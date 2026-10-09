@@ -57,15 +57,6 @@ bool isNameOfThisPass(std::string_view name)
     return name.starts_with(global_row_index_name) || name.starts_with(mask_column_prefix);
 }
 
-bool hasUniqueNames(const Block & header)
-{
-    NameSet names;
-    for (const auto & column : header)
-        if (!names.insert(column.name).second)
-            return false;
-    return true;
-}
-
 /// `if(mask, value, default)`: the value where the join matched the row, and the default where it stuffed
 /// it, which is what the join itself stands there.
 const ActionsDAG::Node & addMasked(
@@ -209,37 +200,34 @@ bool canReadLazily(const QueryPlan::Node & source, const QueryPlanOptimizationSe
     return false;
 }
 
-/// The row index of a read, under `index_name`. For MergeTree it is the offset of the part in the read
-/// plus the offset of the row in its part: the read is asked for the two virtual columns this is computed
-/// from, and the ones it did not produce before are consumed here, so they do not leak into the rest of
-/// the plan. An object storage read produces the index itself. Below a join that can leave the source
-/// unmatched the index is `Nullable`, so that the join stands it at NULL for the rows it stuffs.
-ActionsDAG makeRowIndexDAG(ReadFromMergeTree * merge_tree, const Block & read_header, const String & index_name, bool nullable)
+/// The row index of a read, under `index_name`, after the columns of `former_header` the read still has, in their order,
+/// so that the columns of the read keep their positions and the index comes after them. For MergeTree the index is the
+/// offset of the part in the read plus the offset of the row in its part: the read is asked for the two virtual columns
+/// this is computed from, and the ones it did not produce before are consumed here, so they do not leak into the rest
+/// of the plan. An object storage read produces the index itself. Below a join that can leave the source unmatched
+/// the index is `Nullable`, so that the join stands it at NULL for the rows it stuffs.
+ActionsDAG makeRowIndexDAG(ReadFromMergeTree * merge_tree, const Block & former_header, const Block & read_header, const String & index_name, bool nullable)
 {
-    ActionsDAG dag;
-    const ActionsDAG::Node * index = nullptr;
+    ActionsDAG dag(read_header.getColumnsWithTypeAndName());
+    const auto & inputs = dag.getInputs();
+    /// The columns of a read are storage columns, so their names are unique.
+    const auto find_input = [&](const String & name) { return inputs[read_header.getPositionByName(name)]; };
 
+    auto & outputs = dag.getOutputs();
+    outputs.clear();
+    for (const auto & column : former_header)
+        if (read_header.has(column.name))
+            outputs.push_back(find_input(column.name));
+
+    const ActionsDAG::Node * index = nullptr;
     if (merge_tree)
     {
-        bool added_part_starting_offset = false;
-        bool added_part_offset = false;
-        merge_tree->addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
-
-        DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
-        const auto & part_starting_offset = dag.addInput("_part_starting_offset", uint64_type);
-        const auto & part_offset = dag.addInput("_part_offset", uint64_type);
-
         auto plus = FunctionFactory::instance().get("plus", nullptr);
-        index = &dag.addFunction(plus, {&part_starting_offset, &part_offset}, {});
-
-        if (!added_part_starting_offset)
-            dag.getOutputs().push_back(&part_starting_offset);
-        if (!added_part_offset)
-            dag.getOutputs().push_back(&part_offset);
+        index = &dag.addFunction(plus, {find_input("_part_starting_offset"), find_input("_part_offset")}, {});
     }
     else
     {
-        index = &dag.addInput(read_header.getByName(String(global_row_index_name)));
+        index = find_input(String(global_row_index_name));
     }
 
     if (nullable)
@@ -248,7 +236,7 @@ ActionsDAG makeRowIndexDAG(ReadFromMergeTree * merge_tree, const Block & read_he
         index = &dag.addFunction(to_nullable, {index}, {});
     }
 
-    dag.getOutputs().push_back(&dag.addAlias(*index, index_name));
+    outputs.push_back(&dag.addAlias(*index, index_name));
     return dag;
 }
 
@@ -416,7 +404,8 @@ public:
                 if (!sort_key_nodes.contains(values[position]) && std::ranges::find(carried_values, values[position]) == carried_values.end())
                     unneeded.push_back(position);
         }
-        auto main_plan = assemble(chain_top, unneeded, nodes);
+        auto assembled = assemble(chain_top, unneeded, nodes);
+        auto & main_plan = assembled.plan;
 
         /// Hand over exactly the sort keys, the crossing values and the row indexes; the sort then carries no
         /// more than that. What each column of the block holds is followed from here on, so that the
@@ -428,25 +417,40 @@ public:
             const auto & header = *main_plan.getCurrentHeader();
             ActionsDAG projection(header.getColumnsWithTypeAndName());
             const auto inputs = projection.getInputs();
-            auto find_input = [&](const String & name) { return inputs[header.getPositionByName(name)]; };
+
+            /// The chain keeps the columns of its former header it did not drop, in their order, so a value is found where
+            /// it was, less the dropped positions before it. A row index has a name of its own.
+            const auto & former_values = header_values.at(chain_top);
+            const auto & dropped = assembled.dropped_positions;
+            auto find_value = [&](const ActionsDAG::Node * value)
+            {
+                for (size_t position = 0; position < former_values.size(); ++position)
+                {
+                    if (former_values[position] != value || std::ranges::binary_search(dropped, position))
+                        continue;
+                    const auto dropped_before = std::ranges::lower_bound(dropped, position) - dropped.begin();
+                    return inputs.at(position - dropped_before);
+                }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lazy materialization lost the value {} below the LIMIT", value->result_name);
+            };
 
             auto & projection_outputs = projection.getOutputs();
             projection_outputs.clear();
             for (size_t position : sort_key_positions)
             {
-                projection_outputs.push_back(find_input(outputs[position]->result_name));
+                projection_outputs.push_back(find_value(outputs[position]));
                 slots.push_back(outputs[position]);
                 slot_indexes.emplace_back();
             }
             for (const auto * value : carried_values)
             {
-                projection_outputs.push_back(find_input(value->result_name));
+                projection_outputs.push_back(find_value(value));
                 slots.push_back(value);
                 slot_indexes.emplace_back();
             }
             for (const auto & [source, index_name] : index_names)
             {
-                projection_outputs.push_back(find_input(index_name));
+                projection_outputs.push_back(inputs[header.getPositionByName(index_name)]);
                 slots.push_back(nullptr);
                 slot_indexes.push_back(index_name);
             }
@@ -589,11 +593,8 @@ private:
     /// Whether every step between `node` and the sources is one this rebuilds.
     bool checkSteps(QueryPlan::Node * node, size_t & joins)
     {
-        /// The steps are pruned and reconciled by name, which a name occurring twice makes ambiguous.
-        const auto & header = *node->step->getOutputHeader();
-        if (!hasUniqueNames(header))
-            return false;
-        for (const auto & column : header)
+        /// The steps are pruned and reconciled by position, but the columns this pass adds are found by name.
+        for (const auto & column : *node->step->getOutputHeader())
             if (isNameOfThisPass(column.name))
                 return false;
 
@@ -604,9 +605,17 @@ private:
         for (auto * child : node->children)
             parents.emplace(child, node);
 
-        /// Passes its input through, and reads its key by name, which the merged DAG has made sure is there once.
-        if (typeid_cast<BuildRuntimeFilterStep *>(step))
-            return node->children.size() == 1 && checkSteps(node->children.front(), joins);
+        /// Passes its input through, and reads its key by name, so the key has to be there once.
+        if (auto * runtime_filter = typeid_cast<BuildRuntimeFilterStep *>(step))
+        {
+            if (node->children.size() != 1)
+                return false;
+            const auto & key = runtime_filter->getFilterColumnName();
+            const auto & input = *node->children.front()->step->getOutputHeader();
+            if (std::ranges::count_if(input, [&](const auto & column) { return column.name == key; }) != 1)
+                return false;
+            return checkSteps(node->children.front(), joins);
+        }
 
         if (auto * join = typeid_cast<JoinStepLogical *>(step))
         {
@@ -908,33 +917,44 @@ private:
 
     bool isAddedColumn(const String & name) const { return added_names.contains(name); }
 
-    /// A pruned child as the step above it sees it: the columns of its former header that remain, in their
-    /// former order, and after them any other column it now has, which the step consumes - but not the
-    /// columns this rebuild adds, which the step passes through once it is pruned.
-    IQueryPlanStep::PrunedInput prunedInputOf(const Block & former_header, const Block & new_header) const
+    /// A rebuilt node: its plan, and the positions of its former header it no longer has. Its header is the former one
+    /// without those positions, in the same order, then what its step appended, then the columns this rebuild added.
+    struct Assembled
     {
-        IQueryPlanStep::PrunedInput pruned;
-        Block header;
-        for (size_t position = 0; position < former_header.columns(); ++position)
-        {
-            if (const auto * column = new_header.findByName(former_header.getByPosition(position).name))
-                header.insert(*column);
-            else
-                pruned.dropped_positions.push_back(position);
-        }
+        QueryPlan plan;
+        std::vector<size_t> dropped_positions;
+    };
 
-        for (const auto & column : new_header)
-            if (!former_header.has(column.name) && !isAddedColumn(column.name))
-                header.insert(column);
+    /// A rebuilt child as the step above it sees it: everything but the columns this rebuild added, which the step passes
+    /// through once it is pruned. Those come last, and have names of their own.
+    IQueryPlanStep::PrunedInput prunedInputOf(const Assembled & child, size_t former_columns) const
+    {
+        const auto & header = *child.plan.getCurrentHeader();
+        size_t columns = header.columns();
+        while (columns > 0 && isAddedColumn(header.getByPosition(columns - 1).name))
+            --columns;
 
-        pruned.header = std::make_shared<const Block>(std::move(header));
-        return pruned;
+        for (size_t position = 0; position < columns; ++position)
+            if (isAddedColumn(header.getByPosition(position).name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Lazy materialization added column {} before the end of [{}]", header.getByPosition(position).name, header.dumpNames());
+
+        if (columns < former_columns - child.dropped_positions.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Lazy materialization lost columns: [{}] has {} of the {} columns that remain of {}",
+                header.dumpNames(), columns, former_columns - child.dropped_positions.size(), former_columns);
+
+        Block pruned_header;
+        for (size_t position = 0; position < columns; ++position)
+            pruned_header.insert(header.getByPosition(position));
+
+        return {child.dropped_positions, std::make_shared<const Block>(std::move(pruned_header))};
     }
 
     /// Builds the main branch: prunes from each step what the step above does not need of it, top-down, and
     /// assembles it bottom-up - splits the lazily read columns off the reads, adds the row indexes, which
     /// the joins pass through, and prunes a step once its children are built, with their real headers.
-    QueryPlan assemble(QueryPlan::Node * node, const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
+    Assembled assemble(QueryPlan::Node * node, const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
         if (const auto it = source_numbers.find(node); it != source_numbers.end())
             return assembleSource(node, it->second, nodes);
@@ -944,7 +964,8 @@ private:
         IQueryPlanStep::UnneededInputPositions child_unneeded;
         if (auto * runtime_filter = typeid_cast<BuildRuntimeFilterStep *>(step))
         {
-            /// Passes its input through, so it needs what is needed above it, and its key.
+            /// Passes its input through, so it needs what is needed above it, and its key, which `checkSteps` made sure
+            /// is there once.
             const auto & header = *node->children.front()->step->getOutputHeader();
             const auto key_position = header.getPositionByName(runtime_filter->getFilterColumnName());
             auto & positions = child_unneeded.emplace_back(unneeded);
@@ -953,54 +974,63 @@ private:
         else
             child_unneeded = step->getUnneededColumns(unneeded);
 
-        std::vector<QueryPlanPtr> children;
+        std::vector<Assembled> children;
         for (size_t child = 0; child < node->children.size(); ++child)
-            children.emplace_back(std::make_unique<QueryPlan>(assemble(node->children[child], child_unneeded.at(child), nodes)));
+            children.push_back(assemble(node->children[child], child_unneeded.at(child), nodes));
 
+        Assembled result;
         if (typeid_cast<BuildRuntimeFilterStep *>(step))
         {
-            step->updateInputHeader(children.front()->getCurrentHeader());
+            result.dropped_positions = children.front().dropped_positions;
+            step->updateInputHeader(children.front().plan.getCurrentHeader());
         }
         else
         {
             std::vector<IQueryPlanStep::PrunedInput> pruned;
             for (size_t child = 0; child < children.size(); ++child)
-                pruned.push_back(prunedInputOf(*step->getInputHeaders()[child], *children[child]->getCurrentHeader()));
-            step->removeUnusedColumns(unneeded, pruned);
+                pruned.push_back(prunedInputOf(children[child], step->getInputHeaders()[child]->columns()));
+            result.dropped_positions = step->removeUnusedColumns(unneeded, pruned).dropped_output_positions;
 
             /// The columns this rebuild added below pass through: a join is told to, the other steps do by
-            /// themselves.
+            /// themselves, after their own columns, since those columns come last in their input.
             if (auto * join = typeid_cast<JoinStepLogical *>(step))
             {
                 for (size_t side = 0; side < 2; ++side)
-                    for (const auto & column : *children[side]->getCurrentHeader())
+                    for (const auto & column : *children[side].plan.getCurrentHeader())
                         if (isAddedColumn(column.name))
                             join->addPassThroughColumn(column, side == 0 ? JoinTableSide::Left : JoinTableSide::Right);
 
-                join->updateInputHeaders({children[0]->getCurrentHeader(), children[1]->getCurrentHeader()});
+                join->updateInputHeaders({children[0].plan.getCurrentHeader(), children[1].plan.getCurrentHeader()});
             }
             else
-                step->updateInputHeader(children.front()->getCurrentHeader());
+                step->updateInputHeader(children.front().plan.getCurrentHeader());
         }
 
-        QueryPlan plan;
         if (children.size() == 1)
         {
-            plan = std::move(*children.front());
-            const bool is_above_row_index = row_index_steps.contains(plan.getRootNode()->step.get());
-            plan.addStep(std::move(node->step));
+            result.plan = std::move(children.front().plan);
+            const bool is_above_row_index = row_index_steps.contains(result.plan.getRootNode()->step.get());
+            result.plan.addStep(std::move(node->step));
             if (is_above_row_index)
-                mergeRowIndexIntoParent(*plan.getRootNode());
+                mergeRowIndexIntoParent(*result.plan.getRootNode());
         }
         else
-            plan.unitePlans(std::move(node->step), std::move(children));
-        return plan;
+        {
+            std::vector<QueryPlanPtr> plans;
+            for (auto & child : children)
+                plans.emplace_back(std::make_unique<QueryPlan>(std::move(child.plan)));
+            result.plan.unitePlans(std::move(node->step), std::move(plans));
+        }
+        return result;
     }
 
-    QueryPlan assembleSource(QueryPlan::Node * node, size_t source, QueryPlan::Nodes & nodes)
+    Assembled assembleSource(QueryPlan::Node * node, size_t source, QueryPlan::Nodes & nodes)
     {
         /// Whatever is below the source stays as it is.
-        auto plan = QueryPlan::extractSubplan(node, nodes);
+        Assembled result;
+        auto & plan = result.plan;
+        plan = QueryPlan::extractSubplan(node, nodes);
+        const Block former_header = *plan.getCurrentHeader();
 
         auto * merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get());
         auto * object_storage = typeid_cast<ReadFromObjectStorageStep *>(plan.getRootNode()->step.get());
@@ -1038,7 +1068,19 @@ private:
 
         const bool masks_stuffing = std::ranges::any_of(mask_sources, [&](const auto & mask_source) { return mask_source.second == source; });
         if (lazy_it == lazy_by_source.end() && !masks_stuffing)
-            return plan;
+            return result;
+
+        /// The columns now read lazily are gone from the read. Its columns are storage columns, with unique names.
+        if (merge_tree)
+        {
+            bool added_part_starting_offset = false;
+            bool added_part_offset = false;
+            merge_tree->addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
+        }
+        const auto & read_header = *plan.getCurrentHeader();
+        for (size_t position = 0; position < former_header.columns(); ++position)
+            if (!read_header.has(former_header.getByPosition(position).name))
+                result.dropped_positions.push_back(position);
 
         const auto index_name = makeRowIndexName(source);
         index_names.emplace(source, index_name);
@@ -1049,12 +1091,12 @@ private:
         const auto & source_inputs = merged.sources[source].inputs;
         const bool nullable_index = !source_inputs.empty() && merged.getNearestStuffing(source_inputs.front()) != nullptr;
 
-        auto above_read = makeRowIndexDAG(merge_tree, *plan.getCurrentHeader(), index_name, nullable_index);
+        auto above_read = makeRowIndexDAG(merge_tree, former_header, read_header, index_name, nullable_index);
         auto step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(above_read));
         step->setStepDescription("Row index");
         row_index_steps.insert(step.get());
         plan.addStep(std::move(step));
-        return plan;
+        return result;
     }
 
     /// An expression or a filter right above the read computes the row index itself, so that a filter stays right
@@ -1066,9 +1108,16 @@ private:
             return;
 
         String description(parent.step->getStepDescription());
+        const auto header = parent.step->getOutputHeader();
         QueryPlan::Nodes unused_nodes;
         if (!tryMergeExpressions(&parent, unused_nodes, {}))
             return;
+
+        /// The steps above match the columns by position.
+        if (!blocksHaveEqualStructure(*header, *parent.step->getOutputHeader()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Merging the row index changed the header of {} from [{}] to [{}]",
+                parent.step->getName(), header->dumpStructure(), parent.step->getOutputHeader()->dumpStructure());
 
         const auto description_size = description.size();
         parent.step->setStepDescription(std::move(description), description_size);
