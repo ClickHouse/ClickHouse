@@ -586,14 +586,15 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                         "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
             };
 
+            /// Dynamic streams are not enumerated here, so a sample column with the dynamic structure is not
+            /// needed. Reading one would not work anyway: the reader looks the streams up in the checksums,
+            /// which are empty for parts of very old formats.
             ISerialization::EnumerateStreamsSettings settings;
             settings.enumerate_dynamic_streams = false;
             for (const auto & name_type : getColumns())
             {
                 auto serialization = getSerialization(name_type.name);
-                auto data = ISerialization::SubstreamData(serialization)
-                    .withType(name_type.type)
-                    .withColumn(getColumnSample(name_type));
+                auto data = ISerialization::SubstreamData(serialization).withType(name_type.type);
                 serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
                 {
                     auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
