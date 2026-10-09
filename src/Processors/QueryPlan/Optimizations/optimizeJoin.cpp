@@ -453,6 +453,7 @@ static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & n
     {
         RelationEstimateInfo estimate;
         estimate.estimated_rows = stats.estimated_rows;
+        estimate.max_rows = stats.max_rows;
         estimate.source = stats.source;
         estimate.imprecise_estimate = stats.imprecise_estimate;
         return estimate;
@@ -1046,6 +1047,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         relation_infos[BitSet().set(i)] = RelationEstimateInfo{
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
             .estimated_rows = rel.estimated_rows,
+            .max_rows = rel.max_rows,
             .source = rel.source,
             .imprecise_estimate = rel.imprecise_estimate};
 
@@ -1410,6 +1412,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             relation_infos[entry->relations] = RelationEstimateInfo{
                 .name = join_step->getReadableRelationName(),
                 .estimated_rows = entry->estimated_rows,
+                .max_rows = entry->max_rows,
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 

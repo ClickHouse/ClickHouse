@@ -351,6 +351,7 @@ protected:
     static void setRelationEstimate(RelationEstimateInfo & relation, const RelationEstimateInfo & estimate)
     {
         relation.estimated_rows = estimate.estimated_rows;
+        relation.max_rows = estimate.max_rows;
         relation.source = estimate.source;
         relation.imprecise_estimate = estimate.imprecise_estimate;
     }

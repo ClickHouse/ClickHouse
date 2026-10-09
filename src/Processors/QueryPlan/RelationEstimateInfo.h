@@ -126,12 +126,15 @@ struct RelationEstimateInfo
     /// Table name or alias; for a relation that is itself a join, a readable chain of its inputs.
     String name;
     std::optional<UInt64> estimated_rows = {};
+    /// Rows the relation cannot exceed; shown when there is no estimate.
+    std::optional<UInt64> max_rows = {};
     RowEstimateSource source = RowEstimateSource::NoSource;
     bool imprecise_estimate = false;
     /// A relation composed of sub-joins is rendered as the chain only, without its own estimate.
     bool composite = false;
 
-    /// `name[source~rows]`, e.g. `a[no_stats~1000]`, `b[100]`, `c[hint~?]`.
+    /// `name[source~rows]`, e.g. `a[no_stats~1000]`, `b[100]`; without an estimate the bound,
+    /// `c[no_stats<=1000]`, or `c[hint~?]` when there is none.
     String displayName() const
     {
         if (composite)
@@ -144,6 +147,8 @@ struct RelationEstimateInfo
 
         if (estimated_rows)
             return fmt::format("{}[{}{}{}]", name, tag, tag.empty() ? "" : "~", *estimated_rows);
+        if (max_rows)
+            return fmt::format("{}[{}<={}]", name, tag, *max_rows);
         if (!tag.empty())
             return fmt::format("{}[{}~?]", name, tag);
         return name;

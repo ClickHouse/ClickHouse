@@ -20,7 +20,7 @@ Positions: 5 0 1 2 3
            FUNCTION less(__table1.uid : 0, __table2.age_sum : 3) -> less(__table1.uid, __table2.age_sum) Nullable(UInt8) : 5
   Positions: 5 0 1 2 3 4
     JoinLogical
-    Join: u1[3] ⋈ u2[no_stats~?]
+    Join: u1[3] ⋈ u2[no_stats<=3]
     ResultRows: unknown
     Type: INNER
     Strictness: ALL
@@ -96,7 +96,7 @@ Positions: 5 0 1 2 3
            FUNCTION less(__table1.uid : 0, __table2.age_sum : 3) -> less(__table1.uid, __table2.age_sum) Nullable(UInt8) : 5
   Positions: 5 0 1 2 3 4
     JoinLogical
-    Join: u1[3] ⟕ u2[no_stats~?]
+    Join: u1[3] ⟕ u2[no_stats<=3]
     ResultRows: unknown
     Type: LEFT
     Strictness: ANY
@@ -175,7 +175,7 @@ Positions: 6 0 1 2 3 4
            FUNCTION less(__table1.uid : 0, __table2.age_sum : 3) -> less(__table1.uid, __table2.age_sum) Nullable(UInt8) : 6
   Positions: 6 0 1 2 3 4 5
     JoinLogical
-    Join: u1[3] ⋈ u2[no_stats~?]
+    Join: u1[3] ⋈ u2[no_stats<=3]
     ResultRows: unknown
     Type: INNER
     Strictness: ALL
@@ -262,7 +262,7 @@ Positions: 6 0 1 2 3 4
            FUNCTION less(__table1.uid : 0, __table2.age_sum : 3) -> less(__table1.uid, __table2.age_sum) Nullable(UInt8) : 6
   Positions: 6 0 1 2 3 4 5
     JoinLogical
-    Join: u1[3] ⟕ u2[no_stats~?]
+    Join: u1[3] ⟕ u2[no_stats<=3]
     ResultRows: unknown
     Type: LEFT
     Strictness: ANY
