@@ -184,8 +184,7 @@ namespace
             value = DB::tryConvertFieldToTypeExact(literal, *type, literal_type.get());
         }
 
-        /// A conversion to `Bool` can keep a raw byte, which the kernel literal would read as `true`.
-        if (value.isNull() || (isBool(type) && value.safeGet<UInt64>() > 1))
+        if (value.isNull())
             return std::nullopt;
         return ConvertedLiteral{value, true};
     }
@@ -446,8 +445,11 @@ static uintptr_t visitLiteralValue(
         {
             if (isBool(data_type))
             {
-                bool result = value.safeGet<UInt8>();
-                return ffi::visit_expression_literal_bool(state, result); /// Accepts bool
+                /// A `Bool` byte above 1 compares as a number, which a kernel boolean cannot express.
+                const auto result = value.safeGet<UInt64>();
+                if (result > 1)
+                    return EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED;
+                return ffi::visit_expression_literal_bool(state, result == 1); /// Accepts bool
             }
             else
             {

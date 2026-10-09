@@ -192,7 +192,8 @@ for where in "x < 300" "x != 300" "x > -200" "x < 1.5" "x < 45" "x = 44"; do
 done
 
 make_table bools b Bool boolean 0 '[true, true]' '[false, false]'
-for where in "b != 5" "b != 256" "b < 2" "b > 0.5" "b = 1" "NOT (b = 1)" "b = true"; do
+for where in "b != 5" "b != 256" "b < 2" "b > 0.5" "b = 1" "NOT (b = 1)" "b = true" \
+    "b != reinterpret(toUInt8(5), 'Bool')" "b < reinterpret(toUInt8(5), 'Bool')"; do
     check bools UTC "${where}"
 done
 

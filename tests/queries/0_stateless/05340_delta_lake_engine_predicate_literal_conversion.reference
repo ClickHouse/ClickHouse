@@ -127,6 +127,12 @@ bools [UTC]: NOT (b = 1)
 bools [UTC]: b = true
 ['true','true']
 1
+bools [UTC]: b != reinterpret(toUInt8(5), 'Bool')
+['false','false','true','true']
+2
+bools [UTC]: b < reinterpret(toUInt8(5), 'Bool')
+['false','false','true','true']
+2
 strings [UTC]: s = 'a'
 ['a']
 1
