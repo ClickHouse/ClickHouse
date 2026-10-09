@@ -856,6 +856,48 @@ def test_postgresql_database_engine_schema_sql_injection(started_cluster):
     cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
+def test_merge_over_postgresql_database_reads_only_matching_tables(started_cluster):
+    # `Merge` and `merge` pass their table name regexp to the database's table iterator and do not check the names
+    # again. `DatabasePostgreSQL::getTablesIterator` used to ignore that filter, so they read every table of the
+    # database. `merge_t10` also starts with `merge_t1`, so the anchored regexp must leave it out too.
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+    for table_name in ["merge_t1", "merge_t2", "merge_t10"]:
+        create_postgres_table(cursor, table_name)
+    cursor.execute("INSERT INTO merge_t1 VALUES (1, 1)")
+    cursor.execute("INSERT INTO merge_t2 VALUES (2, 2), (3, 3)")
+    cursor.execute("INSERT INTO merge_t10 VALUES (10, 10), (11, 11), (12, 12)")
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    try:
+        node1.query(
+            f"CREATE DATABASE postgres_database ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
+        )
+        assert (
+            node1.query(
+                "SELECT _table, count() FROM merge(postgres_database, '^merge_t1$') GROUP BY _table"
+            )
+            == "merge_t1\t1\n"
+        )
+
+        node1.query(
+            "CREATE TABLE merge_over_postgres (id Int32, value Nullable(Int32)) "
+            "ENGINE = Merge(postgres_database, '^merge_t1$')"
+        )
+        assert (
+            node1.query("SELECT _table, count() FROM merge_over_postgres GROUP BY _table")
+            == "merge_t1\t1\n"
+        )
+    finally:
+        node1.query("DROP TABLE IF EXISTS merge_over_postgres")
+        # `test_postgresql_fetch_tables` asserts the exact public-schema table list, so these tables must not
+        # outlive the test even if an assertion above fires.
+        node1.query("DROP DATABASE IF EXISTS postgres_database")
+        for table_name in ["merge_t1", "merge_t2", "merge_t10"]:
+            cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_postgresql_database_engine_quoted_remote_table_name(started_cluster):
     # `DatabasePostgreSQL::checkPostgresTable` casts the formatted table name to `regclass` to
     # decide whether the remote relation exists, and every table access of this database engine
