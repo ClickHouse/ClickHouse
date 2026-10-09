@@ -93,7 +93,6 @@ std::optional<DataTypePtr> getDateTimeTypeWithTimeZoneArgument(
     const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function);
     if (!adaptor)
         return std::nullopt;
-    /// `toString(datetime, time_zone)` formats in that time zone.
     const auto & inner = adaptor->getFunction();
     if (!dynamic_cast<const FunctionDateOrDateTimeBase *>(inner.get()) && inner->getName() != "toString")
         return std::nullopt;
