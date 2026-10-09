@@ -357,6 +357,12 @@ off_t CompressedReadBufferBase::getPosition() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implement getPosition");
 }
 
+size_t CompressedReadBufferBase::getInPlaceInputBufferSize(const ICompressionCodec & codec, size_t max_decompressed_size)
+{
+    return sizeof(Checksum) + codec.getCompressedReserveSize(static_cast<UInt32>(max_decompressed_size))
+        + codec.getAdditionalSizeAtTheEndOfBuffer();
+}
+
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.
 
 }

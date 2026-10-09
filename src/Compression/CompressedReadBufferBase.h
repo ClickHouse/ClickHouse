@@ -75,6 +75,11 @@ public:
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);
     virtual off_t getPosition() const;
 
+    /// Returns the size of an input buffer that holds any compressed block of at most `max_decompressed_size`
+    /// bytes that `codec` compresses, with its checksum and the bytes that `codec` needs after the block, so
+    /// that `readCompressedData` uses the block where the buffer holds it instead of copying it first.
+    static size_t getInPlaceInputBufferSize(const ICompressionCodec & codec, size_t max_decompressed_size);
+
     CompressionCodecPtr codec;
 };
 
