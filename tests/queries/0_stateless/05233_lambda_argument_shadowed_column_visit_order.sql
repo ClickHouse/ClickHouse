@@ -21,19 +21,20 @@ SELECT value FROM t_05233 PREWHERE arrayMap(value -> arrayMap(y -> value + t_052
 SELECT value FROM t_05233 PREWHERE arrayMap(value -> arrayMap(y -> t_05233.value + value, [1])[1], [toUInt8(1)])[1] = 11;
 SELECT value FROM t_05233 PREWHERE arrayMap(value -> arrayMap(y -> arrayMap(z -> value + t_05233.value, [1])[1], [1])[1], [toUInt8(1)])[1] = 11;
 
--- The same for a correlated column of the outer query. `t1.value + 1` matches the single row.
+-- A correlated column of the outer query cannot be read together with the table of the subquery, and binding
+-- `PREWHERE` to the outer table would filter the outer query instead, so it is rejected in `PREWHERE`,
+-- whether captured by a lambda or not.
 SET allow_experimental_correlated_subqueries = 1;
-SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE arrayMap(value -> t1.value + value, [toUInt8(1)])[1] = 11);
-SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE arrayMap(value -> value + t1.value, [toUInt8(1)])[1] = 11);
-
--- The table alias `__CORRELATED` is legal, so the name under which the shadowed correlated column is passed
--- through the lambda must not be derived from a fixed prefix: it would coincide with `__CORRELATED.value`.
-SELECT 1 FROM t_05233 AS __CORRELATED WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE arrayMap(value -> __CORRELATED.value + value, [toUInt8(1)])[1] = 11);
-SELECT 1 FROM t_05233 AS __CORRELATED WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE arrayMap(value -> value + __CORRELATED.value, [toUInt8(1)])[1] = 11);
-
--- A column captured by a lambda is checked like any other column in `PREWHERE`: columns of two tables are not allowed.
+SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE arrayMap(value -> t1.value + value, [toUInt8(1)])[1] = 11); -- { serverError ILLEGAL_PREWHERE }
+SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE arrayMap(value -> value + t1.value, [toUInt8(1)])[1] = 11); -- { serverError ILLEGAL_PREWHERE }
 SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE arrayMap(value -> t2.value + t1.value + value, [toUInt8(1)])[1] = 21); -- { serverError ILLEGAL_PREWHERE }
 SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE t2.value + arrayMap(value -> t1.value + value, [toUInt8(1)])[1] = 21); -- { serverError ILLEGAL_PREWHERE }
+SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE t1.value + 1 = 11); -- { serverError ILLEGAL_PREWHERE }
+SELECT value, (SELECT count() FROM t_05233 AS t2 PREWHERE arrayMap(x -> t1.value + x, [toUInt8(1)])[1] = 11) FROM t_05233 AS t1; -- { serverError ILLEGAL_PREWHERE }
+
+-- In `WHERE` the shadowed correlated column works. `t1.value + 1` matches the single row.
+SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 WHERE arrayMap(value -> t1.value + value, [toUInt8(1)])[1] = 11);
+SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 WHERE arrayMap(value -> value + t1.value, [toUInt8(1)])[1] = 11);
 
 DROP TABLE t_05233;
 
