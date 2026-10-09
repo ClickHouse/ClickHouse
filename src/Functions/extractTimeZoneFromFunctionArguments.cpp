@@ -91,7 +91,11 @@ std::optional<DataTypePtr> getDateTimeTypeWithTimeZoneArgument(
     const IFunctionBase & function, const IDataType & type, const ColumnWithTypeAndName & time_zone_argument)
 {
     const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function);
-    if (!adaptor || !dynamic_cast<const FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()))
+    if (!adaptor)
+        return std::nullopt;
+    /// `toString(datetime, time_zone)` formats in that time zone.
+    const auto & inner = adaptor->getFunction();
+    if (!dynamic_cast<const FunctionDateOrDateTimeBase *>(inner.get()) && inner->getName() != "toString")
         return std::nullopt;
 
     /// The default implementation for NULLs admits a NULL or `Nullable` time zone; the function runs with the nested value.
