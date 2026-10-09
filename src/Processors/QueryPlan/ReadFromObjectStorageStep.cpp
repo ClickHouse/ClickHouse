@@ -46,6 +46,11 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache_for_top_k;
 }
 
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsBool paimon_incremental_read;
+}
+
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     const StorageID & storage_id_,
@@ -260,6 +265,12 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
         return {};
     const auto & datalake_table_state = storage_snapshot->metadata->datalake_table_state;
     if (!datalake_table_state)
+        return {};
+
+    /// An incremental `Paimon` read iterates only the delta since the watermark committed in Keeper
+    /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
+    /// yields different sets of files from query to query.
+    if (configuration->getDataLakeSettings()[DataLakeStorageSetting::paimon_incremental_read])
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
