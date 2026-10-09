@@ -10,7 +10,7 @@
     'background_insert_max_sleep_time_ms',
 ] %}
 drop table if exists dist_{{ table_setting }};
-create table dist_{{ table_setting }} as system.one engine=Distributed(test_shard_localhost, system, one) settings {{ table_setting }}=1;
+create table dist_{{ table_setting }} as system.one engine=Distributed(test_shard_localhost, system, one) settings {{ table_setting }}=1 comment 'compatibility test';
 show create dist_{{ table_setting }};
 drop table dist_{{ table_setting }};
 {% endfor %}

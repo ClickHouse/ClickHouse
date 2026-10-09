@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 DROP TABLE IF EXISTS t1;
 
 CREATE TABLE t1 (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity=1;
@@ -19,5 +20,7 @@ FROM t1
 GROUP BY a
 HAVING materialize(0)
 SETTINGS parallel_replicas_local_plan = 1;
+
+SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 DROP TABLE t1;

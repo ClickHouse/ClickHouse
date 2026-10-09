@@ -17,7 +17,7 @@ INSERT INTO ts_memo VALUES
 SELECT 'window=1000, step=100 (buckets_per_window=10 -> recompute + memoization):';
 SELECT timeSeriesChangesToGrid(0, 2000, 100, 1000)(timestamp, value) FROM ts_memo;
 SELECT timeSeriesResetsToGrid(0, 2000, 100, 1000)(timestamp, value) FROM ts_memo;
-SELECT timeSeriesResampleToGridWithStaleness(0, 2000, 100, 1000)(timestamp, value) FROM ts_memo;
+SELECT timeSeriesLastToGrid(0, 2000, 100, 1000)(timestamp, value) FROM ts_memo;
 SELECT timeSeriesRateToGrid(0, 2000, 100, 1000)(timestamp, value) FROM ts_memo;
 SELECT timeSeriesDerivToGrid(0, 2000, 100, 1000)(timestamp, value) FROM ts_memo;
 
@@ -29,8 +29,8 @@ SELECT timeSeriesChangesToGrid(0, 2000, 100, 1000)(timestamp, value)[8]
      = timeSeriesChangesToGrid(700, 700, 100, 1000)(timestamp, value)[1] FROM ts_memo;
 SELECT timeSeriesResetsToGrid(0, 2000, 100, 1000)(timestamp, value)[10]
      = timeSeriesResetsToGrid(900, 900, 100, 1000)(timestamp, value)[1] FROM ts_memo;
-SELECT timeSeriesResampleToGridWithStaleness(0, 2000, 100, 1000)(timestamp, value)[12]
-     = timeSeriesResampleToGridWithStaleness(1100, 1100, 100, 1000)(timestamp, value)[1] FROM ts_memo;
+SELECT timeSeriesLastToGrid(0, 2000, 100, 1000)(timestamp, value)[12]
+     = timeSeriesLastToGrid(1100, 1100, 100, 1000)(timestamp, value)[1] FROM ts_memo;
 SELECT timeSeriesRateToGrid(0, 2000, 100, 1000)(timestamp, value)[9]
      = timeSeriesRateToGrid(800, 800, 100, 1000)(timestamp, value)[1] FROM ts_memo;
 

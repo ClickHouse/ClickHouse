@@ -88,6 +88,27 @@ namespace ErrorCodes
 namespace
 {
 
+/// Column names from the `name (col1, col2, ...)` alias list of a CTE/table expression
+/// Duplicates are rejected, they would collapse columns during identifier resolution
+Names getColumnAliasNames(const ASTPtr & column_aliases)
+{
+    const auto & column_aliases_list = column_aliases->as<const ASTExpressionList &>();
+
+    Names result;
+    result.reserve(column_aliases_list.children.size());
+
+    NameSet unique_aliases;
+    for (const auto & column_alias : column_aliases_list.children)
+    {
+        const auto & alias_name = column_alias->as<const ASTIdentifier &>().name();
+        if (!unique_aliases.insert(alias_name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate column alias '{}' in column alias list", alias_name);
+        result.push_back(alias_name);
+    }
+
+    return result;
+}
+
 class QueryTreeBuilder
 {
 public:
@@ -359,12 +380,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             for (auto & with_node : current_query_tree->getWith().getNodes())
             {
                 auto * with_union_node = with_node->as<UnionNode>();
-                auto * with_query_node = with_node->as<QueryNode>();
-
-                const bool materialized_cte = (with_query_node && with_query_node->isMaterialized()) || (with_union_node && with_union_node->isMaterialized());
-                if (materialized_cte)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MATERIALIZED CTE is not supported in recursive WITH");
-
                 if (!with_union_node)
                     continue;
 
@@ -379,20 +394,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     // Apply the override aliases to the projection nodes
     if (aliases)
-    {
-        // Collect the aliases into a vector of strings
-        Names collected_aliases;
-        auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
-        collected_aliases.reserve(override_aliases_children.size());
-
-        for (const auto & child : override_aliases_children)
-        {
-            const auto & alias_ast = child->as<ASTIdentifier &>();
-            collected_aliases.push_back(alias_ast.name());
-        }
-
-        current_query_tree->setProjectionAliasesToOverride(collected_aliases);
-    }
+        current_query_tree->setProjectionAliasesToOverride(getColumnAliasNames(aliases));
 
     auto prewhere_expression = select_query_typed.prewhere();
     if (prewhere_expression)
@@ -996,19 +998,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 /// Apply column aliases from AS alias(col1, col2, ...) syntax
                 if (table_expression.column_aliases)
                 {
-                    const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
-                    Names column_alias_names;
-                    column_alias_names.reserve(column_aliases_list.children.size());
-
-                    std::unordered_set<std::string> seen_aliases;
-                    for (const auto & column_alias : column_aliases_list.children)
-                    {
-                        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
-                        if (!seen_aliases.insert(alias_name).second)
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Duplicate column alias '{}' in table expression column list", alias_name);
-                        column_alias_names.push_back(alias_name);
-                    }
+                    Names column_alias_names = getColumnAliasNames(table_expression.column_aliases);
 
                     if (auto * query_node = node->as<QueryNode>())
                     {
@@ -1092,6 +1082,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             JoinStrictness result_join_strictness = table_join.strictness;
             JoinKind result_join_kind = table_join.kind;
 
+            /// `LATERAL JOIN` supports only `ALL` semantics, so an unspecified strictness must not
+            /// depend on `join_default_strictness` or `any_join_distinct_right_table_keys`.
+            if (table_join.lateral && result_join_strictness == JoinStrictness::Unspecified
+                && result_join_kind != JoinKind::Cross && result_join_kind != JoinKind::Comma)
+                result_join_strictness = JoinStrictness::All;
+
             if (result_join_strictness == JoinStrictness::Unspecified && (result_join_kind != JoinKind::Cross && result_join_kind != JoinKind::Comma))
             {
                 if (join_default_strictness == JoinStrictness::Any)
@@ -1158,6 +1154,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     result_join_kind,
                     table_join.using_expression_list != nullptr);
                 join_node->as<JoinNode &>().setNatural(table_join.is_natural);
+                join_node->as<JoinNode &>().setLateral(table_join.lateral);
             }
 
             join_node->setOriginalAST(table_element.table_join);
@@ -1210,7 +1207,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             if (apply_transformer->lambda)
             {
                 auto lambda_query_tree_node = buildExpression(apply_transformer->lambda, context);
-                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(lambda_query_tree_node)));
+                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(lambda_query_tree_node), apply_transformer->column_name_prefix));
             }
             else
             {
@@ -1218,7 +1215,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
                 if (apply_transformer->parameters)
                     function_node->getParametersNode() = buildExpressionList(apply_transformer->parameters, context);
 
-                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(function_node)));
+                column_transformers.emplace_back(std::make_shared<ApplyColumnTransformerNode>(std::move(function_node), apply_transformer->column_name_prefix));
             }
         }
         else if (auto * except_transformer = child->as<ASTColumnsExceptTransformer>())
