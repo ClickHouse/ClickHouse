@@ -158,8 +158,7 @@ Chunk ParallelParsingInputFormat::read()
                 return {};
         }
 
-        /// The first unit is cut and parsed in this thread: other parsers need its column mapping before they start,
-        /// so threads would not parse it sooner, and an input that fits into one unit then starts no threads at all.
+        /// Unit 0 must be parsed before any other parser starts: they need its column mapping.
         bool have_more_data = segmentUnit(processing_units[0]);
         ++segmentator_ticket_number;
         parserThreadFunction(0);

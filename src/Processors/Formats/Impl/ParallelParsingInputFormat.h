@@ -65,8 +65,7 @@ class Context;
  *  2) take the blocks from the processing unit to return them to the caller
  *  3) signal that the processing unit is empty
  *  4) repeat until it encounters unit that is marked as "past_the_end"
- * The reader thread cuts and parses the first unit itself and starts the segmentator only if more
- * data follows, so an input that fits into one unit is parsed without starting any threads.
+ * The reader thread cuts and parses the first unit itself and starts the segmentator only if more data follows.
  * All threads must also check for cancel/eof/exception flags.
  */
 class ParallelParsingInputFormat final : public IInputFormat
