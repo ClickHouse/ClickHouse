@@ -738,6 +738,23 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     local_graph.addDependencies(id, relevant_deps);
                 }
 
+                /// A `TimeSeries` table drops its inner tables in `dropInnerTableIfAny`, so they go first.
+                for (const auto & [id, _] : tables_to_drop)
+                {
+                    auto time_series
+                        = castStorage<StorageTimeSeries>(database->tryGetTable(id.getTableName(), table_context), DeferredTable::Skip);
+                    if (!time_series || !time_series->hasInnerTables())
+                        continue;
+                    for (auto target_kind : StorageTimeSeries::getTargetKinds())
+                    {
+                        if (!time_series->isInnerTable(target_kind))
+                            continue;
+                        auto inner_id = time_series->tryGetTargetTableID(target_kind, table_context);
+                        if (inner_id && table_names_in_drop.contains(inner_id.getFullTableName()))
+                            local_graph.addDependency(inner_id, id);
+                    }
+                }
+
                 auto sorted = local_graph.getTablesSortedByDependency();
 
                 /// Build a position map: tables sorted by dependency order (dependencies first).
