@@ -6,7 +6,6 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperStorage.h>
 #include <functional>
 #include <libnuraft/nuraft.hxx>
@@ -257,8 +256,7 @@ public:
     KeeperSnapshotManager(
         size_t snapshots_to_keep_,
         const KeeperContextPtr & keeper_context_,
-        bool compress_snapshots_zstd_ = true,
-        Int64 snapshot_zstd_compression_level_ = DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL);
+        bool compress_snapshots_zstd_ = true);
 
     /// TODO: We should probably allow arbitrary WriteBuffer/SeekableReadBuffer in most of these
     ///       methods, instead of requiring the whole snapshot to be read/written into memory first.
@@ -387,8 +385,6 @@ private:
     uint64_t protected_pending_snapshot_log_idx = 0;
     /// Compress snapshots in common ZSTD format instead of custom ClickHouse block LZ4 format
     const bool compress_snapshots_zstd;
-    /// ZSTD compression level used by both in-memory and on-disk snapshot writers
-    const int snapshot_zstd_compression_level;
 
     KeeperContextPtr keeper_context;
 

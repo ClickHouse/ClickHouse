@@ -18,15 +18,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [UInt8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toUInt8(256) == 0;`.
-</Note>
+:::
 
-<Note>
+:::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-</Note>
+:::
 
 See also:
 - [`toUInt8OrZero`](#toUInt8OrZero).
@@ -74,15 +74,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toUInt16(65536) == 0;`.
-</Note>
+:::
 
-<Note>
+:::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-</Note>
+:::
 
 See also:
 - [`toUInt16OrZero`](#toUInt16OrZero).
@@ -133,15 +133,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toUInt32(4294967296) == 0;`
-</Note>
+:::
 
-<Note>
+:::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-</Note>
+:::
 
 See also:
 - [`toUInt32OrZero`](#toUInt32OrZero).
@@ -191,15 +191,15 @@ Unsupported types:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toUInt64(18446744073709551616) == 0;`
-</Note>
+:::
 
-<Note>
+:::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-</Note>
+:::
 
 See also:
 - [`toUInt64OrZero`](#toUInt64OrZero).
@@ -250,10 +250,10 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of UInt128, the result over or under flows.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt128OrZero`](#toUInt128OrZero).
@@ -302,10 +302,10 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of UInt256, the result over or under flows.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt256OrZero`](#toUInt256OrZero).
@@ -355,15 +355,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toInt8(128) == -128;`.
-</Note>
+:::
 
-<Note>
+:::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-</Note>
+:::
 
 See also:
 - [`toInt8OrZero`](#toInt8OrZero).
@@ -413,15 +413,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
 For example: `SELECT toInt16(32768) == -32768;`.
-</Note>
+:::
 
-<Note>
+:::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-</Note>
+:::
 
 See also:
 - [`toInt16OrZero`](#toInt16OrZero).
@@ -471,15 +471,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toInt32(2147483648) == -2147483648;`
-</Note>
+:::
 
-<Note>
+:::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-</Note>
+:::
 
 See also:
 - [`toInt32OrZero`](#toInt32OrZero).
@@ -529,15 +529,15 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int64](/reference/data-types/int-uint), the result over or under flows.
 This is not considered an error.
 For example: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
-</Note>
+:::
 
-<Note>
+:::note
 The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), meaning it truncates fractional digits of numbers.
-</Note>
+:::
 
 See also:
 - [`toInt64OrZero`](#toInt64OrZero).
@@ -588,10 +588,10 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of Int128, the result over or under flows.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt128OrZero`](#toInt128OrZero).
@@ -642,10 +642,10 @@ Unsupported arguments:
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of Int256, the result over or under flows.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt256OrZero`](#toInt256OrZero).
@@ -707,11 +707,9 @@ toBFloat16('42.7')
 FORMAT Vertical;
         )",
         R"(
-Row 1:
-──────
-toBFloat16(toFloat32(42.7)):   42.5
-toBFloat16(toFloat32('42.7')): 42.5
-toBFloat16('42.7'):            42.5
+toBFloat16(toFloat32(42.7)): 42.5
+toBFloat16(t⋯32('42.7')):    42.5
+toBFloat16('42.7'):          42.5
         )"
     }
     };
@@ -832,17 +830,17 @@ Unsupported arguments:
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal64('0xc0fe', 1);`.
 
-<Note>
+:::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-</Note>
+:::
 
-<Warning>
+:::warning
 Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
 For example: `toDecimal64(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal64('1.15', 2) = 1.15`
-</Warning>
+:::
     )";
     FunctionDocumentation::Syntax syntax_toDecimal64 = "toDecimal64(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal64 = {
@@ -863,11 +861,11 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-a:      2
+a:      2.0
 type_a: Decimal(18, 1)
-b:      4.2
+b:      4.20
 type_b: Decimal(18, 2)
-c:      4.2
+c:      4.200
 type_c: Decimal(18, 3)
         )"
     }
@@ -888,17 +886,17 @@ Unsupported arguments:
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal32('0xc0fe', 1);`.
 
-<Note>
+:::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-</Note>
+:::
 
-<Warning>
+:::warning
 Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
 For example: `toDecimal32(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal32('1.15', 2) = 1.15`
-</Warning>
+:::
     )";
     FunctionDocumentation::Syntax syntax_toDecimal32 = "toDecimal32(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal32 = {
@@ -945,17 +943,17 @@ Unsupported arguments:
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal128('0xc0fe', 1);`.
 
-<Note>
+:::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-</Note>
+:::
 
-<Warning>
+:::warning
 Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
 For example: `toDecimal128(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal128('1.15', 2) = 1.15`
-</Warning>
+:::
     )";
     FunctionDocumentation::Syntax syntax_toDecimal128 = "toDecimal128(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal128 = {
@@ -1001,17 +999,17 @@ Unsupported arguments:
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values, e.g. `SELECT toDecimal256('0xc0fe', 1);`.
 
-<Note>
+:::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`.
 Excessive digits in a fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
-</Note>
+:::
 
-<Warning>
+:::warning
 Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
 For example: `toDecimal256(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
 You can use a String input so the operations use the underlying integer type: `toDecimal256('1.15', 2) = 1.15`
-</Warning>
+:::
     )";
     FunctionDocumentation::Syntax syntax_toDecimal256 = "toDecimal256(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal256 = {
@@ -1134,7 +1132,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:             2025-01-01
+value:           2025-01-01
 toTypeName(value): Date32
         )"
     },
@@ -1147,7 +1145,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-value:             1899-01-01
+value:           1899-01-01
 toTypeName(value): Date32
         )"
     }
@@ -1164,7 +1162,7 @@ Converts an input value to type [Time](/reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
 Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
 
-<Note title="Legacy `toTime`">
+:::note Legacy `toTime`
 Before v25.5, `toTime` was a different function, which converted a date with time to a fixed date (`1970-01-02`) while preserving the
 time component. That function is still available under the name [`toTimeWithFixedDate`](/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
 
@@ -1172,7 +1170,7 @@ Setting [`use_legacy_to_time`](/reference/settings/session-settings#use_legacy_t
 function, i.e. calls to `toTime` resolve to `toTimeWithFixedDate` instead of the conversion function described here.
 While the setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to type `Time`.
 The setting defaults to `0` since v26.7, but defaulted to `1` from v25.6 to v26.6, which is why the examples below set it explicitly.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
@@ -1273,11 +1271,11 @@ SELECT toTime64(52225.123456, 6)
     FunctionDocumentation::Description description_toDateTime = R"(
 Converts an input value to type [DateTime](/reference/data-types/datetime).
 
-<Note>
+:::note
 If `expr` is a number, it is interpreted as the number of seconds since the beginning of the Unix Epoch (as Unix timestamp).
 If `expr` is a [String](/reference/data-types/string), it may be interpreted as a Unix timestamp or as a string representation of date / date with time.
 Thus, parsing of short numbers' string representations (up to 4 digits) is explicitly disabled due to ambiguity, e.g. a string `'1999'` may be both a year (an incomplete string representation of Date / DateTime) or a unix timestamp. Longer numeric strings are allowed.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax_toDateTime = "toDateTime(expr[, time_zone])";
     FunctionDocumentation::Arguments arguments_toDateTime = {
@@ -1309,7 +1307,7 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
     /// toDateTime32 documentation
     FunctionDocumentation::Description description_toDateTime32 = R"(
 Converts an input value to type `DateTime`.
-Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `(U)Int128`, `(U)Int256`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; a value of the `Time` type wraps around instead of saturating.
+Supports conversion from `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64`, or numeric types (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). `Decimal` and `Time64` values are not supported and result in an exception; the `Time` type and wide integer types such as `(U)Int128`/`(U)Int256` wrap around instead of saturating.
 `DateTime32` is an alias of `DateTime` and supports dates from `1970-01-01 00:00:00` to `2106-02-07 06:28:15`.
 When converting from a string or from one of the saturating numeric types listed above, values outside of this range are saturated to the range boundaries. Non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
 Conversions from other date and time types such as `Date32` or `DateTime64` follow the `date_time_overflow_behavior` setting: the default `ignore` mode may produce wrapped-around values, `saturate` clamps them to the range boundaries, and `throw` throws an exception.
@@ -1379,9 +1377,9 @@ Converts an input value to a value of type [`DateTime64`](/reference/data-types/
 SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
+└─────────────────────────┴────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -1392,12 +1390,9 @@ SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 9999-12-31 23:59:59.999 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
+│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
+└─────────────────────────┴────────────────────────────────────────────┘
         )"
     },
     {
@@ -1406,9 +1401,9 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
         )",
         R"(
-┌───────────────────value─┬─toTypeName(value)──────────────┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
-└─────────────────────────┴────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
+└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -1434,7 +1429,7 @@ Converts a String value to a UUID value.
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
         )",
         R"(
-┌─uuid─────────────────────────────────┐
+┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
         )"
@@ -1642,10 +1637,10 @@ Unsupported arguments (return `0`):
 - String representations of ordinary Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt8`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt8`](#toUInt8).
@@ -1691,10 +1686,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt16`](#toUInt16).
@@ -1740,10 +1735,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt32`](#toUInt32).
@@ -1789,10 +1784,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt64`](#toUInt64).
@@ -1838,10 +1833,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt128`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt128`](#toUInt128).
@@ -1887,10 +1882,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt256`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt256`](#toUInt256).
@@ -1936,10 +1931,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt8`](#toInt8).
@@ -1963,7 +1958,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt8OrZero('8'):   8
+toInt8OrZero('8'): 8
 toInt8OrZero('abc'): 0
         )"
     }
@@ -1985,10 +1980,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt16`](#toInt16).
@@ -2012,7 +2007,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt16OrZero('16'):  16
+toInt16OrZero('16'): 16
 toInt16OrZero('abc'): 0
         )"
     }
@@ -2034,10 +2029,10 @@ Unsupported arguments (return `0`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrZero('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt32`](#toInt32).
@@ -2061,7 +2056,7 @@ FORMAT Vertical
         R"(
 Row 1:
 ──────
-toInt32OrZero('32'):  32
+toInt32OrZero('32'): 32
 toInt32OrZero('abc'): 0
         )"
     }
@@ -2204,9 +2199,9 @@ Unsupported arguments (return `0`):
 - String representations of binary and hexadecimal values.
 - Numeric values.
 
-<Note>
+:::note
 The function allows a silent loss of precision while converting from the string representation.
-</Note>
+:::
 
 See also:
 - [`toBFloat16`](#toBFloat16).
@@ -2225,9 +2220,11 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
        toBFloat16OrZero('12.3'), -- typical use
        toBFloat16OrZero('12.3456789') -- silent loss of precision
         )",
-        R"DOCS_MD(
-0	12.25	12.3125
-        )DOCS_MD"
+        R"(
+0
+12.25
+12.3125
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrZero_introduced_in = {1, 1};
@@ -2412,20 +2409,14 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
 
     /// toTime64OrZero documentation
     FunctionDocumentation::Description description_toTime64OrZero = R"(
-Converts an input value to a value of type `Time64` but returns the zero `Time64` value (`00:00:00`) if an invalid argument is received.
-The same as [`toTime64`](#toTime64) but returns the zero `Time64` value if an invalid argument is received.
-
-See also:
-- [`toTime64`](#toTime64).
-- [`toTime64OrNull`](#toTime64OrNull).
+Converts an input value to a value of type Time64 but returns `00:00:00.000` in case of an error.
+Like [`toTime64`](#toTime64) but returns `00:00:00.000` instead of throwing an exception on conversion errors.
 )";
-    FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x[, precision])";
-    FunctionDocumentation::Arguments arguments_toTime64OrZero =
-    {
+    FunctionDocumentation::Syntax syntax_toTime64OrZero = "toTime64OrZero(x)";
+    FunctionDocumentation::Arguments arguments_toTime64OrZero = {
         {"x", "A string representation of a time with subsecond precision.", {"String"}},
-        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toTime64OrZero = {"Returns a Time64 value if successful, otherwise the zero Time64 value (`00:00:00`) at the requested precision.", {"Time64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toTime64OrZero = {"Returns a Time64 value if successful, otherwise `00:00:00.000`.", {"Time64"}};
     FunctionDocumentation::Examples examples_toTime64OrZero = {
     {
     "Usage example",
@@ -2476,22 +2467,19 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
 
     /// toDateTime64OrZero documentation
     FunctionDocumentation::Description description_toDateTime64OrZero = R"(
-Converts an input value to a value of type [DateTime64](/reference/data-types/datetime64) but returns the zero [DateTime64](/reference/data-types/datetime64) value (the Unix epoch, `1970-01-01 00:00:00`) if an invalid argument is received.
-The same as [toDateTime64](#toDateTime64) but returns the zero [DateTime64](/reference/data-types/datetime64) value if an invalid argument is received.
+Converts an input value to a value of type [DateTime64](/reference/data-types/datetime64) but returns the lower boundary of [DateTime64](/reference/data-types/datetime64) if an invalid argument is received.
+The same as [toDateTime64](#toDateTime64) but returns lower boundary of [DateTime64](/reference/data-types/datetime64) if an invalid argument is received.
 
 See also:
 - [toDateTime64](#toDateTime64).
 - [toDateTime64OrNull](#toDateTime64OrNull).
 - [toDateTime64OrDefault](#toDateTime64OrDefault).
     )";
-    FunctionDocumentation::Syntax syntax_toDateTime64OrZero = "toDateTime64OrZero(x[, precision[, timezone]])";
-    FunctionDocumentation::Arguments arguments_toDateTime64OrZero =
-    {
+    FunctionDocumentation::Syntax syntax_toDateTime64OrZero = "toDateTime64OrZero(x)";
+    FunctionDocumentation::Arguments arguments_toDateTime64OrZero = {
         {"x", "A string representation of a date with time and subsecond precision.", {"String"}},
-        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
-        {"timezone", "Optional. Time zone of the returned value.", {"String"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the zero DateTime64 value (`1970-01-01 00:00:00`) at the requested precision.", {"DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the lower boundary of DateTime64 (`1970-01-01 00:00:00.000`).", {"DateTime64"}};
     FunctionDocumentation::Examples examples_toDateTime64OrZero = {
     {
         "Usage example",
@@ -2524,9 +2512,9 @@ Unsupported arguments (return `0`):
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
-<Note>
+:::note
 If the input value exceeds the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`, the function returns `0`.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax_toDecimal32OrZero = "toDecimal32OrZero(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal32OrZero = {
@@ -2542,7 +2530,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                         42.7 │                               0 │
+│                        42.70 │                            0.00 │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -2566,9 +2554,9 @@ Unsupported arguments (return `0`):
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
-<Note>
+:::note
 If the input value exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`, the function returns `0`.
-</Note>
+:::
 
 See also:
 - [`toDecimal64`](#toDecimal64).
@@ -2589,7 +2577,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                         42.7 │                               0 │
+│                        42.70 │                            0.00 │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -2613,9 +2601,9 @@ Unsupported arguments (return `0`):
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
-<Note>
+:::note
 If the input value exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`, the function returns `0`.
-</Note>
+:::
     )";
     FunctionDocumentation::Syntax syntax_toDecimal128OrZero = "toDecimal128OrZero(expr, S)";
     FunctionDocumentation::Arguments arguments_toDecimal128OrZero = {
@@ -2631,7 +2619,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                          42.7 │                                0 │
+│                         42.70 │                             0.00 │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -2655,9 +2643,9 @@ Unsupported arguments (return `0`):
 - Values or string representations of Float* values `NaN` and `Inf` (case-insensitive).
 - String representations of binary and hexadecimal values.
 
-<Note>
+:::note
 If the input value exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`, the function returns `0`.
-</Note>
+:::
 
 See also:
 - [`toDecimal256`](#toDecimal256).
@@ -2678,7 +2666,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
         )",
         R"(
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                          42.7 │                                0 │
+│                         42.70 │                             0.00 │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -2800,9 +2788,9 @@ SELECT
     toIPv6OrZero('invalid::ip') AS invalid_ipv6
         )",
         R"(
-┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334 │ ::           │
-└──────────────────────────────┴──────────────┘
+┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334        │ ::           │
+└─────────────────────────────────────┴──────────────┘
         )"
     }
     };
@@ -2823,10 +2811,10 @@ Unsupported arguments (return `NULL`):
 - String representations of ordinary Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt8OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt8`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt8`](#toUInt8).
@@ -2852,7 +2840,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): ᴺᵁᴸᴸ
+toUInt8OrNull('abc'): \N
         )"
     }
     };
@@ -2873,10 +2861,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt16OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt16`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt16`](#toUInt16).
@@ -2902,7 +2890,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): ᴺᵁᴸᴸ
+toUInt16OrNull('abc'): \N
         )"
     }
     };
@@ -2923,10 +2911,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt32OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt32`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt32`](#toUInt32).
@@ -2952,7 +2940,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): ᴺᵁᴸᴸ
+toUInt32OrNull('abc'): \N
         )"
     }
     };
@@ -2973,10 +2961,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt64OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt64`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt64`](#toUInt64).
@@ -3002,7 +2990,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): ᴺᵁᴸᴸ
+toUInt64OrNull('abc'): \N
         )"
     }
     };
@@ -3023,10 +3011,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt128OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt128`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt128`](#toUInt128).
@@ -3052,7 +3040,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): ᴺᵁᴸᴸ
+toUInt128OrNull('abc'): \N
         )"
     }
     };
@@ -3073,10 +3061,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toUInt256OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [`UInt256`](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toUInt256`](#toUInt256).
@@ -3102,7 +3090,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): ᴺᵁᴸᴸ
+toUInt256OrNull('abc'): \N
         )"
     }
     };
@@ -3123,10 +3111,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt8OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int8](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt8`](#toInt8).
@@ -3152,7 +3140,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): ᴺᵁᴸᴸ
+toInt8OrNull('abc'): \N
         )"
     }
     };
@@ -3173,10 +3161,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt16OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int16](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt16`](#toInt16).
@@ -3202,7 +3190,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): ᴺᵁᴸᴸ
+toInt16OrNull('abc'): \N
         )"
     }
     };
@@ -3223,10 +3211,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt32OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int32](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt32`](#toInt32).
@@ -3252,7 +3240,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): ᴺᵁᴸᴸ
+toInt32OrNull('abc'): \N
         )"
     }
     };
@@ -3273,10 +3261,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt64OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int64](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt64`](#toInt64).
@@ -3302,7 +3290,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): ᴺᵁᴸᴸ
+toInt64OrNull('abc'): \N
         )"
     }
     };
@@ -3323,10 +3311,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt128OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int128](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt128`](#toInt128).
@@ -3352,7 +3340,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  ᴺᵁᴸᴸ
+toInt128OrNull('abc'):  \N
         )"
     }
     };
@@ -3373,10 +3361,10 @@ Unsupported arguments (return `NULL`):
 - String representations of Float* values, including `NaN` and `Inf`.
 - String representations of binary and hexadecimal values, e.g. `SELECT toInt256OrNull('0xc0fe');`.
 
-<Note>
+:::note
 If the input value cannot be represented within the bounds of [Int256](/reference/data-types/int-uint), overflow or underflow of the result occurs.
 This is not considered an error.
-</Note>
+:::
 
 See also:
 - [`toInt256`](#toInt256).
@@ -3402,7 +3390,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  ᴺᵁᴸᴸ
+toInt256OrNull('abc'):  \N
         )"
     }
     };
@@ -3424,9 +3412,9 @@ Unsupported arguments (return `NULL`):
 - String representations of binary and hexadecimal values.
 - Numeric values.
 
-<Note>
+:::note
 The function allows a silent loss of precision while converting from the string representation.
-</Note>
+:::
 
 See also:
 - [`toBFloat16`](#toBFloat16).
@@ -3446,9 +3434,11 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
        toBFloat16OrNull('12.3'), -- typical use
        toBFloat16OrNull('12.3456789') -- silent loss of precision
         )",
-        R"DOCS_MD(
-\N	12.25	12.3125
-        )DOCS_MD"
+        R"(
+\N
+12.25
+12.3125
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrNull_introduced_in = {1, 1};
@@ -3498,7 +3488,7 @@ Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
+toFloat32OrNull('abc'):  \N
         )"
     }
     };
@@ -3549,7 +3539,7 @@ Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
+toFloat64OrNull('abc'):  \N
         )"
     }
     };
@@ -3663,11 +3653,10 @@ See also:
 - [`toTime64`](#toTime64)
 - [`toTime64OrZero`](#toTime64OrZero)
     )";
-    FunctionDocumentation::Syntax syntax_toTime64OrNull = "toTime64OrNull(x[, precision])";
+    FunctionDocumentation::Syntax syntax_toTime64OrNull = "toTime64OrNull(x)";
     FunctionDocumentation::Arguments arguments_toTime64OrNull =
     {
-        {"x", "A string representation of a time with subsecond precision.", {"String"}},
-        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}}
+        {"x", "A string representation of a time with subsecond precision.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_toTime64OrNull = {"Returns a Time64 value if successful, otherwise `NULL`.", {"Time64", "NULL"}};
     FunctionDocumentation::Examples examples_toTime64OrNull = {
@@ -3799,7 +3788,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                         42.7 │                            ᴺᵁᴸᴸ │
+│                        42.70 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -3844,7 +3833,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                         42.7 │                            ᴺᵁᴸᴸ │
+│                        42.70 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
         )"
     }
@@ -3888,7 +3877,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                          42.7 │                             ᴺᵁᴸᴸ │
+│                         42.70 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -3933,7 +3922,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
         )",
         R"(
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                          42.7 │                             ᴺᵁᴸᴸ │
+│                         42.70 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
         )"
     }
@@ -3975,7 +3964,7 @@ SELECT
         )",
         R"(
 ┌─valid_uuid───────────────────────────┬─invalid_uuid─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │ ᴺᵁᴸᴸ         │
+│ 550e8400-e29b-41d4-a716-446655440000 │         ᴺᵁᴸᴸ │
 └──────────────────────────────────────┴──────────────┘
         )"
     }
@@ -4017,7 +4006,7 @@ SELECT
         )",
         R"(
 ┌─valid_ip────┬─invalid_ip─┐
-│ 192.168.1.1 │ ᴺᵁᴸᴸ       │
+│ 192.168.1.1 │       ᴺᵁᴸᴸ │
 └─────────────┴────────────┘
         )"
     }
@@ -4059,9 +4048,9 @@ SELECT
     toIPv6OrNull('invalid::ip') AS invalid_ipv6
         )",
         R"(
-┌─valid_ipv6───────────────────┬─invalid_ipv6─┐
-│ 2001:db8:85a3::8a2e:370:7334 │ ᴺᵁᴸᴸ         │
-└──────────────────────────────┴──────────────┘
+┌─valid_ipv6──────────────────────────┬─invalid_ipv6─┐
+│ 2001:db8:85a3::8a2e:370:7334        │         ᴺᵁᴸᴸ │
+└─────────────────────────────────────┴──────────────┘
         )"
     }
     };
@@ -4168,7 +4157,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrZero('invalid') AS invalid
         )",
         R"(
-┌───────────────valid─┬─────────────invalid─┐
+┌─valid───────────────┬─invalid─────────────┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
@@ -4212,7 +4201,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
        parseDateTimeBestEffortOrNull('invalid') AS invalid
         )",
         R"(
-┌───────────────valid─┬─invalid─┐
+┌─valid───────────────┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4246,7 +4235,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
        parseDateTimeBestEffortUS('15/08/2025') AS fallback_to_standard
         )",
         R"(
-┌───────────us_format─┬─fallback_to_standard─┐
+┌─us_format───────────┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
         )"
@@ -4280,7 +4269,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
-┌────────────valid_us─┬─────────────invalid─┐
+┌─valid_us────────────┬─invalid─────────────┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
         )"
@@ -4314,7 +4303,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
        parseDateTimeBestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
-┌────────────valid_us─┬─invalid─┐
+┌─valid_us────────────┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4373,7 +4362,7 @@ AS parseDateTime32BestEffort
         )",
         R"(
 ┌─parseDateTime32BestEffort─┐
-│       2010-09-10 06:51:25 │
+│       2015-07-07 12:04:41 │
 └───────────────────────────┘
         )"
     }
@@ -4405,7 +4394,7 @@ SELECT
     parseDateTime32BestEffortOrZero('invalid date') AS invalid
     )",
     R"(
-┌───────────────valid─┬─────────────invalid─┐
+┌─valid───────────────┬─invalid─────────────┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
     )"
@@ -4438,7 +4427,7 @@ SELECT
     parseDateTime32BestEffortOrNull('invalid date') AS invalid
         )",
         R"(
-┌───────────────valid─┬─invalid─┐
+┌─valid───────────────┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
         )"
@@ -4513,7 +4502,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrZero('invalid') AS invalid
         )",
         R"(
-┌───────────────────valid─┬─────────────────invalid─┐
+┌─valid───────────────────┬─invalid─────────────────┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4546,7 +4535,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
        parseDateTime64BestEffortOrNull('invalid') AS invalid
     )",
     R"(
-┌───────────────────valid─┬─invalid─┐
+┌─valid───────────────────┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"
@@ -4579,7 +4568,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
        parseDateTime64BestEffortUS('15/08/2025 10:15:30.456') AS fallback_to_standard
         )",
         R"(
-┌───────────────us_format─┬────fallback_to_standard─┐
+┌─us_format───────────────┬─fallback_to_standard────┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4612,7 +4601,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrZero('invalid') AS invalid
         )",
         R"(
-┌────────────────valid_us─┬─────────────────invalid─┐
+┌─valid_us────────────────┬─invalid─────────────────┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
         )"
@@ -4645,7 +4634,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
        parseDateTime64BestEffortUSOrNull('invalid') AS invalid
         )",
         R"(
-┌────────────────valid_us─┬─invalid─┐
+┌─valid_us────────────────┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
         )"

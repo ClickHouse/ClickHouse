@@ -197,9 +197,9 @@ SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
 ```
 
 ```response title=Response
-┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
-│                                            2 │
-└──────────────────────────────────────────────┘
+┌─countSubstri⋯AAA', 'aa')─┐
+│                        2 │
+└──────────────────────────┘
 ```
 
 **使用 start&#95;pos 参数**
@@ -209,9 +209,9 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 ```
 
 ```response title=Response
-┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
-│                                                           2 │
-└─────────────────────────────────────────────────────────────┘
+┌─countSubstri⋯, 'abc', 4)─┐
+│                        2 │
+└──────────────────────────┘
 ```
 
 <div id="countSubstringsCaseInsensitiveUTF8">
@@ -247,9 +247,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
-│                                                                  4 │
-└────────────────────────────────────────────────────────────────────┘
+┌─countSubstri⋯шка', 'КА')─┐
+│                        4 │
+└──────────────────────────┘
 ```
 
 **使用 start&#95;pos 参数**
@@ -259,9 +259,9 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 ```
 
 ```response title=Response
-┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
-│                                                                      2 │
-└────────────────────────────────────────────────────────────────────────┘
+┌─countSubstri⋯, 'КА', 13)─┐
+│                        2 │
+└──────────────────────────┘
 ```
 
 <div id="extract">
@@ -485,16 +485,16 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **语法**
 
 ```sql
-hasAllTokens(input, needles[, tokenizer])
+hasAllTokens(input, needles)
 ```
 
 **别名**: `hasAllToken`
 
 **参数**
 
-* `input` — 输入列。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`Nullable(String)`](/zh/reference/data-types/nullable)、[`Nullable(FixedString)`](/zh/reference/data-types/nullable)、[`Array(String)`](/zh/reference/data-types/array)、[`Array(FixedString)`](/zh/reference/data-types/array)、[`Array(Nullable(String))`](/zh/reference/data-types/array) 或 [`Array(Nullable(FixedString))`](/zh/reference/data-types/array)
+* `input` — 输入列。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
-* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -505,8 +505,6 @@ hasAllTokens(input, needles[, tokenizer])
 **使用字符串 needle 的基本用法**
 
 ```sql title=Query
-DROP TABLE IF EXISTS doc;
-
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -526,11 +524,9 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**指定要在数组中按 AS-IS (不分词) 方式搜索的 needles**
+**指定要在数组中按原样搜索的 needle (不进行标记化)**
 
 ```sql title=Query
-DROP TABLE IF EXISTS doc;
-
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -553,8 +549,6 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 **使用 `tokens` 函数生成 needles**
 
 ```sql title=Query
-DROP TABLE IF EXISTS doc;
-
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -581,16 +575,14 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
-│                                          1 │
-└────────────────────────────────────────────┘
+┌─hasAllTokens⋯ngrams(3)')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
-**数组列和 Map 列的使用示例**
+**Array 和 Map 列的使用示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS log;
-
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -610,8 +602,6 @@ INSERT INTO log VALUES
 **数组列示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS log;
-
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -639,8 +629,6 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **使用 mapKeys 的示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS log;
-
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -668,8 +656,6 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **mapValues 示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS log;
-
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -729,7 +715,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **语法**
 
 ```sql
-hasAnyTokens(input, needles[, tokenizer])
+hasAnyTokens(input, needles)
 ```
 
 **别名**: `hasAnyToken`
@@ -738,7 +724,7 @@ hasAnyTokens(input, needles[, tokenizer])
 
 * `input` — 输入列。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Nullable(String)`](/zh/reference/data-types/nullable) 或 [`Nullable(FixedString)`](/zh/reference/data-types/nullable) 或 [`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array) 或 [`Array(Nullable(String))`](/zh/reference/data-types/array) 或 [`Array(Nullable(FixedString))`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
-* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数为可选项；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数为可选项；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -749,8 +735,6 @@ hasAnyTokens(input, needles[, tokenizer])
 **使用字符串 needle 的基本示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS doc;
-
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -770,11 +754,9 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**指定要在数组中按原样搜索的 needle (不进行分词)&#x20;**
+**指定要在数组中按原样搜索的 needle (不进行标记化)**
 
 ```sql title=Query
-DROP TABLE IF EXISTS doc;
-
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -797,8 +779,6 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 **使用 `tokens` 函数生成 needles**
 
 ```sql title=Query
-DROP TABLE IF EXISTS doc;
-
 CREATE TABLE doc (
     id UInt32,
     msg String,
@@ -818,11 +798,9 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', 
 └─────────┘
 ```
 
-**数组列和 Map 列的使用示例**
+**数组列和 map 列的使用示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS log;
-
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -842,8 +820,6 @@ INSERT INTO log VALUES
 **数组列示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS log;
-
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -871,8 +847,6 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **使用 mapKeys 的示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS log;
-
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -900,8 +874,6 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **使用 mapValues 的示例**
 
 ```sql title=Query
-DROP TABLE IF EXISTS log;
-
 CREATE TABLE log (
     id UInt32,
     tags Array(String),
@@ -939,13 +911,12 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
   如果未定义 文本索引，该函数会执行穷举列扫描，其速度比索引查找慢几个数量级。
 </Note>
 
-搜索前，该函数会使用为 文本索引 指定的分词器，对 `input` 和 `phrase` 参数进行标记化。
+搜索前，该函数会使用为 文本索引 指定的分词器，对 `input` 和 `phrase` 参数进行分词。
 如果该列未定义 文本索引，则改用 `splitByNonAlpha` 分词器——除非通过可选的第三个参数提供了分词器。
-`tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`ngrams`、`asciiCJK` 或 `icu` 之一。
-请注意，当 文本索引 还定义了后处理器时，`hasPhrase` 不支持 `splitByRegexp`。
+`tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` 或 `icu` 之一。
 
 <Note>
-  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在标记化前将其应用于 `input` 和 `phrase`。
+  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在分词前将其应用于 `input` 和 `phrase`。
   预处理器仅在 文本索引 路径上生效，因此，使用 文本索引 的查询与不使用 文本索引 的查询，结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
   为了提高全文检索的易用性，可以容忍这种不一致。
 </Note>
@@ -1117,9 +1088,9 @@ SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая си
 ```
 
 ```response title=Response
-┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
-│                                                                                                        1 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─hasSubsequen⋯ 'СИСТЕМА')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 <div id="hasSubsequenceUTF8">
@@ -1154,9 +1125,9 @@ SELECT hasSubsequenceUTF8('картошка', 'кошка');
 ```
 
 ```response title=Response
-┌─hasSubsequenceUTF8('картошка', 'кошка')─┐
-│                                       1 │
-└─────────────────────────────────────────┘
+┌─hasSubsequen⋯', 'кошка')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 **不匹配子序列**
@@ -1166,9 +1137,9 @@ SELECT hasSubsequenceUTF8('картошка', 'апельсин');
 ```
 
 ```response title=Response
-┌─hasSubsequenceUTF8('картошка', 'апельсин')─┐
-│                                          0 │
-└────────────────────────────────────────────┘
+┌─hasSubsequen⋯'апельсин')─┐
+│                        0 │
+└──────────────────────────┘
 ```
 
 <div id="hasToken">
@@ -1285,7 +1256,7 @@ hasTokenOrNull(haystack, token)
 
 **返回值**
 
-如果找到该标记，则返回 `1`；否则返回 `0`。如果 `token` 格式不合法，则返回 NULL。[`Nullable(UInt8)`](/zh/reference/data-types/nullable)
+如果找到该标记，则返回 `1`；否则返回 `0`。如果 `token` 格式不正确，则返回 NULL。[`Nullable(UInt8)`](/zh/reference/data-types/nullable)
 
 **示例**
 
@@ -1296,9 +1267,9 @@ SELECT hasTokenOrNull('apple banana cherry', 'ban ana');
 ```
 
 ```response title=Response
-┌─hasTokenOrNull('apple banana cherry', 'ban ana')─┐
-│                                             ᴺᵁᴸᴸ │
-└──────────────────────────────────────────────────┘
+┌─hasTokenOrNu⋯ 'ban ana')─┐
+│                     ᴺᵁᴸᴸ │
+└──────────────────────────┘
 ```
 
 <div id="highlight">
@@ -1470,9 +1441,9 @@ SELECT like('ClickHouse', 'Click_ouse');
 ```
 
 ```response title=Response
-┌─like('ClickHouse', 'Click_ouse')─┐
-│                                1 │
-└──────────────────────────────────┘
+┌─like('ClickH⋯lick_ouse')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 **不匹配模式**
@@ -1567,7 +1538,7 @@ SELECT locate('ca', 'abcabc')
 
 如果你只是想搜索子字符串，可以改用函数 [`like`](#like) 或 [`position`](#position)，它们的速度比此函数快得多。
 
-可选的运算符语法：`haystack REGEXP pattern` 或 `haystack ~ pattern` (PostgreSQL 风格) 。
+可选的运算符语法：`haystack REGEXP pattern`。
 
 **语法**
 
@@ -1624,48 +1595,6 @@ SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')
 └────────────────────────┴──────────────────────────┘
 ```
 
-<div id="matchCaseInsensitive">
-  ## matchCaseInsensitive
-</div>
-
-引入版本：v26.8.0
-
-与 [`match`](#match) 类似，但进行不区分大小写的匹配。
-
-此函数使用 RE2 正则表达式 库。支持的语法请参阅 [re2](https://github.com/google/re2/wiki/Syntax)。
-
-可选的运算符语法：`haystack ~* pattern` (PostgreSQL 风格) 。
-
-**语法**
-
-```sql
-matchCaseInsensitive(haystack, pattern)
--- haystack ~* pattern
-```
-
-**参数**
-
-* `haystack` — 在其中搜索模式的 String。[`String`](/zh/reference/data-types/string)
-* `pattern` — 正则表达式模式。可以是常量，也可以来自列。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-如果不区分大小写地匹配该模式，则返回 `1`，否则返回 `0`。[`UInt8`](/zh/reference/data-types/int-uint)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT matchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' ~* 'HELLO.*'
-```
-
-```response title=Response
-┌─matchCaseInsensitive('Hello World', 'hello.*')─┬─matchCaseInsensitive('Hello World', 'HELLO.*')─┐
-│                                              1 │                                              1 │
-└────────────────────────────────────────────────┴────────────────────────────────────────────────┘
-```
-
 <div id="multiFuzzyMatchAllIndices">
   ## multiFuzzyMatchAllIndices
 </div>
@@ -1699,9 +1628,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 ```
 
 ```response title=Response
-┌─multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose', 'House'])─┐
-│ [3,1,4,2]                                                                                     │
-└───────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─multiFuzzyMa⋯, 'House'])─┐
+│ [3,1,4,2]                │
+└──────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAny">
@@ -1743,9 +1672,9 @@ SELECT multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHos
 ```
 
 ```response title=Response
-┌─multiFuzzyMatchAny('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'ClickHose'])─┐
-│                                                                             1 │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─multiFuzzyMa⋯lickHose'])─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 <div id="multiFuzzyMatchAnyIndex">
@@ -1781,9 +1710,9 @@ SELECT multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'Clic
 ```
 
 ```response title=Response
-┌─multiFuzzyMatchAnyIndex('ClickHouse', 2, ['ClckHouse', 'ClickHose', 'ClickHouse'])─┐
-│                                                                                  2 │
-└────────────────────────────────────────────────────────────────────────────────────┘
+┌─multiFuzzyMa⋯ickHouse'])─┐
+│                        2 │
+└──────────────────────────┘
 ```
 
 <div id="multiMatchAllIndices">
@@ -1818,9 +1747,9 @@ SELECT multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse']);
 ```
 
 ```response title=Response
-┌─multiMatchAllIndices('ClickHouse', ['[0-9]', 'House', 'Click', 'ouse'])─┐
-│ [3,2,4]                                                                 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─multiMatchAl⋯', 'ouse'])─┐
+│ [3, 2, 4]                │
+└──────────────────────────┘
 ```
 
 <div id="multiMatchAny">
@@ -1906,9 +1835,9 @@ SELECT multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click']);
 ```
 
 ```response title=Response
-┌─multiMatchAnyIndex('ClickHouse', ['[0-9]', 'House', 'Click'])─┐
-│                                                             3 │
-└───────────────────────────────────────────────────────────────┘
+┌─multiMatchAn⋯, 'Click'])─┐
+│                        3 │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchAllPositions">
@@ -1982,9 +1911,9 @@ SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])
 ```
 
 ```response title=Response
-┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
-│ [1,6]                                                            │
-└──────────────────────────────────────────────────────────────────┘
+┌─multiSearchA⋯['c', 'h'])─┐
+│ [1,6]                    │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsCaseInsensitiveUTF8">
@@ -2019,9 +1948,9 @@ SELECT multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!
 ```
 
 ```response title=Response
-┌─multiSearchAllPositionsCaseInsensitiveUTF8('Здравствуй, мир!', ['здравствуй', 'МИР'])─┐
-│ [1,13]                                                                                │
-└───────────────────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchA⋯й', 'МИР'])─┐
+│ [1, 13]                  │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchAllPositionsUTF8">
@@ -2169,9 +2098,9 @@ SELECT multiSearchAnyCaseInsensitiveUTF8('Здравствуйте',['з'])
 ```
 
 ```response title=Response
-┌─multiSearchAnyCaseInsensitiveUTF8('Здравствуйте', ['з'])─┐
-│                                                        1 │
-└──────────────────────────────────────────────────────────┘
+┌─multiSearchA⋯те', ['з'])─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchAnyUTF8">
@@ -2243,9 +2172,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchFirstIndex('ClickHouse Database', ['Click', 'Database', 'Server'])─┐
-│                                                                             1 │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯ 'Server'])─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 **区分大小写**
@@ -2255,9 +2184,9 @@ SELECT multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Serve
 ```
 
 ```response title=Response
-┌─multiSearchFirstIndex('ClickHouse Database', ['CLICK', 'Database', 'Server'])─┐
-│                                                                             2 │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯ 'Server'])─┐
+│                        2 │
+└──────────────────────────┘
 ```
 
 **未找到匹配项**
@@ -2267,9 +2196,9 @@ SELECT multiSearchFirstIndex('Hello World', ['goodbye', 'test']);
 ```
 
 ```response title=Response
-┌─multiSearchFirstIndex('Hello World', ['goodbye', 'test'])─┐
-│                                                         0 │
-└───────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯', 'test'])─┐
+│                        0 │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitive">
@@ -2305,9 +2234,9 @@ SELECT multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello']);
 ```
 
 ```response title=Response
-┌─multiSearchFirstIndexCaseInsensitive('hElLo WoRlD', ['World', 'Hello'])─┐
-│                                                                       1 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯, 'Hello'])─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexCaseInsensitiveUTF8">
@@ -2342,9 +2271,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK',
 ```
 
 ```response title=Response
-┌─multiSearchFirstIndexCaseInsensitiveUTF8('ClickHouse Database', ['CLICK', 'data', 'server'])─┐
-│                                                                                            1 │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯ 'server'])─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 **UTF-8 字母大小写处理**
@@ -2354,9 +2283,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир'
 ```
 
 ```response title=Response
-┌─multiSearchFirstIndexCaseInsensitiveUTF8('Привет Мир', ['мир', 'ПРИВЕТ'])─┐
-│                                                                         1 │
-└───────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯ 'ПРИВЕТ'])─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 **未找到匹配结果**
@@ -2366,9 +2295,9 @@ SELECT multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test
 ```
 
 ```response title=Response
-┌─multiSearchFirstIndexCaseInsensitiveUTF8('Hello World', ['goodbye', 'test'])─┐
-│                                                                            0 │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯', 'test'])─┐
+│                        0 │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchFirstIndexUTF8">
@@ -2404,9 +2333,9 @@ SELECT multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', '
 ```
 
 ```response title=Response
-┌─multiSearchFirstIndexUTF8('Здравствуйте мир', ['мир', 'здравствуйте'])─┐
-│                                                                      1 │
-└────────────────────────────────────────────────────────────────────────┘
+┌─multiSearchF⋯вствуйте'])─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 <div id="multiSearchFirstPosition">
@@ -2596,7 +2525,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 ```response title=Response
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                 0.06666667 │
+│                                        0.1 │
 └────────────────────────────────────────────┘
 ```
 
@@ -2606,7 +2535,7 @@ SELECT ngramDistance('ClickHouse', 'ClickHouses')
 
 引入版本：v20.1.0
 
-提供 [`ngramDistance`](#ngramDistance) 的不区分大小写 Variant。
+提供 [`ngramDistance`](#ngramDistance) 的不区分大小写变体。
 计算两个字符串之间的 4-gram 距离，忽略大小写。
 返回值越小，字符串越相似。
 
@@ -2634,9 +2563,9 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
-│                                                        0 │
-└──────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
+│                                                       0 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceCaseInsensitiveUTF8">
@@ -2645,7 +2574,7 @@ SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')
 
 引入版本：v20.1.0
 
-提供 [`ngramDistance`](#ngramDistance) 的不区分大小写 UTF-8 Variant。
+提供 [`ngramDistance`](#ngramDistance) 的不区分大小写 UTF-8 变体。
 假定 `needle` 和 `haystack` 字符串均为 UTF-8 编码，并忽略大小写。
 计算两个 UTF-8 字符串之间不区分大小写的 3-gram 距离。
 返回值越小，字符串越相似。
@@ -2674,9 +2603,9 @@ SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')
 ```
 
 ```response title=Response
-┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
-│                                              0.5 │
-└──────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
+│                                             0.5 │
+└─────────────────────────────────────────────────┘
 ```
 
 <div id="ngramDistanceUTF8">
@@ -2803,7 +2732,7 @@ SELECT ngramSearchCaseInsensitive('Hello World','hello')
 
 引入版本：v20.1.0
 
-提供 [`ngramSearch`](#ngramSearch) 的不区分大小写 UTF-8 Variant。
+提供 [`ngramSearch`](#ngramSearch) 的不区分大小写 UTF-8 变体。
 假定 `haystack` 和 `needle` 为 UTF-8 字符串，并且不区分大小写。
 检查两个 UTF-8 字符串之间的 3-gram 距离是否小于或等于给定阈值，且不区分大小写。
 
@@ -2832,7 +2761,7 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 ```response title=Response
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                               0.57142854 │
+│                                                        1 │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -2842,9 +2771,9 @@ SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз'
 
 引入版本：v20.1.0
 
-提供 `ngramSearch` 的 UTF-8 Variant。
+提供 `ngramSearch` 的 UTF-8 版本。
 假定 `haystack` 和 `needle` 为 UTF-8 字符串。
-检查两个 UTF-8 字符串之间的 3-gram 距离是否小于或等于给定阈值。
+检查两个 UTF-8 字符串之间的 3-gram distance 是否小于或等于给定阈值。
 
 **语法**
 
@@ -2871,7 +2800,7 @@ SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')
 
 ```response title=Response
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                    0.5 │
+│                                      1 │
 └────────────────────────────────────────┘
 ```
 
@@ -2909,9 +2838,9 @@ SELECT notILike('ClickHouse', '%house%');
 ```
 
 ```response title=Response
-┌─notILike('ClickHouse', '%house%')─┐
-│                                 0 │
-└───────────────────────────────────┘
+┌─notILike('Cl⋯ '%house%')─┐
+│                        0 │
+└──────────────────────────┘
 ```
 
 <div id="notLike">
@@ -2922,7 +2851,7 @@ Introduced in：v1.1.0
 
 与 [`like`](#like) 类似，但会返回相反的结果。支持可选的 `ESCAPE` 子句 (参见 `like`) 。
 
-**语法**
+**Syntax**
 
 ```sql
 notLike(haystack, pattern[, escape_character])
@@ -2948,9 +2877,9 @@ SELECT notLike('ClickHouse', '%House%');
 ```
 
 ```response title=Response
-┌─notLike('ClickHouse', '%House%')─┐
-│                                0 │
-└──────────────────────────────────┘
+┌─notLike('Cli⋯ '%House%')─┐
+│                        0 │
+└──────────────────────────┘
 ```
 
 **不匹配的模式**
@@ -2960,93 +2889,9 @@ SELECT notLike('ClickHouse', '%SQL%');
 ```
 
 ```response title=Response
-┌─notLike('ClickHouse', '%SQL%')─┐
-│                              1 │
-└────────────────────────────────┘
-```
-
-<div id="notMatch">
-  ## notMatch
-</div>
-
-引入版本：v26.8.0
-
-与 [`match`](#match) 类似，但会对结果取反：检查字符串是否不匹配正则表达式模式。
-
-此函数使用 RE2 正则表达式 库。支持的语法请参阅 [re2](https://github.com/google/re2/wiki/Syntax)。
-
-可选的运算符语法：`haystack !~ pattern` (PostgreSQL 风格) 。
-
-**语法**
-
-```sql
-notMatch(haystack, pattern)
--- haystack !~ pattern
-```
-
-**参数**
-
-* `haystack` — 在其中搜索模式的 String。[`String`](/zh/reference/data-types/string)
-* `pattern` — 正则表达式模式。可以是常量，也可以来自列。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-如果匹配该模式，则返回 `0`，否则返回 `1`。[`UInt8`](/zh/reference/data-types/int-uint)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT notMatch('Hello World', 'Hello.*'), 'Hello World' !~ 'goodbye.*'
-```
-
-```response title=Response
-┌─notMatch('Hello World', 'Hello.*')─┬─notMatch('Hello World', 'goodbye.*')─┐
-│                                  0 │                                    1 │
-└────────────────────────────────────┴──────────────────────────────────────┘
-```
-
-<div id="notMatchCaseInsensitive">
-  ## notMatchCaseInsensitive
-</div>
-
-引入版本：v26.8.0
-
-与 [`matchCaseInsensitive`](#matchCaseInsensitive) 类似，但会对结果取反：检查字符串是否不与正则表达式模式进行不区分大小写的匹配。
-
-此函数使用 RE2 正则表达式库。支持的语法请参阅 [re2](https://github.com/google/re2/wiki/Syntax)。
-
-可选的运算符语法：`haystack !~* pattern` (PostgreSQL 风格) 。
-
-**语法**
-
-```sql
-notMatchCaseInsensitive(haystack, pattern)
--- haystack !~* pattern
-```
-
-**参数**
-
-* `haystack` — 在其中搜索模式的 String。[`String`](/zh/reference/data-types/string)
-* `pattern` — 正则表达式模式。可以是常量，也可以来自列。[`String`](/zh/reference/data-types/string)
-
-**返回值**
-
-如果不区分大小写地匹配该模式，则返回 `0`，否则返回 `1`。[`UInt8`](/zh/reference/data-types/int-uint)
-
-**示例**
-
-**使用示例**
-
-```sql title=Query
-SELECT notMatchCaseInsensitive('Hello World', 'hello.*'), 'Hello World' !~* 'GOODBYE.*'
-```
-
-```response title=Response
-┌─notMatchCaseInsensitive('Hello World', 'hello.*')─┬─notMatchCaseInsensitive('Hello World', 'GOODBYE.*')─┐
-│                                                 0 │                                                   1 │
-└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
+┌─notLike('Cli⋯', '%SQL%')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 <div id="position">
@@ -3243,9 +3088,9 @@ SELECT positionUTF8('Motörhead', 'r')
 ```
 
 ```response title=Response
-┌─positionUTF8('Motörhead', 'r')─┐
-│                              5 │
-└────────────────────────────────┘
+┌─position('Motörhead', 'r')─┐
+│                          5 │
+└────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

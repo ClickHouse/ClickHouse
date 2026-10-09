@@ -81,6 +81,8 @@ def test_cache_evicted_by_temporary_data(start_cluster):
             "settings": {
                 "max_bytes_before_external_group_by": "4M",
                 "max_bytes_ratio_before_external_group_by": 0,
+                # TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk).
+                "enable_sharding_aggregator": 0,
             },
         },
         {

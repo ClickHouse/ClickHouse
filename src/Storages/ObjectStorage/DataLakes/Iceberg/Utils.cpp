@@ -823,12 +823,12 @@ static Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "toRelativeDayNum")
     {
-        result->set(Iceberg::f_transform, "day");
+        result->set(Iceberg::f_transform, "days");
         return result;
     }
     else if (partition_function->name == "toRelativeHourNum")
     {
-        result->set(Iceberg::f_transform, "hour");
+        result->set(Iceberg::f_transform, "hours");
         return result;
     }
     else if (partition_function->name == "icebergTruncate")
@@ -1609,6 +1609,13 @@ void forEachAvroEntry(
     auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
     auto reader_base = std::make_unique<avro::DataFileReaderBase>(std::move(input_stream), MAX_AVRO_SCHEMA_DEPTH);
     avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
+
+    if (reader.readerSchema().root()->type() != avro::AVRO_RECORD)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Avro file {} has root schema type {}, but Iceberg manifest-list entries must be records",
+            filename,
+            static_cast<int>(reader.readerSchema().root()->type()));
 
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))

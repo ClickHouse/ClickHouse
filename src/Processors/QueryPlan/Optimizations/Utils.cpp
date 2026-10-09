@@ -1,11 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -72,37 +69,27 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
+static bool isNotReadySetColumn(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+        return false;
+
+    const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+    if (!column_set)
+        return false;
+
+    auto future_set = column_set->getData();
+    return !future_set || !future_set->get();
+}
+
 bool dagContainsNonReadySet(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
     {
-        if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
-        {
-            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-            if (column_set)
-            {
-                auto future_set = column_set->getData();
-                if (!future_set || !future_set->get())
-                    return true;
-            }
-        }
+        if (isNotReadySetColumn(node))
+            return true;
     }
     return false;
-}
-
-bool canHoistGatherThroughStep(const IQueryPlanStep & step)
-{
-    const ActionsDAG * dag = nullptr;
-    if (const auto * expression = typeid_cast<const ExpressionStep *>(&step))
-        dag = &expression->getExpression();
-    else if (const auto * filter = typeid_cast<const FilterStep *>(&step))
-        dag = &filter->getExpression();
-    else if (!typeid_cast<const BuildRuntimeFilterStep *>(&step))
-        return false;
-
-    /// Per-block functions (rowNumberInAllBlocks, blockNumber, nowInBlock, ...) depend on the whole block
-    /// stream; below a gather they would run per shard and produce different values.
-    return !(dag && dagContainsNonDeterministicFunction(*dag));
 }
 
 bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
@@ -115,12 +102,14 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
     /// value for all rows in a single query (`isDeterministicInScopeOfQuery() == true`), so
     /// the optimizer can soundly use their plan-time value and they should NOT block the
     /// JOIN-conversion rewrite.
-    /// The walk also looks inside the lambdas of the DAG - a non-deterministic call that depends on a
-    /// lambda argument lives in the lambda's own `ActionsDAG`, not in this one - which is what
-    /// `allNodeFunctions` covers, including a lambda that constant folding turned into a `COLUMN` node.
     for (const auto & node : dag.getNodes())
-        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
-            return true;
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            if (!node.function_base->isDeterministicInScopeOfQuery())
+                return true;
+        }
+    }
     return false;
 }
 
@@ -131,10 +120,6 @@ FilterResult filterResultForNotMatchedRows(
     bool allow_unknown_function_arguments
 )
 {
-    /// If the filter DAG contains IN subquery sets that are not yet built - we cannot evaluate the filter result
-    if (dagContainsNonReadySet(filter_dag))
-        return FilterResult::UNKNOWN;
-
     /// `ActionsDAG::evaluatePartialResult` (called below) routes every function node through
     /// `IFunction::executeImplDryRun` with `input_rows_count=1`. For functions that are not
     /// deterministic within a single query (`rand`, `nowInBlock`, `rowNumberInAllBlocks`,
@@ -155,6 +140,13 @@ FilterResult filterResultForNotMatchedRows(
         return FilterResult::UNKNOWN;
 
     ActionsDAG::IntermediateExecutionResult filter_input;
+
+    /// A set that is not built yet is an unknown argument: `in` must never be dry-run on it (that yields a fake 0).
+    for (const auto & node : filter_dag.getNodes())
+    {
+        if (isNotReadySetColumn(node))
+            filter_input.emplace(&node, ColumnWithTypeAndName{nullptr, node.result_type, node.result_name});
+    }
 
     /// Create constant columns with default values for inputs of the filter DAG
     for (const auto * input : filter_dag.getInputs())

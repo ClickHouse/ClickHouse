@@ -5,12 +5,6 @@
 namespace DB
 {
 
-/// Whether adding a hashing preliminary DISTINCT can pay off, given the effective number of threads the
-/// caller has already resolved. Such a step deduplicates each stream on its own so that the final,
-/// single-stream DISTINCT has fewer rows left to merge, which takes a second stream to be worth
-/// anything: at one thread it only hashes every row a second time.
-bool preliminaryDistinctIsUseful(size_t max_threads);
-
 /// Execute DISTINCT for specified columns.
 class DistinctStep : public ITransformingStep
 {
@@ -20,10 +14,7 @@ public:
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        /// If enabled, execute the `DISTINCT` for separate streams, otherwise for merged streams. The
-        /// per-stream deduplication is best-effort: duplicates from different streams pass through it
-        /// in any case, so a deduplicating consumer must follow, and on mostly-unique input the
-        /// transform may abandon deduplication entirely (see `allow_preliminary_distinct_abandoning`).
+        /// If is enabled, execute distinct for separate streams, otherwise for merged streams.
         bool pre_distinct_);
 
     String getName() const override { return "Distinct"; }

@@ -3,13 +3,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/NullableUtils.h>
-#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-
-namespace ProfileEvents
-{
-    extern const Event DistinctTransformsAbandonedDeduplication;
-}
 
 namespace DB
 {
@@ -247,20 +241,6 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
     return {std::move(mask), state.seen_count - seen_count_before};
 }
 
-void DistinctTransform::maybeAbandonDeduplication(size_t num_rows, size_t num_unique_rows)
-{
-    if (!abandon_controller)
-        return;
-
-    abandon_controller->update(num_rows, num_unique_rows, data->getTotalByteCount());
-    if (abandon_controller->isAbandoned())
-    {
-        data.reset();
-        lc_dict_states.clear();
-        ProfileEvents::increment(ProfileEvents::DistinctTransformsAbandonedDeduplication);
-    }
-}
-
 void DistinctTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
@@ -357,7 +337,8 @@ void DistinctTransform::transform(Chunk & chunk)
             /// the abandon accounting must see it.
             if (lc_mask->empty())
             {
-                maybeAbandonDeduplication(num_rows, 0);
+                if (abandon_controller)
+                    abandon_controller->update(num_rows, 0, data->getTotalByteCount());
                 return;
             }
         }
@@ -384,7 +365,15 @@ void DistinctTransform::transform(Chunk & chunk)
     const auto new_set_size = data->getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;
 
-    maybeAbandonDeduplication(num_rows, num_selected);
+    if (abandon_controller)
+    {
+        abandon_controller->update(num_rows, num_selected, data->getTotalByteCount());
+        if (abandon_controller->isAbandoned())
+        {
+            data.reset();
+            lc_dict_states.clear();
+        }
+    }
 
     /// Just go to the next chunk if there isn't any new record in the current one.
     if (num_selected == 0)

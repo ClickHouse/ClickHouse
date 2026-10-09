@@ -27,23 +27,8 @@ namespace ErrorCodes
 namespace
 {
 
-/** Profile instrumentation (WITH_COVERAGE) must not touch the remap machinery.
-  * remapToHugeStep2 and the scratch copy of our_syscall execute at a shifted
-  * address while the original text is unmapped: an instrumented prologue's
-  * RIP-relative counter access (and the __llvm_profile_counter_bias load under
-  * runtime counter relocation) then dereferences a shifted, unrelated address -
-  * a deterministic segfault with relocation, silent memory corruption without.
-  * Step1/Step3 run at original addresses, but are excluded too so the whole
-  * mechanism stays uninstrumented.
-  */
-#if defined(__clang__)
-#    define NO_PROFILE_INSTRUMENTATION __attribute__((no_profile_instrument_function))
-#else
-#    define NO_PROFILE_INSTRUMENTATION
-#endif
-
 /// NOLINTNEXTLINE(cert-dcl50-cpp)
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...)
+__attribute__((__noinline__)) int64_t our_syscall(...)
 {
     __asm__ __volatile__ (R"(
         movq %%rdi,%%rax;
@@ -60,7 +45,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
+__attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
 {
     /// The function should not use the stack, otherwise various optimizations, including "omit-frame-pointer" may break the code.
 
@@ -74,7 +59,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep3(v
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, void * scratch, void * syscall_in_scratch, void * step3_in_place)
+__attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, void * scratch, void * syscall_in_scratch, void * step3_in_place)
 {
     /** Unmap old memory region with the code of our program.
       * Our instruction pointer is located inside scratch area and this function can execute after old code is unmapped.
@@ -135,7 +120,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep2(v
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
+__attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 {
     /// Allocate scratch area and copy the code there.
 

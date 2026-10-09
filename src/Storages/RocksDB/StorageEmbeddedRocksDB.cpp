@@ -1249,10 +1249,10 @@ To enable direct joins:
 SET join_algorithm = 'direct, hash'
 ```
 
-<Tip>
+:::tip
 When the `join_algorithm` is set to `direct, hash`, direct joins will be used
 when possible, and hash otherwise.
-</Tip>
+:::
 
 #### Example {#example}
 
