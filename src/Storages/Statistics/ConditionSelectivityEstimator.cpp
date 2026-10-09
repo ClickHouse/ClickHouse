@@ -265,9 +265,11 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
 
-        /// A value survives the filter when any of its rows does.
-        const UInt64 domain = estimator.estimateCardinality();
-        const UInt64 cardinality = QueryPlanOptimizations::distinctValuesAfterFilter(domain, total_rows, result.rows);
+        /// A value survives the filter when any of its rows does. Without a `uniq` sketch the column
+        /// has no distinct count: exporting the fallback ratio would make the join take a guess for a
+        /// measured value.
+        const UInt64 domain = estimator.stats->hasCardinality() ? estimator.estimateCardinality() : 0;
+        const UInt64 cardinality = domain ? QueryPlanOptimizations::distinctValuesAfterFilter(domain, total_rows, result.rows) : 0;
         result.column_stats.emplace(column_name, makeColumnStats(cardinality, domain, estimator.stats));
     }
     return result;
@@ -279,7 +281,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        const UInt64 domain = estimator.estimateCardinality();
+        const UInt64 domain = estimator.stats->hasCardinality() ? estimator.estimateCardinality() : 0;
         result.column_stats.emplace(column_name, makeColumnStats(domain, domain, estimator.stats));
     }
     return result;
