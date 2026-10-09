@@ -19,6 +19,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -387,6 +388,18 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
             }
             else
             {
+                /// Only columns whose data is read are checked.
+                const auto & column_meta = c.meta->meta_data;
+                const auto & size_statistics = column_meta.size_statistics;
+                if (row_subgroup.filter.rows_pass > 0
+                    && (column_meta.num_values < 0 || column_meta.total_uncompressed_size < 0
+                        || (column_meta.__isset.size_statistics && size_statistics.__isset.unencoded_byte_array_data_bytes
+                            && size_statistics.unencoded_byte_array_data_bytes < 0)))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Column '{}' in row group {} has a negative value count or size: num_values {}, total_uncompressed_size {}, unencoded_byte_array_data_bytes {}",
+                        reader.primitive_columns[i].name, row_group.row_group_idx, column_meta.num_values, column_meta.total_uncompressed_size,
+                        size_statistics.unencoded_byte_array_data_bytes);
+
                 LOG_TEST(getLogger("ParquetReadManager"), "addTasksToReadColumns: added ColumnData: i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
                 add_tasks.push_back(Task {
                     .stage = ReadStage::ColumnData,

@@ -2453,23 +2453,6 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     if (num_rows == 0)
         return;
 
-    /// Only row groups that the query reads are checked.
-    if (row_group.need_to_process)
-    {
-        for (size_t i = 0; i < primitive_columns.size(); ++i)
-        {
-            const auto & column_meta = row_group.columns[i].meta->meta_data;
-            const auto & size_statistics = column_meta.size_statistics;
-            if (column_meta.num_values < 0 || column_meta.total_uncompressed_size < 0
-                || (column_meta.__isset.size_statistics && size_statistics.__isset.unencoded_byte_array_data_bytes
-                    && size_statistics.unencoded_byte_array_data_bytes < 0))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Column '{}' in row group {} has a negative value count or size: num_values {}, total_uncompressed_size {}, unencoded_byte_array_data_bytes {}",
-                    primitive_columns[i].name, row_group.row_group_idx, column_meta.num_values, column_meta.total_uncompressed_size,
-                    size_statistics.unencoded_byte_array_data_bytes);
-        }
-    }
-
     size_t rows_per_subgroup = num_rows;
     if (options.format.parquet.max_block_size > 0)
         rows_per_subgroup = std::min(rows_per_subgroup, size_t(options.format.parquet.max_block_size));

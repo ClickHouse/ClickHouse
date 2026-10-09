@@ -3,8 +3,8 @@
 # no-fasttest: needs the Parquet format, which is not built in fasttest.
 
 # A negative ColumnMetaData.num_values, total_uncompressed_size or size_statistics.unencoded_byte_array_data_bytes
-# in a row group the query reads is rejected with INCORRECT_DATA. A positive one implying 2^61 bytes or more is only
-# capped or ignored as a memory estimate, so the file still reads correctly.
+# in a column chunk whose data the query reads is rejected with INCORRECT_DATA. A positive one implying 2^61 bytes
+# or more is only capped or ignored as a memory estimate, so the file still reads correctly.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -82,6 +82,7 @@ rewrite("i64_huge", "i64", [(M(0, 5), 2 ** 62)])
 rewrite("str_bytes_huge", "str", [(M(0, 16, 1), 2 ** 63 - 1)])
 rewrite("arr_huge", "arr", [(M(0, 5), 2 ** 60)])
 rewrite("wide_huge", "wide", [(M(c, 5), 2 ** 62) for c in range(5)])
+rewrite("wide_neg", "wide", [(M(1, 5), -1)])
 PYEOF
 
 read_file() { $CLICKHOUSE_LOCAL "${@:3}" -q "SELECT count(), sum(cityHash64(*)) FROM file('$WORK_DIR/$1.parquet', Parquet) $2" 2>&1; }
@@ -92,6 +93,8 @@ negative() {
 for f in i64_neg i64_size_neg str_bytes_neg; do negative $f ""; done
 # A row group pruned by statistics is not read, so it is not checked.
 echo "i64_neg pruned: $(read_file i64_neg "WHERE x > 1000")"
+# Nor is a column that PREWHERE leaves with no rows to read.
+echo "wide_neg prewhere: $(read_file wide_neg "PREWHERE cityHash64(a) = 0")"
 # A corrupt num_values = null_count must not silently prune the row group.
 negative nul_neg "WHERE x = 5"
 for f in nul nul_huge; do echo "$f: $(read_file $f "WHERE x = 5")"; done
