@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # - no-fasttest: needs S3
+# - no-parallel: enables a failpoint
 
 # A read of many Parquet objects from object storage reads the footers of the next objects in the background.
 # The result, the number of requests and the Parquet metadata cache hits and misses of the query do not change.
@@ -55,6 +56,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
         sumIf(ProfileEvents['S3GetObject'], arm = 'on') = sumIf(ProfileEvents['S3GetObject'], arm = 'off'),
+        sumIf(ProfileEvents['ParquetPrefetchedFooters'], arm = 'on') > 0,
         sumIf(ProfileEvents['ParquetPrefetchedFooters'], arm = 'off') = 0
     FROM
     (
