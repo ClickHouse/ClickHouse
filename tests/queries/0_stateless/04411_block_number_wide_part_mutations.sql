@@ -1,3 +1,6 @@
+-- Tags: no-shared-merge-tree
+-- Tag no-shared-merge-tree: RMT/SMT allocate block numbers starting from 0
+
 -- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
 SET force_primary_key_reverse_order = 0;
 
