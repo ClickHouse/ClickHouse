@@ -115,7 +115,9 @@ std::shared_ptr<const ActionsDAG> makeManifestFilterDag(const ActionsDAG * filte
     return std::make_shared<ActionsDAG>(filter_dag->clone());
 }
 
-std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+}
+
+std::span<const ProcessedManifestFileEntryPtr> Iceberg::defineDeletesSpan(
     ProcessedManifestFileEntryPtr data_object_,
     const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
     bool is_equality_delete,
@@ -183,6 +185,11 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     return {beg_it, end_it};
 }
 
+bool Iceberg::positionDeleteMayReferenceDataFile(const ParsedManifestFileEntry & position_delete, const IcebergPathFromMetadata & data_file_path)
+{
+    const auto & lower = position_delete.lower_reference_data_file_path;
+    const auto & upper = position_delete.upper_reference_data_file_path;
+    return (!lower.has_value() || *lower <= data_file_path) && (!upper.has_value() || *upper >= data_file_path);
 }
 
 namespace Iceberg
@@ -510,9 +517,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             const auto & data_file_path = object_info->info.data_object_file_path_key;
             const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
             const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
-            bool can_contain_data_file_deletes
-                = (!lower.has_value() || *lower <= data_file_path)
-                && (!upper.has_value() || *upper >= data_file_path);
+            bool can_contain_data_file_deletes = positionDeleteMayReferenceDataFile(*position_delete->parsed_entry, data_file_path);
             /// Skip position deletes that do not match the data file path.
             if (!can_contain_data_file_deletes)
             {

@@ -62,13 +62,13 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
         "SELECT number FROM numbers(20, 90)"
     )
 
-    # check that timetravel works with previous snapshot_ids and timestamps
+    # Earlier snapshots are not changed by the compaction: time travel still returns the rows before the DELETE.
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_snapshot_id = {snapshot_id}") == instance.query(
-        "SELECT number FROM numbers(20, 80)"
+        "SELECT number FROM numbers(10, 90)"
     )
 
     assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_timestamp_ms = {int(snapshot_timestamp.timestamp() * 1000)}") == instance.query(
-        "SELECT number FROM numbers(20, 80)"
+        "SELECT number FROM numbers(10, 90)"
     )
     if storage_type == "azure":
         return
@@ -121,27 +121,33 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+
+    def list_manifest_files():
+        return set(
+            instance.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
+                    f"-not -name 'snap-*.avro' -type f",
+                ]
+            )
+            .strip()
+            .splitlines()
+        )
+
+    manifests_before = list_manifest_files()
     instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={"allow_experimental_iceberg_compaction": 1},
     )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
 
-    metadata_dir = (
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
-    )
-    manifest_files = (
-        instance.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
-                f"-not -name 'snap-*.avro' -type f",
-            ]
-        )
-        .strip()
-        .splitlines()
-    )
+    # Only the manifests written by OPTIMIZE: the earlier ones stay as they were.
+    manifest_files = sorted(list_manifest_files() - manifests_before)
     assert manifest_files
 
     data_entries_checked = 0

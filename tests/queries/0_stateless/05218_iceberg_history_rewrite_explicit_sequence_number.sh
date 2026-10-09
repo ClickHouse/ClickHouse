@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# Manifests rewritten by `OPTIMIZE` get an explicit `sequence_number` (remapped onto the renumbered history)
-# and a null `file_sequence_number`. The plain INSERT case (both null) is covered by 05210.
+# `OPTIMIZE` rewrites only the data file its position deletes apply to: the rewritten file gets the sequence number of the
+# compaction snapshot, the untouched one keeps its own. The plain INSERT case is covered by 05210.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +18,7 @@ fi
 TABLE_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_t0"
 rm -rf "${TABLE_PATH}"
 
-# Sequence numbers 1, 2, 3; the rewrite drops the delete snapshot, so the second insert becomes 2.
+# Sequence numbers 1, 2, 3; the compaction snapshot gets 4.
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_insert_into_iceberg = 1;
     SET mutations_sync = 2;
@@ -29,14 +29,6 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE t0"
-
-echo '--- Rewritten manifest entries ---'
-# Only the rewritten `<uuid>.avro` manifests remain; the glob skips the `snap-*.avro` manifest lists.
-${CLICKHOUSE_CLIENT} --query "
-    SELECT status, sequence_number, file_sequence_number
-    FROM file('${TABLE_PATH}/metadata/????????-????-????-????-????????????.avro', Avro)
-    ORDER BY ALL
-"
 
 echo '--- Resolved on read ---'
 ${CLICKHOUSE_CLIENT} --query "

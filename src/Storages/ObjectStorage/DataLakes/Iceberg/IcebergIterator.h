@@ -21,6 +21,7 @@
 #include <atomic>
 #include <future>
 #include <mutex>
+#include <span>
 #include <vector>
 #include <base/defines.h>
 
@@ -37,6 +38,17 @@ namespace DB
 
 namespace Iceberg
 {
+
+/// The deletes of `deletes_objects` (sorted) with the partition spec and value of `data_object` whose sequence number lets them
+/// apply to it (https://iceberg.apache.org/spec/#scan-planning).
+std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+    ProcessedManifestFileEntryPtr data_object,
+    const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
+    bool is_equality_delete,
+    LoggerPtr logger);
+
+/// Whether `data_file_path` is within the referenced data file bounds of `position_delete`.
+bool positionDeleteMayReferenceDataFile(const ParsedManifestFileEntry & position_delete, const IcebergPathFromMetadata & data_file_path);
 
 class DataFileEntriesStream
 {

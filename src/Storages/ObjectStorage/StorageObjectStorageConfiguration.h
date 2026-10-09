@@ -323,7 +323,8 @@ public:
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
         const std::optional<FormatSettings> & /*format_settings*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageID & /*storage_id*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
     }
