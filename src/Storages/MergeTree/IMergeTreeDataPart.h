@@ -257,7 +257,10 @@ public:
     void loadStatisticsToCache(StatisticsCache & cache) const;
     /// Removes the statistics of all columns of the part from the cache.
     void removeStatisticsFromCache(StatisticsCache * cache) const;
-    Estimates getEstimates() const;
+    /// The estimates of the statistics of `required_columns`; an empty `required_columns` means all columns.
+    /// The estimates are memoized per column, so only the statistics of the columns that were not requested
+    /// before are read. The result may contain the estimates of other columns as well.
+    Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
@@ -945,9 +948,13 @@ private:
     PartSerializationsPtr serializations = SharedPartColumns::getEmptySerializations();
 
     /// Small state of finalized statistics for suitable statistics types.
-    /// Lazily initialized on a first access.
+    /// Lazily initialized per column on a first access.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
+    /// The columns whose statistics were already looked up, including the columns without statistics.
+    mutable NameSet estimates_loaded_columns TSA_GUARDED_BY(estimates_mutex);
+    /// The estimates of all columns are known.
+    mutable bool estimates_complete TSA_GUARDED_BY(estimates_mutex) = false;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

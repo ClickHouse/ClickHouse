@@ -1555,26 +1555,44 @@ String IMergeTreeDataPart::getPathForCacheKey() const
     return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
 }
 
-Estimates IMergeTreeDataPart::getEstimates() const
+Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) const
 {
     std::lock_guard lock(estimates_mutex);
 
-    if (estimates.has_value())
-        return *estimates;
+    if (estimates_complete)
+        return estimates;
+
+    /// Read only the statistics of the columns that were not looked up before, so that a query that
+    /// needs the estimates of a few columns does not read the statistics of every column of a wide part.
+    NameSet columns_to_load;
+    for (const auto & column_name : required_columns)
+        if (!estimates_loaded_columns.contains(column_name))
+            columns_to_load.insert(column_name);
+
+    if (!required_columns.empty() && columns_to_load.empty())
+        return estimates;
 
     /// The statistics themselves are owned by the statistics cache; only the estimates map is
     /// kept on the part (until reload), so build it in the dedicated arena, like the rest of the
     /// part's metadata.
-    auto statistics = loadStatistics({}, storage.getContext()->getStatisticsCache().get());
+    auto statistics = loadStatistics(columns_to_load, storage.getContext()->getStatisticsCache().get());
 
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        Estimates new_estimates;
         for (const auto & [column_name, stats] : statistics)
-            new_estimates.emplace(column_name, stats->getEstimate());
-        estimates = std::move(new_estimates);
+            estimates.try_emplace(column_name, stats->getEstimate());
+
+        if (columns_to_load.empty())
+        {
+            estimates_complete = true;
+            estimates_loaded_columns.clear();
+        }
+        else
+        {
+            estimates_loaded_columns.insert(columns_to_load.begin(), columns_to_load.end());
+        }
     }
-    return *estimates;
+    return estimates;
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
@@ -1591,6 +1609,8 @@ void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 
     std::lock_guard lock(estimates_mutex);
     estimates = std::move(stored_estimates);
+    estimates_loaded_columns.clear();
+    estimates_complete = true;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
