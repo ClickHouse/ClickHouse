@@ -33,6 +33,8 @@ public:
     {
     }
 
+    ~BlockReader() { ProfileEvents::increment(ProfileEvents::ExternalSetReadBlocks, read_blocks); }
+
     /// Returns the keys of `block`, which stay valid until the next call. It reads and decodes the block
     /// unless the previous call already did.
     std::span<const Key> read(size_t block)
@@ -45,7 +47,7 @@ public:
             compressed.next();
             current_keys = decoder.decode(compressed, set.directory.getFirstKey(block));
 
-            ProfileEvents::increment(ProfileEvents::ExternalSetReadBlocks);
+            ++read_blocks;
             current_block = block;
         }
         return current_keys;
@@ -78,6 +80,10 @@ private:
     /// share one read.
     std::optional<size_t> current_block;
     std::span<const Key> current_keys;
+
+    /// The reader reports the blocks that it reads once, because all lookup threads increment the same
+    /// counters of profile events, which makes an increment for each block a noticeable part of reading it.
+    size_t read_blocks = 0;
 };
 
 template <typename Key>
