@@ -830,6 +830,20 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
     std::vector<PrefetchHandle *> prefetches;
     RowGroup & row_group = reader.row_groups[task.row_group_idx];
     ssize_t memory_before = diff.by_stage[size_t(diff.cur_stage)];
+
+    if (task.stage == ReadStage::ColumnData && is_first_in_group)
+    {
+        /// The top-K threshold may have tightened while this batch waited for a decoding thread.
+        RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+        if (row_subgroup.filter.rows_pass > 0 && reader.topKShouldSkipRowGroup(row_group))
+        {
+            row_subgroup.filter.rows_pass = 0;
+            const size_t first_step = reader.steps.empty() ? 0 : 1;
+            if (task.row_subgroup_idx == 0 && task.step_idx == first_step)
+                ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+        }
+    }
+
     if (task.column_idx != UINT64_MAX)
     {
         ColumnChunk & column = row_group.columns.at(task.column_idx);

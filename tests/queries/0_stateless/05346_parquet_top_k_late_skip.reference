@@ -1,0 +1,21 @@
+-- results identical with and without the optimization
+threads (max_threads = 1, max_parsing_threads = 2), block 100, prewhere 1: OK
+threads (max_threads = 1, max_parsing_threads = 2), block 100, prewhere 0: OK
+threads (max_threads = 1, max_parsing_threads = 2), block 4000, prewhere 1: OK
+threads (max_threads = 1, max_parsing_threads = 2), block 4000, prewhere 0: OK
+threads (max_threads = 4, max_parsing_threads = 8), block 100, prewhere 1: OK
+threads (max_threads = 4, max_parsing_threads = 8), block 100, prewhere 0: OK
+threads (max_threads = 4, max_parsing_threads = 8), block 4000, prewhere 1: OK
+threads (max_threads = 4, max_parsing_threads = 8), block 4000, prewhere 0: OK
+-- row groups excluded while their data waits are not read
+1
+-- a String key: row groups excluded while their data waits are not read
+1
+-- the query condition cache after a read that skipped row groups late
+results equal: 1
+1
+40000
+40000
+-- a String key at the default settings: the query condition cache after the reads
+40000
+40000
