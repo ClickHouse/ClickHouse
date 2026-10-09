@@ -13,6 +13,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/TimezoneMixin.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
@@ -41,6 +42,40 @@ String IDataType::getName() const
     if (custom_name)
         return custom_name->getName();
     return doGetName();
+}
+
+const DataTypePtr & IDataType::getChild(size_t index) const
+{
+    /// Reached only for a type without children, which never has a valid index.
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Data type {} has {} children, but child {} was requested", getName(), getNumberOfChildren(), index);
+}
+
+DataTypes IDataType::getChildren() const
+{
+    const size_t num_children = getNumberOfChildren();
+    DataTypes children;
+    children.reserve(num_children);
+    for (size_t i = 0; i < num_children; ++i)
+        children.push_back(getChild(i));
+    return children;
+}
+
+DataTypePtr IDataType::cloneWithChildren(const DataTypes & new_children) const
+{
+    const size_t num_children = getNumberOfChildren();
+    if (new_children.size() != num_children)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Data type {} has {} children, but {} were given to cloneWithChildren",
+            getName(), num_children, new_children.size());
+
+    return doCloneWithChildren(new_children);
+}
+
+DataTypePtr IDataType::doCloneWithChildren(const DataTypes &) const
+{
+    /// Reached only for a type without children, which `cloneWithChildren` has already checked.
+    return shared_from_this();
 }
 
 String IDataType::getPrettyName(size_t indent) const
@@ -83,7 +118,7 @@ struct ExpressionIdentityComponent
 /// other order describe another type, and so does the same declared name at another position.
 using ExpressionIdentity = std::vector<ExpressionIdentityComponent>;
 
-/// These keep a nested type without handing it to `forEachChild`, so a zone inside one is not
+/// These keep a nested type that is not one of their children (`getChild`), so a zone inside one is not
 /// reachable here: the argument types of an aggregate function and of a lambda, a QBit element type.
 bool keepsANestedTypeOutOfReach(const IDataType & type)
 {
@@ -93,16 +128,7 @@ bool keepsANestedTypeOutOfReach(const IDataType & type)
 
 bool carriesAReachableTimeZone(const IDataType & type)
 {
-    if (dynamic_cast<const TimezoneMixin *>(&type))
-        return true;
-
-    bool found = false;
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (dynamic_cast<const TimezoneMixin *>(&child))
-            found = true;
-    });
-    return found;
+    return anyInTypeTree(type, [](const IDataType & one) { return dynamic_cast<const TimezoneMixin *>(&one) != nullptr; });
 }
 
 ExpressionIdentity collectExpressionIdentity(const IDataType & type)
@@ -126,15 +152,13 @@ ExpressionIdentity collectExpressionIdentity(const IDataType & type)
                 : getDateLUTTimeZone(DateLUT::instance());
         }
         /// The name carries what this walk cannot see: the interior of a declared name, and the
-        /// nested types of a type that does not hand them to `forEachChild`, zone included.
+        /// nested types of a type that does not expose them as children, zone included.
         if (one.hasCustomName() || keepsANestedTypeOutOfReach(one))
             component.declared_name = one.getName();
         identity.push_back(std::move(component));
     };
 
-    visit(type);
-    /// Descends the whole way down, not just one level.
-    type.forEachChild(visit);
+    forEachInTypeTree(type, visit);
     return identity;
 }
 
@@ -345,6 +369,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
     settings.enumerate_dynamic_streams = false;
     settings.enumerate_virtual_streams = true;
     settings.array_level = initial_array_level;
+    settings.subcolumn_name = subcolumn_name;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
@@ -401,7 +426,12 @@ bool IDataType::hasDynamicSubcolumns() const
 
 DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    return tryGetSubcolumnType(subcolumn_name, getDefaultSerialization());
+}
+
+DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+{
+    auto data = SubstreamData(serialization).withType(getPtr());
     auto subcolumn_data = getSubcolumnInfo(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->data.type : nullptr;
 }
@@ -414,7 +444,12 @@ DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 
 std::optional<IDataType::SubcolumnInfo> IDataType::tryGetSubcolumnInfo(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    return tryGetSubcolumnInfo(subcolumn_name, getDefaultSerialization());
+}
+
+std::optional<IDataType::SubcolumnInfo> IDataType::tryGetSubcolumnInfo(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+{
+    auto data = SubstreamData(serialization).withType(getPtr());
     auto info = getSubcolumnInfo(subcolumn_name, data, {}, false);
     if (!info)
         return {};
@@ -442,7 +477,10 @@ ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnP
         return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr()), column_const->size());
 
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
-    return getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
+    auto subcolumn = getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
+    if (!subcolumn)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Subcolumn {} of type {} cannot be extracted from a column in memory", subcolumn_name, getName());
+    return subcolumn;
 }
 
 SerializationPtr IDataType::getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const
@@ -457,7 +495,7 @@ Names IDataType::getSubcolumnNames() const
     forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
         res.push_back(name);
-    }, SubstreamData(getDefaultSerialization()));
+    }, SubstreamData(getDefaultSerialization()).withType(getPtr()));
     return res;
 }
 
