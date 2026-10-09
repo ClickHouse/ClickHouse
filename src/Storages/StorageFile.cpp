@@ -95,6 +95,17 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
 
+#include "config.h"
+#if USE_PARQUET
+#include <IO/SharedThreadPools.h>
+#include <Interpreters/ProcessList.h>
+#include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <numeric>
+#endif
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -132,6 +143,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsInt64 zstd_window_log_max;
@@ -1662,6 +1674,12 @@ std::optional<Strings> StorageFileSource::FilesIterator::tryGetFiles() const
     return files;
 }
 
+void StorageFileSource::FilesIterator::setFiles(Strings files_)
+{
+    chassert(index.load() == 0);
+    files = std::move(files_);
+}
+
 const String & StorageFileSource::FilesIterator::getFileNameInArchive()
 {
     if (archive_info->path_in_archive.empty())
@@ -2796,6 +2814,160 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     return key;
 }
 
+void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filter_info, size_t num_streams)
+{
+#if USE_PARQUET
+    /// The footers are read with one task per stream, and with 8 streams the concurrent reads already
+    /// cost more than 5% extra CPU when the order gains nothing.
+    static constexpr size_t max_streams_to_order = 4;
+    if (num_streams > max_streams_to_order)
+        return;
+
+    if (storage->use_table_fd || !boost::iequals(storage->format_name, "Parquet") || !getIOThreadPool().isInitialized())
+        return;
+
+    auto ctx = getContext();
+    ParquetMetadataCachePtr metadata_cache
+        = ctx->getSettingsRef()[Setting::use_parquet_metadata_cache] ? ctx->tryGetParquetMetadataCache() : nullptr;
+    if (!metadata_cache)
+        return;
+
+    /// The footers reach the readers through the cache, so they must stay there until their reader runs.
+    static constexpr size_t max_files_to_order = 1000;
+    const size_t max_files = std::min(max_files_to_order, metadata_cache->maxCount() / 4);
+    const size_t max_bytes = metadata_cache->maxSizeInBytes() / 4;
+    std::optional<Strings> files = files_iterator->tryGetFiles();
+    /// With at most one file per stream the order changes nothing.
+    if (!files || files->size() <= num_streams || files->size() > max_files || max_bytes == 0)
+        return;
+    for (const auto & path : *files)
+        if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
+            return;
+
+    DB::FormatSettings format_settings = storage->format_settings ? *storage->format_settings : getFormatSettings(ctx);
+    /// Without seeks the whole file is read to get its footer.
+    if (format_settings.parquet.preserve_order || !format_settings.seekable_read)
+        return;
+
+    /// Writers rewrite the files under the write lock, and the sources take the read lock only when they are created.
+    auto read_lock = storage->lockRwlock(RWLockImpl::Read, ctx);
+
+    struct State
+    {
+        Strings files;
+        std::vector<std::optional<Field>> bounds;
+        std::shared_ptr<StorageFile> storage;
+        ContextPtr context;
+        QueryStatusPtr query_status;
+        FormatFilterInfoPtr format_filter_info;
+        ParquetMetadataCachePtr metadata_cache;
+        DB::FormatSettings format_settings;
+        Block header;
+        size_t num_tasks = 0;
+        size_t max_bytes = 0;
+        std::atomic<size_t> claimed_bytes = 0;
+        std::atomic<size_t> largest_footer_bytes = 0;
+        std::atomic<size_t> files_with_rows = 0;
+        std::atomic<bool> found_bound = false;
+        std::atomic<bool> stop = false;
+    };
+    auto state = std::make_shared<State>();
+    state->bounds.resize(files->size());
+    state->files = std::move(*files);
+    state->storage = storage;
+    state->context = ctx;
+    state->query_status = ctx->getProcessListElementSafe();
+    state->format_filter_info = format_filter_info;
+    state->metadata_cache = metadata_cache;
+    /// The header `FormatFactory::getInputImpl` builds the Parquet reader with.
+    state->header = AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(
+        info.format_header, format_settings.aggregate_function_input_format).value_or(info.format_header);
+    state->format_settings = std::move(format_settings);
+    state->num_tasks = std::min(state->files.size(), std::max<size_t>(num_streams, 1));
+    state->max_bytes = max_bytes;
+
+    state->format_filter_info->initKeyConditionOnce(state->header);
+    {
+        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::PARQUET_PREFETCH);
+        runner.reserve(state->num_tasks);
+        for (size_t task = 0; task < state->num_tasks; ++task)
+        {
+            runner.enqueueAndKeepTrack([state, task]
+            {
+                for (size_t i = task; i < state->files.size(); i += state->num_tasks)
+                {
+                    /// No file read in the first round has a bound: the other files likely have none either.
+                    if (state->stop || (state->query_status && state->query_status->isKilled())
+                        || (state->files_with_rows >= state->num_tasks && !state->found_bound))
+                        return;
+                    /// Each task may still read one more footer.
+                    if (state->claimed_bytes + state->num_tasks * state->largest_footer_bytes > state->max_bytes)
+                    {
+                        state->stop = true;
+                        return;
+                    }
+
+                    /// Such a file is left to its reader, which handles it according to the settings.
+                    const String & path = state->files[i];
+                    struct stat file_stat{};
+                    if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode) || file_stat.st_size == 0)
+                        continue;
+
+                    try
+                    {
+                        auto buf = createReadBuffer(
+                            path, file_stat, /*use_table_fd=*/ false, -1, state->storage->compression_method, state->context);
+                        auto bound = ParquetV3BlockInputFormat::getTopKSortColumnBound(
+                            *buf, state->header, state->format_settings, state->format_filter_info,
+                            state->format_settings.parquet.local_read_min_bytes_for_seek, *state->metadata_cache,
+                            path, computeFileCacheVersionToken(file_stat));
+
+                        const size_t footer_bytes = bound.metadata_bytes;
+                        state->claimed_bytes += footer_bytes;
+                        size_t largest = state->largest_footer_bytes;
+                        while (largest < footer_bytes && !state->largest_footer_bytes.compare_exchange_weak(largest, footer_bytes)) {}
+                        if (bound.value.has_value())
+                            state->found_bound = true;
+                        if (!bound.no_rows_to_read)
+                            ++state->files_with_rows;
+                        state->bounds[i] = std::move(bound.value);
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage(fmt::format("(in file/uri {})", path));
+                        state->stop = true;
+                        throw;
+                    }
+                }
+            });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
+    if (!state->found_bound)
+        return;
+
+    /// Files without a bound keep their order, after the others.
+    const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
+    const auto & bounds = state->bounds;
+    std::vector<size_t> order(bounds.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b)
+    {
+        if (!bounds[a].has_value() || !bounds[b].has_value())
+            return bounds[a].has_value() && !bounds[b].has_value();
+        return ascending ? accurateLess(*bounds[a], *bounds[b]) : accurateLess(*bounds[b], *bounds[a]);
+    });
+    Strings ordered_files;
+    ordered_files.reserve(order.size());
+    for (size_t i : order)
+        ordered_files.push_back(std::move(state->files[i]));
+    files_iterator->setFiles(std::move(ordered_files));
+#else
+    UNUSED(format_filter_info, num_streams);
+#endif
+}
+
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
@@ -2835,6 +3007,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         top_k_filter_tracking_best_values->track_row_group_best_values = true;
         format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
     }
+    if (format_filter_info->top_k_filter && !need_only_count)
+        orderFilesByTopKBound(format_filter_info, num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

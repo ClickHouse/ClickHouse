@@ -120,6 +120,37 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
     }
 }
 
+ParquetV3BlockInputFormat::TopKSortColumnBound ParquetV3BlockInputFormat::getTopKSortColumnBound(
+    ReadBuffer & buf,
+    const Block & header,
+    const FormatSettings & format_settings,
+    const FormatFilterInfoPtr & format_filter_info,
+    size_t min_bytes_for_seek,
+    ParquetMetadataCache & metadata_cache,
+    const String & path,
+    const String & etag)
+{
+    Parquet::ReadOptions options = convertReadOptions(format_settings);
+    options.min_bytes_for_seek = min_bytes_for_seek;
+    options.bytes_per_read_task = min_bytes_for_seek * 4;
+
+    Parquet::Reader reader;
+    reader.prefetcher.init(&buf, options, /*parser_shared_resources_=*/ nullptr);
+    const auto cell = metadata_cache.getOrSetMetadataCell(
+        ParquetMetadataCache::createKey(path, etag),
+        [&] { return Parquet::Reader::readFileMetaData(reader.prefetcher, options.format.parquet.footer_read_size); });
+    reader.file_metadata = cell->metadata;
+
+    format_filter_info->initKeyConditionOnce(header);
+    reader.init(options, header, format_filter_info);
+    reader.prefilterRowGroups(/*row_groups_to_read=*/ std::nullopt);
+
+    return {
+        .value = reader.getTopKSortColumnBound(),
+        .no_rows_to_read = reader.row_groups.empty(),
+        .metadata_bytes = cell->memory_bytes};
+}
+
 Chunk ParquetV3BlockInputFormat::read()
 {
     if (need_only_count)

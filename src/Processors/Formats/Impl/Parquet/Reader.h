@@ -602,6 +602,8 @@ struct Reader
     /// `footer_read_size` overrides the initial footer read size; 0 sizes it adaptively to the file.
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    /// The part of `prefilterAndInitRowGroups` that fills `row_groups`, without preparing to read them.
+    void prefilterRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -660,6 +662,9 @@ struct Reader
     /// top-K heap, so the row group can be skipped without reading its column data. The threshold
     /// only ever tightens, so a `false` result is safely revisited by the row filter later.
     bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
+    /// The smallest minimum (ascending order) or the largest maximum (descending order) of the sort column
+    /// over `row_groups`; nullopt if a row group has no usable statistics for it.
+    std::optional<Field> getTopKSortColumnBound() const;
     /// Folds the sort column of a chunk delivered from the row group into RowGroup::top_k_best_value.
     void updateTopKBestValue(RowGroup & row_group, const IColumn & column) const;
 
@@ -722,6 +727,7 @@ private:
     /// look false for the row group or page while a NULL-bbox row inside it still matches.
     bool spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
+    void initRowGroups();
     void prepareBloomFilterCondition();
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
