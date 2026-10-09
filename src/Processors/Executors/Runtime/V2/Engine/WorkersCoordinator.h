@@ -25,6 +25,7 @@ public:
 
     void enter(size_t worker_id);
     void leave(size_t worker_id);
+    size_t registeredWorkers() const;
 
     bool startStealing();
     void stopStealing();

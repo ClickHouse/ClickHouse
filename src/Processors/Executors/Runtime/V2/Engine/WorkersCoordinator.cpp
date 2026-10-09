@@ -79,6 +79,11 @@ void WorkersCoordinator::leave(size_t worker_id)
         pool.poller.wakeup();
 }
 
+size_t WorkersCoordinator::registeredWorkers() const
+{
+    return registered_workers.load();
+}
+
 bool WorkersCoordinator::startStealing()
 {
     Wyrd::SpinWait spin_wait;
