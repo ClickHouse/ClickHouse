@@ -2,6 +2,7 @@
 -- EXPLAIN output may differ
 
 SET explain_query_plan_default = 'legacy';
+SET max_bytes_ratio_before_external_limit_by = 0;
 
 -- { echo }
 

@@ -4,6 +4,7 @@
 #include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
+#include <Processors/Transforms/LimitByGroupMapping.h>
 #include <Processors/Transforms/NegativeLimitByTransform.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
@@ -19,49 +20,6 @@ extern const int LOGICAL_ERROR;
 
 namespace
 {
-
-/// Compute the sliding-window size = min(length + offset, max_uint64).
-UInt64 computeWindowSize(UInt64 length, UInt64 offset)
-{
-    if (length > std::numeric_limits<UInt64>::max() - offset)
-        return std::numeric_limits<UInt64>::max();
-    return length + offset;
-}
-
-/// Drop keys whose header-sample column is ColumnConst, since constant columns have the
-/// same value on every row and cannot distinguish groups.
-struct GroupingKeys
-{
-    Names names;
-    std::vector<size_t> positions;
-};
-
-GroupingKeys filterNonConstKeys(const SharedHeader & header, const Names & column_names)
-{
-    GroupingKeys out;
-    out.names.reserve(column_names.size());
-    out.positions.reserve(column_names.size());
-    for (const auto & name : column_names)
-    {
-        auto position = header->getPositionByName(name);
-        const auto & column = header->getByPosition(position).column;
-        if (!(column && isColumnConst(*column)))
-        {
-            out.names.emplace_back(name);
-            out.positions.emplace_back(position);
-        }
-    }
-    return out;
-}
-
-AggregateDataPtr groupIndexToMapped(size_t idx)
-{
-    return reinterpret_cast<AggregateDataPtr>(idx + 1);
-}
-size_t mappedToGroupIndex(AggregateDataPtr mapped)
-{
-    return reinterpret_cast<size_t>(mapped) - 1;
-}
 
 /// Materialize one slice as its own Chunk.
 /// Fast path: if the slice covers the whole source chunk, reuse the columns
@@ -107,9 +65,9 @@ NegativeLimitByTransform::NegativeLimitByTransform(
     SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
     : IAccumulatingTransform(header, header)
     , group_offset(group_offset_)
-    , group_window_size(computeWindowSize(group_length_, group_offset_))
+    , group_window_size(computeGroupLimitEnd(group_length_, group_offset_))
 {
-    auto grouping_keys = filterNonConstKeys(header, column_names);
+    auto grouping_keys = filterNonConstKeys(*header, column_names);
     key_positions = std::move(grouping_keys.positions);
 
     data.keys_size = grouping_keys.names.size();
@@ -205,10 +163,10 @@ void NegativeLimitByTransform::consumeImpl(
         {
             group_idx = group_windows.size();
             group_windows.emplace_back();
-            emplace_result.setMapped(groupIndexToMapped(group_idx));
+            emplace_result.setMapped(mappedFromGroupIndex(group_idx));
         }
         else /// Existing grouping key
-            group_idx = mappedToGroupIndex(emplace_result.getMapped());
+            group_idx = groupIndexFromMapped(emplace_result.getMapped());
 
         if (row == 0)
             run_group = group_idx;
@@ -354,13 +312,13 @@ NegativeLimitBySortedStreamTransform::NegativeLimitBySortedStreamTransform(
     SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr)
     : IInflatingTransform(header, header)
     , group_offset(group_offset_)
-    , group_window_size(computeWindowSize(group_length_, group_offset_))
+    , group_window_size(computeGroupLimitEnd(group_length_, group_offset_))
 {
     Names key_names;
     key_names.reserve(sorted_columns_descr.size());
     for (const auto & column_description : sorted_columns_descr)
         key_names.push_back(column_description.column_name);
-    key_positions = filterNonConstKeys(header, key_names).positions;
+    key_positions = filterNonConstKeys(*header, key_names).positions;
 
     prev_key_columns.reserve(key_positions.size());
     for (size_t position : key_positions)

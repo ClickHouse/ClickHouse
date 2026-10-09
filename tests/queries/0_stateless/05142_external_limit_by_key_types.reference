@@ -1,0 +1,16 @@
+String key
+2	2	20000
+LowCardinality(String) key
+2	2	20000
+Nullable(String) key, including the NULL group
+2	2	20000	1
+LowCardinality(Nullable(String)) key, including the NULL group
+2	2	20000	1
+two fixed-size keys packed into one hash key
+2	2	20000	0
+mixed String and numeric keys
+2	2	20000	0
+constant key is a single group
+2	2
+the spill actually happened
+1

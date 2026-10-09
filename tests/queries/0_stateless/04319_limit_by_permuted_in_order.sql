@@ -2,6 +2,7 @@
 -- no-random-settings, no-random-merge-tree-settings, no-parallel-replicas: Explain output may differ
 
 SET max_threads = 16;
+SET max_bytes_ratio_before_external_limit_by = 0;
 
 -- { echo }
 
