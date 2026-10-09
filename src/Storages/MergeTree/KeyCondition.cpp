@@ -6970,10 +6970,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
     /// The reported position is the element's position in the RPN built from the filter, which is the layout
     /// the disjunction bitset is read against. A position that is never reported keeps the bitset's all-true default.
-    for (size_t element_idx = 0; element_idx < rpn.size(); ++element_idx)
+    for (const auto & element : rpn)
     {
-        const auto & element = rpn[element_idx];
-
         if (element.argument_num_of_space_filling_curve.has_value())
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
