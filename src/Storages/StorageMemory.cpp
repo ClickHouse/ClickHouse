@@ -857,6 +857,7 @@ void registerStorageMemory(StorageFactory & factory)
 
         return storage;
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
