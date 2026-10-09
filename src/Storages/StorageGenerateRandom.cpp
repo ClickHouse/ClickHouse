@@ -2006,6 +2006,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, options, random_seed);
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .has_builtin_setting_fn = GenerateRandomSettings::hasBuiltin,

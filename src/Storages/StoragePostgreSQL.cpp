@@ -935,6 +935,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             configuration.schema,
             configuration.on_conflict);
     },
+    mysqlPostgreSQLSecretArguments(4),
     {
         .supports_settings = true,
         .supports_schema_inference = true,

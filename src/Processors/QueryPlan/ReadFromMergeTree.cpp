@@ -2825,7 +2825,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache() const
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool allow_query_condition_cache_) const
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
     /// executed read, which has to re-analyze once its final shape (and with it the TopK gate) is known.
@@ -2846,35 +2846,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         indexes,
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
-        /*allow_query_condition_cache_=*/false,
-        /*allow_top_k_prewhere_query_condition_cache_=*/false,
-        supportsSkipIndexesOnDataRead(),
-        /*check_row_limits=*/true);
-}
-
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation() const
-{
-    return selectRangesToRead(
-        getParts(),
-        mutations_snapshot,
-        vector_search_parameters,
-        top_k_filter_info,
-        storage_snapshot->metadata,
-        query_info,
-        context,
-        requested_num_streams,
-        max_block_numbers_to_read,
-        data,
-        data_settings,
-        all_column_names,
-        log,
-        indexes,
-        /*find_exact_ranges=*/false,
-        is_parallel_reading_from_replicas,
-        allow_query_condition_cache,
-        allow_top_k_prewhere_query_condition_cache,
+        allow_query_condition_cache && allow_query_condition_cache_,
+        allow_top_k_prewhere_query_condition_cache && allow_query_condition_cache_,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/false);
+}
+
+bool ReadFromMergeTree::hasThrowingReadRowLimit() const
+{
+    const auto & settings = context->getSettingsRef();
+    return (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+        || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 }
 
 std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
@@ -3210,6 +3192,14 @@ void ReadFromMergeTree::buildIndexes(
 
                 if (top_k_filter_info->threshold_tracker
                     && top_k_filter_info->threshold_tracker->getCollator())
+                    return false;
+
+                /// The `minmax` index leaves NaN out of the granule bounds. That is harmless while NaN ranks last,
+                /// but under NULLS FIRST a granule whose finite values are all beyond the threshold would be
+                /// skipped together with the NaN rows it holds, which rank before the threshold.
+                if (top_k_filter_info->threshold_tracker
+                    && isFloat(removeLowCardinality(top_k_filter_info->data_type))
+                    && top_k_filter_info->threshold_tracker->getNullsDirection() != top_k_filter_info->threshold_tracker->getDirection())
                     return false;
 
                 return true;
@@ -5521,6 +5511,40 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         }
     }
 
+    /// A top-K read whose threshold column is a primary key column skips granules by the primary index as the
+    /// threshold tightens (see `SkipIndexReadResult::isGranuleBeyondTopKThreshold`). Same safety gates as the
+    /// runtime-filter pruning above; `Nullable` and floating-point columns are left out, as NULLs and NaNs
+    /// are placed by the query's NULLS FIRST/LAST rather than by the primary key order. A collated threshold
+    /// (`ORDER BY s COLLATE ...`) is left out too: the primary key is in byte order, so a granule starting
+    /// beyond the collated threshold can still hold a later row that collates before it. A key column in
+    /// descending order (`allow_experimental_reverse_key`) is left out: the pruning reads granule bounds
+    /// assuming the column ascends within a part.
+    std::optional<size_t> top_k_primary_key_column_position;
+    if (top_k_filter_info && top_k_filter_info->threshold_tracker
+        && !top_k_filter_info->threshold_tracker->getCollator()
+        && context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+        && !query_info.isFinal()
+        && !pending_mutations
+        && !isParallelReadingFromReplicas()
+        && indexes.has_value())
+    {
+        const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+        const auto & column_type = top_k_filter_info->data_type;
+        /// Also nested inside `Tuple`, `Array`, ...: the threshold is compared as a raw `Field`, which places
+        /// a nested NULL or NaN regardless of NULLS FIRST/LAST.
+        bool has_nulls_direction_dependent_part = anyInTypeTree(
+            *column_type, [](const IDataType & type) { return type.isNullable() || isFloat(type); });
+        auto it = std::find(primary_key.column_names.begin(), primary_key.column_names.end(), top_k_filter_info->column_name);
+        if (it != primary_key.column_names.end() && !has_nulls_direction_dependent_part)
+        {
+            const size_t position = it - primary_key.column_names.begin();
+            const auto reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+            const bool is_reversed = position < reverse_flags.size() && reverse_flags[position];
+            if (!is_reversed && position < primary_key.data_types.size() && primary_key.data_types[position]->equals(*column_type))
+                top_k_primary_key_column_position = position;
+        }
+    }
+
     /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
@@ -5605,10 +5629,32 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             getLogger("MergeTreeSkipIndexReader"));
     }
 
-    /// Account SelectedRanges / SelectedMarks here, once both reader-creation paths above have
-    /// run. When a read-time skip-index reader is installed (either the use_skip_indexes_on_data_read
-    /// path or the join runtime-filter fallback), it increments these ProfileEvents itself after
-    /// read-time pruning, so we must not increment the pre-pruning AnalysisResult counts here too.
+    /// Need a reader for the top-K primary key pruning as well; it has nothing to prune up front.
+    if (!skip_index_reader && top_k_primary_key_column_position)
+    {
+        skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
+            UsefulSkipIndexes{},
+            indexes->key_condition_rpn_template,
+            /*use_for_disjunctions=*/false,
+            context->getIndexMarkCache(),
+            context->getIndexUncompressedCache(),
+            context->getVectorSimilarityIndexCache(),
+            reader_settings,
+            MergeTreeSkipIndexReader::DynamicPredicateBuilder{},
+            /*prune_primary_key=*/false,
+            MergeTreeIndices{},
+            MergeTreeSkipIndexReader::DynamicSkipIndexFilter{},
+            context,
+            getLogger("MergeTreeSkipIndexReader"));
+    }
+
+    if (skip_index_reader && top_k_primary_key_column_position)
+        skip_index_reader->setTopKPrimaryKeyPruning(*top_k_primary_key_column_position, top_k_filter_info->threshold_tracker);
+
+    /// Account SelectedRanges / SelectedMarks here, once all reader-creation paths above have
+    /// run. When a read-time skip-index reader is installed (the use_skip_indexes_on_data_read
+    /// path, the join runtime-filter fallback or the top-K primary key pruning), it increments these
+    /// ProfileEvents itself after read-time pruning, so we must not increment the pre-pruning AnalysisResult counts here too.
     if (!skip_index_reader)
     {
         ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);

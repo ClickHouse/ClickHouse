@@ -1504,8 +1504,6 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
-    checkStackSize();
-
     std::unordered_set<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type, /*uuid2_paths=*/{}, /*path=*/{});
 }
@@ -1517,6 +1515,8 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(
     const std::unordered_set<String> & uuid2_paths,
     const String & path)
 {
+    checkStackSize();
+
     /// Recurse into a nested node at the same path (`Nullable` unions) or at a child path (array elements, map values,
     /// record fields, `Variant` alternatives).
     auto infer = [&](const avro::NodePtr & nested_node, const String & nested_path)
