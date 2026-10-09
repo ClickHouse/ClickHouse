@@ -58,8 +58,9 @@ public:
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
-    /// The key of the boundary an earlier execution of the plan with this root matched, so that a later one
-    /// can find its statistics without building a plan with parallel replicas to match against.
+    /// The key of the single-replica plan's boundary - the node matched to the top of the replicas plan - that an
+    /// earlier execution of the single-replica plan with this root found, so that a later one can find its
+    /// statistics without building a replicas plan to match against.
     std::optional<UInt64> getBoundaryHash(UInt64 root_hash) const;
 
     void setBoundaryHash(UInt64 root_hash, UInt64 boundary_hash);
