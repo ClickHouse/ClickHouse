@@ -2955,14 +2955,15 @@ try
             /// Load WORKLOADs and RESOURCEs.
             global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
 
+            /// The reloaders below and `latest_config` keep the configuration they are given,
+            /// so it must have the command line on top of the file.
+            Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
+            file_and_command_line->add(loaded_config, PRIO_DEFAULT);
+            argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+            const ConfigurationPtr reload_config = file_and_command_line;
+
             if (!initial_loading)
             {
-                /// These keep the configuration they are given, so it must have the command line on top of the file.
-                Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
-                file_and_command_line->add(loaded_config, PRIO_DEFAULT);
-                argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
-                const ConfigurationPtr reload_config = file_and_command_line;
-
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
                 if (zkutil::hasZooKeeperConfig(*reload_config))
@@ -3079,7 +3080,7 @@ try
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
-            latest_config = loaded_config;
+            latest_config = reload_config;
         });
 
     const auto listen_hosts = getListenHosts(config());
