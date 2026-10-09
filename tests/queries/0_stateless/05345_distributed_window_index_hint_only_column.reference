@@ -1,0 +1,32 @@
+qualify, remote
+200	200
+qualify, Distributed
+200	200
+row_number
+200	200
+where
+1
+prewhere
+1
+Memory
+200	200
+view
+200	200
+nested indexHint
+200	200
+serialize_query_plan
+200	200
+prefer_localhost_replica
+200	200
+fuzzer shape
+200
+
+200
+control: column also selected
+200	9	200
+control: single shard
+100	100
+control: local table
+100	100
+control: having
+10	200

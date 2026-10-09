@@ -98,6 +98,8 @@ public:
             return;
 
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(column_source_node);
+        if (!is_inside_index_hint_function)
+            table_expression_data.markColumnReferencedOutsideIndexHint();
 
         if (isAliasColumn(node))
         {
