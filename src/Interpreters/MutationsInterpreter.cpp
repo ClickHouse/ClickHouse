@@ -1680,6 +1680,21 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// the freshly written value of the column it depends on.
     emit_materialized_recompute_stages(patch_affected_materialized, std::nullopt);
 
+    /// A part without a commit-order projection rebuilds it in every mutation, so it has to read the projection's columns.
+    if (source.isMutatingDataPart() && !settings.apply_on_fly_for_read)
+    {
+        for (const auto & projection : projections_desc)
+        {
+            if (source.hasProjection(projection.name) || !(projection.with_block_number || projection.with_block_offset))
+                continue;
+
+            LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
+            for (const auto & column : projection.required_columns)
+                dependencies.emplace(column, ColumnDependency::PROJECTION);
+            materialized_projections.insert(projection.name);
+        }
+    }
+
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
@@ -1775,15 +1790,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (!source.hasProjection(projection.name))
-        {
-            if (projection.with_block_number || projection.with_block_offset)
-            {
-                LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
-                materialized_projections.insert(projection.name);
-            }
-
             continue;
-        }
 
         /// Always rebuild broken projections.
         if (source.hasBrokenProjection(projection.name))
