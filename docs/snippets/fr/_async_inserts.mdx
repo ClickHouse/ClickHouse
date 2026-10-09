@@ -28,9 +28,7 @@ Le premier seuil atteint déclenche le flush.
 
 Ce processus de batching est invisible pour les clients et aide ClickHouse à fusionner efficacement le trafic d&#39;insertions provenant de plusieurs sources. Cependant, tant qu&#39;un flush n&#39;a pas eu lieu, les données ne peuvent pas être interrogées. Il est important de noter qu&#39;il existe plusieurs tampons par combinaison de forme d&#39;insertion et de paramètres et que, dans les clusters, les tampons sont maintenus par nœud, ce qui permet un contrôle granulaire dans les environnements multi-tenant. Les mécanismes d&#39;insertion sont par ailleurs identiques à ceux décrits pour les [insertions synchrones](/fr/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
 
-<div id="choosing-a-return-mode">
-  ### Choisir un mode de retour
-</div>
+### Choisir un mode de retour {#choosing-a-return-mode}
 
 Le comportement des insertions asynchrones est affiné davantage à l’aide du paramètre [`wait_for_async_insert`](/fr/reference/settings/session-settings/wait-for#wait_for_async_insert).
 
@@ -46,19 +44,17 @@ Les [benchmarks montrent également](https://clickhouse.com/blog/asynchronous-da
 
 Nous recommandons vivement d’utiliser `async_insert=1,wait_for_async_insert=1` si vous utilisez des insertions asynchrones. Utiliser `wait_for_async_insert=0` est très risqué, car votre client INSERT peut ne pas être informé en cas d’erreur. Cela peut également entraîner une surcharge si votre client continue à écrire rapidement alors que le ClickHouse server doit ralentir les écritures et appliquer une certaine contre-pression afin de garantir la fiabilité du service.
 
-<div id="adaptive-async-inserts">
-  ### Insertions asynchrones adaptatives
-</div>
+### Insertions asynchrones adaptatives {#adaptive-async-inserts}
 
 Depuis la version 24.2, ClickHouse utilise par défaut des délais de flush adaptatifs ([`async_insert_use_adaptive_busy_timeout`](/fr/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout)). Au lieu d&#39;un intervalle de flush fixe, le timeout s&#39;ajuste dynamiquement entre un minimum ([`async_insert_busy_timeout_min_ms`](/fr/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms), 50 ms par défaut) et un maximum ([`async_insert_busy_timeout_max_ms`](/fr/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), 200 ms par défaut ou 1000 ms sur Cloud) en fonction du débit des données entrantes.
 
 Lorsque les données arrivent fréquemment, le timeout reste proche du minimum afin de déclencher le flush plus rapidement et de réduire la latence de bout en bout. Lorsque les données sont clairsemées, il se rapproche du maximum pour accumuler des lots plus volumineux. Cela est particulièrement utile dans le mode par défaut (`wait_for_async_insert=1`), où un timeout fixe élevé obligerait les clients à attendre pendant tout l&#39;intervalle, même lorsque les données sont déjà prêtes à être écrites.
 
-<div id="error-handling">
-  ### Gestion des erreurs
-</div>
+### Gestion des erreurs {#error-handling}
 
-La validation du schéma et l&#39;analyse des données ont lieu lors du flush du tampon, et non à la réception de l&#39;insertion. Si une ligne d&#39;une requête d&#39;insertion contient une erreur d&#39;analyse ou de type, **aucune des données de cette requête n&#39;est écrite** — l&#39;intégralité de la charge utile de la requête est rejetée. En mode par défaut (`wait_for_async_insert=1`), l&#39;erreur est renvoyée au client. En mode fire-and-forget, les erreurs sont consignées dans les journaux du serveur et dans la table [`system.asynchronous_inserts`](/fr/reference/system-tables/asynchronous_inserts).
+La validation du schéma et l&#39;analyse des données ont lieu lors du flush du tampon, et non à la réception de l&#39;insertion. Si une ligne d&#39;une requête d&#39;insertion contient une erreur d&#39;analyse ou de type, **aucune des données de cette requête n&#39;est écrite** — l&#39;intégralité de la charge utile de la requête est rejetée. En mode par défaut (`wait_for_async_insert=1`), l&#39;erreur est renvoyée au client. En mode fire-and-forget, les erreurs sont consignées dans les logs du serveur et dans la table [`system.asynchronous_inserts`](/fr/reference/system-tables/asynchronous_inserts).
+
+La résolution de la destination et la vérification des autorisations sont elles aussi effectuées au moment du flush, en fonction de l’état du catalogue et des droits d’accès à cet instant, et non à la réception de l’insertion. Si une vue matérialisée est rattachée à la destination ou qu’un privilège est révoqué entre la réception de l’insertion et le flush du tampon, ce changement influe sur le flush.
 
 Chaque flush crée au moins une part par valeur distincte de clé de partitionnement dans le tampon. Même pour les tables sans clé de partitionnement, un seul flush peut produire plusieurs parts si les données mises en tampon dépassent [`max_insert_block_size`](/fr/reference/settings/session-settings/max-insert#max_insert_block_size) (environ 1 million de lignes par défaut).
 
@@ -66,9 +62,7 @@ Chaque flush crée au moins une part par valeur distincte de clé de partitionne
   Même avec les insertions asynchrones, vous pouvez toujours rencontrer des erreurs [&quot;too many parts&quot;](/fr/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) si la clé de partitionnement présente une cardinalité élevée.
 </Note>
 
-<div id="deduplication-and-reliability">
-  ### Déduplication et fiabilité
-</div>
+### Déduplication et fiabilité {#deduplication-and-reliability}
 
 Depuis la version 26.2, ClickHouse effectue automatiquement la déduplication des insertions asynchrones comme synchrones, ce qui permet de réessayer les insertions en toute sécurité sur les tables qui conservent un journal de déduplication. Les moteurs `*ReplicatedMergeTree` en conservent un par défaut ; pour une table `MergeTree` classique, `non_replicated_deduplication_window` doit être défini sur une valeur positive. Les deux types d’insertions sont contrôlés par [`deduplicate_insert`](/fr/reference/settings/session-settings/deduplicate-insert#deduplicate_insert), dont la valeur par défaut est `enable`. Les vues matérialisées dépendantes sont prises en charge.
 
@@ -76,20 +70,22 @@ En pratique, si une même insertion est réessayée — par exemple en raison d�
 
 Pour plus de détails, ainsi que sur l’unique restriction applicable aux vues matérialisées avec les insertions asynchrones, consultez [Déduplication des insertions lors de nouvelles tentatives](/fr/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts).
 
-<div id="enabling-asynchronous-inserts">
-  ### Activation des insertions asynchrones
-</div>
+### Activation des insertions asynchrones {#enabling-asynchronous-inserts}
 
 Les insertions asynchrones peuvent être activées pour un utilisateur donné ou pour une requête spécifique :
 
 * Activation des insertions asynchrones au niveau de l&#39;utilisateur. Cet exemple utilise l&#39;utilisateur `default` ; si vous créez un autre utilisateur, remplacez-le par ce nom d&#39;utilisateur :
+
   ```sql
   ALTER USER default SETTINGS async_insert = 1
   ```
+
 * Vous pouvez spécifier les paramètres d&#39;insertion asynchrone à l&#39;aide de la clause SETTINGS dans les requêtes d&#39;insertion :
+
   ```sql
   INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
   ```
+
 * Vous pouvez également définir les paramètres d&#39;insertion asynchrone comme paramètres de connexion lorsque vous utilisez un client ClickHouse pour un langage de programmation.
 
   Par exemple, voici comment procéder dans une chaîne de connexion JDBC lorsque vous utilisez le pilote JDBC Java de ClickHouse pour vous connecter à ClickHouse Cloud :
@@ -99,11 +95,11 @@ Les insertions asynchrones peuvent être activées pour un utilisateur donné ou
   ```
 
 <Note>
-  Les insertions asynchrones ne s&#39;appliquent pas aux requêtes `INSERT INTO ... SELECT`. Lorsqu&#39;une insertion contient une clause `SELECT`, la requête est toujours exécutée de manière synchrone, quel que soit le paramètre `async_insert`.
+  `INSERT ... SELECT` peut également passer par la file d’attente des insertions asynchrones lorsque `async_insert = 1` et que le résultat entier tient dans un seul bloc sans dépasser `async_insert_max_data_size` ; sinon, la requête s’exécute de manière synchrone. Ce mode a ses propres critères d’éligibilité, ainsi que ses propres règles de comptabilisation des écritures et d’annulation. Pour plus de détails, consultez [Asynchronous `INSERT ... SELECT`](/fr/concepts/features/operations/insert/async-insert-select).
 </Note>
 
 <div id="flushing-buffers-on-shutdown">
-  ### Flush des tampons à l’arrêt
+  ### Flush des tampons à l’arrêt {#flushing-buffers-on-shutdown}
 </div>
 
 Pour flush tous les tampons d’`async insert` en attente — par exemple, lors d’un arrêt propre ou avant une opération de maintenance — exécutez :
@@ -115,7 +111,7 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 Cela garantit que toutes les données en mémoire tampon sont écrites dans le stockage avant que le serveur ne s&#39;arrête.
 
 <div id="comparison-with-buffer-tables">
-  ### Comparaison avec les tables Buffer
+  ### Comparaison avec les tables Buffer {#comparison-with-buffer-tables}
 </div>
 
 Les insertions asynchrones constituent le remplaçant moderne des [tables Buffer](/fr/reference/engines/table-engines/special/buffer). Principales différences :

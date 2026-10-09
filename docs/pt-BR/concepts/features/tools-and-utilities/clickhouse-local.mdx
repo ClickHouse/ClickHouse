@@ -203,6 +203,15 @@ $ clickhouse-local --copy < data.json > data.csv
 
 Por padrão, o `clickhouse-local` tem acesso aos dados de um servidor ClickHouse no mesmo host e não depende da configuração do servidor. Ele também permite carregar a configuração do servidor usando o argumento `--config-file`. Para dados temporários, um diretório temporário exclusivo é criado por padrão.
 
+Quando `--config-file` não é informado, o `clickhouse-local` procura um arquivo de configuração nos seguintes locais e usa o primeiro que existir:
+
+1. `./config.xml`, `./config.yaml`, `./config.yml`
+2. `./clickhouse-local.xml`, `./clickhouse-local.yaml`, `./clickhouse-local.yml`
+3. `$HOME/.clickhouse-local/config.xml`, `$HOME/.clickhouse-local/config.yaml`, `$HOME/.clickhouse-local/config.yml`
+4. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml`, `/etc/clickhouse-local/config.yml`
+
+O arquivo de configuração pode ser escrito em XML ou YAML, no mesmo formato usado pelo servidor ClickHouse — consulte [&quot;Arquivos de configuração&quot;](/pt-BR/operations/configuration-files).
+
 Uso básico (Linux):
 
 ```bash
@@ -241,8 +250,8 @@ Argumentos:
 * `--logger.console` — Registrar no console.
 * `--logger.log` — Nome do arquivo de log.
 * `--logger.level` — Nível de log.
-* `--ignore-error` — não interrompe o processamento se uma consulta falhar.
-* `-c`, `--config-file` — caminho para o arquivo de configuração no mesmo formato do servidor ClickHouse; por padrão, a configuração é vazia.
+* `--ignore-error` — não interrompe o processamento se uma consulta falhar: o erro é informado em `stderr` e a próxima consulta é processada. Como os erros são ignorados, o processo termina com um código de sucesso mesmo que algumas consultas tenham falhado.
+* `-c`, `--config-file` — caminho para o arquivo de configuração no mesmo formato do servidor ClickHouse. Quando não é informado, o `clickhouse-local` procura por conta própria seu arquivo de configuração principal (veja [&quot;Arquivos de configuração&quot;](#configuration-files)); a configuração só fica vazia quando nenhum dos arquivos procurados existe.
 * `--no-system-tables` — não anexar as tabelas do sistema.
 * `--help` — referência dos argumentos de `clickhouse-local`.
 * `-V`, `--version` — imprime informações da versão e sai.
@@ -255,7 +264,7 @@ O `clickhouse-local` não utiliza a configuração de um servidor ClickHouse ins
 host — ele procura seu próprio arquivo de configuração principal e usa o primeiro dos seguintes que existir:
 
 1. o caminho passado com `--config-file`;
-2. `./config.xml`;
+2. `./config.xml`, `./config.yaml` ou `./config.yml`;
 3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` ou `./clickhouse-local.yml`;
 4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` ou `~/.clickhouse-local/config.yml`;
 5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` ou `/etc/clickhouse-local/config.yml`.

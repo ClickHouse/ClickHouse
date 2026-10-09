@@ -7,13 +7,13 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## 개요
+  ## 개요 {#overview}
 </div>
 
 Composable protocols를 사용하면 ClickHouse 서버에 대한 TCP 액세스를 더 유연하게 구성할 수 있습니다. 이 구성은 기존 구성과 함께 사용할 수도 있고, 이를 대체할 수도 있습니다.
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## Composable protocols 구성하기
+  ## Composable protocols 구성하기 {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
 </div>
 
 Composable protocols는 XML 설정 파일에서 구성할 수 있습니다. 프로토콜
@@ -26,7 +26,7 @@ Composable protocols는 XML 설정 파일에서 구성할 수 있습니다. 프�
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### 프로토콜 레이어 구성
+  ### 프로토콜 레이어 구성 {#basic-modules-define-protocol-layers}
 </div>
 
 기본 모듈을 사용해 프로토콜 레이어를 정의할 수 있습니다. 예를 들어
@@ -62,7 +62,7 @@ HTTP 레이어를 정의하려면 `protocols` 섹션에 새 기본 모듈을 추
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### 엔드포인트 구성
+  ### 엔드포인트 구성 {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
 </div>
 
 엔드포인트(수신 포트)는 `<port>`와 선택적 `<host>` 태그로 표시합니다.
@@ -88,7 +88,7 @@ HTTP 레이어를 정의하려면 `protocols` 섹션에 새 기본 모듈을 추
 사용됩니다.
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### 레이어 시퀀스 구성
+  ### 레이어 시퀀스 구성 {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
 </div>
 
 레이어 시퀀스는 `<impl>` 태그를 사용해 다른 모듈을 참조하는 방식으로 정의합니다. 예를 들어, plain&#95;http 모듈 위에 TLS 레이어를 구성하려면 구성을 다음과 같이 더 수정할 수 있습니다:
@@ -113,7 +113,7 @@ HTTP 레이어를 정의하려면 `protocols` 섹션에 새 기본 모듈을 추
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### 레이어에 엔드포인트 추가하기
+  ### 레이어에 엔드포인트 추가하기 {#endpoint-can-be-attached-to-any-layer}
 </div>
 
 엔드포인트는 모든 레이어에 추가할 수 있습니다. 예를 들어,
@@ -139,7 +139,7 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### 추가 엔드포인트 정의
+  ### 추가 엔드포인트 정의 {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
 </div>
 
 추가 엔드포인트는 임의의 모듈을 참조하고
@@ -172,7 +172,7 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### 엔드포인트별 사용자 지정 HTTP 처리기
+  ### 엔드포인트별 사용자 지정 HTTP 처리기 {#custom-http-handlers-per-endpoint}
 </div>
 
 기본적으로 모든 `type=http` 프로토콜 항목은 동일한 `<http_handlers>`
@@ -228,9 +228,7 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 사용자 지정 처리기 섹션의 변경 사항은 구성 다시 로드 시 감지되며, 해당
 엔드포인트는 자동으로 다시 시작됩니다.
 
-<div id="default-session-user-per-endpoint">
-  ### 엔드포인트별 기본 세션 사용자
-</div>
+### 엔드포인트별 기본 세션 사용자 {#default-session-user-per-endpoint}
 
 클라이언트가 사용자 이름을 지정하지 않고 연결하면(예: `user` 매개변수 없이 전송된 HTTP 요청 또는 사용자 이름이 비어 있는 네이티브 프로토콜 `Hello` 패킷) 서버는 기본 세션 사용자로 인증합니다. 기본 세션 사용자는 기본값이 `default`인 `default_session_user` [서버 설정](/ko/reference/settings/server-settings/settings)입니다.
 
@@ -268,9 +266,7 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 `interserver` 프로토콜과 함께 사용할 수 없습니다. interserver 연결은 클러스터
 시크릿과 초기 사용자로 인증되며 기본 세션 사용자를 사용하지 않습니다.
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### 추가 레이어 매개변수 지정
-</div>
+### 추가 레이어 매개변수 지정 {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 일부 모듈에는 추가 레이어 매개변수가 있을 수 있습니다. 예를 들어, TLS 레이어에서는
 개인 키(`privateKeyFile`)와 인증서 파일(`certificateFile`)을
@@ -296,3 +292,7 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 
 </protocols>
 ```
+
+TLS 레이어에서는 `cipherList`와 `cipherSuites`도 설정할 수 있지만, 이 설정은 해당 레이어에
+자체 `privateKeyFile`(인증서가 별도 파일에 있는 경우 `certificateFile`도 포함)이 지정된 경우에만 적용됩니다.
+이러한 파일이 없는 레이어에 비어 있지 않은 `cipherSuites`를 지정하면 서버 시작 시 오류가 발생합니다.

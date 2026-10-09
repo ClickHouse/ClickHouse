@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## Descripción general
+  ## Descripción general {#overview}
 </div>
 
 Los protocolos componibles permiten una configuración más flexible del acceso TCP al
@@ -16,7 +16,7 @@ servidor de ClickHouse. Esta configuración puede coexistir con la configuració
 convencional o reemplazarla.
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## Configuración de protocolos componibles
+  ## Configuración de protocolos componibles {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
 </div>
 
 Los protocolos componibles se pueden configurar en un archivo de configuración XML. La sección de protocolos
@@ -29,7 +29,7 @@ se indica con etiquetas `protocols` en el archivo de configuración XML:
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### Configuración de las capas de protocolo
+  ### Configuración de las capas de protocolo {#basic-modules-define-protocol-layers}
 </div>
 
 Puede definir capas de protocolo con módulos básicos. Por ejemplo, para definir una
@@ -65,7 +65,7 @@ Los módulos se pueden configurar de la siguiente manera:
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### Configuración de los endpoints
+  ### Configuración de los endpoints {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
 </div>
 
 Los endpoints (puertos de escucha) se indican con las etiquetas `<port>` y, opcionalmente, `<host>`.
@@ -91,7 +91,7 @@ Si se omite la etiqueta `<host>`, se usa `<listen_host>` de la configuración
 principal.
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### Configuración de secuencias de capas
+  ### Configuración de secuencias de capas {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
 </div>
 
 Las secuencias de capas se definen con la etiqueta `<impl>` y haciendo referencia a otro
@@ -118,7 +118,7 @@ podríamos seguir modificando nuestra configuración de la siguiente manera:
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### Asociar endpoints a las capas
+  ### Asociar endpoints a las capas {#endpoint-can-be-attached-to-any-layer}
 </div>
 
 Los endpoints se pueden asociar a cualquier capa. Por ejemplo, podemos definir endpoints para
@@ -144,7 +144,7 @@ HTTP (puerto 8123) y HTTPS (puerto 8443):
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### Definición de endpoints adicionales
+  ### Definición de endpoints adicionales {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
 </div>
 
 Los endpoints adicionales pueden definirse haciendo referencia a cualquier módulo y omitiendo la
@@ -177,7 +177,7 @@ módulo `plain_http` de la siguiente manera:
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### Manejadores HTTP personalizados por endpoint
+  ### Manejadores HTTP personalizados por endpoint {#custom-http-handlers-per-endpoint}
 </div>
 
 De forma predeterminada, todas las entradas de protocolo `type=http` comparten la misma configuración
@@ -232,9 +232,7 @@ La sección de handler personalizados sigue el mismo formato que
 Los cambios en la sección de handler personalizados se detectan durante la recarga de la configuración, y el
 endpoint correspondiente se reinicia automáticamente.
 
-<div id="default-session-user-per-endpoint">
-  ### Usuario de sesión predeterminado por endpoint
-</div>
+### Usuario de sesión predeterminado por endpoint {#default-session-user-per-endpoint}
 
 Cuando un cliente se conecta sin especificar un nombre de usuario (por ejemplo, mediante una solicitud HTTP
 sin el parámetro `user` o un paquete `Hello` del protocolo nativo con un nombre de usuario
@@ -280,9 +278,7 @@ particular, un `default_session_user` vacío no los rechaza. No se puede utiliza
 `interserver`: las conexiones entre servidores se autentican mediante el secreto del cluster
 y el usuario inicial, y nunca usan el usuario de sesión predeterminado.
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### Especificar parámetros adicionales de la capa
-</div>
+### Especificar parámetros adicionales de la capa {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 Algunos módulos pueden incluir parámetros adicionales de la capa. Por ejemplo, la capa TLS
 permite especificar una clave privada (`privateKeyFile`) y archivos de certificado (`certificateFile`)
@@ -308,3 +304,7 @@ de la siguiente manera:
 
 </protocols>
 ```
+
+Una capa TLS también puede definir `cipherList` y `cipherSuites`, pero solo surten efecto cuando la capa
+tiene su propio `privateKeyFile` (y `certificateFile`, si el certificado está en un archivo independiente). Si
+una capa sin ellos tiene un `cipherSuites` no vacío, se produce un error durante el inicio.

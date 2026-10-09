@@ -7,13 +7,13 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## 概要
+  ## 概要 {#overview}
 </div>
 
 コンポーザブルプロトコル を使用すると、ClickHouseサーバー への TCP アクセスをより柔軟に構成できます。この構成は、従来の構成と併用することも、置き換えることもできます。
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## コンポーザブルプロトコルの設定
+  ## コンポーザブルプロトコルの設定 {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
 </div>
 
 コンポーザブルプロトコルは、XML設定ファイルで設定できます。プロトコル
@@ -26,7 +26,7 @@ doc_type: 'reference'
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### プロトコルレイヤーの設定
+  ### プロトコルレイヤーの設定 {#basic-modules-define-protocol-layers}
 </div>
 
 基本モジュールを使ってプロトコルレイヤーを定義できます。たとえば、HTTP レイヤーを定義するには、
@@ -62,7 +62,7 @@ doc_type: 'reference'
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### エンドポイントの設定
+  ### エンドポイントの設定 {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
 </div>
 
 エンドポイント (待ち受けポート) は、`<port>` と省略可能な `<host>` タグで表されます。
@@ -88,7 +88,7 @@ doc_type: 'reference'
 使用されます。
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### レイヤーシーケンスの設定
+  ### レイヤーシーケンスの設定 {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
 </div>
 
 レイヤーシーケンスは、`<impl>` タグを使って定義し、別の
@@ -115,7 +115,7 @@ doc_type: 'reference'
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### エンドポイントをレイヤーに割り当てる
+  ### エンドポイントをレイヤーに割り当てる {#endpoint-can-be-attached-to-any-layer}
 </div>
 
 エンドポイントはどのレイヤーにも割り当てることができます。たとえば、HTTP (ポート8123) とHTTPS (ポート8443) のエンドポイントを定義できます。
@@ -140,7 +140,7 @@ doc_type: 'reference'
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### 追加のエンドポイントを定義する
+  ### 追加のエンドポイントを定義する {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
 </div>
 
 任意のモジュールを参照し、`<type>` タグを省略することで、追加のエンドポイントを定義できます。たとえば、`plain_http` モジュールに対する `another_http` エンドポイントは次のように定義できます。
@@ -171,7 +171,7 @@ doc_type: 'reference'
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### エンドポイントごとのカスタム HTTP ハンドラー
+  ### エンドポイントごとのカスタム HTTP ハンドラー {#custom-http-handlers-per-endpoint}
 </div>
 
 デフォルトでは、すべての `type=http` プロトコルエントリは同じ `<http_handlers>`
@@ -225,9 +225,7 @@ doc_type: 'reference'
 カスタムハンドラーのセクションへの変更は設定のリロード時に検出され、対応する
 エンドポイント は自動的に自動的に再起動されます。
 
-<div id="default-session-user-per-endpoint">
-  ### エンドポイントごとのデフォルトセッションユーザー
-</div>
+### エンドポイントごとのデフォルトセッションユーザー {#default-session-user-per-endpoint}
 
 クライアントがユーザー名を指定せずに接続した場合 (たとえば、`user` パラメータなしの HTTP リクエストや、ユーザー名が空のネイティブプロトコル `Hello` パケット) 、サーバーはデフォルトセッションユーザーとして認証します。デフォルトセッションユーザーは、デフォルト値が `default` の `default_session_user` [サーバー設定](/ja/reference/settings/server-settings/settings)です。
 
@@ -256,9 +254,7 @@ doc_type: 'reference'
 
 タグは、エンドポイントのモジュールから参照先の (`impl`) モジュールに向かって検索され、エンドポイントに最も近い値が優先されます。この設定は、`tcp`、`http`、`mysql`、`postgres`のプロトコルハンドラー、およびリクエストを認証する`prometheus`ハンドラー (`remote_write`、`remote_read`、`query`、`api_v1`) に適用されます。メトリクス公開エンドポイント (Keeperのメトリクス専用エンドポイントを含む) は認証なしで提供され、この設定を無視します。固定ユーザーを持つハンドラー (`http_handlers`ルールの`handler`内の`user`キー、または`prometheus.handlers`ルールの`handler`内の`user`キー) は、設定されたユーザーとして認証され、この設定も無視します。特に、`default_session_user`が空であっても、これらのハンドラーが拒否されることはありません。この設定は`interserver`プロトコルでは使用できません。interserver接続はクラスターのsecretと初期ユーザーによって認証され、デフォルトのセッションユーザーを使用することはありません。
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### 追加のレイヤーパラメータを指定する
-</div>
+### 追加のレイヤーパラメータを指定する {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 一部のモジュールでは、追加のレイヤーパラメータを指定できます。たとえば、TLS レイヤーでは、秘密鍵 (`privateKeyFile`) と証明書ファイル (`certificateFile`) を次のように指定できます。
 
@@ -282,3 +278,6 @@ doc_type: 'reference'
 
 </protocols>
 ```
+
+TLS レイヤーでは `cipherList` と `cipherSuites` も設定できますが、これらが有効になるのは、そのレイヤー自身に `privateKeyFile` (証明書が別ファイルの場合は `certificateFile` も) が指定されている場合に限られます。
+これらが指定されていないレイヤーで空でない `cipherSuites` を設定すると、起動時にエラーになります。

@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## نظرة عامة
+  ## نظرة عامة {#overview}
 </div>
 
 تتيح البروتوكولات القابلة للتركيب إعدادًا أكثر مرونة للوصول عبر TCP إلى
@@ -16,7 +16,7 @@ doc_type: 'reference'
 محلّه.
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## إعداد البروتوكولات القابلة للتركيب
+  ## إعداد البروتوكولات القابلة للتركيب {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
 </div>
 
 يمكن إعداد البروتوكولات القابلة للتركيب في ملف تهيئة بتنسيق XML. ويُحدَّد قسم البروتوكولات
@@ -29,7 +29,7 @@ doc_type: 'reference'
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### إعداد طبقات البروتوكول
+  ### إعداد طبقات البروتوكول {#basic-modules-define-protocol-layers}
 </div>
 
 يمكنك تحديد طبقات البروتوكول باستخدام وحدات أساسية. على سبيل المثال، لتحديد
@@ -65,7 +65,7 @@ doc_type: 'reference'
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### تكوين نقاط النهاية
+  ### تكوين نقاط النهاية {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
 </div>
 
 يُشار إلى نقاط النهاية (منافذ الاستماع) بالوسمين `<port>` و`<host>` الاختياريين.
@@ -90,7 +90,7 @@ doc_type: 'reference'
 إذا أُهمِل الوسم `<host>`، فسيُستخدم `<listen_host>` من إعدادات الجذر.
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### تهيئة تسلسلات الطبقات
+  ### تهيئة تسلسلات الطبقات {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
 </div>
 
 تُعرَّف تسلسلات الطبقات باستخدام الوسم `<impl>`، مع الإشارة إلى
@@ -117,7 +117,7 @@ doc_type: 'reference'
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### إرفاق نقاط النهاية بالطبقات
+  ### إرفاق نقاط النهاية بالطبقات {#endpoint-can-be-attached-to-any-layer}
 </div>
 
 يمكن إرفاق نقاط النهاية بأي طبقة. على سبيل المثال، يمكننا تحديد نقاط نهاية لكلٍّ من
@@ -143,7 +143,7 @@ HTTP (المنفذ 8123) وHTTPS (المنفذ 8443):
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### تعريف نقاط نهاية إضافية
+  ### تعريف نقاط نهاية إضافية {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
 </div>
 
 يمكن تعريف نقاط نهاية إضافية بالإشارة إلى أي وحدة مع حذف
@@ -176,7 +176,7 @@ HTTP (المنفذ 8123) وHTTPS (المنفذ 8443):
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### معالجات HTTP مخصّصة لكل نقطة نهاية
+  ### معالجات HTTP مخصّصة لكل نقطة نهاية {#custom-http-handlers-per-endpoint}
 </div>
 
 بشكل افتراضي، تشترك جميع إدخالات البروتوكول `type=http` في الإعداد
@@ -231,9 +231,7 @@ HTTP (المنفذ 8123) وHTTPS (المنفذ 8443):
 ويُكتشف أي تغيير في قسم المعالِجات المخصّصة أثناء إعادة تحميل config، وتُعاد
 تشغيل نقطة النهاية المقابلة تلقائيًا.
 
-<div id="default-session-user-per-endpoint">
-  ### مستخدم الجلسة الافتراضي لكل نقطة نهاية
-</div>
+### مستخدم الجلسة الافتراضي لكل نقطة نهاية {#default-session-user-per-endpoint}
 
 عندما يتصل عميل دون تحديد اسم مستخدم (على سبيل المثال، طلب HTTP
 دون المعلَمة `user`، أو حزمة `Hello` من البروتوكول الأصلي ذات اسم مستخدم
@@ -279,9 +277,7 @@ HTTP (المنفذ 8123) وHTTPS (المنفذ 8443):
 `interserver`: إذ تُصادَق اتصالات الاتصال الداخلي بين خوادم ClickHouse بواسطة
 secret الخاص بـ cluster والمستخدم الأولي، ولا تستخدم أبدًا مستخدم الجلسة الافتراضي.
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### تحديد معلمات إضافية للطبقة
-</div>
+### تحديد معلمات إضافية للطبقة {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 قد تتضمن بعض الوحدات معلمات إضافية للطبقة. على سبيل المثال، تتيح طبقة TLS
 تحديد مفتاح خاص (`privateKeyFile`) وملفات الشهادة (`certificateFile`)
@@ -307,3 +303,7 @@ secret الخاص بـ cluster والمستخدم الأولي، ولا تستخ
 
 </protocols>
 ```
+
+يمكن لطبقة TLS أيضًا تعيين `cipherList` و`cipherSuites`، غير أنهما لا يسريان إلا إذا كان للطبقة
+ملف `privateKeyFile` خاص بها (وكذلك `certificateFile` إذا كانت الشهادة في ملف منفصل). ويؤدي
+تعيين قيمة غير فارغة لـ `cipherSuites` في طبقة لا تتضمنهما إلى حدوث error عند بدء التشغيل.

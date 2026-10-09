@@ -13,9 +13,7 @@ integration:
 import { Image } from "/snippets/ar/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="supported-data-sources">
-  ## مصادر البيانات المدعومة
-</div>
+## مصادر البيانات المدعومة {#supported-data-sources}
 
 | الاسم            | الشعار                                                                                               | النوع | الحالة | الوصف                                                                                |
 | ---------------- | ---------------------------------------------------------------------------------------------------- | ----- | ------ | ------------------------------------------------------------------------------------ |
@@ -26,14 +24,12 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 | Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="شعار Azure Event Hubs" width="32" /> | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من Azure Event Hubs إلى ClickHouse Cloud. |
 | WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="شعار WarpStream" width="32" />             | البث  | مستقر  | هيّئ ClickPipes وابدأ باستيعاب بيانات البث من WarpStream إلى ClickHouse Cloud.       |
 
-<div id="isolation-level">
-  ## مستوى العزل
-</div>
+## مستوى العزل {#isolation-level}
 
 يحدد مستوى عزل مستهلك Kafka ما إذا كان ClickPipe يقرأ ويُدرج الرسائل التي تم تثبيتها ضمن معاملات Kafka فقط. فعّل إعداد `kafka_read_committed` لاستخدام `read_committed` وتخطي الرسائل الناتجة عن معاملات Kafka المُجهضة. عطّله لاستخدام `read_uncommitted` وقراءة جميع الرسائل. يمكنك تهيئة هذا الإعداد ضمن **الإعدادات المتقدمة**.
 
 <div id="supported-data-formats">
-  ## تنسيقات البيانات المدعومة
+  ## تنسيقات البيانات المدعومة {#supported-data-formats}
 </div>
 
 التنسيقات المدعومة هي:
@@ -43,11 +39,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * [Protobuf](/ar/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## أنواع البيانات المدعومة
+  ## أنواع البيانات المدعومة {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### الأنواع القياسية
+  ### الأنواع القياسية {#standard-types-support}
 </div>
 
 أنواع بيانات ClickHouse القياسية التالية مدعومة حاليًا في ClickPipes:
@@ -71,9 +67,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * Tuple و Array بعناصر تستخدم أيًا من الأنواع المذكورة أعلاه (بما في ذلك Nullable، وبعمق مستوى واحد فقط)
 * أنواع SimpleAggregateFunction (لوجهات AggregatingMergeTree أو SummingMergeTree)
 
-<div id="variant-type-support">
-  ### دعم نوع Variant
-</div>
+### دعم نوع Variant {#variant-type-support}
 
 يدعم ClickPipes نوع Variant في الحالات التالية:
 
@@ -81,7 +75,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * حقول JSON. يمكنك تحديد نوع Variant يدويًا (مثل `Variant(String, Int64, DateTime)`) لأي حقل JSON في مصدر تدفق البيانات. لا تُدعَم الأنواع الفرعية المعقدة (arrays/maps/tuples). بالإضافة إلى ذلك، ونظرًا للطريقة التي يحدد بها ClickPipes النوع الفرعي الصحيح من Variant الذي يجب استخدامه، لا يمكن استخدام أكثر من نوع عدد صحيح واحد أو نوع DateTime واحد في تعريف Variant — على سبيل المثال، `Variant(Int64, UInt32)` غير مدعوم.
 
 <div id="json-type-support">
-  ### دعم نوع JSON
+  ### دعم نوع JSON {#json-type-support}
 </div>
 
 تدعم ClickPipes نوع JSON في الحالات التالية:
@@ -94,18 +88,16 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 لاحظ أنك ستحتاج إلى تغيير عمود الوجهة يدويًا إلى نوع JSON المطلوب، بما في ذلك أي مسارات ثابتة أو متخطاة.
 
 <div id="avro">
-  ### Avro
+  ### Avro {#avro}
 </div>
 
 <div id="supported-avro-data-types">
-  #### أنواع بيانات Avro المدعومة
+  #### أنواع بيانات Avro المدعومة {#supported-avro-data-types}
 </div>
 
 تدعم ClickPipes جميع أنواع Avro البدائية والمركبة، وجميع أنواع Avro المنطقية باستثناء `local-timestamp-millis` و`local_timestamp-micros`. تُحوَّل أنواع Avro `record` إلى Tuple، وأنواع `array` إلى Array، و`map` إلى Map (بمفاتيح نصية فقط). وبوجه عام، تتوفر التحويلات المذكورة [هنا](/ar/concepts/features/interfaces/schema-inference#avro). نوصي باستخدام المطابقة الدقيقة للأنواع الرقمية في Avro، لأن ClickPipes لا تتحقق من تجاوز السعة أو فقدان الدقة عند تحويل الأنواع. وبدلاً من ذلك، يمكن إدراج جميع أنواع Avro في عمود `String`، وستُمثَّل في هذه الحالة كسلسلة JSON صالحة.
 
-<div id="nullable-types-and-avro-unions">
-  #### أنواع Nullable واتحاد في Avro
-</div>
+#### أنواع Nullable واتحاد في Avro {#nullable-types-and-avro-unions}
 
 تُعرَّف أنواع Nullable في Avro باستخدام مخطط اتحاد بالشكل `(T, null)` أو `(null, T)`، حيث إن T هو نوع Avro الأساسي. أثناء استنتاج المخطط، تُربَط أنواع اتحاد هذه بعمود &quot;Nullable&quot; في ClickHouse. لاحظ أن ClickHouse لا يدعم الأنواع `Nullable(Array)` و`Nullable(Map)` و`Nullable(Tuple)`. ستُحوَّل اتحادات null في Avro لهذه الأنواع إلى إصدارات غير Nullable (وتُحوَّل أنواع Avro Record إلى Tuple مُسمّى في ClickHouse). وستُدرَج قيم Avro &quot;nulls&quot; لهذه الأنواع على النحو التالي:
 
@@ -114,12 +106,10 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * Tuple مُسمّى تحتوي على جميع القيم الافتراضية/الصفرية لـ Avro Record null
 
 <div id="protobuf">
-  ### Protobuf
+  ### Protobuf {#protobuf}
 </div>
 
-<div id="supported-protobuf-data-types">
-  #### أنواع بيانات Protobuf المدعومة
-</div>
+#### أنواع بيانات Protobuf المدعومة {#supported-protobuf-data-types}
 
 يدعم ClickPipes جميع أنواع Protobuf 2 و3، باستثناء النوع `group` في proto 2، وهو نوع أُعلن عن إهماله منذ وقت طويل. وتستخدم تحويلات الأنواع الأساسية عمليات التحويل التالية:
 
@@ -161,7 +151,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
 <div id="protobuf-one-ofs">
-  #### ‏Protobuf `oneof`
+  #### ‏Protobuf `oneof` {#protobuf-one-ofs}
 </div>
 
 أثناء استنتاج المخطط، تُربَط حقول Protobuf `oneof` افتراضيًا بـ `Tuple` مُسمّى، بحيث لا يحمل قيمة غير افتراضية سوى حقل واحد كحد أقصى.
@@ -169,16 +159,14 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 وبدلاً من ذلك، يمكن ربط كل حقل مكوّن يدويًا بعمود ClickHouse خاص به؛ ونظرًا إلى أن حقول `oneof` متنافية فيما بينها، فلن يُملأ لكل سجل سوى عمود واحد.
 
 <div id="protobuf-message-lists">
-  #### قوائم الرسائل
+  #### قوائم الرسائل {#protobuf-message-lists}
 </div>
 
 إذا كان مخطط Protobuf المعرّف لـ ClickPipe على المستوى الأعلى يحتوي على حقل متكرر واحد يكون بحد ذاته رسالة protobuf، فسيعتمد استنتاج المخطط وتعيين الأعمدة على حقل الرسالة &quot;المضمَّنة&quot;. وستُعالَج رسالة Kafka على أنها قائمة من هذه الرسائل، كما ستُفكَّك رسالة Kafka واحدة إلى عدة صفوف في ClickHouse.
 
-<div id="kafka-virtual-columns">
-  ## الأعمدة الافتراضية في Kafka
-</div>
+## الأعمدة الافتراضية في Kafka {#kafka-virtual-columns}
 
-الأعمدة الافتراضية التالية مدعومة لمصادر البيانات المتدفقة المتوافقة مع Kafka. عند إنشاء وجهة جديدة، يمكن إضافة الأعمدة الافتراضية إلى الجدول الهدف باستخدام الزر `Add Column`.
+الأعمدة الافتراضية التالية مدعومة لمصادر بيانات البث المتوافقة مع Kafka. عند إنشاء وجهة جديدة، يمكن إضافة الأعمدة الافتراضية إلى الجدول الهدف باستخدام الزر `Add Column`.
 
 | الاسم            | الوصف                                       | نوع البيانات الموصى به |
 | ---------------- | ------------------------------------------- | ---------------------- |
@@ -190,14 +178,16 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 | `_header_keys`   | مصفوفة موازية من المفاتيح في ترويسات السجل  | `Array(String)`        |
 | `_header_values` | مصفوفة موازية من الترويسات في ترويسات السجل | `Array(String)`        |
 | `_raw_message`   | رسالة Kafka الكاملة                         | `String`               |
+| `_is_deleted`    | ما إذا كان السجل علامة حذف مرن              | `Bool`                 |
 
 لاحظ أن العمود `_raw_message` يُوصى به فقط لبيانات JSON.
 وفي حالات الاستخدام التي تكون فيها سلسلة JSON فقط هي المطلوبة (مثل استخدام دوال ClickHouse [`JsonExtract*`](/ar/reference/functions/regular-functions/json-functions#jsonextract-functions) من أجل
 ملء عرض مادي لاحق)، قد يؤدي حذف جميع الأعمدة &quot;غير الافتراضية&quot; إلى تحسين أداء ClickPipes.
 
-<div id="structured-message-keys">
-  ### مفاتيح الرسائل المهيكلة
-</div>
+يتوفر العمود `_is_deleted` عندما تُضبط معالجة علامات الحذف على الحذف المرن.
+تكون قيمته `true` لعلامات الحذف في Kafka و`false` للرسائل العادية.
+
+### مفاتيح الرسائل المهيكلة {#structured-message-keys}
 
 تؤدي مطابقة `_key` بعمود `String` إلى تخزين مفتاح رسالة Kafka الأصلي. تتجاوز هذه المطابقة فك ترميز المفتاح والبحث عن المخطط. لاستخراج الحقول من مفتاح مهيكل، طابِق حقول المصدر التي تبدأ بـ `_key.`. على سبيل المثال، لمفتاح JSON ‏`{"customer":{"id":42}}`، طابِق `_key.customer.id` بعمود وجهة مثل `customer_id`.
 

@@ -1,0 +1,62 @@
+---
+slug: /concepts/features/operations/insert/async-insert-select
+sidebarTitle: 'INSERT ... SELECT asynchrone'
+title: 'INSERT ... SELECT asynchrone'
+description: "Comment INSERT ... SELECT passe par la file d’attente d’insertion asynchrone, ainsi que les règles de routage, de comptabilisation et d’annulation qui s’y appliquent."
+keywords: ['asynchronous inserts', 'async_insert', 'insert select', 'async_insert_select_as_async_insert']
+doc_type: 'guide'
+---
+
+Un simple `INSERT ... VALUES` n’est pas le seul à pouvoir passer par la file d’attente d’[insertion asynchrone](/fr/optimize/asynchronous-inserts) : `INSERT ... SELECT` le peut aussi. Cette page décrit dans quels cas cela se produit, comment la partie écriture est comptabilisée et ce qui se passe lorsque la requête est annulée ou dépasse le délai imparti.
+
+## Éligibilité et routage {#eligibility-and-routing}
+
+Une requête `INSERT ... SELECT` passe par la file d’attente asynchrone uniquement si toutes les conditions suivantes sont réunies :
+
+* `async_insert = 1`.
+* `async_insert_select_as_async_insert = 1` (valeur par défaut). C’est le paramètre qui détermine ce comportement : s’il est désactivé, `INSERT ... SELECT` reste synchrone, quelle que soit la valeur de `async_insert`. Si `compatibility` est défini sur une version antérieure à 26.10, la valeur par défaut de ce paramètre passe à `0` ; définir explicitement `async_insert_select_as_async_insert = 1` réactive le traitement asynchrone.
+* L’intégralité du résultat du `SELECT` tient dans un seul bloc dont la taille ne dépasse pas `async_insert_max_data_size`.
+* La destination est une table de la famille `MergeTree` (si elle est désignée par un alias, la vérification porte sur la table à laquelle cet alias renvoie).
+
+Même si toutes ces conditions sont réunies, l’insertion bascule vers le traitement synchrone dans les cas suivants :
+
+* Le résultat occupe plusieurs blocs, dépasse `async_insert_max_data_size` ou est vide.
+* Un quorum non parallèle est utilisé : `insert_quorum` est défini et `insert_quorum_parallel = 0`.
+* Des vues matérialisées dépendent de la table de destination.
+* La destination est une vue matérialisée. La vérification `MergeTree` porte sur la vue, et non sur sa table cible ; elle n’est donc pas éligible.
+* La destination est une fonction de table ou une table utilisant un moteur distant tel que `Distributed`.
+* Le `SELECT` lit la table dans laquelle l’insertion est effectuée (`INSERT INTO t SELECT ... FROM t`).
+* `insert_null_as_default` doit remplacer une valeur `NULL` provenant d’une colonne `Nullable` du `SELECT` par une valeur par défaut dans une colonne cible non `Nullable`.
+* L’insertion est interne (rafraîchissement d’une vue matérialisée actualisable, `POPULATE` ou `CREATE TABLE ... AS SELECT`). Ces insertions sont toujours synchrones et ne tiennent compte ni de `async_insert_select_as_async_insert` ni de `async_insert`.
+
+Le cas des transactions est différent. Lorsque la requête s’exécute dans une transaction (explicite ou avec `implicit_transaction = 1`), le traitement asynchrone n’est pas pris en charge et, par défaut, ClickHouse lève `NOT_IMPLEMENTED` au lieu de basculer vers le traitement synchrone. La requête ne bascule vers une insertion synchrone que si `throw_on_unsupported_query_inside_transaction = 0`.
+
+Les décisions de routage prises en amont du traitement asynchrone prévalent : la partie `SELECT` peut donc, à elle seule, exclure ce traitement. Avec `parallel_distributed_insert_select` (activé par défaut), une requête `INSERT ... SELECT` qui lit une source sur un cluster telle que `s3Cluster` pour insérer les données dans une table répliquée suit le chemin de l’insertion distribuée et n’atteint jamais la file d’attente asynchrone. Il en va de même pour les répliques parallèles.
+
+## Mode de retour et attente {#return-mode-and-waiting}
+
+`wait_for_async_insert` fonctionne comme pour toute insertion asynchrone : `1` (valeur par défaut) attend le vidage ; `0` rend la main dès que le bloc est placé en file d’attente.
+
+Pour aider un `SELECT` à produire le bloc unique qu’exige le traitement asynchrone, [`optimize_trivial_insert_select`](/fr/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select) limite un `INSERT INTO dest SELECT ... FROM source` trivial entre deux tables distinctes à [`max_insert_threads`](/fr/reference/settings/session-settings/max-insert#max_insert_threads) threads de lecture. Avec `max_insert_threads = 1`, le `SELECT` produit généralement un seul bloc.
+
+## Comptabilisation des écritures et observability {#write-accounting-and-observability}
+
+Les écritures sont attribuées à la requête de vidage, et non à l’instruction `INSERT ... SELECT` initiale :
+
+* La requête de vidage comptabilise les `ProfileEvents` liés aux écritures (`InsertedRows`, `InsertedBytes`) et dispose de sa propre ligne dans `system.query_log` pour ces écritures. La ligne de l’instruction `INSERT ... SELECT` initiale indique `0` pour ces `ProfileEvents`. Pour connaître les volumes écrits par la requête de vidage, consultez les lignes qui lui correspondent dans `system.query_log` et `system.asynchronous_insert_log`.
+* Avec `wait_for_async_insert = 1` (valeur par défaut), les valeurs `written_rows` et `written_bytes` de la requête (ainsi que l’en-tête HTTP `X-ClickHouse-Summary`) indiquent le nombre de lignes et d’octets acceptés depuis l’instruction `SELECT`, et non le total écrit par la requête de vidage. Si le vidage échoue, une erreur est néanmoins renvoyée au client.
+* Avec `wait_for_async_insert = 0`, ces valeurs ne sont pas indiquées, car la requête se termine avant que le résultat du vidage soit disponible.
+* Le quota `WRITTEN_BYTES` est décompté une seule fois, lors du vidage, et ce décompte n’est pas annulé si le vidage échoue.
+
+## Annulation et dépassements de délai {#cancellation-and-timeouts}
+
+Le bloc est placé dans la file d’attente avant que ne commence l’attente du vidage : annuler la requête interrompt donc l’attente du client, mais n’empêche pas la file d’attente d’effectuer le vidage.
+
+* `KILL QUERY`, ou l’atteinte de `max_execution_time` pendant l’attente, renvoie une erreur au client, mais les lignes peuvent malgré tout être écrites. Sur ce chemin, une requête annulée ou ayant dépassé son délai ne prouve pas que rien n’a été écrit.
+* Avec `timeout_overflow_mode = 'break'`, il n’y a ni erreur ni retour anticipé : la requête attend le vidage au-delà de `max_execution_time`, jusqu’à `wait_for_async_insert_timeout`. Interrompre l’attente prématurément reviendrait à signaler un succès avant que l’écriture ne soit confirmée.
+
+## Quand les décisions sont figées {#when-decisions-are-bound}
+
+L’éligibilité au traitement asynchrone est déterminée une seule fois, au démarrage de la requête, avant la mise en file d’attente du bloc, et une vérification préalable des droits d’accès rejette d’emblée toute insertion non autorisée. Le fait qu’un `INSERT ... SELECT` emprunte ou non le traitement asynchrone dépend de la forme du bloc de résultat, et pas uniquement de `async_insert`.
+
+La résolution de la table de destination et la vérification des autorisations s’effectuent ensuite au moment du vidage, comme pour [toute insertion asynchrone](/fr/optimize/asynchronous-inserts) : si une vue matérialisée est attachée à la table de destination, ou si un privilège est révoqué, entre la mise en file d’attente et le vidage, ce changement s’applique lors du vidage.

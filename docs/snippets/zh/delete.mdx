@@ -15,61 +15,53 @@ DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE 
 
 之所以称为 &quot;轻量级删除&quot;，是为了与 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 命令相区别，后者属于开销较大的过程。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 ```sql
 -- 删除 `hits` 表中 `Title` 列包含文本 `hello` 的所有行
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## 轻量级删除不会立即删除数据
-</div>
+## 轻量级 `DELETE` 不会立即删除数据 {#lightweight-delete-does-not-delete-data-immediately}
 
-轻量级删除是以 [变更](/zh/reference/statements/alter/index#mutations) 的形式实现的：它会将行标记为已删除，但不会立即从物理层面删除这些行。
+轻量级 `DELETE` 会将行标记为已删除，但不会立即将其从存储中移除。默认情况下，它使用 [变更](/zh/reference/statements/alter/index#mutations)。根据 [`lightweight_delete_mode`](#lightweight-delete-mode) 设置，它也可以使用补丁分区片段。
 
-默认情况下，`DELETE` 语句会等到行被标记为已删除后才返回。如果数据量很大，这可能需要较长时间。或者，你也可以通过设置 [`lightweight_deletes_sync`](/zh/reference/settings/session-settings/lightweight#lightweight_deletes_sync) 让它在后台异步执行。禁用该设置后，`DELETE` 语句会立即返回，但在后台变更完成之前，这些数据对查询而言仍可能可见。
+在默认的基于变更的模式下，`DELETE` 语句会等到行被标记为已删除后才返回。如果数据量很大，这可能需要较长时间。或者，你也可以通过设置 [`lightweight_deletes_sync`](/zh/reference/settings/session-settings/lightweight#lightweight_deletes_sync) 让它在后台异步执行。禁用该设置后，`DELETE` 语句会立即返回，但在后台变更完成之前，这些数据对查询而言仍可能可见。
 
-该变更不会物理删除那些已标记为删除的行；这只会在下一次合并期间发生。因此，在一段未明确的时间内，数据实际上可能并未从存储中删除，而只是被标记为已删除。
+在这两种模式下，已删除的行都会保留在存储中，直到清理完成。后台合并通常会将这些行从受影响的数据分区片段中移除。若要显式应用删除掩码，请使用 [`ALTER TABLE ... APPLY DELETED MASK`](/zh/reference/statements/alter/apply-deleted-mask)，这会执行一次开销较大的变更。
 
 如果你需要确保数据能在可预测的时间内从存储中删除，请考虑使用表设置 [`min_age_to_force_merge_seconds`](/zh/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds)。或者，也可以使用 [ALTER TABLE ... DELETE](/zh/reference/statements/alter/delete) 命令。请注意，使用 `ALTER TABLE ... DELETE` 删除数据可能会消耗大量资源，因为它会重建所有受影响的 parts。
 
-<div id="deleting-large-amounts-of-data">
-  ## 删除大量数据
-</div>
+## 选择删除模式 {#lightweight-delete-mode}
+
+[`lightweight_delete_mode`](/zh/reference/settings/session-settings/lightweight#lightweight_delete_mode) 设置可选择基于变更的删除 (默认模式) ，或通过轻量级更新写入补丁分区片段，并以 `_row_exists = 0` 标记已删除的行。查询会先应用这些补丁，再进行物理清理。
+
+有关可用模式，请参阅该设置的参考文档；有关前置条件，请参阅[轻量级更新要求](/zh/reference/statements/update#lightweight-update-requirements)。使用补丁分区片段时，`lightweight_deletes_sync` 不会等待其他副本；对于 `ReplicatedMergeTree`，其他副本在收到补丁之前仍可能返回已删除的行。
+
+## 删除大量数据 {#deleting-large-amounts-of-data}
 
 大批量删除可能会对 ClickHouse 的性能产生负面影响。如果你想删除表中的所有行，建议使用 [`TRUNCATE TABLE`](/zh/reference/statements/truncate) 命令。
 
 如果你预计会频繁删除数据，建议使用[自定义分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)。这样，你就可以使用 [`ALTER TABLE ... DROP PARTITION`](/zh/reference/statements/alter/partition#drop-partitionpart) 命令快速删除与该分区关联的所有行。
 
-<div id="limitations-of-lightweight-delete">
-  ## lightweight `DELETE` 的局限性
-</div>
+## lightweight `DELETE` 的局限性 {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### 带投影的轻量级删除
-</div>
+### 带投影的轻量级删除 {#lightweight-deletes-with-projections}
 
 默认情况下，`DELETE` 不支持带投影的表。这是因为投影中的行可能会受 `DELETE` 操作影响。不过，可以使用 [MergeTree setting](/zh/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode` 来更改这一行为。
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## 使用轻量级删除时的性能注意事项
-</div>
+## 使用轻量级删除时的性能注意事项 {#performance-considerations-when-using-lightweight-delete}
 
 **使用轻量级删除语句删除大量数据，可能会对 SELECT 查询性能造成负面影响。**
 
 以下因素也可能会影响轻量级删除的性能：
 
 * `DELETE` 查询中的 `WHERE` 条件过于复杂。
-* 如果变更队列中积压了大量其他变更，也可能导致性能问题，因为表上的所有变更都是按顺序依次执行的。
+* 对于基于变更的删除操作，变更队列过长也可能影响性能，因为表上的所有变更都是按顺序依次执行的。
 * 受影响的表包含数量非常多的数据分区片段。
-* compact parts 中存有大量数据。在 Compact part 中，所有列都存储在同一个文件中。
+* 使用基于变更的删除操作时，compact parts 中存有大量数据。在 compact part 中，所有列都存储在同一个文件中，必须一起重写。
 
-<div id="delete-permissions">
-  ## 删除权限
-</div>
+## 删除权限 {#delete-permissions}
 
 `DELETE` 需要 `ALTER DELETE` 权限。要为特定用户启用对特定表执行 `DELETE` 语句的权限，请运行以下命令：
 
@@ -77,13 +69,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## ClickHouse 中轻量级 DELETE 的内部工作机制
-</div>
+## ClickHouse 中轻量级 DELETE 的内部工作机制 {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **对受影响的行应用“掩码”**
 
-   当执行 `DELETE FROM table ...` 查询时，ClickHouse 会保存一个掩码，将每一行标记为“存在”或“已删除”。这些“已删除”的行会在后续查询中被忽略。不过，这些行实际上只会在之后的合并过程中才被真正移除。写入这个掩码比执行 `ALTER TABLE ... DELETE` 查询要轻量得多。
+   当执行 `DELETE FROM table ...` 查询时，ClickHouse 会保存一个掩码，将每一行标记为“存在”或“已删除”。这些“已删除”的行会在后续查询中被忽略。不过，这些行通常要等到之后的后台合并过程中才会被真正移除。写入这个掩码比执行 `ALTER TABLE ... DELETE` 查询要轻量得多。
 
    该掩码通过一个隐藏的 `_row_exists` 系统列来实现：对所有可见行存储 `True`，对已删除的行存储 `False`。只有当某个 part 中有行被删除时，这一列才会出现在该 part 中。如果某个 part 的所有值都等于 `True`，则不会存在这一列。
 
@@ -97,9 +87,11 @@ GRANT ALTER DELETE ON db.table to username;
 
    在执行时，会读取 `_row_exists` 列来确定哪些行不应返回。如果已删除的行很多，ClickHouse 还可以判断在读取其余列时，哪些粒度能够被完全跳过。
 
-3. **`DELETE` 查询会被转换为 `ALTER TABLE ... UPDATE` 查询**
+3. **`DELETE` 查询会按选定的模式更新掩码**
 
-   `DELETE FROM table WHERE condition` 会被转换为一个 `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` 变更。
+   使用补丁分区片段时，`DELETE FROM table WHERE condition` 会被转换为 `UPDATE table SET _row_exists = 0 WHERE condition`。生成的补丁分区片段会存储已删除行的掩码变更，并在读取和合并数据时应用这些变更。
+
+   使用默认的 `alter_update` 模式时，`DELETE FROM table WHERE condition` 会被转换为一个 `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition` 变更。
 
    在内部，这个变更分两步执行：
 
@@ -107,10 +99,9 @@ GRANT ALTER DELETE ON db.table to username;
 
    2. 根据上述命令的结果，对受影响的 parts 执行变更，而对未受影响的 parts 创建硬链接。对于 wide parts，会更新每一行的 `_row_exists` 列，而其他所有列的文件都会创建硬链接。对于 compact parts，由于所有列都存储在同一个文件中，因此所有列都会被重写。
 
-   从上述步骤可以看出，使用掩码技术的轻量级 `DELETE` 比传统的 `ALTER TABLE ... DELETE` 性能更好，因为它不需要为受影响的 parts 重写所有列文件。
+   从上述步骤可以看出，使用掩码技术的轻量级删除比传统的 `ALTER TABLE ... DELETE` 性能更好，因为它不需要为受影响的 parts 重写所有列文件。
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * 博客：[ClickHouse 中更新与删除的处理方式](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+* 博客：[轻量级删除如今更加轻量](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#lightweight-deletes-are-now-even-lighter)

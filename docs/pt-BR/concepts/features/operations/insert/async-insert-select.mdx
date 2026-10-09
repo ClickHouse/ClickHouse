@@ -1,0 +1,62 @@
+---
+slug: /concepts/features/operations/insert/async-insert-select
+sidebarTitle: 'INSERT ... SELECT assíncrono'
+title: 'INSERT ... SELECT assíncrono'
+description: 'Como o INSERT ... SELECT passa pela fila de inserts assíncronos e quais regras de roteamento, contabilização e cancelamento se aplicam a ele.'
+keywords: ['asynchronous inserts', 'async_insert', 'insert select', 'async_insert_select_as_async_insert']
+doc_type: 'guide'
+---
+
+Não é apenas um `INSERT ... VALUES` simples que pode passar pela fila de [insert assíncrono](/pt-BR/optimize/asynchronous-inserts): um `INSERT ... SELECT` também pode. Esta página descreve quando isso acontece, como o lado de escrita é contabilizado e o que ocorre quando a consulta é cancelada ou atinge o tempo limite.
+
+## Elegibilidade e roteamento {#eligibility-and-routing}
+
+Um `INSERT ... SELECT` segue a rota da fila assíncrona somente quando todas estas condições são atendidas:
+
+* `async_insert = 1`.
+* `async_insert_select_as_async_insert = 1` (o padrão). Esta é a chave geral: com ela desativada, `INSERT ... SELECT` é sempre síncrono, independentemente de `async_insert`. Definir `compatibility` para uma versão anterior à 26.10 muda seu padrão para `0`; definir explicitamente `async_insert_select_as_async_insert = 1` reativa o comportamento.
+* O resultado inteiro do `SELECT` cabe em um único bloco de tamanho não superior a `async_insert_max_data_size`.
+* O destino é uma tabela da família `MergeTree` (nesta verificação, um alias é resolvido até a tabela a que se refere).
+
+Mesmo quando todas as condições acima são atendidas, o insert volta para a rota síncrona em qualquer um destes casos:
+
+* O resultado abrange mais de um bloco, excede `async_insert_max_data_size` ou está vazio.
+* É usado quórum não paralelo: `insert_quorum` está definido e `insert_quorum_parallel = 0`.
+* O destino possui visões materializadas dependentes.
+* O destino é uma visão materializada. A verificação de `MergeTree` se aplica à visão, e não à sua tabela de destino, portanto ela não é elegível.
+* O destino é uma função de tabela ou um motor de tabela remoto, como `Distributed`.
+* O `SELECT` lê sua própria tabela de destino (`INSERT INTO t SELECT ... FROM t`).
+* `insert_null_as_default` precisa substituir por um valor padrão os dados de uma coluna `Nullable` do `SELECT` que alimenta uma coluna de destino não `Nullable`.
+* O insert é interno (atualização de view materializada atualizável, `POPULATE` ou `CREATE TABLE ... AS SELECT`). Esses casos são sempre síncronos e ignoram `async_insert_select_as_async_insert` e `async_insert`.
+
+Transações são tratadas de forma diferente. Quando a consulta é executada dentro de uma transação (explícita ou com `implicit_transaction = 1`), a rota assíncrona não tem suporte e, por padrão, o ClickHouse gera `NOT_IMPLEMENTED` em vez de voltar para a rota síncrona. Somente com `throw_on_unsupported_query_inside_transaction = 0` a consulta passa a ser executada como um insert síncrono.
+
+O roteamento definido antes da verificação assíncrona tem precedência, de modo que o próprio `SELECT` pode, por si só, descartar a rota assíncrona. Com `parallel_distributed_insert_select` (ativado por padrão), um `INSERT ... SELECT` que lê de uma fonte em cluster, como `s3Cluster`, e grava em uma tabela replicada é executado pelo caminho de insert distribuído e nunca chega à fila assíncrona. O mesmo ocorre com réplicas paralelas.
+
+## Modo de retorno e espera {#return-mode-and-waiting}
+
+`wait_for_async_insert` funciona como em qualquer inserção assíncrona: `1` (o padrão) aguarda o flush; `0` retorna assim que o bloco entra na fila.
+
+Para ajudar um `SELECT` a gerar o bloco único exigido pela rota assíncrona: [`optimize_trivial_insert_select`](/pt-BR/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select) limita um `INSERT INTO dest SELECT ... FROM source` trivial entre tabelas distintas a [`max_insert_threads`](/pt-BR/reference/settings/session-settings/max-insert#max_insert_threads) threads de leitura. Com `max_insert_threads = 1`, o `SELECT` normalmente gera um único bloco.
+
+## Contabilização de gravações e observabilidade {#write-accounting-and-observability}
+
+A gravação é atribuída à consulta de flush, e não ao `INSERT ... SELECT` original:
+
+* A consulta de flush é dona dos `ProfileEvents` de gravação (`InsertedRows`, `InsertedBytes`) e recebe sua própria linha de gravação em `system.query_log`. Na linha do `INSERT ... SELECT` original, esses `ProfileEvents` aparecem com valor `0`. Para ver os números de gravação do próprio flush, consulte a linha correspondente em `system.query_log` e `system.asynchronous_insert_log`.
+* Com `wait_for_async_insert = 1` (o padrão), os valores `written_rows` e `written_bytes` da própria consulta (e o cabeçalho HTTP `X-ClickHouse-Summary`) informam as linhas e os bytes aceitos do `SELECT`, e não o total da própria consulta de flush. Uma falha no flush continua sendo reportada como erro ao cliente.
+* Com `wait_for_async_insert = 0`, esses números não são informados, pois a consulta retorna antes que o resultado do flush esteja disponível.
+* A cota `WRITTEN_BYTES` é cobrada uma única vez, no caminho do flush, e não é revertida caso o flush falhe.
+
+## Cancelamento e tempos limite {#cancellation-and-timeouts}
+
+O bloco é enfileirado antes de começar a espera pelo flush; portanto, cancelar a consulta apenas faz o cliente parar de esperar, mas não impede que a fila seja descarregada.
+
+* `KILL QUERY`, ou atingir `max_execution_time` durante a espera, retorna um erro ao cliente, mas as linhas ainda podem ser gravadas. Não considere uma consulta cancelada ou que excedeu o tempo limite nesse caminho como prova de que nada foi gravado.
+* Com `timeout_overflow_mode = 'break'`, não há erro nem retorno antecipado: a consulta aguarda o flush além de `max_execution_time`, até `wait_for_async_insert_timeout`. Interromper a espera antecipadamente reportaria sucesso antes de a gravação ser confirmada.
+
+## Quando as decisões são definidas {#when-decisions-are-bound}
+
+A elegibilidade para a rota assíncrona é decidida uma única vez, no início da consulta e antes de o bloco ser enfileirado. Além disso, uma verificação de acesso antecipada rejeita logo de início um insert não autorizado. Se um `INSERT ... SELECT` segue ou não a rota assíncrona depende do formato do bloco do resultado, e não apenas de `async_insert`.
+
+Em seguida, a busca do destino e a verificação de autorização definitiva são executadas no momento do flush, assim como em [qualquer insert assíncrono](/pt-BR/optimize/asynchronous-inserts). Portanto, se uma visão materializada for anexada ao destino ou uma concessão for revogada entre o enfileiramento e o flush, isso afetará o flush.

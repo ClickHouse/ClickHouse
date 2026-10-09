@@ -10,7 +10,7 @@ doc_type: 'guide'
 クエリの種類によっては、これにより ClickHouse server のレイテンシとリソース使用量を大幅に削減できます。
 
 <div id="background-design-and-limitations">
-  ## 背景、設計、および制限事項
+  ## 背景、設計、および制限事項 {#background-design-and-limitations}
 </div>
 
 クエリキャッシュは、一般にトランザクション整合性があるものとないものに分けられます。
@@ -24,17 +24,16 @@ doc_type: 'guide'
 [chproxy](https://www.chproxy.org/configuration/caching/)) によって提供されてきました。その結果、同じキャッシュロジックや
 configuration が重複して実装されることが少なくありません。ClickHouse の クエリキャッシュ では、キャッシュロジックが server 側に移ります。これにより、保守の手間が減り、冗長性も回避できます。
 
-<div id="configuration-settings-and-usage">
-  ## 設定と使用方法
-</div>
+## 設定と使用方法 {#configuration-settings-and-usage}
 
 <Note>
   ClickHouse Cloud では、クエリキャッシュの設定を変更するには、[クエリレベルの設定](/ja/concepts/features/configuration/settings/settings-query-level)を使用する必要があります。[構成レベルの設定](/ja/concepts/features/configuration/server-config/configuration-files)の変更は現在サポートされていません。
 </Note>
 
 <Note>
-  [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) は一度に 1 つのクエリしか実行できません。クエリ結果をキャッシュしても意味がないため、clickhouse-local ではクエリ
-  結果キャッシュは無効になっています。
+  [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) は一度に 1 つのクエリしか実行できません。単一のプロセスでクエリ結果をメモリ上にキャッシュしても意味がないため、
+  clickhouse-local ではインメモリのクエリキャッシュは無効になっています。一方、[ディスク上のクエリキャッシュ](#query-cache-on-disk) は利用できます。そのエントリはディスク上の
+  ファイルシステムキャッシュに格納されるため、ある clickhouse-local プロセスがキャッシュした結果を、同じファイルシステムキャッシュディレクトリを使用する後続のプロセスで再利用できます。
 </Note>
 
 設定 [use&#95;query&#95;cache](/ja/reference/settings/session-settings/use-query#use_query_cache) を使用すると、特定のクエリ、または
@@ -74,23 +73,26 @@ use_query_cache = true`) が、その場合はすべての `SELECT` クエリが
 [system.query&#95;cache](/ja/reference/system-tables/query_cache) に表示されます。データベースの起動以降のクエリキャッシュのヒット数とミス数は、システムテーブル
 [system.events](/ja/reference/system-tables/events) のイベント
 &quot;QueryCacheHits&quot; および &quot;QueryCacheMisses&quot; として確認できます。どちらのカウンターも、
-`SELECT` クエリが設定 `use_query_cache = true` で実行された場合にのみ更新され、その他のクエリは &quot;QueryCacheMisses&quot; に影響しません。フィールド `query_cache_usage`
+`SELECT` クエリが設定 `use_query_cache = true` で実行された場合にのみ更新され、その他のクエリは &quot;QueryCacheMisses&quot; に影響しません。これらのカウンターはクエリ
+キャッシュ全体を対象とします。ディスク上のクエリキャッシュが有効な場合 (下記を参照)、メモリ上でミスした後にディスクから結果が返されたクエリは
+1 回の &quot;QueryCacheHits&quot; として、両方のバックエンドでミスしたクエリは 1 回の &quot;QueryCacheMisses&quot; としてカウントされます。フィールド `query_cache_usage`
 は、システムテーブル [system.query&#95;log](/ja/reference/system-tables/query_log) にあり、実行された各クエリについて、そのクエリ結果がクエリキャッシュに書き込まれたか、または
 クエリキャッシュから読み取られたかを示します。システムテーブル
-[system.metrics](/ja/reference/system-tables/metrics) のメトリクス `QueryCacheEntries` および `QueryCacheBytes` は、クエリキャッシュに現在含まれているエントリ数 / バイト数を示します。
+[system.metrics](/ja/reference/system-tables/metrics) のメトリクス `QueryCacheEntries` および `QueryCacheBytes` は、インメモリのクエリキャッシュに現在含まれているエントリ数 / バイト数を示します。これらには
+[ディスク上のクエリキャッシュ](#query-cache-on-disk) のエントリは含まれません。ディスク上のクエリキャッシュには、現時点で使用量を示すメトリクスはありません。
 
 クエリキャッシュは ClickHouseサーバープロセスごとに 1 つ存在します。ただし、キャッシュ結果はデフォルトではユーザー間で共有されません。これは
 変更できます (下記を参照) が、セキュリティ上の理由から推奨されません。
 
-クエリ結果は、クエリキャッシュ内で、そのクエリの [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) によって
-参照されます。これは、キャッシュが大文字/小文字を区別しないことを意味し、たとえば `SELECT 1` と `select 1` は同じクエリとして扱われます。より
-自然な照合を行うために、クエリキャッシュに関連するすべてのクエリレベル設定と [出力フォーマット](/ja/reference/settings/formats))
-は AST から削除されます。
+クエリ結果は、クエリキャッシュ内でそのクエリの [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) によって参照されます。
+つまり、キャッシュでは大文字・小文字は区別されず、たとえば `SELECT 1` と `select 1` は同じクエリとして扱われます。
+マッチングをより自然にするため、クエリキャッシュおよび[出力フォーマット](/ja/reference/settings/formats))に関連するクエリレベルの設定はすべて
+AST から除去されます。
 
-クエリが例外またはユーザーによるキャンセルによって中断された場合、そのエントリはクエリキャッシュに書き込まれません。
+例外またはユーザーによるキャンセルによってクエリが中断された場合、クエリキャッシュにエントリは書き込まれません。
 
-クエリキャッシュのサイズ (バイト単位) 、cache エントリの最大数、および個々の cache エントリの最大サイズ (バイト単位および
-レコード単位) は、さまざまな [サーバー設定オプション](/ja/reference/settings/server-settings/settings/query#query_cache) を使用して構成できます。
+クエリキャッシュのサイズ (バイト単位)、cache エントリの最大数、および個々の cache エントリの最大サイズ (バイト単位および
+レコード数) は、各種[サーバー設定オプション](/ja/reference/settings/server-settings/settings/query#query_cache)で設定できます。
 
 ```xml
 <query_cache>
@@ -103,7 +105,8 @@ use_query_cache = true`) が、その場合はすべての `SELECT` クエリが
 
 [設定プロファイル](/ja/concepts/features/configuration/settings/settings-profiles) と [設定の
 制約](/ja/concepts/features/configuration/settings/constraints-on-settings) を使用して、個々のユーザーによる cache の使用量を制限することもできます。具体的には、ユーザーが
-クエリキャッシュ内で割り当て可能なメモリの最大量 (バイト単位) と、保存できるクエリ結果の最大数を制限できます。そのためには、まず
+インメモリのクエリキャッシュ内で割り当て可能なメモリの最大量 (バイト単位) と、保存できるクエリ結果の最大数を制限できます (これらの制限は [ディスク上の
+クエリキャッシュ](#query-cache-on-disk) には適用されません)。そのためには、まず
 `users.xml` のユーザープロファイルに
 [query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/ja/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) と
 [query&#95;cache&#95;max&#95;entries](/ja/reference/settings/session-settings/query-cache#query_cache_max_entries) の設定を追加し、その後、両方の設定を
@@ -153,10 +156,10 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 。圧縮を無効にするには、設定 [query&#95;cache&#95;compress&#95;entries](/ja/reference/settings/session-settings/query-cache#query_cache_compress_entries) を使用します。
 
 同じクエリに対して複数の結果をキャッシュしておくことが有用な場合があります。これは、
-クエリキャッシュのエントリに対するラベル (またはネームスペース) として機能する設定 [query&#95;cache&#95;tag](/ja/reference/settings/session-settings/query-cache#query_cache_tag) を使うことで実現できます。クエリキャッシュは、
+クエリキャッシュの cache エントリに対するラベル (またはネームスペース) として機能する設定 [query&#95;cache&#95;tag](/ja/reference/settings/session-settings/query-cache#query_cache_tag) を使うことで実現できます。クエリキャッシュは、
 同じクエリであってもタグが異なる結果は別のものとして扱います。
 
-同じクエリに対して 3 つの異なるクエリキャッシュエントリを作成する例:
+同じクエリに対して 3 つの異なるクエリキャッシュの cache エントリを作成する例:
 
 ```sql
 SELECT 1 SETTINGS use_query_cache = true; -- query_cache_tag is implicitly '' (empty string)
@@ -166,9 +169,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 
 クエリキャッシュからタグ `tag` の付いたエントリのみを削除するには、ステートメント `SYSTEM CLEAR QUERY CACHE TAG 'tag'` を使用します。
 
-<div id="subquery-caching">
-  ## サブクエリのキャッシュ
-</div>
+## サブクエリのキャッシュ {#subquery-caching}
 
 デフォルトでは、外側のクエリで `use_query_cache` を有効にしても、その設定はサブクエリには伝播しません。つまり、各サブクエリで明示的にキャッシュを有効にする必要があります:
 
@@ -198,7 +199,7 @@ WHERE number > 500
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 ```
 
-サブクエリの cache エントリは、[system.query&#95;cache](/ja/reference/system-tables/query_cache) で `is_subquery = 1` のエントリとして確認できます。`query_cache_ttl` 設定はサブクエリの cache エントリにも適用され、サブクエリごとに設定できます。
+インメモリのクエリキャッシュにおけるサブクエリの cache エントリは、[system.query&#95;cache](/ja/reference/system-tables/query_cache) で `is_subquery = 1` のエントリとして確認できます。[ディスク上のクエリキャッシュ](#query-cache-on-disk) が有効な場合、サブクエリの結果はディスクにもキャッシュされますが、これらのエントリは `system.query_cache` には表示されません。`query_cache_ttl` 設定はサブクエリの cache エントリにも適用され、サブクエリごとに設定できます。
 
 ClickHouse は、テーブルデータを [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size) 行ごとのブロックで読み取ります。フィルタリングや集約、
 その他の処理の影響により、結果ブロックは通常 &#39;max&#95;block&#95;size&#39; よりかなり小さくなりますが、これよりずっと大きくなる場合もあります。設定
@@ -233,9 +234,9 @@ ClickHouse は、テーブルデータを [max&#95;block&#95;size](/ja/reference
 それでも非決定論的関数を含むクエリの結果を強制的にキャッシュするには、設定
 [query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/ja/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling) を使用します。
 
-システムテーブルを含むクエリ (たとえば [system.processes](/ja/reference/system-tables/processes)&#96; または
-[information&#95;schema.tables](/ja/reference/system-tables/information_schema)) の結果は、デフォルトではキャッシュされません。システムテーブルを含むクエリの結果を
-それでも強制的にキャッシュするには、設定 [query&#95;cache&#95;system&#95;table&#95;handling](/ja/reference/settings/session-settings/query-cache#query_cache_system_table_handling) を使用します。
+システムテーブル (例: [system.processes](/ja/reference/system-tables/processes)&#96; や
+[information&#95;schema.tables](/ja/reference/system-tables/information_schema)) を含むクエリの結果は、デフォルトではキャッシュされません。それでもシステムテーブルを含む
+クエリの結果を強制的にキャッシュするには、設定 [query&#95;cache&#95;system&#95;table&#95;handling](/ja/reference/settings/session-settings/query-cache#query_cache_system_table_handling) を使用します。
 
 最後に、クエリキャッシュ内の cache エントリは、セキュリティ上の理由からユーザー間で共有されません。たとえば、ユーザー A が、同じクエリを実行することで、
 そのようなポリシーが存在しない別のユーザー B の結果を利用し、テーブル上の ROW POLICY を回避できてはなりません。ただし、必要に応じて、
@@ -243,8 +244,78 @@ ClickHouse は、テーブルデータを [max&#95;block&#95;size](/ja/reference
 [query&#95;cache&#95;share&#95;between&#95;users](/ja/reference/settings/session-settings/query-cache#query_cache_share_between_users) を指定することで、cache エントリを他のユーザーから
 アクセス可能 (つまり共有) としてマークできます。
 
+## ディスク上のクエリキャッシュ {#query-cache-on-disk}
+
+デフォルトでは、クエリキャッシュはエントリをメモリ上に保持します。加えて、
+[ファイルシステムキャッシュ](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache)をバックエンドとして、クエリ結果をディスク上にキャッシュすることもできます。インメモリのクエリキャッシュと比べて、ディスク上のクエリキャッシュは
+より多くの容量を使用でき、サーバーを再起動しても失われません。エントリは、それを書き込んだサーバービルドと同じビルドからのみ提供されます。そのため、
+アップグレードやダウングレードを行うと、以前のビルドで書き込まれたエントリはキャッシュミスとなり、いずれ上書きされるか追い出されます。
+
+ディスク上のクエリキャッシュを使用するには、まずサーバー設定の `filesystem_caches` セクションでファイルシステムキャッシュを設定します。
+
+```xml
+<filesystem_caches>
+    <query_results>
+        <path>query_results_cache/</path>
+        <max_size>10Gi</max_size>
+    </query_results>
+</filesystem_caches>
+```
+
+次に、その名前を設定 `query_cache_on_disk_cache_name` で指定します:
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results';
+```
+
+ディスク上のクエリキャッシュはインメモリのクエリキャッシュとは独立して動作し、設定
+`enable_reads_from_query_cache_on_disk` および `enable_writes_to_query_cache_on_disk` (いずれもデフォルトは `true`
+) により、読み取りと書き込みをそれぞれ個別に有効化できます。両方のキャッシュで読み取りが有効な場合、ルックアップはまずメモリで行われ、ミスした場合にのみディスクで行われます。両方のキャッシュで書き込み
+が有効な場合、結果は両方に保存されます。結果を保存できるキャッシュが存在しない場合 (例：インメモリのクエリキャッシュを持たない `clickhouse-local` で
+`enable_writes_to_query_cache_on_disk = false` とした場合) でも、非決定論的
+関数、システムテーブル、または `throw` 以外のオーバーフローモードを理由にクエリが拒否されることはありません。これらのチェックは、誤った結果の保存を防ぐためだけのものだからです。ディスク上のエントリは、設定
+`query_cache_on_disk_codec` (デフォルトは `ZSTD(3)`) で指定されたコーデックで圧縮されます。クエリキャッシュのサーバー設定 `max_entry_size_in_bytes` および `max_entry_size_in_rows` は、
+両方のバックエンドのエントリを制限します。各バックエンドはエントリを自身の保存形式に基づいて計測するため、ディスク上ではバイト数の上限は
+シリアル化・圧縮後のエントリに適用されます。いずれかを 0 に設定すると、両方のバックエンドへの書き込みが無効になります。その他の
+すべてのクエリキャッシュ設定 (例：`query_cache_ttl`、`query_cache_min_query_duration`) は、以下の 2 つの例外を除き、
+インメモリのクエリキャッシュと同様にディスク上のクエリキャッシュにも適用されます。
+
+設定 `query_cache_max_size_in_bytes` および `query_cache_max_entries` は、インメモリのクエリキャッシュにのみ適用されるユーザーごとの上限です。これらは
+ディスク上のクエリキャッシュには適用されません。ディスク上のエントリの上限は、設定されたファイルシステムキャッシュのサイズによって決まり、そのルールに従って追い出されます
+(後述) 。そのため、制限の厳しい設定プロファイルを持つユーザーであっても、これらの設定でメモリ上に許容される量を超えて結果をディスクに保存できます。
+これは意図的な仕様です。ファイルシステムキャッシュはサイズ上限のある共有リソースであり、ディスク上のクエリキャッシュはその中に領域を予約しません。
+
+設定 `query_cache_share_between_users` も例外です。この設定は両方のバックエンドで同じ意味を持ち、この設定を有効にして書き込まれたエントリは
+すべてのユーザーに提供されます。ただし、非共有エントリの分離方法が異なります。インメモリのクエリキャッシュはクエリごとに単一のエントリを保持し、
+読み取り時にそのエントリが別のユーザーのものであれば拒否します。そのため、ユーザー A の非共有エントリは、期限切れになるか
+追い出されるまで、ユーザー B の書き込みを妨げます。一方、ディスク上のクエリキャッシュでは、ユーザーとそのユーザーの現在のロールの組み合わせを非共有エントリのキーの一部とするため、
+ユーザー B はユーザー A のエントリにはヒットせず、結果のコピーを独自に保存します。これは、同一ユーザーが異なる現在のロールの組み合わせで
+実行する場合 (例：`SET ROLE` の後) にも当てはまります。ロールは権限と行ポリシーを伴うため、異なるロールの下で計算された結果は
+別々にキャッシュされます。
+
+ディスク上のクエリキャッシュのエントリは、ファイルシステムキャッシュの通常のエントリであり、同じファイルシステムキャッシュにキャッシュされている他のデータと区別されません。つまり、削除から保護されることはなく、
+ファイルシステムキャッシュの容量が不足した場合には同じルール (例: least-recently-used) に従って追い出されます。合計サイズや件数に対する個別の制限はなく、ファイルシステム
+キャッシュ自体の制限のみが適用されます。ステートメント `SYSTEM CLEAR QUERY CACHE` (および `SYSTEM CLEAR QUERY CACHE TAG 'tag'`) は、セッションの設定 `query_cache_on_disk_cache_name` で選択されたファイルシステムキャッシュ
+(例: `SET query_cache_on_disk_cache_name = 'query_results'` の実行後) から、ディスク上のクエリキャッシュのエントリ (指定された
+タグを持つもの。ただし、破損したエントリおよび互換性のないフォーマットのエントリはタグに関係なく削除されます) も削除し、ファイルシステムキャッシュ内のその他のデータはそのまま残します。
+エントリを見つけるために、ファイルシステムキャッシュのすべてのファイルセグメントのメタデータを (ディスクから読み取ることなくメモリ上で) 走査し、
+クエリキャッシュのエントリとしてマークされた各キーのヘッダーを読み取ります。この走査にかかる時間は
+ファイルシステムキャッシュ内のファイルセグメント数に比例するため、クエリ結果専用のファイルシステムキャッシュを用意しておけば、`SYSTEM CLEAR QUERY CACHE` のコストを低く抑えられます。
+ファイルシステムキャッシュがエントリの先頭部分をすでに追い出している場合、エントリの残りの部分は、ファイルシステムキャッシュが
+それを追い出すか、同じクエリ結果が再度書き込まれるまで残り続けますが、結果として返されることはありません。書き込み中の
+エントリも同様にそのまま残されます。ステートメント `SYSTEM DROP FILESYSTEM CACHE '<name>'` を実行すると、これらのエントリはファイルシステムキャッシュ内の他のすべてのデータと
+ともに削除されます。システムテーブル
+[system.query&#95;cache](/ja/reference/system-tables/query_cache) およびメトリクス `QueryCacheEntries` と `QueryCacheBytes` に表示されるのは、
+インメモリのクエリキャッシュのエントリのみです。ディスク上のクエリ
+キャッシュのヒット数とミス数は、システムテーブル
+[system.events](/ja/reference/system-tables/events) のイベント &quot;QueryCacheOnDiskHits&quot; および &quot;QueryCacheOnDiskMisses&quot; として表示されます。これらはディスク上のバックエンドのみの内訳です。一方、&quot;QueryCacheHits&quot; と
+&quot;QueryCacheMisses&quot; は引き続きクエリキャッシュ全体のカウンターであり、&quot;QueryCacheAgeSeconds&quot; は両方のバックエンドのヒットを集計します。
+メモリ内キャッシュが先に参照されるため、メモリ内のヒット数は &quot;QueryCacheHits&quot; から &quot;QueryCacheOnDiskHits&quot; を引いた値になります。
+
 <div id="related-content">
-  ## 関連コンテンツ
+  ## 関連コンテンツ {#related-content}
 </div>
 
 * ブログ: [ClickHouse クエリキャッシュ の紹介](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

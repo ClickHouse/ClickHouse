@@ -10,7 +10,7 @@ doc_type: 'guide'
 根据查询类型的不同，这可以显著降低 ClickHouse 服务器的延迟和资源消耗。
 
 <div id="background-design-and-limitations">
-  ## 背景、设计与局限性
+  ## 背景、设计与局限性 {#background-design-and-limitations}
 </div>
 
 查询缓存通常可分为事务一致和事务不一致两类。
@@ -32,16 +32,16 @@ doc_type: 'guide'
 配置往往会被重复实现。借助 ClickHouse 的查询缓存，缓存逻辑被移到了服务端。这减少了维护
 工作量，也避免了重复。
 
-<div id="configuration-settings-and-usage">
-  ## 配置设置与用法
-</div>
+## 配置设置与用法 {#configuration-settings-and-usage}
 
 <Note>
   在 ClickHouse Cloud 中，必须使用[查询级别设置](/zh/concepts/features/configuration/settings/settings-query-level)来修改查询缓存设置。目前暂不支持修改[配置级别设置](/zh/concepts/features/configuration/server-config/configuration-files)。
 </Note>
 
 <Note>
-  [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local) 一次只能运行一条查询。由于查询结果缓存没有实际意义，因此 clickhouse-local 中默认禁用查询结果缓存。
+  [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local) 一次只能运行一条查询。对单个进程而言，在内存中缓存查询结果并无实际意义，
+  因此 clickhouse-local 中禁用了内存查询缓存。不过，[磁盘上的查询缓存](#query-cache-on-disk)仍可使用：其条目存放在磁盘上的
+  文件系统缓存中，因此某个 clickhouse-local 进程缓存的结果，可供之后使用同一文件系统缓存目录的其他进程直接复用。
 </Note>
 
 可通过设置 [use&#95;query&#95;cache](/zh/reference/settings/session-settings/use-query#use_query_cache) 来控制某个特定查询或当前会话中的所有查询
@@ -81,23 +81,26 @@ use_query_cache = true`) ，但需要注意的是，这样一来，所有 `SELEC
 可以使用语句 `SYSTEM CLEAR QUERY CACHE` 清空查询缓存。查询缓存的内容显示在系统表
 [system.query&#95;cache](/zh/reference/system-tables/query_cache) 中。自数据库启动以来的查询缓存命中和未命中次数，会作为事件
 &quot;QueryCacheHits&quot; 和 &quot;QueryCacheMisses&quot; 显示在系统表 [system.events](/zh/reference/system-tables/events) 中。这两个计数器只会对
-在设置 `use_query_cache = true` 下运行的 `SELECT` 查询进行更新，其他查询不会影响 &quot;QueryCacheMisses&quot;。系统表
+在设置 `use_query_cache = true` 下运行的 `SELECT` 查询进行更新，其他查询不会影响 &quot;QueryCacheMisses&quot;。它们反映的是整个查询
+缓存的情况：启用磁盘查询缓存 (见下文) 时，在内存中未命中、随后由磁盘提供结果的查询计为
+一次 &quot;QueryCacheHits&quot;，而在两个后端中均未命中的查询则计为一次 &quot;QueryCacheMisses&quot;。系统表
 [system.query&#95;log](/zh/reference/system-tables/query_log) 中的字段 `query_cache_usage` 会显示每个已执行查询的结果是否被写入
 查询缓存，或者是否从查询缓存中读取。系统表中的指标 `QueryCacheEntries` 和 `QueryCacheBytes`
-[system.metrics](/zh/reference/system-tables/metrics) 显示查询缓存当前包含多少条目 / 字节。
+[system.metrics](/zh/reference/system-tables/metrics) 显示内存查询缓存当前包含多少条目 / 字节。它们
+不统计[磁盘查询缓存](#query-cache-on-disk)中的条目，磁盘查询缓存目前没有占用量指标。
 
 每个 ClickHouse server process 都有一个查询缓存实例。不过，默认情况下，缓存结果不会在用户之间共享。这一点可以
 更改 (见下文) ，但出于安全原因，不建议这样做。
 
-查询结果在查询缓存中通过其查询的 [抽象语法树 (AST) ](https://en.wikipedia.org/wiki/Abstract_syntax_tree) 来标识。
+查询结果在查询缓存中以其查询的[抽象语法树 (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) 作为引用依据。
 这意味着缓存不区分大小写，例如 `SELECT 1` 和 `select 1` 会被视为同一个查询。为了
-让匹配更符合直觉，所有与查询缓存以及[输出格式](/zh/reference/settings/formats))相关的查询级设置
+使匹配更加自然，所有与查询缓存和[输出格式化](/zh/reference/settings/formats))相关的查询级别设置
 都会从 AST 中移除。
 
-如果查询因异常或被用户取消而中止，则不会向查询缓存写入任何条目。
+如果查询因异常或用户取消而中止，则不会向查询缓存写入任何条目。
 
-查询缓存的字节大小、缓存条目的最大数量，以及单个缓存条目的最大大小 (按字节和
-记录数计) ，都可以通过不同的[服务器配置选项](/zh/reference/settings/server-settings/settings/query#query_cache)进行配置。
+查询缓存的大小 (以字节为单位) 、缓存条目的最大数量以及单个缓存条目的最大大小 (以字节和
+记录数计) 均可通过相应的[服务器配置选项](/zh/reference/settings/server-settings/settings/query#query_cache)进行配置。
 
 ```xml
 <query_cache>
@@ -108,8 +111,9 @@ use_query_cache = true`) ，但需要注意的是，这样一来，所有 `SELEC
 </query_cache>
 ```
 
-也可以使用 [profile](/zh/concepts/features/configuration/settings/settings-profiles) 和 [设置约束](/zh/concepts/features/configuration/settings/constraints-on-settings) 来限制单个用户的缓存使用量。更具体地说，你可以限制用户在查询缓存中可
-分配的最大内存量 (以字节为单位) ，以及可存储的查询结果的最大数量。为此，首先在 `users.xml` 的用户 profile 中配置
+也可以使用 [SETTINGS PROFILE](/zh/concepts/features/configuration/settings/settings-profiles) 和 [设置约束](/zh/concepts/features/configuration/settings/constraints-on-settings) 来限制单个用户的缓存使用量。更具体地说，你可以限制用户在内存查询缓存中可
+分配的最大内存量 (以字节为单位) ，以及可存储的查询结果的最大数量 (这些限制不适用于[磁盘上的查询
+缓存](#query-cache-on-disk)) 。为此，首先在 `users.xml` 的用户 SETTINGS PROFILE 中配置
 [query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/zh/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) 和
 [query&#95;cache&#95;max&#95;entries](/zh/reference/settings/session-settings/query-cache#query_cache_max_entries)，然后将这两个设置都设为
 只读：
@@ -146,9 +150,9 @@ SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 仅当查询运行时间超过 5 秒时，其结果才会被缓存。还可以指定查询需要运行多少次后，其结果才会被
 缓存——为此请使用设置 [query&#95;cache&#95;min&#95;query&#95;runs](/zh/reference/settings/session-settings/query-cache#query_cache_min_query_runs)。
 
-查询缓存条目会在一定时间后变为过期 (生存时间 (TTL)) 。默认情况下，这个时间为 60 秒，但也可以在会话、profile 或查询级别
+查询缓存条目会在一定时间后变为过期 (生存时间 (TTL)) 。默认情况下，这个时间为 60 秒，但也可以在会话、SETTINGS PROFILE 或查询级别
 使用设置 [query&#95;cache&#95;ttl](/zh/reference/settings/session-settings/query-cache#query_cache_ttl) 指定其他值。查询
-缓存会&quot;惰性&quot;驱逐条目，也就是说，当某个条目过期后，它不会立即从缓存中移除。相反，当一个新条目
+缓存会&quot;惰性&quot;淘汰条目，也就是说，当某个条目过期后，它不会立即从缓存中移除。相反，当一个新条目
 准备插入查询缓存时，数据库会检查缓存是否有足够的可用空间容纳该新条目。如果
 没有，数据库会尝试移除所有已过期的条目。如果查询缓存仍然没有足够的可用空间，则不会插入新条目。
 
@@ -172,9 +176,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 
 如果只想从查询缓存中移除带有标签 `tag` 的条目，可以使用语句 `SYSTEM CLEAR QUERY CACHE TAG 'tag'`。
 
-<div id="subquery-caching">
-  ## 子查询缓存
-</div>
+## 子查询缓存 {#subquery-caching}
 
 默认情况下，外层查询上的 `use_query_cache` 设置不会传递给子查询。这意味着每个子查询都必须显式启用缓存：
 
@@ -204,7 +206,7 @@ WHERE number > 500
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 ```
 
-子查询缓存条目在 [system.query&#95;cache](/zh/reference/system-tables/query_cache) 中可见，其中 `is_subquery = 1`。`query_cache_ttl` 设置也适用于子查询缓存条目，并且可以为每个子查询单独设置。
+内存中查询缓存的子查询缓存条目在 [system.query&#95;cache](/zh/reference/system-tables/query_cache) 中可见，其中 `is_subquery = 1`。如果启用了[磁盘查询缓存](#query-cache-on-disk)，子查询结果也会缓存到磁盘上，但这些条目不会显示在 `system.query_cache` 中。`query_cache_ttl` 设置也适用于子查询缓存条目，并且可以为每个子查询单独设置。
 
 ClickHouse 按 [max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size) 行一块读取表数据。由于过滤、aggregation
 等操作，结果块通常会比 &#39;max&#95;block&#95;size&#39; 小得多，但在某些情况下也可能大得多。设置
@@ -239,16 +241,88 @@ ClickHouse 按 [max&#95;block&#95;size](/zh/reference/settings/session-settings/
 如果无论如何都要强制缓存包含非确定性函数的查询结果，请使用设置
 [query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/zh/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling)。
 
-涉及系统表的查询结果 (例如 [system.processes](/zh/reference/system-tables/processes)&#96; 或
-[information&#95;schema.tables](/zh/reference/system-tables/information_schema)) 默认不会被缓存。如果无论如何都要强制缓存包含
+默认情况下，涉及系统表 (例如 [system.processes](/zh/reference/system-tables/processes)&#96; 或
+[information&#95;schema.tables](/zh/reference/system-tables/information_schema)) 的查询结果不会被缓存。如需强制缓存涉及
 系统表的查询结果，请使用设置 [query&#95;cache&#95;system&#95;table&#95;handling](/zh/reference/settings/session-settings/query-cache#query_cache_system_table_handling)。
 
 最后，出于安全原因，查询缓存 中的条目不会在用户之间共享。例如，用户 A 不应通过执行与另一位用户 B 相同的查询来绕过
 表上的 ROW POLICY，因为用户 B 可能并不存在这样的策略。不过，如有需要，可以通过提供设置
 [query&#95;cache&#95;share&#95;between&#95;users](/zh/reference/settings/session-settings/query-cache#query_cache_share_between_users)，将缓存条目标记为其他用户也可访问 (即共享) 。
 
+## 磁盘上的查询缓存 {#query-cache-on-disk}
+
+默认情况下，查询缓存将其条目保存在内存中。此外，查询结果也可以缓存到磁盘上，并由
+[文件系统缓存](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)提供存储支持。与内存中的查询缓存相比，磁盘上的
+查询缓存空间更大，且在服务器重启后依然保留。条目只能由写入它的同一服务器构建版本读取：
+升级或降级后，先前构建版本写入的条目均视为缓存未命中，并最终被覆盖或淘汰。
+
+要使用磁盘上的查询缓存，需先在服务器配置的 `filesystem_caches` 部分中配置文件系统缓存：
+
+```xml
+<filesystem_caches>
+    <query_results>
+        <path>query_results_cache/</path>
+        <max_size>10Gi</max_size>
+    </query_results>
+</filesystem_caches>
+```
+
+然后在设置 `query_cache_on_disk_cache_name` 中指定该缓存的名称：
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results';
+```
+
+磁盘查询缓存独立于内存查询缓存运行，可以通过设置 `enable_reads_from_query_cache_on_disk` 和 `enable_writes_to_query_cache_on_disk` (二者默认均为 `true`
+) 分别启用读取和/或写入。如果两种缓存都启用了读取，则会先在内存中查找，仅在未命中时才查找磁盘。如果两种缓存
+都启用了写入，则结果会同时存储到两者中。如果没有任何缓存可以存储结果 (例如在 `clickhouse-local` 中，它没有
+内存查询缓存，且 `enable_writes_to_query_cache_on_disk = false`) ，查询不会因为包含非确定性
+函数、系统表或非 `throw` 溢出模式而被拒绝：这些检查仅用于防止存储错误的结果。磁盘上的条目使用设置
+`query_cache_on_disk_codec` 指定的编解码器进行压缩 (默认为 `ZSTD(3)`) 。查询缓存的服务器设置 `max_entry_size_in_bytes` 和 `max_entry_size_in_rows`
+同时限制两种后端的条目；每种后端都按照自身的存储方式来衡量条目大小，因此在磁盘上，字节限制针对的是
+序列化并压缩后的条目。将其中任一设置设为 0 会禁止向两种后端写入。除下述两个例外，所有
+其他查询缓存设置 (例如 `query_cache_ttl`、`query_cache_min_query_duration`) 对磁盘查询缓存的作用方式均与
+对内存查询缓存相同。
+
+设置 `query_cache_max_size_in_bytes` 和 `query_cache_max_entries` 仅是内存查询缓存的按用户限制，
+对磁盘查询缓存不生效：磁盘上的条目受所配置的文件系统缓存大小限制，并按其规则淘汰
+(见下文) ，因此即使用户的 SETTINGS PROFILE 限制较严，其在磁盘上存储的结果仍可能超过这些设置在
+内存中允许的数量。这是有意设计的——文件系统缓存是一种共享且有大小上限的资源，磁盘查询缓存不会在其中预留
+空间。
+
+设置 `query_cache_share_between_users` 是另一个例外：它对两种后端的含义相同——启用该设置写入的条目会提供给
+所有用户——但非共享条目的隔离方式不同。内存查询缓存对每个查询只保留一个条目，读取时若发现该条目属于其他用户则予以拒绝，
+因此用户 A 的非共享条目会遮蔽用户 B 的写入，直到该条目过期或被
+淘汰。而磁盘查询缓存则将用户及其当前启用的角色集合纳入非共享条目的键中，因此
+用户 B 不会命中用户 A 的条目，而是存储自己的一份结果副本。同一用户在不同的当前启用的角色集合下也是如此，
+例如执行 `SET ROLE` 之后：角色附带特权和 ROW POLICY，因此在不同角色下计算出的结果会分别
+缓存。
+
+磁盘上的查询缓存条目是文件系统缓存中的普通条目，与同一
+文件系统缓存中缓存的其他数据并无区别：它们不受删除保护，当文件系统缓存空间不足时，也会按照相同的规则 (例如最近最少使用) 被淘汰。
+它们的总大小或数量没有单独的限制——只受文件系统
+缓存本身的限制约束。语句 `SYSTEM CLEAR QUERY CACHE` (以及 `SYSTEM CLEAR QUERY CACHE TAG 'tag'`) 还会从会话设置 `query_cache_on_disk_cache_name` 所选定的文件系统缓存中
+(例如在执行 `SET query_cache_on_disk_cache_name = 'query_results'` 之后) 删除磁盘上的查询缓存条目 (对于后者，仅删除带有
+指定标签的条目；但损坏的条目以及格式不兼容的条目无论标签如何都会被删除) ，
+同时保留文件系统缓存中的其他数据。为了
+找到这些条目，该语句会遍历文件系统缓存中所有 File 段的元数据 (在内存中进行，无需读取磁盘) ，并读取
+每个被标记为查询缓存条目的 key 的请求头。遍历耗时与文件系统缓存中 File 段的数量成正比，
+因此为查询结果使用专用的文件系统缓存，可以让 `SYSTEM CLEAR QUERY CACHE` 保持低开销。如果
+文件系统缓存已经淘汰了某个条目的开头部分，则该条目的剩余部分会保留在原处，直到被文件系统缓存
+淘汰或同一查询结果被重新写入，但它永远不会被用来返回结果。仍在写入中的
+条目同样会被保留。语句 `SYSTEM DROP FILESYSTEM CACHE '<name>'` 则会将这些条目连同
+文件系统缓存中的其他所有内容一并删除。系统表
+[system.query&#95;cache](/zh/reference/system-tables/query_cache) 以及指标 `QueryCacheEntries` 和 `QueryCacheBytes` 仅显示
+内存查询缓存中的条目。磁盘查询
+缓存的命中数和未命中数分别以事件 &quot;QueryCacheOnDiskHits&quot; 和 &quot;QueryCacheOnDiskMisses&quot; 显示在系统表 [system.events](/zh/reference/system-tables/events) 中。
+这两个事件仅是磁盘后端的细分统计，而 &quot;QueryCacheHits&quot; 和
+&quot;QueryCacheMisses&quot; 仍是整个查询缓存的计数器，&quot;QueryCacheAgeSeconds&quot; 则同时统计两种后端的命中。由于
+系统会先探测内存缓存，因此内存命中数等于 &quot;QueryCacheHits&quot; 减去 &quot;QueryCacheOnDiskHits&quot;。
+
 <div id="related-content">
-  ## 相关内容
+  ## 相关内容 {#related-content}
 </div>
 
 * 博客：[ClickHouse 查询缓存介绍](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

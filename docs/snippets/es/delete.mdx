@@ -15,61 +15,53 @@ DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE 
 
 Se denomina &quot;`DELETE` ligero&quot; para diferenciarlo del comando [ALTER TABLE ... DELETE](/es/reference/statements/alter/delete), que es un proceso costoso.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 ```sql
 -- Elimina todas las filas de la tabla `hits` donde la columna `Title` contiene el texto `hello`
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## eliminación ligera no elimina los datos de inmediato
-</div>
+## eliminación ligera no elimina los datos de inmediato {#lightweight-delete-does-not-delete-data-immediately}
 
-eliminación ligera se implementa como una [mutación](/es/reference/statements/alter/index#mutations) que marca las filas como eliminadas, pero no las elimina físicamente de inmediato.
+La eliminación ligera marca las filas como eliminadas sin quitarlas de inmediato del almacenamiento. De forma predeterminada, utiliza una [mutación](/es/reference/statements/alter/index#mutations). También puede utilizar partes de parche, según la configuración [`lightweight_delete_mode`](#lightweight-delete-mode).
 
-De forma predeterminada, las Sentencias `DELETE` esperan a que se complete el marcado de las filas como eliminadas antes de finalizar. Esto puede llevar mucho tiempo si el volumen de datos es grande. Como alternativa, puede ejecutarlo de forma asíncrona en segundo plano mediante la configuración [`lightweight_deletes_sync`](/es/reference/settings/session-settings/lightweight#lightweight_deletes_sync). Si está deshabilitada, la sentencia `DELETE` devolverá el resultado de inmediato, pero los datos pueden seguir siendo visibles para las consultas hasta que finalice la mutación en segundo plano.
+Con el modo predeterminado basado en mutaciones, las sentencias `DELETE` esperan a que se complete el marcado de las filas como eliminadas antes de finalizar. Esto puede llevar mucho tiempo si el volumen de datos es grande. Como alternativa, puede ejecutarlo de forma asíncrona en segundo plano mediante la configuración [`lightweight_deletes_sync`](/es/reference/settings/session-settings/lightweight#lightweight_deletes_sync). Si está deshabilitada, la sentencia `DELETE` devolverá el resultado de inmediato, pero los datos pueden seguir siendo visibles para las consultas hasta que finalice la mutación en segundo plano.
 
-La mutación no elimina físicamente las filas que se han marcado como eliminadas; esto solo ocurrirá durante la siguiente fusión. Como resultado, es posible que, durante un período no especificado, los datos no se eliminen realmente del almacenamiento y solo queden marcados como eliminados.
+En ambos modos, las filas eliminadas permanecen en el almacenamiento hasta que se limpian. Normalmente, las fusiones en segundo plano las eliminan de las partes de datos afectadas. Para aplicar explícitamente la máscara de eliminación, utilice [`ALTER TABLE ... APPLY DELETED MASK`](/es/reference/statements/alter/apply-deleted-mask), que realiza una mutación pesada.
 
 Si necesita garantizar que sus datos se eliminen del almacenamiento en un tiempo predecible, considere usar la configuración de tabla [`min_age_to_force_merge_seconds`](/es/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds). O bien, puede usar el comando [ALTER TABLE ... DELETE](/es/reference/statements/alter/delete). Tenga en cuenta que eliminar datos con `ALTER TABLE ... DELETE` puede consumir una cantidad significativa de recursos, ya que vuelve a crear todas las partes afectadas.
 
-<div id="deleting-large-amounts-of-data">
-  ## Eliminación de grandes volúmenes de datos
-</div>
+## Elija el modo de eliminación {#lightweight-delete-mode}
+
+La configuración [`lightweight_delete_mode`](/es/reference/settings/session-settings/lightweight#lightweight_delete_mode) permite elegir entre eliminaciones mediante mutaciones (la opción predeterminada) y actualizaciones ligeras que escriben partes de parche con `_row_exists = 0` para las filas eliminadas. Las consultas aplican estos parches antes de la eliminación física de las filas.
+
+Consulte la referencia de esta configuración para conocer los modos disponibles y los [requisitos de las actualizaciones ligeras](/es/reference/statements/update#lightweight-update-requirements) para conocer las condiciones previas. Cuando se usan partes de parche, `lightweight_deletes_sync` no espera a las demás réplicas; en `ReplicatedMergeTree`, estas pueden seguir devolviendo filas eliminadas hasta que reciban el parche.
+
+## Eliminación de grandes volúmenes de datos {#deleting-large-amounts-of-data}
 
 Las eliminaciones de gran volumen pueden afectar negativamente el rendimiento de ClickHouse. Si intenta eliminar todas las filas de una tabla, considere usar el comando [`TRUNCATE TABLE`](/es/reference/statements/truncate).
 
 Si prevé eliminaciones frecuentes, considere usar una [clave de particionamiento personalizada](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Después, puede usar el comando [`ALTER TABLE ... DROP PARTITION`](/es/reference/statements/alter/partition#drop-partitionpart) para eliminar rápidamente todas las filas asociadas a esa partición.
 
-<div id="limitations-of-lightweight-delete">
-  ## Limitaciones de la eliminación ligera
-</div>
+## Limitaciones de la eliminación ligera {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### Eliminaciones ligeras con proyecciones
-</div>
+### Eliminaciones ligeras con proyecciones {#lightweight-deletes-with-projections}
 
 De forma predeterminada, `DELETE` no funciona en tablas con proyecciones. Esto se debe a que las filas de una proyección pueden verse afectadas por una operación `DELETE`. Sin embargo, existe la [configuración de MergeTree](/es/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode` para cambiar este comportamiento.
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## Consideraciones de rendimiento al usar eliminación ligera
-</div>
+## Consideraciones de rendimiento al usar eliminación ligera {#performance-considerations-when-using-lightweight-delete}
 
-**Eliminar grandes volúmenes de datos con la instrucción de eliminación ligera puede afectar negativamente el rendimiento de las consultas SELECT.**
+**Eliminar grandes volúmenes de datos con la sentencia de eliminación ligera puede afectar negativamente el rendimiento de las consultas SELECT.**
 
 Los siguientes factores también pueden afectar negativamente el rendimiento de la eliminación ligera:
 
 * Una condición `WHERE` compleja en una consulta `DELETE`.
-* Si la cola de mutaciones está llena de muchas otras mutaciones, esto puede provocar problemas de rendimiento, ya que todas las mutaciones de una tabla se ejecutan de forma secuencial.
+* En el caso de eliminaciones basadas en mutaciones, una cola de mutaciones grande: las mutaciones de una tabla se ejecutan de forma secuencial.
 * La tabla afectada tiene una cantidad muy grande de partes de datos.
-* Tener muchos datos en partes compactas. En una parte Compact, todas las columnas se almacenan en un único archivo.
+* Al usar eliminaciones basadas en mutaciones, tener muchos datos en partes compactas. En una parte compacta, todas las columnas se almacenan en un único archivo y deben reescribirse juntas.
 
-<div id="delete-permissions">
-  ## Permisos de DELETE
-</div>
+## Permisos de DELETE {#delete-permissions}
 
 `DELETE` requiere el privilegio `ALTER DELETE`. Para habilitar las Sentencias `DELETE` en una tabla específica para un usuario determinado, ejecute el siguiente comando:
 
@@ -77,13 +69,11 @@ Los siguientes factores también pueden afectar negativamente el rendimiento de 
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## Cómo funcionan internamente las eliminaciones ligeras en ClickHouse
-</div>
+## Cómo funcionan internamente las eliminaciones ligeras en ClickHouse {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **Se aplica una &quot;máscara&quot; a las filas afectadas**
 
-   Cuando se ejecuta una consulta `DELETE FROM table ...`, ClickHouse guarda una máscara en la que cada fila queda marcada como &quot;existente&quot; o &quot;eliminada&quot;. Esas filas &quot;eliminadas&quot; se omiten en las consultas posteriores. Sin embargo, las filas en realidad solo se eliminan más adelante, durante fusiones posteriores. Escribir esta máscara es mucho más ligero que lo que se hace con una consulta `ALTER TABLE ... DELETE`.
+   Cuando se ejecuta una consulta `DELETE FROM table ...`, ClickHouse guarda una máscara en la que cada fila queda marcada como &quot;existente&quot; o &quot;eliminada&quot;. Esas filas &quot;eliminadas&quot; se omiten en las consultas posteriores. Sin embargo, las filas se eliminan físicamente más adelante, normalmente durante las fusiones en segundo plano. Escribir esta máscara es mucho más ligero que lo que se hace con una consulta `ALTER TABLE ... DELETE`.
 
    La máscara se implementa como una columna de sistema oculta, `_row_exists`, que almacena `True` para todas las filas visibles y `False` para las eliminadas. Esta columna solo está presente en una parte si se eliminaron algunas filas de esa parte. No existe cuando una parte tiene todos sus valores iguales a `True`.
 
@@ -97,9 +87,11 @@ GRANT ALTER DELETE ON db.table to username;
 
    En tiempo de ejecución, la columna `_row_exists` se lee para determinar qué filas no deben devolverse. Si hay muchas filas eliminadas, ClickHouse puede determinar qué gránulos pueden omitirse por completo al leer el resto de las columnas.
 
-3. **Las consultas `DELETE` se transforman en consultas `ALTER TABLE ... UPDATE`**
+3. **Las consultas `DELETE` actualizan la máscara mediante el modo seleccionado**
 
-   `DELETE FROM table WHERE condition` se traduce en una mutación `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition`.
+   Con las partes de parche, `DELETE FROM table WHERE condition` se traduce en `UPDATE table SET _row_exists = 0 WHERE condition`. Las partes de parche resultantes almacenan los cambios en la máscara correspondientes a las filas eliminadas y se aplican al leer y fusionar los datos.
+
+   Con el modo predeterminado `alter_update`, `DELETE FROM table WHERE condition` se traduce en una mutación `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition`.
 
    Internamente, esta mutación se ejecuta en dos pasos:
 
@@ -109,8 +101,8 @@ GRANT ALTER DELETE ON db.table to username;
 
    A partir de los pasos anteriores, podemos ver que el uso de eliminación ligera con la técnica de enmascaramiento mejora el rendimiento frente al `ALTER TABLE ... DELETE` tradicional porque no reescribe todos los archivos de columnas de las partes afectadas.
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * Blog: [Cómo gestionar actualizaciones y eliminaciones en ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
+
+- Blog: [Las eliminaciones ligeras son ahora aún más ligeras](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#lightweight-deletes-are-now-even-lighter)

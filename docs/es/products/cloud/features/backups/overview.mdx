@@ -13,12 +13,14 @@ import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureB
 Las copias de seguridad de la base de datos están diseñadas para permitirle restaurar un servicio a un estado anterior a partir de la última copia de seguridad completada correctamente.
 
 <div id="backups">
-  ## Copias de seguridad
+  ## Copias de seguridad {#backups}
 </div>
 
 ### Cómo funcionan las copias de seguridad en ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
 
 Las copias de seguridad de ClickHouse Cloud combinan copias de seguridad &quot;completas&quot; e &quot;incrementales&quot; que forman una cadena de copias de seguridad. La cadena comienza con una copia de seguridad completa y, a continuación, se realizan copias de seguridad incrementales durante los siguientes períodos programados para crear una secuencia de copias de seguridad. Cuando una cadena de copias de seguridad alcanza cierta longitud, se inicia una nueva cadena. Toda esta cadena de copias de seguridad puede utilizarse para restaurar datos en un nuevo servicio si es necesario. Cuando todas las copias de seguridad incluidas en una cadena concreta superan el período de retención establecido para el servicio (más información sobre la retención más adelante), la cadena se descarta.
+
+El número de puntos de restauración no coincide con el número de objetos físicos de copia de seguridad. La copia de seguridad completa y las copias de seguridad incrementales de las que depende un punto de restauración se conservan juntas como una cadena.
 
 En la captura de pantalla de abajo, los cuadrados con línea continua representan copias de seguridad completas y los cuadrados con línea discontinua representan copias de seguridad incrementales que forman parte de la cadena.
 
@@ -40,8 +42,10 @@ Consulta [&quot;Revisar y restaurar copias de seguridad&quot;](/es/products/clou
 ClickHouse Cloud le permite configurar la programación de las copias de seguridad para los servicios de los niveles **Scale** y **Enterprise**. Las copias de seguridad pueden configurarse según las siguientes dimensiones, en función de las necesidades de su empresa.
 
 * **Retención**: La cantidad de días durante los que se conservará cada copia de seguridad. La retención puede configurarse desde 1 día hasta 45 días, con varios valores intermedios para elegir.
-* **Frecuencia**: La frecuencia le permite especificar el intervalo entre copias de seguridad consecutivas. Por ejemplo, una frecuencia de &quot;cada 12 horas&quot; significa que las copias de seguridad se realizarán con 12 horas de separación. La frecuencia puede ir de &quot;cada 6 horas&quot; a &quot;cada 48 horas&quot; con los siguientes incrementos en horas: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
-* **Hora de inicio**: La hora a la que desea programar las copias de seguridad cada día. Especificar una hora de inicio implica que la &quot;Frecuencia&quot; de la copia de seguridad se establecerá de forma predeterminada en una vez cada 24 horas. ClickHouse Cloud iniciará la copia de seguridad dentro de la hora siguiente a la hora de inicio especificada.
+* **Frecuencia**: La frecuencia le permite especificar el intervalo entre copias de seguridad consecutivas. Por ejemplo, una frecuencia de «cada 12 horas» significa que las copias de seguridad se realizarán con 12 horas de separación. La frecuencia puede ir de «cada 6 horas» a «cada 48 horas» con los siguientes incrementos en horas: `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
+* **Hora de inicio**: La hora a la que desea programar las copias de seguridad cada día. Especificar una hora de inicio implica que la «Frecuencia» de la copia de seguridad se establecerá de forma predeterminada en una vez cada 24 horas.  ClickHouse Cloud iniciará la copia de seguridad dentro de la hora siguiente a la hora de inicio especificada.
+
+La retención determina cuánto tiempo se conservan los datos de las copias de seguridad; la frecuencia determina la antigüedad del punto de restauración más reciente y, por tanto, el objetivo de punto de recuperación (RPO). Por ejemplo, con una retención de 1 día y una frecuencia de cada 48 horas, normalmente hay al menos una copia de seguridad que se puede restaurar. La copia de seguridad más reciente que se puede restaurar puede tener casi 48 horas de antigüedad, y el servicio puede tener uno o dos puntos de restauración mientras se conserva la cadena de copias de seguridad necesaria para restaurarlos.
 
 <Note>
   La programación personalizada anulará la política predeterminada de copias de seguridad de ClickHouse Cloud para el servicio indicado.
@@ -49,10 +53,10 @@ ClickHouse Cloud le permite configurar la programación de las copias de segurid
   En algunos casos poco frecuentes, el programador de copias de seguridad no respetará la **Hora de inicio** especificada para las copias de seguridad. En concreto, esto ocurre si se activó correctamente una copia de seguridad &lt; 24 horas antes de la hora de la copia de seguridad actualmente programada. Esto puede ocurrir debido al mecanismo de reintento que tenemos implementado para las copias de seguridad. En esos casos, el programador omitirá la copia de seguridad del día en curso y volverá a intentarla al día siguiente a la hora programada.
 </Note>
 
-Consulte [&quot;Configurar programaciones de copias de seguridad&quot;](/es/products/cloud/guides/backups/configurable-backups) para ver los pasos necesarios para configurar sus copias de seguridad.
+Consulte [«Configurar programaciones de copias de seguridad»](/es/products/cloud/guides/backups/configurable-backups) para ver los pasos necesarios para configurar sus copias de seguridad.
 
 <div id="byob">
-  ## Copias de seguridad con tu propio bucket (BYOB)
+  ## Copias de seguridad con tu propio bucket (BYOB) {#byob}
 </div>
 
 ClickHouse Cloud permite exportar copias de seguridad al almacenamiento de tu cuenta en tu proveedor de servicios en la nube (CSP) (AWS S3, Google Cloud Storage o Azure Blob Storage).

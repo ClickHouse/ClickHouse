@@ -17,9 +17,7 @@ Los diccionarios son útiles para:
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Casos de uso del diccionario en ClickHouse" />
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## Acelerar los JOIN usando un Diccionario
-</div>
+## Acelerar los JOIN usando un Diccionario {#speeding-up-joins-using-a-dictionary}
 
 Los diccionarios pueden usarse para acelerar un tipo específico de `JOIN`: el [tipo `LEFT ANY`](/es/reference/statements/select/join#supported-types-of-join), en el que la clave de join debe coincidir con el atributo clave del almacenamiento clave-valor subyacente.
 
@@ -30,7 +28,7 @@ Si este es el caso, ClickHouse puede aprovechar el diccionario para realizar un 
 El algoritmo de direct join requiere que la tabla derecha esté respaldada por un diccionario, de modo que los datos que se van a unir de esa tabla ya estén presentes en memoria en forma de una estructura de datos clave-valor de baja latencia.
 
 <div id="example">
-  ### Ejemplo
+  ### Ejemplo {#example}
 </div>
 
 Usando el [conjunto de datos de Stack Overflow](/es/get-started/sample-datasets/stackoverflow), respondamos a la pregunta:
@@ -88,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 Aunque esta consulta es rápida, requiere que escribamos el `JOIN` con cuidado para lograr un buen rendimiento. Idealmente, simplemente filtraríamos las publicaciones para quedarnos con las que contienen &quot;SQL&quot; antes de examinar los recuentos de `UpVote` y `DownVote` del subconjunto de publicaciones para calcular nuestra métrica.
 
 <div id="applying-a-dictionary">
-  #### Aplicar un diccionario
+  #### Aplicar un diccionario {#applying-a-dictionary}
 </div>
 
 Para ilustrar estos conceptos, usamos un diccionario para nuestros datos de votos. Dado que los diccionarios suelen mantenerse en memoria ([ssd&#95;cache](/es/reference/statements/create/dictionary/layouts/ssd-cache) es la excepción), debes tener en cuenta el tamaño de los datos. Para confirmar el tamaño de nuestra tabla `votes`:
@@ -197,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 No solo esta consulta es mucho más sencilla, sino que además es más del doble de rápida. Esto podría optimizarse aún más cargando en el diccionario únicamente las publicaciones con más de 10 votos positivos y negativos, y almacenando solo un valor de controversia precalculado.
 
 <div id="query-time-enrichment">
-  ## Enriquecimiento en tiempo de consulta
+  ## Enriquecimiento en tiempo de consulta {#query-time-enrichment}
 </div>
 
 Los diccionarios pueden utilizarse para consultar valores en tiempo de consulta. Estos valores pueden devolverse en los resultados o usarse en agregaciones. Supongamos que creamos un diccionario para asociar los ID de usuario con su ubicación:
@@ -266,11 +264,13 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## Enriquecimiento durante la indexación
-</div>
+## Enriquecimiento durante la indexación {#index-time-enrichment}
 
-En el ejemplo anterior, usamos un diccionario en tiempo de consulta para eliminar un join. Los diccionarios también se pueden usar para enriquecer filas en tiempo de inserción. Esto suele ser apropiado si el valor de enriquecimiento no cambia y existe en una fuente externa que puede usarse para rellenar el diccionario. En este caso, enriquecer la fila en tiempo de inserción evita tener que consultar el diccionario en tiempo de consulta.
+En el ejemplo anterior, usamos un diccionario en tiempo de consulta para eliminar un join. Los diccionarios también se pueden usar para enriquecer filas en tiempo de inserción. Esto suele ser apropiado si el valor de enriquecimiento no cambia y existe en una fuente externa que puede usarse para poblar el diccionario. En este caso, enriquecer la fila en tiempo de inserción evita tener que consultar el diccionario en tiempo de consulta.
+
+<Note>
+  Evite las estructuras de diccionario basadas en caché para el enriquecimiento en tiempo de inserción cuando sean importantes una latencia predecible y la disponibilidad de la fuente. Cada servidor mantiene su propia caché local, que queda vacía tras un reinicio o un reemplazo, por lo que las inserciones pasan a depender de búsquedas con la caché en frío contra la fuente del diccionario. El autoescalado de ClickHouse Cloud y el reemplazo gestionado de nodos hacen más probable esta situación. Elija una estructura de diccionario que cargue el diccionario completo en cada servidor. Consulte [Diccionarios cache en rutas de ingestión](/es/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+</Note>
 
 Supongamos que la `Location` de un usuario en Stack Overflow nunca cambia (en realidad sí cambia), concretamente la columna `Location` de la tabla `users`. Supongamos que queremos hacer una consulta analítica sobre la tabla `posts` por ubicación. Esta contiene un `UserId`.
 
@@ -308,7 +308,7 @@ En el ejemplo anterior, `Location` se declara como una columna `MATERIALIZED`. E
 
 > ClickHouse también admite [columnas `DEFAULT`](/es/reference/statements/create/table#default_values) (donde el valor puede insertarse o calcularse si no se proporciona).
 
-Para rellenar la tabla, podemos usar la instrucción habitual `INSERT INTO SELECT` desde S3:
+Para poblar la tabla, podemos usar la instrucción habitual `INSERT INTO SELECT` desde S3:
 
 ```sql
 INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Temas avanzados sobre diccionarios
+  ## Temas avanzados sobre diccionarios {#advanced-dictionary-topics}
 </div>
 
 Para obtener orientación sobre cómo elegir los layouts de diccionario, cuándo usar diccionarios en lugar de JOINs y cómo supervisar su uso, consulta [Buenas prácticas para diccionarios](/es/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### Actualización de diccionarios
+  ### Actualización de diccionarios {#refreshing-dictionaries}
 </div>
 
 Hemos especificado un `LIFETIME` para el diccionario de `MIN 600 MAX 900`. `LIFETIME` es el intervalo de actualización del diccionario, y estos valores hacen que se recargue periódicamente en un intervalo aleatorio de entre 600 y 900 s. Este intervalo aleatorio es necesario para distribuir la carga en el origen del diccionario cuando se actualiza en un gran número de servidores. Durante las actualizaciones, la versión anterior de un diccionario puede seguir consultándose; solo la carga inicial bloquea las consultas. Tenga en cuenta que establecer `(LIFETIME(0))` impide que los diccionarios se actualicen.
@@ -357,14 +357,12 @@ Los diccionarios pueden recargarse de forma forzada mediante el comando `SYSTEM 
 Para orígenes de base de datos como ClickHouse y Postgres, puede configurar una consulta que actualice los diccionarios solo si realmente han cambiado (esto lo determina la respuesta de la consulta), en lugar de hacerlo a intervalos periódicos. Puede encontrar más detalles [aquí](/es/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### Otros tipos de diccionarios
+  ### Otros tipos de diccionarios {#other-dictionary-types}
 </div>
 
 ClickHouse también admite diccionarios [jerárquicos](/es/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/es/reference/statements/create/dictionary/layouts/polygon) y de [expresión regular](/es/reference/statements/create/dictionary/layouts/regexp-tree).
 
-<div id="more-reading">
-  ### Más información
-</div>
+### Más información {#more-reading}
 
 * [Buenas prácticas para diccionarios](/es/concepts/features/dictionaries/best-practices) — elección del layout, diccionarios frente a JOINs, monitorización
 * [Uso de diccionarios para acelerar las consultas](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

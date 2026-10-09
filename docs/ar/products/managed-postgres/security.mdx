@@ -2,8 +2,8 @@
 slug: /cloud/managed-postgres/security
 sidebarTitle: 'الأمان'
 title: 'الأمان'
-description: 'ميزات الأمان في ClickHouse Managed Postgres، بما في ذلك قائمة سماح عناوين IP والتشفير وPrivate Link'
-keywords: ['أمان Postgres', 'قائمة سماح عناوين IP', 'التشفير', 'tls', 'ssl', 'private link', 'الاحتفاظ بالنسخ الاحتياطية']
+description: 'ميزات الأمان في ClickHouse Managed Postgres، بما في ذلك قائمة سماح عناوين IP والتشفير وAWS PrivateLink وGCP Private Service Connect'
+keywords: ['أمان Postgres', 'قائمة سماح عناوين IP', 'التشفير', 'tls', 'ssl', 'private link', 'private service connect', 'psc', 'الاحتفاظ بالنسخ الاحتياطية']
 doc_type: 'guide'
 ---
 
@@ -12,7 +12,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
-صُمِّم ClickHouse Managed Postgres بميزات أمان على مستوى المؤسسات لحماية بياناتك وتلبية متطلبات الامتثال. تتناول هذه الصفحة أمان الشبكة، والتشفير، وسياسات الاحتفاظ بالنسخ الاحتياطية.
+صُمِّم ClickHouse Managed Postgres بميزات أمان على مستوى المؤسسات لحماية بياناتك وتلبية متطلبات الامتثال. تتناول هذه الصفحة أمان الشبكة، والتشفير، وسياسات الاحتفاظ بالنسخ الاحتياطية.
 
 ## قائمة سماح عناوين IP {#ip-whitelisting}
 
@@ -21,7 +21,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/managed-postgres/ip-filters.webp" alt="تهيئة قائمة الوصول إلى IP" size="md" border />
 
 <div id="configuring-ip-filters">
-  ### تكوين عوامل تصفية IP
+  ### تكوين عوامل تصفية IP {#configuring-ip-filters}
 </div>
 
 لتكوين عوامل تصفية IP:
@@ -58,7 +58,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تُشفَّر جميع البيانات المخزَّنة بواسطة ClickHouse Managed Postgres في التخزين للحماية من الوصول غير المصرَّح به إلى البنية التحتية الأساسية للتخزين.
 
 <div id="nvme-encryption">
-  #### تشفير تخزين NVMe
+  #### تشفير تخزين NVMe {#nvme-encryption}
 </div>
 
 تُشفَّر ملفات قاعدة البيانات، وسجلات المعاملات، والملفات المؤقتة المخزَّنة على أقراص NVMe باستخدام خوارزميات تشفير متوافقة مع معايير الصناعة. ويتم هذا التشفير بشفافية بالنسبة إلى تطبيقاتك، ولا يتطلب أي إعداد.
@@ -82,7 +82,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تُؤمَّن جميع اتصالات الشبكة بـ ClickHouse Managed Postgres باستخدام TLS ‏(أمن طبقة النقل) لحماية البيانات أثناء انتقالها بين تطبيقاتك وقاعدة البيانات.
 
 <div id="tls-ssl">
-  #### إعدادات TLS/SSL
+  #### إعدادات TLS/SSL {#tls-ssl}
 </div>
 
 تستخدم الاتصالات افتراضيًا تشفير TLS من دون التحقق من الشهادة. بالنسبة إلى أعباء العمل في بيئة الإنتاج، نوصي بالاتصال عبر TLS مع التحقق من الشهادة لضمان أنك تتواصل مع الخادم الصحيح.
@@ -100,7 +100,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Info>
 
 <div id="requesting-private-link">
-  ### طلب إعداد AWS PrivateLink
+  ### طلب إعداد AWS PrivateLink {#requesting-private-link}
 </div>
 
 لتمكين AWS PrivateLink لمثيل ClickHouse Managed Postgres لديك:
@@ -123,18 +123,60 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ## GCP Private Service Connect {#gcp-private-service-connect}
 
-يتيح Private Service Connect اتصالًا خاصًا بين مثيل ClickHouse Managed Postgres لديك وGCP Virtual Private Cloud (VPC) لديك، من دون تعريض حركة المرور للإنترنت العام.
+تتيح GCP Private Service Connect (PSC) اتصالاً خاصاً بين مثيل ClickHouse Managed Postgres الخاص بك وشبكة Virtual Private Cloud (VPC) الخاصة بك على Google Cloud، دون تعريض حركة البيانات للإنترنت العام. ويضيف ذلك طبقة إضافية من عزل الشبكة وتعزيز أمانها.
 
-لتمكين Private Service Connect لمثيل ClickHouse Managed Postgres لديك، تواصل مع ClickHouse Support عبر إنشاء تذكرة دعم.
+<Info>
+  **يتطلب إعداداً يدوياً**
+
+  تدعم الخدمة GCP Private Service Connect، لكن ذلك يتطلب تهيئة يدوية من قِبل فريق ClickHouse Support. وتُعد هذه الميزة مثالية لعملاء المؤسسات ذوي المتطلبات الصارمة في عزل الشبكة.
+</Info>
+
+### طلب إعداد GCP Private Service Connect {#requesting-gcp-private-service-connect}
+
+يُمنح الوصول لكل نقطة نهاية Private Service Connect على حدة، وليس لكل مشروع GCP. ولا تُقبل إلا نقطة النهاية المحددة التي تنشئها وتُبلغ بها فريق ClickHouse Support، لذا يتطلب الإعداد جولتين من التواصل مع فريق الدعم.
+
+لتفعيل GCP Private Service Connect لمثيل ClickHouse Managed Postgres الخاص بك:
+
+1. **تواصل مع ClickHouse Support** بإنشاء تذكرة دعم
+
+2. **قدّم المعلومات التالية**:
+   * معرّف مؤسسة ClickHouse الخاصة بك
+   * معرّف خدمة Postgres أو اسم المضيف الخاص بها
+
+3. **سيتولى فريق ClickHouse Support ما يلي**:
+   * تجهيز service attachment الخاص بـ Private Service Connect على جانب ClickHouse Managed Postgres
+   * تزويدك بمعرّف service attachment لتستخدمه في إنشاء نقطة نهاية.
+
+4. **أنشئ نقطة نهاية Private Service Connect الخاصة بك**:
+   * أنشئ نقطة نهاية Private Service Connect في شبكة VPC الخاصة بك، في المنطقة نفسها التي توجد فيها خدمة Postgres، باستخدام معرّف service attachment الذي زوّدك به فريق ClickHouse Support. ونظرًا لأن نقاط نهاية Private Service Connect إقليمية، فإن الاتصالات عبر المناطق غير مدعومة.
+
+   * سيظهر الاتصال بحالة &quot;Pending&quot; في وحدة تحكم GCP، وهذا متوقع إلى أن يقبله فريق ClickHouse Support.
+
+   * احصل على **معرّف اتصال PSC** لنقطة النهاية. يظهر هذا المعرّف ضمن تفاصيل نقطة النهاية في وحدة تحكم GCP، أو يمكنك تشغيل الأمر التالي:
+
+     ```bash
+     gcloud compute forwarding-rules describe <endpoint-name> --region <region> --format='value(pscConnectionId)'
+     ```
+
+   * أرسل معرّف اتصال PSC إلى فريق ClickHouse Support في تذكرة الدعم نفسها.
+
+5. **سيتولى فريق ClickHouse Support ما يلي**:
+   * إضافة نقطة النهاية الخاصة بك إلى قائمة السماح الخاصة بـ service attachment، لتنتقل بعدها حالة الاتصال من &quot;Pending&quot; إلى &quot;Accepted&quot;.
+
+6. **اتصل بمثيل ClickHouse Managed Postgres الخاص بك**:
+   * بمجرد أن تصبح نقطة النهاية في حالة &quot;Accepted&quot;، يمكنك الاتصال بها باستخدام عنوان IP لنقطة النهاية عبر المنفذ `5432` (اتصال مباشر) أو `6432` (عبر مجمّع الاتصالات).
+   * لا يرتبط عنوان IP لنقطة النهاية باسم DNS مطابق لاسم مضيف Postgres، لذا استخدم `sslmode=require`، أو أضف سجل Cloud DNS خاصًا يربط اسم مضيف Postgres بعنوان IP لنقطة النهاية حتى تتمكن من استخدام `sslmode=verify-full`.
+
+لربط نقطة نهاية إضافية بالمثيل نفسه، كأن تكون من شبكة VPC أخرى أو بعد إعادة إنشاء نقطة نهاية، كرّر الخطوتين 4 و5: أنشئ نقطة النهاية باستخدام معرّف service attachment نفسه، ثم أرسل معرّف اتصال PSC الخاص بها إلى فريق ClickHouse Support. ولإلغاء وصول نقطة نهاية ما، اطلب من فريق ClickHouse Support إزالتها من قائمة السماح.
 
 <div id="backup-retention">
-  ## الاحتفاظ بالنسخ الاحتياطية
+  ## الاحتفاظ بالنسخ الاحتياطية {#backup-retention}
 </div>
 
 يُنشئ ClickHouse Managed Postgres نسخًا احتياطية من بياناتك تلقائيًا للحماية من الحذف غير المقصود أو التلف أو غير ذلك من حالات فقدان البيانات.
 
 <div id="retention-policy">
-  ### سياسة الاحتفاظ
+  ### سياسة الاحتفاظ {#retention-policy}
 </div>
 
 * **فترة الاحتفاظ الافتراضية**: 7 أيام

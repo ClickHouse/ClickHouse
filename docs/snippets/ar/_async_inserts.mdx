@@ -28,9 +28,7 @@ title: عمليات الإدراج غير المتزامنة
 
 تكون عملية التجميع هذه غير مرئية للعملاء، وتساعد ClickHouse على دمج حركة الإدراج بكفاءة من مصادر متعددة. ومع ذلك، وحتى حدوث التفريغ، لا يمكن الاستعلام عن البيانات. ومن المهم ملاحظة وجود عدة مخازن مؤقتة لكل تركيبة من شكل الإدراج والإعدادات، وفي clusters، تُحفَظ هذه المخازن لكل node على حدة—مما يتيح تحكمًا دقيقًا في البيئات متعددة المستأجرين. وبخلاف ذلك، تبقى آليات الإدراج مطابقة لما هو موصوف في [عمليات الإدراج المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
 
-<div id="choosing-a-return-mode">
-  ### اختيار وضع الإرجاع
-</div>
+### اختيار وضع الإرجاع {#choosing-a-return-mode}
 
 يمكن ضبط سلوك عمليات الإدراج غير المتزامنة بمزيد من الدقة باستخدام الإعداد [`wait_for_async_insert`](/ar/reference/settings/session-settings/wait-for#wait_for_async_insert).
 
@@ -46,29 +44,25 @@ title: عمليات الإدراج غير المتزامنة
 
 نوصي بشدة باستخدام `async_insert=1,wait_for_async_insert=1` عند استخدام عمليات الإدراج غير المتزامنة. فاستخدام `wait_for_async_insert=0` ينطوي على مخاطر كبيرة جدًا، لأن INSERT client قد لا يكتشف وجود أخطاء، وقد يؤدي أيضًا إلى حمل زائد محتمل إذا واصل client الكتابة بسرعة في موقف يحتاج فيه ClickHouse server إلى إبطاء عمليات الكتابة وفرض بعض الضغط العكسي لضمان موثوقية service.
 
-<div id="adaptive-async-inserts">
-  ### عمليات الإدراج غير المتزامنة التكيفية
-</div>
+### عمليات الإدراج غير المتزامنة التكيفية {#adaptive-async-inserts}
 
 اعتبارًا من الإصدار 24.2، يستخدم ClickHouse افتراضيًا مهلات تفريغ تكيفية ([`async_insert_use_adaptive_busy_timeout`](/ar/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout)). فبدلًا من فاصل زمني ثابت للتفريغ، تُضبط المهلة ديناميكيًا بين حد أدنى ([`async_insert_busy_timeout_min_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms)، والقيمة الافتراضية 50 مللي ثانية) وحد أقصى ([`async_insert_busy_timeout_max_ms`](/ar/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)، والقيمة الافتراضية 200 مللي ثانية أو 1000 مللي ثانية على Cloud) استنادًا إلى معدل البيانات الواردة.
 
 عندما تصل البيانات بوتيرة متكررة، تبقى المهلة أقرب إلى الحد الأدنى لتفريغ البيانات بشكل أسرع وتقليل زمن الانتقال من الطرف إلى الطرف. وعندما تكون البيانات متناثرة، ترتفع المهلة باتجاه الحد الأقصى لتجميع دفعات أكبر. ويكون ذلك مفيدًا بشكل خاص في الوضع الافتراضي (`wait_for_async_insert=1`)، إذ إن المهلة الثابتة المرتفعة ستجبر العميل على الانتظار طوال الفاصل الزمني الكامل حتى عندما تكون البيانات جاهزة للتفريغ.
 
-<div id="error-handling">
-  ### معالجة الأخطاء
-</div>
+### معالجة الأخطاء {#error-handling}
 
 يحدث التحقق من المخطط وتحليل البيانات أثناء تفريغ المخزن المؤقت، وليس عند استلام عملية insert. إذا احتوى أي صف في استعلام insert على خطأ في التحليل أو في النوع، **فلن يُفرَّغ أيٌّ من بيانات ذلك الاستعلام** — بل تُرفَض حمولة الاستعلام بالكامل. في الوضع الافتراضي (`wait_for_async_insert=1`)، يُعاد الخطأ إلى العميل. أما في وضع fire-and-forget، فتُسجَّل الأخطاء في سجلات الخادم وفي جدول [`system.asynchronous_inserts`](/ar/reference/system-tables/asynchronous_inserts).
+
+تُعاد أيضًا عملية البحث عن الوجهة والتحقق من الأذونات عند التفريغ، وفقًا لحالة الكتالوج والتحكم في الوصول في ذلك الوقت، لا لحالتهما عند استلام عملية insert. لذا، فإن إرفاق عرض مُجسَّد بالوجهة أو إلغاء أحد الأذونات بين استلام عملية insert وتفريغ مخزنها المؤقت يؤثر في عملية التفريغ.
 
 ينشئ كل تفريغ جزءًا واحدًا على الأقل لكل قيمة مميزة لمفتاح partition في المخزن المؤقت. وحتى في الجداول التي لا تحتوي على مفتاح partition، يمكن لعملية تفريغ واحدة أن تُنتج عدة أجزاء إذا تجاوزت البيانات المخزنة مؤقتًا [`max_insert_block_size`](/ar/reference/settings/session-settings/max-insert#max_insert_block_size) (الافتراضي نحو مليون صف).
 
 <Note>
-  على الرغم من استخدام async inserts، فقد تظل تواجه أخطاء [&quot;too many parts&quot;](/ar/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) إذا كان مفتاح partitioning ذا كاردينالية عالية.
+  على الرغم من استخدام عملية الإدراج غير المتزامنة، فقد تظل تواجه أخطاء [&quot;too many parts&quot;](/ar/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) إذا كان مفتاح partitioning ذا كاردينالية عالية.
 </Note>
 
-<div id="deduplication-and-reliability">
-  ### إزالة التكرار والموثوقية
-</div>
+### إزالة التكرار والموثوقية {#deduplication-and-reliability}
 
 بدءًا من الإصدار 26.2، يُجري ClickHouse إزالة التكرار تلقائيًا لعمليات الإدراج غير المتزامنة والمتزامنة، مما يجعل إعادة المحاولة آمنة في الجداول التي تحتفظ بسجل لإزالة التكرار. تحتفظ محركات `*ReplicatedMergeTree` بهذا السجل افتراضيًا؛ أما جدول `MergeTree` العادي، فيتطلب ضبط `non_replicated_deduplication_window` على قيمة موجبة. يتحكم الإعداد [`deduplicate_insert`](/ar/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) في كلا نوعَي عمليات الإدراج، وقيمته الافتراضية هي `enable`. كما تُدعَم طرق العرض المجسّدة التابعة.
 
@@ -76,20 +70,22 @@ title: عمليات الإدراج غير المتزامنة
 
 للتفاصيل، وللاطلاع على القيد الوحيد الذي ينطبق على طرق العرض المجسّدة مع عمليات الإدراج غير المتزامنة، راجع [إزالة تكرار عمليات الإدراج عند إعادة المحاولة](/ar/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts).
 
-<div id="enabling-asynchronous-inserts">
-  ### تمكين عمليات الإدراج غير المتزامنة
-</div>
+### تمكين عمليات الإدراج غير المتزامنة {#enabling-asynchronous-inserts}
 
 يمكن تمكين عمليات الإدراج غير المتزامنة لمستخدم معيّن أو لاستعلام محدد:
 
 * تمكين عمليات الإدراج غير المتزامنة على مستوى المستخدم. يستخدم هذا المثال المستخدم `default`، فإذا أنشأت مستخدمًا آخر، فاستبدل اسم المستخدم بهذا الاسم:
+
   ```sql
   ALTER USER default SETTINGS async_insert = 1
   ```
+
 * يمكنك تحديد إعدادات الإدراج غير المتزامن باستخدام عبارة SETTINGS في استعلامات `INSERT`:
+
   ```sql
   INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
   ```
+
 * يمكنك أيضًا تحديد إعدادات الإدراج غير المتزامن كمعلمات اتصال عند استخدام عميل ClickHouse لإحدى لغات البرمجة.
 
   على سبيل المثال، إليك كيفية تنفيذ ذلك ضمن سلسلة اتصال JDBC عند استخدام برنامج تشغيل ClickHouse Java JDBC للاتصال بـ ClickHouse Cloud:
@@ -99,11 +95,11 @@ title: عمليات الإدراج غير المتزامنة
   ```
 
 <Note>
-  لا تنطبق عمليات الإدراج غير المتزامنة على استعلامات `INSERT INTO ... SELECT`. وعندما يتضمن الإدراج عبارة `SELECT`، يُنفَّذ الاستعلام دائمًا بشكل متزامن بغض النظر عن الإعداد `async_insert`.
+  يمكن أيضًا توجيه `INSERT ... SELECT` عبر قائمة انتظار الإدراج غير المتزامن عندما يكون `async_insert = 1` وتكون النتيجة بأكملها كتلة واحدة لا يتجاوز حجمها `async_insert_max_data_size`؛ وإلا فسيُنفَّذ بشكل متزامن. ويخضع هذا المسار لقواعد أهلية خاصة به، وله سلوكه الخاص في احتساب عمليات الكتابة وإلغائها. راجع [عمليات `INSERT ... SELECT` غير المتزامنة](/ar/concepts/features/operations/insert/async-insert-select) للاطلاع على التفاصيل.
 </Note>
 
 <div id="flushing-buffers-on-shutdown">
-  ### تفريغ المخازن المؤقتة عند إيقاف التشغيل
+  ### تفريغ المخازن المؤقتة عند إيقاف التشغيل {#flushing-buffers-on-shutdown}
 </div>
 
 لتفريغ جميع مخازن `async insert` المؤقتة قيد الانتظار — على سبيل المثال، أثناء إيقاف تشغيلٍ منظّم أو قبل إجراء الصيانة — شغّل:
@@ -115,7 +111,7 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 يضمن ذلك كتابة أي بيانات موجودة في الذاكرة المؤقتة إلى التخزين قبل توقف الخادم.
 
 <div id="comparison-with-buffer-tables">
-  ### مقارنة مع جداول Buffer
+  ### مقارنة مع جداول Buffer {#comparison-with-buffer-tables}
 </div>
 
 تُعد عمليات الإدراج غير المتزامنة البديل الحديث لـ[جداول Buffer](/ar/reference/engines/table-engines/special/buffer). الاختلافات الرئيسية:

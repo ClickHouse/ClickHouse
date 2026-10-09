@@ -15,7 +15,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムによってデプロイおよび管理することもできます。
 
 <div id="prerequisite">
-  ## 前提条件
+  ## 前提条件 {#prerequisite}
 </div>
 
 あらかじめ [ClickPipes の概要](/ja/integrations/clickpipes/home)を確認し、[IAM 認証情報](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html)または [IAM ロール](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)を設定しておいてください。ClickHouse Cloud で使用するロールの設定方法については、[Kinesis のロールベースアクセスガイド](/ja/integrations/clickpipes/kinesis/auth)を参照してください。
@@ -34,13 +34,13 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="データソースの種類を選択" size="lg" border />
 
-4. ClickPipe の名前、説明 (任意) 、IAM ロールまたは認証情報、そのほかの接続情報を入力します。
+4. ClickPipe の名前、説明 (任意) 、IAM role または認証情報、そのほかの接続情報を入力します。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="接続情報を入力" size="lg" border />
 
-5. Kinesis ストリーム、**Data format**、開始オフセットを選択します。`Protobuf` の場合は、`.proto` ファイルまたはシリアライズされた `FileDescriptorSet` (最大 768 KiB) をアップロードします。スキーマレジストリは不要です。
+5. Kinesis ストリーム、**Data format**、開始オフセットを選択します。Kinesis ClickPipes は JSON、Avro、Protobuf をサポートしています。`Protobuf` の場合は、`.proto` ファイルまたはシリアライズされた `FileDescriptorSet` (最大 768 KiB) をアップロードするか、AWS Glue Schema Registry を設定します。Avro の場合は、AWS Glue Schema Registry を設定します。アップロードした Protobuf スキーマとスキーマレジストリは併用しないでください。
 
-   UI には、選択した stream のサンプルデータが表示されます。**Use Kinesis Enhanced Fan-Out** はデフォルトで有効になっています。詳細は [Amazon Kinesis のドキュメント](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)を参照してください。
+   UI には、選択した ストリーム のサンプルデータが表示されます。**Use Kinesis Enhanced Fan-Out** はデフォルトで有効になっています。詳細は [Amazon Kinesis のドキュメント](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)を参照してください。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="データフォーマットと topic を設定" size="lg" border />
 
@@ -56,12 +56,12 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存の table を使用" size="lg" border />
 
-8. 最後に、内部 ClickPipes ユーザーの権限を設定できます。
+8. 最後に、内部 ClickPipes ユーザーのアクセス許可を設定できます。
 
-**Permissions:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。カスタムロールまたは定義済みロールのいずれかを使って、この内部ユーザーに割り当てるロールを選択できます。
+**アクセス許可:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。カスタムロールまたは定義済みロールのいずれかを使って、この内部ユーザーに割り当てるロールを選択できます。
 
 * `Full access`: クラスターへのフルアクセス権を持ちます。宛先テーブルで materialized view や Dictionary を使用する場合に便利です。
-  * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみを持ちます。
+  * `Only destination table`: 宛先テーブルに対する `INSERT` アクセス許可のみを持ちます。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" border />
 
@@ -86,10 +86,17 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 対応フォーマットは以下のとおりです。
 
 * [JSON](/ja/reference/formats/JSON/JSON)
+* [Avro](/ja/reference/formats/Avro/AvroConfluent) (AWS Glue Schema Registry と併用)
 * [Protobuf](/ja/reference/formats/Protobuf/Protobuf)
 
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
+
+Kinesis ClickPipes は、AWS Glue Schema Registry から Avro および Protobuf のスキーマを解決できます。ClickPipe の作成フローで **AWS Glue** を選択し、レジストリの AWS リージョンと名前を指定してください。必要に応じて、レジストリへのアクセスに使用する IAM role を指定することもできます。指定しない場合、ClickPipes は Kinesis ソースの IAM アイデンティティを使用します。このアイデンティティには `glue:GetSchemaVersion` のアクセス許可が必要です。
+
+これらのフィールドは、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) または [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) から設定することもできます。必要な IAM ポリシーと設定の詳細については、[スキーマレジストリガイド](/ja/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry)を参照してください。
+
 <div id="compression">
-  ## 圧縮
+  ## 圧縮 {#compression}
 </div>
 
 ClickPipes for Kinesis は、圧縮されたレコードを自動的に検出して解凍します。Kafka ではクライアントライブラリが透過的に解凍を処理しますが、Kinesis は生のバイト列をそのまま配信するため、これは ClickPipes が設定不要で処理します。
@@ -108,11 +115,11 @@ ClickPipes for Kinesis は、圧縮されたレコードを自動的に検出し
 </Note>
 
 <div id="supported-data-types">
-  ## サポートされているデータ型
+  ## サポートされているデータ型 {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### 標準型のサポート
+  ### 標準型のサポート {#standard-types-support}
 </div>
 
 現在、ClickPipes では以下の ClickHouse データ型がサポートされています。
@@ -135,7 +142,7 @@ ClickPipes for Kinesis は、圧縮されたレコードを自動的に検出し
 * SimpleAggregateFunction 型 (AggregatingMergeTree または SummingMergeTree の宛先向け)
 
 <div id="variant-type-support">
-  ### Variant 型のサポート
+  ### Variant 型のサポート {#variant-type-support}
 </div>
 
 ソースデータストリーム内の任意の JSON フィールドに対して、Variant 型 (`Variant(String, Int64, DateTime)` など) を手動で指定できます。
@@ -143,13 +150,13 @@ ClickPipes では使用する適切な Variant 型を判定する仕組み上、
 型は 1 つだけです。たとえば、`Variant(Int64, UInt32)` はサポートされていません。
 
 <div id="json-type-support">
-  ### JSON 型のサポート
+  ### JSON 型のサポート {#json-type-support}
 </div>
 
 常に JSON オブジェクトである JSON フィールドは、JSON の宛先カラムに割り当てることができます。固定パスやスキップするパスも含め、宛先カラムを目的の JSON 型に手動で変更する必要があります。
 
 <div id="kinesis-virtual-columns">
-  ## Kinesis 仮想カラム
+  ## Kinesis 仮想カラム {#kinesis-virtual-columns}
 </div>
 
 Kinesis ストリームでは、以下の仮想カラムをサポートしています。新しい宛先テーブルを作成する際は、`Add Column` ボタンを使って仮想カラムを追加できます。
@@ -166,18 +173,18 @@ Kinesis ストリームでは、以下の仮想カラムをサポートしてい
 ビューにデータを投入する場合) 。このようなパイプでは、「仮想カラムではない」カラムをすべて削除することで、ClickPipes のパフォーマンスが向上する場合があります。
 
 <div id="limitations">
-  ## 制限事項
+  ## 制限事項 {#limitations}
 </div>
 
 * [DEFAULT](/ja/reference/statements/create/table#default) はサポートされていません。
 * 最小の (XS) レプリカサイズで実行する場合、個々のメッセージの上限はデフォルトで 16MB (非圧縮) 、より大きいレプリカでは 32MB (非圧縮) です。この上限を超えるメッセージは error となり、拒否されます。より大きいメッセージが必要な場合は、サポートにお問い合わせください。
 
 <div id="performance">
-  ## パフォーマンス
+  ## パフォーマンス {#performance}
 </div>
 
 <div id="batching">
-  ### バッチ処理
+  ### バッチ処理 {#batching}
 </div>
 
 ClickPipes はデータをバッチ単位で ClickHouse に挿入します。これは、データベース内に過剰な数のパーツが作成されるのを防ぎ、クラスターのパフォーマンス低下を避けるためです。
@@ -188,7 +195,7 @@ ClickPipes はデータをバッチ単位で ClickHouse に挿入します。こ
 * バッチの保持時間が上限に達した場合 (5 秒)
 
 <div id="latency">
-  ### レイテンシ
+  ### レイテンシ {#latency}
 </div>
 
 レイテンシ (Kinesis のメッセージがストリームに送信されてから、そのメッセージを ClickHouse で利用できるようになるまでの時間) は、さまざまな要因 (例: Kinesis のレイテンシ、ネットワークレイテンシ、メッセージのサイズ/フォーマット) に左右されます。上のセクションで説明した[バッチ処理](#batching)も、レイテンシに影響します。実際にどの程度のレイテンシになるかを把握するため、必ずご利用のユースケースに即してテストすることをお勧めします。
@@ -196,13 +203,13 @@ ClickPipes はデータをバッチ単位で ClickHouse に挿入します。こ
 低レイテンシに関する特定の要件がある場合は、[お問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
 
 <div id="active-shards">
-  ### アクティブな分片
+  ### アクティブな分片 {#active-shards}
 </div>
 
 アクティブな分片が多数ある場合、それらを処理できるだけの[スケール](#scaling)が ClickPipe に設定されていないと、ClickPipe のスループットが低下する可能性があります。
 
 <div id="scaling">
-  ### スケーリング
+  ### スケーリング {#scaling}
 </div>
 
 ClickPipes for Kinesis は、水平方向と垂直方向の両方にスケールできるよう設計されています。デフォルトでは、1 つのコンシューマーを含むコンシューマグループが作成されます。これは ClickPipe の作成時、または作成後の任意のタイミングで **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** から設定できます。

@@ -1,0 +1,62 @@
+---
+slug: /concepts/features/operations/insert/async-insert-select
+sidebarTitle: '非同期 INSERT ... SELECT'
+title: '非同期 INSERT ... SELECT'
+description: 'INSERT ... SELECT が非同期挿入キューを経由して処理される仕組みと、その際に適用されるルーティング、リソース計上、キャンセルのルールについて説明します。'
+keywords: ['asynchronous inserts', 'async_insert', 'insert select', 'async_insert_select_as_async_insert']
+doc_type: 'guide'
+---
+
+[非同期挿入](/ja/optimize/asynchronous-inserts)キューを経由して処理できるのは、通常の `INSERT ... VALUES` だけではありません。`INSERT ... SELECT` も同様に処理できます。このページでは、どのような場合に非同期挿入キューが使われるのか、書き込み側がどのように計上されるのか、そしてクエリがキャンセルまたはタイムアウトした場合にどうなるのかを説明します。
+
+## 適用条件とルーティング {#eligibility-and-routing}
+
+`INSERT ... SELECT` が非同期キューのルートを通るのは、以下の条件をすべて満たす場合に限られます。
+
+* `async_insert = 1` であること。
+* `async_insert_select_as_async_insert = 1` (デフォルト) であること。これはマスタースイッチであり、無効にすると `async_insert` の値にかかわらず `INSERT ... SELECT` は常に同期的に実行されます。`compatibility` を 26.10 より前のバージョンに設定すると、このデフォルト値は `0` に切り替わります。明示的に `async_insert_select_as_async_insert = 1` を指定すれば、再び有効にできます。
+* `SELECT` の結果全体が、`async_insert_max_data_size` 以下の単一のブロックであること。
+* 宛先が `MergeTree` ファミリーのテーブルであること (別名の場合は、このチェックの際に参照先までたどって判定されます) 。
+
+上記の条件をすべて満たしていても、次のいずれかに該当する場合、insert は同期ルートにフォールバックします。
+
+* 結果が複数のブロックにまたがる、`async_insert_max_data_size` を超える、または空である。
+* 非並列クォーラムが使用されている (`insert_quorum` が設定され、かつ `insert_quorum_parallel = 0`) 。
+* 宛先に依存する materialized view が存在する。
+* 宛先が materialized view である。`MergeTree` のチェックはターゲットテーブルではなくビュー自体に対して行われるため、対象外となります。
+* 宛先がテーブル関数、または `Distributed` などのリモートテーブルエンジンである。
+* `SELECT` が自身の宛先テーブルを読み取る (`INSERT INTO t SELECT ... FROM t`) 。
+* 非 `Nullable` のターゲットカラムに `Nullable` の `SELECT` カラムを挿入する際、`insert_null_as_default` によってデフォルト値への置き換えが必要になる。
+* insert が内部的なものである (リフレッシャブルmaterialized view のリフレッシュ、`POPULATE`、または `CREATE TABLE ... AS SELECT`) 。これらは常に同期的に実行され、`async_insert_select_as_async_insert` および `async_insert` は無視されます。
+
+トランザクションの場合は扱いが異なります。クエリがトランザクション内 (明示的なトランザクション、または `implicit_transaction = 1`) で実行される場合、非同期ルートはサポートされておらず、デフォルトでは ClickHouse はフォールバックせずに `NOT_IMPLEMENTED` を送出します。クエリが同期 insert にフォールバックするのは、`throw_on_unsupported_query_inside_transaction = 0` が設定されている場合のみです。
+
+非同期ゲートより前に決定されたルーティングが優先されるため、`SELECT` 側の要因だけで非同期ルートが除外されることもあります。`parallel_distributed_insert_select` (デフォルトで有効) が有効な場合、`s3Cluster` などのクラスターソースから読み取ってレプリケートテーブルに書き込む `INSERT ... SELECT` は分散 insert パスで実行され、非同期キューには到達しません。並列レプリカの場合も同様です。
+
+## 返却モードと待機 {#return-mode-and-waiting}
+
+`wait_for_async_insert` の動作は、通常の非同期 INSERT と同じです。`1`(デフォルト)の場合は flush の完了を待機し、`0` の場合はブロックがキューに追加された時点で即座に制御を返します。
+
+非同期ルートでは単一のブロックが必要となるため、`SELECT` が単一ブロックを生成しやすくするには次の設定を利用します。[`optimize_trivial_insert_select`](/ja/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select) は、異なるテーブル間で実行される単純な `INSERT INTO dest SELECT ... FROM source` の読み取りスレッド数を [`max_insert_threads`](/ja/reference/settings/session-settings/max-insert#max_insert_threads) までに制限します。`max_insert_threads = 1` を設定すると、ほとんどの場合 `SELECT` は 1 つのブロックを生成します。
+
+## 書き込みの計上とオブザーバビリティ {#write-accounting-and-observability}
+
+書き込み側の処理は、元の `INSERT ... SELECT` ではなく、flush クエリに帰属します。
+
+* 書き込みに関する `ProfileEvents` (`InsertedRows`、`InsertedBytes`) は flush クエリに計上され、flush クエリには書き込み側の `system.query_log` 行が別途記録されます。元の `INSERT ... SELECT` の行では、これらの `ProfileEvents` の値は `0` になります。flush 自体の書き込み量を確認するには、`system.query_log` および `system.asynchronous_insert_log` にある flush クエリの行を参照してください。
+* `wait_for_async_insert = 1` (デフォルト) の場合、クエリ自身の `written_rows` と `written_bytes` (および HTTP の `X-ClickHouse-Summary` ヘッダー) には、flush クエリ自体の合計ではなく、`SELECT` から受け付けた行数とバイト数が報告されます。flush が失敗した場合は、その場合でもクライアントにエラーとして通知されます。
+* `wait_for_async_insert = 0` の場合、flush の結果が出る前にクエリが返るため、これらの数値は報告されません。
+* `WRITTEN_BYTES` クォータは flush のパス上で一度だけ計上され、flush が失敗してもロールバックされません。
+
+## キャンセルとタイムアウト {#cancellation-and-timeouts}
+
+ブロックは flush の待機が始まる前にキューに投入されます。そのため、クエリをキャンセルしても止まるのはクライアント側の待機だけで、キューの flush は止まりません。
+
+* `KILL QUERY` を実行した場合や、待機中に `max_execution_time` に達した場合、クライアントにはエラーが返されますが、行はすでに書き込まれている可能性があります。この経路でクエリがキャンセルまたはタイムアウトしたからといって、何も書き込まれていないとは判断しないでください。
+* `timeout_overflow_mode = 'break'` の場合、エラーも早期リターンも発生しません。クエリは `max_execution_time` を超えても、`wait_for_async_insert_timeout` に達するまで flush を待機します。途中で打ち切ると、書き込みが確認される前に成功が報告されてしまうためです。
+
+## 判定が確定するタイミング {#when-decisions-are-bound}
+
+非同期ルートを利用できるかどうかは、ブロックがキューに入る前、クエリ開始時に一度だけ判定されます。また、事前のアクセスチェックにより、認可されていない挿入は早い段階で拒否されます。`INSERT ... SELECT` が非同期ルートを通るかどうかは、`async_insert` だけでなく、結果のブロックの形状によっても決まります。
+
+一方、宛先のルックアップとバインディングの認可は、[他の非同期挿入](/ja/optimize/asynchronous-inserts)と同様に flush 時に実行されます。そのため、キューに入ってから flush されるまでの間に、宛先へ materialized view がアタッチされたり権限が取り消されたりすると、その変更が flush に反映されます。

@@ -8,9 +8,9 @@ sidebarTitle: "Главная"
 
 export const localizeHref = (href) => {
     if (/^\/(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/.test(href)) return href;
-    const match = typeof window !== 'undefined' ? window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/) : null;
-    const locale = match ? match[1] : 'ru';
-    return `/${locale}${href}`;
+    if (typeof window === 'undefined') return href;
+    const match = window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/);
+    return match ? `/${match[1]}${href}` : href;
 };
 
 export const withDocsBase = (href) => {
@@ -160,7 +160,7 @@ export const IntegrationsBanner = () => {
         >
             <div>
                 <h3 className="text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] mt-0">Интеграции</h3>
-                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-1 text-sm font-normal leading-normal">Более 100 интеграций для подключения любимых инструментов и сервисов к ClickHouse.</span>
+                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-1 text-sm font-normal leading-normal">100+ интеграций to connect the tools and services that you love with ClickHouse.</span>
             </div>
             <div className="ch-usecase-arrow shrink-0 flex items-center justify-center w-12 h-12 mr-2 rounded-full bg-gray-950/[0.05] dark:bg-white/[0.06]">
                 <span
@@ -194,7 +194,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const path = localizeHref('/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server');
+    const path = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
     const href = withDocsBase(path);
     return (
         <a
@@ -217,7 +217,7 @@ export const McpLink = ({ children }) => {
 };
 
 export const QuickstartPill = ({ children }) => {
-    const path = '/ru/get-started/setup/cloud';
+    const path = '/get-started/setup/cloud';
     const href = withDocsBase(path);
     return (
         <a
@@ -277,25 +277,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-            .ch-goal-icon { color: #374151; }
-            .dark .ch-goal-icon { color: #FAFF69; }
-            /* Баннер «Интеграции»: акцентная граница в обеих темах */
-            html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-            html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-            .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-            .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-            /* Сразу скрыть боковую панель на главной странице (предотвращает мерцание) */
-            #sidebar { display: none !important; }
-            /* Растянуть панель навигации на всю ширину, так как боковая панель скрыта */
-            #navbar-transition-maple {
-              width: 100vw !important;
-              left: 0 !important;
-              margin-left: 0 !important;
-              /* Соответствует правому внутреннему отступу самой панели навигации (3rem) */
-              padding-left: 3rem !important;
-              justify-content: flex-start !important;
-            }
-            `}
+      .ch-goal-icon { color: #374151; }
+      .dark .ch-goal-icon { color: #FAFF69; }
+      /* Баннер «Интеграции»: акцентная граница в обеих темах */
+      html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+      html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+      .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+      .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+      /* Сразу скрыть боковую панель на главной странице (предотвращает мерцание) */
+      #sidebar { display: none !important; }
+      /* Растянуть панель навигации на всю ширину, так как боковая панель скрыта */
+      #navbar-transition-maple {
+        width: 100vw !important;
+        left: 0 !important;
+        margin-left: 0 !important;
+        /* Соответствует правому внутреннему отступу самой панели навигации (3rem) */
+        padding-left: 3rem !important;
+        justify-content: flex-start !important;
+      }
+      `}
 </style>
 
 <PageWrapper>
@@ -323,6 +323,7 @@ export const PageWrapper = ({ children }) => {
         <button type="button" id="home-search-entry" data-galaxy-event="docs.home.search" className="flex w-full sm:flex-1 pointer-events-auto items-center text-sm leading-6 h-9 pl-3.5 pr-4 text-gray-500 dark:text-white/50 gap-2 min-w-0 bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded" aria-label="Открыть поиск">
           <div className="flex items-center gap-2 min-w-0"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">Поиск...</div></div>
         </button>
+
         <AskAILink>Спросить у ИИ</AskAILink>
       </div>
 

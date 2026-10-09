@@ -28,9 +28,7 @@ O primeiro limite atingido aciona o flush.
 
 Esse processo de batching é invisível para os clientes e ajuda o ClickHouse a mesclar com eficiência o tráfego de inserções de várias fontes. No entanto, até que ocorra um flush, os dados não podem ser consultados. É importante destacar que há vários buffers para cada combinação de formato de inserção e configurações e, em clusters, os buffers são mantidos por nó, o que possibilita um controle granular em ambientes multilocatários. Fora isso, a mecânica de inserção é idêntica à descrita para [inserções síncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
 
-<div id="choosing-a-return-mode">
-  ### Escolhendo um modo de retorno
-</div>
+### Escolhendo um modo de retorno {#choosing-a-return-mode}
 
 O comportamento das inserções assíncronas é refinado ainda mais com a configuração [`wait_for_async_insert`](/pt-BR/reference/settings/session-settings/wait-for#wait_for_async_insert).
 
@@ -46,29 +44,25 @@ Isso oferece inserções com latência ultrabaixa e throughput máximo, ideal pa
 
 Nossa recomendação enfática é usar `async_insert=1,wait_for_async_insert=1` ao usar inserções assíncronas. Usar `wait_for_async_insert=0` é muito arriscado porque seu cliente de INSERT pode não perceber se houver erros, e também pode causar uma possível sobrecarga se o cliente continuar gravando rapidamente em uma situação em que o servidor ClickHouse precise desacelerar as gravações e criar alguma contrapressão para garantir a confiabilidade do serviço.
 
-<div id="adaptive-async-inserts">
-  ### Inserts assíncronos adaptativos
-</div>
+### Inserts assíncronos adaptativos {#adaptive-async-inserts}
 
 Desde a versão 24.2, o ClickHouse usa timeouts adaptativos de flush por padrão ([`async_insert_use_adaptive_busy_timeout`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout)). Em vez de um intervalo de flush fixo, o timeout se ajusta dinamicamente entre um mínimo ([`async_insert_busy_timeout_min_ms`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms), padrão de 50 ms) e um máximo ([`async_insert_busy_timeout_max_ms`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), padrão de 200 ms ou 1000 ms no Cloud), com base na taxa de chegada dos dados.
 
 Quando os dados chegam com frequência, o timeout fica mais próximo do mínimo para fazer o flush mais cedo e reduzir a latência de ponta a ponta. Quando os dados são esparsos, ele aumenta em direção ao máximo para acumular lotes maiores. Isso é especialmente útil no modo padrão (`wait_for_async_insert=1`), em que um timeout fixo alto faria os clientes ficarem bloqueados durante todo o intervalo, mesmo quando os dados já estivessem prontos para flush.
 
-<div id="error-handling">
-  ### Tratamento de erros
-</div>
+### Tratamento de erros {#error-handling}
 
 A validação do schema e o parsing dos dados acontecem durante o flush do buffer, não quando o insert é recebido. Se qualquer linha em uma consulta de insert tiver erro de parsing ou de tipo, **nenhum dado dessa consulta é gravado** — todo o payload da consulta é rejeitado. No modo padrão (`wait_for_async_insert=1`), o erro é retornado ao cliente. No modo fire-and-forget, os erros são gravados nos logs do servidor e na tabela [`system.asynchronous_inserts`](/pt-BR/reference/system-tables/asynchronous_inserts).
+
+A identificação do destino e a autorização também são reavaliadas no momento do flush, com base no catálogo e nas permissões de acesso vigentes naquele momento, não nas que estavam em vigor quando o insert foi recebido. Se uma visão materializada for anexada ao destino ou uma concessão for revogada entre o recebimento do insert e o flush do buffer, isso afetará o flush.
 
 Cada flush cria pelo menos uma parte para cada valor distinto da chave de particionamento no buffer. Mesmo em tabelas sem chave de particionamento, um único flush pode produzir várias partes se os dados em buffer excederem [`max_insert_block_size`](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size) (padrão: ~1 milhão de linhas).
 
 <Note>
-  Apesar de usar async inserts, você ainda pode encontrar erros de [&quot;too many parts&quot;](/pt-BR/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) se a chave de particionamento tiver alta cardinalidade.
+  Apesar de usar inserção assíncrona, você ainda pode encontrar erros de [&quot;too many parts&quot;](/pt-BR/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) se a chave de particionamento tiver alta cardinalidade.
 </Note>
 
-<div id="deduplication-and-reliability">
-  ### Desduplicação e confiabilidade
-</div>
+### Desduplicação e confiabilidade {#deduplication-and-reliability}
 
 Desde a versão 26.2, o ClickHouse realiza desduplicação automática tanto para inserções assíncronas quanto para síncronos, o que torna seguras as novas tentativas em tabelas que mantêm um registro de desduplicação. Os motores `*ReplicatedMergeTree` mantêm um por padrão; uma tabela `MergeTree` simples precisa ter `non_replicated_deduplication_window` definido com um valor positivo. Ambos os tipos de insert são controlados por [`deduplicate_insert`](/pt-BR/reference/settings/session-settings/deduplicate-insert#deduplicate_insert), cujo valor padrão é `enable`. Visões materializadas dependentes são compatíveis.
 
@@ -76,20 +70,22 @@ Na prática, se o mesmo insert for repetido — por exemplo, devido a um timeout
 
 Para obter detalhes e conhecer a única restrição aplicável a visões materializadas em inserções assíncronas, consulte [Desduplicação de inserts em novas tentativas](/pt-BR/concepts/features/operations/insert/deduplicating-inserts-on-retries#deduplication-for-asynchronous-inserts).
 
-<div id="enabling-asynchronous-inserts">
-  ### Habilitando inserções assíncronas
-</div>
+### Habilitando inserções assíncronas {#enabling-asynchronous-inserts}
 
 As inserções assíncronas podem ser habilitadas para um determinado usuário ou para uma consulta específica:
 
 * Habilite as inserções assíncronas no nível do usuário. Este exemplo usa o usuário `default`; se você criar outro usuário, substitua pelo respectivo nome de usuário:
+
   ```sql
   ALTER USER default SETTINGS async_insert = 1
   ```
+
 * Você pode especificar as configurações de inserção assíncrona usando a cláusula SETTINGS nas consultas de inserção:
+
   ```sql
   INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
   ```
+
 * Você também pode especificar as configurações de inserção assíncrona como parâmetros de conexão ao usar um cliente ClickHouse de uma linguagem de programação.
 
   Por exemplo, veja como fazer isso em uma string de conexão JDBC ao usar o driver JDBC Java do ClickHouse para se conectar ao ClickHouse Cloud:
@@ -99,11 +95,11 @@ As inserções assíncronas podem ser habilitadas para um determinado usuário o
   ```
 
 <Note>
-  As inserções assíncronas não se aplicam a consultas `INSERT INTO ... SELECT`. Quando a inserção contém uma cláusula `SELECT`, a consulta é sempre executada de forma síncrona, independentemente da configuração `async_insert`.
+  `INSERT ... SELECT` também pode usar a fila de inserções assíncronas quando `async_insert = 1` e o resultado inteiro forma um único bloco que não excede `async_insert_max_data_size`; caso contrário, é executado de forma síncrona. Esse caminho tem suas próprias regras de elegibilidade, contabilização de gravações e comportamento de cancelamento. Consulte [Instruções `INSERT ... SELECT` assíncronas](/pt-BR/concepts/features/operations/insert/async-insert-select) para obter detalhes.
 </Note>
 
 <div id="flushing-buffers-on-shutdown">
-  ### Esvaziando os buffers ao encerrar
+  ### Esvaziando os buffers ao encerrar {#flushing-buffers-on-shutdown}
 </div>
 
 Para esvaziar todos os buffers pendentes de async insert — por exemplo, durante um encerramento controlado ou antes de uma manutenção — execute:
@@ -115,7 +111,7 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 Isso garante que todos os dados em buffer sejam gravados no armazenamento antes que o servidor pare.
 
 <div id="comparison-with-buffer-tables">
-  ### Comparação com tabelas Buffer
+  ### Comparação com tabelas Buffer {#comparison-with-buffer-tables}
 </div>
 
 As inserções assíncronas são o substituto moderno das [tabelas Buffer](/pt-BR/reference/engines/table-engines/special/buffer). Principais diferenças:

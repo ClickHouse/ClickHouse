@@ -17,7 +17,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Tip>
 
 <div id="definitions">
-  ## 定義
+  ## 定義 {#definitions}
 </div>
 
 まず、いくつかの用語を確認しておくと役立ちます。
@@ -28,9 +28,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 **Database Backups and Snapshots**: バックアップは、データの別個のコピーを保持することで、耐久性の高い長期保存を実現します。スナップショットはデータの追加コピーを作成せず、通常はより高速で、より優れた RPO を実現します。
 
-<div id="database-backups">
-  ## データベースのバックアップ
-</div>
+## データベースのバックアップ {#database-backups}
 
 プライマリサービスのバックアップを保持しておくことで、プライマリサービスでダウンタイムが発生した場合に、そのバックアップを使って復元できます。
 ClickHouse Cloud は、バックアップについて以下の機能をサポートしています。
@@ -56,11 +54,13 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 お客様は、RPO を改善するために、[バックアップを設定](/ja/products/cloud/guides/backups/configurable-backups)して、最短で 6 時間ごとに実行されるようにできます。
 また、保持期間をより長く設定することもできます。
 
+バックアップの頻度によって、最新の復元ポイントが最悪の場合どれだけ古くなるかが決まり、それに応じて RPO が決まります。保持期間はバックアップデータの保存期間を決めるもので、最新の復元ポイントが新しくなるわけではありません。たとえば、保持期間を 1 日、バックアップの頻度を 48 時間ごとに設定したサービスでは、最新の復元ポイントが 48 時間近く前のものになる場合があります。
+
 現在サービスで利用可能なバックアップは、ClickHouse Cloud コンソールの「backups」ページに一覧表示されます。
 このセクションでは、各バックアップの成功 / 失敗ステータスも確認できます。
 
 <div id="restoring-from-a-backup">
-  ## バックアップからの復元
+  ## バックアップからの復元 {#restoring-from-a-backup}
 </div>
 
 1. ClickHouse Cloud の バケット 内にあるデフォルトバックアップは、同じリージョン内の新しいサービスに復元できます。
@@ -82,13 +82,13 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 </Note>
 
 <div id="recovery-process">
-  ## 復旧プロセス
+  ## 復旧プロセス {#recovery-process}
 </div>
 
 このセクションでは、各ケースで利用できるさまざまな復旧オプションと、その手順について説明します。
 
 <div id="primary-service-data-corruption">
-  ### プライマリサービスのデータ破損
+  ### プライマリサービスのデータ破損 {#primary-service-data-corruption}
 </div>
 
 この場合、データはバックアップから同一リージョン内の別のサービスに[復元できます](/ja/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup)。
@@ -105,7 +105,7 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="バックアップから復元" />
 
 <div id="primary-region-downtime">
-  ### プライマリリージョンのダウンタイム
+  ### プライマリリージョンのダウンタイム {#primary-region-downtime}
 </div>
 
 [バックアップをエクスポート](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)して、ご利用のクラウドプロバイダーのバケットに保存できます。
@@ -125,7 +125,7 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 </Note>
 
 <div id="additional-options">
-  ## 追加オプション
+  ## 追加オプション {#additional-options}
 </div>
 
 検討できる追加オプションがいくつかあります。

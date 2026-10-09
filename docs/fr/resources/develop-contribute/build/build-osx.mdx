@@ -17,15 +17,13 @@ ClickHouse peut être compilé sur macOS x86&#95;64 (Intel) et arm64 (Apple Sili
 
 Comme compilateur, seul Clang fourni par Homebrew est pris en charge.
 
-<div id="install-prerequisites">
-  ## Installer les prérequis
-</div>
+## Installer les prérequis {#install-prerequisites}
 
 Commencez par consulter la [documentation générale sur les prérequis](/fr/resources/develop-contribute/introduction/developer-instruction).
 
 Ensuite, installez [Homebrew](https://brew.sh/) et exécutez
 
-Puis exécutez :
+Puis exécutez :
 
 ```bash
 brew update
@@ -33,15 +31,23 @@ brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils
 ```
 
 <Note>
+  Comme `llvm`, le paquet `rustup` de Homebrew est keg-only : son répertoire `bin` n’est donc pas ajouté automatiquement au `PATH`. Exportez-le de la même manière que le `PATH` de `llvm` dans [Construire ClickHouse](#build-clickhouse) :
+
+  ```bash
+  export PATH=$(brew --prefix rustup)/bin:$PATH
+  ```
+
+  ClickHouse fixe également la version de la chaîne d’outils Rust utilisée par le module contrib `corrosion`. Installez-la et sélectionnez-la en suivant la section [Installer le compilateur Rust](/fr/development/build#install-the-rust-compiler-optional) du guide de construction sous Linux. Sans cela, `cmake` échoue sur le module contrib `corrosion` avec l’erreur `Cannot find nightly-<date> Rust toolchain`.
+</Note>
+
+<Note>
   Par défaut, Apple utilise un système de fichiers insensible à la casse. Bien que cela n’ait généralement pas d’impact sur la compilation (en particulier, les compilations depuis zéro fonctionneront), cela peut perturber des opérations sur les fichiers comme `git mv`.
   Pour un développement sérieux sur macOS, assurez-vous que le code source est stocké sur un volume de disque sensible à la casse ; consultez par exemple [ces instructions](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
 </Note>
 
-<div id="build-clickhouse">
-  ## Compiler ClickHouse
-</div>
+## Construction de ClickHouse {#build-clickhouse}
 
-Pour compiler, vous devez utiliser le compilateur Clang de Homebrew :
+Pour la construction, vous devez utiliser le compilateur Clang de Homebrew :
 
 ```bash
 cd ClickHouse
@@ -53,13 +59,15 @@ cmake --build build
 ```
 
 <Note>
+  Une simple commande `brew install llvm` installe toujours la dernière version de LLVM proposée par Homebrew, qui peut être plus récente que la version de Clang figée pour l’intégration continue et les constructions Linux (voir [Installer le compilateur Clang](/fr/development/build#install-the-clang-compiler)). Une version plus récente de Clang peut activer des diagnostics `-Weverything` qui ne sont pas encore neutralisés dans la construction et faire échouer celle-ci avec `-Werror`. Dans ce cas, plutôt que de désactiver les avertissements, installez la version majeure figée, par exemple via une formule versionnée (`brew install llvm@<version>`) si Homebrew la propose encore.
+</Note>
+
+<Note>
   Si vous rencontrez des erreurs `ld: archive member '/' not a mach-o file in ...` lors de l’édition des liens, il peut être nécessaire
   d’utiliser llvm-ar en définissant l’option `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar`.
 </Note>
 
-<div id="caveats">
-  ## Points à retenir
-</div>
+## Points à retenir {#caveats}
 
 Si vous prévoyez d’exécuter `clickhouse-server`, veillez à augmenter la variable système `maxfiles`.
 

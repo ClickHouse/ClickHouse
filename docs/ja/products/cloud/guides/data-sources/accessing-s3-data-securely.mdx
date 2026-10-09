@@ -19,9 +19,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 この方法では、S3 バケットへのすべてのアクセスを 1 か所 (引き受けるロールの IAM ポリシー) で管理できるため、アクセスを追加または削除するたびに各バケットポリシーを見直す必要がありません。
 以下のセクションでは、この設定方法を説明します。
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## ClickHouseサービスの IAM ロール ARN を取得する
-</div>
+## ClickHouseサービスの IAM ロール ARN を取得する {#obtaining-the-clickhouse-service-iam-role-arn}
 
 1. ClickHouse Cloud アカウントにログインします。
 
@@ -36,7 +34,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="ClickHouseサービスの IAM ロール ARN を取得する" border />
 
 <div id="setting-up-iam-assume-role">
-  ## IAM Assume Role を設定する
+  ## IAM Assume Role を設定する {#setting-up-iam-assume-role}
 </div>
 
 IAM Assume Role は、次の 2 つの方法のいずれかで設定できます。
@@ -44,9 +42,7 @@ IAM Assume Role は、次の 2 つの方法のいずれかで設定できます�
 * [CloudFormation スタックを使用して設定する](#option-1-deploying-with-cloudformation-stack)
 * [IAM ロールを手動で作成する](#option-2-manually-create-iam-role)
 
-<div id="option-1-deploying-with-cloudformation-stack">
-  ### CloudFormation スタックを使用したデプロイ
-</div>
+### CloudFormation スタックを使用したデプロイ {#option-1-deploying-with-cloudformation-stack}
 
 1. IAM ロールを作成および管理する権限を持つ IAM ユーザーで、Web ブラウザーから AWS アカウントにログインします。
 
@@ -84,7 +80,7 @@ IAM Assume Role は、次の 2 つの方法のいずれかで設定できます�
 <Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="IAM Role ARN を示す CloudFormation スタックの出力" border />
 
 <div id="option-2-manually-create-iam-role">
-  ### IAM ロールを手動で作成する
+  ### IAM ロールを手動で作成する {#option-2-manually-create-iam-role}
 </div>
 
 1. IAM ロールの作成と管理の権限を持つ IAM ユーザーで、ウェブブラウザから AWS アカウントにログインします。
@@ -140,9 +136,7 @@ IAM Assume Role は、次の 2 つの方法のいずれかで設定できます�
 
 4. 作成後、新しい**IAM Role Arn**をコピーします。これは、S3 バケットにアクセスするために必要です。
 
-<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
-  ## ClickHouseAccessロールでS3バケットにアクセスする
-</div>
+## ClickHouseAccessロールでS3バケットにアクセスする {#access-your-s3-bucket-with-the-clickhouseaccess-role}
 
 ClickHouse Cloud では、S3 table function の一部として `extra_credentials` を指定できます。
 以下は、上でコピーした新しく作成したロールを使用してクエリを実行する例です。
@@ -153,6 +147,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
 
 以下は、`role_session_name` を共有シークレットとして使用してバケット内のデータをクエリする例です。
 `role_session_name` が正しくない場合、この操作は失敗します。
+`role_session_name` は共有シークレットとして機能し得るため、ClickHouse は `external_id` と同様に、`system.query_log` や `SHOW CREATE TABLE` をはじめ、クエリテキストが表示されるすべての箇所で `role_session_name` の値を `[HIDDEN]` としてマスクします。
 
 ```sql
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
@@ -163,9 +158,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   詳しくは、[S3 の料金](https://aws.amazon.com/s3/pricing/) を参照してください。
 </Note>
 
-<div id="advanced-action-control">
-  ## 高度なアクション制御
-</div>
+## 高度なアクション制御 {#advanced-action-control}
 
 より厳格なアクセス制御を行うには、[`aws:SourceVpce` 条件](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint)を使用して、ClickHouse Cloud の VPC エンドポイント経由のリクエストのみを受け入れるようにバケットポリシーを制限できます。お使いの ClickHouse Cloud リージョンの VPC エンドポイントを取得するには、ターミナルを開いて次を実行します。
 
