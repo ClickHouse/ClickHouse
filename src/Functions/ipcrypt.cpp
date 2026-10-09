@@ -14,6 +14,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Common/formatIPv6.h>
 
 #include <ipcrypt2.h>
@@ -363,6 +364,17 @@ private:
     }
 };
 
+static void findIPCryptSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    if (finder.function->arguments->size() < 2)
+        return;
+
+    /// We hide the key argument and any following for the case of using extra arguments by mistake:
+    /// ipcryptEncrypt('ip', 'key') -> ipcryptEncrypt('ip', '[HIDDEN]')
+    finder.result.start = 1;
+    finder.result.count = finder.function->arguments->size() - 1;
+}
+
 REGISTER_FUNCTION(IPCrypt)
 {
     FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
@@ -394,7 +406,9 @@ IPv4/IPv6 input returns IPv6, String input returns String (an IPv4-mapped result
              "c629:37a3:24f9:e1c3:705e:a51b:a160:f609"},
         };
         factory.registerFunction<FunctionIPCrypt<IPCryptMode::Encrypt>>(
-            {description, "ipcryptEncrypt(ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
+            {description, "ipcryptEncrypt(ip, key)", arguments, {}, returned_value, examples, introduced_in, category},
+            FunctionFactory::Case::Sensitive,
+            SecretArgumentsSpec{.custom = findIPCryptSecretArguments});
     }
 
     /// ipcryptDecrypt
@@ -423,7 +437,9 @@ IPv4/IPv6 input returns IPv6, String input returns String (an IPv4-mapped result
              "::ffff:192.168.1.1"},
         };
         factory.registerFunction<FunctionIPCrypt<IPCryptMode::Decrypt>>(
-            {description, "ipcryptDecrypt(encrypted_ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
+            {description, "ipcryptDecrypt(encrypted_ip, key)", arguments, {}, returned_value, examples, introduced_in, category},
+            FunctionFactory::Case::Sensitive,
+            SecretArgumentsSpec{.custom = findIPCryptSecretArguments});
     }
 
     /// ipcryptPrefixEncrypt
@@ -453,7 +469,9 @@ The return type preserves the input class: IPv4 stays IPv4, IPv6 stays IPv6.
              "43.223.59.191"},
         };
         factory.registerFunction<FunctionIPCrypt<IPCryptMode::PrefixEncrypt>>(
-            {description, "ipcryptPrefixEncrypt(ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
+            {description, "ipcryptPrefixEncrypt(ip, key)", arguments, {}, returned_value, examples, introduced_in, category},
+            FunctionFactory::Case::Sensitive,
+            SecretArgumentsSpec{.custom = findIPCryptSecretArguments});
     }
 
     /// ipcryptPrefixDecrypt
@@ -482,7 +500,9 @@ The return type preserves the input class: IPv4 stays IPv4, IPv6 stays IPv6.
              "192.168.1.1"},
         };
         factory.registerFunction<FunctionIPCrypt<IPCryptMode::PrefixDecrypt>>(
-            {description, "ipcryptPrefixDecrypt(encrypted_ip, key)", arguments, {}, returned_value, examples, introduced_in, category});
+            {description, "ipcryptPrefixDecrypt(encrypted_ip, key)", arguments, {}, returned_value, examples, introduced_in, category},
+            FunctionFactory::Case::Sensitive,
+            SecretArgumentsSpec{.custom = findIPCryptSecretArguments});
     }
 }
 
