@@ -217,7 +217,7 @@ void MergePlainMergeTreeTask::cleanupAfterFailure() noexcept
     /// Cleanup retains configured retries under `StopWork`, but still observes `StopAll`.
     ThreadGroupSwitcher operation_group(
         merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
-    ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+    ExecutionPhaseScope cleanup_scope(ExecutionPhase::Cleanup);
     if (merge_task)
         merge_task->cancel();
 
