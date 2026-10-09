@@ -412,21 +412,24 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
             local_tables_cache.erase(iterator);
         }
 
-        local_tables_cache[table_name] = std::make_pair(
-            table_modification_time,
-            std::make_shared<StorageMySQL>(
-                StorageID(database_name, table_name),
-                std::move(mysql_pool),
-                database_name_in_mysql,
-                TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
-                /* replace_query_ */ false,
-                /* on_duplicate_clause = */ "",
-                ColumnsDescription{columns_name_and_type},
-                ConstraintsDescription{},
-                String{},
-                getContext(),
-                MySQLSettings{}));
+        local_tables_cache[table_name] = std::make_pair(table_modification_time, createStorage(table_name, columns_name_and_type));
     }
+}
+
+StoragePtr DatabaseMySQL::createStorage(const String & table_name, const ColumnsDescription & columns) const
+{
+    return std::make_shared<StorageMySQL>(
+        StorageID(database_name, table_name),
+        std::move(mysql_pool),
+        database_name_in_mysql,
+        TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+        /* replace_query_ */ false,
+        /* on_duplicate_clause = */ "",
+        columns,
+        ConstraintsDescription{},
+        String{},
+        getContext(),
+        *mysql_settings);
 }
 
 std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextPtr local_context) const
