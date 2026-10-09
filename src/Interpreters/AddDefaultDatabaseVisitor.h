@@ -713,7 +713,11 @@ private:
                                 continue;
 
                             auto dictionary_name = literal_value.safeGet<String>();
-                            auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+                            /// Unlike `dictGet`, `assignCentroid` is not validated against the current database, so it binds to `database_name`.
+                            const auto & loader = context->getExternalDictionariesLoader();
+                            auto qualified_dictionary_name = is_dict_get
+                                ? loader.qualifyDictionaryNameWithDatabase(dictionary_name, context)
+                                : loader.qualifyDictionaryNameWithDatabase(dictionary_name, database_name);
                             literal_value = qualified_dictionary_name.getFullName();
                         }
                     }

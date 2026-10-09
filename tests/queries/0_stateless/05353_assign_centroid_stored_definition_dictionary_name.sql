@@ -43,12 +43,20 @@ INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.t_default (id, v) VALUES (1, [1.0, 
 SELECT id, c, m FROM {CLICKHOUSE_DATABASE:Identifier}.t_default ORDER BY id;
 SELECT id, a FROM {CLICKHOUSE_DATABASE:Identifier}.vectors ORDER BY id;
 
+-- An ALTER issued from another current database binds the name to the database of the table.
+ALTER TABLE {CLICKHOUSE_DATABASE:Identifier}.vectors ADD COLUMN a_other UInt32 ALIAS assignCentroid(v, 'centroids_dict');
+SELECT id, a_other FROM {CLICKHOUSE_DATABASE:Identifier}.vectors ORDER BY id;
+ALTER TABLE {CLICKHOUSE_DATABASE:Identifier}.t_mut UPDATE c = assignCentroid(v, 'centroids_dict') + 1 WHERE 1 SETTINGS mutations_sync = 2;
+SELECT id, c FROM {CLICKHOUSE_DATABASE:Identifier}.t_mut ORDER BY id;
+
 -- A dictionary with the same name in the current database is not used instead.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.other_centroids (cid UInt64, vec Array(Float32)) ENGINE = MergeTree ORDER BY cid;
 INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.other_centroids VALUES (3, [1.0, 1.0]), (5, [9.0, 9.0]);
 CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.centroids_dict (cid UInt64, vec Array(Float32))
 PRIMARY KEY cid SOURCE(CLICKHOUSE(TABLE 'other_centroids')) LAYOUT(FLAT(MAX_ARRAY_SIZE 1000)) LIFETIME(0);
 SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.v_bound ORDER BY id;
+ALTER TABLE {CLICKHOUSE_DATABASE:Identifier}.vectors MODIFY COLUMN a_other UInt32 ALIAS assignCentroid(v, 'centroids_dict');
+SELECT id, a_other FROM {CLICKHOUSE_DATABASE:Identifier}.vectors ORDER BY id;
 
 -- A definition that is not new keeps the name as it is stored: a name that did not resolve when the view was created is
 -- still resolved in the current database of the reader after a short ATTACH and after a RESTORE.
