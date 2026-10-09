@@ -22,7 +22,7 @@ function wait_merges_gone()
     done
 }
 
-# Part A: the main mutating pipeline builds the set itself (`WHERE 1` needs no affected-rows check).
+# Part A: the main mutating pipeline builds the set itself: the affected-rows check of `WHERE 1` does not need it.
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE t_main (id UInt64, v UInt8) ENGINE = MergeTree ORDER BY id
 SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0"
@@ -48,7 +48,8 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges WHERE database = c
 $CLICKHOUSE_CLIENT --query "SELECT sum(v) FROM t_main"
 
 # Part B: three partitions share one set. `ignore` keeps the set out of the index analysis, so every part's
-# affected-rows check query needs it: one builds it, the other two wait for it.
+# affected-rows check query needs it: one builds it, the others wait for it. The roles are found one at a time,
+# so at most two of the part tasks have to run at once in the shared background pool.
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE t_wait (id UInt64, p UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY id
 SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0"
@@ -62,32 +63,50 @@ table_uuid=$($CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --query "
 ALTER TABLE t_wait DELETE WHERE ignore(id IN ($subquery)) SETTINGS mutations_sync = 0"
 
-# The partition of each part task, from its query id `<table uuid>::<part name>_<mutation version>`.
-roles_query="
-    SELECT splitByChar('_', splitByString('::', query_id)[2])[1]
-    FROM system.text_log
-    WHERE event_date >= yesterday() AND logger_name = 'CreatingSetsTransform'
-      AND query_id LIKE concat('${table_uuid}', '::%') AND message LIKE"
+# The partitions whose part task logged a message, from the query id `<table uuid>::<part name>_<mutation version>`.
+function partitions_logging()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
+        SELECT DISTINCT splitByChar('_', splitByString('::', query_id)[2])[1] AS p
+        FROM system.text_log
+        WHERE event_date >= yesterday() AND logger_name = 'CreatingSetsTransform'
+          AND query_id LIKE concat('${table_uuid}', '::%') AND message LIKE '$1%'
+        ORDER BY p"
+}
+
+# One deadline for both waiters: the set takes more than 150 seconds to build, so a task that starts before it
+# still finds the set in progress.
+roles_deadline=$((SECONDS + 120))
 
 builder=""
-waiters=""
-deadline=$((SECONDS + 120))
-while [ $SECONDS -lt $deadline ]; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-    builder=$($CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "$roles_query 'Building set, key: %' GROUP BY 1")
-    waiters=$($CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "$roles_query 'Waiting for set to be built by another thread, key: %' GROUP BY 1 ORDER BY 1")
-    [ "$(echo "$builder" | grep -c .)" = 1 ] && [ "$(echo "$waiters" | grep -c .)" = 2 ] && break
+waiter_1=""
+while [ $SECONDS -lt $roles_deadline ]; do
+    builder=$(partitions_logging 'Building set, key: ')
+    waiter_1=$(partitions_logging 'Waiting for set to be built by another thread, key: ' | sed -n 1p)
+    [ "$(echo "$builder" | grep -c .)" = 1 ] && [ -n "$waiter_1" ] && break
     sleep 1
 done
-if [ "$(echo "$builder" | grep -c .)" != 1 ] || [ "$(echo "$waiters" | grep -c .)" != 2 ]; then
-    echo "Part B: expected one builder and two waiters, got builder [$builder], waiters [$waiters]" >&2
+if [ "$(echo "$builder" | grep -c .)" != 1 ] || [ -z "$waiter_1" ]; then
+    echo "Part B: expected one builder and a waiter, got builder [$builder], waiter [$waiter_1]" >&2
     exit 1
 fi
-waiter_1=$(echo "$waiters" | head -n 1)
-waiter_2=$(echo "$waiters" | tail -n 1)
 
 # Only the first waiter is cancelled, while the set is still being built.
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_wait REPLACE PARTITION ID '$waiter_1' FROM t_wait_src"
+
+# The task of the remaining partition waits for the set too; under a busy pool it may start only now.
+waiter_2=""
+while [ $SECONDS -lt $roles_deadline ]; do
+    waiter_2=$(partitions_logging 'Waiting for set to be built by another thread, key: ' \
+        | grep -vxF -e "$builder" -e "$waiter_1" | sed -n 1p)
+    [ -n "$waiter_2" ] && break
+    sleep 1
+done
+if [ -z "$waiter_2" ]; then
+    echo "Part B: the task of the third partition did not wait for the set" >&2
+    exit 1
+fi
 
 # The builder is cancelled. It abandons the set instead of failing it, so the other waiter builds it itself.
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_wait REPLACE PARTITION ID '$builder' FROM t_wait_src"

@@ -132,6 +132,8 @@ void CreatingSetsTransform::startSubquery()
         {
             try
             {
+                /// A cancelled task must not take over the build of a set another task abandoned.
+                CurrentThread::checkIfNotCancelled();
                 auto from_cache = prepared_sets_cache->findOrPromiseToBuild(set_and_key->key);
                 if (from_cache.index() == 0)
                 {
