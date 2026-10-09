@@ -812,8 +812,7 @@ private:
     /// ContextData mutex
     mutable ContextSharedMutex mutex;
 
-    /// The query's stateless-worker allocation, see `getOrCreateStatelessWorkerAllocation`. It has its own
-    /// mutex, held across the blocking allocation, so that it does not block other access to `mutex`.
+    /// Held across the blocking allocation, so separate from `mutex`.
     mutable std::mutex stateless_worker_allocation_mutex;
     mutable StatelessWorkerAllocationPtr stateless_worker_allocation;
     mutable StatelessWorkersProviderPtr stateless_worker_provider;
@@ -1621,17 +1620,13 @@ public:
 
     /// The provider for the named worker cluster (empty = default), built on first use.
     StatelessWorkersProviderPtr getStatelessWorkersProvider(const String & cluster_name) const;
-    /// Like `getStatelessWorkersProvider` but returns null instead of building one (introspection).
+    /// Like `getStatelessWorkersProvider`, but returns null instead of building one.
     StatelessWorkersProviderPtr tryGetStatelessWorkersProvider(const String & cluster_name) const;
-    /// The registry that owns the per-cluster stateless-worker providers.
     std::shared_ptr<StatelessWorkersProviderRegistry> getStatelessWorkersProviderRegistry() const;
-    /// Re-apply the server config to already-built providers.
     void reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const;
-    /// The provider for the query's selected worker cluster, resolved once so plan sizing and the allocation
-    /// (`getOrCreateStatelessWorkerAllocation`) use one provider — and one worker set — for the query.
+    /// The query's provider, resolved once so plan sizing and the allocation use the same workers.
     StatelessWorkersProviderPtr getStatelessWorkersProvider() const;
-    /// The query's stateless-worker allocation, shared by all of its distributed plans: the first call
-    /// allocates as many workers as the plans run on, and later calls return the same handle.
+    /// The query's allocation, shared by all of its distributed plans.
     StatelessWorkerAllocationPtr getOrCreateStatelessWorkerAllocation() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.

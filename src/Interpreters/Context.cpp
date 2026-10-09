@@ -884,7 +884,6 @@ struct ContextSharedPart : boost::noncopyable
 #endif
 
     mutable std::mutex stateless_worker_provider_mutex;
-    /// The per-cluster stateless-worker providers, built lazily on first use.
     mutable StatelessWorkersProviderRegistryPtr stateless_workers_registry TSA_GUARDED_BY(stateless_worker_provider_mutex);
 
     ContextSharedPart()
@@ -9265,8 +9264,7 @@ StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
 
 StatelessWorkerAllocationPtr Context::getOrCreateStatelessWorkerAllocation() const
 {
-    /// Stored on the query context and sized from its settings, which planning also uses, so a
-    /// subquery's own `SETTINGS` clause does not change the allocation.
+    /// Sized from the query context's settings, as planning is, so a subquery's `SETTINGS` cannot change it.
     auto query_context_ptr = getQueryContext();
 
     /// Resolve the provider before locking (it takes the same mutex).

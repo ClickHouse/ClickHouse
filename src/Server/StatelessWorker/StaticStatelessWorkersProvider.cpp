@@ -60,9 +60,6 @@ std::vector<StatelessWorkerAddress> StaticStatelessWorkersProvider::resolveWorke
 }
 
 StaticStatelessWorkersProvider::StaticStatelessWorkersProvider(String config_prefix_)
-    /// Resolve the worker set once, now, so the provider is an immutable snapshot of its configuration
-    /// (a config reload rebuilds it for new queries). A broken static config therefore fails here, when
-    /// the provider is built, rather than at allocation time.
     : addresses(resolveWorkerAddresses(config_prefix_))
 {
 }
@@ -70,8 +67,7 @@ StaticStatelessWorkersProvider::StaticStatelessWorkersProvider(String config_pre
 StatelessWorkerAllocationPtr StaticStatelessWorkersProvider::allocate(
     size_t /*desired_workers*/, uint64_t /*provisioning_timeout_ms*/)
 {
-    /// Hand out a copy of the workers snapshotted at construction. Static allocations carry no worker
-    /// IDs and no refcounting: the provider pointer is null so the destructor skips the release call.
+    /// No provider and no worker IDs: nothing to return when the allocation is destroyed.
     return StatelessWorkerAllocationPtr(
         new StatelessWorkerAllocation(nullptr, {}, addresses));
 }
@@ -88,10 +84,7 @@ void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & fa
         {
             return std::make_shared<StaticStatelessWorkersProvider>(config_prefix);
         },
-        /// Hash the RESOLVED worker set, not just the literal `cluster`/`host`: a `<cluster>` form points
-        /// at a `remote_servers` entry whose replicas/ports can change while the `cluster` name stays the
-        /// same, and the provider snapshots its workers at build — so the signature must change when the
-        /// resolved set does, to retire and rebuild.
+        /// Sign the resolved workers, not the literal `cluster` name, whose `remote_servers` entry can change.
         .config_signature = [](const Poco::Util::AbstractConfiguration &, const String & config_prefix) -> String
         {
             String signature;
@@ -105,10 +98,7 @@ void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & fa
 
 std::vector<StatelessWorkerState> StaticStatelessWorkersProvider::getWorkersState() const
 {
-    /// Report the snapshotted workers so `system.stateless_workers` shows a built static cluster — an
-    /// empty result would be indistinguishable from "provider not built yet". A static cluster has no
-    /// refcounting, so each worker is simply present (`cached`) with a zero refcount and a
-    /// `STATIC` status.
+    /// No refcounting: every worker is reported as cached with a zero refcount.
     std::vector<StatelessWorkerState> result;
     result.reserve(addresses.size());
     for (const auto & address : addresses)

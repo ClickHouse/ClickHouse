@@ -43,40 +43,29 @@ struct StatelessWorkerState
     bool cached = false;
 };
 
-/// Provider of stateless workers for one worker cluster. A query
-/// selects a cluster (via the `distributed_plan_worker_cluster` setting) and the
-/// provider registry resolves it to one provider that hands out per-query worker
-/// allocations. `StaticStatelessWorkersProvider` serves a fixed set of workers; other
-/// implementations acquire workers dynamically.
+/// Provider of stateless workers for one worker cluster; hands out per-query worker allocations.
 class IStatelessWorkersProvider : private boost::noncopyable
 {
 public:
     virtual ~IStatelessWorkersProvider() = default;
 
-    /// Create a per-query allocation of workers. Returns a lightweight RAII handle
-    /// (`StatelessWorkerAllocation`) carrying the worker endpoints to dial.
+    /// Create a per-query allocation of workers.
     virtual StatelessWorkerAllocationPtr allocate(size_t desired_workers, uint64_t provisioning_timeout_ms) = 0;
 
-    /// Snapshot of all workers this provider knows about (backs `system.stateless_workers`).
+    /// Snapshot of all workers this provider knows about, for introspection.
     virtual std::vector<StatelessWorkerState> getWorkersState() const = 0;
 
-    /// Number of nodes the optimizer should plan the query for when this provider serves it: a
-    /// dynamic provider acquires up to `requested_workers`, a static provider serves its fixed
-    /// configured set regardless of the request. Lets plan sizing and the allocation size from the same
-    /// provider instance the query resolves (see `Context::getStatelessWorkersProvider`).
+    /// Number of nodes to plan a query for, given the requested worker count.
     virtual size_t getPlanningNodeCount(size_t requested_workers) const = 0;
 
-    /// The token to present when dialing this provider's workers, or empty when there is none
-    /// (static clusters carry no token).
+    /// The token to present when dialing this provider's workers; empty when there is none.
     virtual std::string getAuthToken() const = 0;
 
-    /// Begin/stop the provider's background work.
-    /// A no-op for providers that do not run background threads.
+    /// Begin/stop the provider's background work, if any.
     virtual void start() = 0;
     virtual void shutdown() = 0;
 
-    /// Re-apply the server configuration to a running provider (e.g. re-read a token file
-    /// after it changed). Providers with nothing to reload leave this a no-op.
+    /// Re-apply the server configuration to a running provider.
     virtual void reloadConfig(const Poco::Util::AbstractConfiguration & config) { (void)config; }
 
 protected:

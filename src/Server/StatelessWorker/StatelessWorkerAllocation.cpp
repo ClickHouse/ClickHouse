@@ -21,11 +21,8 @@ StatelessWorkerAllocation::StatelessWorkerAllocation(
 {
     chassert(worker_ids.empty() || worker_ids.size() == addresses.size());
 
-    /// Per-query count of stateless workers provided to the query (a query
-    /// executed over N stateless workers adds N). Constructed on the query
-    /// thread, so this is attributed to the query's ProfileEvents. Counts the
-    /// provided addresses: a static allocation carries addresses but no
-    /// `worker_ids`, so counting ids would report zero for static clusters.
+    /// Constructed on the query thread, so this counts against the query. Counts addresses, not
+    /// `worker_ids`, which a static allocation does not have.
     ProfileEvents::increment(ProfileEvents::StatelessWorkerProvided, addresses.size());
 }
 

@@ -1198,10 +1198,8 @@ TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan
 
 size_t getCascadesPlanningNodeCount(ContextPtr context)
 {
-    /// Resolve the query-level context — the same one execution allocates from
-    /// (`getOrCreateStatelessWorkerAllocation`) — and read the plan's settings from it, so a copied or
-    /// subquery planning context's own `SETTINGS` (the worker cluster and the worker count) cannot plan a
-    /// different topology than execution uses (one query → one cluster, one size).
+    /// Read the settings from the query context, which the allocation also uses, so a subquery's own
+    /// `SETTINGS` cannot plan a different cluster or worker count than execution gets.
     const ContextPtr query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     const auto & settings = query_context->getSettingsRef();
     const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
@@ -1210,9 +1208,8 @@ size_t getCascadesPlanningNodeCount(ContextPtr context)
     if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
         return requested_workers;
 
-    /// Execution (`fillWorkerAddresses`) serves stateless-worker queries only when the client is enabled.
-    /// With it disabled the default cluster plans zero distributed nodes (runs locally), but a query that
-    /// explicitly named a worker cluster cannot be served, so reject it rather than silently running local.
+    /// With the client disabled the default cluster plans no distributed nodes, but an explicitly named
+    /// cluster cannot be served, so reject it instead of silently running locally.
     const String worker_cluster = settings[Setting::distributed_plan_worker_cluster];
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
     {
@@ -1232,8 +1229,7 @@ void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
 
-    /// The query allocates its workers once, shared across its distributed plans, from the cluster it
-    /// selected (`distributed_plan_worker_cluster`, resolved inside getOrCreateStatelessWorkerAllocation).
+    /// One allocation per query, shared by its distributed plans.
     worker_allocation = context->getOrCreateStatelessWorkerAllocation();
     for (const auto & addr : worker_allocation->getAddresses())
         worker_addresses.push_back(

@@ -45,18 +45,15 @@ String StatelessWorkersProviderRegistry::canonicalizeClusterName(
     /// The default cluster is the flat `stateless_worker_client` block. It is selected by an empty
     /// value, or by the optional name it is given via `default_cluster_name`.
     const String default_cluster_name = config.getString("stateless_worker_client.default_cluster_name", "");
-    /// A named default must not also exist under `clusters`: selecting that name would resolve to the
-    /// flat default and the `clusters.<name>` entry would be unreachable, silently routing to the wrong
-    /// pool. Reject the collision so the ambiguity surfaces as a loud configuration error.
+    /// A named default must not also exist under `clusters`, or that entry would be unreachable.
     if (!default_cluster_name.empty() && config.has("stateless_worker_client.clusters." + default_cluster_name))
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "Stateless worker `default_cluster_name` '{}' also names a cluster under `clusters`; cluster names must be unique",
             default_cluster_name);
     if (worker_cluster.empty() || (!default_cluster_name.empty() && worker_cluster == default_cluster_name))
     {
-        /// A default exists only when the flat block itself names a worker source. A symmetric config
-        /// that keeps only shared settings there (every cluster under `clusters.<name>`) has none, so a
-        /// query must name its cluster — reject an empty selection and point at the configured names.
+        /// A default exists only when the flat block names a worker source; otherwise a query must
+        /// name its cluster.
         const size_t sources = countWorkerSources(config, "stateless_worker_client");
         if (sources == 0)
         {
@@ -95,17 +92,15 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
     if (!global_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No global context to resolve a stateless worker cluster");
     const auto & config = global_context->getConfigRef();
-    /// Resolve the selection (default naming, no-default rejection, unknown/sourceless checks) so the
-    /// default cluster is cached under one key whether it was selected by an empty value or by name.
+    /// The default cluster is cached under one key whether it was selected by an empty value or by name.
     const String canonical = canonicalizeClusterName(config, cluster_name);
 
     std::lock_guard lock(mutex);
     if (auto it = providers.find(canonical); it != providers.end())
         return it->second.provider;
 
-    /// Sign before building: a reload published in between then leaves the signature older than the
-    /// provider, so the next reload rebuilds it at worst, instead of keeping a stale provider under a
-    /// newer signature.
+    /// Sign before building, so a reload published in between can only cause a rebuild, never keep a
+    /// stale provider under a newer signature.
     String signature = computeConfigSignature(config, canonical);
     auto provider = buildProvider(canonical);
     providers.emplace(canonical, ProviderEntry{provider, std::move(signature)});
@@ -117,8 +112,7 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::tryGetProvider(con
     auto global_context = Context::getGlobalContextInstance();
     if (!global_context)
         return nullptr;
-    /// Introspection reports no provider for a selection it cannot resolve (e.g. the default cluster
-    /// when none is configured) instead of propagating the validation error.
+    /// Introspection reports no provider for a selection it cannot resolve instead of throwing.
     String canonical;
     try
     {
@@ -177,8 +171,6 @@ String StatelessWorkersProviderRegistry::computeConfigSignature(const Poco::Util
 
 void StatelessWorkersProviderRegistry::reloadConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    /// Never throws: a cluster whose new configuration cannot be applied is retired, so the error
-    /// surfaces to the next query that selects it (when it is rebuilt) rather than to the reload.
     std::lock_guard lock(mutex);
     for (auto it = providers.begin(); it != providers.end();)
     {
@@ -191,9 +183,8 @@ void StatelessWorkersProviderRegistry::reloadConfig(const Poco::Util::AbstractCo
                 ++it;
                 continue;
             }
-            /// The cluster was removed or reconfigured: stop selecting it. In-flight queries keep
-            /// their provider alive through their allocation and drain naturally; a reconfigured
-            /// cluster is rebuilt from the new configuration on its next use.
+            /// Removed or reconfigured: queries holding the provider drain on it, and the cluster is
+            /// rebuilt on its next use.
             LOG_INFO(log, "Retiring stateless worker provider for cluster '{}' after a configuration change", it->first);
         }
         catch (...)
