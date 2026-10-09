@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/V2/Engine/Polling/PollRequest.h>
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/TaskRunner.h>
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/LocalTasks.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerSlot.h>
@@ -8,6 +9,7 @@
 #include <array>
 #include <atomic>
 #include <optional>
+#include <span>
 
 namespace DB
 {
@@ -19,26 +21,27 @@ class WorkerPool;
 
 class Worker
 {
-    std::optional<Task> pickTask();
+    /// Tasks search.
+    bool keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag);
+    std::optional<Task> pickTask(WorkerSlot & slot, std::atomic_bool * yield_flag);
     std::optional<Task> tryPickTask();
-    std::optional<Task> takeFromLocal();
-    std::optional<Task> takeFromGlobal();
-    std::optional<Task> takeFromPoller();
-    std::optional<Task> takeFromOthers();
-    void pushToLocal(const Task & task);
-    void wakeOrSpawn(size_t threads_needed);
-    size_t runTask(Task task);
+    std::optional<Task> tryPickTaskBeforePark();
+    std::optional<Task> tryStealTasks(size_t rounds);
+
+    /// Tasks population.
+    void pushMany(std::span<const Task> tasks);
+    void pushMany(std::span<const PollRequest> requests);
+    void wakeFor(Int64 extra_work);
+    void runTask(Task task);
+    void finishRun();
 
 public:
     Worker(WorkerPool & pool_, size_t worker_id_);
 
     void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
 
-    std::optional<Task> steal();
-    std::optional<Task> poll(int timeout_ms);
-    size_t drain();
-
-    void park();
+    UInt32 steal(std::span<Task> out);
+    void handOverTasks();
     void wake();
 
 private:
@@ -47,9 +50,9 @@ private:
     TaskRunner runner;
 
     LocalTasks local_tasks;
-    std::array<Task, LocalTasks::capacity / 2> offload_buffer{};
+    std::array<Task, LocalTasks::capacity> tmp_task_buffer{};
 
-    Wyrd::Atomic<bool> wake_up = false;
+    Wyrd::Atomic<UInt32> wakeups = 0;
 };
 
 }

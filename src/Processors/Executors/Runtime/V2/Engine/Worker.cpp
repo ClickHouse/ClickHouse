@@ -1,11 +1,12 @@
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
-#include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
-#include <ranges>
+#include <Interpreters/ProcessList.h>
+
 #include <span>
 
 namespace DB
@@ -14,6 +15,8 @@ namespace DB
 namespace Runtime::V2
 {
 
+static constexpr size_t steal_rounds = 4;
+
 Worker::Worker(WorkerPool & pool_, size_t worker_id_)
     : pool(pool_)
     , worker_id(worker_id_)
@@ -21,187 +24,213 @@ Worker::Worker(WorkerPool & pool_, size_t worker_id_)
 {
 }
 
-std::optional<Task> Worker::pickTask()
+bool Worker::keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag)
+{
+    if (!slot.keepGoing() || pool.coordinator.isStopped())
+        return false;
+
+    if (yield_flag && yield_flag->load())
+        return false;
+
+    if (pool.pipeline.process_list_element && !pool.pipeline.process_list_element->checkTimeLimitSoft())
+    {
+        pool.pipeline.cancel(IProcessor::CancelReason::CancelledByTimeout);
+        pool.coordinator.stop();
+        return false;
+    }
+
+    return true;
+}
+
+std::optional<Task> Worker::pickTask(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
     while (true)
     {
-        if (pool.coordinator.stopped())
+        if (!keepRunning(slot, yield_flag))
             return std::nullopt;
-
-        if (pool.pipeline.hasReadyForRemoval())
-            pool.pipeline.removeReady();
 
         if (auto task = tryPickTask())
             return task;
 
-        if (auto task = pool.coordinator.wait(*this))
-            return task;
+        if (pool.pipeline.hasReadyForRemoval())
+            pool.pipeline.removeReady();
+
+        if (pool.poller.pending() > 0 && pool.coordinator.startPolling())
+        {
+            auto task = tryPickTaskBeforePark();
+            if (!task)
+            {
+                const auto fired = pool.poller.poll(-1);
+                if (!fired.empty())
+                {
+                    pushMany(std::span(fired).subspan(1));
+                    wakeFor(fired.size() - 1);
+                    task = fired.front();
+                }
+            }
+            pool.coordinator.stopPolling();
+            if (task)
+                return task;
+        }
+        else
+        {
+            UInt32 wakeups_before = wakeups.load();
+            if (!pool.coordinator.startParking(worker_id))
+                continue;
+
+            auto task = tryPickTaskBeforePark();
+            if (!task)
+                futexWaitFetch(wakeups, wakeups_before);
+            pool.coordinator.becomeNormal(worker_id);
+            if (task)
+                return task;
+        }
     }
 }
 
 std::optional<Task> Worker::tryPickTask()
 {
-    if (auto task = takeFromLocal())
+    if (auto task = local_tasks.pop())
         return task;
 
-    if (auto task = takeFromGlobal())
+    if (auto task = pool.global_tasks.tryPop())
         return task;
 
-    if (auto task = takeFromPoller())
-        return task;
-
-    return takeFromOthers();
-}
-
-std::optional<Task> Worker::takeFromLocal()
-{
-    return local_tasks.pop();
-}
-
-std::optional<Task> Worker::takeFromGlobal()
-{
-    return pool.global_tasks.tryPop();
-}
-
-std::optional<Task> Worker::takeFromPoller()
-{
-    if (pool.coordinator.isPolling())
-        return std::nullopt;
-
-    return poll(0);
-}
-
-std::optional<Task> Worker::takeFromOthers()
-{
-    const size_t workers = pool.workers.size();
-    const size_t start = Wyrd::randomNumber() % workers;
-    for (size_t i = 0; i < workers; ++i)
+    if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
     {
-        Worker & other = pool.workers[(start + i) % workers];
-        if (&other == this)
-            continue;
+        const auto fired = pool.poller.poll(0);
+        pool.coordinator.stopPolling();
 
-        if (auto task = other.steal())
-            return task;
+        if (!fired.empty())
+        {
+            pushMany(std::span(fired).subspan(1));
+            wakeFor(fired.size() - 1);
+            return fired.front();
+        }
+    }
+
+    if (pool.coordinator.startStealing())
+    {
+        auto task = tryStealTasks(steal_rounds);
+        pool.coordinator.stopStealing();
+        wakeFor(task.has_value());
+        return task;
     }
 
     return std::nullopt;
 }
 
-void Worker::pushToLocal(const Task & task)
+std::optional<Task> Worker::tryPickTaskBeforePark()
 {
-    while (!local_tasks.push(task))
+    if (auto task = pool.global_tasks.tryPop())
+        return task;
+
+    auto task = tryStealTasks(/*rounds=*/1);
+    wakeFor(task.has_value());
+    return task;
+}
+
+std::optional<Task> Worker::tryStealTasks(size_t rounds)
+{
+    const size_t workers = pool.workers.size();
+    for (size_t round = 0; round < rounds; ++round)
     {
-        const size_t count = local_tasks.grab(offload_buffer);
-        pool.global_tasks.pushMany(std::span(offload_buffer).first(count));
+        const size_t start = Wyrd::randomNumber() % workers;
+        for (size_t offset = 0; offset < workers; ++offset)
+        {
+            Worker & other = pool.workers[(start + offset) % workers];
+            if (&other == this)
+                continue;
+
+            const UInt32 count = other.steal(tmp_task_buffer);
+            if (count == 0)
+                continue;
+
+            const std::span stolen(tmp_task_buffer.data(), count);
+            local_tasks.pushMany(stolen.subspan(1));
+            return stolen.front();
+        }
     }
+
+    return std::nullopt;
 }
 
-void Worker::wakeOrSpawn(size_t threads_needed)
+void Worker::pushMany(std::span<const Task> tasks)
 {
-    size_t woken = 0;
-    if (pool.coordinator.idle() > 0)
-        woken = pool.coordinator.wake(threads_needed);
-
-    if (threads_needed > woken)
-        pool.grow(threads_needed - woken);
+    const UInt32 pushed = local_tasks.pushMany(tasks);
+    pool.global_tasks.pushMany(tasks.subspan(pushed));
 }
 
-size_t Worker::runTask(Task task)
+void Worker::pushMany(std::span<const PollRequest> requests)
+{
+    pool.poller.pushMany(requests);
+}
+
+void Worker::wakeFor(Int64 extra_work)
+{
+    if (extra_work <= 0 || pool.coordinator.hasStealer())
+        return;
+
+    if (pool.coordinator.hasSleepers() || pool.coordinator.hasPoller())
+        if (pool.coordinator.wakeOne())
+            return;
+
+    pool.grow(1);
+}
+
+void Worker::runTask(Task task)
 {
     runner.run(task);
 
-    for (const auto & found : runner.getFoundTasks() | std::views::reverse)
-        pushToLocal(found);
+    const auto & new_compute_tasks = runner.getFoundTasks();
+    pushMany(new_compute_tasks);
 
-    for (const auto & found : runner.getFoundPollRequests())
-        pool.poller.add(found);
+    const auto & new_poll_requests = runner.getFoundPollRequests();
+    pushMany(new_poll_requests);
 
-    const size_t work_found = runner.getFoundTasks().size() + runner.getFoundPollRequests().size();
-    return work_found == 0 ? 0 : work_found - 1;
+    const Int64 work_found = new_compute_tasks.size() + new_poll_requests.size();
+    wakeFor(work_found - 1);
 }
 
 void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
-    while (auto task = pickTask())
-    {
-        const size_t threads_needed = runTask(*task);
+    while (auto task = pickTask(slot, yield_flag))
+        runTask(*task);
 
-        if (threads_needed > 0)
-            wakeOrSpawn(threads_needed);
+    finishRun();
+}
 
-        if (pool.pipeline.process_list_element && !pool.pipeline.process_list_element->checkTimeLimitSoft())
-        {
-            pool.pipeline.cancel(IProcessor::CancelReason::CancelledByTimeout);
-            pool.coordinator.stop();
-            break;
-        }
-
-        if (!slot.keepGoing())
-            break;
-
-        if (yield_flag && yield_flag->load())
-            break;
-    }
-
-    if (const size_t moved = drain(); moved > 0)
-        wakeOrSpawn(moved);
+void Worker::finishRun()
+{
+    handOverTasks();
 
     if (pool.pipeline.step_profiler)
         pool.pipeline.step_profiler->addWorkIntervals(runner.takeWorkIntervals());
 }
 
-std::optional<Task> Worker::steal()
+UInt32 Worker::steal(std::span<Task> out)
 {
-    Task stolen{};
-    if (local_tasks.grab(std::span(&stolen, 1)) == 0)
-        return std::nullopt;
-    return stolen;
+    return local_tasks.steal(out);
 }
 
-std::optional<Task> Worker::poll(int timeout_ms)
+void Worker::handOverTasks()
 {
-    if (pool.poller.pending() == 0)
-        return std::nullopt;
-
-    const auto fired = pool.poller.poll(timeout_ms);
-    if (fired.empty())
-        return std::nullopt;
-
-    if (fired.size() > 1)
-    {
-        pool.global_tasks.pushMany(std::span(fired).subspan(1));
-        wakeOrSpawn(fired.size() - 1);
-    }
-
-    return fired.front();
-}
-
-size_t Worker::drain()
-{
-    std::array<Task, LocalTasks::capacity> taken;
     size_t moved = 0;
     while (local_tasks.size() > 0)
     {
-        if (const size_t count = local_tasks.grab(taken))
+        if (const size_t count = local_tasks.steal(tmp_task_buffer))
         {
-            pool.global_tasks.pushMany(std::span(taken).first(count));
+            pool.global_tasks.pushMany(std::span(tmp_task_buffer).first(count));
             moved += count;
         }
     }
-    return moved;
-}
-
-void Worker::park()
-{
-    wake_up.wait(false);
-    wake_up.store(false);
+    wakeFor(moved);
 }
 
 void Worker::wake()
 {
-    wake_up.store(true);
-    wake_up.notify_one();
+    wakeups.fetch_add(1);
+    futexWakeOne(wakeups);
 }
 
 }
