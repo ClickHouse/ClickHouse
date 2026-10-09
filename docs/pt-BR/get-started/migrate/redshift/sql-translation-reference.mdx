@@ -50,8 +50,8 @@ Abaixo, mapeamos o tipo equivalente no ClickHouse para cada tipo do Redshift:
 | [`TIMETZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timetz)                             | [`DateTime`](/pt-BR/reference/data-types/datetime), [`DateTime64`](/pt-BR/reference/data-types/datetime64)                                                                                                                                            |
 | [`VARBYTE`](https://docs.aws.amazon.com/redshift/latest/dg/r_VARBYTE_type.html) **                                                   | [`String`](/pt-BR/reference/data-types/string) em combinação com [`Bit`](/pt-BR/reference/functions/regular-functions/bit-functions) e funções de [Codificação](/pt-BR/reference/functions/regular-functions/encoding-functions#hex)                        |
 
-<sub><span>*</span> O ClickHouse também oferece suporte a inteiros sem sinal com intervalos estendidos, ou seja, <a href="/pt-BR/reference/data-types/int-uint">`UInt8`, `UInt32`, `UInt32` e `UInt64`</a>.</sub><br />
-<sub><span>**</span>O tipo String do ClickHouse é ilimitado por padrão, mas pode ser limitado a comprimentos específicos usando <a href="/pt-BR/reference/statements/create/table#constraints">restrições</a>.</sub>
+<sub><span>*</span> O ClickHouse também oferece suporte a inteiros sem sinal com intervalos estendidos, ou seja, <a href="http://clickhouse.com/docs/sql-reference/data-types/int-uint">`UInt8`, `UInt32`, `UInt32` e `UInt64`</a>.</sub><br />
+<sub><span>**</span>O tipo String do ClickHouse é ilimitado por padrão, mas pode ser limitado a comprimentos específicos usando <a href="http://clickhouse.com/docs/sql-reference/statements/create/table#constraints">restrições</a>.</sub>
 
 <div id="compression">
   ## Sintaxe DDL

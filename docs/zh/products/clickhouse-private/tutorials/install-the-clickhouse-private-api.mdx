@@ -1,0 +1,162 @@
+---
+noindex: true
+title: "安装 ClickHouse Private API"
+sidebarTitle: "安装管理 API"
+description: "本教程将指导你安装 ClickHouse Private API。它是一个可选的独立组件，用于支持常见的管理操作。"
+---
+
+本教程将指导你安装 ClickHouse Private API。它是一个可选的独立组件，用于支持备份和垂直扩缩容等常见管理操作。
+
+***
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+开始前，请确保你已具备以下条件：
+
+* 已安装 ClickHouse Operator (参见 [tutorials/deploy-aws.md](/zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)，第 8 阶段)
+* 已部署至少一个 ClickHouse 集群 (参见 [tutorials/deploy-aws.md](/zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)，第 9 阶段)
+* 具有对 ClickHouse 私有 ECR 仓库的访问权限
+* 已在你的 AWS 账户中创建以下目标 ECR 仓库：
+* `airgap-management`
+* `helm/airgap-management`
+
+***
+
+<Steps>
+  <Step>
+    ## 步骤 1：复制容器镜像
+
+    使用 skopeo 将 Private API 镜像和 Helm 图表复制到你的 ECR。
+
+    ```ini
+    SOURCE_REGION=us-east-1
+    SOURCE_ECR_REPO=349290138304.dkr.ecr.$SOURCE_REGION.amazonaws.com
+
+    TARGET_REGION=us-west-2
+    TARGET_ECR_REPO=0000000000.dkr.ecr.$TARGET_REGION.amazonaws.com
+
+    # 登录我们的 ECR
+    aws ecr get-login-password --region $SOURCE_REGION | skopeo login --username AWS --password-stdin $SOURCE_ECR_REPO
+
+    # 登录目标 AWS 仓库
+    aws ecr get-login-password --region $TARGET_REGION | skopeo login --username AWS --password-stdin $TARGET_ECR_REPO
+
+    # 将每个镜像复制到目标 ECR，务必包含 --all 标志
+    skopeo copy --all docker://$SOURCE_ECR_REPO/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/airgap-management:1.165.1
+    skopeo copy --all docker://$SOURCE_ECR_REPO/helm/airgap-management:1.165.1 docker://$TARGET_ECR_REPO/helm/airgap-management:1.165.1
+    ```
+
+    将 `1.165.1` 和 `1.165.1` 替换为 ClickHouse 提供的版本标签。
+
+    ***
+  </Step>
+
+  <Step>
+    ## 步骤 2：通过 Helm 安装
+
+    Private API 会安装在专用命名空间中。
+
+    ```text
+    # 按需更新 ECR_HOST
+    ECR_HOST=0000000000.dkr.ecr.us-west-2.amazonaws.com
+
+    # 应使用 API 的 Helm 图表版本
+    API_HELM_VERSION=1.165.1
+
+    # 设置 API 镜像标签
+    API_IMAGE_TAG=1.165.1
+
+    helm install clickhouse-private-api \
+       oci://$ECR_HOST/helm/airgap-management \
+       --version=$API_HELM_VERSION \
+       --create-namespace \
+       -n clickhouse-private-api \
+       --set-json="image.repository=\"$ECR_HOST/airgap-management\"" \
+       --set-json="image.tag=\"$API_IMAGE_TAG\""
+    ```
+
+    ***
+  </Step>
+
+  <Step>
+    ## 步骤 3：配置身份验证
+
+    默认情况下，basic authentication 处于禁用状态。对于生产环境，请通过设置 Helm 配置值启用它：
+
+    * `api.basicAuth.enabled=true`
+    * `api.basicAuth.username` -- 你选择的用户名
+    * `api.basicAuth.password` -- 安全密码
+
+    用户名和密码应妥善保管，并根据你所在组织的安全策略定期轮换。
+
+    ***
+  </Step>
+
+  <Step>
+    ## 步骤 4：验证安装
+
+    ### 检查 Pod (容器组)
+
+    ```bash
+    kubectl get pods -n clickhouse-private-api
+    ```
+
+    预期输出：
+
+    ```text
+    NAME                                    READY   STATUS    RESTARTS   AGE
+    clickhouse-private-api-xxxxxxxxxx-xxxxx   1/1     Running   0          1m
+    ```
+
+    ### 端口转发并测试
+
+    ```bash
+    kubectl port-forward svc/clickhouse-private-api-airgap-management 8080:8080 -n clickhouse-private-api
+    ```
+
+    测试健康检查端点：
+
+    ```bash
+    curl http://localhost:8080/readiness
+    ```
+
+    如果已启用身份验证：
+
+    ```bash
+    curl -u admin:YOUR_SECURE_PASSWORD_HERE http://localhost:8080/readiness
+    ```
+
+    ***
+  </Step>
+</Steps>
+
+<div id="configuration-options">
+  ## 配置选项
+</div>
+
+以下关键配置选项可通过 Helm 配置值进行设置：
+
+| Helm 值                       | 说明                   | 默认值        |
+| ---------------------------- | -------------------- | ---------- |
+| `image.repository`           | Private API 镜像的 ECR 仓库    | --         |
+| `image.tag`                  | 要部署的镜像标签             | --         |
+| `api.port`                   | API 监听的端口            | `8080`     |
+| `api.basicAuth.enabled`      | 启用 HTTP 基本身份验证       | `false`    |
+| `api.basicAuth.username`     | 基本身份验证的用户名           | `admin`    |
+| `api.basicAuth.password`     | 基本身份验证的密码            | `changeme` |
+| `serviceAccount.enabled`     | 为 API 创建服务账号         | `true`     |
+| `serviceAccount.annotations` | 服务账号的注解 (例如用于 IRSA)  | `{}`       |
+
+有关完整的配置选项列表，请参阅 Helm 图表的 values 文件。
+
+***
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* **[通过 API 管理备份](/zh/products/clickhouse-private/guides/manage-backups-via-the-private-api)** — 创建、列出、设置备份计划和恢复备份
+* **[纵向扩展集群](/zh/products/clickhouse-private/guides/vertically-scale-a-clickhouse-cluster)** — 纵向扩展 CPU 和内存
+* **[重置密码](/zh/products/clickhouse-private/guides/reset-user-passwords)** — 重置 ClickHouse `default` 用户的密码

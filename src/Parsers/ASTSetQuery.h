@@ -4,8 +4,6 @@
 #include <Parsers/IAST.h>
 #include <Common/SettingsChanges.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
@@ -34,9 +32,6 @@ public:
     bool hasSecretParts() const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     void appendColumnName(WriteBuffer & ostr) const override;
     void appendColumnNameWithoutAlias(WriteBuffer & ostr) const override { appendColumnName(ostr); }

@@ -1,0 +1,90 @@
+---
+noindex: true
+title: "ClickHouse 인증서용 Cert Manager 구성"
+sidebarTitle: "Cert Manager 구성"
+description: "Cert Manager를 사용하여 ClickHouse 서버와 Keeper용 TLS 인증서를 생성합니다."
+---
+
+Cert Manager를 사용하여 ClickHouse 서버와 Keeper용 TLS 인증서를 생성합니다.
+
+> 각 인증서의 용도, 검증 모드의 작동 방식, 인증서 교체 방식 등 이 가이드의 배경 개념은 [ClickHouse Private의 PKI 및 mTLS](/ko/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private)를 참조하십시오.
+
+<div id="prerequisites">
+  ## 사전 준비 사항
+</div>
+
+* 클러스터에 [Cert Manager](https://cert-manager.io/)가 설치되어 있어야 합니다
+* 클러스터 이름을 정해 두어야 합니다(이 가이드에서는 `default-xx-01`을 예시로 사용합니다)
+
+<div id="steps">
+  ## 단계
+</div>
+
+<Steps>
+  <Step>
+    ### 1. 인증서 발급자 생성
+
+    인증 기관 역할을 할 자체 서명 `Issuer`를 생성합니다:
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Issuer
+    metadata:
+      name: selfsigned-issuer
+      namespace: ns-default-xx-01
+    spec:
+      selfSigned: {}
+    ```
+
+    > **참고:** `Issuer`는 네임스페이스 범위의 리소스이므로, 이를 참조하는 `Certificate` 리소스와 동일한 네임스페이스에 있어야 합니다. 자체 서명 발급자는 테스트 용도에 적합합니다. 운영(production) 환경에서는 [발급자 옵션 목록](https://cert-manager.io/docs/configuration/issuers/)을 검토하십시오.
+  </Step>
+
+  <Step>
+    ### 2. Certificate 리소스 생성
+
+    ClickHouse 서버용 `Certificate` 리소스를 생성합니다:
+
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server-tls
+      namespace: ns-default-xx-01
+    spec:
+      secretName: default-xx-01-server-cert-secret
+      dnsNames:
+        - "*.c-default-xx-01-server-headless.ns-default-xx-01.svc.cluster.local"
+      issuerRef:
+        name: selfsigned-issuer
+        kind: Issuer
+    ```
+
+    이렇게 하면 `ca.crt`, `tls.crt`, `tls.key` 키를 포함하는 `default-xx-01-server-cert-secret`라는 이름의 Kubernetes 시크릿이 생성됩니다.
+
+    필요한 경우 Keeper에도 적절한 `dnsNames`와 `secretName`을 사용해 같은 작업을 반복하십시오.
+  </Step>
+
+  <Step>
+    ### 3. cert-manager 시크릿 키를 사용하도록 Helm values 구성
+
+    기본적으로 `onprem-clickhouse-cluster` Helm 차트는 `ca.crt`, `server.crt`, `server.key`라는 이름의 시크릿 키를 예상합니다. cert-manager는 `ca.crt`, `tls.crt`, `tls.key`를 생성합니다. Helm values에서 키 이름을 재정의합니다:
+
+    ```yaml
+    server:
+      openSSL:
+        enabled: true
+        secret:
+          caKey: ca.crt
+          certKey: tls.crt
+          keyKey: tls.key
+    ```
+
+    인증서는 Server의 경우 `/etc/clickhouse-server/certs/`에, Keeper의 경우 `/etc/clickhouse-keeper/certs/`에 마운트됩니다. Helm 차트는 올바른 OpenSSL 구성을 자동으로 생성합니다.
+  </Step>
+</Steps>
+
+<div id="notes-on-cacrt-availability">
+  ## ca.crt 사용 가능 여부 참고 사항
+</div>
+
+`ca.crt` 키는 issuer에서 제공되는 경우에만 시크릿에 추가됩니다. 예를 들어 ACME issuer는 `ca.crt`를 포함하지 않습니다. 이 경우 공개 루트 CA를 `ca.crt` 키에 수동으로 추가하거나, [trust-manager](https://cert-manager.io/docs/trust/trust-manager/)를 사용해 CA bundle을 생성한 뒤 올바른 시크릿을 대상으로 설정하십시오.

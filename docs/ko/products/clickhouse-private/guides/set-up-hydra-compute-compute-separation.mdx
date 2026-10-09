@@ -1,0 +1,124 @@
+---
+noindex: true
+title: "Hydra 설정하기(컴퓨트-컴퓨트 분리)"
+sidebarTitle: "Hydra 설정하기(컴퓨트 분리)"
+description: "이 가이드는 기존 ClickHouse Private 클러스터의 Hydra 하위 인스턴스를 프로비저닝하는 방법을 안내합니다."
+---
+
+이 가이드는 기존 ClickHouse Private 클러스터의 Hydra 하위 인스턴스를 프로비저닝하는 방법을 안내합니다. Hydra를 사용하면 공유 데이터셋에서 여러 개의 독립적인 컴퓨트 그룹을 실행할 수 있으며, 각 그룹은 고유한 용량 산정과 엔드포인트를 가집니다.
+
+Hydra의 작동 방식에 대한 개념적인 설명은 [Hydra Compute Separation](/ko/products/clickhouse-private/explanation/hydra-compute-separation)에서 확인하십시오.
+
+<div id="prerequisites">
+  ## 사전 요구사항
+</div>
+
+* **parent** 역할을 하는 실행 중인 ClickHouse Private 클러스터(이 가이드에서는 `default-xx-01` 사용)
+
+* Hydra 기능 플래그를 활성화하여 설치한 ClickHouse Operator:
+
+  ```text
+  --set operator.featureFlags.privateHydraEnabled="true"
+  ```
+
+  이 플래그 없이 ClickHouse Operator를 설치한 경우, 계속 진행하기 전에 플래그를 `true`로 설정하여 업그레이드하십시오.
+
+* Helm 레지스트리 및 `onprem-clickhouse-cluster` 차트에 대한 액세스 권한
+
+<Steps>
+  <Step>
+    ## 1. 부모 클러스터 식별
+
+    하위 인스턴스를 생성하기 전에 부모 클러스터의 **이름**과 **네임스페이스**를 확인하십시오. 부모는 반드시 실행 중 상태여야 합니다. 부모가 중지됨, 종료됨 또는 유휴 상태이면 하위 인스턴스를 프로비저닝할 수 없습니다.
+
+    이름이 `default-xx-01`인 클러스터의 기본값은 다음과 같습니다:
+
+    | 속성      | 값                  |
+    | ------- | ------------------ |
+    | 클러스터 이름 | `default-xx-01`    |
+    | 네임스페이스  | `ns-default-xx-01` |
+  </Step>
+
+  <Step>
+    ## 2. 하위 인스턴스 생성
+
+    <Warning>
+      각 ClickHouseCluster 인스턴스는 반드시 고유한 네임스페이스에 있어야 합니다. 하위 인스턴스를 부모와 동일한 네임스페이스에 배포하지 마십시오. ClickHouse Operator는 네임스페이스당 하나의 ClickHouseCluster가 있다고 가정하므로, 이 규칙을 위반하면 클러스터 상태가 저하됩니다.
+    </Warning>
+
+    부모에 사용한 것과 동일한 Helm 차트를 사용해 새 `ClickHouseCluster`를 배포하고, 연결을 위해 `parentCluster` 값을 추가하십시오:
+
+    ```bash
+    helm install default-xx-02 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-02 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    하위 인스턴스는 다음과 같습니다:
+
+    * 부모의 ClickHouse Keeper 앙상블을 공유합니다(별도의 Keeper 배포는 필요하지 않음)
+    * 부모의 S3 데이터 prefix를 공유합니다
+    * 독립적인 리소스 할당으로 자체 ClickHouse 서버 파드를 실행합니다
+    * 자체 Kubernetes Service endpoint를 노출합니다
+  </Step>
+
+  <Step>
+    ## 3. 읽기 전용 자식 생성(선택 사항)
+
+    데이터를 쿼리할 수는 있지만 쓸 수 없는 하위 인스턴스를 생성하려면 `isReadonly` 플래그를 추가하십시오:
+
+    ```bash
+    helm install default-xx-03 oci://$HELM_REGISTRY/helm/onprem-clickhouse-cluster \
+        --version=$CR_HELM_TAG \
+        --namespace ns-default-xx-03 \
+        --create-namespace \
+        --set-json='parentCluster.name="c-default-xx-01"' \
+        --set-json='parentCluster.namespace="ns-default-xx-01"' \
+        --set-json='isReadonly=true' \
+        --set-json="server.replicas=$SERVER_REPLICAS" \
+        --set-json="server.podPolicy.resources.requests.cpu=\"$SERVER_CPU\"" \
+        --set-json="server.podPolicy.resources.requests.memory=\"$SERVER_MEMORY\""
+    ```
+
+    읽기 전용 하위 인스턴스는 쓰기 권한이 필요 없는 보고, 대시보드 또는 analytics 워크로드에 적합합니다.
+  </Step>
+
+  <Step>
+    ## 4. 하위 인스턴스 확인
+
+    하위 인스턴스를 배포한 후 실행 중인지 확인하십시오:
+
+    ```bash
+    kubectl get clickhousecluster -n ns-default-xx-02
+    ```
+
+    하위 인스턴스의 자체 service endpoint를 통해 연결하십시오:
+
+    ```bash
+    kubectl port-forward svc/c-default-xx-02-server-any 9000:9000 -n ns-default-xx-02
+    clickhouse client --host localhost --port 9000 --password $PASSWORD
+    ```
+
+    데이터에 액세스할 수 있는지 확인하려면 쿼리를 실행하십시오:
+
+    ```sql
+    SELECT count() FROM system.tables;
+    ```
+  </Step>
+</Steps>
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+1. **상위 인스턴스가 실행 중이어야 합니다.** 상위 인스턴스가 중지, 종료 또는 유휴(idled) 상태이면 하위 인스턴스를 프로비저닝할 수 없습니다. 하위 인스턴스는 상위 인스턴스의 Keeper 앙상블과 공유 데이터 구성에 의존하므로, 상위 인스턴스는 실행 중 상태여야 합니다.
+
+2. **부모 클러스터를 삭제하기 전에 하위 인스턴스를 삭제하십시오.** 부모 클러스터를 삭제하기 전에 모든 하위 인스턴스를 삭제해야 합니다. 활성 상태의 하위 인스턴스가 있는 부모 클러스터를 삭제하려고 하면 실패합니다.
+
+3. **비밀번호 재설정은 상위 인스턴스에 적용됩니다.** Hydra 하위 인스턴스에서는 비밀번호를 재설정할 수 없습니다. 하위 인스턴스의 비밀번호를 재설정하려면 대신 상위 인스턴스에서 재설정하십시오. [how-to/reset-passwords.md](/ko/products/clickhouse-private/guides/reset-user-passwords)를 참조하십시오.
