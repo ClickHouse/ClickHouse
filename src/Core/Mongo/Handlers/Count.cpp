@@ -33,6 +33,7 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     /// field it does not implement is refused for the same reason.
     static const std::unordered_set<String> supported_fields{"query", "limit", "skip", "hint"};
     rejectUnsupportedCommandFields(json_representation, supported_fields, "count");
+    validateHintOption(json_representation, "count");
 
     /// `count` is the size of the result of a `find`, so its filter takes exactly the same
     /// path as the filter of a `find` - including the normalization of subdocument paths.

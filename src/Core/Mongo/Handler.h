@@ -74,6 +74,13 @@ std::optional<String> getNameEqualityFilter(const rapidjson::Value & json, const
 /// Returns nothing when the member is absent or null; anything but a boolean is an error.
 std::optional<bool> getBoolOption(const rapidjson::Value & json, const char * name, const char * command);
 
+/** Validates the `hint` of a command, which names the index a command should use. It changes nothing
+  * about the answer, so it is accepted and otherwise ignored, but only in a shape a `hint` can have:
+  * the name of an index or an index specification document. Anything else is an error rather than
+  * being acknowledged as a well-formed option.
+  */
+void validateHintOption(const rapidjson::Value & json, const char * command);
+
 /** Refuses the fields of a command, or of one of the write statements of a command, that this
   * endpoint does not implement. A field that changes what a write does - `arrayFilters` and
   * `collation` of an `update`, `collation` of a `delete` - would otherwise be dropped silently and

@@ -2681,6 +2681,19 @@ def test_a_read_option_that_is_accepted_and_ignored(started_cluster):
         )["cursor"]["firstBatch"]
     ) == plain_aggregate
 
+    # Ignored as they are, these options are still validated: a malformed value is an error rather
+    # than being acknowledged.
+    for command in [
+        {"find": "accepted_options", "filter": {}, "singleBatch": "oops"},
+        {"find": "accepted_options", "filter": {}, "hint": 1},
+        {"count": "accepted_options", "query": {}, "hint": 1},
+        {"distinct": "accepted_options", "key": "value", "hint": [1]},
+        {"aggregate": "accepted_options", "pipeline": [], "cursor": {}, "allowDiskUse": "yes"},
+        {"aggregate": "accepted_options", "pipeline": [], "cursor": {}, "hint": 1},
+    ]:
+        with pytest.raises(pymongo.errors.OperationFailure):
+            database.command(command)
+
     collection.drop()
 
 
@@ -2971,6 +2984,14 @@ def test_list_command_options_are_honoured_or_refused(started_cluster):
     assert "db" in client.list_database_names()
     verbose = client["admin"].command({"listDatabases": 1})["databases"]
     assert set(next(d for d in verbose if d["name"] == "db")) == {"name", "empty"}
+    # `empty` says whether a database holds any collection.
+    assert next(d for d in verbose if d["name"] == "db")["empty"] is False
+    node = cluster.instances["node"]
+    node.query("DROP DATABASE IF EXISTS list_options_empty", password="123")
+    node.query("CREATE DATABASE list_options_empty", password="123")
+    verbose = client["admin"].command({"listDatabases": 1})["databases"]
+    assert next(d for d in verbose if d["name"] == "list_options_empty")["empty"] is True
+    node.query("DROP DATABASE list_options_empty", password="123")
     names_only = client["admin"].command({"listDatabases": 1, "nameOnly": True})[
         "databases"
     ]

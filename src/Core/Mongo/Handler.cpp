@@ -250,6 +250,15 @@ std::optional<bool> getBoolOption(const rapidjson::Value & json, const char * na
     return it->value.GetBool();
 }
 
+void validateHintOption(const rapidjson::Value & json, const char * command)
+{
+    auto it = json.FindMember("hint");
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return;
+    if (!it->value.IsString() && !it->value.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'hint' of a '{}' command must be a string or a document", command);
+}
+
 void rejectUnsupportedFields(
     const rapidjson::Value & json, const std::unordered_set<String> & supported, const char * what, const char * command)
 {

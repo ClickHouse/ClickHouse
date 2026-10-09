@@ -78,6 +78,7 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
         static const std::unordered_set<String> supported_fields{"q", "limit", "hint", "comment"};
         auto json_representation = delete_spec.getRapidJSONRepresentation();
         rejectUnsupportedFields(json_representation, supported_fields, "delete statement", "delete");
+        validateHintOption(json_representation, "delete");
 
         auto limit_it = json_representation.FindMember("limit");
         if (limit_it != json_representation.MemberEnd() && !(limit_it->value.IsNumber() && limit_it->value.GetDouble() == 0))

@@ -36,6 +36,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     /// rather than answered with a different set of values.
     static const std::unordered_set<String> supported_fields{"key", "query", "hint"};
     rejectUnsupportedCommandFields(json_representation, supported_fields, "distinct");
+    validateHintOption(json_representation, "distinct");
 
     auto key_it = json_representation.FindMember("key");
     if (key_it == json_representation.MemberEnd() || !key_it->value.IsString())

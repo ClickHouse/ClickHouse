@@ -40,6 +40,16 @@ std::vector<Document> ListDatabasesHandler::handle(
     auto out = executor->execute("SHOW DATABASES");
     auto names = splitByNewline(out);
 
+    /// A database is `empty` when it holds no collection the user can see. The databases that hold
+    /// any are listed in one query rather than one probe per database, and only when the reply
+    /// carries `empty` at all.
+    std::unordered_set<String> non_empty_databases;
+    if (!name_only)
+    {
+        for (auto & database : splitByNewline(executor->execute("SELECT DISTINCT database FROM system.tables WHERE NOT is_temporary")))
+            non_empty_databases.insert(std::move(database));
+    }
+
     bson_t * bson_doc = bson_new();
 
     {
@@ -58,7 +68,7 @@ std::vector<Document> ListDatabasesHandler::handle(
             BSON_APPEND_UTF8(&database_doc, "name", name.c_str());
             /// With `nameOnly` the reply carries the name of each database and nothing else.
             if (!name_only)
-                BSON_APPEND_BOOL(&database_doc, "empty", false);
+                BSON_APPEND_BOOL(&database_doc, "empty", !non_empty_databases.contains(name));
 
             auto key_str = std::to_string(index);
             ++index;

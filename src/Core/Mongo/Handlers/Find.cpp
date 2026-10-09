@@ -55,6 +55,10 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
       */
     static const std::unordered_set<String> supported_fields{"filter", "projection", "sort", "limit", "skip", "singleBatch", "hint"};
     rejectUnsupportedCommandFields(json_representation, supported_fields, "find");
+    /// `singleBatch` and `hint` change nothing about the answer, but they are still validated, so
+    /// that a malformed option is an error rather than being acknowledged.
+    getBoolOption(json_representation, "singleBatch", "find");
+    validateHintOption(json_representation, "find");
 
     /// `filter` is a document so it owns its allocator: it is serialized below and
     /// must stay valid (it must not reference a temporary document's allocator).

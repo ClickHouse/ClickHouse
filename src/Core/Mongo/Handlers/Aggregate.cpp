@@ -129,6 +129,8 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
     /// implemented and are refused rather than dropped.
     static const std::unordered_set<String> supported_fields{"pipeline", "cursor", "allowDiskUse", "hint"};
     rejectUnsupportedCommandFields(json_representation, supported_fields, "aggregate");
+    getBoolOption(json_representation, "allowDiskUse", "aggregate");
+    validateHintOption(json_representation, "aggregate");
 
     /// Every document of the result is answered in the first batch, so a `cursor` that asks for a
     /// `batchSize` asks for a batching this handler does not do.

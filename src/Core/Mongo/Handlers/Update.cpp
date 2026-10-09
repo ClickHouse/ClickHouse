@@ -110,6 +110,7 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         static const std::unordered_set<String> supported_fields{"q", "u", "multi", "upsert", "hint", "comment"};
         auto json_representation = update_spec.getRapidJSONRepresentation();
         rejectUnsupportedFields(json_representation, supported_fields, "update statement", "update");
+        validateHintOption(json_representation, "update");
 
         auto multi_it = json_representation.FindMember("multi");
         if (multi_it == json_representation.MemberEnd() || !multi_it->value.IsBool() || !multi_it->value.GetBool())
