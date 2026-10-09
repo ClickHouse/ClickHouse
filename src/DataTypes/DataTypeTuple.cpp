@@ -476,8 +476,6 @@ You can use a function to create a tuple:
 tuple(T1, T2, ...)
 ```
 
-The SQL standard spelling `ROW(T1, T2, ...)` is the same as `tuple(T1, T2, ...)`, and the data type can also be written as `ROW(name1 T1, name2 T2, ...)`.
-
 Example of creating a tuple:
 
 ```sql

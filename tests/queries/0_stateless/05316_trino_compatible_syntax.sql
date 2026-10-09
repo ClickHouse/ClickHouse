@@ -20,16 +20,12 @@ SELECT a.array[1] FROM (SELECT [10, 20] AS array) AS a;
 SELECT `array`[1] FROM (SELECT [10, 20] AS array);
 SELECT arrayMap(array -> array[1], [[5], [6]]);
 
-SELECT '-- ROW';
-SELECT ROW(1, 'a'), toTypeName(row(1, 'a')), ROW(1, 2) = (1, 2);
-
 SELECT '-- Composite types';
 SELECT CAST([1, 2] AS ARRAY(INTEGER)) AS x, toTypeName(x);
 SELECT CAST(map('a', 1) AS MAP(VARCHAR, BIGINT)) AS x, toTypeName(x);
-SELECT CAST((1, 'a') AS ROW(id INTEGER, name VARCHAR)) AS x, toTypeName(x), x.name;
-SELECT CAST([(1, [2])] AS ARRAY(ROW(a BIGINT, b ARRAY(INTEGER)))) AS x, toTypeName(x);
+SELECT CAST([[1, 2]] AS ARRAY(ARRAY(INTEGER))) AS x, toTypeName(x);
 DROP TABLE IF EXISTS t_trino_types;
-CREATE TABLE t_trino_types (a ARRAY(INTEGER), m MAP(VARCHAR, DOUBLE), r ROW(x INTEGER, y VARCHAR)) ENGINE = Memory;
+CREATE TABLE t_trino_types (a ARRAY(INTEGER), m MAP(VARCHAR, DOUBLE)) ENGINE = Memory;
 SHOW CREATE TABLE t_trino_types;
 DROP TABLE t_trino_types;
 

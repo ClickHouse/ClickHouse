@@ -3201,8 +3201,7 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
             return std::make_unique<EvalLayer>();
     }
 
-    /// ROW(...) is the SQL standard spelling of tuple(...).
-    if (function_name == "tuple" || function_name_lowercase == "row")
+    if (function_name == "tuple")
         return std::make_unique<TupleLayer>();
 
     if (function_name_lowercase == "cast")
