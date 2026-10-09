@@ -54,6 +54,7 @@ private:
 
     /// The blobs that lost their last link only when the changes were published, see `FsMetadata::applyJournal`.
     StoredObjects unlinked_blobs;
+    StoredObjects cleanup_unlinked_blobs;
 
 public:
     MetadataStorageFromPlainObjectStoragePublishOperation(

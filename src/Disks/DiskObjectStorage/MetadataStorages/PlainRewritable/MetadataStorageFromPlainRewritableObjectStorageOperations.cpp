@@ -162,12 +162,13 @@ DirectoryRemoteInfo getDirectoryInfoOrThrow(const FsSnapshot & fs_tree, const No
 /// The blob is removed only when its last link is gone. The link count is tracked only for blobs that are referenced,
 /// so the count is not decremented for the removed blob: a new blob may appear under the same key later.
 std::optional<StoredObject> removeLinkAndGetBlobToRemove(
-    FsSnapshot & fs_tree, const PlainRewritableLayout & layout, const std::string & blob_key)
+    FsSnapshot & fs_tree, const PlainRewritableLayout & layout, const std::string & blob_key,
+    RemoteIORequestIntent intent = RemoteIORequestIntent::Regular)
 {
     if (fs_tree.getBlobLinkCount(blob_key) == 1)
         return StoredObject(layout.constructBlobObjectKey(blob_key));
 
-    fs_tree.removeBlobLink(blob_key);
+    fs_tree.removeBlobLink(blob_key, intent);
     return std::nullopt;
 }
 
@@ -220,19 +221,39 @@ void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
     /// A transaction that removes a link to a shared blob does not exclude the transactions removing the other links
     /// to it, because they lock only the paths of their own files. Each of them may see the other link left and keep
     /// the blob, so the last link is found only here, where the publications are serialized.
-    for (const auto & blob_key : fs.applyJournal(fs_tree->getJournal()))
-        unlinked_blobs.emplace_back(layout->constructBlobObjectKey(blob_key));
+    const auto journal = fs_tree->getJournal();
+    std::unordered_map<std::string, RemoteIORequestIntent> removal_intents;
+    for (const auto & edit : journal)
+        if (const auto * removal = std::get_if<FsEdits::RemoveBlobLink>(&edit))
+            removal_intents.insert_or_assign(removal->blob_key, removal->intent);
+
+    /// Only this publishing transaction grants permission, not an earlier transaction that removed another link.
+    /// If this journal removes several links to a blob, its last removal supplies the deletion intent.
+    for (const auto & blob_key : fs.applyJournal(journal))
+    {
+        auto & objects = removal_intents.at(blob_key) == RemoteIORequestIntent::Cleanup ? cleanup_unlinked_blobs : unlinked_blobs;
+        objects.emplace_back(layout->constructBlobObjectKey(blob_key));
+    }
 }
 
 void MetadataStorageFromPlainObjectStoragePublishOperation::finalize()
 {
-    if (unlinked_blobs.empty())
+    if (unlinked_blobs.empty() && cleanup_unlinked_blobs.empty())
         return;
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStoragePublishOperation"),
-        "Removing {} blobs whose last links were removed by concurrent transactions", unlinked_blobs.size());
-    object_storage->removeObjectsIfExist(unlinked_blobs);
-    removed_objects.append_range(unlinked_blobs);
+        "Removing {} blobs whose last links were removed by concurrent transactions", unlinked_blobs.size() + cleanup_unlinked_blobs.size());
+    /// Attempt explicit cleanup before an ordinary deletion can throw cancellation. Never grant cleanup to the whole batch.
+    if (!cleanup_unlinked_blobs.empty())
+    {
+        object_storage->removeObjectsIfExist(cleanup_unlinked_blobs, nullptr, RemoteIORequestIntent::Cleanup);
+        removed_objects.append_range(cleanup_unlinked_blobs);
+    }
+    if (!unlinked_blobs.empty())
+    {
+        object_storage->removeObjectsIfExist(unlinked_blobs);
+        removed_objects.append_range(unlinked_blobs);
+    }
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -652,7 +673,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
         previous_directory_info = directory_info;
 
         fs_tree->removeFile(path);
-        blob_to_remove = removeLinkAndGetBlobToRemove(*fs_tree, *layout, blob_key);
+        blob_to_remove = removeLinkAndGetBlobToRemove(*fs_tree, *layout, blob_key, intent);
         fs_tree->markDirectoryExplicit(directory);
 
         prefix_path_written = true;
@@ -1288,7 +1309,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
                 else
                 {
                     LOG_TRACE(log, "Keeping the blob of the file '{}', it is shared with other files", file_path);
-                    fs_tree->removeBlobLink(blob_key);
+                    fs_tree->removeBlobLink(blob_key, intent);
                 }
             }
         }

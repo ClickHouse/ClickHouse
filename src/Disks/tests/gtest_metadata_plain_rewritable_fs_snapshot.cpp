@@ -1,6 +1,8 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/BlobLinkCounts.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <gtest/gtest.h>
 
@@ -8,6 +10,101 @@
 #include <random>
 
 using namespace DB;
+
+namespace
+{
+class RecordingRemovalStorage : public LocalObjectStorage
+{
+public:
+    RecordingRemovalStorage() : LocalObjectStorage(LocalObjectStorageSettings("intent_test", "/", true)) {}
+
+    std::map<std::string, RemoteIORequestIntent> requests;
+
+    void removeObjectsIfExist(const StoredObjects & objects, StoredObjects *, RemoteIORequestIntent intent) override
+    {
+        for (const auto & object : objects)
+            EXPECT_TRUE(requests.emplace(object.remote_path, intent).second);
+    }
+};
+}
+
+TEST(FsSnapshot, ConcurrentLastLinkDeletionKeepsPublishingOperationIntent)
+{
+    for (const auto first_intent : {RemoteIORequestIntent::Regular, RemoteIORequestIntent::Cleanup})
+    {
+        FsMetadata fs(CurrentMetrics::end(), CurrentMetrics::end());
+        std::unordered_map<std::string, DirectoryRemoteInfo> directories;
+        for (const auto * directory : {"a", "b"})
+            directories[directory] = {.remote_path = directory, .etag = "", .files = {
+                {"regular", {1, 0, "regular_blob"}}, {"cleanup", {1, 0, "cleanup_blob"}}}, .has_explicit_file_list = true};
+        fs.applyLayout(std::move(directories));
+
+        auto first = fs.takeReadWriteSnapshot();
+        auto second = fs.takeReadWriteSnapshot();
+        first->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+        second->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+        first->removeFile("a/regular");
+        first->removeFile("a/cleanup");
+        first->removeBlobLink("regular_blob", first_intent);
+        first->removeBlobLink("cleanup_blob", first_intent);
+        second->removeFile("b/regular");
+        second->removeFile("b/cleanup");
+        second->removeBlobLink("regular_blob", RemoteIORequestIntent::Regular);
+        second->removeBlobLink("cleanup_blob", RemoteIORequestIntent::Cleanup);
+
+        auto storage = std::make_shared<RecordingRemovalStorage>();
+        auto layout = std::make_shared<PlainRewritableLayout>("prefix/");
+        StoredObjects removed;
+        MetadataStorageFromPlainObjectStoragePublishOperation first_publish(first, fs, storage, layout, removed);
+        first_publish.execute();
+        first_publish.finalize();
+        EXPECT_TRUE(storage->requests.empty());
+        MetadataStorageFromPlainObjectStoragePublishOperation second_publish(second, fs, storage, layout, removed);
+        second_publish.execute();
+        second_publish.finalize();
+
+        ASSERT_EQ(storage->requests.size(), 2);
+        EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("regular_blob")), RemoteIORequestIntent::Regular);
+        EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("cleanup_blob")), RemoteIORequestIntent::Cleanup);
+        EXPECT_EQ(removed.size(), 2);
+    }
+}
+
+TEST(FsSnapshot, ReplayedJournalUsesLastRemovalIntentPerBlob)
+{
+    FsMetadata fs(CurrentMetrics::end(), CurrentMetrics::end());
+    std::unordered_map<std::string, DirectoryRemoteInfo> directories;
+    for (const auto * directory : {"a", "b"})
+        directories[directory] = {.remote_path = directory, .etag = "", .files = {
+            {"regular", {1, 0, "regular_blob"}}, {"cleanup", {1, 0, "cleanup_blob"}}}, .has_explicit_file_list = true};
+    fs.applyLayout(std::move(directories));
+
+    auto snapshot = fs.takeReadWriteSnapshot();
+    snapshot->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+    snapshot->removeFile("a/regular");
+    snapshot->removeBlobLink("regular_blob", RemoteIORequestIntent::Cleanup);
+    snapshot->removeFile("b/regular");
+    snapshot->removeBlobLink("regular_blob", RemoteIORequestIntent::Regular);
+    snapshot->removeFile("a/cleanup");
+    snapshot->removeBlobLink("cleanup_blob", RemoteIORequestIntent::Regular);
+    snapshot->removeFile("b/cleanup");
+    snapshot->removeBlobLink("cleanup_blob", RemoteIORequestIntent::Cleanup);
+
+    auto replayed = fs.takeReadWriteSnapshot();
+    replayed->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+    replayed->replay(snapshot->getJournal());
+    auto storage = std::make_shared<RecordingRemovalStorage>();
+    auto layout = std::make_shared<PlainRewritableLayout>("prefix/");
+    StoredObjects removed;
+    MetadataStorageFromPlainObjectStoragePublishOperation publish(replayed, fs, storage, layout, removed);
+    publish.execute();
+    publish.finalize();
+
+    ASSERT_EQ(storage->requests.size(), 2);
+    EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("regular_blob")), RemoteIORequestIntent::Regular);
+    EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("cleanup_blob")), RemoteIORequestIntent::Cleanup);
+    EXPECT_EQ(removed.size(), 2);
+}
 
 TEST(FsSnapshot, BranchesRemainIndependent)
 {
