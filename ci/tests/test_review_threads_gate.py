@@ -267,7 +267,7 @@ def test_limited_pipeline_skips_test_jobs(fake_info):
 def test_limited_pipeline_keeps_builds_and_preliminary_jobs(fake_info):
     for job_name in (
         "Build (amd_debug)",
-        "Build (arm_tidy)",
+        JobConfigs.tidy_build_arm_jobs[0].name,
         "Build (wasm_parser)",
         "Style check",
         "Fast test",
@@ -937,9 +937,19 @@ def test_review_thread_gate_never_widens_the_coverage_family(monkeypatch, fake_i
     filter_job._pipeline_note_labels = set()
     assert filter_job.should_skip_job(coverage_build)[0]
 
-    # A build-affecting change without the label runs the allowlisted coverage
-    # build under the gate, exactly as a full run would.
+    # Pull requests run the coverage family only on request: a build-affecting
+    # change without the `ci-coverage` label skips the coverage build under the
+    # gate, exactly as a full run would.
     fake_info.pr_labels = []
+    filter_job._pipeline_note_labels = set()
+    assert filter_job.should_skip_job(coverage_build)[0]
+    fake_info.kv[KV_UNRESOLVED_COUNT] = 0
+    filter_job._pipeline_note_labels = set()
+    assert filter_job.should_skip_job(coverage_build)[0]
+
+    # With `ci-coverage` the allowlisted coverage build runs under the gate.
+    fake_info.kv[KV_UNRESOLVED_COUNT] = 3
+    fake_info.pr_labels = [Labels.CI_COVERAGE]
     filter_job._pipeline_note_labels = set()
     assert filter_job.should_skip_job(coverage_build) == (False, "")
 

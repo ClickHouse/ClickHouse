@@ -55,6 +55,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Common/StackTrace.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
@@ -146,6 +147,12 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsString columns_cache_policy;
+    extern const ServerSettingsDouble columns_cache_free_memory_ratio;
+    extern const ServerSettingsUInt64 columns_cache_history_window_ms;
+    extern const ServerSettingsUInt64 columns_cache_size;
+    extern const ServerSettingsDouble columns_cache_size_ratio;
+    extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
@@ -164,6 +171,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
     extern const ServerSettingsUInt64 point_in_polygon_cache_size;
+    extern const ServerSettingsUInt64 query_cache_max_entry_size_in_bytes;
+    extern const ServerSettingsUInt64 query_cache_max_entry_size_in_rows;
     extern const ServerSettingsString vector_similarity_index_cache_policy;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
@@ -831,7 +840,7 @@ void LocalServer::startServers(const ServerType & server_type)
             std::lock_guard lock(servers_lock);
             result.reserve(servers.size());
             for (const auto & server : servers)
-                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentConnections(), 0});
+                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.getProtocolType(), server.currentConnections(), 0});
             return result;
         };
         /// Note: we intentionally don't call `start` on it, to avoid an extra background thread
@@ -909,6 +918,7 @@ void LocalServer::startServers(const ServerType & server_type)
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::TCP,
                         "native protocol (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new TCPHandlerFactory(*this, /* secure= */ false, /* parse_proxy_protocol_= */ false,
@@ -939,6 +949,7 @@ void LocalServer::startServers(const ServerType & server_type)
                         return ProtocolServerAdapter(
                             listen_host,
                             port_name,
+                            ServerType::Type::HTTP,
                             "http://" + address.toString(),
                             std::make_unique<HTTPServer>(
                                 std::make_shared<HTTPContext>(global_context),
@@ -1070,6 +1081,11 @@ void LocalServer::cleanup()
             async_metrics->stop();
             async_metrics.reset();
         }
+
+        /// The columns cache goes away with the context; stop resizing it.
+        setMemoryReleasableCache(nullptr);
+        if (memory_worker)
+            memory_worker->setReleasableCache(nullptr);
 
         /// Stop the memory worker before shutting down context, as it references the page cache.
         memory_worker.reset();
@@ -1490,7 +1506,8 @@ void LocalServer::processConfig()
     {
         getClientConfiguration().setString("logger", "logger");
         getClientConfiguration().setString("logger.level", logging ? level : "fatal");
-        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
+        /// Crash reports must reach stderr, which the configured channels may not write to.
+        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local", {fatal_log_name});
     }
 
     shared_context = Context::createShared();
@@ -1649,6 +1666,30 @@ void LocalServer::processConfig()
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
+    String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
+    /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
+    size_t columns_cache_size = config().getUInt64("columns_cache_size",
+        getDefaultColumnsCacheSize(physical_server_memory, server_settings[ServerSetting::columns_cache_size_to_ram_ratio]));
+    double columns_cache_size_ratio = server_settings[ServerSetting::columns_cache_size_ratio];
+    if (columns_cache_size > max_cache_size)
+    {
+        columns_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(columns_cache_size));
+    }
+    global_context->setColumnsCache(columns_cache_policy, columns_cache_size, columns_cache_size_ratio);
+    /// The cache counts against `max_server_memory_usage` here just as it does in the server, so it
+    /// has to be able to give that memory back: without this registration a query that the server
+    /// would keep alive by shrinking the cache fails with `MEMORY_LIMIT_EXCEEDED` in `clickhouse-local`.
+    if (auto columns_cache = global_context->getColumnsCache())
+    {
+        columns_cache->setAutoResizeSettings(
+            server_settings[ServerSetting::columns_cache_free_memory_ratio],
+            server_settings[ServerSetting::columns_cache_history_window_ms]);
+        setMemoryReleasableCache(columns_cache.get());
+        if (memory_worker)
+            memory_worker->setReleasableCache(columns_cache);
+    }
+
     /// UNIQUE KEY delete-bitmap cache. Zero size disables.
     String unique_key_bitmap_cache_policy_name = server_settings[ServerSetting::unique_key_bitmap_cache_policy];
     size_t unique_key_bitmap_cache_size = server_settings[ServerSetting::unique_key_bitmap_cache_size_bytes];
@@ -1789,8 +1830,10 @@ void LocalServer::processConfig()
     /// system.server_settings can report its size).
     global_context->setEncryptionHeaderCache(DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, 0, 0);
 
-    /// Initialize a dummy query result cache.
-    global_context->setQueryResultCache(0, 0, 0, 0);
+    /// Initialize a query result cache which stores nothing in memory. The maximum entry sizes are configured as in the server: they
+    /// apply to the query result cache on disk as well, which is usable in `clickhouse-local`.
+    global_context->setQueryResultCache(
+        0, 0, server_settings[ServerSetting::query_cache_max_entry_size_in_bytes], server_settings[ServerSetting::query_cache_max_entry_size_in_rows]);
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
@@ -1868,6 +1911,7 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         fs::create_directories(fs::path(path));
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+        bool started_background_tasks = false;
 
         /// With `--only-system-tables` the directory is only inspected, so the default database is not recorded in it.
         if (!server_default_database.empty() && !getClientConfiguration().has("only-system-tables"))
@@ -1891,9 +1935,17 @@ void LocalServer::processConfig()
                 DatabaseCatalog::instance().createBackgroundTasks();
                 waitLoad(loadMetadata(global_context));
                 DatabaseCatalog::instance().startupBackgroundTasks();
+                started_background_tasks = true;
             }
 
             LOG_DEBUG(log, "Loaded metadata.");
+        }
+
+        /// `DROP ... SYNC` waits for the drop task, so it has to run also when no metadata was loaded.
+        if (!started_background_tasks)
+        {
+            DatabaseCatalog::instance().createBackgroundTasks();
+            DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
         if (!attached_system_database)
@@ -1956,7 +2008,8 @@ void LocalServer::processConfig()
         prompt = getClientConfiguration().getString("prompt");
     else if (getClientConfiguration().has("prompt_by_server_display_name.default"))
         prompt = getClientConfiguration().getRawString("prompt_by_server_display_name.default");
-    prompt = appendSmileyIfNeeded(prompt);
+    else
+        prompt = "{display_name}";
 
     /// Set default ports if not specified, so SYSTEM START LISTEN works out of the box.
     if (!getClientConfiguration().has("tcp_port"))
