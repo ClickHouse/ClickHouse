@@ -83,20 +83,20 @@ SpillingHashJoin::SpillingHashJoin(
 
 SpillingHashJoin::~SpillingHashJoin() = default;
 
-bool SpillingHashJoin::addBlockToExternalJoin(const Block & block, bool check_limits)
+bool SpillingHashJoin::addBlockToExternalJoin(const Block & block, size_t num_rows, JoinBuildContext context)
 {
     if (keep_left_block_order)
     {
         /// MergeJoin cannot build right side concurrently, thus protect it with a mutex
         /// FIXME(antaljanosbenjamin): SortedBlock
         std::lock_guard lock(merge_join_insert_mutex);
-        return chosen_join->addBlockToJoin(block, check_limits);
+        return chosen_join->addBlockToJoin(block, num_rows, context);
     }
 
-    return chosen_join->addBlockToJoin(block, check_limits);
+    return chosen_join->addBlockToJoin(block, num_rows, context);
 }
 
-void SpillingHashJoin::tryConvertSlots()
+void SpillingHashJoin::tryConvertSlots(JoinBuildContext context)
 {
     chassert(concurrent_join);
     chassert(grace_join || merge_join);
@@ -116,7 +116,7 @@ void SpillingHashJoin::tryConvertSlots()
         auto blocks = concurrent_join->releaseSlotBlocks(slot);
         while (!blocks.empty())
         {
-            addBlockToExternalJoin(blocks.front(), /*check_limits=*/false);
+            addBlockToExternalJoin(blocks.front(), blocks.front().rows(), context.callerChecksLimits());
             blocks.pop_front();
         }
     }
@@ -146,15 +146,15 @@ std::string SpillingHashJoin::getAlgorithm() const
     }
 }
 
-bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
+bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context)
 {
     /// Fast path: already switched to the external join (no switch lock needed).
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
         /// Help convert ConcurrentHashJoin slots into the external join.
         if (concurrent_join)
-            tryConvertSlots();
-        return addBlockToExternalJoin(block, check_limits);
+            tryConvertSlots(context);
+        return addBlockToExternalJoin(block, num_rows, context);
     }
 
     /// The hash table buffer grows in power-of-two steps. Doubling from X to 2X allocates the new
@@ -167,20 +167,20 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     if (concurrent_join)
     {
         if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-            switchToExternalJoin();
+            switchToExternalJoin(context);
     }
     else
     {
         if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-            switchToExternalJoin();
+            switchToExternalJoin(context);
     }
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
     {
         if (concurrent_join)
-            tryConvertSlots();
-        return addBlockToExternalJoin(block, check_limits);
+            tryConvertSlots(context);
+        return addBlockToExternalJoin(block, num_rows, context);
     }
 
     if (concurrent_join)
@@ -190,16 +190,16 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 
         /// Re-check: another thread may have switched while we waited for the lock.
         if (state.load(std::memory_order_acquire) != State::COLLECTING)
-            return addBlockToExternalJoin(block, check_limits);
+            return addBlockToExternalJoin(block, num_rows, context);
 
-        return concurrent_join->addBlockToJoin(block, check_limits);
+        return concurrent_join->addBlockToJoin(block, num_rows, context);
     }
 
     /// Single-thread HashJoin path.
-    return hash_join->addBlockToJoin(block, check_limits);
+    return hash_join->addBlockToJoin(block, num_rows, context);
 }
 
-void SpillingHashJoin::switchToExternalJoin(bool spill_immediately)
+void SpillingHashJoin::switchToExternalJoin(JoinBuildContext context, bool spill_immediately)
 {
     /// The target is pinned at plan time: MergeJoin when the plan requires the left stream's row
     /// order (the pipeline was then built without the delayed-block transforms GraceHashJoin
@@ -242,7 +242,7 @@ void SpillingHashJoin::switchToExternalJoin(bool spill_immediately)
         /// before it is fed doubles the bucket count on the first block, so half of what we hand
         /// over goes to disk right away - even if this is the last block of the build phase.
         if (spill_immediately)
-            grace_join->requestSpill();
+            grace_join->requestSpill(context);
         return grace_join;
     };
 
@@ -280,7 +280,7 @@ void SpillingHashJoin::switchToExternalJoin(bool spill_immediately)
         }
         /// Convert ConcurrentHashJoin slots into the external join.
         /// Other build-phase threads will also help via `addBlockToJoin`.
-        tryConvertSlots();
+        tryConvertSlots(context);
 
         QueryExecutionCounters::addUsedJoinAlgorithm(target_algorithm);
         return;
@@ -302,7 +302,7 @@ void SpillingHashJoin::switchToExternalJoin(bool spill_immediately)
     /// freeing each after insertion to limit peak memory.
     while (!right_blocks.empty())
     {
-        addBlockToExternalJoin(right_blocks.front(), /*check_limits=*/false);
+        addBlockToExternalJoin(right_blocks.front(), right_blocks.front().rows(), context.callerChecksLimits());
         right_blocks.pop_front();
     }
 
@@ -322,7 +322,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
         if (total_bytes >= max_bytes_before_external_join)
         {
-            switchToExternalJoin();
+            switchToExternalJoin(JoinBuildContext::serial());
         }
         else if (concurrent_join)
         {
@@ -378,17 +378,17 @@ size_t SpillingHashJoin::getSpillableBytes() const
     }
 }
 
-void SpillingHashJoin::requestSpill()
+void SpillingHashJoin::requestSpill(JoinBuildContext context)
 {
     switch (state.load(std::memory_order_acquire))
     {
         case State::COLLECTING:
             /// The switch functions re-check the state, so a concurrent switch is harmless.
-            switchToExternalJoin(/*spill_immediately=*/true);
+            switchToExternalJoin(context, /*spill_immediately=*/true);
             return;
         case State::GRACE_HASH_JOIN:
         case State::MERGE_JOIN:
-            chosen_join->requestSpill();
+            chosen_join->requestSpill(context);
             return;
         case State::IN_MEMORY_JOIN:
             return;

@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsBool enable_group_by_top_k_dynamic_filtering;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool group_by_top_k_optimization_shared_boundary;
     extern const SettingsBool distributed_plan_fallback_to_local_execution;
@@ -226,6 +227,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_optimization_shared_boundary = from[Setting::group_by_top_k_optimization_shared_boundary];
+    enable_group_by_top_k_dynamic_filtering = from[Setting::enable_group_by_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];

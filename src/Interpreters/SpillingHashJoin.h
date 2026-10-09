@@ -83,7 +83,7 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     void initialize(const Block & sample_block) override;
     JoinResultPtr joinBlock(Block block) override;
@@ -125,7 +125,7 @@ public:
 
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;
-    void requestSpill() override;
+    void requestSpill(JoinBuildContext context) override;
 
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
@@ -154,12 +154,12 @@ private:
     /// memory-pressure path: a new GraceHashJoin then repartitions as it takes the data over,
     /// instead of holding all of it in bucket 0 until the next spill request (MergeJoin always
     /// puts the drained blocks on disk right away).
-    void switchToExternalJoin(bool spill_immediately = false);
+    void switchToExternalJoin(JoinBuildContext context, bool spill_immediately = false);
     /// Every insert into the external join funnels through here: MergeJoin inserts are
     /// serialized by `merge_join_insert_mutex` (single-threaded build), GraceHashJoin inserts
     /// stay concurrent.
-    bool addBlockToExternalJoin(const Block & block, bool check_limits);
-    void tryConvertSlots();
+    bool addBlockToExternalJoin(const Block & block, size_t num_rows, JoinBuildContext context);
+    void tryConvertSlots(JoinBuildContext context);
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
