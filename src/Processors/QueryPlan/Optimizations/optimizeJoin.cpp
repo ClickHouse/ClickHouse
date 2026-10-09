@@ -292,6 +292,9 @@ struct QueryGraphBuilder
 
     std::vector<JoinActionRef> join_edges;
 
+    /// See `QueryGraph::probe_keys_within_preserved_side`.
+    bool probe_keys_within_preserved_side = false;
+
     /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
     /// The `join_kinds` maps (join relation index) -> (set of relations it depends on, join kind)
@@ -444,7 +447,7 @@ static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & n
 
     const RelationStats left_stats = estimateReadRowsCount(*node.children[0]);
     const RelationStats right_stats = estimateReadRowsCount(*node.children[1]);
-    const auto join = estimateJoin(left_stats, right_stats, join_step.getJoinOperator());
+    const auto join = estimateJoin(left_stats, right_stats, join_step.getJoinOperator(), join_step.probeKeysWithinPreservedSide());
 
     auto input_estimate = [](const RelationStats & stats)
     {
@@ -1021,6 +1024,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
     query_graph.join_strictness = join_strictness;
+    query_graph.probe_keys_within_preserved_side = query_graph_builder.probe_keys_within_preserved_side;
     for (size_t i = 0; i < query_graph_builder.inputs.size(); ++i)
     {
         if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
@@ -1624,6 +1628,8 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
+    /// A swap-only semi or anti join keeps its graph to itself, so the property holds for the graph.
+    query_graph_builder.probe_keys_within_preserved_side = query_graph_size_limit == 2 && join_step->probeKeysWithinPreservedSide();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

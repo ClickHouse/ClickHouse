@@ -37,8 +37,17 @@ struct JoinKeyEstimate
     bool has_equality = false;
     /// Some key NDV comes from statistics.
     bool from_statistics = false;
+    /// The probe side of a semi join was built from the preserved side's key values (a decorrelated
+    /// subquery joined with the distinct correlation keys), so every probe key is a preserved key:
+    /// the preserved side matches in the share of its keys the probe side has, whatever the key
+    /// domain, and a row count stands in for a missing NDV. An anti join does not take this share:
+    /// its complement of a share near one is unreliable, and the domain-based fraction errs towards
+    /// keeping rows.
+    bool probe_keys_within_preserved_side = false;
+    std::optional<double> left_within_fraction = {};
+    std::optional<double> right_within_fraction = {};
     /// Smallest share of a side's key values the other side also has, see `keyContainment`; known
-    /// when the side's NDV comes from statistics.
+    /// when both NDVs come from statistics, since a row count says nothing about shared values.
     std::optional<double> left_match_fraction;
     std::optional<double> right_match_fraction;
 
@@ -54,12 +63,19 @@ struct JoinKeyEstimate
             statistics_selectivity = std::min(statistics_selectivity, 1.0 / static_cast<double>(largest_from_statistics));
             from_statistics = true;
         }
-        if (left.from_statistics)
-            left_match_fraction = std::min(left_match_fraction.value_or(1.0),
-                QueryPlanOptimizations::keyContainment(left.orRows(), right.orRows(), domain_distinct_values).value_or(1.0));
-        if (right.from_statistics)
-            right_match_fraction = std::min(right_match_fraction.value_or(1.0),
-                QueryPlanOptimizations::keyContainment(right.orRows(), left.orRows(), domain_distinct_values).value_or(1.0));
+        if (probe_keys_within_preserved_side)
+        {
+            const double left_values = static_cast<double>(left.orRows());
+            const double right_values = static_cast<double>(right.orRows());
+            left_within_fraction = std::min(left_within_fraction.value_or(1.0), std::min(1.0, right_values / left_values));
+            right_within_fraction = std::min(right_within_fraction.value_or(1.0), std::min(1.0, left_values / right_values));
+        }
+        if (!left.from_statistics || !right.from_statistics)
+            return;
+        left_match_fraction = std::min(left_match_fraction.value_or(1.0),
+            QueryPlanOptimizations::keyContainment(left.from_statistics, right.from_statistics, domain_distinct_values).value_or(1.0));
+        right_match_fraction = std::min(right_match_fraction.value_or(1.0),
+            QueryPlanOptimizations::keyContainment(right.from_statistics, left.from_statistics, domain_distinct_values).value_or(1.0));
     }
 };
 
@@ -292,7 +308,10 @@ inline std::optional<UInt64> estimateJoinCardinality(
         const double other = preserve_left ? rhs : lhs;
         /// Fraction of preserved rows with a match: the share of the preserved key values the other
         /// side has when that key's NDV is known, else the other side's rows per key value, capped at 1.
-        const auto & known_fraction = preserve_left ? keys.left_match_fraction : keys.right_match_fraction;
+        const auto & within_fraction = preserve_left ? keys.left_within_fraction : keys.right_within_fraction;
+        const auto & known_fraction = (strictness == JoinStrictness::Semi && within_fraction)
+            ? within_fraction
+            : (preserve_left ? keys.left_match_fraction : keys.right_match_fraction);
         const double rows_per_key = keys.from_statistics ? keys.statistics_selectivity : keys.selectivity;
         const double match_fraction = known_fraction.value_or(std::min(1.0, rows_per_key * other));
         const double kept = (strictness == JoinStrictness::Semi)
@@ -371,12 +390,14 @@ struct JoinEstimate
     std::unordered_map<String, ColumnStats> column_stats;
 };
 
-inline JoinEstimate estimateJoin(const RelationStats & left, const RelationStats & right, const JoinOperator & join_operator)
+inline JoinEstimate estimateJoin(
+    const RelationStats & left, const RelationStats & right, const JoinOperator & join_operator, bool probe_keys_within_preserved_side = false)
 {
     auto left_entry = std::make_shared<DPJoinEntry>(0, left);
     auto right_entry = std::make_shared<DPJoinEntry>(1, right);
 
     JoinKeyEstimate keys;
+    keys.probe_keys_within_preserved_side = probe_keys_within_preserved_side;
     for (const auto & predicate : join_operator.expression)
     {
         auto [op, lhs, rhs] = predicate.asBinaryPredicate();

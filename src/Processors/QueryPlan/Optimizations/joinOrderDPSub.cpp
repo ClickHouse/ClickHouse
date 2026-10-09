@@ -477,6 +477,7 @@ JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
     const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
     JoinKeyEstimate keys;
+    keys.probe_keys_within_preserved_side = query_graph.probe_keys_within_preserved_side;
     collectEdgeKeys(query_graph, dp_table, expression_selectivity, edges, BitSet::fromUInt(left_mask), keys);
 
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes

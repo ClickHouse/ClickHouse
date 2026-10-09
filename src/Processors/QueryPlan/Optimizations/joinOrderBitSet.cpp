@@ -103,6 +103,7 @@ JoinKeyEstimate computeSelectivity(
     const BitSet & right)
 {
     JoinKeyEstimate keys;
+    keys.probe_keys_within_preserved_side = query_graph.probe_keys_within_preserved_side;
     collectEdgeKeys(query_graph, dp_table, expression_selectivity, edges, left, keys);
 
     /// One key per equivalence class with members on both sides: the largest values over the

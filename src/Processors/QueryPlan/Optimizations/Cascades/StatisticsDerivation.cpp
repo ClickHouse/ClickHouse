@@ -257,7 +257,8 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     /// The shared estimate of every planner, from the inputs as relations: an unknown side stays
     /// unknown, an empty side decides, the key NDVs of the output narrow by the join.
-    const auto join = estimateJoin(left_statistics.toRelationStats(), right_statistics.toRelationStats(), join_operator);
+    const auto join = estimateJoin(
+        left_statistics.toRelationStats(), right_statistics.toRelationStats(), join_operator, join_step.probeKeysWithinPreservedSide());
 
     ExpressionStatistics statistics;
     statistics.min_row_count = 0;

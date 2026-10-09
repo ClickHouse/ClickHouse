@@ -252,6 +252,11 @@ public:
     std::string_view getTableStatsHint() const { return table_stats_hint; }
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
+    /// The non-preserved side was built from the preserved side's key values (a decorrelated
+    /// subquery joined with the distinct correlation keys), so every key it has is a preserved key.
+    bool probeKeysWithinPreservedSide() const { return probe_keys_within_preserved_side; }
+    void setProbeKeysWithinPreservedSide() { probe_keys_within_preserved_side = true; }
+
     bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
@@ -352,6 +357,7 @@ protected:
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;
+    bool probe_keys_within_preserved_side = false;
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;

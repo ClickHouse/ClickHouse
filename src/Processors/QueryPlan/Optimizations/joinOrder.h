@@ -97,6 +97,10 @@ struct QueryGraph
 
     std::vector<JoinActionRef> edges;
 
+    /// The graph is one semi or anti join whose probe side was built from the preserved side's
+    /// key values, see `JoinStepLogical::probeKeysWithinPreservedSide`.
+    bool probe_keys_within_preserved_side = false;
+
     /// Operators of the original join tree, in tree (not enumeration) order. Populated during
     /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
     /// otherwise. See `ConflictJoinOp`.
