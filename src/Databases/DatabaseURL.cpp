@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -31,6 +32,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -271,7 +273,23 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     const bool is_local = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
     const VolumePtr user_files_volume = is_local ? VolumePtr{} : context_->getUserFilesVolume();
 
-    fs::path fs_path(getLocalPathFromFileURL(url));
+    /// A table name can use the archive path syntax (`archive.tar.zst::data.native`), which the
+    /// `file` delegate resolves to a file stored inside the archive. The file that has to exist on
+    /// the filesystem is then the archive, not the whole name: probing the name itself would make
+    /// every table inside an archive unresolvable. Archive syntax is not supported with a
+    /// `user_files_policy` volume (the `file` delegate rejects it), so the name is not split there.
+    String local_path = getLocalPathFromFileURL(url);
+    String path_in_archive;
+    if (!user_files_volume && context_->getSettingsRef()[Setting::allow_archive_path_syntax])
+    {
+        if (auto [path_to_archive, path_inside] = splitToArchivePathAndPathInArchive(local_path); !path_to_archive.empty())
+        {
+            local_path = std::move(path_to_archive);
+            path_in_archive = std::move(path_inside);
+        }
+    }
+
+    fs::path fs_path(local_path);
     if (fs_path.is_relative())
         fs_path = fs::path(context_->getUserFilesPath()) / fs_path;
 
@@ -349,6 +367,17 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path);
+        return false;
+    }
+
+    /// The name addresses a file stored inside the archive, so the table exists only if that file
+    /// does. Answering with the presence of the archive alone would claim a table for a member that
+    /// is not there, and its resolution would fail with a schema inference error instead of
+    /// reporting the missing table, as this database does for a plain path.
+    if (!path_in_archive.empty() && !archiveContainsFile(path, path_in_archive))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist inside the archive {}: {}", path, path_in_archive);
         return false;
     }
 
@@ -468,7 +497,7 @@ void registerDatabaseURL(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseURL>(args.database_name, base_url, args.context);
     };
-    factory.registerDatabase("URL", create_fn, {
+    factory.registerDatabase("URL", create_fn, urlSecretArguments(0), {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::URL,
