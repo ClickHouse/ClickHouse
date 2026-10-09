@@ -43,7 +43,6 @@ inline bool functionIsDictGet(const std::string & name)
     return startsWith(name, "dictGet") || (name == "dictHas") || (name == "dictIsIn") || startsWith(name, "naiveBayesClassifier");
 }
 
-/// The position of the argument holding a dictionary name, for the functions that take one.
 inline std::optional<size_t> getDictionaryNameArgumentPosition(const std::string & name)
 {
     if (functionIsDictGet(name))

@@ -58,8 +58,7 @@ public:
         }
     }
 
-    /// The visited definition is new user input, not replayed stored metadata (see `isReplayedTableDefinition`).
-    /// Only then is the dictionary name of `assignCentroid` qualified: no loading dependency attaches its dictionary first.
+    /// Only a new definition, never replayed stored metadata, qualifies the dictionary name of `assignCentroid`.
     void setIsNewDefinition(bool value) { is_new_definition = value; }
 
     void visitDDL(ASTPtr & ast) const
