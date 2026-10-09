@@ -218,3 +218,8 @@ SELECT * FROM numbers(1, 1) RIGHT JOIN numbers(1, 1) ON 0 SETTINGS joined_subque
 SELECT * FROM (SELECT * FROM numbers(1, 1) RIGHT JOIN numbers(1, 1) ON 0) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT materialize(1) AS x) ALL LEFT JOIN (SELECT materialize(1) AS x) ON 0 SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT * FROM (SELECT materialize(1) AS x) ALL LEFT JOIN (SELECT materialize(1) AS x) ON 0) SETTINGS joined_subquery_requires_alias = 0;
+
+-- A repeated name in a CTE column list is rejected like in a table alias list.
+WITH t(a, b) AS (SELECT materialize(1), materialize(2)) SELECT * FROM t;
+WITH t(a, a) AS (SELECT materialize(1), materialize(2)) SELECT * FROM t; -- { serverError BAD_ARGUMENTS }
+WITH t(a, a) AS MATERIALIZED (SELECT materialize(1), materialize(2)) SELECT * FROM t SETTINGS enable_materialized_cte = 1; -- { serverError BAD_ARGUMENTS }
