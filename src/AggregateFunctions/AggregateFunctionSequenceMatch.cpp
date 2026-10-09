@@ -54,7 +54,7 @@ struct AggregateFunctionSequenceMatchData final
 {
     using Timestamp = T;
     using Events = std::bitset<max_events>;
-    /// Trivially copyable (unlike std::pair), so that ::stableSort uses driftsort instead of std::stable_sort.
+    /// Must stay trivially copyable: otherwise ::stableSort falls back to std::stable_sort.
     struct TimestampEvents
     {
         Timestamp first;
