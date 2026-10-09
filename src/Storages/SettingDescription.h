@@ -5,6 +5,7 @@
 #include <base/types.h>
 
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace DB
@@ -42,6 +43,18 @@ template <typename TSettings>
 SettingDescriptions enumerateCompiledDefaults(ContextPtr, const SettingsChanges & changes)
 {
     return TSettings{}.enumerateSettings(changes);
+}
+
+/// `enumerateCompiledDefaults` without the settings for which `is_unusable` holds: those of `TSettings` that a table of
+/// the engine cannot use, because stating them fails or has no effect - such as a setting only the database engine of
+/// the same name takes, or a deprecated one the engine rejects. So they are left out even where a table's definition
+/// states them. They are still rendered before being left out.
+template <typename TSettings, bool (*is_unusable)(std::string_view)>
+SettingDescriptions enumerateCompiledDefaultsExcept(ContextPtr context, const SettingsChanges & changes)
+{
+    auto settings = enumerateCompiledDefaults<TSettings>(context, changes);
+    std::erase_if(settings, [](const SettingDescription & setting) { return is_unusable(setting.name); });
+    return settings;
 }
 
 }

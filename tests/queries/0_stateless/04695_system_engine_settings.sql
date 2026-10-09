@@ -48,5 +48,12 @@ WHERE name LIKE 'format\_%' OR name LIKE 'input\_format\_%' OR name LIKE 'output
     OR (engine_name = 'RabbitMQ' AND name IN ('rabbitmq_max_block_size', 'rabbitmq_flush_interval_ms'))
     OR (engine_name IN ('S3Queue', 'AzureQueue') AND name = 'keeper_path');
 
+-- Verify settings a new table cannot use are not listed: MaterializedPostgreSQL's database engine settings and the
+-- deprecated catalog settings of the data lake engines
+SELECT count() FROM system.engine_settings
+WHERE (engine_name = 'MaterializedPostgreSQL' AND name IN ('materialized_postgresql_use_extended_date_and_time_types',
+        'materialized_postgresql_schema_list', 'materialized_postgresql_tables_list'))
+    OR name IN ('storage_catalog_type', 'storage_catalog_url', 'storage_aws_access_key_id');
+
 -- Verify an engine keeps its own settings: Set lists only these, without the format settings its class includes
 SELECT name FROM system.engine_settings WHERE engine_name = 'Set' ORDER BY name;
