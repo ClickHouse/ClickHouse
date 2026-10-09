@@ -3,10 +3,7 @@
 #include <Common/CurrentThread.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
-#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Common/checkStackSize.h>
 #include <Common/formatReadable.h>
@@ -61,41 +58,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
     extern const int CANNOT_RMDIR;
-    extern const int CORRUPTED_DATA;
-    extern const int FILE_ALREADY_EXISTS;
 }
 
 namespace
 {
     constexpr size_t DEFAULT_COPY_OBJECT_THREAD_POOL_SIZE = 16;
-
-    constexpr std::string_view RENAME_EXCHANGE_TEMP_SUFFIX = "_tmp_rename_exchange";
-    constexpr std::string_view RENAME_EXCHANGE_JOURNAL_DIR = "clickhouse_rename_exchange_journal/";
-    constexpr std::string_view RENAME_EXCHANGE_JOURNAL_HEADER = "rename exchange journal v1";
-
-    /// A record is the header line followed by the two escaped paths, one per line.
-    bool tryParseRenameExchangeRecord(const String & content, String & old_path, String & new_path)
-    {
-        ReadBufferFromString in(content);
-        String header;
-        try
-        {
-            readEscapedString(header, in);
-            if (header != RENAME_EXCHANGE_JOURNAL_HEADER || !checkChar('\n', in))
-                return false;
-            readEscapedString(old_path, in);
-            if (old_path.empty() || !checkChar('\n', in))
-                return false;
-            readEscapedString(new_path, in);
-            if (new_path.empty() || !checkChar('\n', in))
-                return false;
-        }
-        catch (const Exception &)
-        {
-            return false;
-        }
-        return in.eof();
-    }
 
     size_t getCopyObjectThreadPoolSize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
@@ -402,128 +369,15 @@ void DiskObjectStorage::renameExchange(const std::string & old_path, const std::
 {
     if (existsFile(new_path))
     {
-        auto temp_old_path = old_path + String(RENAME_EXCHANGE_TEMP_SUFFIX);
-        if (existsFile(temp_old_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
-                "Cannot exchange {} and {}: {} is left by an interrupted exchange, which is finished when the disk is opened again",
-                old_path, new_path, temp_old_path);
-
-        /// The moves below are persisted one by one, so a crash can stop between them.
-        const String record_path = String(RENAME_EXCHANGE_JOURNAL_DIR) + sipHash128String(old_path);
-        createDirectories(String(RENAME_EXCHANGE_JOURNAL_DIR));
-        {
-            auto out = writeFile(record_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getWriteSettingsForMetadata());
-            writeString(RENAME_EXCHANGE_JOURNAL_HEADER, *out);
-            writeChar('\n', *out);
-            writeEscapedString(old_path, *out);
-            writeChar('\n', *out);
-            writeEscapedString(new_path, *out);
-            writeChar('\n', *out);
-            out->finalize();
-        }
-
+        auto temp_old_path = old_path + "_tmp_rename_exchange";
         auto transaction = createObjectStorageTransaction();
         transaction->moveFile(old_path, temp_old_path);
         transaction->moveFile(new_path, old_path);
         transaction->moveFile(temp_old_path, new_path);
         transaction->commit();
-
-        /// The exchange is committed, so a record that cannot be removed only names a finished exchange.
-        try
-        {
-            removeFileIfExists(record_path);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, fmt::format("Cannot remove {}", record_path));
-        }
     }
     else
         moveFile(old_path, new_path);
-}
-
-void DiskObjectStorage::finishInterruptedRenameExchanges()
-{
-    const String journal_dir(RENAME_EXCHANGE_JOURNAL_DIR);
-    if (isReadOnly() || isWriteOnce() || !existsDirectory(journal_dir))
-        return;
-
-    std::vector<String> entries;
-    for (auto it = iterateDirectory(journal_dir); it->isValid(); it->next())
-        entries.push_back(it->path());
-
-    for (const auto & entry : entries)
-    {
-        String content;
-        if (auto in = readFileIfExists(entry, getReadSettingsForMetadata(), std::nullopt))
-            readStringUntilEOF(content, *in);
-
-        String old_path;
-        String new_path;
-        if (!tryParseRenameExchangeRecord(content, old_path, new_path))
-        {
-            LOG_WARNING(log, "Disk {}: {} is not a rename exchange record, leaving it as is", name, entry);
-            continue;
-        }
-
-        finishRenameExchange(old_path, new_path);
-        removeFile(entry);
-    }
-}
-
-void DiskObjectStorage::finishRenameExchange(const String & old_path, const String & new_path)
-{
-    /// Never destroys unique bytes: a file is removed only when another of the three holds the same bytes,
-    /// and a file is moved only onto a path just read as absent.
-    const String temp_path = old_path + String(RENAME_EXCHANGE_TEMP_SUFFIX);
-    auto read = [&](const String & path) -> std::optional<String>
-    {
-        auto in = readFileIfExists(path, getReadSettingsForMetadata(), std::nullopt);
-        if (!in)
-            return {};
-        String content;
-        readStringUntilEOF(content, *in);
-        return content;
-    };
-
-    const auto temp_content = read(temp_path);
-    if (!temp_content)
-        return;
-
-    auto old_content = read(old_path);
-    const auto new_content = read(new_path);
-
-    if (old_content && new_content && *new_content == *temp_content)
-    {
-        removeFile(temp_path);
-    }
-    else
-    {
-        const bool old_is_copy_of_temp = old_content && *old_content == *temp_content;
-        const bool consistent = (old_is_copy_of_temp || !old_content)
-            ? new_content.has_value()
-            : (!new_content || *new_content == *old_content);
-
-        if (!consistent)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Disk {}: cannot finish the interrupted exchange of {} and {}: unexpected contents of {}, {} and {}",
-                name, old_path, new_path, old_path, new_path, temp_path);
-
-        if (old_is_copy_of_temp)
-        {
-            removeFile(old_path);
-            old_content.reset();
-        }
-
-        if (!old_content)
-            moveFile(new_path, old_path);
-        else if (new_content)
-            removeFile(new_path);
-
-        moveFile(temp_path, new_path);
-    }
-
-    LOG_WARNING(log, "Disk {}: finished the interrupted exchange of {} and {}", name, old_path, new_path);
 }
 
 bool DiskObjectStorage::renameExchangeIfSupported(const std::string &, const std::string &)

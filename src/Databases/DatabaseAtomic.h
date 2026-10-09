@@ -63,6 +63,8 @@ public:
 
     void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
+    void loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup) override;
+
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
     void waitDatabaseStarted() const override;
     void stopLoading() override;
@@ -107,6 +109,16 @@ protected:
     const UUID db_uuid;
 
     LoadTaskPtr startup_atomic_database_task TSA_GUARDED_BY(mutex);
+
+private:
+    void exchangeMetadataFiles(
+        DatabaseAtomic & other_db, const DiskPtr & disk, const String & old_path, const String & new_path, const Strings & record_paths)
+        TSA_NO_THREAD_SAFETY_ANALYSIS;
+    void finishInterruptedExchanges() const;
+    void assertNoUnfinishedExchangeUnlocked() const TSA_REQUIRES(mutex);
+
+    /// Set when an exchange failed and its undo may have left the metadata files half exchanged.
+    String unfinished_exchange TSA_GUARDED_BY(mutex);
 };
 
 }
