@@ -34,8 +34,7 @@ repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
 
 # Must equal helpers/cluster.py's RABBITMQ_RECREATE_TOKEN, which emits it. Copied
-# rather than imported so this script does not depend on the test helpers' imports;
-# test_cluster_waiters/test_rabbitmq_start_retry.py asserts the two stay equal.
+# rather than imported so this script does not depend on the test helpers' imports.
 RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
 
 
@@ -698,8 +697,7 @@ TIMEOUT_ERROR_PATTERNS = [
 # `veth` name collision in moby, present at least up to 28.3.3), so the server is unreachable
 # for the rest of the module through no fault of its own. Unlike the substrings below it
 # already carries its own proof, which is why the FAIL path trusts it without further
-# context. Must stay in step with the constant of the same name in the harness - pinned by
-# `tests/integration/test_cluster_waiters/test_lost_network_interface.py`.
+# context. Must stay in step with the constant of the same name in the harness.
 LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
 
 INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
@@ -1931,11 +1929,28 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not args.test
     ):
         changed_files = info.get_changed_files()
-        if changed_files and all(
-            Targeting.is_functional_test_file(f)
-            or Targeting.is_integration_test_file(f)
-            or Targeting.is_ci_job_script(f)
-            for f in changed_files
+        # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
+        # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        is_coverage_replacement_with_ci_script_changes = False
+        if info.pr_number > 0 and any(
+            Targeting.is_ci_job_script(f) for f in changed_files or []
+        ):
+            # Not at module scope: `ci.defs.job_configs` needs a bare `praktika` on `sys.path`.
+            from ci.defs.job_configs import JobConfigs
+
+            is_coverage_replacement_with_ci_script_changes = info.job_name in [
+                j.name for j in JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
+            ]
+        if (
+            changed_files
+            and not is_coverage_replacement_with_ci_script_changes
+            and all(
+                Targeting.is_functional_test_file(f)
+                or Targeting.is_integration_test_file(f)
+                or Targeting.is_ci_job_script(f)
+                or Targeting.is_documentation_file(f)
+                for f in changed_files
+            )
         ):
             changed_integration_modules = {
                 f.removeprefix("tests/integration/")
