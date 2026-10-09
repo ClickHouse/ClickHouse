@@ -264,7 +264,10 @@ like the other `num_columns = 0` variants.
 A reader below revision `54494` rejects this variant (`INCORRECT_DATA`), so a writer only emits it once
 the negotiated revision is at least that. Below it the writer refuses such a block with an error
 (`NOT_IMPLEMENTED`) instead of writing an empty block that would lose its rows, and an initiator that
-expects a result with no columns refuses a peer below the revision the same way. This also keeps a
+expects a result with no columns refuses a peer below the revision the same way. The writer's error
+arrives before any data, so an older initiator running with
+`skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing'` treats it like any other
+shard that fails before processing: it skips the shard, as that mode asks, and logs the error. This also keeps a
 `Native` file — written at revision `0` — free of the variant, where a declared row count with no
 columns remains a sign of a truncated or corrupted stream.
 

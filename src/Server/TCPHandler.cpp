@@ -1679,6 +1679,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     {
                         /// An older initiator cannot receive the number of rows of a block with no columns, so the
                         /// rows of this part of the result would be lost there. Fail rather than return a wrong result.
+                        /// No data was sent yet, so an initiator with `skip_unavailable_shards_mode` set to
+                        /// `unavailable_or_exception_before_processing` skips this shard, which is what that mode asks for.
                         if (block.columns() == 0 && client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
                             throw Exception(
                                 ErrorCodes::NOT_IMPLEMENTED,
