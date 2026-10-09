@@ -15,6 +15,10 @@
 -- creates the unfinished window). Correctness must hold with the feature on: a partial or racily
 -- read set would prune granules for not-yet-merged keys and undercount.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS rf_fact;
 DROP TABLE IF EXISTS rf_dim;
 

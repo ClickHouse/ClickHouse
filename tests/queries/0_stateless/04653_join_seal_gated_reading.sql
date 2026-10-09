@@ -11,6 +11,9 @@
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_seal_gated_reading = 1;
+-- Pin (randomized in CI): the gating counters below expect the default-sized bloom filter;
+-- with a 1 KiB one nothing gets gated.
+SET join_runtime_bloom_filter_bytes = 524288;
 -- The gating marks only plain local reads (no parallel replicas).
 SET enable_parallel_replicas = 0;
 -- Pin the default multi-threaded read pool for the main queries; single-stream, in-order

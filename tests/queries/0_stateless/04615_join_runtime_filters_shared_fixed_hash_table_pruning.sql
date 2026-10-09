@@ -9,6 +9,10 @@
 -- than fail the query. Whichever filter ends up published, results must be exact and granule
 -- pruning must still engage.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS rf_shared_fact;
 DROP TABLE IF EXISTS rf_shared_dim;
 

@@ -4,6 +4,10 @@
 -- 04611_join_runtime_filters_index_analysis_skip_index to keep each test fast enough
 -- for slow builds.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS sales1;
 DROP TABLE IF EXISTS sales2;
 
