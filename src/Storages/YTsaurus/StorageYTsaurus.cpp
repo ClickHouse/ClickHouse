@@ -161,8 +161,9 @@ void registerStorageYTsaurus(StorageFactory & factory)
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         auto configuration = StorageYTsaurus::getConfiguration(
             args.engine_args, YTsaurusSettings::createFromQuery(*args.storage_def), args.getLocalContext(), &args.table_id);
-        /// Skipped on ATTACH so that a forbidden header does not block server startup; the client still checks it.
-        if (args.mode <= LoadingStrictnessLevel::CREATE)
+        /// Skipped for a stored definition so that a forbidden header does not block server startup;
+        /// the client still checks it.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
             YTsaurusClient::checkHeaders(args.getLocalContext(), configuration.oauth_token);
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
