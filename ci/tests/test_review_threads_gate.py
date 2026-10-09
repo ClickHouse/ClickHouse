@@ -1048,3 +1048,76 @@ def test_rerun_considers_only_the_runs_of_its_own_pr():
     assert _run_runs_filter(runs, 100, "feature", "ClickHouse/ClickHouse") == [1, 3]
     assert _run_runs_filter(runs, 200, "feature-copy", "ClickHouse/ClickHouse") == [2, 3]
     assert _run_runs_filter(runs, 300, "feature", "someone/ClickHouse") == [4]
+
+
+def _run_pr_resolution(payload_prs, commit_prs, head_branch, head_repo, head_repo_id):
+    """Run the PR-number resolution of `rerun_on_review_threads.yml` for a
+    `workflow_run` event, sliced out of the workflow, with the GitHub API stubbed,
+    and return the resolved PR number, or `None` when it resolves to nothing."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/rerun_on_review_threads.yml"
+    ).read_text()
+    start = workflow.index("          # --- Resolve the PR number ---")
+    end = workflow.index("          # --- Current PR state ---")
+    snippet = "\n".join(line[10:] for line in workflow[start:end].splitlines())
+    script = f"""
+set -euo pipefail
+GH_REPO=ClickHouse/ClickHouse
+PR_NUMBER=
+WR_HEAD_SHA={RUN_SHA}
+WR_PULL_REQUESTS={shlex.quote(json.dumps(payload_prs))}
+WR_HEAD_BRANCH={shlex.quote(head_branch)}
+WR_HEAD_REPO={shlex.quote(head_repo)}
+WR_HEAD_REPO_ID={head_repo_id}
+api_with_retries() {{ echo {shlex.quote(json.dumps(commit_prs))}; }}
+{snippet}
+echo "resolved=$pr"
+"""
+    result = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=True
+    )
+    last = result.stdout.strip().splitlines()[-1]
+    if not last.startswith("resolved="):
+        return None
+    return int(last[len("resolved="):])
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_workflow_run_event_resolves_the_pr_of_its_own_branch():
+    """A completed run must be attributed to the PR of its own head branch and
+    repository, even when other open PRs share its head commit."""
+
+    def payload_pr(number, ref, repo_id):
+        return {"number": number, "head": {"ref": ref, "repo": {"id": repo_id}}}
+
+    def commit_pr(number, ref, repo, state="open"):
+        return {
+            "number": number,
+            "state": state,
+            "head": {"ref": ref, "repo": {"full_name": repo}},
+        }
+
+    main = ("ClickHouse/ClickHouse", 1)
+    fork = ("someone/ClickHouse", 2)
+
+    # The payload names several PRs: pick the one of the run's branch.
+    payload = [payload_pr(200, "feature-copy", 1), payload_pr(100, "feature", 1)]
+    assert _run_pr_resolution(payload, [], "feature", *main) == 100
+    assert _run_pr_resolution(payload, [], "feature-copy", *main) == 200
+
+    # Fork PRs: the payload is empty, so the head commit is looked up.
+    commit_prs = [
+        commit_pr(300, "feature", fork[0]),
+        commit_pr(400, "feature", "other/ClickHouse"),
+        commit_pr(500, "feature", fork[0], state="closed"),
+    ]
+    assert _run_pr_resolution([], commit_prs, "feature", *fork) == 300
+    assert _run_pr_resolution([], commit_prs, "feature", "nobody/ClickHouse", 3) is None
+
+    # The same branch into two base branches is genuinely ambiguous.
+    commit_prs.append(commit_pr(600, "feature", fork[0]))
+    assert _run_pr_resolution([], commit_prs, "feature", *fork) is None
+    assert _run_pr_resolution(
+        [payload_pr(100, "feature", 1), payload_pr(700, "feature", 1)], [], "feature", *main
+    ) is None

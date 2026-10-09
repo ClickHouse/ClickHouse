@@ -51,8 +51,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-          WR_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number || '' }}
+          WR_PULL_REQUESTS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
           WR_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+          WR_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
+          WR_HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name || '' }}
+          WR_HEAD_REPO_ID: ${{ github.event.workflow_run.head_repository.id || '' }}
           # Keep in sync with REVIEW_THREADS_STATUS_NAME in
           # ci/jobs/scripts/workflow_hooks/review_threads.py.
           STATUS_NAME: Review Threads
@@ -101,21 +104,29 @@ jobs:
 
           # --- Resolve the PR number ---
           pr="$PR_NUMBER"
-          if [ -z "$pr" ]; then
-            pr="$WR_PR_NUMBER"
-          fi
           if [ -z "$pr" ] && [ -n "$WR_HEAD_SHA" ]; then
-            # workflow_run.pull_requests is empty for PRs from forks - find
-            # the PR through its head commit instead. Several open PRs can
-            # share one head commit; then the commit does not tell which of
-            # them the run belongs to, so do not guess.
-            open_prs=$(api_with_retries "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
-              --jq '[.[] | select(.state == "open") | .number]')
-            if [ "$(echo "$open_prs" | jq 'length')" -gt 1 ]; then
-              echo "Head commit $WR_HEAD_SHA belongs to several open PRs ($open_prs) - ambiguous, nothing to do."
+            # Several open PRs can share the head commit of a run, so match
+            # the candidates against the run's own head branch and repository
+            # instead of trusting the first one. `workflow_run.pull_requests`
+            # names the PRs of this repository; it is empty for fork PRs, so
+            # then look the PRs up through the head commit.
+            candidates=$(echo "$WR_PULL_REQUESTS" \
+              | jq -c --arg ref "$WR_HEAD_BRANCH" --arg repo_id "$WR_HEAD_REPO_ID" \
+                '[(. // [])[] | select(.head.ref == $ref and (.head.repo.id | tostring) == $repo_id)
+                  | .number] | unique')
+            if [ "$(echo "$candidates" | jq 'length')" -eq 0 ]; then
+              candidates=$(api_with_retries "repos/$GH_REPO/commits/$WR_HEAD_SHA/pulls" \
+                | jq -c --arg ref "$WR_HEAD_BRANCH" --arg repo "$WR_HEAD_REPO" \
+                  '[.[] | select(.state == "open" and .head.ref == $ref and .head.repo.full_name == $repo)
+                    | .number] | unique')
+            fi
+            # Only PRs from the same branch into different base branches are
+            # left here; the run does not tell which of them it belongs to.
+            if [ "$(echo "$candidates" | jq 'length')" -gt 1 ]; then
+              echo "Run for $WR_HEAD_REPO:$WR_HEAD_BRANCH ($WR_HEAD_SHA) belongs to several PRs ($candidates) - ambiguous, nothing to do."
               exit 0
             fi
-            pr=$(echo "$open_prs" | jq -r '.[0] // empty')
+            pr=$(echo "$candidates" | jq -r '.[0] // empty')
           fi
           if [ -z "$pr" ]; then
             echo "No PR associated with the event - nothing to do."
