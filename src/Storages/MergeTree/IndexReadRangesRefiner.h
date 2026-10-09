@@ -25,7 +25,15 @@ using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext
 class IndexReadRangesRefiner : public IMergeTreeReadRangesRefiner
 {
 public:
-    IndexReadRangesRefiner(MergeTreeIndexBuildContextPtr index_build_context_, StorageMetadataPtr metadata_snapshot_);
+    /// `apply_index_filter_` = false makes an accounting-only participant: `refine` passes the
+    /// ranges through, only `onMarksDropped` runs. Installed when another refiner in the chain
+    /// can drop marks while pool-side index refinement is disabled, so the per-part cached
+    /// index read results still release (their release is keyed on every mark of the part
+    /// being either read or accounted as dropped).
+    IndexReadRangesRefiner(
+        MergeTreeIndexBuildContextPtr index_build_context_,
+        StorageMetadataPtr metadata_snapshot_,
+        bool apply_index_filter_ = true);
 
     MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
 
@@ -34,6 +42,7 @@ public:
 private:
     const MergeTreeIndexBuildContextPtr index_build_context;
     const StorageMetadataPtr metadata_snapshot;
+    const bool apply_index_filter;
 };
 
 }

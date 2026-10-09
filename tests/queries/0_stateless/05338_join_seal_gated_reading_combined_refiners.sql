@@ -53,6 +53,12 @@ SELECT /* refiners_combined */ count() FROM probe_05338 AS p INNER JOIN build_05
 SELECT /* refiners_seal_only */ count() FROM probe_05338 AS p INNER JOIN build_05338 AS b ON p.k = b.k WHERE p.region = 'hot'
 SETTINGS optimize_use_projection_filtering = 0, use_indexes_refiner_in_read_pools = 0;
 
+-- Seal refiner with the projection index applied only at reader level (the default
+-- use_indexes_refiner_in_read_pools = 0): the chain gets an accounting-only index refiner
+-- so the per-part cached index read results still release as the seal drops marks.
+SELECT /* refiners_seal_reader_level */ count() FROM probe_05338 AS p INNER JOIN build_05338 AS b ON p.k = b.k WHERE p.region = 'hot'
+SETTINGS use_indexes_refiner_in_read_pools = 0;
+
 -- Index refiner only (no gating).
 SELECT /* refiners_index_only */ count() FROM probe_05338 AS p INNER JOIN build_05338 AS b ON p.k = b.k WHERE p.region = 'hot'
 SETTINGS enable_join_seal_gated_reading = 0;
@@ -79,7 +85,8 @@ SELECT
     maxIf(dropped, marker = 'refiners_combined') >= maxIf(dropped, marker = 'refiners_seal_only') + 20 AS index_stage_engages_on_gated_read,
     maxIf(dropped, marker = 'refiners_combined') >= maxIf(dropped, marker = 'refiners_index_only') + 40 AS seal_stage_engages,
     maxIf(rows_read, marker = 'refiners_combined') < maxIf(rows_read, marker = 'refiners_seal_only')
-        AND maxIf(rows_read, marker = 'refiners_combined') < maxIf(rows_read, marker = 'refiners_index_only') AS combined_reads_less
+        AND maxIf(rows_read, marker = 'refiners_combined') < maxIf(rows_read, marker = 'refiners_index_only') AS combined_reads_less,
+    maxIf(dropped, marker = 'refiners_seal_reader_level') > 700 AS accounting_only_chain_prunes_by_seal
 FROM dropped_by;
 
 DROP TABLE probe_05338;

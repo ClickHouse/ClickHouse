@@ -648,6 +648,28 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }
 
+/// Install the task-cut refiner chain of a pool which may be seal-gated: the seal refiner
+/// first (its PK cut is cheap and usually the most selective), the index refiner on the
+/// survivors. When the index refiner is disabled but the seal refiner can drop marks, an
+/// accounting-only `IndexReadRangesRefiner` keeps the per-part release accounting of the
+/// cached index read results correct (see `IndexReadRangesRefiner::onMarksDropped`); without
+/// the seal refiner nothing drops marks, and installing it would only make the pool stand
+/// down from the columns-cache write-estimate gating.
+static void addReadRangesRefiners(
+    MergeTreeReadPoolBase & pool,
+    const MergeTreeReadRangesRefinerPtr & seal_gate_refiner,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Settings & settings)
+{
+    pool.addReadRangesRefiner(seal_gate_refiner);
+
+    auto index_refiner = createIndexReadRangesRefiner(index_build_context, metadata_snapshot, settings);
+    if (!index_refiner && seal_gate_refiner && index_build_context)
+        index_refiner = std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot, /*apply_index_filter=*/ false);
+    pool.addReadRangesRefiner(std::move(index_refiner));
+}
+
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -799,8 +821,7 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        prefetched_pool->addReadRangesRefiner(seal_gate_refiner);
-        prefetched_pool->addReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        addReadRangesRefiners(*prefetched_pool, seal_gate_refiner, index_build_context, storage_snapshot->metadata, settings);
         pool = std::move(prefetched_pool);
     }
     else
@@ -821,8 +842,7 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        read_pool->addReadRangesRefiner(seal_gate_refiner);
-        read_pool->addReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        addReadRangesRefiners(*read_pool, seal_gate_refiner, index_build_context, storage_snapshot->metadata, settings);
         pool = std::move(read_pool);
     }
 
@@ -1017,9 +1037,7 @@ Pipe ReadFromMergeTree::readInOrder(
             context,
             dataflow_cache_updater);
 
-        in_order_pool->addReadRangesRefiner(seal_gate_refiner);
-        in_order_pool->addReadRangesRefiner(
-            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+        addReadRangesRefiners(*in_order_pool, seal_gate_refiner, index_build_context, storage_snapshot->metadata, context->getSettingsRef());
         pool = std::move(in_order_pool);
     }
 

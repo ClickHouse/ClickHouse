@@ -11,15 +11,19 @@ namespace DB
 {
 
 IndexReadRangesRefiner::IndexReadRangesRefiner(
-    MergeTreeIndexBuildContextPtr index_build_context_, StorageMetadataPtr metadata_snapshot_)
+    MergeTreeIndexBuildContextPtr index_build_context_, StorageMetadataPtr metadata_snapshot_, bool apply_index_filter_)
     : index_build_context(std::move(index_build_context_))
     , metadata_snapshot(std::move(metadata_snapshot_))
+    , apply_index_filter(apply_index_filter_)
 {
     chassert(index_build_context);
 }
 
 MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const
 {
+    if (!apply_index_filter)
+        return ranges;
+
     auto projection_it = index_build_context->projection_read_ranges.find(info.part_index_in_query);
     bool has_projection_ranges = projection_it != index_build_context->projection_read_ranges.end();
 
