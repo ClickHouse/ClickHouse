@@ -4986,13 +4986,24 @@ void Aggregator::mergeAndDestroyRowOrDefer(AggregateDataPtr dst, AggregateDataPt
             && aggregate_functions[i]->isLargeMergePair(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i]);
     };
 
+    /// Everything that can throw is done in this loop: the merges and the reservation of the slots for the
+    /// deferred pairs. If something throws, the source row is still owned by the source table and is destroyed
+    /// once, by it.
     for (size_t i = 0; i < params.aggregates_size; ++i)
-        if (!is_deferred(i))
+    {
+        if (is_deferred(i))
+        {
+            auto & pairs = (*deferred)[i];
+            pairs.dst_places.reserve(pairs.dst_places.size() + 1);
+            pairs.src_places.reserve(pairs.src_places.size() + 1);
+        }
+        else
             aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+    }
 
-    /// The pairs are recorded only after every merge of the row succeeded: if one throws, the source row is
-    /// still owned by the source table and is destroyed once, by it. The decision is the same as above,
-    /// because the states of a deferred pair have not been touched.
+    /// The pairs are recorded and the other source states destroyed only after every merge of the row succeeded,
+    /// and nothing here can throw: the slots are reserved and `destroy` is `noexcept`. The decision is the same
+    /// as above, because the states of a deferred pair have not been touched.
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         if (is_deferred(i))
