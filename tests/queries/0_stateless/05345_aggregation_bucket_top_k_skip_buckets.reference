@@ -1,0 +1,72 @@
+numeric key
+49	396
+48	392
+47	388
+46	384
+45	380
+44	376
+43	372
+42	368
+41	364
+40	360
+String key
+heavy-49	396
+heavy-48	392
+heavy-47	388
+heavy-46	384
+heavy-45	380
+two keys
+49	heavy-49	396
+48	heavy-48	392
+47	heavy-47	388
+offset
+4	216
+3	212
+2	208
+limit above the number of heavy keys
+14910	60
+ascending
+10
+legacy String table
+heavy-49	396
+heavy-48	392
+heavy-47	388
+heavy-46	384
+heavy-45	380
+adaptive aggregator
+49	396
+48	392
+47	388
+46	384
+45	380
+44	376
+43	372
+42	368
+41	364
+40	360
+a single-level stream
+2000002	1002
+2000001	1001
+2000000	1000
+9	590
+8	580
+a larger limit before
+49	396
+48	392
+47	388
+46	384
+45	380
+44	376
+43	372
+42	368
+41	364
+40	360
+skipped buckets
+1 numeric key	most
+2 String key	most
+3 two keys	most
+4 ascending	0
+5 legacy String table	0
+6 a single-level stream	most
+7 a larger limit	0
+8 after a larger limit	most
