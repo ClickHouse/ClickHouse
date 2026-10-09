@@ -807,7 +807,10 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
     {
         if (agg_type->getFunction()->haveSameStateRepresentation(*to_type->getFunction()))
         {
-            return [function = to_type->getFunction()](
+            /// The states are shared as they are, but the result column must take the state version
+            /// of the target type (e.g. `AggregateFunction(1, uniq, UInt64)`), because the version
+            /// affects how the states are serialized on a later round trip through an arena.
+            return [function = to_type->getFunction(), version = to_type->getVersionIfExplicit()](
                        ColumnsWithTypeAndName & arguments,
                        const DataTypePtr & /* result_type */,
                        const ColumnNullable * /* nullable_source */,
@@ -818,7 +821,7 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
                 if (col_agg)
                 {
                     auto new_col_agg = ColumnAggregateFunction::create(*col_agg);
-                    new_col_agg->set(function);
+                    new_col_agg->set(function, version);
                     return new_col_agg;
                 }
                 else
@@ -835,7 +838,7 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
         /// can be converted by merging the source state into a fresh target state.
         if (to_type->getFunction()->canMergeStateFromDifferentVariant(*agg_type->getFunction()))
         {
-            return [function = to_type->getFunction(), from_function = agg_type->getFunction()](
+            return [function = to_type->getFunction(), from_function = agg_type->getFunction(), version = to_type->getVersionIfExplicit()](
                        ColumnsWithTypeAndName & arguments,
                        const DataTypePtr & /* result_type */,
                        const ColumnNullable * /* nullable_source */,
@@ -849,7 +852,7 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
                         "Illegal column {} for function CAST AS AggregateFunction",
                         argument_column.column->getName());
 
-                auto res = ColumnAggregateFunction::create(function);
+                auto res = ColumnAggregateFunction::create(function, version);
 
                 for (const auto * src_state : col_agg->getData())
                 {

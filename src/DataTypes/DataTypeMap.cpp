@@ -172,12 +172,9 @@ void DataTypeMap::updateHashImpl(SipHash & hash) const
     value_type->updateHash(hash);
 }
 
-void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) const
+DataTypePtr DataTypeMap::doCloneWithChildren(const DataTypes & new_children) const
 {
-    callback(*key_type);
-    callback(*value_type);
-    key_type->forEachChild(callback);
-    value_type->forEachChild(callback);
+    return std::make_shared<DataTypeMap>(new_children[0], new_children[1]);
 }
 
 MutableColumnPtr DataTypeMap::tryParseSubcolumnKey(std::string_view subcolumn_name) const

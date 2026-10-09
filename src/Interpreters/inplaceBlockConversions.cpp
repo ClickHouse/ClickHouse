@@ -717,7 +717,7 @@ void fillMissingColumns(
                     if (visited_elements.emplace(subcolumn_name).second)
                         tuple_elements.push_back(path[j].name_of_substream);
                 }
-            });
+            }, column_for_type.type);
 
             /// The number of dimensions that belongs to the array itself but not shared in Nested column.
             /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
