@@ -6729,7 +6729,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Add, replace or drop the `ESCAPE 'c'` argument of the `LIKE` / `SIMILAR TO` family
         if (fn->arguments && fn->name != "match" && pattern_match_functions.contains(fn->name) && fuzz_rand() % 20 == 0)
         {
-            static const Strings escapes = {"#", "!", "\\", "%", "_", "|", "[", "'", "$", "a", "", "ab"};
+            /// "!" goes last: the style check rejects an exclamation mark followed by `",`.
+            static const Strings escapes = {"#", "\\", "%", "_", "|", "[", "'", "$", "a", "", "ab", "!"};
             auto & args = fn->arguments->children;
 
             if (args.size() == 3 && fuzz_rand() % 3 == 0)
