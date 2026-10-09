@@ -119,15 +119,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table_id)
     {
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
-        /// Resolve once here so every branch below validates against the real structure instead of
-        /// the columns-only metadata a lazily loaded table reports.
-        table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
+        /// Not resolved: `StorageProxy::alter` is what refreshes the metadata a lazily loaded table reports.
+        table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
-        /// NOLINT(storage-cast): `table` is resolved above.
-        if (table && table->as<StorageKeeperMap>())
+        if (table && castStorage<StorageKeeperMap>(table, DeferredTable::Load))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
         DDLQueryOnClusterParams params;
