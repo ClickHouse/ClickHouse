@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTimeSeries.h>
@@ -151,6 +152,7 @@ namespace Setting
     extern const SettingsBool materialized_views_populate_atomically;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_temporary_tables;
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
@@ -170,6 +172,7 @@ namespace FailPoints
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
     extern const char atomic_populate_pause_before_source_guard[];
+    extern const char atomic_populate_pause_before_population[];
 }
 
 namespace ErrorCodes
@@ -312,7 +315,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         for (const auto & system_database : system_databases)
         {
-            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(std::string(system_database)))
+            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(system_database))
                 --db_count;
         }
 
@@ -631,7 +634,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -642,14 +645,21 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
-    if (LoadingStrictnessLevel::ATTACH <= mode)
-        setVersionToAggregateFunctions(column_type, true);
-    else
+    if (pin_current_state_version)
         /// Spell the state version the column is going to be written with out in the type, so that
         /// it gets into the table metadata and the data stays readable when a newer server changes
         /// the default: an unversioned name in stored metadata denotes the layout from before the
-        /// function became versioned (the ATTACH branch above pins it to 0).
+        /// function became versioned (the branch below pins it to 0).
         pinCurrentStateVersionToAggregateFunctions(column_type);
+    else
+        /// The query replays formatted metadata rather than a user-written definition: an `ATTACH`
+        /// reads the stored `.sql` file, a DDL worker (`ON CLUSTER` / `Replicated` database -
+        /// including the initiator, which re-executes the entry it wrote to the log) replays a
+        /// query normalized on the initiator (so a version the initiator pinned is spelled out in
+        /// the type), and a restore replays the `CREATE` query saved in the backup. In all of these
+        /// an unversioned name denotes the layout from before the function became versioned, and
+        /// the data that goes with it is written in that layout - pin it to version 0.
+        setVersionToAggregateFunctions(column_type, true);
 
     if (col_decl.null_modifier)
     {
@@ -700,6 +710,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
+    /// The current aggregate-function state version is pinned into the type only for a definition
+    /// the user wrote. A normalized query already spells any pinned version out in the type name,
+    /// so in it (and in stored metadata, and in a backup) an unversioned name denotes the layout
+    /// from before the function became versioned and must stay version 0 - see `getColumnType`.
+    bool pin_current_state_version = mode == LoadingStrictnessLevel::CREATE
+        && !already_normalized_on_initiator
+        && !is_restore_from_backup;
+
     for (const auto & ast : columns_ast.children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
@@ -711,7 +729,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, make_columns_nullable, pin_current_state_version));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -977,7 +995,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        /// A lazily loaded source reports only its columns, so the indices, projections, constraints
+        /// and comment copied below would silently come out empty.
+        StoragePtr as_storage = resolveStorageProxyLoading(
+            DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext()));
 
         /// An `Alias` reports its target's metadata, so copying that metadata requires the privilege on the
         /// target that describing the target requires.
@@ -1010,7 +1031,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(as_storage, DeferredTable::Load).get())
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
@@ -1201,13 +1222,17 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     /// A constraint expression is evaluated per block and read by block row, so an `arrayJoin` inside it
-    /// checks a row against another row's value, or reads past the end of a shorter column. Screened for
+    /// checks a row against another row's value, or reads past the end of a shorter column. And a second
+    /// declaration of a name is reachable only once the first one has been dropped. Screened for
     /// every definition the user supplies now - an explicit column list, a full-definition `ATTACH`, and
     /// the `AS src` / `CLONE AS src` copy of the constraints of another table, which may have been stored
-    /// by a version without this check. A replay of stored metadata is not screened, so such a table
+    /// by a version without these checks. A replay of stored metadata is not screened, so such a table
     /// still attaches.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
+    {
         properties.constraints.checkExpressionsPreserveRowCount();
+        properties.constraints.checkNamesAreUnique();
+    }
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
@@ -1492,6 +1517,19 @@ namespace
 
 }
 
+String InterpreterCreateQuery::getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context)
+{
+    if (!create.as_table.empty() || create.is_materialized_view)
+        return {};
+    if (create.storage && create.storage->engine)
+        return {};
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(local_context->resolveDatabase(create.getDatabase()));
+    if (!database)
+        return {};
+    return database->getDefaultTableEngineName(create.getTable());
+}
+
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
@@ -1558,6 +1596,18 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
             return;
         }
+    }
+
+    if (auto engine_name = getDatabaseDefaultTableEngineName(create, getContext()); !engine_name.empty())
+    {
+        if (!create.storage)
+            create.set(create.storage, make_intrusive<ASTStorage>());
+
+        auto engine_ast = make_intrusive<ASTFunction>();
+        engine_ast->name = std::move(engine_name);
+        engine_ast->setNoEmptyArgs(true);
+        create.storage->set(create.storage->engine, engine_ast);
+        return;
     }
 
     /// We'll try to extract a storage definition from clause `AS`:
@@ -1782,6 +1832,16 @@ bool isReplicated(const ASTStorage & storage)
         return false;
     const auto & storage_name = storage.engine->name;
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
+}
+
+/// The drop privilege matching the kind of an existing table.
+AccessType getDropAccessType(const IStorage & table)
+{
+    if (table.isView())
+        return AccessType::DROP_VIEW;
+    if (table.isDictionary())
+        return AccessType::DROP_DICTIONARY;
+    return AccessType::DROP_TABLE;
 }
 
 }
@@ -2321,6 +2381,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
+/// Enforces `max_temporary_tables` before a temporary table named `table_name` is added to the session.
+void checkTemporaryTablesLimit(const ContextPtr & context, const String & table_name)
+{
+    const UInt64 max_temporary_tables = context->getSettingsRef()[Setting::max_temporary_tables];
+    if (!max_temporary_tables)
+        return;
+
+    const Tables tables = context->getSessionContext()->getExternalTables();
+
+    /// Replacing an existing temporary table does not change the number of tables.
+    if (tables.contains(table_name))
+        return;
+
+    if (tables.size() >= max_temporary_tables)
+        throw Exception(ErrorCodes::TOO_MANY_TABLES,
+            "Too many temporary tables in the session: {}, the maximum is {} (the `max_temporary_tables` setting)",
+            tables.size(), max_temporary_tables);
+}
+
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
@@ -2398,6 +2477,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
+
+        checkTemporaryTablesLimit(getContext(), create.getTable());
 
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -2602,6 +2683,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
 
+        /// A table engine picks the comment up from the arguments the storage factory passes to it,
+        /// while a table function does not receive it at all, so apply it here: otherwise the comment
+        /// would be stored in the metadata but missing from `system.tables`.
+        if (create.comment)
+            res->setInMemoryMetadataComment(create.comment->as<ASTLiteral &>().value.safeGet<String>());
+
         /// The table is permanent, so it must hold its named collection (if any) the same way a table
         /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
@@ -2638,7 +2725,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
+        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
                             "Only tables with a Replicated engine "
@@ -2650,7 +2737,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
-    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+    /// `res` is the storage this query just built, and for a table function it is a proxy that
+    /// resolving would run during CREATE.
+    auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip).get();
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
@@ -3054,12 +3143,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 {
                     /// The replaced table is dropped after the swap, under an internal temporary name that
                     /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
-                    AccessType drop_access = AccessType::DROP_TABLE;
-                    if (to_drop->isView())
-                        drop_access = AccessType::DROP_VIEW;
-                    else if (to_drop->isDictionary())
-                        drop_access = AccessType::DROP_DICTIONARY;
-                    current_context->checkAccess(drop_access, to_drop_id);
+                    current_context->checkAccess(getDropAccessType(*to_drop), to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
                 }
             });
@@ -3138,6 +3222,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
                                                                 const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    /// Bare `REPLACE` requires the target to exist, so it never adds a table.
+    if (create.create_or_replace)
+        checkTemporaryTablesLimit(getContext(), create.getTable());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();
@@ -3240,7 +3328,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
             /// directly requires exactly these grants, so the contract is the same either way.
             getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
-                *command, create.getDatabase(), published_table_name, /*row_exists_is_lightweight_marker=*/false));
+                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular, getContext()));
             interpreter_alter.setSkipAccessCheck(true);
         }
         return interpreter_alter.execute();
@@ -3320,7 +3408,8 @@ StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCre
     if (context->hasQueryContext())
         context->getQueryContext()->dropStorageCacheEntry(*ref_dependencies.mv_from_dependency);
 
-    auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
+    auto source = resolveStorageProxyLoading(
+        DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context));
 
     /// The view's SELECT was validated against the source before the view was published, so the source
     /// existed then; not finding it now means it was dropped, renamed or exchanged away in the window
@@ -3423,8 +3512,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// removing it from the catalog and renaming away its metadata, so that the name is free again for a
         /// retry - happens synchronously inside `DatabaseAtomic::dropTable`; only the removal of the (empty)
         /// data is deferred to the background drop task, exactly as for a plain `DROP TABLE`. Waiting for
-        /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
-        /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
+        /// that here would buy nothing.
         ///
         /// In a `Replicated` database the view would not be ours to drop - the entry's metadata transaction
         /// is already committed and a unilateral drop would diverge this replica - which is why
@@ -3552,6 +3640,11 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     populate_context->setPinnedStorageSnapshot(source_uuid, snapshot);
     if (populate_context->hasQueryContext())
         populate_context->getQueryContext()->setPinnedStorageSnapshot(source_uuid, snapshot);
+
+    /// Models a slow start of the population. The view is already subscribed, so a test inserts into the
+    /// source here and checks that the row reaches the view once - live, not again through the population
+    /// (see 05315_atomic_populate_materialized_view_trivial_count).
+    FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_before_population);
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
@@ -3766,6 +3859,16 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         }
     }
 
+    /// Replicated and ON CLUSTER replays run with full access, so the drop privilege for the replaced
+    /// table's kind must be required here, on its real name, while the query still runs as the user.
+    if ((create.replace_table || create.create_or_replace || create.replace_view) && !create.isTemporary())
+    {
+        String database_name = getContext()->resolveDatabase(create.getDatabase());
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
+            if (auto table = database->tryGetTable(create.getTable(), getContext()))
+                required_access.emplace_back(getDropAccessType(*table), database_name, create.getTable());
+    }
+
     if (create.targets)
     {
         for (const auto & target : create.targets->targets)
@@ -3801,7 +3904,9 @@ void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
 
 void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage)
 {
-    if (create.is_dictionary || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
+    if (create.is_dictionary
+        || storage->getName() == "Alias"
+        || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
         return;
 
     auto ast_storage = make_intrusive<ASTStorage>();
@@ -3893,9 +3998,9 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
 void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
 {
     /// Check engine can be changed
-    if (database->getEngineName() != "Atomic")
+    if (database->getEngineName() != "Atomic" && database->getEngineName() != "Ordinary")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Table engine conversion to replicated is supported only for Atomic databases");
+            "Table engine conversion to replicated is supported only for Atomic and Ordinary databases");
 
     if (!create.storage || !create.storage->engine || !create.storage->engine->name.contains("MergeTree"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -3923,30 +4028,45 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` first.",
             backQuoteIfNeed(create.getTable()));
 
+    const bool ordinary_database = database->getEngineName() == "Ordinary";
+    const bool temporary_uuid = to_replicated && ordinary_database;
+    if (temporary_uuid)
+    {
+        create.uuid = UUIDHelpers::generateV4();
+        create.has_uuid = true;
+    }
     /// Must precede every side effect below: neither the transaction metadata removal nor the
     /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.
+    std::optional<TableZnodeInfo> znode_info;
     if (to_replicated)
-        DatabaseOrdinary::checkReplicaPathIsSafe(create, getContext());
+        znode_info = DatabaseOrdinary::checkReplicaPathIsSafe(create, getContext(), /*stores_path_literally=*/ordinary_database);
 
     /// Ensure the old detached table instance is destroyed before we remove
     /// transaction metadata files. Otherwise the old table's parts still hold
     /// in-memory version metadata referencing those files, and the debug
     /// assertion in removeIfNeeded() → assertHasValidVersionMetadata() will
-    /// fail when the old storage is destroyed later.
-    if (create.uuid != UUIDHelpers::Nil)
+    /// fail when the old storage is destroyed later. An `Ordinary` table may carry
+    /// such files too, after `RENAME TABLE` from an `Atomic` database; it has no UUID,
+    /// so its guard is keyed by table name.
+    const bool wait_for_detached = getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously];
+    QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+    auto throw_if_cancelled = [&]()
     {
-        if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-        {
-            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-            database->waitDetachedTableNotInUse(create.uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
-        }
+        if (query_status)
+            query_status->throwIfKilled();
+    };
+    if (ordinary_database)
+    {
+        auto & ordinary = typeid_cast<DatabaseOrdinary &>(*database);
+        if (wait_for_detached)
+            ordinary.waitDetachedTableByNameNotInUse(create.getTable(), throw_if_cancelled);
         else
-            database->checkDetachedTableNotInUse(create.uuid);
+            ordinary.checkDetachedTableByNameNotInUse(create.getTable());
     }
+    else if (wait_for_detached)
+        database->waitDetachedTableNotInUse(create.uuid, throw_if_cancelled);
+    else
+        database->checkDetachedTableNotInUse(create.uuid);
 
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))
@@ -3956,8 +4076,12 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
 
     /// Set new engine
-    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
-
+    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated, temporary_uuid ? &*znode_info : nullptr);
+    if (temporary_uuid)
+    {
+        create.uuid = UUIDHelpers::Nil;
+        create.has_uuid = false;
+    }
     /// Save new metadata
     auto db_disk = database->getDisk();
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
