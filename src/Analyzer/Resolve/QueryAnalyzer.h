@@ -284,6 +284,8 @@ private:
 
     void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
+    void resolveTableAliasColumn(const QueryTreeNodePtr & alias_column_node, AnalysisTableExpressionData & table_expression_data, IdentifierResolveScope & table_scope);
+
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
     void resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);

@@ -40,6 +40,9 @@ struct AnalysisTableExpressionData
     bool should_qualify_columns = true;
     bool supports_subcolumns = false;
     NamesAndTypes column_names_and_types;
+    /// ALIAS columns of this table expression whose expressions are not resolved yet.
+    /// Valid only while they are resolved (see `QueryAnalyzer::resolveTableAliasColumn`).
+    std::unordered_set<const IQueryTreeNode *> unresolved_alias_columns;
     /// Set of regular (non-subcolumn) column names. Lazily populated by
     /// `ensureColumnMembershipSetsArePopulated()`. Used for membership checks that don't need
     /// a `ColumnNode` (e.g. `hasFullIdentifierName`). For wide tables (~100 columns) building
