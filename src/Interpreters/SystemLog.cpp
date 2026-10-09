@@ -1218,6 +1218,10 @@ void SystemLog<LogElement>::prepareUnionTable()
             LOG_DEBUG(log, "Creating new table {} for {}", union_table_id.getNameForLogs(), LogElement::name());
         }
 
+        /// Replacing the table may wait for the previous one to be dropped, which cannot
+        /// happen while it is still referenced here.
+        union_table.reset();
+
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
         addSettingsForQuery(query_context, IAST::QueryKind::Create);
