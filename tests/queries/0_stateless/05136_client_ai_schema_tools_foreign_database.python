@@ -64,6 +64,9 @@ FOREIGN_TABLE = "rows"
 FOREIGN_COLUMN = "`s` Nullable(String)"
 WRITABLE_SESSION = [
     ("local_show_create", "show_create_table", {"database": "default", "table": "plain"}, True, "ENGINE = MergeTree"),
+    # The definition of a view is the text of its query rather than the shape of a table, so the
+    # tool refuses it, as the read-only tool refuses to read the view.
+    ("local_view_show_create", "show_create_table", {"database": "default", "table": "view_of_plain"}, False, None),
     (
         "foreign_show_create",
         "show_create_table",
@@ -98,6 +101,7 @@ CASES = WRITABLE_SESSION + READONLY_SESSION
 # one reads; the second one only narrows the session it inherits.
 WRITABLE_SETUP = [
     "CREATE TABLE default.plain (x UInt32) ENGINE = MergeTree ORDER BY x AS SELECT 1",
+    "CREATE VIEW default.view_of_plain AS SELECT x FROM default.plain WHERE x != 12345",
     f"CREATE DATABASE foreign_db ENGINE = SQLite('{SQLITE_PATH}')",
 ]
 READONLY_SETUP = ["SET readonly = 1"]

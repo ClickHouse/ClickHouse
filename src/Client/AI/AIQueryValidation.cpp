@@ -621,6 +621,14 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         /// Shows the values of the server settings with the secrets unmasked: it does not obey
         /// `format_display_secrets_in_show_and_select`.
         "server_settings",
+        /// The stored definitions of the server-global objects (`collection`, `create_query`):
+        /// the named collections with their connection parameters, the SQL and Wasm user-defined
+        /// functions, and the workloads and resources of the scheduler. The names of the built-in
+        /// functions are in `system.documentation`, which the `consult_documentation` tool reads.
+        "named_collections",
+        "functions",
+        "workloads",
+        "resources",
     };
     if (disallowed_system_tables.contains(table))
         return false;
@@ -649,6 +657,11 @@ bool isAllowedTableEngineForAIAgent(const String & engine)
         "EmbeddedRocksDB",
     };
     return allowed.contains(engine);
+}
+
+bool isStoredQueryTableEngineForAIAgent(const String & engine)
+{
+    return engine == "View" || engine == "MaterializedView" || engine == "LiveView" || engine == "WindowView";
 }
 
 bool isAllowedDatabaseEngineForAIAgent(const String & engine)

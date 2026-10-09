@@ -1,4 +1,5 @@
 local_show_create: OK
+local_view_show_create: BLOCKED
 foreign_show_create: OK
 foreign_list_tables: OK
 foreign_readonly_query: BLOCKED

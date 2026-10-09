@@ -1,4 +1,5 @@
 #include <Client/AI/AIAgentTools.h>
+#include <Client/AI/AIQueryValidation.h>
 
 #include <Common/quoteString.h>
 
@@ -85,7 +86,9 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
             });
 
         tools["show_create_table"] = makeTool(
-            "Get the CREATE TABLE statement (columns, engine, sorting key) of a table. "
+            "Get the CREATE TABLE statement (columns, engine, sorting key) of a table. Refuses a view or a "
+            "materialized view, whose definition is the text of a stored query; that one has to be read through "
+            "run_query so the user sees it. "
             "Runs internally, nothing is displayed to the user. The table is resolved the way any query resolves "
             "it, so for a database backed by an external system (MySQL, PostgreSQL, a data-lake catalog) the "
             "definition is fetched from that system - this is the one unconfirmed step that always leaves this "
@@ -104,6 +107,24 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                     {
                         auto database = args.at("database").get<std::string>();
                         auto table = args.at("table").get<std::string>();
+
+                        /// The definition of a view is the text of its query, not the shape of a
+                        /// table, so it is not read without the user seeing it. A table that is not
+                        /// in `system.tables` - one of a database backed by an external system,
+                        /// which is not enumerated there - has no definition of a view of this server.
+                        /// The views of the server-owned databases are defined by the server itself.
+                        if (!isServerOwnedDatabaseForAIAgent(database))
+                        {
+                            String engine = hooks->execute_scalar(
+                                "SELECT engine FROM system.tables WHERE database = {database:String} AND name = {table:String}",
+                                {{"database", database}, {"table", table}});
+                            if (isStoredQueryTableEngineForAIAgent(engine))
+                                return errorResult(
+                                    "The table " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table) + " has the " + engine
+                                    + " engine: its definition is the text of a stored query, which is not read without "
+                                      "the user seeing it. Use the run_query tool to read it");
+                        }
+
                         return successResult(hooks->execute_internal_masking_secrets(
                             "SHOW CREATE TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table), {}));
                     });

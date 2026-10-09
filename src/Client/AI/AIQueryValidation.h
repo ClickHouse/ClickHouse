@@ -98,6 +98,13 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
 /// `Buffer`, `MaterializedView`).
 bool isAllowedTableEngineForAIAgent(const String & engine);
 
+/// Whether the definition of a table with this engine stores the text of a query (`View`,
+/// `MaterializedView`, `LiveView`, `WindowView`). Such a definition is not just the shape of the
+/// table: the stored query can carry arbitrary literals and table function arguments, which the
+/// masking of secrets in `SHOW CREATE` does not classify as credentials. The `show_create_table`
+/// tool refuses these tables, as the read-only tool refuses to read them.
+bool isStoredQueryTableEngineForAIAgent(const String & engine);
+
 /// Whether a database with this engine keeps its tables on this server and lists all of them in
 /// `system.tables`. This is what makes "the name did not resolve to a table" a safe answer: in a
 /// database backed by an external catalog (`S3`, `Iceberg`, `MySQL`, ...) a name that is absent

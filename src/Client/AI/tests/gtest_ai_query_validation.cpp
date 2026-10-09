@@ -186,6 +186,11 @@ TEST(AIQueryValidation, RejectsRunningQueriesAndAccessMetadata)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "handlers"));
     /// The values of the server settings are shown there with the secrets unmasked.
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "server_settings"));
+    /// The stored definitions of the server-global objects are in their `create_query` columns.
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "named_collections"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "functions"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "workloads"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "resources"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "columns"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "parts"));
 }
@@ -263,6 +268,15 @@ TEST(AIQueryValidation, AllowsOnlyLocalTableEngines)
     EXPECT_FALSE(isAllowedTableEngineForAIAgent("IcebergS3"));
     EXPECT_FALSE(isAllowedTableEngineForAIAgent("KeeperMap"));
     EXPECT_FALSE(isAllowedTableEngineForAIAgent(""));
+
+    /// The definition of these is the text of a stored query, so `show_create_table` refuses them.
+    EXPECT_TRUE(isStoredQueryTableEngineForAIAgent("View"));
+    EXPECT_TRUE(isStoredQueryTableEngineForAIAgent("MaterializedView"));
+    EXPECT_TRUE(isStoredQueryTableEngineForAIAgent("LiveView"));
+    EXPECT_TRUE(isStoredQueryTableEngineForAIAgent("WindowView"));
+    EXPECT_FALSE(isStoredQueryTableEngineForAIAgent("MergeTree"));
+    EXPECT_FALSE(isStoredQueryTableEngineForAIAgent("MySQL"));
+    EXPECT_FALSE(isStoredQueryTableEngineForAIAgent(""));
 }
 
 TEST(AIQueryValidation, AllowsOnlyLocalDatabaseEngines)
