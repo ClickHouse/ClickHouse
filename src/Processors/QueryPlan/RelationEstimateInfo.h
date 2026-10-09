@@ -67,6 +67,12 @@ enum class RowEstimateSource : UInt8
     HashTableCache,
 };
 
+/// A serialized plan carries the source as its underlying value; `HashTableCache` is the last enumerator.
+constexpr bool isRowEstimateSource(UInt8 value)
+{
+    return value <= static_cast<UInt8>(RowEstimateSource::HashTableCache);
+}
+
 /// Imprecise specifically because column statistics are missing (excludes the synthetic test sources).
 constexpr bool isMissingStatisticsSource(RowEstimateSource source)
 {

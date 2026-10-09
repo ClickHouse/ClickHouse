@@ -469,15 +469,17 @@ static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & n
         input_estimate(right_stats));
 
     /// Annotate the plan nodes like the join-order path does, so that `EXPLAIN estimates` and the
-    /// profile log see the estimate. An input that already carries an annotation keeps it.
+    /// profile log see the estimate. A node that already carries an annotation keeps it: a plan
+    /// fragment arrives with the estimates of the planner that decided it.
     if (!node.children[0]->cost_estimation)
         node.children[0]->cost_estimation = toCostEstimationInfo(left_stats);
     if (!node.children[1]->cost_estimation)
         node.children[1]->cost_estimation = toCostEstimationInfo(right_stats);
-    node.cost_estimation = CostEstimationInfo{
-        .rows = join.rows ? std::optional<Float64>(Float64(*join.rows)) : std::nullopt,
-        .cost = std::nullopt,
-        .source = RowEstimateSource::NoSource};
+    if (!node.cost_estimation)
+        node.cost_estimation = CostEstimationInfo{
+            .rows = join.rows ? std::optional<Float64>(Float64(*join.rows)) : std::nullopt,
+            .cost = std::nullopt,
+            .source = RowEstimateSource::NoSource};
 }
 
 static String dumpStatsForLogs(const RelationStats & stats)

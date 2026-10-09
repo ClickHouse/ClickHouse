@@ -1460,6 +1460,13 @@ String dumpQueryPlanShort(const QueryPlan & query_plan)
 /// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
 /// Exchange steps are split into ExchangeSink and ExchangeSource.
 /// This allows to build a separate plan fragment (a part of the original full plan) for each stage.
+/// A fragment is assembled from the steps alone; the estimate of the node a step came from goes to the
+/// fragment node that holds the step, so the task's processors log it like the coordinator's own would.
+static void keepEstimate(QueryPlan & fragment, const QueryPlan::Node & node)
+{
+    fragment.getRootNode()->cost_estimation = node.cost_estimation;
+}
+
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto logger = getLogger("makeDistributedPlan");
@@ -1615,6 +1622,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 /// Step has multiple inputs
                 current_plan = std::make_unique<QueryPlan>();
                 current_plan->unitePlans(std::move(frame.node->step), std::move(frame.child_plans));
+                keepEstimate(*current_plan, *frame.node);
             }
             else if (frame.child_plans.size() == 1)
             {
@@ -1658,6 +1666,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                     /// Finish current plan fragment with exchange sink
                     current_plan->addStep(std::move(send_and_receive_steps.first));
+                    keepEstimate(*current_plan, *frame.node);
                     /// Create stage with the current plan fragment
                     {
                         DistributedQueryStage stage;
@@ -1702,6 +1711,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// And start a new plan fragment with exchange source
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(send_and_receive_steps.second));
+                    keepEstimate(*current_plan, *frame.node);
                     frame.list_of_shards = std::move(destination_stage_tasks);
                     frame.shards_are_copies = typeid_cast<const BroadcastExchangeStep *>(exchange_step) != nullptr;
                 }
@@ -1709,6 +1719,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 {
                     /// Add current step on top of the current plan
                     current_plan->addStep(std::move(frame.node->step));
+                    keepEstimate(*current_plan, *frame.node);
                 }
             }
             else
@@ -1752,6 +1763,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(worker_step));
+                    keepEstimate(*current_plan, *frame.node);
 
                     populate_shards(std::move(shards_for_read), std::move(read_buckets), read_bucket_param_name);
                 }
@@ -1772,6 +1784,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(frame.node->step));
+                    keepEstimate(*current_plan, *frame.node);
 
                     populate_shards(std::move(shards_for_read), std::move(read_buckets), read_bucket_param_name);
                 }
