@@ -91,3 +91,9 @@ SELECT sum(number >= 0 AND s != 'maybe' AND toBool(s)) FROM (SELECT arrayJoin(['
 SETTINGS short_circuit_function_evaluation = 'force_enable', short_circuit_function_evaluation_reorder_arguments = 1;
 SELECT count() FROM (SELECT arrayJoin(['true', 'maybe', 'false']) AS s, number FROM numbers(1)) WHERE number >= 0 AND s != 'maybe' AND toBool(s)
 SETTINGS short_circuit_function_evaluation = 'force_enable', short_circuit_function_evaluation_reorder_arguments = 1;
+
+-- A cheap argument is not moved in front of a lazy argument with functions that are not deterministic in the scope
+-- of the query (`blockSize`) between the heavy first argument and itself: this lazy argument would be executed
+-- on fewer rows than in the original order, and the block would be smaller.
+SELECT sum(isValidUTF8(repeat(toString(number), 10)) AND intDiv(100, blockSize()) = 10 AND number % 2 = 1) FROM numbers(100)
+SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10;

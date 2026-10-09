@@ -389,6 +389,9 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
             /// The heavy argument must not contain stateful functions, functions with observable side effects (like `sleep`)
             /// or functions that are not deterministic in the scope of the query (like `rand`),
             /// because executing them on fewer rows changes what an observer sees.
+            /// For the same reason, the cheap argument is not moved in front of the arguments between the first one
+            /// and itself that contain such functions: they would be executed on fewer rows as well.
+            /// The arguments after the cheap one are executed on the same rows as before.
             if (reorder_arguments
                 && short_circuit_function_evaluation == ShortCircuitFunctionEvaluation::ENABLE
                 && short_circuit_settings.arguments_are_commutative
@@ -404,6 +407,9 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
                         short_circuit_settings.arguments_with_disabled_lazy_execution = {i};
                         break;
                     }
+
+                    if (hasOrderSensitiveFunctions(node.children[i], has_order_sensitive_functions_cache))
+                        break;
                 }
             }
 
