@@ -1,12 +1,13 @@
 <test>
     <!-- The set of `IN` spills to disk, where it stores its keys in the ascending order of their disk keys.
-         In the first three queries, the keys arrive in the order of their disk keys. So lookups of sorted
-         keys read the blocks of the set in order, and a set built from sorted rows gets its keys already
-         sorted. The set packs the gaps between keys that are close to each other, so it takes fewer blocks,
-         which the random lookups of the last three queries read again and again. A codec does not shrink
-         packed gaps, so the set writes these blocks uncompressed. A set of `String` keys stores 128-bit
-         hashes, which compress poorly, so it writes them uncompressed as well. The lookups of both read
-         blocks without decompressing them. -->
+         In the first four queries, the keys arrive in the order of their disk keys, which keep the order of
+         numbers and short `FixedString` values, and of the first 4 bytes of other strings. So lookups of
+         sorted keys read the blocks of the set in order, and a set built from sorted rows gets its keys
+         already sorted. The set packs the gaps between keys that are close to each other, so it takes fewer
+         blocks, which the random lookups of the last three queries read again and again. A codec does not
+         shrink packed gaps, so the set writes these blocks uncompressed. The disk keys of strings are mostly
+         hash bits, which compress too little to pay for a codec, so the set writes them uncompressed as well.
+         The lookups of both read blocks without decompressing them. -->
     <settings>
         <max_bytes_before_external_set>16777216</max_bytes_before_external_set>
         <max_bytes_ratio_before_external_set>0</max_bytes_ratio_before_external_set>
@@ -18,7 +19,8 @@
     <query>SELECT count() FROM numbers_mt(10000000) WHERE toFixedString(leftPad(toString(number), 16, '0'), 16) IN (SELECT toFixedString(leftPad(toString(number * 2), 16, '0'), 16) FROM numbers(5000000))</query>
     <!-- The query builds a set of packed numbers from rows in key order. -->
     <query>SELECT count() FROM numbers(1) WHERE (intDiv(number, 1000), toUInt32(number % 1000)) IN (SELECT intDiv(number, 1000), toUInt32(number % 1000) FROM numbers(30000000))</query>
-    <!-- The set holds `String` keys, which it stores as uncompressed hashes. -->
+    <!-- The set holds `String` keys, and the lookups and the rows of the set come in the order of the first
+         4 bytes of the strings. -->
     <query>SELECT count() FROM numbers_mt(10000000) WHERE toString(number) IN (SELECT toString(number * 2) FROM numbers(5000000))</query>
     <!-- The set holds dense numbers, and the lookups come in random order. -->
     <query>SELECT count() FROM numbers_mt(10000000) WHERE cityHash64(number) % 10000000 IN (SELECT number FROM numbers(5000000))</query>

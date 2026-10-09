@@ -41,9 +41,9 @@ SETTINGS log_comment = 'strings';"
 # set in one chunk, so it reads every block once, and the number of blocks that it reads shows how the set
 # stores its keys. Dense numbers pack. So do `UInt32` numbers with gaps of one and two, which use 32-bit
 # offsets and the SIMD layout of `PFor`, and tuples of slowly changing numbers, whose keys take 16 bytes.
-# Hashes do not pack, and neither do the hashes that the set stores for strings. A set of dense numbers and
-# hashes takes blocks of both kinds. The 1024 hashes of a set fill exactly two blocks, so the last key
-# completes the last block. Each query also counts the keys that it finds.
+# Hashes do not pack, and neither do the disk keys of strings, whose low 96 bits are hashes. A set of dense
+# numbers and hashes takes blocks of both kinds. The 1024 hashes of a set fill exactly two blocks, so the
+# last key completes the last block. Each query also counts the keys that it finds.
 ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --config-file "${LOCAL_DIR}/query-log.yaml" \
     --max_bytes_before_external_set 1 --max_threads 1 --max_block_size 1000000 <<SQL
 ${DENSE}
