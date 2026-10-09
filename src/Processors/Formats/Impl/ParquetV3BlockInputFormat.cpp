@@ -1,5 +1,6 @@
 #include <memory>
 #include <Common/CurrentThread.h>
+#include <cstring>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
@@ -870,7 +871,9 @@ UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_met
 {
     /// Hashes the footer's layout - the schema shape, and every row group's and column chunk's row
     /// counts, byte sizes and file offsets - plus its value-bearing fields: per-column statistics
-    /// (min/max/null/distinct/NaN counts), key-value metadata and `created_by`. The layout is what a
+    /// (min/max/null/distinct/NaN counts), key-value metadata and `created_by` - and the schema's
+    /// type metadata (physical, repetition, converted and logical types), which decides how the
+    /// bytes are interpreted. The layout is what a
     /// bucket assignment is computed from, and the statistics change whenever the data values do, so
     /// two generations of a file that differ in any of it produce different digests, while the same
     /// in-memory struct - whether freshly parsed or returned by `ParquetMetadataCache` - always
@@ -886,9 +889,9 @@ UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_met
     /// ...) whose in-memory value can be out of range for a malformed or future-writer file, and the
     /// generated `write` loads them as enumerators - undefined behavior that `-fsanitize=enum`
     /// reports, aborting a read that otherwise succeeds. `Reader::columnChunkCanUseDictionaryFilter`
-    /// reads such fields through `isValidThriftEnum` for the same reason. Only integer and string
-    /// fields are hashed here, so advisory garbage in an enum cannot turn a readable file into a hard
-    /// failure. Optional fields contribute a presence flag so a set-to-zero field cannot collide with
+    /// reads such fields through `isValidThriftEnum` for the same reason. Enums are hashed through
+    /// their raw underlying integer (copied with `memcpy`), so advisory garbage in an enum cannot
+    /// turn a readable file into a hard failure. Optional fields contribute a presence flag so a set-to-zero field cannot collide with
     /// an absent one.
     SipHash hash;
     auto update_optional = [&](bool is_set, Int64 value)
@@ -920,10 +923,84 @@ UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_met
     hash.update(file_metadata.num_rows);
     update_optional_string(file_metadata.__isset.created_by, file_metadata.created_by);
     update_key_value_metadata(file_metadata.__isset.key_value_metadata, file_metadata.key_value_metadata);
+    /// Thrift enums are hashed through their raw underlying integer, never loaded as enumerators
+    /// (see above).
+    auto update_optional_enum = [&]<typename E>(bool is_set, const E & value)
+    {
+        std::underlying_type_t<E> raw;
+        memcpy(&raw, &value, sizeof(raw));
+        update_optional(is_set, static_cast<Int64>(raw));
+    };
+    auto update_time_unit = [&](const parquet::format::TimeUnit & unit)
+    {
+        hash.update(unit.__isset.MILLIS);
+        hash.update(unit.__isset.MICROS);
+        hash.update(unit.__isset.NANOS);
+    };
+    /// The logical type decides how the same physical bytes are interpreted (e.g. plain `INT32` vs
+    /// `DATE`, raw bytes vs `STRING`), so a footer-only rewrite that changes it must change the digest.
+    auto update_logical_type = [&](bool is_set, const parquet::format::LogicalType & logical_type)
+    {
+        hash.update(is_set);
+        if (!is_set)
+            return;
+        const auto & isset = logical_type.__isset;
+        hash.update(isset.STRING);
+        hash.update(isset.MAP);
+        hash.update(isset.LIST);
+        hash.update(isset.ENUM);
+        hash.update(isset.DATE);
+        hash.update(isset.UNKNOWN);
+        hash.update(isset.JSON);
+        hash.update(isset.BSON);
+        hash.update(isset.UUID);
+        hash.update(isset.FLOAT16);
+        hash.update(isset.DECIMAL);
+        if (isset.DECIMAL)
+        {
+            hash.update(logical_type.DECIMAL.scale);
+            hash.update(logical_type.DECIMAL.precision);
+        }
+        hash.update(isset.TIME);
+        if (isset.TIME)
+        {
+            hash.update(logical_type.TIME.isAdjustedToUTC);
+            update_time_unit(logical_type.TIME.unit);
+        }
+        hash.update(isset.TIMESTAMP);
+        if (isset.TIMESTAMP)
+        {
+            hash.update(logical_type.TIMESTAMP.isAdjustedToUTC);
+            update_time_unit(logical_type.TIMESTAMP.unit);
+        }
+        hash.update(isset.INTEGER);
+        if (isset.INTEGER)
+        {
+            hash.update(logical_type.INTEGER.bitWidth);
+            hash.update(logical_type.INTEGER.isSigned);
+        }
+        hash.update(isset.VARIANT);
+        if (isset.VARIANT)
+            update_optional(logical_type.VARIANT.__isset.specification_version, logical_type.VARIANT.specification_version);
+        hash.update(isset.GEOMETRY);
+        if (isset.GEOMETRY)
+            update_optional_string(logical_type.GEOMETRY.__isset.crs, logical_type.GEOMETRY.crs);
+        hash.update(isset.GEOGRAPHY);
+        if (isset.GEOGRAPHY)
+        {
+            update_optional_string(logical_type.GEOGRAPHY.__isset.crs, logical_type.GEOGRAPHY.crs);
+            update_optional_enum(logical_type.GEOGRAPHY.__isset.algorithm, logical_type.GEOGRAPHY.algorithm);
+        }
+    };
+
     hash.update(file_metadata.schema.size());
     for (const auto & element : file_metadata.schema)
     {
         hash.update(element.name);
+        update_optional_enum(element.__isset.type, element.type);
+        update_optional_enum(element.__isset.repetition_type, element.repetition_type);
+        update_optional_enum(element.__isset.converted_type, element.converted_type);
+        update_logical_type(element.__isset.logicalType, element.logicalType);
         update_optional(element.__isset.num_children, element.num_children);
         update_optional(element.__isset.type_length, element.type_length);
         update_optional(element.__isset.precision, element.precision);
