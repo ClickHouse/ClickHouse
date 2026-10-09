@@ -49,7 +49,7 @@ struct Optimization
         VectorSearchFilterStrategy vector_search_filter_strategy{};
 
         /// Other settings
-        size_t use_index_for_in_with_subqueries_max_values{};
+        FutureSetSettings set_settings;
         SizeLimits network_transfer_limits;
         bool optimize_prewhere{};
         bool remove_unused_columns{};
@@ -72,6 +72,8 @@ struct Optimization
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
         bool top_k_optimization_shared_boundary{};
+        bool enable_group_by_top_k_dynamic_filtering{};
+        bool use_query_condition_cache_for_top_k{};
         bool is_explain{};
 
         size_t max_block_size{};

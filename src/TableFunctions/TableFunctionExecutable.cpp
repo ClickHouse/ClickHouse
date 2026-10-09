@@ -308,7 +308,7 @@ SELECT * FROM executable(
     (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20)
 );
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 }
 
 }
