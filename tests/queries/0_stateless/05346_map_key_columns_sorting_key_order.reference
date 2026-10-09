@@ -1,0 +1,25 @@
+in order	1	{'a':1,'b':1}	({'c':2,'d':1})
+in order	1	{'a':1,'b':1}	({'c':9})
+in order	1	{'a':5}	({'c':1})
+full sort	1	{'a':1,'b':1}	({'c':2,'d':1})
+full sort	1	{'a':1,'b':1}	({'c':9})
+full sort	1	{'a':5}	({'c':1})
+pk	2
+no pk	2
+merged	1	{'a':1,'b':1}	({'c':2,'d':1})
+merged	1	{'a':1,'b':1}	({'c':9})
+merged	1	{'a':5}	({'c':1})
+merged pk	1
+merged no pk	1
+partition	1	a
+default	{'x':2,'y':1}	['x','y']	1
+index	1
+no index	1
+projection	{'a':0}	1
+projection	{'a':0,'z':1}	1
+projection	{'a':2}	1
+projection	{'a':3}	1
+no projection	{'a':0}	1
+no projection	{'a':0,'z':1}	1
+no projection	{'a':2}	1
+no projection	{'a':3}	1

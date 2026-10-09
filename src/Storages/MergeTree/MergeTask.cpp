@@ -14,6 +14,7 @@
 #include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
@@ -31,6 +32,7 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -377,6 +379,37 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
+}
+
+static bool isMapKeyColumnsColumn(const NameAndTypePair & column, const MergeTreeSettings & settings)
+{
+    return settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
+        && SerializationMapKeyColumns::hasMapsWithKeyColumns(*column.type);
+}
+
+/// The union of the source parts' `m.keys` manifests of a column holding
+/// `with_key_columns` Maps; `nullopt` when some part may hold keys outside its manifest.
+static std::optional<ISerialization::MapKeyColumnsKeys> collectMapKeyColumnsKeysUnion(
+    const MergeTreeData::DataPartsVector & parts, const NameAndTypePair & column)
+{
+    ISerialization::MapKeyColumnsKeys result;
+    for (const auto & part : parts)
+    {
+        auto part_keys = part->readMapKeyColumnsKeys(column);
+        if (!part_keys)
+            return std::nullopt;
+        for (auto & [path, keys] : *part_keys)
+        {
+            auto & union_keys = result[path];
+            union_keys.insert(union_keys.end(), keys.begin(), keys.end());
+        }
+    }
+    for (auto & [path, keys] : result)
+    {
+        std::sort(keys.begin(), keys.end());
+        keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+    }
+    return result;
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
@@ -1056,6 +1089,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+    /// Projection parts keep `with_key_columns` Maps in the basic layout (see `writeProjectionPartImpl`).
+    if (global_ctx->parent_part && info_settings.map_serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        info_settings.map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
     for (const auto & part : global_ctx->future_part->parts)
@@ -1227,6 +1263,74 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
+    /// The output part's key sets of the `with_key_columns` Maps are the union of the
+    /// source parts' manifests, including the patch parts applied by this merge. Without a
+    /// manifest for some part (e.g. the column is missing from it and its DEFAULT is
+    /// evaluated), or when TTL can replace Map values with expression results (column
+    /// defaults, `GROUP BY ... SET`), the writer takes the key set from its first block,
+    /// so the pipeline is squashed into a single block.
+    const bool applies_ttl = ctx->need_remove_expired_values || !global_ctx->storage_columns_expired_by_ttl.empty();
+    const auto & column_ttls = global_ctx->metadata_snapshot->getColumnTTLs();
+    const auto & columns_description = global_ctx->metadata_snapshot->getColumns();
+    /// The column's own TTL resets it to its default, `GROUP BY ... SET` assigns any column, and a
+    /// `MATERIALIZED` column is recomputed when a column it reads is reset.
+    auto ttl_can_produce_values = [&](const String & name)
+    {
+        if (!applies_ttl)
+            return false;
+        if (column_ttls.contains(name) || !global_ctx->metadata_snapshot->getGroupByTTLs().empty())
+            return true;
+        const auto default_description = columns_description.getDefault(name);
+        return default_description && default_description->kind == ColumnDefaultKind::Materialized && !column_ttls.empty();
+    };
+    PlannedMapKeyColumnsKeys map_key_columns_keys;
+    for (const auto & column : global_ctx->storage_columns)
+    {
+        if (global_ctx->parent_part || !isMapKeyColumnsColumn(column, *global_ctx->data_settings))
+            continue;
+
+        auto keys = ttl_can_produce_values(column.name) ? std::nullopt : collectMapKeyColumnsKeysUnion(global_ctx->future_part->parts, column);
+        if (keys)
+        {
+            for (const auto & patch : global_ctx->future_part->patch_parts)
+            {
+                if (!patch->getColumns().contains(column.name))
+                {
+                    /// A patch written before a pending `RENAME COLUMN` stores the column under its
+                    /// old name; its keys are unknown here.
+                    const bool has_renamed_column = std::ranges::any_of(patch->getColumns(), [&](const auto & patch_column)
+                    {
+                        return !global_ctx->storage_columns.contains(patch_column.name)
+                            && SerializationMapKeyColumns::hasMapsWithKeyColumns(*patch_column.type);
+                    });
+                    if (!has_renamed_column)
+                        continue;
+                    keys.reset();
+                    break;
+                }
+                auto patch_keys = collectMapKeyColumnsKeysUnion({patch}, column);
+                if (!patch_keys)
+                {
+                    keys.reset();
+                    break;
+                }
+                for (auto & [path, path_keys] : *patch_keys)
+                {
+                    auto & union_keys = (*keys)[path];
+                    union_keys.insert(union_keys.end(), path_keys.begin(), path_keys.end());
+                    std::sort(union_keys.begin(), union_keys.end());
+                    union_keys.erase(std::unique(union_keys.begin(), union_keys.end()), union_keys.end());
+                }
+            }
+        }
+
+        if (keys)
+            map_key_columns_keys.emplace(column.name, std::move(*keys));
+        else
+            global_ctx->map_key_columns_with_unknown_keys.insert(column.name);
+    }
+    global_ctx->map_key_columns_keys = map_key_columns_keys;
+
     if (can_short_circuit_ttl_drop)
     {
         LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
@@ -1321,7 +1425,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
-        global_ctx->stream_base_manifest);
+        global_ctx->stream_base_manifest,
+        std::move(map_key_columns_keys));
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -2228,6 +2333,13 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
     auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
 
+    /// See `map_key_columns_with_unknown_keys`.
+    if (global_ctx->map_key_columns_with_unknown_keys.contains(column_name))
+        builder->addSimpleTransform([](const SharedHeader & header)
+        {
+            return std::make_shared<SquashingTransform>(header, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
+        });
+
     return {QueryPipelineBuilder::getPipeline(std::move(*builder)), std::move(indexes_to_recalc), std::move(column_build_statistics_transforms)};
 }
 
@@ -2269,6 +2381,10 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
+    PlannedMapKeyColumnsKeys map_key_columns_keys;
+    if (auto it = global_ctx->map_key_columns_keys.find(ctx->it_name_and_type->name); it != global_ctx->map_key_columns_keys.end())
+        map_key_columns_keys.emplace(it->first, it->second);
+
     /// The horizontal `global_ctx->to` writer owns this part's `skp_idx.packed`. Share its
     /// `PackedFilesWriter` with this per-column writer so the per-column packed substreams land
     /// in the same in-memory archive instead of racing on the on-disk file. The horizontal
@@ -2286,7 +2402,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->to->getSkipIndicesPackedWriter(),
-        global_ctx->stream_base_manifest);
+        global_ctx->stream_base_manifest,
+        std::move(map_key_columns_keys));
 
     ctx->column_elems_written = 0;
 }
@@ -3707,6 +3824,19 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         // Merges are not using concurrency control now. Queries and merges running together could lead to CPU overcommit.
         // TODO(serxa): Enable concurrency control for merges. This should be done after CPU scheduler introduction.
         builder->setConcurrencyControl(false);
+
+        /// See `map_key_columns_with_unknown_keys`. In a vertical merge a gathered Map
+        /// column is squashed in its own pipeline.
+        const bool gathers_map_with_unknown_keys = std::ranges::any_of(global_ctx->merging_columns,
+            [&](const auto & column) { return global_ctx->map_key_columns_with_unknown_keys.contains(column.name); });
+        if (gathers_map_with_unknown_keys)
+        {
+            LOG_DEBUG(ctx->log, "Merging a with_key_columns Map with keys not present in manifests; squashing the horizontal merge into a single block");
+            builder->addSimpleTransform([](const SharedHeader & header)
+            {
+                return std::make_shared<SquashingTransform>(header, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
+            });
+        }
 
         global_ctx->merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }

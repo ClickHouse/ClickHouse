@@ -2131,10 +2131,16 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
     /// Add transform to remove Replicated columns. Right now no storage supports writing it.
     result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(output_headers.at(view_id)));
 
+    MergeTreeSettingsPtr storage_settings;
+    if (auto storage_it = storages.find(inner_tables.at(view_id)); storage_it != storages.end())
+        if (const auto * merge_tree = castStorage<MergeTreeData>(storage_it->second, DeferredTable::Load).get())
+            storage_settings = merge_tree->getSettings();
+
     result.addSink(
         std::make_shared<SelectPartitionTransform>(
         partition,
         metadata_snapshots.at(inner_tables.at(view_id)),
+        std::move(storage_settings),
         insert_contexts.at(view_id),
         output_headers.at(view_id)));
 

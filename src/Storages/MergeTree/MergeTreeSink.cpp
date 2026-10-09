@@ -138,6 +138,7 @@ void MergeTreeSink::consume(Chunk & chunk)
         storage.delayInsertOrThrowIfNeeded(nullptr, context, false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
+    MergeTreeDataWriter::sortMapKeyColumnsKeys(block, *storage.getSettings());
 
     auto deduplication_info = chunk.getChunkInfos().getSafe<DeduplicationInfo>();
     IColumn::Selector partition_selector;

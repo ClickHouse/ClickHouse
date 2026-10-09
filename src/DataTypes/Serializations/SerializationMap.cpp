@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int INCORRECT_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 UInt128 SerializationMap::getHash(const SerializationPtr & nested_, MergeTreeMapSerializationVersion serialization_version_)
@@ -664,8 +665,11 @@ void SerializationMap::enumerateStreams(
         .withSerializationInfo(data.serialization_info)
         .withDeserializeState(map_deserialize_state ? map_deserialize_state->nested_state : nullptr);
 
-    /// BASIC format stores the Map as a plain Array(Tuple(K, V)) — no bucketing.
-    if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
+    /// BASIC stores the Map as Array(Tuple(K, V)). WITH_KEY_COLUMNS is not written by this
+    /// class (DataTypeMap hands out `SerializationMapKeyColumns` instead); enumerate the same
+    /// nested streams so CREATE can check filenames. Actual read/write throws below.
+    if (serialization_version == MergeTreeMapSerializationVersion::BASIC
+        || serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
     {
         nested_serialization->enumerateStreams(settings, callback, next_data);
         return;
@@ -755,11 +759,21 @@ void SerializationMap::enumerateStreams(
     }
 }
 
+[[noreturn]] static void throwMapKeyColumnsNotImplemented()
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Serialization of Map columns with map_serialization_version = 'with_key_columns' is not implemented yet");
+}
+
 void SerializationMap::serializeBinaryBulkStatePrefix(
     const IColumn & column,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        throwMapKeyColumnsNotImplemented();
+
     /// BASIC format delegates directly to the nested Array(Tuple(K, V)) serialization.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
@@ -836,6 +850,9 @@ void SerializationMap::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        throwMapKeyColumnsNotImplemented();
+
     /// BASIC format delegates directly to the nested Array(Tuple(K, V)) serialization.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
@@ -923,6 +940,9 @@ void SerializationMap::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsDeserializeStatesCache * cache) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        throwMapKeyColumnsNotImplemented();
+
     auto map_state = std::make_shared<DeserializeBinaryBulkStateMap>();
 
     /// BASIC format stores the Map as a plain Array(Tuple(K, V)) — no bucketing.
@@ -1341,6 +1361,9 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        throwMapKeyColumnsNotImplemented();
+
     /// BASIC format delegates directly to the nested Array(Tuple(K, V)) serialization.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
@@ -1393,6 +1416,9 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        throwMapKeyColumnsNotImplemented();
+
     auto & column_map = assert_cast<ColumnMap &>(column);
 
     if (!state)

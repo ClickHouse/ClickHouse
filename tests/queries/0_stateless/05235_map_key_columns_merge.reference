@@ -1,0 +1,26 @@
+parts before merge
+3
+parts after merge
+1
+merged key set is the union
+['c','a','b']
+per-row presence and values after merge
+1	1	0	0	10	0	0
+2	1	0	0	20	0	0
+3	0	1	1	0	30	300
+4	0	1	0	0	40	0
+5	0	0	0	0	0	0
+6	0	0	0	0	0	0
+1	{'a':10}
+2	{'a':20}
+3	{'b':30,'c':300}
+4	{'b':40}
+5	{}
+6	{}
+1	{'k1':1}	['k1']	1
+2	{'k2':2}	['k2']	1
+merged with default-derived keys
+1	{'k1':1}	1	0
+2	{'k2':2}	1	0
+3	{'x':5}	0	1
+4	{'k4':4}	1	0

@@ -177,7 +177,6 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedVariantDiscriminators,
     QuantizedCodes,
     ProductQuantizationCodebook,
-    MapKeyValue,
     ObjectDistinctPaths,
     ObjectSubObject,
     ObjectCombinedPath,
@@ -193,6 +192,9 @@ String ISerialization::Substream::toString() const
 
     if (type == VariantElementNullMap)
         return fmt::format("VariantElementNullMap({}.null)", variant_element_name);
+
+    if (type == MapKeyValue || type == MapKeyPresence)
+        return fmt::format("{}({})", type, name_of_substream);
 
     return String(magic_enum::enum_name(type));
 }
@@ -315,17 +317,29 @@ void appendNameForSubstreamPath(
     using Substream = ISerialization::Substream;
 
     size_t array_level = initial_array_level;
+    bool inside_per_key = false;
+    size_t per_key_array_level = 0;
     for (auto it = begin; it != end; ++it)
     {
         if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
+        {
             append(".null");
+            /// Keep the outer key-presence stream unchanged. Array elements have their own
+            /// null maps, counted in elements rather than rows, including in substream caches.
+            if (inside_per_key && per_key_array_level)
+                append(toString(per_key_array_level));
+        }
         else if (it->type == Substream::ArraySizes)
         {
             append(".size");
             append(toString(array_level));
         }
         else if (it->type == Substream::ArrayElements)
+        {
             ++array_level;
+            if (inside_per_key)
+                ++per_key_array_level;
+        }
         else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
             append(".size");
         else if (it->type == Substream::DictionaryKeys)
@@ -390,6 +404,22 @@ void appendNameForSubstreamPath(
         }
         else if (it->type == SubstreamType::MapBucketsInfo)
             append(".buckets_info");
+        else if (it->type == SubstreamType::MapKeys)
+        {
+            append(".keys");
+        }
+        else if (it->type == SubstreamType::MapKeyValue || it->type == SubstreamType::MapKeyPresence)
+        {
+            append(it->type == SubstreamType::MapKeyValue ? ".values." : ".exists.");
+            /// The key bytes are raw in the logical substream name; escaping for the
+            /// file name (and the substream cache key) is handled generically here.
+            if (escape_for_file_name || encode_sparse_stream)
+                append(escapeForFileName(it->name_of_substream));
+            else
+                append(it->name_of_substream);
+            inside_per_key = true;
+            per_key_array_level = 0;
+        }
         else if (it->type == SubstreamType::MapBucketIndexes)
             append(".bucket_indexes");
         else if (it->type == SubstreamType::ObjectSharedDataStructure)
@@ -790,7 +820,8 @@ bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath 
     for (size_t i = 0; i != prefix_len; ++i)
     {
         if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
-            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
+            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure
+            || path[i].type == SubstreamType::MapKeyValue || path[i].type == SubstreamType::MapKeyPresence)
             return true;
     }
 
@@ -811,7 +842,8 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         return false;
 
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure
-        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
+        || path[path.size() - 1].type == SubstreamType::MapBucketsInfo
+        || path[path.size() - 1].type == SubstreamType::MapKeys;
 }
 
 bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::SubstreamPath & path)

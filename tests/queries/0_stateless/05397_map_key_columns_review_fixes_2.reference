@@ -1,0 +1,12 @@
+-- zero-level only
+-- value stream collision
+-- source column check
+42	1	['k']
+42	1	['k']
+-- tuple map default
+({'a':7})	({'b':7},7)
+-- old basic nested map
+20	20	['a','b']
+-- mutations
+on the fly	{'a':1,'z':1}	a
+coalesced	{'a':1,'z':1}	1

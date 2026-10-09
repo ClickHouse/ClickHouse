@@ -11061,6 +11061,11 @@ Set to 0 to leave the input unsplit: the whole pipeline block is passed in one c
 Maximum number of WebAssembly UDF instances that can run in parallel per function.
 )", EXPERIMENTAL, \
         {"26.3", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."}) \
+    DECLARE(Bool, allow_experimental_map_key_columns, false, R"(
+Allow creating MergeTree tables with `map_serialization_version = 'with_key_columns'` (or switching an empty table to it).
+Existing tables with this layout are loaded regardless of this setting.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable the experimental with_key_columns Map serialization"}) \
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
 )", EXPERIMENTAL, \

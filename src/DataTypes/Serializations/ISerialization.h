@@ -15,6 +15,7 @@
 #include <absl/functional/function_ref.h>
 #include <boost/noncopyable.hpp>
 #include <map>
+#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
@@ -325,6 +326,13 @@ public:
             MapBucketsInfo,
             MapBucketIndexes,
 
+            /// Per-key streams of `map_serialization_version = 'with_key_columns'`:
+            /// the sorted key list (`m.keys`) and a key's presence bitmap
+            /// (`m.exists.<key>`). Both `MapKeyValue` (`m.values.<key>`) and
+            /// `MapKeyPresence` carry the raw key bytes in `name_of_substream`.
+            MapKeys,
+            MapKeyPresence,
+
             QuantizedCodes,
             ProductQuantizationCodebook,
 
@@ -384,9 +392,19 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
+    /// The part-level key sets of the `with_key_columns` Maps of one column, by the
+    /// substream-path name of each Map inside the column (empty for a top-level Map).
+    using MapKeyColumnsKeys = std::map<String, std::vector<String>>;
+
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
+        /// The key sets the writer fixed for the column's `with_key_columns` Maps; they
+        /// decide which per-key streams exist on the write side.
+        const MapKeyColumnsKeys * map_key_columns_keys = nullptr;
+        /// If set, every `with_key_columns` Map stores the keys of its part of the
+        /// enumerated column here (and rejects duplicate and empty keys).
+        MapKeyColumnsKeys * collect_map_key_columns_keys = nullptr;
         /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
         std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
@@ -464,6 +482,9 @@ public:
     {
         OutputStreamGetter getter;
         SubstreamPath path;
+
+        /// The key sets the writer fixed for the column's `with_key_columns` Maps.
+        const MapKeyColumnsKeys * map_key_columns_keys = nullptr;
 
         size_t low_cardinality_max_dictionary_size = 0;
         bool low_cardinality_use_single_dictionary_for_part = true;

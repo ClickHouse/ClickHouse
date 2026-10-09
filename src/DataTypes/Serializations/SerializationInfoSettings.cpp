@@ -54,6 +54,14 @@ void SerializationInfoSettings::tryDowngradeToBasic()
         version = MergeTreeSerializationInfoVersion::BASIC;
 }
 
+SerializationInfoSettings SerializationInfoSettings::withoutMapKeyColumns() const
+{
+    auto res = *this;
+    if (res.map_serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        res.map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
+    return res;
+}
+
 bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type) const
 {
     if (type.isNullable())

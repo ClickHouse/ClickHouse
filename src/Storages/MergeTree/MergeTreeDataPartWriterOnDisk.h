@@ -62,7 +62,8 @@ public:
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_,
-        WrittenOffsetSubstreams * written_offset_substreams_);
+        WrittenOffsetSubstreams * written_offset_substreams_,
+        const PlannedMapKeyColumnsKeys & map_key_columns_keys_ = {});
 
     void cancel() noexcept override;
 
@@ -126,6 +127,12 @@ protected:
 
     virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
 
+    /// Fix the key sets of the `with_key_columns` Maps from the first written block
+    /// (united with the planned ones), before any stream is opened.
+    void initMapKeyColumnsKeysIfNeeded(const Block & block);
+    /// The fixed key sets of the `with_key_columns` Maps of a column, or null.
+    const ISerialization::MapKeyColumnsKeys * getMapKeyColumnsKeys(const String & column_name) const;
+
     /// This is useful only for vector codecs (like SZ3).
     static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
@@ -187,6 +194,9 @@ protected:
 
     /// List of substreams for each column in order of serialization.
     ColumnsSubstreams columns_substreams;
+
+    PlannedMapKeyColumnsKeys map_key_columns_keys;
+    bool map_key_columns_keys_initialized = false;
 
 private:
     void initSkipIndices();
