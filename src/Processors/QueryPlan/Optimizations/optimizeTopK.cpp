@@ -99,8 +99,7 @@ static size_t tryTopKForFormatSource(
     if (isDynamic(sort_column.type) || isVariant(sort_column.type))
         return 0;
 
-    /// Without the opt-in, a `String` key only skips row groups by statistics. Not for a limit at which
-    /// `PartialSortingTransform` filters rows by its own threshold: it stops doing that once a tracker is set.
+    /// `PartialSortingTransform` stops filtering rows by its own threshold once a tracker is set.
     bool filter_rows = true;
     if (!sort_column.type->haveMaximumSizeOfValue() && !settings.use_top_k_dynamic_filtering_for_variable_length_types)
     {

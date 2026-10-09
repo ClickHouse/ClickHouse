@@ -908,8 +908,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 /// query's collation order, so a row group could be skipped while still holding
                 /// values that sort before the threshold under the collator. The per-row
                 /// `__topKFilter` (which does compare with the collator) stays.
-                /// Same for a `FIXED_LEN_BYTE_ARRAY` read as `String`: the cast strips trailing zero
-                /// bytes from the values but the statistics keep them, so they do not bound what is sorted.
+                /// Same for a `FIXED_LEN_BYTE_ARRAY` read as `String`: its statistics keep the trailing zero bytes the cast strips.
                 if (top_k_column_is_read
                     && !format_filter_info->top_k_filter->threshold_tracker->getCollator()
                     && output_info.is_primitive

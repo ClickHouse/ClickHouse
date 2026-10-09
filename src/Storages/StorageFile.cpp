@@ -2396,7 +2396,6 @@ Chunk StorageFileSource::generate()
         /// source is destroyed, against the final threshold (see `writePendingTopKQueryConditionCacheEntries`).
         /// A cancelled read may stop before it has seen every row group, and the ones it has not
         /// read report no matching rows either, so it writes nothing.
-        /// A statistics-only TopN read (`filter_rows = false`) reports the row groups it skipped as matched: a plain write.
         if (input_format && current_file_cache_version.has_value() && top_k_query_condition_cache_key)
             checkTopKQueryConditionCacheKeyHolds(fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version));
 
@@ -2746,7 +2745,6 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
-    /// Not for a statistics-only read: tracking the best values would compare every returned row.
     if (!top_k_filter->filter_rows)
         return {};
 
