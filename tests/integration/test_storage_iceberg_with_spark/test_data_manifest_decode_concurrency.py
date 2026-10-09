@@ -187,41 +187,6 @@ def test_data_and_delete_manifest_decode_concurrency(
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
-def test_data_manifest_decode_concurrency_row_lineage(started_cluster_iceberg_with_spark):
-    """Format-version 3 manifests carry an inherited `first_row_id`, which the manifest
-    iterator materializes per entry before yielding anything; the row ids and the result
-    must not depend on the concurrency."""
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-    TABLE_NAME = "test_data_manifest_decode_concurrency_row_lineage_" + get_uuid_str()
-
-    write_table(started_cluster_iceberg_with_spark, TABLE_NAME, format_version=3)
-    create_iceberg_table(
-        STORAGE_TYPE, instance, TABLE_NAME, started_cluster_iceberg_with_spark
-    )
-
-    serial = instance.query(
-        f"SELECT id, _row_id FROM {TABLE_NAME} ORDER BY id",
-        settings={
-            "iceberg_manifest_decode_concurrency": 1,
-            "use_iceberg_metadata_files_cache": 0,
-        },
-    )
-    assert serial.strip(), "the serial read returned no rows; fixture broken"
-    for concurrency in [4, 16]:
-        result = instance.query(
-            f"SELECT id, _row_id FROM {TABLE_NAME} ORDER BY id",
-            settings={
-                "iceberg_manifest_decode_concurrency": concurrency,
-                "use_iceberg_metadata_files_cache": 0,
-            },
-        )
-        assert result == serial, (
-            f"row lineage changed with iceberg_manifest_decode_concurrency={concurrency}"
-        )
-
-    instance.query(f"DROP TABLE {TABLE_NAME}")
-
-
 def test_data_manifest_decode_large_manifest(started_cluster_iceberg_with_spark):
     """A single manifest holding three times more entries than the producer queue's
     capacity (100), so pushes block in the middle of the manifest at every concurrency;

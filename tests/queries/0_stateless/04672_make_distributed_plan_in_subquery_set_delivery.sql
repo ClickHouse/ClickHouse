@@ -1,3 +1,4 @@
+-- Tags: no-old-analyzer
 -- The direct set path under `make_distributed_plan`: the set is built once on the initiator,
 -- either during planning when index analysis requests it or by the initiator pipeline at query
 -- start, and its values ship with the worker tasks.

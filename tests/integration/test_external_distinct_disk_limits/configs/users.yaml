@@ -1,3 +1,0 @@
-profiles:
-    default:
-        max_temporary_data_on_disk_size_for_user: 1048576

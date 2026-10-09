@@ -22,7 +22,7 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_aggregation;
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_entries_for_hash_table_stats;
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
@@ -110,9 +110,6 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
     if (memory_efficient_merge_threads == 0)
         memory_efficient_merge_threads = max_threads;
 
-    /// Forget about current totals and extremes. They will be calculated again after the merge if needed.
-    pipeline.dropTotalsAndExtremes();
-
     if (memoryBoundMergingWillBeUsed())
     {
         if (input_headers.front()->has("__grouping_set") || !grouping_sets_params.empty())
@@ -154,7 +151,8 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
         pipeline.resize(1);
 
         /// Now merge the aggregated blocks
-        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getSharedHeader(), params, final, grouping_sets_params);
+        auto transform = std::make_shared<MergingAggregatedTransform>(pipeline.getSharedHeader(), params, final, grouping_sets_params,
+        should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
         pipeline.addTransform(std::move(transform));
     }
     else
@@ -302,7 +300,7 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    serializeSortDescription(group_by_sort_description, ctx.out, ctx.version);
+    serializeSortDescription(group_by_sort_description, ctx.out);
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
@@ -358,7 +356,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
 
     SortDescription group_by_sort_description;
-    deserializeSortDescription(group_by_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
+    deserializeSortDescription(group_by_sort_description, ctx.in);
 
     UInt64 stats_key = 0;
     if (has_stats_key)

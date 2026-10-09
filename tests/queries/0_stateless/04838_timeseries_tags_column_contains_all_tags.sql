@@ -1,6 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
--- grammar requires it.
+-- grammar requires it. The experimental TimeSeries table engine does not
+-- round-trip through DatabaseReplicated.
 
 -- The `tags` column of the tags target table contains all the tags, including the metric name
 -- (the `__name__` tag) and the tags with dedicated columns from the `tags_to_columns` setting.
@@ -16,11 +17,11 @@ SELECT 'inner tags table columns:';
 SELECT extract(create_table_query, 'TAGS INNER COLUMNS \((.*?)\) TAGS INNER ENGINE')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
 
-INSERT INTO ts (metric_name, tags, samples) VALUES
+INSERT INTO ts (metric_name, tags, time_series) VALUES
     ('http_requests', {'job': 'crawler', 'instance': 'host1:8080', 'region': 'eu'}, [(toDateTime64(1000, 3), 1.5)]);
 
 -- The metric name can also be specified as the `__name__` tag.
-INSERT INTO ts (tags, samples) VALUES
+INSERT INTO ts (tags, time_series) VALUES
     ({'__name__': 'http_requests', 'job': 'crawler', 'instance': 'host2:8080'}, [(toDateTime64(1060, 3), 2.5)]);
 
 -- The database is passed to `timeSeriesTags` explicitly, otherwise the queries fail
@@ -39,7 +40,7 @@ SELECT tags, value FROM prometheusQuery(ts, 'http_requests', 1080) ORDER BY tags
 -- but on insertion it's resolved as the same data as the `tags` column.
 ALTER TABLE ts MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags)))';
 
-INSERT INTO ts (metric_name, tags, samples) VALUES
+INSERT INTO ts (metric_name, tags, time_series) VALUES
     ('http_requests', {'job': 'miner', 'instance': 'host3:8080'}, [(toDateTime64(1120, 3), 3.5)]);
 
 SELECT 'id is calculated by the altered id_generator:';

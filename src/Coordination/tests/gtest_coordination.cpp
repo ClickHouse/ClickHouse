@@ -12,7 +12,6 @@
 #include <Coordination/KeeperRequestDispatcher.h>
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperServer.h>
-#include <Common/ZooKeeper/KeeperOverDispatcher.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
@@ -35,19 +34,15 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/Stopwatch.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <future>
 #include <limits>
 #include <sstream>
-#include <thread>
-#include <vector>
 
 namespace DB::CoordinationSetting
 {
-    extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
 }
 
@@ -82,29 +77,6 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "<max_requests_batch_size>1</max_requests_batch_size>"
              "<max_requests_append_size>1</max_requests_append_size>"
              "</coordination_settings></keeper_server></clickhouse>"));
-}
-
-TEST(CoordinationSettingsValidation, CommitProfilerRequiresSamplingProfiler)
-{
-    auto load = [](const std::string & xml)
-    {
-        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
-        DB::CoordinationSettings settings;
-        settings.loadFromConfig("keeper_server.coordination_settings", *config);
-    };
-
-    constexpr auto config = "<clickhouse><keeper_server><coordination_settings>"
-                            "<commit_profiler_real_time_period_ns>1000000</commit_profiler_real_time_period_ns>"
-                            "</coordination_settings></keeper_server></clickhouse>";
-
-#if defined(MEMORY_SANITIZER)
-    /// The sampling profiler is unavailable under `MemorySanitizer`, so accepting this setting
-    /// would make the configured Keeper commit profiler silently do nothing.
-    EXPECT_THROW(load(config), DB::Exception);
-#else
-    EXPECT_NO_THROW(load(config));
-#endif
 }
 
 TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
@@ -163,28 +135,6 @@ TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
                    "</coordination_settings></keeper_server></clickhouse>"),
               std::numeric_limits<int32_t>::max());
-}
-
-TEST(CoordinationSettingsParse, SnapshotZstdCompressionLevel)
-{
-    auto load = [](const std::string & xml)
-    {
-        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
-        DB::CoordinationSettings settings;
-        settings.loadFromConfig("keeper_server.coordination_settings", *config);
-        return static_cast<Int64>(settings[DB::CoordinationSetting::snapshot_zstd_compression_level]);
-    };
-
-    EXPECT_EQ(
-        load("<clickhouse><keeper_server><coordination_settings>"
-             "</coordination_settings></keeper_server></clickhouse>"),
-        DB::DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL);
-    EXPECT_EQ(
-        load("<clickhouse><keeper_server><coordination_settings>"
-             "<snapshot_zstd_compression_level>-5</snapshot_zstd_compression_level>"
-             "</coordination_settings></keeper_server></clickhouse>"),
-        -5);
 }
 
 /// The composition that actually reaches NuRaft: config text -> setting -> `raft_params` field.
@@ -1428,47 +1378,6 @@ TEST(KeeperMemorySoftLimitAdmission, MultiClassifiedBySumOfDataSizes)
     })));
 }
 
-TEST(KeeperOverDispatcherMulti, CallbackPromotesFailedMultiAggregateError)
-{
-    using namespace Coordination;
-
-    auto error_response = [](Error error)
-    {
-        auto response = std::make_shared<ZooKeeperErrorResponse>();
-        response->error = error;
-        return response;
-    };
-
-    /// Drive the exact callback KeeperOverDispatcher::multi installs, with the response
-    /// shape KeeperStorage builds for a failed multi, and check what the user callback
-    /// receives as the aggregate error. Fails if multi() stops promoting the failing
-    /// subresponse error.
-    auto aggregate_seen_by_callback = [&](std::vector<Error> sub_errors, Error aggregate)
-    {
-        auto response = std::make_shared<ZooKeeperMultiWriteResponse>();
-        response->error = aggregate;
-        for (auto error : sub_errors)
-            response->responses.push_back(error_response(error));
-
-        Error seen = Error::ZOK;
-        auto callback = KeeperOverDispatcher::promotingMultiCallback([&](const MultiResponse & r) { seen = r.error; });
-        callback(response);
-        return seen;
-    };
-
-    /// Failed multi: aggregate ZOK, the failing op carries the real error, the op after
-    /// it carries ZRUNTIMEINCONSISTENCY. The callback must promote the real error.
-    EXPECT_EQ(
-        aggregate_seen_by_callback({Error::ZOK, Error::ZBADVERSION, Error::ZRUNTIMEINCONSISTENCY}, Error::ZOK),
-        Error::ZBADVERSION);
-    /// A fully successful multi stays ZOK.
-    EXPECT_EQ(aggregate_seen_by_callback({Error::ZOK, Error::ZOK}, Error::ZOK), Error::ZOK);
-    /// ZRUNTIMEINCONSISTENCY is never promoted on its own.
-    EXPECT_EQ(aggregate_seen_by_callback({Error::ZRUNTIMEINCONSISTENCY}, Error::ZOK), Error::ZOK);
-    /// An already-set aggregate error is authoritative and left untouched.
-    EXPECT_EQ(aggregate_seen_by_callback({Error::ZBADVERSION}, Error::ZNONODE), Error::ZNONODE);
-}
-
 TEST(KeeperMemorySoftLimitAdmission, ReadsAndRemovesAreNotMemoryIncreasing)
 {
     /// Reads fall through to the final `return false`, which is why a saturated Keeper still serves
@@ -1488,20 +1397,15 @@ namespace DB
 class KeeperRequestDispatcherTestAccessor
 {
 public:
-    /// Puts requests in a fresh in-flight batch, the way `dispatchThread` would, and returns its index.
-    static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, KeeperRequestsForSessions requests)
+    /// Puts one request in a fresh in-flight batch, the way dispatchThread would, and returns its index.
+    static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, const KeeperRequestForSession & request)
     {
         size_t batch_idx = dispatcher.tail_idx.load();
         auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
-        batch.requests = std::move(requests);
+        batch.requests = {request};
         batch.activate({});
         dispatcher.tail_idx.store(batch_idx + 1);
         return batch_idx;
-    }
-
-    static size_t seedInFlightBatch(KeeperRequestDispatcher & dispatcher, const KeeperRequestForSession & request)
-    {
-        return seedInFlightBatch(dispatcher, KeeperRequestsForSessions{request});
     }
 
     static size_t committedRequests(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
@@ -1512,56 +1416,6 @@ public:
     static size_t headIdx(const KeeperRequestDispatcher & dispatcher) { return dispatcher.head_idx.load(); }
 
     static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
-
-    /// Seeds a batch with reads parked at `boundary` in `intermediate_reads`, the way
-    /// `dispatchThread` does through `flush_to_intermediate_reads`: initialize at the fill site,
-    /// then move the reads into the batch, then `activate`.
-    /// `InFlightBatch` documents 0 < next_request_idx < requests.size(); requests.size() is
-    /// reserved for `late_reads`.
-    static size_t seedIntermediateReads(
-        KeeperRequestDispatcher & dispatcher,
-        KeeperRequestsForSessions requests,
-        size_t boundary,
-        KeeperRequestsForSessions reads)
-    {
-        chassert(boundary > 0 && boundary < requests.size());
-        size_t batch_idx = dispatcher.tail_idx.load();
-        auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
-        batch.requests = std::move(requests);
-        for (const auto & read : reads)
-            KeeperRequestDispatcher::initializeWaitForWriteSpan(read);
-        batch.intermediate_reads.push_back({boundary, std::move(reads)});
-        batch.activate({});
-        dispatcher.tail_idx.store(batch_idx + 1);
-        return batch_idx;
-    }
-
-    static size_t seedIntermediateReads(
-        KeeperRequestDispatcher & dispatcher,
-        const KeeperRequestForSession & request1,
-        const KeeperRequestForSession & request2,
-        KeeperRequestsForSessions reads)
-    {
-        return seedIntermediateReads(
-            dispatcher, KeeperRequestsForSessions{request1, request2}, /*boundary=*/ 1, std::move(reads));
-    }
-
-    static size_t intermediateReadsIdx(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
-    {
-        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].intermediate_reads_idx;
-    }
-
-    static size_t intermediateReadsSize(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
-    {
-        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].intermediate_reads.size();
-    }
-
-    /// Parks a read behind an in-flight batch through the production entry point, which is also
-    /// where the read's wait_for_write span is initialized. False means the batch already finished.
-    static bool addLateRead(KeeperRequestDispatcher & dispatcher, size_t batch_idx, KeeperRequestForSession & read)
-    {
-        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads.add(read);
-    }
 };
 
 class KeeperRequestDispatcherOldTestAccessor
@@ -1615,11 +1469,6 @@ public:
         return dispatcher.new_session_id_requests.count(internal_id);
     }
 
-    static void interruptibleSleep(KeeperDispatcher & dispatcher, std::chrono::milliseconds period)
-    {
-        dispatcher.interruptibleSleep(period);
-    }
-
     static void waitForFourLetterCommands(KeeperDispatcher & dispatcher)
     {
         dispatcher.waitForFourLetterCommands();
@@ -1631,7 +1480,7 @@ public:
 namespace
 {
 
-/// A server without a started Raft instance. Enough for `onCommit` and the error paths, which only
+/// A server without a started Raft instance. Enough for onCommit and the error paths, which only
 /// touch in_flight_batches and the response routing.
 struct DispatcherFixture
 {
@@ -1645,10 +1494,6 @@ struct DispatcherFixture
 
     /// Responses the router took, i.e. that did not go to the per-session response queue.
     std::vector<DB::KeeperResponseForSession> routed;
-
-    /// Called synchronously from `KeeperStateMachine::processReadRequests`, so a test can observe the
-    /// window in which `onCommit` is executing a batch's reads. Must not throw.
-    std::function<void(DB::KeeperResponseForSession)> on_response;
 
     DB::KeeperSpecialResponseRouter router()
     {
@@ -1682,11 +1527,7 @@ struct DispatcherFixture
         server = std::make_unique<DB::KeeperServer>(
             DB::KeeperConfiguration::loadFromConfig(*config, true),
             *config,
-            [this](DB::KeeperResponseForSession response)
-            {
-                if (on_response)
-                    on_response(std::move(response));
-            },
+            [](DB::KeeperResponseForSession) {},
             snapshots_queue,
             keeper_context,
             snapshot_s3,
@@ -1694,10 +1535,6 @@ struct DispatcherFixture
 
         dispatcher = std::make_unique<DB::KeeperRequestDispatcher>(server.get(), router());
     }
-
-    /// Executing reads goes through `KeeperStateMachine::processReadRequests`, which needs the
-    /// storage the constructor does not create. Raft still is not started.
-    void initStateMachine() const { server->getKeeperStateMachine()->init(); }
 };
 
 DB::KeeperRequestForSession makeSessionIDRequest(int32_t server_id, int64_t internal_id)
@@ -1712,40 +1549,6 @@ DB::KeeperRequestForSession makeSessionIDRequest(int32_t server_id, int64_t inte
     request_for_session.request = request;
     request_for_session.session_id = DB::keeper_internal_get_session_id;
     return request_for_session;
-}
-
-DB::KeeperRequestForSession makeWriteRequest(int64_t session_id, int32_t xid, const std::string & path)
-{
-    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
-    request->path = path;
-    request->xid = xid;
-    DB::KeeperRequestForSession request_for_session;
-    request_for_session.request = request;
-    request_for_session.session_id = session_id;
-    return request_for_session;
-}
-
-DB::KeeperRequestForSession makeReadRequest(int64_t session_id, int32_t xid, const std::string & path)
-{
-    auto request = std::make_shared<Coordination::ZooKeeperGetRequest>();
-    request->path = path;
-    request->xid = xid;
-    DB::KeeperRequestForSession request_for_session;
-    request_for_session.request = request;
-    request_for_session.session_id = session_id;
-    return request_for_session;
-}
-
-/// The true observation count of a histogram metric. `Metric::observe` increments exactly one
-/// bucket counter (they are per-bucket, not cumulative), so any single index is the wrong oracle.
-HistogramMetrics::Metric::Counter waitForWriteObservations()
-{
-    const auto & metric = HistogramMetrics::KeeperReadWaitForWriteTime;
-    HistogramMetrics::Metric::Counter total = 0;
-    /// buckets.size() + 1 counters; this metric has 4 buckets.
-    for (size_t i = 0; i <= 4; ++i)
-        total += metric.getCounter(i);
-    return total;
 }
 
 using RequestDispatcherAccessor = DB::KeeperRequestDispatcherTestAccessor;
@@ -1781,200 +1584,6 @@ TEST(KeeperDispatcher, SessionIDCommitCorrelation)
     EXPECT_EQ(RequestDispatcherAccessor::committedRequests(dispatcher, batch_idx), 1u)
         << "our own SessionID commit did not retire our request";
     EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the fully committed batch was not popped";
-}
-
-/// `keeper_read_wait_for_write_time_milliseconds` must be observed for both carriers of parked reads.
-/// The metric is process-global, so every arm asserts a delta, never an absolute value.
-/// Reads that never waited, and reads dropped without their write completing, must not be counted.
-TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
-{
-    DispatcherFixture fixture;
-    fixture.initStateMachine();
-    auto & dispatcher = *fixture.dispatcher;
-
-    /// `intermediate_reads`: parked between two writes of the batch, drained by `onCommit` after the
-    /// first one commits, while the batch is still in flight.
-    {
-        auto before = waitForWriteObservations();
-        size_t batch_idx = RequestDispatcherAccessor::seedIntermediateReads(
-            dispatcher,
-            makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 1, "/intermediate1"),
-            makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 2, "/intermediate2"),
-            {makeReadRequest(/*session_id=*/ 1, /*xid=*/ 3, "/"), makeReadRequest(/*session_id=*/ 1, /*xid=*/ 4, "/")});
-
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 1, "/intermediate1"));
-
-        EXPECT_EQ(waitForWriteObservations() - before, 2u) << "intermediate_reads were not observed";
-        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx) << "the batch was popped mid-flight";
-        EXPECT_EQ(
-            RequestDispatcherAccessor::intermediateReadsIdx(dispatcher, batch_idx),
-            RequestDispatcherAccessor::intermediateReadsSize(dispatcher, batch_idx));
-
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 2, "/intermediate2"));
-
-        EXPECT_EQ(waitForWriteObservations() - before, 2u) << "retiring the batch observed extra reads";
-        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
-    }
-
-    /// `late_reads`: parked after the last request of the batch, drained by `onCommit`.
-    {
-        auto before = waitForWriteObservations();
-        size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
-            dispatcher, makeWriteRequest(/*session_id=*/ 2, /*xid=*/ 1, "/late"));
-
-        auto late_read = makeReadRequest(/*session_id=*/ 2, /*xid=*/ 2, "/");
-        ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, late_read));
-        EXPECT_EQ(waitForWriteObservations() - before, 0u) << "the read was observed before it stopped waiting";
-
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 2, /*xid=*/ 1, "/late"));
-
-        EXPECT_EQ(waitForWriteObservations() - before, 1u) << "late_reads were not observed";
-        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
-    }
-
-    /// A read added to a batch that already finished never waited: add returns false and the read
-    /// is executed in the dispatch thread instead (early_reads).
-    {
-        auto before = waitForWriteObservations();
-        size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
-            dispatcher, makeWriteRequest(/*session_id=*/ 3, /*xid=*/ 1, "/early"));
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 3, /*xid=*/ 1, "/early"));
-        ASSERT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
-
-        auto read = makeReadRequest(/*session_id=*/ 3, /*xid=*/ 2, "/");
-        EXPECT_FALSE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read));
-        EXPECT_EQ(waitForWriteObservations() - before, 0u) << "a read that never waited was observed";
-    }
-
-    /// Dropped reads never saw their write complete, so their wait is not an instance of what this
-    /// metric documents and must not be recorded.
-    {
-        auto before = waitForWriteObservations();
-        RequestDispatcherAccessor::seedIntermediateReads(
-            dispatcher,
-            makeWriteRequest(/*session_id=*/ 4, /*xid=*/ 1, "/dropped1"),
-            makeWriteRequest(/*session_id=*/ 4, /*xid=*/ 2, "/dropped2"),
-            {makeReadRequest(/*session_id=*/ 4, /*xid=*/ 3, "/")});
-
-        auto late_read = makeReadRequest(/*session_id=*/ 4, /*xid=*/ 4, "/");
-        ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(
-            dispatcher, RequestDispatcherAccessor::headIdx(dispatcher), late_read));
-
-        RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
-
-        EXPECT_EQ(waitForWriteObservations() - before, 0u) << "dropped reads were observed as completed waits";
-    }
-
-    /// A read that arrives while `onCommit` is already executing this batch's reads.
-    {
-        auto before = waitForWriteObservations();
-        size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
-            dispatcher, makeWriteRequest(/*session_id=*/ 5, /*xid=*/ 1, "/mid_drain"));
-
-        auto first_read = makeReadRequest(/*session_id=*/ 5, /*xid=*/ 2, "/");
-        ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, first_read));
-
-        /// `processReadRequests` calls this back synchronously, inside the drain loop, which is
-        /// exactly the window `dispatchThread` would add into.
-        auto mid_drain_read = makeReadRequest(/*session_id=*/ 5, /*xid=*/ 3, "/");
-        bool added_mid_drain = false;
-        fixture.on_response = [&](DB::KeeperResponseForSession)
-        {
-            if (added_mid_drain)
-                return;
-            added_mid_drain = true;
-            EXPECT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, mid_drain_read));
-        };
-
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 5, /*xid=*/ 1, "/mid_drain"));
-        fixture.on_response = nullptr;
-
-        ASSERT_TRUE(added_mid_drain) << "the mid-drain read was never added, so this arm proves nothing";
-        EXPECT_EQ(waitForWriteObservations() - before, 2u) << "a read added mid-drain was not counted as waiting for the write";
-        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
-    }
-
-    /// A batch of reads only, which quorum_reads makes possible.
-    {
-        auto before = waitForWriteObservations();
-        size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
-            dispatcher, makeReadRequest(/*session_id=*/ 6, /*xid=*/ 1, "/"));
-
-        auto read = makeReadRequest(/*session_id=*/ 6, /*xid=*/ 2, "/");
-        ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read));
-
-        dispatcher.onCommit(makeReadRequest(/*session_id=*/ 6, /*xid=*/ 1, "/"));
-
-        EXPECT_EQ(waitForWriteObservations() - before, 1u) << "a read waiting for a quorum read was not counted";
-        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
-    }
-
-    /// Intermediate reads wait for their own prefix, not for a write the batch holds after them.
-    {
-        auto before = waitForWriteObservations();
-        size_t batch_idx = RequestDispatcherAccessor::seedIntermediateReads(
-            dispatcher,
-            makeReadRequest(/*session_id=*/ 7, /*xid=*/ 1, "/"),
-            makeWriteRequest(/*session_id=*/ 7, /*xid=*/ 3, "/prefix"),
-            {makeReadRequest(/*session_id=*/ 7, /*xid=*/ 2, "/")});
-
-        dispatcher.onCommit(makeReadRequest(/*session_id=*/ 7, /*xid=*/ 1, "/"));
-
-        EXPECT_EQ(waitForWriteObservations() - before, 1u);
-
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 7, /*xid=*/ 3, "/prefix"));
-
-        EXPECT_EQ(waitForWriteObservations() - before, 1u);
-        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
-    }
-
-    /// A prefix write need not lead the batch: under `quorum_reads` the first request can be a
-    /// read, and a write appended after it still precedes the next boundary.
-    {
-        auto before = waitForWriteObservations();
-        size_t batch_idx = RequestDispatcherAccessor::seedIntermediateReads(
-            dispatcher,
-            {makeReadRequest(/*session_id=*/ 10, /*xid=*/ 1, "/"),
-             makeWriteRequest(/*session_id=*/ 10, /*xid=*/ 2, "/nonleading"),
-             makeWriteRequest(/*session_id=*/ 10, /*xid=*/ 4, "/after")},
-            /*boundary=*/ 2,
-            {makeReadRequest(/*session_id=*/ 10, /*xid=*/ 3, "/")});
-
-        dispatcher.onCommit(makeReadRequest(/*session_id=*/ 10, /*xid=*/ 1, "/"));
-        EXPECT_EQ(waitForWriteObservations() - before, 0u)
-            << "the read was observed before the write it waits for committed";
-
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 10, /*xid=*/ 2, "/nonleading"));
-
-        EXPECT_EQ(waitForWriteObservations() - before, 1u)
-            << "a read waiting for a write at a non-leading prefix index was not observed";
-
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 10, /*xid=*/ 4, "/after"));
-        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
-    }
-
-    /// `late_reads` drain only once every request of the batch has committed, so a write anywhere
-    /// in the batch precedes them even when it belongs to another session. That wait is real.
-    {
-        auto before = waitForWriteObservations();
-        size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
-            dispatcher,
-            {makeReadRequest(/*session_id=*/ 8, /*xid=*/ 1, "/"),
-             makeWriteRequest(/*session_id=*/ 9, /*xid=*/ 1, "/cross_session")});
-
-        auto late_read = makeReadRequest(/*session_id=*/ 8, /*xid=*/ 2, "/");
-        ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, late_read));
-
-        dispatcher.onCommit(makeReadRequest(/*session_id=*/ 8, /*xid=*/ 1, "/"));
-        EXPECT_EQ(waitForWriteObservations() - before, 0u)
-            << "the late read was observed before the batch's write committed";
-
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 9, /*xid=*/ 1, "/cross_session"));
-
-        EXPECT_EQ(waitForWriteObservations() - before, 1u)
-            << "a late read that waited for another session's write was not observed";
-        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
-    }
 }
 
 /// A dropped SessionID request must reach its waiter instead of the per-session response queue,
@@ -2144,130 +1753,6 @@ TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnThrowingShutdown)
     }
 
     EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
-}
-
-namespace
-{
-
-/// Millisecond counts a coordination wait must survive. The first is representable as nanoseconds
-/// but leaves less than a millisecond below Int64::max, so `steady_clock::now() + duration` wraps;
-/// the rest overflow the milliseconds to nanoseconds product itself.
-const std::vector<Int64> huge_timeouts_ms = {
-    9'223'372'036'854LL,
-    9'223'372'036'855LL,
-    9'223'372'036'854'775LL,
-    std::numeric_limits<Int64>::max(),
-};
-
-/// The predicate becomes true after this long, so a wait that kept its duration returns because the
-/// predicate fired, while a wait whose duration was lost returns immediately instead.
-constexpr Int64 notify_after_ms = 300;
-
-}
-
-/// A very long timeout must remain a very long timeout: with the raw conversion the deadline wraps
-/// into the past, so the wait gives up at once and reports that the log was not committed.
-TEST(KeeperContext, WaitCommittedUptoKeepsHugeTimeout)
-{
-    /// The parameter is unsigned, so a negative count arrives here as a huge positive one.
-    std::vector<UInt64> timeouts;
-    for (Int64 ms : huge_timeouts_ms)
-        timeouts.push_back(static_cast<UInt64>(ms));
-    timeouts.push_back(std::numeric_limits<UInt64>::max());
-
-    for (UInt64 timeout_ms : timeouts)
-    {
-        SCOPED_TRACE(timeout_ms);
-
-        auto keeper_context = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
-        keeper_context->setLastCommitIndex(1);
-
-        std::thread committer(
-            [&]
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(notify_after_ms));
-                keeper_context->setLastCommitIndex(10);
-            });
-
-        Stopwatch watch;
-        const bool committed = keeper_context->waitCommittedUpto(10, timeout_ms);
-        const auto elapsed_ms = watch.elapsedMilliseconds();
-        committer.join();
-
-        EXPECT_TRUE(committed);
-        EXPECT_GE(elapsed_ms, static_cast<UInt64>(notify_after_ms) / 2);
-    }
-}
-
-/// All three callers of interruptibleSleep build the period from a coordination setting, so this
-/// covers each of them. The period arrives typed as std::chrono::milliseconds, whose representation
-/// is signed, so the reachable extremes are the signed ones.
-TEST(KeeperDispatcher, InterruptibleSleepKeepsHugePeriod)
-{
-    for (Int64 period_ms : huge_timeouts_ms)
-    {
-        SCOPED_TRACE(period_ms);
-
-        DB::KeeperDispatcher dispatcher;
-
-        std::thread shutdown_signaller(
-            [&]
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(notify_after_ms));
-                dispatcher.signalShutdown();
-            });
-
-        Stopwatch watch;
-        DispatcherAccessor::interruptibleSleep(dispatcher, std::chrono::milliseconds(period_ms));
-        const auto elapsed_ms = watch.elapsedMilliseconds();
-        /// Sampled before the join: the signaller sets the flag unconditionally, so a reading taken
-        /// afterwards would be true whatever ended the wait and would assert nothing.
-        const bool signalled_when_the_wait_returned = dispatcher.isShuttingDown();
-        shutdown_signaller.join();
-
-        EXPECT_GE(elapsed_ms, static_cast<UInt64>(notify_after_ms) / 2);
-        /// The elapsed bound alone would also accept a period silently shortened to anything above
-        /// 150 ms, which times out rather than keeping the requested period. This pins why the wait
-        /// ended: the predicate became true.
-        EXPECT_TRUE(signalled_when_the_wait_returned);
-    }
-}
-
-/// The opposite direction: a non-positive period must still return immediately, otherwise a
-/// shutdown path passing a wrapped negative count would hang instead of expiring at once.
-TEST(KeeperDispatcher, InterruptibleSleepReturnsAtOnceForNonPositivePeriod)
-{
-    /// Below the shortest spurious wait worth catching, so the ordering oracle can observe one.
-    constexpr Int64 signal_after_ms = 100;
-
-    for (Int64 period_ms : {Int64{0}, Int64{-1}, Int64{-9'223'372'036'854'775}})
-    {
-        SCOPED_TRACE(period_ms);
-
-        /// A fresh dispatcher per period: the flag latches once signalled, so a shared one would
-        /// already be shutting down after the first iteration and the oracle would read true
-        /// without any wait having happened.
-        DB::KeeperDispatcher dispatcher;
-
-        std::thread shutdown_signaller(
-            [&]
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(signal_after_ms));
-                dispatcher.signalShutdown();
-            });
-
-        Stopwatch watch;
-        DispatcherAccessor::interruptibleSleep(dispatcher, std::chrono::milliseconds(period_ms));
-        const auto elapsed_ms = watch.elapsedMilliseconds();
-        const bool signalled_when_the_wait_returned = dispatcher.isShuttingDown();
-        shutdown_signaller.join();
-
-        /// An elapsed bound accepts any wait shorter than the signal delay, so it cannot say the
-        /// wait did not happen. This pins the ordering: the call returned while the predicate was
-        /// still false.
-        EXPECT_FALSE(signalled_when_the_wait_returned);
-        EXPECT_LT(elapsed_ms, static_cast<UInt64>(notify_after_ms));
-    }
 }
 
 TEST(KeeperDispatcher, FourLetterCommandsDrainBeforeShutdown)

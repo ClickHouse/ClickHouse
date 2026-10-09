@@ -1,7 +1,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 
 #include <algorithm>
 #include <chrono>
@@ -24,9 +23,8 @@ namespace ErrorCodes
 }
 }
 
-/// Embedded timezones. The lookup is length-aware on purpose: a name is also the key of the
-/// `DateLUT` cache, so a name with an embedded `\0` must not match the zone that its prefix names.
-std::string_view getTimeZone(std::string_view name);  /// NOLINT(misc-use-internal-linkage)
+/// Embedded timezones.
+std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
 
 
 namespace
@@ -68,89 +66,6 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
-bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
-{
-    /// `cctz` resolves far more names than the time zone database has, and every name that gets loaded
-    /// permanently costs ~4.6 MiB in the `DateLUT` cache, which never evicts anything because callers
-    /// keep bare references into it. The names come from untrusted input - `toDateTime(x, '<name>')`,
-    /// the `session_timezone` setting, binary type decoding, the time zone of an Arrow or ORC timestamp
-    /// column - so accepting anything beyond the database lets one-line queries make the server
-    /// allocate memory that it never gives back. On top of the database, `cctz` accepts:
-    /// - `libc:<suffix>`, resolved through the C library. `libc:localtime` and `libc:UTC` are `cctz`'s
-    ///   own internal, test-only interfaces, and any other suffix is accepted just as well and silently
-    ///   behaves as UTC. The suffix is unrestricted, so this family has no bound at all.
-    /// - `file:<path>`, which takes the rest of the name as a path: also unbounded, and it makes the
-    ///   server open a file outside the time zone database directory, which is exactly what the
-    ///   `CheckTimeZoneName` guard vendored into `contrib/cctz` exists to prevent.
-    /// - every path spelling that the filesystem resolves to the same zone file: `Europe/./Amsterdam`,
-    ///   `Europe//Amsterdam`, and any number of repetitions of `./` and `/` - a separate cache entry
-    ///   each, for one and the same zone.
-    /// - `Fixed/UTC±HH:MM:SS`, synthesized without consulting the database for any offset up to
-    ///   24 hours, which is 172801 distinct names.
-    ///
-    /// A name also has to be matched by length, not as a C string. Names reach us from
-    /// length-prefixed carriers - a SQL literal, `readStringBinary` in binary type decoding - so they
-    /// can carry an embedded `\0`, while the `DateLUT` cache keys on the whole byte string. Matching
-    /// `UTC\0<anything>` as `UTC` would load one zone under unboundedly many keys, which is why
-    /// `::getTimeZone` takes a `std::string_view`.
-    ///
-    /// So accept only the names of the time zone database that is linked into the binary - which is
-    /// exactly what `system.time_zones` lists, and what the documentation of the `DateTime` type and of
-    /// `session_timezone` already tell users to use - plus the fixed offsets a time zone can really
-    /// have. A name that only the host's database has is no longer accepted: ClickHouse ships its own
-    /// tzdata so that results do not depend on the host, and such a name is absent from
-    /// `system.time_zones` anyway.
-
-    /// The `Fixed/` family cannot be rejected outright, because reading an Arrow or ORC timestamp
-    /// column with a fixed-offset time zone deliberately produces such a name. Accept only the offsets
-    /// a time zone can actually have: a whole number of quarters of an hour, no further from UTC than
-    /// 14 hours. That covers every offset in the time zone database - the last one that was not a
-    /// multiple of 15 minutes ended in 1972 - and leaves 114 such names (113 offsets, of which zero is
-    /// spelled both `+00:00:00` and `-00:00:00`), so together with the 598 names of the database the
-    /// cache can hold at most 712 entries.
-    /// `Values::OffsetChangeFactor` already assumes the same granularity for the offset changes within
-    /// a zone.
-    static constexpr std::string_view fixed_zone_prefix = "Fixed/";
-    if (time_zone_name.starts_with(fixed_zone_prefix))
-    {
-        /// The remainder has to be exactly `UTC±HH:MM:SS`, the only spelling `cctz` understands.
-        std::string_view offset_name = time_zone_name.substr(fixed_zone_prefix.size());
-        if (offset_name.size() != 12 || !offset_name.starts_with("UTC")
-            || (offset_name[3] != '+' && offset_name[3] != '-') || offset_name[6] != ':' || offset_name[9] != ':')
-            return false;
-
-        auto parse_two_digits = [&](size_t pos) -> int
-        {
-            if (!isNumericASCII(offset_name[pos]) || !isNumericASCII(offset_name[pos + 1]))
-                return -1;
-            return (offset_name[pos] - '0') * 10 + (offset_name[pos + 1] - '0');
-        };
-
-        const int hours = parse_two_digits(4);
-        const int minutes = parse_two_digits(7);
-        const int seconds = parse_two_digits(10);
-        if (hours < 0 || minutes < 0 || seconds < 0)
-            return false;
-
-        /// Every component has to be in range on its own, and not only the total offset: `cctz`
-        /// normalizes the components, so `Fixed/UTC+00:75:00` and `Fixed/UTC+01:14:60` load the very
-        /// same `+01:15` zone as `Fixed/UTC+01:15:00` does. Accepting them would give one offset up to
-        /// four names, and with it four entries of the `DateLUT` cache, which is exactly the aliasing
-        /// this predicate exists to prevent. Only the canonical spelling of an offset is a name here.
-        if (hours > 14 || minutes > 59 || seconds > 59)
-            return false;
-
-        const int offset = (hours * 60 + minutes) * 60 + seconds;
-        return offset % (15 * 60) == 0 && offset <= 14 * 3600;
-    }
-
-    /// `::getTimeZone` is also what loads the zone, so a name accepted here is one that can be loaded
-    /// without consulting the host at all, and one that cannot alias another name. It is qualified
-    /// because `DateLUTImpl` has a member with the same name that returns the time zone of this
-    /// instance.
-    return !::getTimeZone(time_zone_name).empty();
-}
-
 DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
     : time_zone(time_zone_)
 {
@@ -158,14 +73,6 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     /// 1. It is too heavy.
     if (&inside_main)
         chassert(inside_main);
-
-    if (!isSupportedTimeZoneName(time_zone))
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Time zone {} is not supported. Use a name from `system.time_zones`, or a fixed UTC offset "
-            "spelled `Fixed/UTC±HH:MM:SS`, which has to be a whole number of quarters of an hour, no "
-            "further from UTC than 14 hours",
-            time_zone_);
 
     /// The loaded time zone is kept as a member, so the out-of-range escape paths can use cctz directly.
     cctz_time_zone = std::make_unique<cctz::time_zone>();
@@ -185,17 +92,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_at_start_of_lut = tz.lookup(tz.lookup(lut_start).pre).offset;
     offset_is_whole_number_of_hours_during_epoch = true;
     offset_is_whole_number_of_minutes_during_epoch = true;
-    offset_is_whole_number_of_hours_in_lut_range = true;
-    offset_is_whole_number_of_minutes_in_lut_range = true;
     offset_is_fixed = true;
-    offset_is_fixed_during_epoch = true;
-    offset_minute_of_hour_is_constant_during_epoch = true;
-
-    /// The UTC time of day at which a local day begins: 66600 for `Asia/Kolkata`, whose +05:30 puts local
-    /// midnight at 18:30 the day before.
-    const Time utc_time_of_day_at_local_midnight = ((-offset_at_start_of_epoch) % 86400 + 86400) % 86400;
-    hour_of_day_offset_addend = 86400 - utc_time_of_day_at_local_midnight;
-    minute_of_hour_offset_addend = 3600 - utc_time_of_day_at_local_midnight % 3600;
 
     cctz::civil_day date = lut_start;
     cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
@@ -268,32 +165,6 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
 
         if (offset_is_whole_number_of_minutes_during_epoch && start_of_day > 0 && start_of_day % 60)
             offset_is_whole_number_of_minutes_during_epoch = false;
-
-        /// The epoch-scoped flags are derived from the local days that can contain a non-negative time point;
-        /// west of UTC that day starts before the epoch.
-        if (start_of_day > -86400)
-        {
-            Time time_of_day = start_of_day % 86400;
-            if (time_of_day < 0)
-                time_of_day += 86400;
-
-            if (values.amount_of_offset_change_value != 0 || (i != 0 && values.date - lut[i - 1].date != 86400))
-                offset_is_fixed_during_epoch = false;
-
-            if (time_of_day % 60 != 0 || time_of_day % 3600 != utc_time_of_day_at_local_midnight % 3600
-                || values.amount_of_offset_change() % 3600 != 0)
-                offset_minute_of_hour_is_constant_during_epoch = false;
-        }
-
-        /// The same over the whole LUT, including the days before the epoch: the in-tree tzdata keeps
-        /// sub-minute offsets well into the 20th century (`Europe/Amsterdam` +00:19:32 until 1937,
-        /// `Asia/Kolkata` +05:21:10 until 1906), so a property that holds during the epoch says nothing
-        /// about a pre-1970 `DateTime64`.
-        if (offset_is_whole_number_of_hours_in_lut_range && start_of_day % 3600)
-            offset_is_whole_number_of_hours_in_lut_range = false;
-
-        if (offset_is_whole_number_of_minutes_in_lut_range && start_of_day % 60)
-            offset_is_whole_number_of_minutes_in_lut_range = false;
 
         /// An offset change at midnight makes consecutive days start more or less than 86400 seconds apart;
         /// a change at any other time is recorded in amount_of_offset_change_value of the affected day.
@@ -640,9 +511,9 @@ unsigned int DateLUTImpl::toNanosecond(const DB::DateTime64 & datetime, Int64 sc
 }
 
 
-/// Load timezones only from blobs linked to the binary.
+/// Prefer to load timezones from blobs linked to the binary.
 /// The blobs are provided by "tzdata" library.
-/// This avoids a dependency on system tzdata.
+/// This allows to avoid dependency on system tzdata.
 namespace cctz_extension
 {
     namespace
@@ -680,22 +551,14 @@ namespace cctz_extension
 
         std::unique_ptr<cctz::ZoneInfoSource> custom_factory(
             const std::string & name,
-            const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> &)
+            const std::function<std::unique_ptr<cctz::ZoneInfoSource>(const std::string & name)> & fallback)
         {
-            /// `name`, not `name.data()`: the name can carry an embedded `\0` and must not match the
-            /// zone that its prefix names, see `isSupportedTimeZoneName`.
-            std::string_view tz_file = getTimeZone(name);
+            std::string_view tz_file = getTimeZone(name.data());
 
-            /// `cctz`'s own fallback is deliberately not used. It resolves a name as a path under the
-            /// time zone database directory - or, for a `file:` prefix, as an arbitrary path - so it
-            /// accepts unboundedly many spellings of the same zone, opens files outside that directory,
-            /// and does the open while `DateLUT::getImplementation` holds its global mutex, where a
-            /// FIFO or a hung network mount would block every time zone lookup server-wide. The
-            /// supported set is the database linked into the binary, see `isSupportedTimeZoneName`.
-            if (tz_file.empty())
-                return nullptr;
+            if (!tz_file.empty())
+                return std::make_unique<Source>(tz_file.data(), tz_file.size());
 
-            return std::make_unique<Source>(tz_file.data(), tz_file.size());
+            return fallback(name);
         }
     }
 

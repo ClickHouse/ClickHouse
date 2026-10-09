@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- Residual conditions over LowCardinality columns: the residual result column is
 -- LowCardinality(UInt8) (folded by the operator) and the residual inputs are gathered from
 -- LC columns. Verified against the hash join executing the same query.

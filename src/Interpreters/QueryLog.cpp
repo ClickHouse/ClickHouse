@@ -23,7 +23,6 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IPv6ToBinary.h>
@@ -65,8 +64,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "Hostname of the server executing the query."},
-        {"clickhouse_version", low_cardinality_string, "Version of the ClickHouse server that produced the row."},
-        {"system_processor", low_cardinality_string, "CPU architecture of the ClickHouse server that produced the row."},
         {"type", std::move(query_status_datatype), "Type of an event that occurred when executing the query. Values: `QueryStart` — successful start of query execution, `QueryFinish` — successful end of query execution, `ExceptionBeforeStart` — exception before the start of query execution, `ExceptionWhileProcessing` — exception during the query execution."},
         {"event_date", std::make_shared<DataTypeDate>(), "Query starting date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Query starting time."},
@@ -112,7 +109,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Start time of the initial query in the same query chain."},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of the initial query in the same query chain, with microsecond precision."},
         {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
-        {"interface", getReportedClientInterfaceEnum(), "Interface that the query was initiated from, as reported by the client. `Unknown` if the reported interface is not one this server recognizes."},
+        {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag whether a query was executed over a secure interface"},
         {"os_user", low_cardinality_string, "Operating system username who runs clickhouse-client."},
         {"client_hostname", low_cardinality_string, "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
@@ -124,7 +121,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
         {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
         {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
-        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP, or if the reported method is not one this server recognizes."},
+        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},
@@ -160,12 +157,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_privileges", array_low_cardinality_string, "Privileges which were successfully checked during query execution."},
         {"missing_privileges", array_low_cardinality_string, "Privileges that are missing during query execution."},
 
-        {"used_number_of_joins", std::make_shared<DataTypeUInt64>(), "The number of physical joins executed for this query. It is collected from the pipelines as they are built, so it reflects the joins that are left after all optimizations, not the number of JOIN clauses in the query text. A join is counted no matter how deeply it is nested: subqueries, common table expressions, views, views of views and the SELECT of a materialized view triggered by an INSERT all report into the row of the query that was sent, so this can be non-zero for a query whose own text holds no JOIN at all. A query that builds a pipeline without running it, such as EXPLAIN PIPELINE, reports the joins of the query it explains. Some pipelines are assembled more than once while a single query runs: the SELECT of a materialized view is assembled for every block of the INSERT that triggers it and by every insert stream, the recursive member of a recursive CTE is assembled for every iteration, and the relation of a loop is assembled again every time it is restarted. The joins of such a pipeline are counted once all the same, so this number describes the query and not how many times its pipelines were assembled."},
-        {"used_join_algorithms", array_low_cardinality_string, "Algorithms of the joins counted in used_number_of_joins: 'HASH', 'PARALLEL_HASH', 'GRACE_HASH', 'PARTIAL_MERGE', 'FULL_SORTING_MERGE', 'PARALLEL_FULL_SORTING_MERGE', 'IE_JOIN', 'DIRECT', 'PASTE' and 'CONSTANT', sorted and deduplicated, so an algorithm shared by several joins appears once. This is the algorithm that was chosen to execute each join, not the algorithms that the join_algorithm setting allows. An algorithm can be replaced by another one in the middle of execution, in which case both are reported."},
-        {"used_join_kinds", array_low_cardinality_string, "Kinds of the joins counted in used_number_of_joins, one element per join, so a kind shared by several joins appears several times. The elements are sorted rather than in execution order. Each kind is the one that was executed, which can differ from the query text, because the optimizer may run a join with its sides swapped and thereby turn LEFT into RIGHT."},
-        {"used_join_strictness", array_low_cardinality_string, "Strictness of the joins counted in used_number_of_joins, one element per join, in the same order as used_join_kinds: the element at a given index describes the same join in both arrays."},
-        {"spilled_to_disk", array_low_cardinality_string, "Operators that wrote data to temporary files on disk (processing in external memory) during query execution, sorted and deduplicated. An empty array means the query ran fully in memory."},
-
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
         {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
@@ -196,10 +187,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     const auto & hostname = getFQDNOrHostName();
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
-    const std::string_view version = VERSION_STRING;
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(version.data(), version.size());
-    const std::string_view system_processor = SYSTEM_PROCESSOR;
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(system_processor.data(), system_processor.size());
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(type);
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(event_time));
@@ -301,16 +288,13 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
         auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
-        if (query_settings)
+        for (const auto & [name, value] : query_settings)
         {
-            query_settings->forEach([&](std::string_view name, std::string_view value)
-            {
-                key_column.insertData(name.data(), name.size());
-                value_column.insertData(value.data(), value.size());
-            });
+            key_column.insertData(name.data(), name.size());
+            value_column.insertData(value.data(), value.size());
         }
 
-        offsets.push_back(offsets.back() + (query_settings ? query_settings->size() : 0));
+        offsets.push_back(offsets.back() + query_settings.size());
     }
 
     {
@@ -357,12 +341,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_row_policies, column_row_policies_names);
         fill_column(used_privileges, column_used_privileges);
         fill_column(missing_privileges, column_missing_privileges);
-
-        typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(used_number_of_joins);
-        fill_column(used_join_algorithms, typeid_cast<ColumnArray &>(*columns[i++]));
-        fill_column(used_join_kinds, typeid_cast<ColumnArray &>(*columns[i++]));
-        fill_column(used_join_strictness, typeid_cast<ColumnArray &>(*columns[i++]));
-        fill_column(spilled_to_disk, typeid_cast<ColumnArray &>(*columns[i++]));
     }
 
     {
@@ -370,7 +348,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(0)).getData().push_back(tid.start_csn);
         typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(1)).getData().push_back(tid.local_tid);
         typeid_cast<ColumnUUID &>(tid_tuple.getColumn(2)).getData().push_back(tid.host_id);
-        typeid_cast<ColumnInt64 &>(tid_tuple.getColumn(3)).getData().push_back(tid.session_node_version);
     }
 
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
@@ -416,7 +393,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.authenticated_user.data(), client_info.authenticated_user.size());
 
-    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(reportedClientInterfaceEnumValue(client_info.interface));
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.interface));
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
 
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
@@ -431,7 +408,7 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_query_number);
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_line_number);
 
-    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(reportedClientHTTPMethodEnumValue(client_info.http_method));
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.http_method));
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.http_user_agent.data(), client_info.http_user_agent.size());
     typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.http_referer.data(), client_info.http_referer.size());
     typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.forwarded_for.data(), client_info.forwarded_for.size());
