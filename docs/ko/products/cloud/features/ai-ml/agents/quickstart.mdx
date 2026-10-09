@@ -7,7 +7,7 @@ keywords: ['AI', 'ClickHouse Cloud', '에이전트', '빠른 시작', 'agent bui
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge />
@@ -26,17 +26,13 @@ Cloud Console에서 사용자 지정 에이전트를 만들고 서비스에서 �
 </div>
 
 <Steps>
-  <Step>
-    ### ClickHouse Agents 시작하기
-
+  <Step title="ClickHouse Agents 시작하기" id="launch-agents">
     Cloud service의 왼쪽 사이드바에서 **ClickHouse agents**를 클릭해 에이전트 런치패드를 여십시오. **Launch ClickHouse agents**를 클릭하면 Agent Builder가 열립니다.
 
     <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="ClickHouse agents(베타)가 선택된 Cloud service 탐색 화면으로, Launch ClickHouse agents 버튼이 있는 런치패드를 보여줍니다" size="lg" />
   </Step>
 
-  <Step>
-    ### 에이전트 만들기
-
+  <Step title="에이전트 만들기" id="create-the-agent">
     Agent Builder에서 왼쪽 패널 상단의 **Create New Agent**를 클릭하십시오. 다음 핵심 필드를 입력합니다:
 
     * **Name** - 에이전트를 식별하는 짧은 이름입니다.
@@ -48,9 +44,7 @@ Cloud Console에서 사용자 지정 에이전트를 만들고 서비스에서 �
     <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Create New Agent 드롭다운, 양식 필드(Name, Description, Category, Instructions, Model), 그리고 Capabilities 섹션이 표시된 Agent Builder 패널" size="lg" />
   </Step>
 
-  <Step>
-    ### 기능 및 도구 연결하기
-
+  <Step title="기능 및 도구 연결하기" id="attach-tools">
     에이전트의 기능과 도구는 두 곳에서 관리합니다.
 
     메인 패널의 **Capabilities** — [Run Code](/ko/products/cloud/features/ai-ml/agents/builder/code-interpreter), [웹 검색](/ko/products/cloud/features/ai-ml/agents/builder/web-search), File Context, Artifacts, [MCP 서버](/ko/products/cloud/features/ai-ml/agents/builder/mcp-servers), [스킬](/ko/products/cloud/features/ai-ml/agents/builder/skills) 같은 기본 제공 기능입니다. 에이전트에 필요한 항목을 켜십시오.
@@ -70,9 +64,7 @@ Cloud Console에서 사용자 지정 에이전트를 만들고 서비스에서 �
     연결된 기능과 도구는 언제든지 변경할 수 있습니다.
   </Step>
 
-  <Step>
-    ### 쿼리 실행하기
-
+  <Step title="쿼리 실행하기" id="run-a-query">
     에이전트를 저장한 뒤 새 conversation을 열고, agent picker에서 에이전트를 선택하십시오. 예를 들어 *&quot;What are my top 10 tables by row count this week?&quot;* 같은 질문을 입력하면 에이전트가 계획을 세우고, 필요에 따라 도구를 호출한 후, 답변을 반환합니다.
 
     <Image img="/images/cloud/agent-builder/chat-query.webp" alt="'What are my top 10 tables by row count this week?'라는 질문과 에이전트의 응답이 표시된 채팅 화면으로, 행 수 기준 서비스 전반의 상위 10개 테이블 순위를 보여주는 Markdown 표와 그 아래 Key Observations가 포함되어 있습니다" size="lg" />
@@ -83,5 +75,5 @@ Cloud Console에서 사용자 지정 에이전트를 만들고 서비스에서 �
   ## 다음 단계
 </div>
 
-* 팀원과 [에이전트를 공유하세요](/ko/products/cloud/features/ai-ml/agents/sharing-and-access).
+* 팀원과 [에이전트](/ko/products/cloud/features/ai-ml/agents/sharing-and-access)를 공유하세요.
 * 에이전트가 안정화되면 [마켓플레이스](/ko/products/cloud/features/ai-ml/agents/marketplace)에 게시하세요.

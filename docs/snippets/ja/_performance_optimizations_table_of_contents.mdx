@@ -15,7 +15,7 @@ title: パフォーマンス最適化の目次
 | [ミューテーションを避ける](/ja/concepts/best-practices/avoid-mutations)                           | データの正確性と性能を維持しながら、高コストな`UPDATE`や`DELETE`操作を不要にする追記専用ワークフローを設計します。                             |
 | [Nullable カラムを避ける](/ja/concepts/best-practices/avoidnullablecolumns)                  | 可能な場合はNullable カラムの代わりにデフォルト値を使うことで、ストレージのオーバーヘッドを減らし、クエリ性能を向上させます。                           |
 | [`OPTIMIZE FINAL` を避ける](/ja/concepts/best-practices/avoid-optimize-final)             | `OPTIMIZE TABLE FINAL`を使うべき場合と、使うべきでない場合を理解します。                                               |
-| [アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer)                    | ClickHouseの新しいクエリアナライザを活用して、パフォーマンスのボトルネックを特定し、より効率的なクエリ実行計画へ最適化します。                          |
+| [アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer)                    | ClickHouseのクエリアナライザを活用して、パフォーマンスのボトルネックを特定し、より効率的なクエリ実行計画へ最適化します。                             |
 | [クエリプロファイリング](/ja/concepts/features/performance/troubleshoot/sampling-query-profiler) | サンプリングクエリプロファイラを使用してクエリ実行パターンを分析し、パフォーマンス上のホットスポットを特定して、リソース使用率を最適化します。                       |
 | [クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)                      | ClickHouse組み込みのクエリ結果キャッシュを有効化・設定することで、頻繁に実行される`SELECT`クエリを高速化します。                             |
 | [ハードウェアのテスト](/ja/concepts/features/performance/troubleshoot/performance-test)         | インストール不要で任意のサーバー上でClickHouseのパフォーマンスベンチマークを実行し、ハードウェアの性能を評価できます。 (ClickHouse Cloud には適用されません) |

@@ -27,156 +27,150 @@ Tenga en cuenta que implementar y gestionar una arquitectura con separación de 
   No configure ninguna política de ciclo de vida de AWS/GCS. No se admite y podría provocar tablas corruptas.
 </Warning>
 
-<div id="1-use-s3-as-a-clickhouse-disk">
-  ## 1. Usar S3 como disco de ClickHouse
-</div>
+<Steps>
+  <Step title="Usar S3 como disco de ClickHouse" id="1-use-s3-as-a-clickhouse-disk">
+    ### Crear un disco
 
-<div id="creating-a-disk">
-  ### Crear un disco
-</div>
+    Cree un nuevo archivo en el directorio `config.d` de ClickHouse para guardar la configuración de almacenamiento:
 
-Cree un nuevo archivo en el directorio `config.d` de ClickHouse para guardar la configuración de almacenamiento:
+    ```bash
+    vim /etc/clickhouse-server/config.d/storage_config.xml
+    ```
 
-```bash
-vim /etc/clickhouse-server/config.d/storage_config.xml
-```
+    Copia el siguiente XML en el archivo recién creado y reemplaza `BUCKET`, `ACCESS_KEY_ID` y `SECRET_ACCESS_KEY` por los datos del bucket de AWS donde quieras almacenar tus datos:
 
-Copia el siguiente XML en el archivo recién creado y reemplaza `BUCKET`, `ACCESS_KEY_ID` y `SECRET_ACCESS_KEY` por los datos del bucket de AWS donde quieras almacenar tus datos:
-
-```xml
-<clickhouse>
-  <storage_configuration>
-    <disks>
-      <s3_disk>
-        <type>s3</type>
-        <endpoint>$BUCKET</endpoint>
-        <access_key_id>$ACCESS_KEY_ID</access_key_id>
-        <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
-        <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
-      </s3_disk>
-      <s3_cache>
-        <type>cache</type>
-        <disk>s3_disk</disk>
-        <path>/var/lib/clickhouse/disks/s3_cache/</path>
-        <max_size>10Gi</max_size>
-      </s3_cache>
-    </disks>
-    <policies>
-      <s3_main>
-        <volumes>
-          <main>
+    ```xml
+    <clickhouse>
+      <storage_configuration>
+        <disks>
+          <s3_disk>
+            <type>s3</type>
+            <endpoint>$BUCKET</endpoint>
+            <access_key_id>$ACCESS_KEY_ID</access_key_id>
+            <secret_access_key>$SECRET_ACCESS_KEY</secret_access_key>
+            <metadata_path>/var/lib/clickhouse/disks/s3_disk/</metadata_path>
+          </s3_disk>
+          <s3_cache>
+            <type>cache</type>
             <disk>s3_disk</disk>
-          </main>
-        </volumes>
-      </s3_main>
-    </policies>
-  </storage_configuration>
-</clickhouse>
-```
+            <path>/var/lib/clickhouse/disks/s3_cache/</path>
+            <max_size>10Gi</max_size>
+          </s3_cache>
+        </disks>
+        <policies>
+          <s3_main>
+            <volumes>
+              <main>
+                <disk>s3_disk</disk>
+              </main>
+            </volumes>
+          </s3_main>
+        </policies>
+      </storage_configuration>
+    </clickhouse>
+    ```
 
-Si necesita especificar aún más la configuración del disco S3, por ejemplo, para indicar una `región` o enviar una `cabecera` HTTP personalizada, puede consultar la lista de opciones de configuración pertinentes [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
+    Si necesita especificar aún más la configuración del disco S3, por ejemplo, para indicar una `región` o enviar una `cabecera` HTTP personalizada, puede consultar la lista de opciones de configuración pertinentes [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 
-También puede reemplazar `access_key_id` y `secret_access_key` por lo siguiente, que intentará obtener credenciales de las variables de entorno y de los metadatos de Amazon EC2:
+    También puede reemplazar `access_key_id` y `secret_access_key` por lo siguiente, que intentará obtener credenciales de las variables de entorno y de los metadatos de Amazon EC2:
 
-```bash
-<use_environment_credentials>true</use_environment_credentials>
-```
+    ```bash
+    <use_environment_credentials>true</use_environment_credentials>
+    ```
 
-Después de crear el archivo de configuración, debes cambiar el propietario del archivo al usuario y grupo clickhouse:
+    Después de crear el archivo de configuración, debes cambiar el propietario del archivo al usuario y grupo clickhouse:
 
-```bash
-chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
-```
+    ```bash
+    chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
+    ```
 
-Ahora puede reiniciar el servidor de ClickHouse para que los cambios surtan efecto:
+    Ahora puede reiniciar el servidor de ClickHouse para que los cambios surtan efecto:
 
-```bash
-service clickhouse-server restart
-```
+    ```bash
+    service clickhouse-server restart
+    ```
+  </Step>
 
-<div id="2-create-a-table-backed-by-s3">
-  ## 2. Crear una tabla basada en S3
-</div>
+  <Step title="Crear una tabla con respaldo en S3" id="2-create-a-table-backed-by-s3">
+    Para comprobar que hemos configurado correctamente el disco S3, podemos intentar crear una tabla y hacer una consulta sobre ella.
 
-Para comprobar que hemos configurado correctamente el disco S3, podemos intentar crear y consultar una tabla.
+    Cree una tabla especificando la nueva política de almacenamiento de S3:
 
-Cree una tabla especificando la nueva política de almacenamiento de S3:
+    ```sql
+    CREATE TABLE my_s3_table
+      (
+        `id` UInt64,
+        `column1` String
+      )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS storage_policy = 's3_main';
+    ```
 
-```sql
-CREATE TABLE my_s3_table
-  (
-    `id` UInt64,
-    `column1` String
-  )
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS storage_policy = 's3_main';
-```
+    Tenga en cuenta que no fue necesario especificar el engine como `S3BackedMergeTree`. ClickHouse convierte automáticamente el tipo de engine internamente si detecta que la tabla usa S3 como almacenamiento.
 
-Ten en cuenta que no fue necesario especificar el motor como `S3BackedMergeTree`. ClickHouse convierte automáticamente el tipo de motor internamente si detecta que la tabla usa S3 como almacenamiento.
+    Compruebe que la tabla se creó con la política correcta:
 
-Comprueba que la tabla se creó con la política correcta:
+    ```sql
+    SHOW CREATE TABLE my_s3_table;
+    ```
 
-```sql
-SHOW CREATE TABLE my_s3_table;
-```
+    Debería ver el siguiente resultado:
 
-Deberías ver el siguiente resultado:
+    ```response
+    ┌─statement────────────────────────────────────────────────────
+    │ CREATE TABLE default.my_s3_table
+    (
+      `id` UInt64,
+      `column1` String
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS storage_policy = 's3_main', index_granularity = 8192
+    └──────────────────────────────────────────────────────────────
+    ```
 
-```response
-┌─statement────────────────────────────────────────────────────
-│ CREATE TABLE default.my_s3_table
-(
-  `id` UInt64,
-  `column1` String
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS storage_policy = 's3_main', index_granularity = 8192
-└──────────────────────────────────────────────────────────────
-```
+    Ahora, vamos a insertar algunas filas en nuestra nueva tabla:
 
-Ahora, vamos a insertar algunas filas en nuestra nueva tabla:
+    ```sql
+    INSERT INTO my_s3_table (id, column1)
+      VALUES (1, 'abc'), (2, 'xyz');
+    ```
 
-```sql
-INSERT INTO my_s3_table (id, column1)
-  VALUES (1, 'abc'), (2, 'xyz');
-```
+    Verifiquemos que se hayan insertado nuestras filas:
 
-Comprobemos que se hayan insertado nuestras filas:
+    ```sql
+    SELECT * FROM my_s3_table;
+    ```
 
-```sql
-SELECT * FROM my_s3_table;
-```
+    ```response
+    ┌─id─┬─column1─┐
+    │  1 │ abc     │
+    │  2 │ xyz     │
+    └────┴─────────┘
 
-```response
-┌─id─┬─column1─┐
-│  1 │ abc     │
-│  2 │ xyz     │
-└────┴─────────┘
+    2 rows in set. Elapsed: 0.284 sec.
+    ```
 
-2 rows in set. Elapsed: 0.284 sec.
-```
+    En la consola de AWS, si sus datos se insertaron correctamente en S3, debería ver que ClickHouse ha creado nuevos archivos en el bucket que especificó.
 
-En la consola de AWS, si tus datos se insertaron correctamente en S3, deberías ver que ClickHouse ha creado archivos nuevos en el bucket que especificaste.
+    Si todo funcionó correctamente, ahora está usando ClickHouse con almacenamiento y cómputo separados.
 
-Si todo funcionó correctamente, ¡ahora estás usando ClickHouse con separación entre almacenamiento y cómputo!
+    <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="Ejemplo de bucket de S3 con separación de almacenamiento y cómputo" border />
+  </Step>
 
-<Image img="/images/guides/s3_bucket_example.webp" size="md" alt="Ejemplo de bucket de S3 con separación entre cómputo y almacenamiento" border />
+  <Step title="Implementación de la replicación para tolerancia a fallos (opcional)" id="3-implementing-replication-for-fault-tolerance-optional">
+    <Warning>
+      No configure ninguna política de ciclo de vida de AWS/GCS. Esto no es compatible y podría hacer que las tablas dejen de funcionar.
+    </Warning>
 
-<div id="3-implementing-replication-for-fault-tolerance-optional">
-  ## 3. Implementación de la replicación para lograr tolerancia a fallos (opcional)
-</div>
+    Para la tolerancia a fallos, puede usar varios nodos de servidor de ClickHouse distribuidos en varias regiones de AWS, con un bucket de S3 para cada nodo.
 
-<Warning>
-  No configures ninguna política de ciclo de vida de AWS/GCS. No es compatible y podría provocar tablas corruptas.
-</Warning>
+    La replicación con discos S3 se puede lograr usando el motor de tabla `ReplicatedMergeTree`. Consulte la siguiente guía para obtener más detalles:
 
-Para la tolerancia a fallos, puedes usar varios nodos del servidor ClickHouse distribuidos en varias regiones de AWS, con un bucket de S3 para cada nodo.
-
-La replicación con discos S3 puede implementarse con el motor de tabla `ReplicatedMergeTree`. Consulta la siguiente guía para obtener más información:
-
-* [Replicar un único segmento en dos regiones de AWS mediante almacenamiento de objetos S3](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+    * [Replicar un solo segmento en dos regiones de AWS usando almacenamiento de objetos de S3](/es/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+  </Step>
+</Steps>
 
 <div id="further-reading">
   ## Lecturas adicionales

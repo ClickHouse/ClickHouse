@@ -29,7 +29,7 @@ Avec l’analytique agentique, le modèle appuie ses réponses sur des requêtes
 * **Évaluer et améliorer les réponses** en notant les réponses dans Langfuse avec une validation humaine ou un juge LLM, puis en affinant vos prompts et vos agents.
 
 <div id="architecture">
-  ## Comment les composants s&#39;articulent
+  ## Comment les composants s’articulent
 </div>
 
 <Image img="/images/agentic-data-stack/01-architecture.webp" alt="Architecture d’Agentic Data Stack : les utilisateurs interagissent avec LibreChat, qui se connecte à un LLM, à ClickHouse via le serveur MCP, et à Langfuse pour le tracing" size="md" />
@@ -42,9 +42,9 @@ Le ClickHouse MCP server repose sur le [Model Context Protocol](https://modelcon
   ## Composants
 </div>
 
-| Composant             | Rôle                                                                 | En savoir plus                                                    |
-| --------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| ClickHouse            | Le moteur analytique interrogé par l’agent                           | [Prise en main de ClickHouse](/fr/get-started/setup/install)    |
+| Composant             | Rôle                                                                 | En savoir plus                                                       |
+| --------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| ClickHouse            | Le moteur analytique interrogé par l’agent                           | [Prise en main de ClickHouse](/fr/get-started/setup/install)         |
 | ClickHouse MCP server | La norme ouverte qui expose ClickHouse à l’agent sous forme d’outils | [Serveur MCP](/fr/products/agentic-data-stack/components/mcp-server) |
 | LibreChat             | L’interface de chat et d’agent utilisée par les utilisateurs         | [LibreChat](/fr/products/agentic-data-stack/components/librechat)    |
 | Langfuse              | Observabilité pour chaque prompt, appel d’outil et réponse           | [Langfuse](/fr/products/agentic-data-stack/components/langfuse)      |

@@ -41,7 +41,7 @@ Durante esta configuración, implementamos la instancia de ClickHouse en AWS, en
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_1.webp" size="sm" border alt="Interfaz de implementación del servicio de ClickHouse Cloud que muestra la selección de la región de AWS" />
 
-Durante el proceso de configuración, también deberá prestar atención a la configuración de la conexión. En este tutorial, elegimos &quot;Anywhere&quot;, pero si solicita una ubicación específica, deberá añadir a la whitelist la dirección IP del [gateway NAT](https://docs.emqx.com/en/cloud/latest/vas/nat-gateway.html) obtenida de su implementación de EMQX Cloud.
+Durante el proceso de configuración, también deberá prestar atención a la configuración de la conexión. En este tutorial, elegimos &quot;Anywhere&quot;, pero si solicita una ubicación específica, deberá añadir a la lista de permitidos la dirección IP del [gateway NAT](https://docs.emqx.com/en/cloud/latest/vas/nat-gateway.html) obtenida de su implementación de EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_2.webp" size="sm" border alt="Configuración de conexión de ClickHouse Cloud que muestra la configuración de acceso por IP" />
 
@@ -136,7 +136,7 @@ Una vez creado, encontrará la dirección IP pública en el widget. Tenga en cue
   ## Integración de EMQX Cloud con ClickHouse Cloud
 </div>
 
-La función [EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/rule_engine/introduction.html#general-flow) se utiliza para configurar las reglas que gestionan los flujos de mensajes y los eventos de dispositivos de EMQX, y para responder a ellos. Data Integrations no solo proporciona una solución de arquitectura «configurable» clara y flexible, sino que también simplifica el proceso de desarrollo, mejora la experiencia de uso y reduce el grado de acoplamiento entre el sistema de negocio y EMQX Cloud. Además, ofrece una infraestructura superior para personalizar las capacidades propias de EMQX Cloud.
+La función [EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/data_integration/introduction.html) se utiliza para configurar las reglas que gestionan los flujos de mensajes y los eventos de dispositivos de EMQX, y para responder a ellos. Data Integrations no solo proporciona una solución de arquitectura «configurable» clara y flexible, sino que también simplifica el proceso de desarrollo, mejora la experiencia de uso y reduce el grado de acoplamiento entre el sistema de negocio y EMQX Cloud. Además, ofrece una infraestructura superior para personalizar las capacidades propias de EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png" size="lg" border alt="Opciones de Data Integration en EMQX Cloud que muestran los conectores disponibles" />
 
@@ -166,7 +166,7 @@ Haz clic en la tarjeta de ClickHouse para crear un recurso nuevo.
 
 Durante la creación del recurso, verá una ventana emergente y, al hacer clic en &#39;New&#39;, accederá a la página de creación de reglas.
 
-EMQX proporciona un potente [motor de reglas](https://docs.emqx.com/en/cloud/latest/rule_engine/rules.html) que puede transformar y enriquecer el mensaje MQTT sin procesar antes de enviarlo a sistemas de terceros.
+EMQX proporciona un potente [motor de reglas](https://docs.emqx.com/en/cloud/latest/data_integration/rules.html) que puede transformar y enriquecer el mensaje MQTT sin procesar antes de enviarlo a sistemas de terceros.
 
 Esta es la regla que se utiliza en este tutorial:
 
@@ -236,13 +236,13 @@ Simularemos datos de temperatura y humedad y los enviaremos a EMQX Cloud a trav�
 
 Puede usar cualquier cliente o SDK de MQTT para publicar el mensaje. En este tutorial, usaremos [MQTT X](https://mqttx.app/), una aplicación cliente de MQTT fácil de usar proporcionada por EMQ.
 
-<Image img="/images/integrations/data-ingestion/emqx/mqttx-overview.webp" size="lg" border alt="Vista general de MQTTX que muestra la interfaz del cliente" />
+<Image img="/images/integrations/data-ingestion/emqx/mqttx-overview.webp" size="lg" border alt="MQTTX Overview que muestra la interfaz del cliente" />
 
 Haga clic en &quot;New Connection&quot; en MQTTX y complete el formulario de conexión:
 
 * Name: nombre de la conexión. Use el que prefiera.
-* Host: la dirección de conexión del broker MQTT. Puede obtenerla en la página de vista general de EMQX Cloud.
-* Port: el puerto de conexión del broker MQTT. Puede obtenerlo en la página de vista general de EMQX Cloud.
+* Host: la dirección de conexión del broker MQTT. Puede obtenerla en la página Overview de EMQX Cloud.
+* Port: el puerto de conexión del broker MQTT. Puede obtenerlo en la página Overview de EMQX Cloud.
 * Username/Password: use las credenciales creadas anteriormente, que en este tutorial deberían ser `emqx` y `xxxxxx`.
 
 <Image img="/images/integrations/data-ingestion/emqx/mqttx-new.webp" size="lg" border alt="Formulario de configuración de New Connection de MQTTX con los detalles de conexión" />

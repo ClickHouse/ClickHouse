@@ -16,6 +16,10 @@ DROP TABLE IF EXISTS anti_dim;
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
+SET join_runtime_filter_min_probe_rows = 0;
+-- The asserted granule-pruning counts depend on which side builds the runtime filter, so the
+-- randomized join-order perturbation must be off (it reproducibly flips the result, see issue).
+SET query_plan_optimize_join_order_randomize = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_join_swap_table = 'false';

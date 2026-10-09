@@ -15,7 +15,7 @@ set mutations_sync=1;
 %}
 
 drop table if exists data_{{ id }};
-create table data_{{ id }} (key Int) engine=MergeTree() order by tuple() settings {{ settings }};
+create table data_{{ id }} (key Int) engine=MergeTree() order by tuple() settings {{ settings }}, enable_block_number_column=0, enable_block_offset_column=0;
 insert into data_{{ id }} values (1);
 select sleep(3) format Null;
 select part_type, column, now()-modification_time < 60, modification_time - column_modification_time < {{ mtime_diff_in_seconds }} from system.parts_columns where database = currentDatabase() and table = 'data_{{ id }}';

@@ -13,6 +13,7 @@ doc_type: 'reference'
 يعيد كائنًا هندسيًا بتنسيق WKT ‏(Well Known Text) من [أنواع البيانات الجغرافية](/ar/reference/data-types/geo) المختلفة. كائنات WKT المدعومة هي:
 
 * POINT
+* MULTIPOINT
 * POLYGON
 * MULTIPOLYGON
 * LINESTRING
@@ -29,6 +30,7 @@ WKT(geo_data)
 يمكن أن تكون `geo_data` واحدة من [أنواع البيانات الجغرافية](/ar/reference/data-types/geo) التالية أو من أنواعها الأولية الأساسية:
 
 * [Point](/ar/reference/data-types/geo#point)
+* [MultiPoint](/ar/reference/data-types/geo#multipoint)
 * [Ring](/ar/reference/data-types/geo#ring)
 * [Polygon](/ar/reference/data-types/geo#polygon)
 * [MultiPolygon](/ar/reference/data-types/geo#multipolygon)
@@ -38,6 +40,7 @@ WKT(geo_data)
 **القيمة المُعادة**
 
 * يُعاد الكائن الهندسي WKT `POINT` عند استخدام Point.
+* يُعاد الكائن الهندسي WKT `MULTIPOINT` عند استخدام MultiPoint.
 * يُعاد الكائن الهندسي WKT `POLYGON` عند استخدام Polygon.
 * يُعاد الكائن الهندسي WKT `MULTIPOLYGON` عند استخدام MultiPolygon.
 * يُعاد الكائن الهندسي WKT `LINESTRING` عند استخدام LineString.
@@ -253,6 +256,44 @@ SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6)
 
 ```response
 [[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
+```
+
+<div id="readwktmultipoint">
+  ## readWKTMultiPoint
+</div>
+
+يُحلّل تمثيل «النص المعروف جيدًا» (WKT) لهندسة MultiPoint ويُرجعه بتنسيق ClickHouse الداخلي.
+
+<div id="syntax-readwktmultipoint">
+  ### صيغة
+</div>
+
+```sql
+readWKTMultiPoint(wkt_string)
+```
+
+<div id="arguments-readwktmultipoint">
+  ### الوسيطات
+</div>
+
+* `wkt_string`: سلسلة WKT للإدخال التي تمثّل هندسة MultiPoint.
+
+<div id="returned-value">
+  ### القيمة المُعادة
+</div>
+
+تُرجع الدالة التمثيل الداخلي في ClickHouse لهندسة النقاط المتعددة.
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+SELECT readWKTMultiPoint('MULTIPOINT (1 1, 2 2, 3 3)');
+```
+
+```response
+[(1,1),(2,2),(3,3)]
 ```
 
 <div id="readwktring">
@@ -500,6 +541,44 @@ SELECT readWKBMultiLineString(unhex('0105000000020000000102000000030000000000000
 </div>
 
 UInt8، وتكون 0 للقيمة false و1 للقيمة true
+
+<div id="readwkbmultipoint">
+  ## readWKBMultiPoint
+</div>
+
+يحلّل تمثيل Well-Known Binary ‏(WKB) لشكل هندسي من نوع MultiPoint ويعيده بتنسيق ClickHouse الداخلي.
+
+<div id="syntax-readwktmultipoint">
+  ### صيغة
+</div>
+
+```sql
+readWKBMultiPoint(wkb_string)
+```
+
+<div id="arguments-readwktmultipoint">
+  ### الوسيطات
+</div>
+
+* `wkb_string`: سلسلة WKB المدخلة التي تمثل هندسة MultiPoint.
+
+<div id="returned-value">
+  ### القيمة المُعادة
+</div>
+
+تُرجع الدالة التمثيل الداخلي في ClickHouse لهندسة النقاط المتعددة.
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+SELECT readWKBMultiPoint(unhex('0104000000020000000101000000000000000000f03f000000000000f03f010100000000000000000000400000000000000040'));
+```
+
+```response
+[(1,1),(2,2)]
+```
 
 <div id="polygonsdistancespherical">
   ## polygonsDistanceSpherical
@@ -770,6 +849,78 @@ SELECT polygonsIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 </div>
 
 UInt8، 0 لـ false، و1 لـ true
+
+<div id="geometryintersectcartesian">
+  ## geometryIntersectCartesian
+</div>
+
+تُرجع true إذا تقاطع شكلان هندسيان (أي إذا اشتركا في أي نقطة أو خط أو مساحة).
+
+بخلاف [`polygonsIntersectCartesian`](#polygonsintersectcartesian)، فهي تقبل أي نوع بيانات هندسي
+(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)، بما في ذلك النوع العام
+[`Geometry`](/ar/reference/data-types/geo#geometry)، ويمكن أن تكون الوسيطتان من نوعين مختلفين.
+
+تكون الإحداثيات في نظام الإحداثيات الديكارتية.
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+
+```response
+1
+```
+
+<div id="input-parameters-3">
+  ### معلمة الإدخال
+</div>
+
+شكلان هندسيان من أي نوع من أنواع البيانات الهندسية (أو `Geometry`).
+
+<div id="returned-value">
+  ### القيمة المُعادة
+</div>
+
+UInt8، 0 للقيمة false، و1 للقيمة true
+
+<div id="geometryintersectspherical">
+  ## geometryIntersectSpherical
+</div>
+
+تُرجع `true` إذا كان شكلان هندسيان يتقاطعان (أي يشتركان في أي نقطة أو خط أو مساحة).
+
+بخلاف [`polygonsIntersectSpherical`](#polygonsintersectspherical)، فإنها تقبل أي نوع بيانات هندسي
+(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`)، بما في ذلك النوع العام
+[`Geometry`](/ar/reference/data-types/geo#geometry)، ويمكن أن تكون الوسيطتان من نوعين مختلفين.
+
+تُفسَّر الإحداثيات على أنها تقع على كرة مثالية.
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+
+```response
+1
+```
+
+<div id="input-parameters">
+  ### معلمات الإدخال
+</div>
+
+شكلان هندسيان من أي نوع من أنواع البيانات الهندسية (أو `Geometry`).
+
+<div id="returned-value">
+  ### القيمة المُعادة
+</div>
+
+UInt8، و0 لـ false، و1 لـ true
 
 <div id="polygonconvexhullcartesian">
   ## polygonConvexHullCartesian

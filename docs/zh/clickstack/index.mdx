@@ -2,7 +2,7 @@
 title: 'ClickStack'
 sidebarTitle: '首页'
 description: '基于 ClickHouse 的开源可观测性技术栈，统一日志、链路追踪、指标和会话'
-mode: "custom"
+mode: "wide"
 ---
 
 export function useDark() {
@@ -36,7 +36,6 @@ export const CsCard = ({ title, img, darkImg, abbr, href, dark }) => {
         backgroundColor: dark ? 'rgba(65,65,65,0.5)' : '#ffffff',
         boxShadow: dark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.1)',
         cursor: 'pointer',
-        transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
       }}
     >
       {img ? (

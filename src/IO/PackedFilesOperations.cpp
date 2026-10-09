@@ -216,17 +216,16 @@ void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskP
         out->finalize();
     }
 
-    writer.finalize(
-        [&](String serialised_data, const WriteSettings & settings, bool need_sync)
-        {
-            auto buf =  disk_out->writeFile(output_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-            buf->write(serialised_data.data(), serialised_data.size());
-            buf->finalize();
-            if (need_sync)
-                buf->sync();
-        },
-        file_order_hint,
-        PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    /// Prepare the index before the destination file is opened, so that a failure does not leave
+    /// a truncated archive behind.
+    auto plan = writer.prepareFinalize(file_order_hint, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+
+    auto buf = disk_out->writeFile(output_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, writer.getWriteSettings());
+    writer.finalize(*buf, plan);
+
+    buf->finalize();
+    if (plan.need_sync)
+        buf->sync();
 }
 
 void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_dir, Strings file_order_hint)

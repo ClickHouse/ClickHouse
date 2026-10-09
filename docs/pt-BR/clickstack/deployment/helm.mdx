@@ -51,17 +51,13 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
 <br />
 
 <Steps>
-  <Step>
-    ### Pré-requisitos
-
+  <Step title="Pré-requisitos" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * cluster Kubernetes (v1.20+ recomendado)
     * `kubectl` configurado para interagir com o seu cluster
   </Step>
 
-  <Step>
-    ### Adicione o repositório Helm do ClickStack
-
+  <Step title="Adicione o repositório Helm do ClickStack" id="add-the-clickstack-helm-repository">
     Adicione o repositório Helm do ClickStack:
 
     ```shell
@@ -70,9 +66,7 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
     ```
   </Step>
 
-  <Step>
-    ### Instale os operadores
-
+  <Step title="Instale os operadores" id="install-the-operators">
     Instale primeiro o chart do operador. Isso registra as CRDs necessárias para o chart principal:
 
     ```shell
@@ -86,9 +80,7 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
     ```
   </Step>
 
-  <Step>
-    ### Instale o ClickStack
-
+  <Step title="Instale o ClickStack" id="installing-clickstack">
     Quando os operators estiverem em execução, instale o chart principal:
 
     ```shell
@@ -96,9 +88,7 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
     ```
   </Step>
 
-  <Step>
-    ### Verifique a instalação
-
+  <Step title="Verifique a instalação" id="verify-the-installation">
     Verifique a instalação:
 
     ```shell
@@ -108,9 +98,7 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
     Quando todos os pods estiverem prontos, prossiga.
   </Step>
 
-  <Step>
-    ### Encaminhamento de portas
-
+  <Step title="Encaminhamento de portas" id="forward-ports">
     O encaminhamento de portas permite acessar e configurar o HyperDX. Usuários que implantam em produção devem, em vez disso, expor o serviço por meio de uma Entrada ou de um balanceador de carga para garantir acesso adequado à rede, terminação TLS e escalabilidade. O encaminhamento de portas é mais indicado para desenvolvimento local ou tarefas administrativas pontuais, não para ambientes de longo prazo ou de alta disponibilidade.
 
     ```shell
@@ -126,9 +114,7 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
     </Tip>
   </Step>
 
-  <Step>
-    ### Acesse a UI
-
+  <Step title="Acesse a UI" id="navigate-to-the-ui">
     Acesse [http://localhost:8080](http://localhost:8080) para abrir a UI do HyperDX.
 
     Crie um usuário, informando um nome de usuário e uma senha que atendam aos requisitos.
@@ -144,9 +130,7 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
     </Info>
   </Step>
 
-  <Step>
-    ### Personalizando os valores (opcional)
-
+  <Step title="Personalizando os valores (opcional)" id="customizing-values">
     Você pode personalizar as configurações usando as flags `--set`. Por exemplo:
 
     ```shell
@@ -188,9 +172,7 @@ O chart oferece suporte às práticas recomendadas padrão do Kubernetes, inclui
     ```
   </Step>
 
-  <Step>
-    ### Usando Secrets (opcional)
-
+  <Step title="Usando Secrets (opcional)" id="using-secrets">
     O chart v2.x usa um Secret unificado (`clickstack-secret`) preenchido a partir de `hyperdx.secrets` definidos nos seus values. Todas as variáveis de ambiente sensíveis — incluindo senhas do ClickHouse, senhas do MongoDB e a API key do HyperDX — passam por esse único Secret.
 
     Para substituir os valores do Secret:

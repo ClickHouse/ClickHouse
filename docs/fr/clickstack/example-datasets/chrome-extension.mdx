@@ -41,18 +41,14 @@ Pour en savoir plus sur le session replay et son intégration dans ClickStack, c
 </div>
 
 <Steps>
-  <Step>
-    ### Cloner le dépôt de l’extension
-
+  <Step title="Cloner le dépôt de l’extension" id="clone-extension">
     ```shell
     git clone https://github.com/kyreddie/hyperdx-chrome-extension
     cd hyperdx-chrome-extension
     ```
   </Step>
 
-  <Step>
-    ### Installer l’extension
-
+  <Step title="Installer l’extension" id="install-extension">
     1. Ouvrez Chrome et accédez à `chrome://extensions`.
     2. Activez **Developer mode** (en haut à droite).
     3. Cliquez sur **Load unpacked**.
@@ -61,12 +57,10 @@ Pour en savoir plus sur le session replay et son intégration dans ClickStack, c
     L’extension apparaît dans votre barre d’outils sous le nom **HyperDX Browser Extension**.
   </Step>
 
-  <Step>
-    ### Démarrer ClickStack
-
+  <Step title="Démarrer ClickStack" id="start-clickstack">
     Si vous disposez déjà d’un point de terminaison d’ingestion ClickStack ou HyperDX, passez à [Configurer l’extension](#configure-extension).
 
-    Pour une instance locale de ClickStack, démarrez le collecteur OpenTelemetry. Remplacez `{{CLICKHOUSE_ENDPOINT}}` et `{{CLICKHOUSE_PASSWORD}}` par vos informations de connexion ClickHouse :
+    Pour une instance locale de ClickStack, démarrez le collector OpenTelemetry. Remplacez `{{CLICKHOUSE_ENDPOINT}}` et `{{CLICKHOUSE_PASSWORD}}` par vos informations de connexion ClickHouse :
 
     ```shell
     export CLICKHOUSE_ENDPOINT={{CLICKHOUSE_ENDPOINT}}
@@ -87,17 +81,13 @@ Pour en savoir plus sur le session replay et son intégration dans ClickStack, c
     Pour un déploiement local complet avec ClickHouse et l’UI HyperDX, consultez [Bien démarrer avec ClickStack](/fr/clickstack/getting-started/oss).
   </Step>
 
-  <Step>
-    ### Obtenir votre API key
-
-    Pour une instance locale de ClickStack, une API key n’est pas toujours nécessaire — laissez le champ vide dans l’extension lorsque vous envoyez des données de télémétrie à un collecteur autohébergé sur `http://localhost:4318`.
+  <Step title="Obtenir votre API key" id="get-api-key">
+    Pour une instance locale de ClickStack, une API key n’est pas toujours nécessaire — laissez le champ vide dans l’extension lorsque vous envoyez des données de télémétrie à un collector autohébergé sur `http://localhost:4318`.
 
     Pour l’ingestion dans ClickStack Cloud ou HyperDX Cloud, ouvrez HyperDX, accédez à **Team Settings → API Keys**, puis copiez votre **API key d’ingestion**.
   </Step>
 
-  <Step>
-    ### Configurer l’extension
-
+  <Step title="Configurer l’extension" id="configure-extension">
     Cliquez sur l’icône **HyperDX Browser Extension** dans la barre d’outils de Chrome et renseignez les paramètres :
 
     | Champ                            | Exemple ClickStack local              | Remarques                                                                                               |
@@ -116,20 +106,16 @@ Pour en savoir plus sur le session replay et son intégration dans ClickStack, c
 
     <Image img="/images/clickstack/chrome-extension/extension-config.png" alt="Fenêtre contextuelle de configuration de l’extension Chrome HyperDX avec des paramètres ClickStack locaux" size="sm" />
 
-    La capture d’écran ci-dessus montre une configuration locale typique : monitoring activé, nom du service défini, collecteur pointant vers `http://localhost:4318`, et propagation des traces limitée aux URL d’API et localhost.
+    La capture d’écran ci-dessus montre une configuration locale typique : monitoring activé, nom du service défini, collector pointant vers `http://localhost:4318`, et propagation des traces limitée aux URL d’API et localhost.
   </Step>
 
-  <Step>
-    ### Parcourir un site et générer une session
-
+  <Step title="Parcourir un site et générer une session" id="browse-site">
     Ouvrez n’importe quel site web ou application locale dans Chrome — par exemple, [http://localhost:3000](http://localhost:3000) pour un serveur de développement frontend.
 
     Interagissez normalement avec la page : cliquez sur des liens, soumettez des formulaires, déclenchez des erreurs et naviguez entre les vues. L’extension injecte automatiquement le Browser SDK à chaque chargement de page lorsque la configuration est valide.
   </Step>
 
-  <Step>
-    ### Afficher votre session replay
-
+  <Step title="Afficher votre session replay" id="view-session-replay">
     Revenez à HyperDX à l’adresse [http://localhost:8080](http://localhost:8080) et accédez à **Client Sessions** depuis la barre latérale gauche.
 
     Vous devriez voir votre session apparaître avec sa durée et son nombre d’événements. Cliquez sur le bouton ▶️ pour la rejouer.

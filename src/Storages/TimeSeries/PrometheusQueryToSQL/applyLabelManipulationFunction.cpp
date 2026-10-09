@@ -4,8 +4,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
+#include <Common/isValidUTF8.h>
+#include <Common/quoteString.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeNoDuplicateSeriesPerStepCheck.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <base/insertAtEnd.h>
 
@@ -24,8 +27,37 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    /// Checks that a label name argument is a valid label name.
+    /// Reads the text from the string literal node, because `SQLQueryPiece::string_value` isn't set
+    /// if the evaluation range of the literal is empty (see `fromLiteral`).
+    void checkLabelName(const PrometheusQueryTree::Function * function_node, size_t argument_index)
+    {
+        const auto & function_name = function_node->function_name;
+        const auto * argument_node = function_node->getArguments().at(argument_index);
+        if (argument_node->node_type != PrometheusQueryTree::NodeType::StringLiteral)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                "Function '{}' expects a string literal in argument #{}",
+                function_name,
+                argument_index + 1);
+        }
+
+        const auto & label_name = static_cast<const PrometheusQueryTree::StringLiteral *>(argument_node)->string;
+        if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                "Function '{}' received invalid label name {} in argument #{}",
+                function_name,
+                quoteString(label_name),
+                argument_index + 1);
+        }
+    }
+
     /// Checks if the types of the specified arguments are valid for a label manipulation function.
-    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
@@ -64,6 +96,18 @@ namespace
                                 "Function '{}' expects argument #{} of type {}, but expression {} has type {}",
                                 function_name, i + 1, ResultType::STRING, getPromQLText(argument, context), argument.type);
             }
+        }
+
+        if (function_name == "label_replace")
+        {
+            checkLabelName(function_node, 1);
+        }
+        else
+        {
+            for (size_t i = 3; i < arguments.size(); ++i)
+                checkLabelName(function_node, i);
+
+            checkLabelName(function_node, 1);
         }
     }
 
@@ -119,14 +163,24 @@ bool isLabelManipulationFunction(std::string_view function_name)
 }
 
 
-SQLQueryPiece
-applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyLabelManipulationFunction(
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(function_node, arguments, context);
 
     const auto & function_name = function_node->function_name;
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
+
+    /// Prometheus doesn't validate the source label of `label_replace`, and a label with an empty or invalid UTF-8 name
+    /// can't exist there, so such a source label always behaves like a missing label. The tags stored in a `TimeSeries` table
+    /// can have invalid UTF-8 names, so we replace such a source label with the empty name, which can't be stored.
+    if (function_name == "label_replace")
+    {
+        auto & src_label = arguments[3].string_value;
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(src_label.data()), src_label.size()))
+            src_label.clear();
+    }
 
     chassert(arguments.size() >= 2);
     auto & first_argument = arguments[0];
@@ -158,7 +212,8 @@ applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<
             SelectQueryBuilder builder;
 
             ASTs group_function_args;
-            group_function_args.push_back(make_intrusive<ASTLiteral>(0u)); /// Group "0" means no tags
+            group_function_args.push_back(makeASTFunction(
+                "CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"))); /// Group "0" means no tags
 
             size_t array_argument_index = impl_info->array_argument_index;
             insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
@@ -179,7 +234,7 @@ applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<
             else
             {
                 ASTPtr value = (first_argument.store_method == StoreMethod::CONST_SCALAR)
-                    ? timeSeriesScalarToAST(first_argument.scalar_value, context.scalar_data_type)
+                    ? timeSeriesScalarToAST(first_argument.scalar_value)
                     : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
                 values = makeASTFunction(
@@ -212,10 +267,13 @@ applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<
         case StoreMethod::VECTOR_GRID:
         {
             /// Step 1:
-            /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, any(values) AS values
+            /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, anyForEach(values) AS values
             /// FROM <vector_grid>
             /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
+            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(values)), new_group) = 0
+            ///
+            /// Series which get the same `new_group` are merged step by step; an exception is thrown only if two of them
+            /// have values at the same step, that's how Prometheus evaluates it.
             ASTPtr label_replacing_query;
             {
                 SelectQueryBuilder builder;
@@ -234,7 +292,7 @@ applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<
                 builder.select_list.push_back(std::move(group_function));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-                builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                builder.select_list.push_back(makeNoDuplicateSeriesPerStepValues(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
                 builder.select_list.back()->setAlias(ColumnNames::Values);
 
                 context.subqueries.emplace_back(
@@ -243,13 +301,9 @@ applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<
 
                 builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-                builder.having = makeASTFunction(
-                    "equals",
-                    makeASTFunction(
-                        "timeSeriesThrowDuplicateSeriesIf",
-                        makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u)),
-                        make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
-                    make_intrusive<ASTLiteral>(0u));
+                builder.having = makeNoDuplicateSeriesPerStepCheck(
+                    make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Values}),
+                    make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
                 label_replacing_query = builder.getSelectQuery();
             }

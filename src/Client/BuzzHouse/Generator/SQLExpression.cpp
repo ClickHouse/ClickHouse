@@ -106,7 +106,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                 uint32_t col_counter = 0;
 
                 const uint64_t type_mask_backup = this->next_type_mask;
-                this->next_type_mask = fc.type_mask & ~(allow_nested);
+                this->next_type_mask = fc.type_mask & ~allow_nested;
                 auto tp = randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type());
                 this->next_type_mask = type_mask_backup;
             }
@@ -116,7 +116,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
             uint32_t col_counter = 0;
 
             const uint64_t type_mask_backup = this->next_type_mask;
-            this->next_type_mask = fc.type_mask & ~(allow_nested);
+            this->next_type_mask = fc.type_mask & ~allow_nested;
             auto tp = randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type());
             this->next_type_mask = type_mask_backup;
         }
@@ -330,7 +330,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
             std::uniform_int_distribution<int> jrange(1, 10);
 
             lv->set_no_quote_str(
-                fmt::format("'{}'{}", strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator)), complex ? "::JSON" : ""));
+                fmt::format(
+                    "'{}'{}",
+                    strBuildJSON(rg, jrange(rg.generator), jrange(rg.generator), this->fc.fuzz_floating_points),
+                    complex ? "::JSON" : ""));
         }
         break;
         case LitOp::LitNULLVal: lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL); break;
@@ -496,13 +499,28 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     /// Use search functions more often
     SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
     static const std::vector<std::string> searchFuncs
-        = {"endsWith", "has", "hasToken", "hasTokenOrNull", "mapContains", "match", "hasAllTokens", "hasAnyTokens", "startsWith"};
+        = {"endsWith",
+           "has",
+           "notHas",
+           "hasToken",
+           "hasTokenOrNull",
+           "hasTokenCaseInsensitive",
+           "hasTokenCaseInsensitiveOrNull",
+           "hasPhrase",
+           "matchPhrase",
+           "mapContains",
+           "match",
+           "hasAllTokens",
+           "hasAnyTokens",
+           "startsWith"};
     const auto & nfunc = rg.pickRandomly(searchFuncs);
+    const bool is_phrase = nfunc == "hasPhrase" || nfunc == "matchPhrase";
+    const bool is_multi_token = nfunc == "hasAnyTokens" || nfunc == "hasAllTokens";
 
     sfc->mutable_func()->set_catalog_func(nfunc);
     Expr * res = sfc->add_args()->mutable_expr();
     Expr * expr2 = sfc->add_args()->mutable_expr();
-    if ((nfunc == "hasAnyTokens" || nfunc == "hasAllTokens") && rg.nextBool())
+    if (is_multi_token && rg.nextBool())
     {
         ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 5)) + 1;
@@ -513,22 +531,53 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
             next->mutable_lit_val()->set_string_lit(rg.nextTokenString());
         }
     }
+    else if (is_phrase)
+    {
+        /// Several tokens, otherwise the phrase degenerates into a single-token search.
+        String buf = rg.nextTokenString();
+
+        for (uint32_t i = 0, nextra = rg.randomInt<uint32_t>(1, 2); i < nextra; i++)
+        {
+            buf += " " + rg.nextTokenString();
+        }
+        expr2->mutable_lit_val()->set_string_lit(std::move(buf));
+    }
     else
     {
         expr2->mutable_lit_val()->set_string_lit(rg.nextTokenString());
     }
+    /// The optional tokenizer argument defaults to `splitByNonAlpha`. One that disagrees with the
+    /// index's makes the index unusable for the predicate, and `hasPhrase` rejects some outright.
+    if ((is_phrase || is_multi_token) && rg.nextSmallNumber() < 4)
+    {
+        static const DB::Strings tokenizerVals
+            = {"splitByNonAlpha", "splitByString", "ngrams", "array", "keyword", "sparseGrams", "asciiCJK", "unicodeWord"};
+
+        sfc->add_args()->mutable_expr()->mutable_lit_val()->set_string_lit(
+            rg.pickRandomly(this->fc.tokenizers.empty() ? tokenizerVals : this->fc.tokenizers));
+    }
     return res;
 }
 
-void StatementGenerator::generateExprIn(RandomGenerator & rg, ExprInType * expr)
+void StatementGenerator::generateExprIn(RandomGenerator & rg, const bool allow_empty, ExprInType * expr)
 {
-    const uint32_t nopt = rg.nextSmallNumber();
+    const uint32_t nopt = rg.nextMediumNumber();
 
-    if (nopt < 5 && this->allow_subqueries)
+    if (allow_empty && nopt < 4)
+    {
+        expr->set_empty_list(rg.nextBool());
+    }
+    else if (allow_empty && nopt < 21 && this->allow_not_deterministic && collectionHas<SQLTable>(attached_tables))
+    {
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+
+        t.setName(expr->mutable_tbl(), false);
+    }
+    else if (nopt < 41 && this->allow_subqueries)
     {
         this->generateSubquery(rg, expr->mutable_sel());
     }
-    else if (nopt < 9)
+    else if (nopt < 81)
     {
         ExprList * elist2 = rg.nextBool() ? expr->mutable_tuple() : expr->mutable_array();
         const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
@@ -647,7 +696,9 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             {
                 this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
             }
-            generateExprIn(rg, ein->mutable_in_type());
+            /// An empty set on the right requires a single expression on the left,
+            /// otherwise the tuple sizes don't match
+            generateExprIn(rg, nclauses == 1, ein->mutable_in_type());
             this->depth--;
         }
         break;
@@ -662,7 +713,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->depth++;
             this->generateExpression(rg, eany->mutable_expr());
             this->width++;
-            generateExprIn(rg, eany->mutable_in_type());
+            /// ANY/ALL/SOME don't accept an empty set
+            generateExprIn(rg, false, eany->mutable_in_type());
             this->width--;
             this->depth--;
         }
@@ -1217,7 +1269,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
             casexpr->set_simple(rg.nextMediumNumber() < 16);
             this->depth++;
-            this->next_type_mask = fc.type_mask & ~(allow_nested);
+            this->next_type_mask = fc.type_mask & ~allow_nested;
             auto tp = randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type());
             this->next_type_mask = type_mask_backup;
             this->generateExpression(rg, casexpr->mutable_expr());

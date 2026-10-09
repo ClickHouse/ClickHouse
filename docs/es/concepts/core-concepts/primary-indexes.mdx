@@ -62,13 +62,23 @@ A continuación, mostramos de forma esquemática cómo se utiliza el índice pri
 
 <br />
 
-① La consulta de ejemplo incluye un predicado sobre ambas columnas de la clave primaria: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+<Steps>
+  <Step title="Analizar el predicado de la consulta">
+    La consulta de ejemplo incluye un predicado sobre ambas columnas de la clave primaria: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+  </Step>
 
-② Para acelerar la consulta, ClickHouse carga en memoria el índice primario de la tabla.
+  <Step title="Cargar el índice primario">
+    Para acelerar la consulta, ClickHouse carga en memoria el índice primario de la tabla.
+  </Step>
 
-③ A continuación, examina las entradas del índice para identificar qué gránulos podrían contener filas que coincidan con el predicado; es decir, qué gránulos no se pueden omitir.
+  <Step title="Identificar los gránulos coincidentes">
+    A continuación, examina las entradas del índice para identificar qué gránulos podrían contener filas que coincidan con el predicado; es decir, qué gránulos no se pueden omitir.
+  </Step>
 
-④ Después, estos gránulos potencialmente relevantes se cargan y se [procesan](/es/concepts/core-concepts/query-parallelism) en memoria, junto con los gránulos correspondientes de cualquier otra columna necesaria para la consulta.
+  <Step title="Cargar y procesar gránulos">
+    Después, estos gránulos potencialmente relevantes se cargan y se [procesan](/es/concepts/core-concepts/query-parallelism) en memoria, junto con los gránulos correspondientes de cualquier otra columna necesaria para la consulta.
+  </Step>
+</Steps>
 
 <div id="monitoring-primary-indexes">
   ## Supervisión de índices primarios
@@ -201,6 +211,6 @@ SELECT count() FROM uk.uk_price_paid_simple;
   ## Dónde encontrar más información
 </div>
 
-Si quieres profundizar en cómo funcionan los índices primarios dispersos en ClickHouse, incluidas sus diferencias con los índices de bases de datos tradicionales y las buenas prácticas para utilizarlos, consulta nuestro [análisis detallado](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) sobre indexación.
+Para profundizar en cómo funcionan los índices primarios dispersos en ClickHouse, incluidas sus diferencias con los índices tradicionales de base de datos y las buenas prácticas para utilizarlos, consulta nuestra [guía detallada](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) sobre indexación.
 
-Si te interesa cómo ClickHouse procesa en paralelo, de forma muy eficiente, los datos seleccionados por el escaneo del índice primario, consulta la guía sobre paralelismo de consultas [aquí](/es/concepts/core-concepts/query-parallelism).
+Si te interesa cómo ClickHouse procesa, de forma altamente paralela, los datos seleccionados por el recorrido del índice primario, consulta la guía sobre paralelismo de consultas [aquí](/es/concepts/core-concepts/query-parallelism).

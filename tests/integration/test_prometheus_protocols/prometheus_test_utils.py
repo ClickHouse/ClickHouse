@@ -38,6 +38,25 @@ def convert_time_series_to_protobuf(time_series):
     return write_request
 
 
+# Converts metrics metadata
+# [ (metric_family_name, metric_type, help, unit), ... ]
+# to a protobuf message of type remote_pb2.WriteRequest.
+# `metric_type` is the name of a value of the types_pb2.MetricMetadata.MetricType enum,
+# e.g. "COUNTER" or "GAUGE".
+def convert_metrics_metadata_to_protobuf(metrics_metadata):
+    write_request = remote_pb2.WriteRequest()
+    for metric_family_name, metric_type, help, unit in metrics_metadata:
+        write_request.metadata.append(
+            types_pb2.MetricMetadata(
+                metric_family_name=metric_family_name,
+                type=types_pb2.MetricMetadata.MetricType.Value(metric_type),
+                help=help,
+                unit=unit,
+            )
+        )
+    return write_request
+
+
 # Loads a preset from folder "presets". The function returns a protobuf message of type remote_pb2.WriteRequest.
 def load_preset(preset_name):
     preset_fullname = os.path.join(PRESETS_DIR, preset_name)
@@ -83,10 +102,10 @@ def load_preset_from_file(preset_file):
 
 # Sends a protobuf message of type remote_pb2.WriteRequest to specified host and port via the RemoteWrite protocol.
 def send_protobuf_to_remote_write(
-    host, port, path, write_request_proto, content_encoding="snappy"
+    host, port, path, write_request_proto, content_encoding="snappy", headers=None
 ):
     response = get_response_to_remote_write(
-        host, port, path, write_request_proto, content_encoding
+        host, port, path, write_request_proto, content_encoding, headers=headers
     )
     check_remote_write_response(response)
 
@@ -108,22 +127,25 @@ def get_response_to_remote_write(
     write_request_proto,
     content_encoding="snappy",
     content_type="application/x-protobuf",
+    headers=None,
 ):
     url = f"http://{host}:{port}/{path.strip('/')}"
     print(
         f"Posting {url} with Content-Encoding: {content_encoding}, Content-Type: {content_type}"
     )
+    request_headers = {
+        "Content-Encoding": content_encoding,
+        "Content-Type": content_type,
+        "User-Agent": requests.utils.default_user_agent(),
+        "X-Prometheus-Remote-Write-Version": "0.1.0",
+    }
+    request_headers.update(headers or {})
     response = requests.post(
         url,
         data=compress_remote_write_request(
             write_request_proto.SerializeToString(), content_encoding
         ),
-        headers={
-            "Content-Encoding": content_encoding,
-            "Content-Type": content_type,
-            "User-Agent": requests.utils.default_user_agent(),
-            "X-Prometheus-Remote-Write-Version": "0.1.0",
-        },
+        headers=request_headers,
     )
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"
@@ -140,17 +162,20 @@ def check_remote_write_response(response):
 
 # Prepares a protobuf of type remote_pb2.ReadRequest to read time series via the RemoteRead protocol.
 def convert_read_request_to_protobuf(
-    metric_name_regexp, start_timestamp, end_timestamp
+    metric_name_regexp, start_timestamp, end_timestamp, matchers=None
 ):
     read_request = remote_pb2.ReadRequest()
     query = remote_pb2.Query()
     query.start_timestamp_ms = int(round(float(start_timestamp) * 1000))
     query.end_timestamp_ms = int(round(float(end_timestamp) * 1000))
-    matcher = types_pb2.LabelMatcher()
-    matcher.type = types_pb2.LabelMatcher.Type.RE
-    matcher.name = "__name__"
-    matcher.value = metric_name_regexp
-    query.matchers.append(matcher)
+    if matchers is None:
+        matchers = [(types_pb2.LabelMatcher.Type.RE, "__name__", metric_name_regexp)]
+    for matcher_type, name, value in matchers:
+        matcher = types_pb2.LabelMatcher()
+        matcher.type = matcher_type
+        matcher.name = name
+        matcher.value = value
+        query.matchers.append(matcher)
     read_request.queries.append(query)
     return read_request
 

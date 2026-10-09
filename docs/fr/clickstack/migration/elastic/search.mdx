@@ -13,19 +13,19 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   ## Recherche dans ClickStack et Elastic
 </div>
 
-ClickHouse est un moteur nativement SQL, conçu dès le départ pour les charges de travail analytiques à hautes performances. À l&#39;inverse, Elasticsearch propose une interface de type SQL, en transpilant le SQL vers le DSL de requête Elasticsearch sous-jacent — autrement dit, SQL n&#39;y est pas pris en charge nativement, et la [parité fonctionnelle](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) reste limitée.
+ClickHouse est un moteur nativement SQL, conçu dès le départ pour les charges de travail analytiques à hautes performances. À l’inverse, Elasticsearch propose une interface de type SQL, en transpilant le SQL vers le DSL de requête Elasticsearch sous-jacent — autrement dit, SQL n’y est pas pris en charge nativement, et la [parité fonctionnelle](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) reste limitée.
 
-ClickHouse prend non seulement en charge l&#39;ensemble du SQL, mais l&#39;étend également avec une série de fonctions axées sur l&#39;observabilité, comme [`argMax`](/fr/reference/functions/aggregate-functions/argMax), [`histogram`](/fr/reference/functions/aggregate-functions/parametric-functions#histogram) et [`quantileTiming`](/fr/reference/functions/aggregate-functions/quantileTiming), qui simplifient les requêtes sur des logs, metrics et traces structurés.
+ClickHouse prend non seulement en charge l’ensemble du SQL, mais l’étend également avec une série de fonctions axées sur l’observabilité, comme [`argMax`](/fr/reference/functions/aggregate-functions/argMax), [`histogram`](/fr/reference/functions/aggregate-functions/parametric-functions#histogram) et [`quantileTiming`](/fr/reference/functions/aggregate-functions/quantileTiming), qui simplifient les requêtes sur des logs, metrics et traces structurés.
 
-Pour explorer simplement les logs et les traces, la ClickStack UI (HyperDX) fournit une [syntaxe de type Lucene](/fr/clickstack/features/search) permettant un filtrage textuel intuitif sur des requêtes champ-valeur, des plages, des caractères génériques, etc. Cela est comparable à la [syntaxe Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) dans Elasticsearch, ainsi qu&#39;à certains éléments du [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
+Pour explorer simplement les logs et les traces, la ClickStack UI (HyperDX) fournit une [syntaxe de type Lucene](/fr/clickstack/features/search) permettant un filtrage textuel intuitif sur des requêtes champ-valeur, des plages, des caractères génériques, etc. Cela est comparable à la [syntaxe Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) dans Elasticsearch, ainsi qu’à certains éléments du [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
 
 <Image img="/images/use-cases/observability/hyperdx-search.webp" alt="Recherche" size="lg" />
 
-L&#39;interface de recherche prend en charge cette syntaxe familière, mais la traduit en arrière-plan en clauses SQL `WHERE` efficaces. L&#39;expérience reste ainsi familière pour les utilisateurs de Kibana, tout en leur permettant d&#39;exploiter, si nécessaire, toute la puissance du SQL. Vous pouvez ainsi tirer parti de toute la gamme des [string search functions](/fr/reference/functions/regular-functions/string-search-functions), des [similarity functions](/fr/reference/functions/regular-functions/string-functions#stringJaccardIndex) et des [fonctions de date et heure](/fr/reference/functions/regular-functions/date-time-functions) dans ClickHouse.
+L’interface de recherche prend en charge cette syntaxe familière, mais la traduit en arrière-plan en clauses SQL `WHERE` efficaces. L’expérience reste ainsi familière pour les utilisateurs de Kibana, tout en leur permettant d’exploiter, si nécessaire, toute la puissance du SQL. Vous pouvez ainsi tirer parti de toute la gamme des [string search functions](/fr/reference/functions/regular-functions/string-search-functions), des [similarity functions](/fr/reference/functions/regular-functions/string-functions#stringJaccardIndex) et des [fonctions de date et heure](/fr/reference/functions/regular-functions/date-time-functions) dans ClickHouse.
 
 <Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
 
-Ci-dessous, nous comparons les langages de requête Lucene de ClickStack et d&#39;Elasticsearch.
+Ci-dessous, nous comparons les langages de requête Lucene de ClickStack et d’Elasticsearch.
 
 <div id="clickstack-vs-elasticsearch-query-string">
   ## Syntaxe de recherche ClickStack vs query string Elasticsearch

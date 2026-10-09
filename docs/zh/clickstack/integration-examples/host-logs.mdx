@@ -34,19 +34,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * 具备修改 ClickStack 配置文件的权限
 
 <Steps>
-  <Step>
-    #### 验证 syslog 文件是否存在
-
+  <Step title="验证 syslog 文件是否存在" id="verify-syslog">
     首先，确认系统正在写入 syslog 文件：
 
     ```bash
-    # 检查 syslog 文件是否存在（Linux）
+    # Check if syslog files exist (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # 或在 macOS 上
+    # Or on macOS
     ls -la /var/log/system.log
 
-    # 查看最近的条目
+    # View recent entries
     tail -20 /var/log/syslog
     ```
 
@@ -57,9 +55,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * **macOS**: `/var/log/system.log`
   </Step>
 
-  <Step>
-    #### 创建自定义 OTel collector 配置
-
+  <Step title="创建自定义 OTel collector 配置" id="custom-otel">
     ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。
 
     创建一个名为 `host-logs-monitoring.yaml` 的文件，并填入适用于您系统的配置：
@@ -203,9 +199,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 配置 ClickStack 以加载自定义配置
-
+  <Step title="配置 ClickStack 以加载自定义配置" id="load-custom">
     要在现有的 ClickStack 部署中启用自定义 collector 配置，您必须：
 
     1. 将自定义配置文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
@@ -219,14 +213,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 现有配置 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 其他环境变量 ...
+          # ... other environment variables ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... 其他卷挂载 ...
+          # ... other volumes ...
     ```
 
     ##### 选项 2：Docker Run (All-in-One 镜像)
@@ -247,9 +241,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
-
+  <Step title="在 HyperDX 中验证日志" id="verifying-logs">
     配置完成后，登录 HyperDX 并确认日志已开始流入：
 
     1. 进入搜索视图
@@ -270,9 +262,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 对于希望在配置生产系统之前先测试主机日志集成的用户，我们提供了一个预生成系统日志的演示数据集，其中包含贴近真实场景的日志模式。
 
 <Steps>
-  <Step>
-    #### 下载样本数据集
-
+  <Step title="下载样本数据集" id="download-sample">
     下载样本日志文件：
 
     ```bash
@@ -290,9 +280,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * 正常操作与重要事件混合出现
   </Step>
 
-  <Step>
-    #### 创建测试 collector 配置
-
+  <Step title="创建测试 collector 配置" id="test-config">
     创建一个名为 `host-logs-demo.yaml` 的文件，并写入以下配置：
 
     ```yaml
@@ -334,9 +322,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 使用演示配置运行 ClickStack
-
+  <Step title="使用演示配置运行 ClickStack" id="run-demo">
     使用演示日志和配置运行 ClickStack：
 
     ```bash
@@ -350,13 +336,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     <Note>
       **这会将日志文件直接挂载到容器中。这种方式仅用于使用静态演示数据进行测试。**
-
     </Note>
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证日志
-
+  <Step title="在 HyperDX 中验证日志" id="verify-demo-logs">
     ClickStack 运行后：
 
     1. 打开 [HyperDX](http://localhost:8080/) 并登录您的账户 (您可能需要先创建一个账户)
@@ -382,13 +365,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 为了帮助你开始使用 ClickStack 监控主机日志，我们提供了系统日志监控所需的关键可视化。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预构建仪表盘
-
+  <Step title="导入预构建仪表盘" id="import-dashboard">
     1. 打开 HyperDX 并进入仪表盘部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
@@ -399,9 +380,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="完成导入" />
   </Step>
 
-  <Step>
-    #### 查看仪表盘
-
+  <Step title="查看仪表盘" id="created-dashboard">
     该仪表盘创建后将自动预配置好所有可视化：
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="日志仪表盘" />
@@ -513,7 +492,7 @@ tail -5 /var/log/system.log
 * 为安全监控 (SSH 尝试、sudo 使用情况、防火墙拦截) 创建自定义仪表盘
 
 <div id="going-to-production">
-  ## 投入生产环境
+  ## 进入生产环境
 </div>
 
-本指南在 ClickStack 内置的 OpenTelemetry Collector 基础上进行了扩展，便于快速完成设置。对于生产环境中的部署，我们建议运行您自己的 OTel collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南使用 ClickStack 内置的 OpenTelemetry Collector，以便快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参见[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

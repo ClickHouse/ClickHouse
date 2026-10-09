@@ -1,0 +1,8 @@
+mutation pending on the read-only table: 1
+mutation still pending inside the window: 1
+toggle failed at the commit: 1
+still readonly after failed toggle: 1
+mutation still pending after failed toggle: 1
+rows after failed toggle: 10
+mutation executed after successful toggle: 1
+rows after successful toggle: 9

@@ -31,24 +31,18 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 接受您的专属报价
-
+  <Step title="接受您的专属报价" id="private-offer-accept">
     您应该已经收到一封电子邮件，其中包含用于查看并接受专属报价的链接。
 
     <Image img="/images/cloud/reference/mp_committed_spend_1.webp" size="md" alt="AWS Marketplace 专属报价电子邮件" />
   </Step>
 
-  <Step>
-    ### 查看报价链接
-
+  <Step title="查看报价链接" id="review-offer-link">
     点击电子邮件中的 Review Offer 链接。
     这会将您带到 AWS Marketplace 页面，查看专属报价的详细信息。
   </Step>
 
-  <Step>
-    ### 设置您的账户
-
+  <Step title="设置您的账户" id="setup-your-account">
     在 AWS 门户中完成订阅步骤，然后点击 **&quot;Set up your account&quot;**。
     此时务必要跳转到 ClickHouse Cloud，并注册新账户或使用现有账户登录。
     如果未完成此步骤，我们将无法把您的 AWS Marketplace 合同关联到 ClickHouse Cloud。
@@ -56,18 +50,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Image img="/images/cloud/reference/mp_committed_spend_2.webp" size="md" alt="AWS Marketplace 专属报价电子邮件" />
   </Step>
 
-  <Step>
-    ### 登录 Cloud
-
+  <Step title="登录 Cloud" id="login-cloud">
     跳转到 ClickHouse Cloud 后，您可以使用现有账户登录，或注册一个新账户。
     此步骤必不可少，这样我们才能将您的 ClickHouse Cloud 组织绑定到 AWS Marketplace 计费。
 
     <Image img="/images/cloud/reference/mp_committed_spend_3.webp" size="md" alt="AWS Marketplace 专属报价电子邮件" />
   </Step>
 
-  <Step>
-    ### 如为新用户，请注册
-
+  <Step title="如为新用户，请注册" id="register">
     如果您是 ClickHouse Cloud 新用户，请点击页面底部的“Register”。
     系统会提示您创建新用户并验证电子邮件地址。
     完成电子邮件验证后，您可以离开 ClickHouse Cloud 登录页面，并使用新用户名在 [https://console.clickhouse.cloud](https://console.clickhouse.cloud) 登录。
@@ -82,9 +72,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     如果您是现有 ClickHouse Cloud 用户，直接使用您的凭据登录即可。
   </Step>
 
-  <Step>
-    ### 创建或选择计费组织
-
+  <Step title="创建或选择计费组织" id="create-select-org-to-bill">
     成功登录后，您可以选择创建一个新组织来关联此市场合同的计费，或选择一个现有组织来关联此合同的计费。
 
     <Image img="/images/cloud/reference/mp_committed_spend_6.webp" size="md" alt="创建或选择一个组织以对此订阅计费" />

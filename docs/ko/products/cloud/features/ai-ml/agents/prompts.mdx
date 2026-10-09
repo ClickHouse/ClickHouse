@@ -7,7 +7,7 @@ keywords: ['AI', 'ClickHouse Cloud', 'agents', '프롬프트', '템플릿']
 doc_type: 'reference'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge />
@@ -22,12 +22,12 @@ Prompts 라이브러리는 자주 반복해 입력하는 자연어 프롬프트�
 
 * **Prompt Name** (필수) - 선택기에 표시되는 이름입니다. 구체적으로 작성하십시오. *&quot;WAU&quot;*보다는 *&quot;지역별 주간 활성 사용자 수&quot;*가 더 좋습니다.
 * **Text** (필수) - 컴포저에 실제로 삽입되는 텍스트입니다.
-* **Special variables** - **Special variables** 버튼을 클릭해 플레이스홀더를 삽입하거나 `{{name}}` 형식의 마커를 직접 입력할 수 있습니다. 선택기에서는 삽입 전에 값을 입력하라는 메시지가 표시됩니다.
-* **Category**, **Description**, **Command** (선택 사항) - 라이브러리 정리, 선택기 미리보기 텍스트, 빠른 실행 바로가기 설정에 사용됩니다.
+* **Special variables** - **Special variables** 버튼을 클릭해 플레이스홀더를 삽입하거나 `{{name}}` 형식의 마커를 직접 입력할 수 있습니다. 선택기에서는 삽입하기 전에 값을 입력하라는 메시지가 표시됩니다.
+* **Category**, **Description**, **Command** (선택 사항) - 라이브러리 정리, 선택기 미리보기 텍스트, 빠른 실행 바로가기에 사용됩니다.
 
 그런 다음 오른쪽 아래의 **Create Prompt**를 클릭하십시오.
 
-<Image img="/images/cloud/agent-builder/prompts/create-prompt.webp" alt="왼쪽에서 + 버튼이 강조 표시된 Prompts 패널과 오른쪽에서 Prompt Name, Text, Category, Special variables, Description, Command 필드 및 Create Prompt 버튼이 표시된 Create Prompt 양식" size="lg" />
+<Image img="/images/cloud/agent-builder/prompts/create-prompt.webp" alt="왼쪽에 + 버튼이 강조 표시된 Prompts 패널과 오른쪽에 Prompt Name, Text, Category, Special variables, Description, Command 필드 및 Create Prompt 버튼이 표시된 Create Prompt 양식" size="lg" />
 
 <div id="use-a-prompt">
   ## 프롬프트 사용

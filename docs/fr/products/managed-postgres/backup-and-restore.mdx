@@ -7,14 +7,14 @@ keywords: ['sauvegarde', 'restauration', 'restauration à un instant donné', 'p
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
 
-Managed Postgres garantit la sécurité et la disponibilité de vos données grâce à des sauvegardes automatisées et à la restauration à un instant donné. Vous pouvez consulter l’historique de vos sauvegardes et lancer des restaurations depuis la vue **sauvegarde** de votre instance.
+ClickHouse Managed Postgres garantit la sécurité et la disponibilité de vos données grâce à des sauvegardes automatisées et à la restauration à un instant donné. Vous pouvez consulter l’historique de vos sauvegardes et lancer des restaurations depuis la vue **sauvegardes** de votre instance.
 
-<Image img="/images/managed-postgres/backup-and-restore.webp" alt="Vue sauvegarde affichant l’historique des sauvegardes et les options de restauration à un instant donné" size="lg" border />
+<Image img="/images/managed-postgres/backup-and-restore.webp" alt="Vue sauvegardes affichant l’historique des sauvegardes et les options de restauration à un instant donné" size="lg" border />
 
 <div id="backups">
   ## Sauvegardes
@@ -24,7 +24,7 @@ Managed Postgres garantit la sécurité et la disponibilité de vos données gr�
   ### Fréquence des sauvegardes
 </div>
 
-Managed Postgres effectue chaque jour des sauvegardes complètes de votre base de données. En plus de ces sauvegardes complètes, les fichiers Write-Ahead Log (WAL) sont archivés toutes les 60 secondes ou dès que 16 Mo de données WAL se sont accumulées, selon la première éventualité. Cette combinaison de sauvegardes complètes et d’archivage continu des WAL permet une restauration à un instant donné à tout moment pendant la période de rétention.
+ClickHouse Managed Postgres effectue chaque jour des sauvegardes complètes de votre base de données. En plus de ces sauvegardes complètes, les fichiers Write-Ahead Log (WAL) sont archivés toutes les 60 secondes ou dès que 16 Mo de données WAL se sont accumulées, selon la première éventualité. Cette combinaison de sauvegardes complètes et d’archivage continu des WAL permet une restauration à un instant donné à tout moment pendant la période de rétention.
 
 <div id="retention-period">
   ### Durée de conservation
@@ -36,7 +36,7 @@ Les sauvegardes sont conservées pendant 7 jours, ce qui laisse un délai suffis
   ### Stockage et durabilité
 </div>
 
-Les sauvegardes sont répliquées sur plusieurs serveurs au moyen du codage par effacement, ce qui garantit qu’elles restent accessibles même si certains serveurs de stockage deviennent indisponibles. Le stockage des sauvegardes est isolé au niveau du bucket : chaque instance Managed Postgres dispose de son propre storage bucket dédié, et les informations d’identification sont limitées de façon à n’autoriser l’accès qu’aux sauvegardes de cette instance.
+Les sauvegardes sont répliquées sur plusieurs serveurs au moyen du codage par effacement, ce qui garantit qu’elles restent accessibles même si certains serveurs de stockage deviennent indisponibles. Le stockage des sauvegardes est isolé au niveau du bucket : chaque instance ClickHouse Managed Postgres dispose de son propre storage bucket dédié, et les informations d’identification sont limitées de façon à n’autoriser l’accès qu’aux sauvegardes de cette instance.
 
 <div id="point-in-time-recovery">
   ## Restauration à un instant donné
@@ -46,8 +46,8 @@ La restauration à un instant donné vous permet de restaurer votre base de donn
 
 Pour effectuer une restauration à un instant donné :
 
-1. Accédez à la vue **sauvegarde** de votre instance Managed Postgres.
+1. Accédez à la vue **sauvegardes** de votre instance ClickHouse Managed Postgres.
 2. Dans la section **Point in time recovery**, sélectionnez la date et l’heure cibles (en UTC) auxquelles vous souhaitez restaurer.
 3. Cliquez sur **Restore to point in time**.
 
-L’opération de restauration crée une nouvelle instance Managed Postgres avec l’état de votre base de données tel qu’il était au moment sélectionné. Votre instance d’origine reste inchangée, ce qui vous permet de vérifier les données restaurées avant de décider quelle instance conserver.
+L’opération de restauration crée une nouvelle instance ClickHouse Managed Postgres avec l’état de votre base de données tel qu’il était au moment sélectionné. Votre instance d’origine reste inchangée, ce qui vous permet de vérifier les données restaurées avant de décider quelle instance conserver.

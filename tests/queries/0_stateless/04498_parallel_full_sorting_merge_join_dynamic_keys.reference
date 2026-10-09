@@ -1,0 +1,5 @@
+dynamic_key_matches_fsm	1
+dynamic_key_not_scattered	1
+nested_dynamic_key_matches_fsm	1
+nested_dynamic_key_not_scattered	1
+int_key_scattered	1

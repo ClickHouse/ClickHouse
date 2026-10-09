@@ -57,10 +57,10 @@ INSERT INTO t_geometry_cast_custom_type_name_geom VALUES (CAST([[(0., 0.), (0., 
 SELECT areaCartesian(g) FROM t_geometry_cast_custom_type_name_geom;
 DROP TABLE t_geometry_cast_custom_type_name_geom;
 
--- flipCoordinates on Geometry exercises the default FunctionBaseVariantAdaptor path
--- (flipCoordinates does not override useDefaultImplementationForVariant).
--- This verifies that the Variant adaptor preserves all 6 custom-named geometry types
--- instead of deduplicating to 4 raw types. See https://github.com/ClickHouse/ClickHouse/issues/103207
+-- Insert/value round-trip of representative `Geometry` alternatives through `flipCoordinates`: the
+-- values must survive a `Geometry` source column, the flip, and a `Geometry` destination column. All
+-- seven alternatives are covered in 04635 and the result type is asserted in 03444.
+-- See https://github.com/ClickHouse/ClickHouse/issues/103207
 SELECT 'flipCoordinates on Geometry round-trip';
 SET allow_suspicious_variant_types = 1;
 DROP TABLE IF EXISTS t_flip_src;

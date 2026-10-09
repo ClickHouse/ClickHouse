@@ -67,7 +67,7 @@ psql < postlinks.sql
 
 ClickHouse 기준으로는 작은 편이지만, 이 데이터셋은 Postgres에서는 상당한 규모입니다. 위 데이터는 2024년 첫 3개월을 다루는 일부 하위 집합입니다.
 
-> 예시 결과에서는 Postgres와 ClickHouse의 성능 차이를 보여주기 위해 전체 데이터셋을 사용하지만, 아래에 설명된 모든 단계는 더 작은 하위 집합에도 동일하게 적용됩니다. 전체 데이터셋을 Postgres에 로드하려는 사용자는 [여기](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==)를 참조하십시오. 위 스키마에 적용된 외래 키 제약 조건 때문에 PostgreSQL용 전체 데이터셋에는 참조 무결성을 만족하는 행만 포함됩니다. 이러한 제약 조건이 없는 [Parquet 버전](/ko/get-started/sample-datasets/stackoverflow)이 필요한 경우, 이를 ClickHouse에 직접 쉽게 로드할 수 있습니다.
+> 예시 결과에서는 Postgres와 ClickHouse의 성능 차이를 보여주기 위해 전체 데이터셋을 사용하지만, 아래에 설명된 모든 단계는 더 작은 하위 집합에도 동일하게 적용됩니다. 전체 데이터셋을 Postgres에 로드하려는 사용자는 [여기](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==)를 참조하십시오. 위 스키마에 적용된 외래 키 제약 조건 때문에 PostgreSQL용 전체 데이터셋에는 참조 무결성을 만족하는 행만 포함됩니다. 이러한 제약 조건이 없는 [Parquet 버전](/ko/get-started/sample-datasets/stackoverflow)이 필요한 경우, 이를 ClickHouse에 직접 쉽게 로드할 수 있습니다。
 
 <div id="migrating-data">
   ## 데이터 마이그레이션
@@ -185,8 +185,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> ClickHouse는 `=`, `!=`, `>`,`>=`, `<`, `<=`, IN과 같은 단순한 `WHERE` 절을 PostgreSQL 서버로 푸시다운합니다. 따라서 변경 집합을 식별하는 데 사용하는 컬럼에 인덱스가 있도록 하면 증분 로드를 더 효율적으로 수행할 수 있습니다.
+> ClickHouse는 `=`, `!=`, `>`,`>=`, `<`, `<=`, IN과 같은 단순한 `WHERE` 절을 PostgreSQL 서버로 푸시다운합니다. 따라서 변경 집합을 식별하는 데 사용하는 컬럼에 인덱스가 있도록 하면 증분 적재를 더 효율적으로 수행할 수 있습니다.
 
-> 쿼리 복제를 사용할 때 UPDATE 작업을 감지하는 한 가지 방법은 [`XMIN` 시스템 컬럼](https://www.postgresql.org/docs/9.1/ddl-system-columns.html)(트랜잭션 ID)을 워터마크로 사용하는 것입니다. 이 컬럼의 값이 변경되면 데이터가 변경되었음을 의미하므로 대상 테이블에 적용할 수 있습니다. 이 방식을 사용할 경우 `XMIN` 값이 래핑될 수 있고, 비교를 위해 전체 테이블 스캔이 필요하므로 변경 사항 추적이 더 복잡해질 수 있다는 점에 유의해야 합니다.
+> 쿼리 복제를 사용할 때 UPDATE 작업을 감지하는 한 가지 방법은 [`XMIN` system column](https://www.postgresql.org/docs/9.1/ddl-system-columns.html)(transaction IDs)을 워터마크로 사용하는 것입니다. 이 컬럼의 값이 변경되면 데이터가 변경되었음을 의미하므로 대상 테이블에 반영할 수 있습니다. 이 방법을 사용하는 경우 `XMIN` 값이 순환할 수 있고 비교 시 전체 테이블 스캔이 필요하므로 변경 사항 추적이 더 복잡해질 수 있다는 점에 유의해야 합니다.
 
-[2부는 여기를 클릭하세요](/ko/get-started/migrate/postgres/migration-guide/migration-guide-part2)
+[Part 2를 보려면 여기를 클릭하세요](/ko/get-started/migrate/postgres/migration-guide/migration-guide-part2)

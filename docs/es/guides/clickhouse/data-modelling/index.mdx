@@ -1,18 +1,52 @@
 ---
 slug: /data-modeling/overview
-title: 'Visión general del modelado de datos'
-description: 'Visión general del modelado de datos'
+title: 'Descripción general del modelado de datos'
+description: 'Descripción general del modelado de datos'
 keywords: ['modelado de datos', 'diseño de esquemas', 'diccionario', 'vista materializada', 'compresión de datos', 'desnormalización de datos']
 doc_type: 'landing-page'
+mode: wide
 ---
 
 Esta sección trata sobre el modelado de datos en ClickHouse e incluye los siguientes temas:
 
-| Página                                                                                         | Descripción                                                                                                                                                                                                                               |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Diseño de esquemas](/es/guides/clickhouse/data-modelling/schema-design)                          | Explica el diseño de esquemas en ClickHouse para lograr un rendimiento óptimo, teniendo en cuenta factores como las consultas, las actualizaciones de datos, la latencia y el volumen.                                                    |
-| [Diccionario](/es/concepts/features/dictionaries/index)                                           | Explica cómo definir y usar diccionarios para mejorar el rendimiento de las consultas y enriquecer los datos.                                                                                                                             |
-| [Vistas materializadas](/es/concepts/features/materialized-views/index)                           | Información sobre las vistas materializadas y las vistas materializadas actualizables en ClickHouse.                                                                                                                                      |
-| [Proyecciones](/es/concepts/features/projections/projections)                                     | Información sobre las proyecciones en ClickHouse.                                                                                                                                                                                         |
-| [Compresión de datos](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | Explica los distintos modos de compresión en ClickHouse y cómo optimizar el almacenamiento de datos y el rendimiento de las consultas eligiendo el método de compresión adecuado para tus tipos de datos y cargas de trabajo específicas. |
-| [Desnormalización de datos](/es/guides/clickhouse/data-modelling/denormalization)                 | Explica el enfoque de desnormalización utilizado en ClickHouse, cuyo objetivo es mejorar el rendimiento de las consultas al almacenar datos relacionados en una sola tabla.                                                               |
+<CardGroup cols={2}>
+  <Card title="Diseño de esquemas" icon="pen-ruler" href="/es/guides/clickhouse/data-modelling/schema-design">
+    Diseño de esquemas en ClickHouse para un rendimiento óptimo, teniendo en cuenta factores como las consultas, las actualizaciones de datos, la latencia y el volumen.
+  </Card>
+
+  <Card title="Índices primarios dispersos" icon="key" href="/es/guides/clickhouse/data-modelling/sparse-primary-indexes">
+    Una introducción práctica a los índices primarios en ClickHouse.
+  </Card>
+
+  <Card title="Desnormalización de datos" icon="table-list" href="/es/guides/clickhouse/data-modelling/denormalization">
+    El enfoque de desnormalización, cuyo objetivo es mejorar el rendimiento de las consultas almacenando los datos relacionados en una sola tabla.
+  </Card>
+
+  <Card title="Carga retroactiva de datos" icon="clock-rotate-left" href="/es/guides/clickhouse/data-modelling/backfilling">
+    Técnicas para realizar la carga retroactiva de datos en tablas de ClickHouse de forma eficiente.
+  </Card>
+
+  <Card title="Función de tabla Merge" icon="code-merge" href="/es/guides/clickhouse/data-modelling/merge-table-function">
+    Uso de la función de tabla `merge` para consultar varias tablas como si fueran una sola.
+  </Card>
+
+  <Card title="Procedimientos almacenados y sentencias preparadas" icon="database" href="/es/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements">
+    Procedimientos almacenados y parámetros de consulta en ClickHouse.
+  </Card>
+
+  <Card title="Generación de datos de prueba" icon="flask" href="/es/guides/clickhouse/data-modelling/generating-test-data">
+    Cómo generar datos de prueba aleatorios en ClickHouse.
+  </Card>
+
+  <Card title="Compresión de datos" icon="file-zipper" href="/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse">
+    La compresión en ClickHouse, los modos de compresión disponibles y cómo elegir el más adecuado para sus tipos de datos y cargas de trabajo.
+  </Card>
+
+  <Card title="Trabajar con arrays" icon="list-ol" href="/es/guides/clickhouse/working-with-arrays">
+    Uso de arrays en ClickHouse.
+  </Card>
+
+  <Card title="Trabajar con JOINs" icon="link" href="/es/guides/clickhouse/working-with-joins">
+    Uso de JOINs en ClickHouse.
+  </Card>
+</CardGroup>

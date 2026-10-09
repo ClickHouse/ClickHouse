@@ -71,7 +71,7 @@ const constexpr uint64_t allow_replacing_mergetree
     allow_replicated = (UINT64_C(1) << 40), allow_shared = (UINT64_C(1) << 41), allow_datalakecatalog = (UINT64_C(1) << 42),
     allow_arrowflight = (UINT64_C(1) << 43), allow_alias = (UINT64_C(1) << 44), allow_kafka = (UINT64_C(1) << 45),
     allow_backup = (UINT64_C(1) << 46), allow_paimon = (UINT64_C(1) << 47), allow_paimonS3 = (UINT64_C(1) << 48),
-    allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50);
+    allow_paimonAzure = (UINT64_C(1) << 49), allow_paimonLocal = (UINT64_C(1) << 50), allow_remote = (UINT64_C(1) << 51);
 
 extern const DB::Strings compressionMethods;
 extern const DB::Strings codecs;
@@ -301,7 +301,6 @@ public:
     std::vector<DiskInfo> disks;
     DB::Strings clusters;
     DB::Strings caches;
-    DB::Strings function_implementations;
     DB::Strings failpoints;
     DB::Strings remote_servers;
     DB::Strings remote_secure_servers;
@@ -366,6 +365,7 @@ public:
     bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
+    bool enable_failpoints = true;
     bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
@@ -385,7 +385,8 @@ public:
     uint32_t max_views = 5;
     uint32_t max_dictionaries = 5;
     uint32_t max_policies = 8;
-    uint32_t max_hypotheticals = 8;
+    uint32_t max_hypothetical_indexes = 4;
+    uint32_t max_hypothetical_projections = 4;
     uint32_t max_columns = 5;
     uint32_t time_to_run = 0;
     uint32_t port = 9000;
@@ -462,6 +463,12 @@ public:
     String getRandomIcebergHistoryValue(const String & property);
 
     String getRandomFileSystemCacheValue();
+
+    static String getRandomFuzzedPartName(uint64_t rand_val);
+
+    static String getRandomFuzzedPartitionValue(uint64_t rand_val);
+
+    static String getRandomFuzzedPartitionId(uint64_t rand_val);
 
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 

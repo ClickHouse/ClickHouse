@@ -43,9 +43,7 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
 </div>
 
 <Accordion title="ClickStack はパラメータ化されたダッシュボードやダッシュボード変数をサポートしていますか？">
-  ClickStack は、ClickHouse からクエリしたデータで値が設定される、ダッシュボード上のカスタムドロップダウンフィルターをサポートしています。これらのフィルターを使うと、ダッシュボード上のすべてのタイルを特定の値 (たとえば、サービス名、環境、ホスト) に動的に絞り込めます。
-
-  ClickStack は現在、Grafana のテンプレート変数のような再利用可能なダッシュボード変数には対応していません。ClickStack はデータソースとして ClickHouse のみを使用するため、変数の抽象化レイヤーを用意しなくても、ドリルダウンやフィルタリングの機能をネイティブに提供できます。
+  はい。ClickStack は、ClickHouse からクエリしたデータで値が設定される、カスタムフィルターおよび変数によってパラメータ化されたダッシュボードをサポートしています。これらのフィルターを使うと、ダッシュボード上の一部またはすべてのタイルを特定の値 (たとえば、サービス名、環境、ホスト) に動的に絞り込めます。
 
   ダッシュボードの作成方法やフィルターの適用方法について詳しくは、[ダッシュボード](/ja/clickstack/features/dashboards/overview) を参照してください。
 </Accordion>
@@ -84,8 +82,8 @@ keywords: ['ClickStack', 'よくある質問', 'アラート', 'ダッシュボ�
   ## 参考資料
 </div>
 
-* [アラート](/ja/clickstack/features/alerts): 検索アラート、ダッシュボードチャートアラート、Webhook インテグレーション。
+* [アラート](/ja/clickstack/features/alerts): 検索アラート、ダッシュボードチャートアラート、webhook インテグレーション。
 * [ダッシュボード](/ja/clickstack/features/dashboards/overview): 可視化の作成、ダッシュボードの構築、フィルターの適用。
-* [検索](/ja/clickstack/features/search): Lucene と SQL 構文を使ったログとトレースのクエリ。
+* [Search](/ja/clickstack/features/search): Lucene と SQL 構文を使用したログおよびトレースのクエリ。
 * [スキーマ](/ja/clickstack/ingesting-data/schemas): ログ、トレース、メトリクス向けの OpenTelemetry データスキーマ。
-* [アーキテクチャ](/ja/clickstack/architecture): ClickStack のコンポーネントと、それらがどのように連携するか。
+* [アーキテクチャ](/ja/clickstack/architecture): ClickStack のコンポーネントとその連携方法。

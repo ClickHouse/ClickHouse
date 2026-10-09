@@ -21,7 +21,7 @@ format(format_name, [structure], data)
 - `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
 - `data` — String literal or constant expression that returns a string containing data in specified format
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with data parsed from `data` argument according to specified format and specified or extracted structure.
 

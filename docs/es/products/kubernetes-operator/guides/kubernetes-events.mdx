@@ -1,0 +1,211 @@
+---
+position: 8
+slug: /clickhouse-operator/guides/kubernetes-events
+title: Eventos de Kubernetes
+keywords: ['kubernetes', 'eventos', 'solución de problemas', 'reconciliar', 'system.warnings']
+description: 'Cómo el operador informa los fallos de reconciliación, el progreso del escalado, las comprobaciones de versión y las advertencias del servidor ClickHouse como eventos de Kubernetes en los objetos ClickHouseCluster y KeeperCluster, cómo verlos y qué significa la razón de cada evento.'
+doc_type: 'guide'
+---
+
+El operador registra eventos de Kubernetes en los objetos `ClickHouseCluster` y
+`KeeperCluster` que administra. Estos eventos muestran lo que hizo el operador
+durante la reconciliación — dónde fallaron los cambios en los recursos, cuándo un clúster pasó a estar
+listo, por qué se bloqueó el escalado — y sacan a la luz fallos que nunca llegan a un log que
+un usuario leería normalmente. Complementan las [métricas](/es/products/kubernetes-operator/guides/monitoring)
+al adjuntar un historial legible para humanos directamente al recurso personalizado.
+
+`clickhouse-controller` informa eventos en los objetos `ClickHouseCluster` y
+`keeper-controller` los informa en los objetos `KeeperCluster`. Los eventos de fallo del ciclo de vida del recurso también hacen referencia al objeto dependiente correspondiente (un
+StatefulSet, Service, ConfigMap, Secret, PodDisruptionBudget,
+PersistentVolumeClaim o Job de comprobación de versión); otros eventos hacen referencia solo al
+clúster en sí.
+
+<Note>
+  El Kubernetes API server hace que los eventos caduquen tras un TTL — una hora de forma predeterminada
+  (`--event-ttl`). Por lo tanto, los eventos son una señal de corta duración sobre la actividad reciente,
+  no un registro de auditoría duradero.
+</Note>
+
+<div id="viewing-events">
+  ## Ver eventos
+</div>
+
+La forma más rápida de verlos es con `kubectl describe` en el recurso personalizado, que muestra los
+eventos más recientes al final:
+
+```bash
+NS=<your-namespace>
+
+kubectl -n $NS describe clickhousecluster <name>
+kubectl -n $NS describe keepercluster <name>
+```
+
+Para ver los eventos directamente —por ejemplo, para observarlos en tiempo real o filtrarlos para ver solo los fallos—
+consulta el recurso `events` y filtra por el objeto implicado o por el tipo:
+
+```bash
+# All events for one cluster, newest last
+kubectl -n $NS get events \
+  --field-selector involvedObject.name=<name> \
+  --sort-by=.lastTimestamp
+
+# Only warnings across the namespace
+kubectl -n $NS get events --field-selector type=Warning
+
+# Follow events as they arrive
+kubectl -n $NS get events --watch
+```
+
+El controlador que lo reporta aparece en el origen del evento, por lo que puedes distinguir un
+evento de `ClickHouseCluster` (`clickhouse-controller`) de un evento de `KeeperCluster`
+(`keeper-controller`).
+
+<div id="event-reasons">
+  ## Referencia de razones de eventos
+</div>
+
+El operador emite un conjunto fijo de razones, agrupadas según lo que describen. Los eventos `Normal`
+indican el progreso esperado; los eventos `Warning` indican un fallo o un estado sobre el que
+el usuario debe actuar.
+
+<div id="resource-lifecycle">
+  ### Ciclo de vida del recurso
+</div>
+
+Se emite tanto en `ClickHouseCluster` como en `KeeperCluster` cuando el operador no puede
+aplicar un recurso gestionado por él durante la reconciliación.
+
+| Motivo         | Tipo    | Significado                                                                                                                          |
+| -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `FailedCreate` | Warning | El operador no pudo crear un recurso gestionado por él (p. ej., StatefulSet, Service, ConfigMap, Secret, PodDisruptionBudget o Job). |
+| `FailedUpdate` | Warning | El operador no pudo actualizar un recurso.                                                                                           |
+| `FailedDelete` | Warning | El operador no pudo eliminar un recurso gestionado por él durante la reconciliación o la reducción de escala.                        |
+
+<div id="cluster-readiness">
+  ### Disponibilidad del clúster
+</div>
+
+Se emite en ambos tipos cuando el clúster cambia de estado de disponibilidad.
+
+| Motivo            | Tipo        | Significado                                                                                                                                                                                                           |
+| ----------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClusterReady`    | Normal      | El clúster pasó a estar listo: cada segmento de ClickHouse tiene al menos una réplica lista, o el cuórum de Keeper tiene un líder y suficientes seguidores (o su única réplica independiente está en funcionamiento). |
+| `ClusterNotReady` | Warning | El clúster dejó de estar listo: un segmento de ClickHouse se quedó sin réplicas listas, o el cuórum de Keeper perdió a su líder o a demasiados seguidores.                                                            |
+
+<div id="scaling">
+  ### Escalado
+</div>
+
+Se emite en `KeeperCluster` cuando el operador cambia la cantidad de réplicas.
+
+| Motivo                     | Tipo    | Significado                                                                                    |
+| -------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| `HorizontalScaleStarted`   | Normal  | El operador comenzó a añadir o eliminar réplicas.                                              |
+| `HorizontalScaleCompleted` | Normal  | La operación de escalado finalizó.                                                             |
+| `ReplicaCreated`           | Normal  | El operador añadió una réplica al clúster.                                                     |
+| `ReplicaDeleted`           | Normal  | El operador eliminó una réplica durante la reducción de escala.                                |
+| `HorizontalScaleBlocked`   | Warning | El operador se negó a escalar porque el estado actual de Keeper aún no es seguro para hacerlo. |
+
+<Note>
+  `HorizontalScaleBlocked` es el evento que se debe vigilar cuando una solicitud de escalado de Keeper parece
+  no hacer nada: el operador retiene deliberadamente el cambio y mantiene el
+  cuórum existente en lugar de arriesgarse a una partición. El mensaje del evento indica la restricción que
+  bloqueó el cambio.
+</Note>
+
+<div id="external-secret">
+  ### External Secret
+</div>
+
+Se emite en `ClickHouseCluster` cuando el clúster hace referencia a un Secret externo que
+el operador no puede usar. Consulta la función External Secret en la
+[guía de configuración](/es/products/kubernetes-operator/guides/configuration).
+
+| Motivo                   | Tipo    | Significado                                                                                         |
+| ------------------------ | ------- | --------------------------------------------------------------------------------------------------- |
+| `ExternalSecretNotFound` | Warning | El Secret referenciado no existe en el espacio de nombres del clúster.                              |
+| `ExternalSecretInvalid`  | Warning | El Secret existe, pero no contiene las claves requeridas (solo se informa con la policy `Observe`). |
+
+<div id="version-checks">
+  ### Comprobaciones de versión
+</div>
+
+Emitidas por las comprobaciones de versión de `ClickHouseCluster` y `KeeperCluster`.
+`VersionProbeFailed` es específico del Job de sondeo de versión de ClickHouse, `version-probe`.
+
+| Motivo                    | Tipo        | Significado                                                                                                                                                                                                                         |
+| ------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VersionProbeFailed`      | Warning | El Job `version-probe` no pudo detectar la versión de ClickHouse en ejecución.                                                                                                                                                      |
+| `VersionDiverge`          | Warning | La versión detectada de una réplica difiere de la versión que el operador detectó para el clúster. Se suprime durante las actualizaciones progresivas.                                                                              |
+| `VersionUpgradeAvailable` | Warning | Hay una versión más reciente disponible en el canal de actualización configurado, la versión en ejecución no está en ese canal o ha quedado fuera de soporte. El operador nunca se actualiza por sí solo; este evento solo informa. |
+
+<div id="clickhouse-warnings">
+  ### Advertencias del servidor ClickHouse
+</div>
+
+| Motivo              | Tipo    | Significado                                                                                       |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `ClickHouseWarning` | Warning | Una advertencia reportada por el propio servidor ClickHouse, republicada desde `system.warnings`. |
+
+Esta última razón es distinta: no describe las acciones del propio operador. En
+cada réplica lista, el operador consulta periódicamente la
+tabla [`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) del servidor y
+republica cada fila como un evento `Warning` en el clúster, con el prefijo de la
+réplica de la que procede. Esto convierte las propias advertencias de configuración y de ejecución de ClickHouse
+—ajustes obsoletos, límites bajos, opciones inseguras— en eventos que puedes ver
+con `kubectl` sin abrir una sesión de `clickhouse-client` en cada réplica.
+
+```bash
+kubectl -n $NS get events \
+  --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
+```
+
+<div id="events-vs-metrics">
+  ## Eventos, métricas y condiciones
+</div>
+
+El operador expone tres superficies de observabilidad; usa cada una para lo que mejor sabe hacer:
+
+* **Eventos** (esta guía) — recientes, legibles para humanos, asociados al objeto. Ideales
+  para &quot;qué acaba de pasarle a este clúster&quot; y para la resolución interactiva de problemas con
+  `kubectl describe`. Caducan.
+* **`status.conditions`** en el recurso personalizado — la verdad actual y persistente
+  (Ready, External Secret válido, escalado permitido, versión sincronizada). Lo mejor para
+  scripts y compuertas de estado de GitOps. Léalas con
+  `kubectl get clickhousecluster <name> -o jsonpath='{.status.conditions}'`.
+* **[Métricas](/es/products/kubernetes-operator/guides/monitoring)** — duraderas y
+  numéricas. Ideales para dashboards y para generar alertas ante una tasa sostenida de
+  errores de reconciliación.
+
+Un evento `Warning` y una condición `False` a menudo describen el mismo problema desde dos
+ángulos: el evento captura el momento y el mensaje; la condición refleja el
+estado hasta que se despeja.
+
+<div id="troubleshooting">
+  ## Solución de problemas con eventos
+</div>
+
+Algunas señales habituales y lo que suelen indicar:
+
+* **`FailedCreate` / `FailedUpdate` repetidos** — el operador no puede aplicar un
+  recurso. El mensaje del evento incluye el error de la API (rechazo en admisión, cuota,
+  spec no válida). La reconciliación vuelve a intentarlo, así que una causa transitoria se resuelve sola; una
+  persistente requiere corregir la spec o el clúster.
+* **`ClusterNotReady` sin un `ClusterReady` correspondiente** — el clúster no se está
+  recuperando. El mensaje del evento indica qué segmentos no están listos o cuál es el problema de cuórum;
+  compruebe los pods que hay detrás de ellos.
+* **`HorizontalScaleBlocked`** — un escalado previsto se está reteniendo por seguridad. Lea
+  el mensaje para conocer la restricción exacta antes de forzar nada.
+* **`ExternalSecretNotFound` / `ExternalSecretInvalid`** — corrija el nombre del Secret o
+  sus claves; la condición `ExternalSecretValid` correspondiente cambia a `True` una vez que el
+  operador puede usarlo.
+* **`ClickHouseWarning`** — el problema está dentro de ClickHouse, no en el operador.
+  Trate el mensaje como trataría una fila de `system.warnings`.
+
+<div id="related-guides">
+  ## Guías relacionadas
+</div>
+
+* [Monitoreo del operador](/es/products/kubernetes-operator/guides/monitoring) — métricas y sondas de estado, la contraparte persistente de los eventos.
+* [Escalado](/es/products/kubernetes-operator/guides/scaling) — qué protege `HorizontalScaleBlocked` y cómo el quórum de Keeper limita el escalado.
+* [Configuración](/es/products/kubernetes-operator/guides/configuration) — la funcionalidad External Secret detrás de los eventos de external-secret.

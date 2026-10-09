@@ -36,14 +36,14 @@ ClickHouse é um banco de dados orientado a colunas. Em sistemas desse tipo, as 
 A diferença fica mais clara com uma consulta de exemplo executada sobre 100 milhões de linhas de [dados reais anonimizados de análise da web](/pt-BR/get-started/sample-datasets/anon-web-analytics-metrica):
 
 ```sql
-SELECT MobilePhoneModel, COUNT() AS c
+SELECT MobilePhoneModel, count() AS c
 FROM metrica.hits
 WHERE
       RegionID = 229
   AND EventDate >= '2013-07-01'
   AND EventDate <= '2013-07-31'
   AND MobilePhone != 0
-  AND MobilePhoneModel not in ['', 'iPad']
+  AND MobilePhoneModel NOT IN ('', 'iPad')
 GROUP BY MobilePhoneModel
 ORDER BY c DESC
 LIMIT 8;
@@ -55,13 +55,13 @@ Você pode [executar esta consulta no playground SQL do ClickHouse](https://sql.
 
 Como você pode ver na seção de estatísticas do diagrama acima, a consulta processou 100 milhões de linhas em 92 milissegundos, com uma taxa de transferência de aproximadamente 1 bilhão de linhas por segundo, ou pouco menos de 7 GB de dados transferidos por segundo.
 
-**SGBD orientado a linhas**
+**DBMS orientado a linhas**
 
 Em um banco de dados orientado a linhas, embora a consulta acima processe apenas algumas das colunas existentes, o sistema ainda precisa carregar do disco para a memória os dados de outras colunas. Isso acontece porque os dados são armazenados em disco em blocos chamados [blocks](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (geralmente de tamanho fixo, por exemplo, 4 KB ou 8 KB). Os blocos são as menores unidades de dados lidas do disco para a memória. Quando uma aplicação ou banco de dados solicita dados, o subsistema de E/S de disco do sistema operacional lê do disco os blocos necessários. Mesmo que apenas parte de um bloco seja necessária, o bloco inteiro é lido na memória (isso se deve ao design do disco e do sistema de arquivos):
 
 <Image img="/images/row-oriented.webp" alt="Estrutura de banco de dados orientado a linhas" size="lg" />
 
-**SGBD orientado a colunas**
+**DBMS orientado a colunas**
 
 Como os valores de cada coluna são armazenados em sequência no disco, nenhum dado desnecessário é carregado quando a consulta acima é executada.
 Como o armazenamento em blocos e a transferência do disco para a memória estão alinhados com o padrão de acesso aos dados das consultas analíticas, apenas as colunas necessárias para uma consulta são lidas do disco, evitando E/S desnecessária de dados não utilizados. Isso é [muito mais rápido](https://benchmark.clickhouse.com/) em comparação com o armazenamento baseado em linhas, no qual linhas inteiras (incluindo colunas irrelevantes) são lidas:
@@ -106,19 +106,19 @@ O ClickHouse é amplamente conhecido por oferecer desempenho de consultas extrem
 Para entender por que o ClickHouse é tão rápido, consulte o guia [Por que o ClickHouse é rápido?](/pt-BR/get-started/about/why-clickhouse-is-so-fast).
 
 {/*
-  ## O que é OLAP? {#what-is-olap}
+  ## O que é OLAP?
   Os cenários OLAP exigem respostas em tempo real sobre grandes conjuntos de dados para consultas analíticas complexas com as seguintes características:
   - Os conjuntos de dados podem ser massivos — bilhões ou trilhões de linhas
   - Os dados são organizados em tabelas com muitas colunas
   - Apenas algumas colunas são selecionadas para responder a cada consulta específica
   - Os resultados devem ser retornados em milissegundos ou segundos
 
-  ## Bancos de dados orientados a colunas vs. orientados a linhas {#column-oriented-vs-row-oriented-databases}
+  ## Bancos de dados orientados a colunas vs. orientados a linhas
   Em um SGBD orientado a linhas, os dados são armazenados em linhas, com todos os valores de uma mesma linha fisicamente armazenados lado a lado.
 
   Em um SGBD orientado a colunas, os dados são armazenados em colunas, com os valores de uma mesma coluna armazenados juntos.
 
-  ## Por que bancos de dados orientados a colunas funcionam melhor no cenário OLAP {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+  ## Por que bancos de dados orientados a colunas funcionam melhor no cenário OLAP
 
   Os bancos de dados orientados a colunas são mais adequados para cenários OLAP: são pelo menos 100 vezes mais rápidos no processamento da maioria das consultas. Os motivos são explicados em detalhes abaixo, mas o fato é mais fácil de demonstrar visualmente:
 
@@ -126,7 +126,7 @@ Para entender por que o ClickHouse é tão rápido, consulte o guia [Por que o C
 
   O restante deste artigo explica por que os bancos de dados orientados a colunas funcionam bem nesses cenários e por que o ClickHouse em particular [supera](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated) os demais nessa categoria.
 
-  ## Por que o ClickHouse é tão rápido? {#why-is-clickhouse-so-fast}
+  ## Por que o ClickHouse é tão rápido?
 
   O ClickHouse utiliza todos os recursos disponíveis do sistema ao máximo para processar cada consulta analítica o mais rápido possível. Isso é possível graças a uma combinação única de capacidades analíticas e atenção aos detalhes de baixo nível necessários para implementar o banco de dados OLAP mais rápido.
 
@@ -135,7 +135,7 @@ Para entender por que o ClickHouse é tão rápido, consulte o guia [Por que o C
   - [Distinctive Features of ClickHouse](/get-started/about/distinctive-features)
   - [FAQ: Why is ClickHouse so fast?](/get-started/about/why-clickhouse-is-so-fast)
 
-  ## Processamento de consultas analíticas em tempo real {#processing-analytical-queries-in-real-time}
+  ## Processamento de consultas analíticas em tempo real
 
   Em um SGBD orientado a linhas, os dados são armazenados na seguinte ordem:
 
@@ -168,7 +168,7 @@ Para entender por que o ClickHouse é tão rápido, consulte o guia [Por que o C
 
   Quanto maior a carga sobre o sistema, mais importante se torna personalizar sua configuração para atender aos requisitos do cenário de uso — e mais granular essa personalização precisa ser. Não existe um sistema igualmente adequado para cenários significativamente diferentes. Se um sistema é adaptável a um amplo conjunto de cenários, sob alta carga ele tenderá a lidar com todos eles igualmente mal, ou funcionará bem apenas para um ou poucos dos cenários possíveis.
 
-  ### Propriedades-chave do cenário OLAP {#key-properties-of-olap-scenario}
+  ### Propriedades-chave do cenário OLAP
 
   - As tabelas são "largas", ou seja, contêm um grande número de colunas.
   - Os conjuntos de dados são grandes e as consultas exigem alto throughput ao processar uma única consulta (até bilhões de linhas por segundo por servidor).
@@ -183,7 +183,7 @@ Para entender por que o ClickHouse é tão rápido, consulte o guia [Por que o C
 
   É fácil perceber que o cenário OLAP é muito diferente de outros cenários populares (como OLTP ou acesso key-value). Portanto, não faz sentido tentar usar OLTP ou um banco de dados key-value para processar consultas analíticas quando se deseja obter um desempenho satisfatório. Por exemplo, ao tentar usar MongoDB ou Redis para análises, o desempenho obtido será muito inferior ao de bancos de dados OLAP.
 
-  ### Entrada/saída {#inputoutput}
+  ### Entrada/saída
 
   1.  Para uma consulta analítica, apenas um pequeno número de colunas da tabela precisa ser lido. Em um banco de dados orientado a colunas, é possível ler somente os dados necessários. Por exemplo, se forem necessárias 5 colunas de um total de 100, pode-se esperar uma redução de 20 vezes nas operações de E/S.
   2.  Como os dados são lidos em pacotes, é mais fácil compactá-los. Os dados em colunas também são mais fáceis de compactar. Isso reduz ainda mais o volume de E/S.
@@ -191,7 +191,7 @@ Para entender por que o ClickHouse é tão rápido, consulte o guia [Por que o C
 
   Por exemplo, a consulta "contar o número de registros para cada plataforma de publicidade" requer a leitura de uma coluna "ID da plataforma de publicidade", que ocupa 1 byte sem compressão. Se a maior parte do tráfego não for proveniente de plataformas de publicidade, pode-se esperar uma compressão de pelo menos 10 vezes nessa coluna. Com um algoritmo de compressão rápido, a descompressão de dados é possível a uma velocidade de pelo menos vários gigabytes de dados não comprimidos por segundo. Em outras palavras, essa consulta pode ser processada a uma velocidade de aproximadamente vários bilhões de linhas por segundo em um único servidor — velocidade que é de fato alcançada na prática.
 
-  ### CPU {#cpu}
+  ### CPU
 
   Como a execução de uma consulta requer o processamento de um grande número de linhas, é vantajoso despachar todas as operações para vetores inteiros em vez de para linhas individuais, ou implementar o motor de consulta de forma que o custo de despacho seja praticamente nulo. Sem isso, mesmo com um subsistema de disco razoável, o interpretador de consultas inevitavelmente se torna um gargalo para a CPU. Faz sentido tanto armazenar os dados em colunas quanto processá-los por colunas, sempre que possível.
 

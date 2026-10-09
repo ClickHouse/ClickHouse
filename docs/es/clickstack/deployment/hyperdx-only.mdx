@@ -32,9 +32,7 @@ En este modo, la ingestión de datos queda completamente en manos del usuario. P
 <br />
 
 <Steps>
-  <Step>
-    ### Despliegue con Docker
-
+  <Step title="Despliegue con Docker" id="deploy-hyperdx-with-docker">
     Ejecuta el siguiente comando y modifica `YOUR_MONGODB_URI` según sea necesario.
 
     ```shell
@@ -42,9 +40,7 @@ En este modo, la ingestión de datos queda completamente en manos del usuario. P
     ```
   </Step>
 
-  <Step>
-    ### Accede a la UI de HyperDX
-
+  <Step title="Accede a la UI de HyperDX" id="navigate-to-hyperdx-ui">
     Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
 
     Crea un usuario e introduce un nombre de usuario y una contraseña que cumplan los requisitos.
@@ -54,19 +50,17 @@ En este modo, la ingestión de datos queda completamente en manos del usuario. P
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI de HyperDX" size="lg" />
   </Step>
 
-  <Step>
-    ### Completa los detalles de conexión
-
+  <Step title="Completa los detalles de conexión" id="complete-connection-details">
     Conéctate a tu propio clúster externo de ClickHouse, por ejemplo, ClickHouse Cloud.
 
     <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Inicio de sesión de HyperDX" size="md" />
 
-    Si se te pide crear un origen de datos, conserva todos los valores predeterminados y completa el campo `Table` con el valor `otel_logs`. El resto de la configuración debería detectarse automáticamente, por lo que podrás hacer clic en `Save New Source`.
+    Si se te pide crear una source, conserva todos los valores predeterminados y completa el campo `Table` con el valor `otel_logs`. El resto de la configuración debería detectarse automáticamente, por lo que podrás hacer clic en `Save New Source`.
 
     <Info>
-      **Creación de un origen de datos**
+      **Creación de una source**
 
-      Para crear un origen de datos, las tablas deben existir en ClickHouse. Si no tienes datos, te recomendamos desplegar el ClickStack OpenTelemetry collector para crear las tablas.
+      Para crear una source, las tablas deben existir en ClickHouse. Si no tienes datos, te recomendamos desplegar el ClickStack OpenTelemetry collector para crear las tablas.
     </Info>
   </Step>
 </Steps>

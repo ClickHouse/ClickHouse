@@ -46,6 +46,11 @@ private:
 
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
 
+    /// Exclusive end of the range requested for the current `impl` when the request was cut to one
+    /// buffer fill, or 0 when the request covers the whole range this buffer has to deliver.
+    /// See `initialize`.
+    size_t cut_request_end = 0;
+
     LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:

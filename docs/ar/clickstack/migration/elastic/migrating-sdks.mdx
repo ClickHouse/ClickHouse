@@ -28,7 +28,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 على غرار SDKs المستندة إلى OpenTelemetry في ClickStack، تُعدّ Elastic Distributions of the OpenTelemetry SDKs ‏(EDOT SDKs) إصدارات مخصّصة من OpenTelemetry SDKs الرسمية. فعلى سبيل المثال، تُعدّ [EDOT بايثون SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) توزيعة مخصّصة من المورّد لـ [OpenTelemetry بايثون SDK](https://opentelemetry.io/docs/languages/python/)، ومصمّمة للعمل بسلاسة مع Elastic Observability.
 
-ونظرًا إلى أن هذه SDKs تستند إلى مكتبات OpenTelemetry القياسية، فإن الترحيل إلى ClickStack عملية مباشرة، ولا يتطلّب الأمر إعادة instrumentation. وكل ما تحتاج إليه هو تعديل الإعدادات لتوجيه بيانات القياس عن بُعد إلى ClickStack OpenTelemetry Collector.
+ونظرًا إلى أن هذه SDKs تستند إلى مكتبات OpenTelemetry القياسية، فإن الترحيل إلى ClickStack عملية مباشرة، ولا يتطلّب الأمر إعادة أدوات الرصد. وكل ما تحتاج إليه هو تعديل الإعدادات لتوجيه بيانات القياس عن بُعد إلى ClickStack OpenTelemetry Collector.
 
 تتّبع configuration آليات OpenTelemetry القياسية. وفي بايثون، يتم ذلك عادةً عبر متغيرات البيئة، كما هو موضّح في [وثائق OpenTelemetry Zero-Code Instrumentation](https://opentelemetry.io/docs/zero-code/python/configuration/).
 

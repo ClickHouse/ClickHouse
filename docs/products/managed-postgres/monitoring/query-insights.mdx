@@ -2,18 +2,18 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Postgres query insights'
-description: 'Per-statement telemetry for Managed Postgres: every query pattern your database runs, ranked by impact, with the diagnostic counters that explain why each one is slow'
+description: 'Per-statement telemetry for ClickHouse Managed Postgres: every query pattern your database runs, ranked by impact, with the diagnostic counters that explain why each one is slow'
 keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'slow queries', 'p99 latency', 'query patterns', 'postgres performance', 'temp blocks', 'parallel workers', 'wal']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 Query Insights captures per-statement telemetry from your
-[Managed Postgres](/products/managed-postgres/overview) instance and ranks every query
+[ClickHouse Managed Postgres](/products/managed-postgres/overview) instance and ranks every query
 pattern by impact, so you can go from "p99 is creeping up" to "this pattern
 is spilling to disk" without leaving the cloud console.
 
@@ -25,7 +25,7 @@ exact values you query never enter the telemetry stream.
 
 ## Open query insights {#open}
 
-Open your Managed Postgres instance in the cloud console and click
+Open your ClickHouse Managed Postgres instance in the cloud console and click
 **Query insights** in the left sidebar. The page is divided into four
 surfaces, in the order you'd actually use them:
 
@@ -223,6 +223,6 @@ ClickHouse. Source and issues live at
 
 - [Monitoring dashboard](/products/managed-postgres/monitoring/dashboard) — built-in resource and activity charts
 - [Prometheus endpoint](/products/managed-postgres/monitoring/prometheus) — scrape host-level metrics into your own observability stack
-- [Managed Postgres OpenAPI](/products/managed-postgres/openapi#query-insights) — query slow patterns and recent executions programmatically
-- [Extensions](/products/managed-postgres/extensions) — the extensions available on Managed Postgres instances
+- [ClickHouse Managed Postgres OpenAPI](/products/managed-postgres/openapi#query-insights) — query slow patterns and recent executions programmatically
+- [Extensions](/products/managed-postgres/extensions) — the extensions available on ClickHouse Managed Postgres instances
 - [`pg_stat_ch` on GitHub](https://github.com/clickhouse/pg_stat_ch) — the open-source extension that powers Query Insights

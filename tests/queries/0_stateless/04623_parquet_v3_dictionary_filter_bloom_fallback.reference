@@ -1,0 +1,8 @@
+generous memory budget: the dictionary filter prunes row group 1, only 20000 rows are read
+{"result":[{"count()":1}],"rows_read":20000}
+tight memory budget, bloom filter off: the dictionary can't fit and there is no fallback, all 40000 rows are read
+{"result":[{"count()":1}],"rows_read":40000}
+tight memory budget, bloom filter on: the dictionary can't fit but the bloom filter falls back and prunes row group 1, only 20000 rows are read
+{"result":[{"count()":1}],"rows_read":20000}
+results are identical regardless of the memory budget and bloom filter, including across row groups
+OK

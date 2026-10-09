@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
+import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Cloud 的架构" />
 
@@ -66,10 +67,18 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 [Compute-compute separation](/zh/products/cloud/features/infrastructure/warehouses) 让您可以创建多个计算节点组，每个节点组都有各自的服务 URL，但共享同一个对象存储。这使您能够在共享同一份数据的前提下，隔离不同用例的计算资源，例如将读取与写入分离。它还支持根据需要对各个计算组进行独立扩缩容，从而更高效地利用资源。
 
-<div id="concurrency-limits">
-  ## 并发限制
-</div>
+## 按需计算 {#on-demand-compute}
 
-您的 ClickHouse Cloud 服务对每秒查询数 (QPS) 没有限制。不过，每个副本的并发查询上限为 1000。QPS 最终取决于查询的平均执行时间以及服务中的副本数量。
+<PrivatePreviewBadge />
 
-相比自管理 ClickHouse 实例或其他数据库/数据仓库，ClickHouse Cloud 的一大优势是，您可以通过[添加更多副本 (横向扩缩容) ](/zh/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)轻松提升并发能力。
+按需计算会通过您现有的 ClickHouse Cloud 服务，从 ClickHouse 托管的资源池中临时为受支持的工作负载分配**工作线程**。您的服务负责身份验证并协调查询，而所分配的工作线程会在服务自身的计算资源之外，承担大部分符合条件的扫描、join 和聚合工作。该资源池由多个 ClickHouse Cloud 服务共享，但每个工作线程在同一时刻只服务于一个服务。
+
+在私有预览期间，按需计算仅支持符合条件的 `SELECT` 查询。可用性为尽力而为，性能会有波动，且 ClickHouse Cloud 的 SLO 和 SLA 不适用于该功能。
+
+[私有预览服务条款](https://clickhouse.com/legal/agreements/private-preview-terms-of-service)
+
+## 并发限制 {#concurrency-limits}
+
+您的 ClickHouse Cloud 服务对每秒查询数 (QPS) 没有限制。不过，每个副本的并发查询上限为 1000。QPS 最终取决于平均查询执行时间以及服务中的副本数量。
+
+与自管理 ClickHouse 实例或其他数据库/数据仓库相比，ClickHouse Cloud 的一大优势在于，您可以通过[添加更多副本 (横向扩缩容) ](/zh/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)轻松提升并发能力。

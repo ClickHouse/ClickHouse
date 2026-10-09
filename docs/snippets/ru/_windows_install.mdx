@@ -15,9 +15,7 @@ title: Установка на Windows
 </Note>
 
 <Steps>
-  <Step>
-    ## Установите WSL
-
+  <Step title="Установите WSL" id="install-wsl">
     Откройте Windows PowerShell от имени администратора и выполните следующую команду:
 
     ```bash
@@ -32,9 +30,7 @@ title: Установка на Windows
     ```
   </Step>
 
-  <Step>
-    ## Установите ClickHouse с помощью скрипта через curl
-
+  <Step title="Установите ClickHouse с помощью скрипта через curl" id="install-clickhouse-via-script-using-curl">
     Выполните следующую команду, чтобы установить ClickHouse с помощью скрипта через curl:
 
     ```bash
@@ -49,9 +45,7 @@ title: Установка на Windows
     ```
   </Step>
 
-  <Step>
-    ## Запустите clickhouse-local
-
+  <Step title="Запустите clickhouse-local" id="start-clickhouse-local">
     `clickhouse-local` позволяет обрабатывать локальные и удалённые файлы, используя
     мощный SQL-синтаксис ClickHouse, без необходимости в дополнительной настройке. Данные таблиц хранятся
     во временном расположении, поэтому после перезапуска `clickhouse-local`
@@ -64,9 +58,7 @@ title: Установка на Windows
     ```
   </Step>
 
-  <Step>
-    ## Запустите clickhouse-server
-
+  <Step title="Запустите clickhouse-server" id="start-clickhouse-server">
     Если вы хотите сохранять данные, используйте `clickhouse-server`. Вы можете
     запустить сервер ClickHouse с помощью следующей команды:
 
@@ -75,9 +67,7 @@ title: Установка на Windows
     ```
   </Step>
 
-  <Step>
-    ## Запустите clickhouse-client
-
+  <Step title="Запустите clickhouse-client" id="start-clickhouse-client">
     Когда сервер уже запущен, откройте новое окно терминала и выполните следующую команду,
     чтобы запустить `clickhouse-client`:
 

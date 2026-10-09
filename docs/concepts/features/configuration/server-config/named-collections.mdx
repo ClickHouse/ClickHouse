@@ -6,13 +6,13 @@ title: 'Named collections'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge />
-
 Named collections provide a way to store collections of key-value pairs to be
 used to configure integrations with external sources. You can use named collections with
 dictionaries, tables, table functions, and object storage.
+
+<Note>
+DDL-created named collections can be enabled on select ClickHouse Cloud services. Contact Support to confirm availability. Named collections defined in configuration files aren't available because users can't modify server configuration files in ClickHouse Cloud.
+</Note>
 
 Named collections can be configured with DDL or in configuration files and are applied
 when ClickHouse starts. They simplify the creation of objects and the hiding of credentials
@@ -22,16 +22,15 @@ The keys in a named collection must match the parameter names of the correspondi
 function, table engine, database, etc. In the examples below the parameter list is
 linked to for each type.
 
-Parameters set in a named collection can be overridden in SQL, this is shown in the examples
-below. This ability can be limited using `[NOT] OVERRIDABLE` keywords and XML attributes
-and/or the configuration option `allow_named_collection_override_by_default`.
+Overriding a parameter stored in a named collection requires the `SHOW NAMED COLLECTIONS SECRETS` privilege on that collection, including when the parameter is marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` in SQL or `overridable="false"` in XML cannot be overridden. Adding a parameter that the collection does not store does not require this additional privilege. Aliases, such as `addresses_expr` for `host`, count as overrides of the stored parameter.
 
-<Warning>
-If override is allowed, it may be possible for users without administrative access to
-figure out the credentials that you are trying to hide.
-If you are using named collections with that purpose, you should disable
-`allow_named_collection_override_by_default` (which is enabled by default).
-</Warning>
+```sql
+GRANT SHOW NAMED COLLECTIONS SECRETS ON my_collection TO my_user;
+```
+
+This check requires the privilege alone; it does not depend on the settings that control displaying secrets. The `allow_named_collection_override_by_default` setting is obsolete and has no effect.
+
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored. When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
 
 ## Storing named collections in the system database {#storing-named-collections-in-the-system-database}
 
@@ -46,9 +45,9 @@ url = 'https://connection.url/'
 
 In the above example:
 
-* `key_1` can always be overridden.
+* `key_1` can be overridden by users with `SHOW NAMED COLLECTIONS SECRETS` on the collection.
 * `key_2` can never be overridden.
-* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `url` can be overridden by users with `SHOW NAMED COLLECTIONS SECRETS` on the collection.
 
 ### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
@@ -61,6 +60,8 @@ To manage named collections with DDL a user must have the `named_collection_cont
       <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex replace=true>
       <access_management>1</access_management>
       <named_collection_control>1</named_collection_control>
+      <!-- Uncomment to also let this user see the values stored in named collections. -->
+      <!-- <show_named_collections_secrets>1</show_named_collections_secrets> -->
     </default>
   </users>
 </clickhouse>
@@ -69,6 +70,8 @@ To manage named collections with DDL a user must have the `named_collection_cont
 <Tip>
 In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
 </Tip>
+
+`named_collection_control` allows the user to create, alter and drop named collections, but not to read back the values that are already stored in them. That is a separate privilege, `SHOW NAMED COLLECTIONS SECRETS`, enabled by the [`show_named_collections_secrets`](/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) setting. A user can only grant the privileges that they have themselves, so while `show_named_collections_secrets` is disabled, the user does not have the complete set of privileges and `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` is rejected with `(Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)`.
 
 ### Storage for named collections {#storage-for-named-collections}
 
@@ -95,6 +98,16 @@ To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keepe
 
 An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
 
+You can inspect the active storage type through `system.server_settings` and `getServerSetting`:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+Changing the storage type requires a server restart; `SYSTEM RELOAD CONFIG` does not change the active backend.
+
 ## Storing named collections in configuration files {#storing-named-collections-in-configuration-files}
 
 ### XML example {#xml-example}
@@ -113,9 +126,9 @@ An optional configuration parameter `update_timeout_ms` by default is equal to `
 
 In the above example:
 
-* `key_1` can always be overridden.
+* `key_1` can be overridden by users with `SHOW NAMED COLLECTIONS SECRETS` on the collection.
 * `key_2` can never be overridden.
-* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `url` can be overridden by users with `SHOW NAMED COLLECTIONS SECRETS` on the collection.
 
 ## Modifying named collections {#modifying-named-collections}
 
@@ -478,9 +491,16 @@ SELECT * FROM remote(remote1, database = default, table = test);
 ### Example of using named collections with a dictionary with source ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
+CREATE NAMED COLLECTION remote_dict AS
+host = 'localhost',
+port = 9000,
+database = 'default',
+user = 'default',
+password = '';
+
 CREATE DICTIONARY dict(a Int64, b String)
 PRIMARY KEY a
-SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+SOURCE(CLICKHOUSE(NAME remote_dict TABLE test))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED());
 
@@ -520,6 +540,41 @@ kafka_max_block_size = '1048576';
     </named_collections>
 </clickhouse>
 ```
+
+### OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` options are extended `librdkafka` settings, so they must be nested under `<kafka>` inside each named collection. Top-level `kafka_*` keys configure the Kafka table engine. ClickHouse converts underscores in the nested XML element names to periods before passing them to `librdkafka`.
+
+The following example configures OAuth client credentials for an Azure Event Hubs namespace:
+
+```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
+<clickhouse>
+    <named_collections>
+        <eventhub_one>
+            <!-- Kafka table-engine settings -->
+            <kafka_broker_list>domain.one.servicebus.windows.net:9093</kafka_broker_list>
+            <kafka_topic_list>my-topic</kafka_topic_list>
+            <kafka_group_name>my-group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_security_protocol>sasl_ssl</kafka_security_protocol>
+            <kafka_sasl_mechanism>OAUTHBEARER</kafka_sasl_mechanism>
+
+            <!-- Extended librdkafka settings -->
+            <kafka>
+                <sasl_oauthbearer_method>oidc</sasl_oauthbearer_method>
+                <sasl_oauthbearer_client_id from_env="EVENTHUB_CLIENT_ID"/>
+                <sasl_oauthbearer_client_secret from_env="EVENTHUB_CLIENT_SECRET"/>
+                <sasl_oauthbearer_token_endpoint_url>https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0/token</sasl_oauthbearer_token_endpoint_url>
+                <sasl_oauthbearer_scope>https://domain.one.servicebus.windows.net/.default</sasl_oauthbearer_scope>
+            </kafka>
+        </eventhub_one>
+    </named_collections>
+</clickhouse>
+```
+
+When `ENGINE = Kafka(eventhub_one)` uses a named collection, ClickHouse does not merge the global server `<kafka>` configuration. Create one collection per Event Hubs namespace when the broker address or OAuth scope differs, and include every required OIDC property in that collection.
+
+The `from_env` attributes in this example apply to XML-defined named collections and read their values from the ClickHouse server process environment. See [substitution by environment variables](/concepts/features/configuration/server-config/configuration-files#from_env_zk) for deployment and default-value details, and [encrypting and hiding configuration](/concepts/features/configuration/server-config/configuration-files#encryption) to protect secrets in preprocessed configuration files.
 
 ### Example of using named collections with a Kafka table {#example-of-using-named-collections-with-a-kafka-table}
 
@@ -628,7 +683,7 @@ CREATE DICTIONARY dict
     `b` String
 )
 PRIMARY KEY a
-SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+SOURCE(MONGODB(NAME mymongo))
 LIFETIME(MIN 1 MAX 2)
 LAYOUT(HASHED())
 
@@ -640,5 +695,5 @@ SELECT dictGet('dict', 'b', 2);
 ```
 
 <Note>
-The named collection specifies `my_collection` for the collection name. In the function call it is overwritten by `collection = 'my_dict'` to select another collection.
+The dictionary uses `my_collection`, as specified in the named collection. To use another MongoDB collection, define a separate named collection with that value.
 </Note>

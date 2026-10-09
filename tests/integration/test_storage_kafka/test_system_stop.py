@@ -84,7 +84,7 @@ def setup_consuming_table(table, topic, keeper=False):
             SELECT key, value FROM test.{table};
         """,
         settings=(
-            {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+            {"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}
         ),
     )
 
@@ -106,11 +106,14 @@ def wait_dst_count(table, expected):
     assert int(result) == expected, f"expected {expected} rows in {table}_dst, got {result!r}"
 
 
-def assert_dst_count_stable(table, expected, seconds=5):
+def assert_dst_count_stable(table, expected, seconds=5, where="1"):
     """The count cannot grow: check it stays at `expected` for `seconds`."""
     deadline = time.time() + seconds
     while time.time() < deadline:
-        assert int(instance.query(f"SELECT count() FROM test.{table}_dst")) == expected
+        result = instance.query(
+            f"SELECT count() FROM test.{table}_dst WHERE {where}"
+        )
+        assert int(result) == expected
         time.sleep(1)
 
 
@@ -339,7 +342,7 @@ def test_kafka2_stop_aborts_inflight_block_pause_commits_it(kafka_cluster):
                 CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
                     SELECT key, value FROM test.{table};
                 """,
-                settings={"allow_experimental_kafka_offsets_storage_in_keeper": 1},
+                settings={"allow_kafka_offsets_storage_in_keeper": 1},
             )
 
             # Pre-load the topic while halted, then resume and wait for a fresh cycle to start streaming
@@ -358,6 +361,46 @@ def test_kafka2_stop_aborts_inflight_block_pause_commits_it(kafka_cluster):
                 assert_dst_count_stable(table, 0, seconds=8)
                 instance.query(f"SYSTEM START test.{table}")
                 wait_dst_count(table, 5)
+
+
+def test_kafka2_parse_error_does_not_skip_consumed_messages(kafka_cluster):
+    # Companion to test_kafka2_stop_aborts_inflight_block_pause_commits_it, where the abort is a
+    # throw instead of a SYSTEM STOP: with the default kafka_handle_error_mode an unparseable
+    # message makes the cycle throw, and the rows it read before the throw must stay uncommitted
+    # rather than being skipped by a later batch's commit.
+    admin_client = k.get_admin_client(kafka_cluster)
+    table = f"kafka2_parse_error_{k.random_string(6)}"
+    with k.kafka_topic(admin_client, table):
+        setup_consuming_table(table, table, keeper=True)
+
+        # Commit an offset first, so the abort exercises the ordinary committed-offset rollback
+        # rather than the no-committed-offset one.
+        produce(kafka_cluster, table, 0, 2)
+        wait_dst_count(table, 2)
+
+        # Halt, pre-load one batch whose third message cannot be parsed, then resume: keys 2 and 3
+        # are read before the throw and keys 4 and 5 sit behind it in the same batch.
+        instance.query(f"SYSTEM STOP test.{table}")
+        k.kafka_produce(
+            kafka_cluster,
+            table,
+            [
+                json.dumps({"key": 2, "value": 2}),
+                json.dumps({"key": 3, "value": 3}),
+                "this is not valid json",
+                json.dumps({"key": 4, "value": 4}),
+                json.dumps({"key": 5, "value": 5}),
+            ],
+        )
+        instance.query(f"SYSTEM START test.{table}")
+
+        instance.wait_for_log_line("while parsing Kafka message")
+        # Nothing behind the unparseable message may arrive: a later batch must not commit past it.
+        assert_dst_count_stable(table, 0, seconds=10, where="key >= 4")
+        # The cycle is alive and re-reading the same batch, not silently dead.
+        instance.wait_for_log_line("while parsing Kafka message", repetitions=3)
+
+        instance.query(f"DROP TABLE test.{table} SYNC")
 
 
 @pytest.mark.parametrize("keeper", [False, True], ids=["v1", "v2"])
@@ -391,7 +434,7 @@ def test_stop_during_insert_does_not_duplicate(kafka_cluster, keeper):
                 SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+                {"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}
             ),
         )
 
@@ -443,7 +486,7 @@ def test_cancel_during_insert_does_not_duplicate(kafka_cluster, keeper):
                 SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+                {"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}
             ),
         )
 
@@ -835,7 +878,7 @@ def test_cancel_during_direct_select_does_not_drop_messages(kafka_cluster, keepe
                          kafka_flush_interval_ms = 500{keeper_settings};
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1}
+                {"allow_kafka_offsets_storage_in_keeper": 1}
                 if keeper
                 else {}
             ),
@@ -938,7 +981,7 @@ def test_direct_select_rejected_when_view_attached_while_stopped(kafka_cluster, 
                 ENGINE = MergeTree ORDER BY key;
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1} if keeper else {}
+                {"allow_kafka_offsets_storage_in_keeper": 1} if keeper else {}
             ),
         )
 
@@ -1026,7 +1069,7 @@ def test_refresh_survives_active_direct_reader(kafka_cluster):
                          kafka_replica_name = 'r1';
             CREATE TABLE test.{table}_dst (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key;
             """,
-            settings={"allow_experimental_kafka_offsets_storage_in_keeper": 1},
+            settings={"allow_kafka_offsets_storage_in_keeper": 1},
         )
         produce(kafka_cluster, table, 0, n)
 

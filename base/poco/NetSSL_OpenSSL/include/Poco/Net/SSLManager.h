@@ -75,6 +75,7 @@ namespace Net
     ///            <verificationDepth>1..9</verificationDepth>
     ///            <loadDefaultCAFile>true|false</loadDefaultCAFile>
     ///            <cipherList>ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH</cipherList>
+    ///            <cipherSuites>TLS_AES_256_GCM_SHA384</cipherSuites>
     ///            <preferServerCiphers>true|false</preferServerCiphers>
     ///            <privateKeyPassphraseHandler>
     ///                <name>KeyFileHandler</name>
@@ -93,7 +94,7 @@ namespace Net
     ///            <requireTLSv1>true|false</requireTLSv1>
     ///            <requireTLSv1_1>true|false</requireTLSv1_1>
     ///            <requireTLSv1_2>true|false</requireTLSv1_2>
-    ///            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
+    ///            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2,tlsv1_3</disableProtocols>
     ///            <dhParamsFile>dh.pem</dhParamsFile>
     ///            <ecdhCurve>prime256v1</ecdhCurve>
     ///          </server|client>
@@ -115,7 +116,9 @@ namespace Net
     ///      will fail if a certificate chain larger than this is encountered.
     ///    - loadDefaultCAFile (boolean): Specifies whether the builtin CA certificates from OpenSSL are used.
     ///    - cipherList (string): Specifies the supported ciphers in OpenSSL notation
-    ///      (e.g. "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH").
+    ///      (e.g. "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"). Applies to TLS 1.2 and earlier only.
+    ///    - cipherSuites (string): Specifies the supported TLS 1.3 cipher suites in OpenSSL
+    ///      notation (e.g. "TLS_AES_256_GCM_SHA384"). If empty, the OpenSSL defaults are used.
     ///    - preferServerCiphers (bool): When choosing a cipher, use the server's preferences instead of the
     ///      client preferences. When not called, the SSL server will always follow the clients
     ///      preferences. When called, the SSL/TLS server will choose following its own
@@ -143,7 +146,7 @@ namespace Net
     ///    - requireTLSv1_1 (boolean): Require a TLSv1.1 connection.
     ///    - requireTLSv1_2 (boolean): Require a TLSv1.2 connection.
     ///    - disableProtocols (string): A comma-separated list of protocols that should be
-    ///      disabled. Valid protocol names are sslv2, sslv3, tlsv1, tlsv1_1, tlsv1_2.
+    ///      disabled. Valid protocol names are sslv2, sslv3, tlsv1, tlsv1_1, tlsv1_2, tlsv1_3.
     ///    - dhParamsFile (string): Specifies a file containing Diffie-Hellman parameters.
     ///      If not specified or empty, the default parameters are used.
     ///    - ecdhCurve (string): Specifies the name of the curve to use for ECDH, based
@@ -272,6 +275,7 @@ namespace Net
         static const std::string CFG_CIPHER_LIST;
         static const std::string CFG_CYPHER_LIST; // for backwards compatibility
         static const std::string VAL_CIPHER_LIST;
+        static const std::string CFG_CIPHER_SUITES;
         static const std::string CFG_PREFER_SERVER_CIPHERS;
         static const std::string CFG_DELEGATE_HANDLER;
         static const std::string VAL_DELEGATE_HANDLER;

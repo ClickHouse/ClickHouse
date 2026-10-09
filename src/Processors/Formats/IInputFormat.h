@@ -3,6 +3,8 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Core/Field.h>
+#include <Core/Names.h>
 #include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
@@ -24,9 +26,10 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// positional deletes.
 ///
 /// Warning: we currently don't correctly update this info in most transforms. E.g. things like
-/// FilterTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
+/// LimitTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
 /// have a mechanism to systematically find all code sites that would need to do that or to detect
-/// if one was missed.
+/// if one was missed. (FilterTransform can optionally update it, but only when explicitly told to
+/// via `update_row_numbers_info`; by default it leaves it untouched like the others.)
 /// So this is only used in a few specific situations, and the builder of query pipeline must be
 /// careful to never put a step that uses this info after a step that breaks it.
 ///
@@ -127,9 +130,20 @@ public:
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
-    void needOnlyCount() { need_only_count = true; }
+    /// Query parameters make sense only for the Values format, where the data may contain expressions.
+    virtual void setQueryParameters(const NameToNameMap & /*parameters*/) {}
+
+    virtual void needOnlyCount() { need_only_count = true; }
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+
+    /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
+    /// which returned rows, the best value of the sort column among these rows, in the query's order.
+    /// A bucket whose best value is beyond the final threshold holds no row of the result.
+    virtual std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
+    /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
+    /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
+    virtual bool isTopKFilterApplied() const { return false; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

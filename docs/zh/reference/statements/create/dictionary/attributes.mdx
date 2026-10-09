@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – 键所在列的名称。
 
-<div id="composite-key">
-  ### 复合键
-</div>
+### 复合键 {#composite-key}
 
 键可以是由任意类型的字段组成的 `tuple`。在这种情况下，[布局](/zh/reference/statements/create/dictionary/layouts/overview)必须为 `complex_key_hashed` 或 `complex_key_cache`。
 
@@ -124,6 +122,7 @@ PRIMARY KEY Id
         ...
     </key>
 ...
+</structure>
 ```
 
 或
@@ -139,6 +138,8 @@ PRIMARY KEY field1, field2
 ```
 
 对于 `dictGet*` 函数的查询，键会以元组形式传入。示例：`dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`。
+
+当复合键仅由一个属性组成时，可以直接传递键值，而无需将其包装在 `tuple` 中。例如，`dictGetString('dict_name', 'attr_name', 'key')` 和 `dictGetString('dict_name', 'attr_name', tuple('key'))` 都是有效的。
 
 <div id="attributes">
   ## 属性

@@ -14,7 +14,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <br />
 
-ClickHouse の [MergeTree engine family](/ja/reference/engines/table-engines/mergetree-family/index) に含まれる各テーブルのデータは、ディスク上では不変の `data parts` の集合として構成されています。
+ClickHouse の [MergeTree engine family](/ja/reference/engines/table-engines/mergetree-family/index) に含まれる各テーブルのデータは、ディスク上では不変の `データパーツ` の集合として構成されています。
 
 これを説明するために、イギリスで売買された不動産の取引日、町、通り、価格を記録した [この](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) テーブル ([UK property prices dataset](/ja/get-started/sample-datasets/uk-price-paid) をもとに調整) を使用します：
 
@@ -40,13 +40,23 @@ ORDER BY (town, street);
 
 ClickHouse server が上の図に示した 4 行のサンプル insert (たとえば [INSERT INTO ステートメント](/ja/reference/statements/insert-into) 経由) を処理すると、いくつかのステップが実行されます。
 
-① **ソート**: 行はテーブルのソートキー `(town, street)` に従ってソートされ、ソート後の行に対して [スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) が生成されます。
+<Steps>
+  <Step title="ソート">
+    行はテーブルのソートキー `(town, street)` に従ってソートされ、ソート後の行に対して [スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) が生成されます。
+  </Step>
 
-② **分割**: ソート済みのデータはカラムごとに分割されます。
+  <Step title="分割">
+    ソート済みのデータはカラムごとに分割されます。
+  </Step>
 
-③ **圧縮**: 各カラムは[圧縮](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)されます。
+  <Step title="圧縮">
+    各カラムは[圧縮](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)されます。
+  </Step>
 
-④ **ディスクへの書き込み**: 圧縮されたカラムは、insert のデータパーツを表す新しいディレクトリ内に、バイナリのカラムファイルとして保存されます。スパースプライマリインデックスも圧縮され、同じディレクトリに格納されます。
+  <Step title="ディスクへの書き込み">
+    圧縮されたカラムは、insert のデータパーツを表す新しいディレクトリ内に、バイナリのカラムファイルとして保存されます。スパースプライマリインデックスも圧縮され、同じディレクトリに格納されます。
+  </Step>
+</Steps>
 
 テーブルで使用しているエンジンによっては、ソートとあわせて追加の変換が行われる[場合があります](/ja/reference/settings/session-settings)。
 
@@ -56,7 +66,7 @@ ClickHouse server が上の図に示した 4 行のサンプル insert (たと�
   ## パーツのマージ
 </div>
 
-テーブルごとのパーツ数を管理するため、[バックグラウンドマージ](/ja/concepts/core-concepts/merges)ジョブが定期的に小さなパーツをより大きなパーツへ統合し、[設定可能な](/ja/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)圧縮サイズ (通常は約 150 GB) に達するまでこの処理を続けます。マージ済みパーツは非アクティブとしてマークされ、[設定可能な](/ja/reference/settings/merge-tree-settings#old_parts_lifetime)期間の経過後に削除されます。時間の経過とともに、このプロセスによってマージ済みパーツの階層構造が形成されるため、これが MergeTree テーブルと呼ばれる理由です。
+テーブルごとのパーツ数を管理するため、[バックグラウンドマージ](/ja/concepts/core-concepts/merges)ジョブが定期的に小さなパーツをより大きなパーツへ統合し、[設定可能な](/ja/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)圧縮サイズ (通常は約 150 GB) に達するまでこの処理を続けます。マージ済みパーツは非アクティブとしてマークされ、[設定可能な](/ja/reference/settings/merge-tree-settings/other#old_parts_lifetime)期間の経過後に削除されます。時間の経過とともに、このプロセスによってマージ済みパーツの階層構造が形成されるため、これが MergeTree テーブルと呼ばれる理由です。
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 

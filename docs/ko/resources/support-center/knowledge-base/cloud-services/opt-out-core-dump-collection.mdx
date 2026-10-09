@@ -1,0 +1,71 @@
+---
+date: 2026-02-04
+title: '크래시 보고서 수집 제외 방법'
+description: '이 문서에서는 ClickHouse Cloud에서 크래시 보고서 수집에서 제외하는 방법을 설명합니다'
+tags: ['Cloud 관리']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="overview">
+  ## 개요
+</div>
+
+**2026년 2월 27일**부터 ClickHouse Cloud는 서버 크래시 발생 시 크래시 보고서 수집을 시작합니다. 이는 모든 사용자를 위한 서비스 신뢰성 향상을 위한 노력의 일환입니다.
+
+크래시 보고서 수집은 다음과 같은 데 도움이 됩니다:
+
+* 크래시 원인을 식별하고 파악
+* 문제를 더 신속하게 해결
+* 서비스 사용 경험을 지속적으로 개선
+
+<div id="whats-collected">
+  ## 수집되는 항목
+</div>
+
+크래시가 발생하면 크래시 보고서는 그 시점의 서버 상태에 대한 스냅샷을 수집합니다. 여기에는 당시 메모리에 있던 민감한 정보가 포함될 수 있음을 명확히 알려드립니다. 예를 들면 다음과 같습니다.
+
+* 연결 자격 증명
+* 암호화 키
+* 쿼리 문자열
+* 크래시 발생 시점의 기타 메모리 내 데이터
+
+<div id="how-we-protect-your-data">
+  ### 데이터 보호 방법
+</div>
+
+이 데이터의 보안을 매우 중요하게 생각합니다:
+
+* **리전 내 저장**: 모든 데이터는 서비스와 동일한 리전에 유지됩니다
+* **강화된 보안**: 수집된 모든 데이터에 추가적인 보호 조치를 적용합니다
+* **제한된 보존 기간**: 데이터는 디버깅에 필요한 기간 동안만 보관되며, 이후 안전하게 삭제됩니다
+
+<div id="services-automatically-excluded">
+  ## 자동으로 제외되는 서비스
+</div>
+
+일부 서비스는 크래시 보고서 수집 대상에서 자동으로 제외됩니다.
+
+* **HIPAA** 컴플라이언스 요구 사항이 있는 서비스
+* **PCI** 컴플라이언스 요구 사항이 있는 서비스
+* **BYOC** (Bring Your Own Cloud) 서비스
+
+<div id="how-to-opt-out">
+  ## 옵트아웃하는 방법
+</div>
+
+크래시 보고서 수집에 참여하지 않으려면 다음과 같이 쉽게 옵트아웃할 수 있습니다.
+
+1. [ClickHouse Cloud 콘솔](https://clickhouse.cloud)로 이동합니다
+2. 서비스를 선택합니다
+3. **설정** 탭을 클릭합니다
+4. &quot;Share crash reports with ClickHouse&quot;를 찾을 때까지 아래로 스크롤합니다
+5. 옵트아웃하려면 이 옵션을 끕니다
+
+<Image img="/images/crash-reports.png" size="md" alt="Cloud UI에서 옵트아웃 옵션을 찾는 위치" />
+
+<Note>
+  서비스 설정 외에도 organization 수준에서 기본 설정을 구성할 수 있습니다. 이 설정을 비활성화하면, 즉 크래시 보고서 수집을 옵트아웃하면 기존의 모든 서비스와 새로 생성되는 모든 서비스가 자동으로 옵트아웃됩니다. 이 기본 설정을 활성화하면, 즉 옵트인하면 서비스 수준에서 선택적으로 비활성화하여 재정의하고 옵트아웃할 수 있습니다.
+</Note>
+
+<Image img="/images/cloud/crash-reports-collection.png" size="md" alt="크래시 보고서 수집" />

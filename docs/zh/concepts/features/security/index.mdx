@@ -4,9 +4,23 @@ title: '安全与身份验证'
 description: '安全与身份验证概览页'
 doc_type: 'landing-page'
 keywords: ['安全与身份验证', '访问控制', 'RBAC', '用户管理', 'SRE 指南']
+mode: wide
 ---
 
-| 页面                                                                   | 描述                                      |
-| -------------------------------------------------------------------- | --------------------------------------- |
-| [用户和角色](/zh/concepts/features/security/access-rights)                   | 了解 ClickHouse 如何基于 RBAC 实现访问控制管理。       |
-| [外部身份验证器](/zh/concepts/features/security/external-authenticators/index) | 了解 OSS ClickHouse 如何借助外部服务对用户进行身份验证和管理。 |
+<CardGroup cols={2}>
+  <Card title="用户和角色" icon="users" href="/zh/concepts/features/security/access-rights">
+    了解 ClickHouse 如何基于 RBAC 实现访问控制管理。
+  </Card>
+
+  <Card title="网络端口" icon="ethernet" href="/zh/concepts/features/security/network-ports">
+    ClickHouse 使用的网络端口参考。
+  </Card>
+
+  <Card title="TLS" icon="lock" href="/zh/concepts/features/security/tls/index">
+    为 ClickHouse 的安全连接配置 TLS。
+  </Card>
+
+  <Card title="外部身份验证器" icon="id-badge" href="/zh/concepts/features/security/external-authenticators/index">
+    了解 OSS ClickHouse 如何借助外部服务对用户进行身份验证和管理。
+  </Card>
+</CardGroup>

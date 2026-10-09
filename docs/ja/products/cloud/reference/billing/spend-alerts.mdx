@@ -35,23 +35,19 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### 支出アラートのダイアログを開く
-
+  <Step title="支出アラートのダイアログを開く" id="open-spend-alerts-dialog">
     1. ClickHouse Cloud コンソールで **Organization &gt; Billing** に移動します。
     2. **Actions &gt; Add spend alerts** をクリックします。
 
     <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Actions メニューが開き、Add spend alerts が強調表示された Billing ページ" size="lg" />
   </Step>
 
-  <Step>
-    ### アラートを設定して保存する
-
-    1. 請求期間ごとの支出アラート額を、ドルまたはクレジットで入力します。
+  <Step title="アラートを設定して保存する" id="configure-and-save">
+    1. 請求期間ごとの支出アラート金額を、ドルまたはクレジットで入力します。
     2. 通知チャネル (**Email**、**UI**、**Slack** のいずれか、または複数) を選択します。
     3. **Save** をクリックします。
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="支出上限、自動しきい値アラート、通知チャネルが表示された Organization の支出アラート ダイアログ" size="md" />
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="支出上限、自動しきい値アラート、通知チャネルが表示された Organization の支出アラートダイアログ" size="md" />
   </Step>
 </Steps>
 
@@ -65,7 +61,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 | -------- | ------------------ | ------------- |
 | **50%**  | 支出額の半分に達した時点       | $5            |
 | **75%**  | 支出額の 4 分の 3 に達した時点 | $8            |
-| **90%**  | 支出額の 90% に達した時点      | $9            |
+| **90%**  | 支出額の 90% に達した時点    | $9            |
 | **100%** | 支出額の全額に達した時点       | $10           |
 
 <div id="notification-channels">

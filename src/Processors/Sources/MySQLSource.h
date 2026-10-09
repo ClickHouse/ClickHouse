@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 #include <Processors/ISource.h>
 #include <mysqlxx/PoolWithFailover.h>
@@ -12,7 +13,12 @@ namespace DB
 
 struct Settings;
 
-struct StreamSettings
+/// Converts the payload of a MySQL `BIT` field into a `UInt64`. The value is transferred in the
+/// big-endian order and holds at most 64 bits; a longer value coming from the server is rejected
+/// instead of overflowing the destination.
+UInt64 parseMySQLBitValue(std::string_view value);
+
+struct MySQLStreamSettings
 {
     /// Check if setting is enabled, otherwise use common `max_block_size` setting.
     size_t max_read_mysql_row_nums;
@@ -24,7 +30,7 @@ struct StreamSettings
     bool fetch_by_name;
     size_t default_num_tries_on_connection_loss;
 
-    explicit StreamSettings(const Settings & settings, bool auto_close_ = false, bool fetch_by_name_ = false, size_t max_retry_ = 5);
+    explicit MySQLStreamSettings(const Settings & settings, bool auto_close_ = false, bool fetch_by_name_ = false, size_t max_retry_ = 5);
 
 };
 
@@ -36,12 +42,12 @@ public:
         const mysqlxx::PoolWithFailover::Entry & entry,
         const std::string & query_str,
         const Block & sample_block,
-        const StreamSettings & settings_);
+        const MySQLStreamSettings & settings_);
 
     String getName() const override { return "MySQL"; }
 
 protected:
-    MySQLSource(const Block & sample_block_, const StreamSettings & settings);
+    MySQLSource(const Block & sample_block_, const MySQLStreamSettings & settings);
     Chunk generate() override;
     void initPositionMappingFromQueryResultStructure();
 
@@ -57,7 +63,7 @@ protected:
     LoggerPtr log;
     std::unique_ptr<Connection> connection;
 
-    const std::unique_ptr<StreamSettings> settings;
+    const std::unique_ptr<MySQLStreamSettings> settings;
     std::vector<size_t> position_mapping;
     ExternalResultDescription description;
 };
@@ -73,7 +79,7 @@ public:
         mysqlxx::PoolWithFailoverPtr pool_,
         const std::string & query_str_,
         const Block & sample_block_,
-        const StreamSettings & settings_);
+        const MySQLStreamSettings & settings_);
 
     Chunk generate() override;
 

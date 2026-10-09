@@ -177,8 +177,8 @@ NO_INLINE void benchmark(size_t elements, size_t max_elements)
 
 int mainEntryExampleGroupArraySorted(int argc, char ** argv)
 {
-    (void)(argc);
-    (void)(argv);
+    (void)argc;
+    (void)argv;
 
     if (argc != 4)
     {

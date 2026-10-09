@@ -50,21 +50,21 @@ La disponibilidad de los datos exige pensar en el tiempo total hasta obtener inf
   <ExclusiveGroup name="rta-arch">
     <AccordionGroup>
       <Accordion title="Ingestión de datos" defaultOpen>
-        Con [ClickPipes](/es/integrations/clickpipes/home), disponible exclusivamente en ClickHouse Cloud, obtienes un motor de integración listo para usar que facilita la ingestión de grandes volúmenes de datos. Selecciona una fuente de datos de entrada y un formato, ajusta el esquema y deja que la canalización se ejecute.
+        Con [ClickPipes](/es/integrations/clickpipes/home), disponible exclusivamente en ClickHouse Cloud, obtienes un motor de integración listo para usar que facilita la ingesta de grandes volúmenes de datos. Selecciona una fuente de datos de entrada y un formato, ajusta el esquema y deja que el pipeline se ejecute.
 
-        La amplia biblioteca de [motores de tablas](/es/reference/engines/table-engines) de ClickHouse admite la ingestión de datos desde topics de Kafka, buckets de S3, bases de datos OLTP y más. A diferencia de otras bases de datos OLAP que requieren inserciones por lotes para lograr un alto rendimiento, ClickHouse maneja igual de bien payloads más pequeños: las [inserciones asíncronas](/es/concepts/features/operations/insert/asyncinserts) los agrupan automáticamente en lotes para optimizar el rendimiento de escritura.
+        La amplia biblioteca de [motores de tabla](/es/reference/engines/table-engines) de ClickHouse admite la ingesta de datos desde topics de Kafka, buckets de S3, bases de datos OLTP y más. A diferencia de otras bases de datos OLAP que requieren agrupar las inserciones por lotes para lograr un alto rendimiento, ClickHouse maneja igual de bien cargas útiles más pequeñas: las [inserciones asíncronas](/es/concepts/features/operations/insert/asyncinserts) las agrupan automáticamente en lotes para optimizar el rendimiento de escritura.
       </Accordion>
 
       <Accordion title="Transformaciones de datos y consultas">
-        Las [vistas materializadas](/es/concepts/features/materialized-views) permiten realizar transformaciones sin fricciones: se activan automáticamente cuando se insertan datos nuevos, y extraen, agregan y modifican los datos a medida que llegan, sin necesidad de canalizaciones personalizadas. Encadenarlas aporta flexibilidad modular.
+        Las [vistas materializadas](/es/concepts/features/materialized-views) permiten realizar transformaciones sin fricción: se activan automáticamente cuando se insertan datos nuevos y extraen, agregan y modifican los datos a medida que llegan, sin necesidad de pipelines a medida. Encadenarlas aporta flexibilidad modular.
 
-        Las consultas sobre vistas materializadas son excepcionalmente rápidas, ya que los resultados se almacenan en tablas dedicadas. ClickHouse Cloud incluye la [caché de consultas](/es/concepts/features/performance/caches/query-cache), los [índices dispersos](/es/concepts/features/performance/skip-indexes/skipping-indexes) y las [proyecciones](/es/concepts/features/projections/projections) sin costo adicional.
+        Las consultas sobre vistas materializadas son excepcionalmente rápidas, ya que los resultados se almacenan en tablas dedicadas. ClickHouse Cloud incluye la [query cache](/es/concepts/features/performance/caches/query-cache), los [índices dispersos](/es/concepts/features/performance/skip-indexes/skipping-indexes) y las [proyecciones](/es/concepts/features/projections/projections) sin coste adicional.
       </Accordion>
 
       <Accordion title="Aplicaciones y dashboards">
-        ClickHouse impulsa la analítica orientada al usuario en servicios financieros, videojuegos, comercio electrónico y más. Admite una interfaz REST para que los desarrolladores web puedan crear aplicaciones ligeras sin recurrir a protocolos binarios complejos.
+        ClickHouse impulsa la analítica orientada al usuario en servicios financieros, gaming, comercio electrónico y más. Admite una interfaz REST para que los desarrolladores web puedan crear aplicaciones ligeras sin recurrir a protocolos binarios complejos.
 
-        Hay conectores nativos para herramientas de BI como [Grafana](/es/integrations/connectors/data-visualization/grafana), [Tableau](/es/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) y [Looker](/es/integrations/connectors/data-visualization/looker-and-clickhouse), además de clientes para distintos lenguajes, clientes SQL y el [MySQL wire protocol](/es/concepts/features/interfaces/mysql) para herramientas sin un conector nativo.
+        Existen conectores nativos para herramientas de BI como [Grafana](/es/integrations/connectors/data-visualization/grafana), [Tableau](/es/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) y [Looker](/es/integrations/connectors/data-visualization/looker-and-clickhouse), además de clients para distintos lenguajes, clients SQL y el [MySQL wire protocol](/es/concepts/features/interfaces/mysql) para herramientas sin un conector nativo.
       </Accordion>
     </AccordionGroup>
   </ExclusiveGroup>

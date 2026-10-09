@@ -30,6 +30,7 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
+void registerTableFunctionBigQuery(TableFunctionFactory & factory);
 
 #if USE_ARROWFLIGHT
 void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
@@ -72,6 +73,8 @@ void registerTableFunctionDictionary(TableFunctionFactory & factory);
 void registerTableFunctionFormat(TableFunctionFactory & factory);
 
 void registerTableFunctionExplain(TableFunctionFactory & factory);
+
+void registerTableFunctionTraceView(TableFunctionFactory & factory);
 
 void registerTableFunctionObjectStorage(TableFunctionFactory & factory);
 void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory);

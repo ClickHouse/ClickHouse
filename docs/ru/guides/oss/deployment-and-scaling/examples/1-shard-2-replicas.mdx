@@ -39,9 +39,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 * На вашем компьютере установлен Docker
 
 <Steps>
-  <Step>
-    ## Настройка структуры каталогов и тестовой среды
-
+  <Step title="Настройка структуры каталогов и тестовой среды" id="set-up">
     <ExampleFiles />
 
     В этом руководстве вы будете использовать [Docker compose](https://docs.docker.com/compose/) для
@@ -54,12 +52,12 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     mkdir cluster_1S_2R
     cd cluster_1S_2R
 
-    # Создание директорий clickhouse-keeper
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Создание директорий clickhouse-server
+    # Create clickhouse-server directories
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -143,10 +141,8 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Настройка узлов ClickHouse
-
-    ### Настройка сервера
+  <Step title="Настройка узлов ClickHouse" id="configure-clickhouse-servers">
+### Настройка сервера
 
     Теперь измените каждый пустой файл конфигурации `config.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Выделенные ниже строки
@@ -213,14 +209,14 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | Каталог                                                   | File                                                                                                                                                                             |
+    | Каталог                                                   | Файл                                                                                                                                                                             |
     | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
 
     Каждый раздел приведённого выше конфигурационного файла подробно описан ниже.
 
-    #### Сеть и логирование
+#### Сеть и логирование
 
     <ListenHost />
 
@@ -239,7 +235,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     Дополнительные сведения о конфигурации логирования см. в комментариях в стандартном [файле конфигурации](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) ClickHouse.
 
-    #### Конфигурация кластера
+#### Конфигурация кластера
 
     Конфигурация кластера задаётся в блоке `<remote_servers>`.
     Здесь определяется имя кластера `cluster_1S_2R`.
@@ -254,11 +250,11 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-        <!-- имя кластера (не должно содержать точек) -->
+        <!-- cluster name (should not contain dots) -->
         <cluster_1S_2R>
             <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
             <shard>
-                <!-- Необязательно. Записывать ли данные только на одну из реплик. По умолчанию: false (записывать данные на все реплики). -->
+                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>clickhouse-01</host>
@@ -275,7 +271,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-    #### Конфигурация Keeper
+#### Конфигурация Keeper
 
     Секция `<ZooKeeper>` указывает ClickHouse, где запущен ClickHouse Keeper (или ZooKeeper).
     Поскольку мы используем кластер ClickHouse Keeper, необходимо указать каждый узел (`<node>`) кластера
@@ -305,7 +301,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
       в промышленной среде мы настоятельно рекомендуем запускать ClickHouse Keeper на выделенных хостах.
     </Note>
 
-    #### Конфигурация макросов
+#### Конфигурация макросов
 
     Кроме того, раздел `<macros>` используется для определения подстановок параметров для
     реплицированных таблиц. Они перечислены в `system.macros` и позволяют использовать подстановки
@@ -323,7 +319,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
       Они будут определяться по-разному в зависимости от конфигурации кластера.
     </Note>
 
-    ### Конфигурация пользователя
+### Конфигурация пользователя
 
     Теперь внесите следующие изменения в каждый пустой файл конфигурации `users.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d`:
@@ -341,7 +337,6 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -349,7 +344,6 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -368,7 +362,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | Каталог                                                  | File                                                                                                                                                                          |
+    | Каталог                                                  | Файл                                                                                                                                                                          |
     | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
@@ -381,10 +375,8 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## Настройка ClickHouse Keeper
-
-    ### Настройка Keeper
+  <Step title="Настройка ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
+### Настройка Keeper
 
     <KeeperConfig />
 
@@ -399,9 +391,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Проверьте настройку
-
+  <Step title="Проверьте настройку" id="test-the-setup">
     Убедитесь, что Docker запущен на вашем компьютере.
     Запустите кластер командой `docker-compose up` из корневого каталога `cluster_1S_2R`:
 
@@ -426,7 +416,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     следующий запрос. Ниже показана команда для подключения к первому узлу:
 
     ```bash
-    # Подключитесь к любому узлу
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -480,9 +470,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     На следующем шаге вы создадите таблицу в кластере.
   </Step>
 
-  <Step>
-    ## Создайте базу данных
-
+  <Step title="Создайте базу данных" id="creating-a-database">
     Теперь, когда вы убедились, что cluster настроен правильно и работает,
     вам предстоит заново создать ту же table, которая использовалась в обучающем
     примере набора данных [UK property prices](/ru/get-started/sample-datasets/uk-price-paid).
@@ -521,7 +509,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ON CLUSTER cluster_1S_2R;
     ```
 
-    Вы можете снова выполнить тот же запрос, что и раньше, из клиента на каждом хосте,
+    Вы можете снова выполнить тот же запрос, что и раньше, в клиенте на каждом хосте,
     чтобы убедиться, что база данных была создана во всём кластере, хотя
     запрос был выполнен только на `clickhouse-01`:
 
@@ -540,9 +528,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Создайте таблицу на кластере
-
+  <Step title="Создайте таблицу на кластере" id="creating-a-table">
     Теперь, когда база данных создана, создайте таблицу на кластере.
     Выполните следующий запрос на любом из клиентских хостов:
 
@@ -594,9 +580,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Вставка данных
-
+  <Step title="Вставка данных" id="inserting-data">
     Поскольку набор данных велик и его полный приём занимает несколько минут, для начала мы вставим лишь небольшое подмножество.
 
     Вставьте меньшее подмножество данных, используя приведённый ниже запрос на `clickhouse-01`:
@@ -711,7 +695,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -730,7 +714,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -785,8 +769,8 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌──count()─┐
-    1. │ 30212555 │ -- 30,21 миллиона
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
     ```
   </Step>

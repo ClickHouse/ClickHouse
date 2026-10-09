@@ -1,0 +1,24 @@
+{
+  "directory": "none",
+  "group": "Настройки форматов",
+  "pages": [
+    "ru/reference/settings/formats/bool",
+    "ru/reference/settings/formats/date-time",
+    "ru/reference/settings/formats/format",
+    "ru/reference/settings/formats/format-avro",
+    "ru/reference/settings/formats/format-binary",
+    "ru/reference/settings/formats/format-capn",
+    "ru/reference/settings/formats/format-csv",
+    "ru/reference/settings/formats/format-custom",
+    "ru/reference/settings/formats/format-regexp",
+    "ru/reference/settings/formats/format-schema",
+    "ru/reference/settings/formats/format-template",
+    "ru/reference/settings/formats/input-format",
+    "ru/reference/settings/formats/output-format",
+    "ru/reference/settings/formats/schema-inference",
+    "ru/reference/settings/formats/show-create",
+    "ru/reference/settings/formats/type-json",
+    "ru/reference/settings/formats/other"
+  ],
+  "root": "ru/reference/settings/formats"
+}

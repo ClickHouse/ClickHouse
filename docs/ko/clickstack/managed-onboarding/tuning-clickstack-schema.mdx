@@ -16,9 +16,7 @@ ClickStack을 한동안 운영해 왔다면, 기본 스키마만으로도 대부
 아래 요약은 의도적으로 짧게 작성했습니다. 각 변경의 배경 설명, 벤치마크, 그리고 이를 기존 데이터에 적용하는 방법은 [성능 튜닝](/ko/clickstack/managing/performance-tuning)을 참조하십시오.
 
 <Steps>
-  <Step>
-    ## 자주 쿼리하는 속성 구체화하기
-
+  <Step title="자주 쿼리하는 속성 구체화하기" id="materialize-attributes">
     `LogAttributes['service.version']`로 필터링하면 ClickHouse는 검사하는 모든 행에 대해 `LogAttributes` 맵 전체를 로드하고 디코딩해야 합니다. 이 속성을 `MATERIALIZED` 컬럼으로 승격하면 동일한 필터가 컬럼 읽기로 바뀌어, 보통 10배 정도 더 빨라집니다. 컬럼이 만들어지면 ClickStack이 필터를 자동으로 재작성하므로 저장된 검색과 대시보드는 수정 없이 계속 동작합니다.
 
     실제로 자주 쿼리하는 속성만 선택하십시오. 각 구체화된 컬럼은 스토리지와 삽입 시점 비용을 추가하므로, &quot;모든 것을 승격&quot;하기보다 &quot;실제로 사용하는 것만 승격&quot;하는 방식으로 접근해야 합니다.
@@ -34,12 +32,10 @@ ClickStack을 한동안 운영해 왔다면, 기본 스키마만으로도 대부
     자세히 보기: [자주 쿼리하는 속성 구체화하기](/ko/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
   </Step>
 
-  <Step>
-    ## 스킵 인덱스 추가하기
-
+  <Step title="스킵 인덱스 추가하기" id="add-skip-indexes">
     스킵 인덱스를 사용하면 ClickHouse가 필터와 일치할 수 없는 데이터 그래뉼을 미리 제외할 수 있어, 전체 스캔을 작고 정확한 읽기로 줄일 수 있습니다. 알아두면 좋은 유형은 3가지입니다.
 
-    * 문자열 컬럼과 `mapKeys`/`*AttributeItems` 배열에 사용하는 **텍스트 인덱스** (`text(tokenizer = ...)`)입니다. 기본 로그 스키마에는 이미 포함되어 있습니다.
+    * **텍스트 인덱스** (`text(tokenizer = ...)`)입니다. 문자열 컬럼과 `mapKeys`/`*AttributeItems` 배열에 사용합니다. 기본 로그 스키마에는 이미 포함되어 있습니다.
     * 범위 조건으로 필터링하는 숫자 컬럼에 사용하는 **MinMax 인덱스**입니다. 트레이스의 `Duration`이 대표적인 사례입니다.
     * 아직 텍스트 인덱스를 지원하지 않는 ClickHouse 버전에서, 카디널리티가 높은 값에 대한 동등 비교 조회에 사용하는 **블룸 필터**입니다.
 
@@ -53,9 +49,7 @@ ClickStack을 한동안 운영해 왔다면, 기본 스키마만으로도 대부
     자세히 보기: [스킵 인덱스 추가하기](/ko/clickstack/managing/performance-tuning#adding-skip-indexes).
   </Step>
 
-  <Step>
-    ## 반복되는 집계 미리 계산하기
-
+  <Step title="반복되는 집계 미리 계산하기" id="materialized-views">
     대시보드에서 같은 집계가 반복해서 실행된다면(오류율 기준 상위 서비스, 엔드포인트별 p99 지연 시간, 분당 요청 수), materialized view가 삽입 시점에 결과를 계산해 작은 롤업 테이블에 기록합니다. 그러면 대시보드는 원시 logs나 traces 대신 롤업 테이블을 조회하게 되며, 비용이 훨씬 적게 듭니다.
 
     이 방식은 대시보드 조회가 빈번하고 기본 테이블이 클 때 효과적입니다. 대신 삽입 시점에 CPU를 더 사용하게 되고, 유지 관리할 두 번째 테이블이 추가됩니다.
@@ -63,9 +57,7 @@ ClickStack을 한동안 운영해 왔다면, 기본 스키마만으로도 대부
     자세히 보기: [materialized view 활용하기](/ko/clickstack/managing/performance-tuning#exploiting-materialized-views).
   </Step>
 
-  <Step>
-    ## 액세스 패턴에 맞는 프라이머리 키 선택하기
-
+  <Step title="액세스 패턴에 맞는 프라이머리 키 선택하기" id="choose-primary-key">
     프라이머리 키는 행이 디스크에서 어떻게 정렬되는지를 결정합니다. 키의 앞부분 컬럼을 조건으로 사용하는 필터가 있으면 ClickHouse가 관련 영역으로 바로 이동할 수 있지만, 그렇지 않은 필터는 전체 파티션을 스캔합니다.
 
     기본 로그 키 `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`는 &quot;서비스 X에서 최근 N분 동안 무슨 일이 있었는가&quot; 같은 쿼리에 유리합니다. 대부분의 쿼리가 다른 컬럼(테넌트 ID, 고객 ID, 리전)으로 시작한다면, 프라이머리 키의 선두를 그 컬럼으로 바꾸는 것이 가장 큰 효과를 내는 변경입니다.

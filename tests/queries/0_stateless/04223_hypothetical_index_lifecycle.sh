@@ -360,7 +360,7 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE USER ${userq} NOT IDENTIFIED;
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_hypo_quota TO ${userq};
     DROP QUOTA IF EXISTS ${quotaq};
-    CREATE QUOTA ${quotaq} FOR INTERVAL 1 hour MAX read_rows = 100 TO ${userq};
+    CREATE QUOTA ${quotaq} FOR INTERVAL 100 YEAR MAX read_rows = 100 TO ${userq};
 "
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${userq}&session_id=${sessq}&session_timeout=60" \
     --data-binary "CREATE HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_quota (b) TYPE minmax GRANULARITY 1"

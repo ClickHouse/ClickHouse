@@ -30,9 +30,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
     以下指南假设您已创建托管 ClickStack 服务并记录了相应的服务凭据。如果尚未完成，请先参阅托管 ClickStack 的 [Getting Started](/zh/clickstack/getting-started/managed) 指南，按步骤操作至提示配置 Vector 为止。
 
     <Steps>
-      <Step>
-        ### 创建数据库和表
-
+      <Step title="创建数据库和表" id="create-a-database-table">
         Vector 要求在摄取数据之前预先定义好表和 schema。
 
         首先创建一个数据库。可以通过 [ClickHouse Cloud 控制台](/zh/products/cloud/features/sql-console-features/sql-console) 完成。
@@ -43,7 +41,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        为您的数据创建一个表。该表应与数据的输出 schema 相匹配。下面的示例假设采用经典的 Nginx 结构。请根据您的数据进行相应调整，并遵循 [schema 最佳实践](/zh/concepts/best-practices/select-data-type)。我们**强烈建议**您先了解[主键的概念](/zh/concepts/core-concepts/primary-indexes)，并根据[此处](/zh/clickstack/managing/performance-tuning#choosing-a-primary-key)列出的指南选择主键。
+        为您的数据创建一个表。该表应与数据的输出 schema 相匹配。下面的示例假设采用经典的 Nginx 结构。请根据您的数据相应调整，并遵循 [schema 最佳实践](/zh/concepts/best-practices/select-data-type)。我们**强烈建议**您先熟悉[主键的概念](/zh/concepts/core-concepts/primary-indexes)，并根据[此处](/zh/clickstack/managing/performance-tuning#choosing-a-primary-key)所述指南选择主键。
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -72,9 +70,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         </Info>
       </Step>
 
-      <Step>
-        ### 在 Vector 配置中添加 ClickHouse sink
-
+      <Step title="在 Vector 配置中添加 ClickHouse sink" id="add-clickhouse-sink-to-config">
         修改 Vector 配置，加入 ClickHouse sink，并更新 `inputs` 字段，使其从现有管道接收事件。
 
         此配置假定你的上游 Vector 管道已经**将数据处理为符合目标 ClickHouse schema 的格式**，也就是说，各字段都已完成解析、正确命名，并设置为适合插入的类型。有关如何将原始日志行解析并规范化为适用于 ClickStack 的 schema 的完整示例，请参见[**下方的 Nginx 示例**](#example-dataset-with-vector)。
@@ -107,17 +103,13 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         </Note>
       </Step>
 
-      <Step>
-        ### 前往 ClickStack UI
-
+      <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui">
         前往你的托管 ClickStack 服务，并从左侧菜单中选择 &quot;ClickStack&quot;。如果你已经完成引导流程，这将在新标签页中打开 ClickStack UI，并自动完成身份验证。如果尚未完成，你可以继续完成引导流程，并在选择 Vector 作为输入源后点击“Launch ClickStack”。
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="为 Vector 启动 ClickStack" size="lg" />
       </Step>
 
-      <Step>
-        ### 创建数据源
-
+      <Step title="创建数据源" id="create-a-datasource-managed">
         创建一个日志数据源。如果当前还没有数据源，首次登录时系统会提示你创建一个。否则，请前往 Team Settings，添加一个新的数据源。
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="创建数据源 - vector" size="lg" />
@@ -131,9 +123,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         有关其他可选项，请参阅[配置参考](/zh/clickstack/managing/config)。
       </Step>
 
-      <Step>
-        ### 探查数据
-
+      <Step title="探查数据" id="explore-the-data-managed">
         前往日志视图探查数据，并开始使用 ClickStack。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack 中的 Nginx 日志" size="lg" />
@@ -143,9 +133,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
 
   <Tab title="开源 ClickStack">
     <Steps>
-      <Step>
-        ### 创建数据库和表
-
+      <Step title="创建数据库和表" id="create-a-database-table-oss">
         Vector 要求在摄取数据之前预先定义好表和 schema。
 
         首先创建一个数据库。可通过 [ClickHouse Web 用户界面](/zh/concepts/features/interfaces/http#web-ui) 访问 [http://localhost:8123/play](http://localhost:8123/play) 来完成。使用默认用户名和密码 `api:api`。
@@ -183,13 +171,11 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         <Info>
           **Nginx 主键**
 
-          上述主键是基于 ClickStack UI 中 Nginx 日志的常见访问模式设定的，但在生产环境中，可能需要根据实际工作负载进行调整。
+          上述主键是基于 ClickStack UI 中 Nginx 日志的常见访问模式设定的，但在生产环境中可能需要根据你的工作负载进行调整。
         </Info>
       </Step>
 
-      <Step>
-        ### 将 ClickHouse sink 添加到 Vector 配置中
-
+      <Step title="在 Vector 配置中添加 ClickHouse sink" id="add-clickhouse-config-to-sink-oss">
         对于 Vector，向 ClickStack 摄取数据时应直接发送到 ClickHouse，绕过 collector 暴露的 OTLP 端点。
 
         修改 Vector 配置以加入 ClickHouse sink，并更新 `inputs` 字段，使其从现有管道接收事件。
@@ -224,17 +210,13 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         </Note>
       </Step>
 
-      <Step>
-        ### 访问 ClickStack UI
-
+      <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui-oss">
         访问 [http://localhost:8080](http://localhost:8080) 打开 ClickStack UI。如果你尚未完成引导设置，请先创建一个用户。
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack 登录" size="lg" />
       </Step>
 
-      <Step>
-        ### 创建数据源
-
+      <Step title="创建数据源" id="create-a-datasource-oss">
         前往 Team Settings，然后添加一个新的数据源。
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="创建数据源 - vector" size="lg" />
@@ -248,10 +230,8 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         如需了解其他可用选项，请参阅[配置参考](/zh/clickstack/managing/config)。
       </Step>
 
-      <Step>
-        ### 查看数据
-
-        前往日志视图查看数据，并开始使用 ClickStack。
+      <Step title="探查数据" id="explore-the-data-oss">
+        前往日志视图探查数据，并开始使用 ClickStack。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack 中的 Nginx 日志" size="lg" />
       </Step>
@@ -270,21 +250,15 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
     以下指南假设您已创建托管 ClickStack 服务并记录了相应的服务凭据。如果尚未完成，请先参阅托管 ClickStack 的 [Getting Started](/zh/clickstack/getting-started/managed) 指南，按步骤操作直至出现配置 Vector 的提示。
 
     <Steps>
-      <Step>
-        ### 安装 Vector
-
+      <Step title="安装 Vector" id="installing-vector">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### 下载示例数据
-
+      <Step title="下载示例数据" id="download-the-sample-data">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### 创建数据库和表
-
+      <Step title="创建数据库和表" id="create-database-table-nginx-managed">
         在开始摄取数据之前，Vector 需要预先定义好表和 schema。
 
         首先创建一个数据库。可以通过 [ClickHouse Cloud 控制台](/zh/products/cloud/features/sql-console-features/sql-console) 完成。
@@ -324,9 +298,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         </Info>
       </Step>
 
-      <Step>
-        ### 复制 Vector 配置
-
+      <Step title="复制 Vector 配置" id="copy-vector-configuration">
         复制 Vector 配置，并创建一个 `nginx.yaml` 文件，设置 `CLICKHOUSE_ENDPOINT` 和 `CLICKHOUSE_PASSWORD`。
 
         ```yaml
@@ -346,7 +318,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouse 兼容的 DateTime 格式
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -370,9 +342,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         </Note>
       </Step>
 
-      <Step>
-        ### 启动 Vector
-
+      <Step title="启动 Vector" id="start-vector">
         使用以下命令启动 Vector，并先创建数据目录，用于记录文件偏移量。
 
         ```bash
@@ -381,17 +351,13 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         ```
       </Step>
 
-      <Step>
-        ### 前往 ClickStack UI
-
+      <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui-nginx-managed">
         前往你的托管 ClickStack 服务，并在左侧菜单中选择 &quot;ClickStack&quot;。如果你已经完成引导流程，系统会在新标签页中打开 ClickStack UI，并自动完成身份验证。如果还没有，请继续完成引导流程，并在选择 Vector 作为输入源后，选择“启动 ClickStack”。
 
         <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="为 Vector 启动 ClickStack" size="lg" />
       </Step>
 
-      <Step>
-        ### 创建数据源
-
+      <Step title="创建数据源" id="create-a-datasource-nginx-managed">
         创建一个日志数据源。如果还没有任何数据源，首次登录时系统会提示你创建一个。否则，请前往 Team Settings 并添加新的数据源。
 
         <Image img="/images/clickstack/create-vector-datasource.webp" alt="创建数据源 - vector" size="lg" />
@@ -424,9 +390,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         有关其他可用选项，请参阅[配置参考](/zh/clickstack/managing/config)。
       </Step>
 
-      <Step>
-        ### 查看数据
-
+      <Step title="浏览数据" id="explore-the-data-nginx-managed">
         前往 `2025 年 10 月 20 日` 的搜索视图，查看数据并开始使用 ClickStack。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
@@ -435,24 +399,18 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
   </Tab>
 
   <Tab title="开源 ClickStack">
-    以下指南假设您已参照[入门指南](/zh/clickstack/getting-started/oss)完成了 ClickStack Open Source 的部署。
+    以下指南假设您已参照[入门指南](/zh/clickstack/getting-started/oss)完成了 ClickStack 开源版的部署。
 
     <Steps>
-      <Step>
-        ### 安装 Vector
-
+      <Step title="安装 Vector" id="installing-vector-oss">
         <InstallingVector />
       </Step>
 
-      <Step>
-        ### 下载样本数据
-
+      <Step title="下载示例数据" id="download-the-sample-data-oss">
         <VectorSampleData />
       </Step>
 
-      <Step>
-        ### 创建数据库和表
-
+      <Step title="创建数据库和表" id="create-a-database-table-nginx-oss">
         Vector 要求在摄取数据之前预先定义好表和 schema。
 
         首先创建一个数据库。可通过 [ClickHouse Web 用户界面](/zh/concepts/features/interfaces/http#web-ui) 在 [http://localhost:8123/play](http://localhost:8123/play) 中完成。使用默认用户名和密码 `api:api`。
@@ -490,13 +448,11 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         <Info>
           **Nginx 主键**
 
-          上述主键是根据 ClickStack UI 中 Nginx 日志的典型访问模式设计的，但在生产环境中可能需要根据你的工作负载进行调整。
+          上述主键是根据 ClickStack UI 中 Nginx 日志的常见访问模式设定的，但在生产环境中可能需要根据实际工作负载进行调整。
         </Info>
       </Step>
 
-      <Step>
-        ### 复制 Vector 配置
-
+      <Step title="复制 Vector 配置" id="copy-vector-configuration-nginx-oss">
         对于 Vector，向 ClickStack 的摄取应直接写入 ClickHouse，绕过 collector 暴露的 OTLP 端点。
 
         复制 Vector 配置并创建文件 `nginx.yaml`。
@@ -518,7 +474,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # 适合 ClickHouse 的 DateTime 格式
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -542,9 +498,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         </Note>
       </Step>
 
-      <Step>
-        ### 启动 Vector
-
+      <Step title="启动 Vector" id="start-vector-oss-nginx">
         运行以下命令启动 Vector。
 
         ```bash
@@ -553,9 +507,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         ```
       </Step>
 
-      <Step>
-        ### 创建数据源
-
+      <Step title="创建数据源" id="create-a-datasource-nginx-oss">
         通过 `Team -> Sources` 创建一个日志数据源
 
         <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="创建数据源 - vector" size="lg" />
@@ -583,23 +535,19 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         )
         ```
 
-        这会根据结构化字段重新构建日志行。
+        这会根据结构化字段还原日志行。
 
-        有关其他选项，请参阅[配置参考](/zh/clickstack/managing/config)。
+        有关其他可用选项，请参阅[配置参考](/zh/clickstack/managing/config)。
       </Step>
 
-      <Step>
-        ### 访问 ClickStack UI
-
+      <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui-nginx-oss">
         访问 [http://localhost:8080](http://localhost:8080) 上的 ClickStack UI。如果你尚未完成引导配置，请先创建用户。
 
         <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="ClickStack 登录" size="lg" />
       </Step>
 
-      <Step>
-        ### 浏览数据
-
-        前往 `October 20th, 2025` 的搜索视图，浏览数据并开始使用 ClickStack。
+      <Step title="浏览数据" id="explore-the-data-nginx-oss">
+        前往 `2025 年 10 月 20 日` 的搜索视图，查看数据并开始使用 ClickStack。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
       </Step>

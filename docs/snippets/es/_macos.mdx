@@ -14,15 +14,11 @@ import Recommendations from '/snippets/es/recommendations.mdx';
 </Warning>
 
 <Steps>
-  <Step>
-    ## Revisar las recomendaciones
-
+  <Step title="Revisar las recomendaciones" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## Instalar con la fórmula comunitaria de Homebrew
-
+  <Step title="Instalar con la fórmula comunitaria de Homebrew" id="install-using-community-homebrew-formula">
     Para instalar ClickHouse en macOS con [Homebrew](https://brew.sh/), puedes usar
     la [fórmula de Homebrew](https://formulae.brew.sh/cask/clickhouse) mantenida por la comunidad de ClickHouse.
 
@@ -31,15 +27,17 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Corregir el error de verificación del desarrollador en macOS
-
+  <Step title="Corregir el error de verificación del desarrollador en macOS" id="fix-developer-verification-error-macos">
     Si instalas ClickHouse con `brew`, es posible que te encuentres con un error de macOS.
     De forma predeterminada, macOS no ejecuta aplicaciones ni herramientas creadas por desarrolladores cuya identidad no puede verificarse.
 
     Al intentar ejecutar cualquier comando `clickhouse`, es posible que veas este error:
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="Cuadro de diálogo de error de verificación del desarrollador en macOS" border />
+    <div className="ch-image-sm">
+      <Frame>
+        <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" alt="Cuadro de diálogo de error de verificación del desarrollador en macOS" />
+      </Frame>
+    </div>
 
     Para evitar este error de verificación, debes quitar la aplicación de la cuarentena de macOS, ya sea buscando la opción adecuada en la ventana de System Settings, usando la terminal o reinstalando ClickHouse.
 
@@ -51,13 +49,21 @@ import Recommendations from '/snippets/es/recommendations.mdx';
 
     2. Ve a **Privacy &amp; Security**:
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="Vista predeterminada de la configuración de Privacy & Security en macOS" border />
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" alt="Vista predeterminada de la configuración de Privacy & Security en macOS" />
+         </Frame>
+       </div>
 
     3. Desplázate hasta la parte inferior de la ventana para encontrar un mensaje que indica que *&quot;clickhouse-macos-aarch64&quot; fue bloqueado porque no proviene de un desarrollador identificado*.
 
     4. Haz clic en **Allow Anyway**.
 
-       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Configuración de Privacy & Security en macOS mostrando el botón Allow Anyway" border />
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" alt="Configuración de Privacy & Security en macOS mostrando el botón Allow Anyway" />
+         </Frame>
+       </div>
 
     5. Introduce la contraseña de tu usuario de macOS.
 
@@ -102,9 +108,7 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Corregir el problema reinstalando ClickHouse
-
+  <Step title="Corregir el problema reinstalando ClickHouse" id="fix-issue">
     Brew tiene una opción de línea de comandos que evita poner en cuarentena los binarios instalados desde el principio.
 
     Primero, desinstala ClickHouse:

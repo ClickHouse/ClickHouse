@@ -58,7 +58,7 @@ En ClickHouse, el particionamiento se especifica en una tabla cuando se define i
 
 <Image img="/images/migrations/postgres-partitions.webp" size="md" alt="Particiones de PostgreSQL a particiones de ClickHouse" />
 
-Las partes de datos se asocian lógicamente con cada partición en disco y pueden consultarse de forma aislada. En el ejemplo siguiente, particionamos la tabla `posts` por año usando la expresión `toYear(CreationDate)`. A medida que se insertan filas en ClickHouse, esta expresión se evaluará para cada fila y se enviará a la partición correspondiente si existe (si la fila es la primera de un año, se creará la partición).
+Las partes de datos se asocian lógicamente con cada partición en disco y pueden consultarse de forma aislada. En el ejemplo siguiente, particionamos la tabla `posts` por año usando la expresión `toYear(CreationDate)`. A medida que se insertan filas en ClickHouse, esta expresión se evaluará para cada fila y se dirigirá a la partición resultante si existe (si la fila es la primera de un año, se creará la partición).
 
 ```sql
  CREATE TABLE posts
@@ -305,8 +305,8 @@ Recomendamos usar proyecciones cuando:
   ## Desnormalización
 </div>
 
-Dado que Postgres es una base de datos relacional, su modelo de datos está muy [normalizado](https://en.wikipedia.org/wiki/Database_normalization) y a menudo implica cientos de tablas. En ClickHouse, la desnormalización puede resultar beneficiosa en algunos casos para optimizar el rendimiento de los JOIN.
+Como Postgres es una base de datos relacional, su modelo de datos está muy [normalizado](https://en.wikipedia.org/wiki/Database_normalization) y a menudo implica cientos de tablas. En ClickHouse, la desnormalización puede resultar beneficiosa en algunos casos para optimizar el rendimiento de los JOIN.
 
 Puedes consultar esta [guía](/es/guides/clickhouse/data-modelling/denormalization), que muestra las ventajas de desnormalizar el conjunto de datos de Stack Overflow en ClickHouse.
 
-Con esto concluye nuestra guía básica si estás migrando de Postgres a ClickHouse. Te recomendamos leer la [guía para modelar datos en ClickHouse](/es/guides/clickhouse/data-modelling/schema-design) para conocer mejor las funcionalidades avanzadas de ClickHouse.
+Con esto concluye nuestra guía básica si estás migrando de Postgres a ClickHouse. Te recomendamos leer la [guía para modelar datos en ClickHouse](/es/guides/clickhouse/data-modelling/schema-design) para conocer mejor las funciones avanzadas de ClickHouse.

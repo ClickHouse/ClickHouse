@@ -35,20 +35,16 @@ Les alertes de dépenses vous avertissent lorsque la consommation de votre organ
 </div>
 
 <Steps>
-  <Step>
-    ### Ouvrir la boîte de dialogue des alertes de dépenses
-
+  <Step title="Ouvrir la boîte de dialogue des alertes de dépenses" id="open-spend-alerts-dialog">
     1. Accédez à **Organization &gt; Billing** dans la console ClickHouse Cloud.
     2. Cliquez sur **Actions &gt; Add spend alerts**.
 
     <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Page Billing avec le menu Actions ouvert et Add spend alerts mis en évidence" size="lg" />
   </Step>
 
-  <Step>
-    ### Configurer et enregistrer l’alerte
-
+  <Step title="Configurer et enregistrer l’alerte" id="configure-and-save">
     1. Saisissez un montant d’alerte de dépenses en dollars ou en crédits par période de facturation.
-    2. Sélectionnez vos canaux de notification : **Email**, **UI** et/ou **Slack**.
+    2. Sélectionnez vos canaux de notification : **E-mail**, **UI** et/ou **Slack**.
     3. Cliquez sur **Save**.
 
     <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="Boîte de dialogue des alertes de dépenses de l’organisation avec limite de dépenses, alertes de seuil automatiques et canaux de notification" size="md" />
@@ -61,12 +57,12 @@ Les alertes de dépenses vous avertissent lorsque la consommation de votre organ
 
 Quatre alertes sont automatiquement créées et déclenchées en fonction du montant configuré pour votre alerte de dépenses :
 
-| Seuil    | Déclenchement                               | Exemple (alerte à 10 $) |
-| -------- | ------------------------------------------- | ----------------------- |
-| **50%**  | La moitié des dépenses est atteinte         | 5 $                     |
-| **75%**  | Les trois quarts des dépenses sont atteints | 8 $                     |
-| **90%**  | Les dépenses atteignent 90 %                | 9 $                     |
-| **100%** | Le montant total des dépenses est atteint   | 10 $                    |
+| Seuil    | Déclenchement                                         | Exemple (alerte à 10 $) |
+| -------- | ----------------------------------------------------- | ----------------------- |
+| **50%**  | La moitié des dépenses est atteinte                   | 5 $                     |
+| **75%**  | Les trois quarts des dépenses sont atteints           | 8 $                     |
+| **90%**  | Quatre-vingt-dix pour cent des dépenses sont atteints | 9 $                     |
+| **100%** | Le montant total des dépenses est atteint             | 10 $                    |
 
 <div id="notification-channels">
   ## Canaux de notification

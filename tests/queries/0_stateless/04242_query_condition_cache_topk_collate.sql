@@ -1,10 +1,14 @@
--- Tags: no-parallel, no-parallel-replicas, no-fasttest
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: Messes with internal cache.
 -- Tag no-fasttest: COLLATE requires ICU, which is not available in the Fast test build.
 --
 -- Companion to `04217_query_condition_cache_topk.sql`: verify that the QCC key
 -- is partitioned by `COLLATE` locale so two re-runs with the same locale reuse
--- the same entry, while a different locale produces a fresh entry.
+-- the same entries, while a different locale produces fresh entries.
+--
+-- Each TopK plan writes two entries per part: one for the WHERE filter and one for
+-- the dynamic `__topKFilter` PREWHERE (issue #114639), both salted with the TopK
+-- plan parameters, including the collation locale.
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
@@ -12,8 +16,6 @@ SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET optimize_move_to_prewhere = 0;
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 -- Variable-length sort column (`String`) goes through `tryOptimizeTopK`'s dynamic-filtering
 -- branch only when this opt-in is set; the `COLLATE` assertions below rely on it.
@@ -33,13 +35,13 @@ FROM numbers(1_000_000);
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Same COLLATE locale re-runs reuse the same QCC entry';
+SELECT '--- Same COLLATE locale re-runs reuse the same QCC entries';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different COLLATE locale writes a separate entry';
+SELECT '--- Different COLLATE locale writes separate entries';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'fr' LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
