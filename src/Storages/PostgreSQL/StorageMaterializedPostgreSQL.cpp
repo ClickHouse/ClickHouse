@@ -712,8 +712,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// The same restriction as in `InterpreterCreateQuery::doCreateTable` (see `hasUnreplicatedTableDataOnDisk`),
         /// but it must be checked before the storage is constructed: the constructor starts replication, which creates
         /// the publication and the replication slot in PostgreSQL and the nested table, and a rejected `CREATE` would not
-        /// remove them.
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        /// remove them. The condition matches the one in the interpreter (`!create.attach`), so it also covers
+        /// `SECONDARY_CREATE`, which is used when other replicas of a `Replicated` database replay the query.
+        if (!args.query.attach
             && args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
         {
             auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
