@@ -5,9 +5,6 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/array/emptyArrayToSingle.h>
 
 #include <list>
 
@@ -88,26 +85,10 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         }
         else if (auto * array_join_step = typeid_cast<ArrayJoinStep *>(iter->node->step.get()))
         {
-            /// A plain ARRAY JOIN emits real elements only, so a condition on the element is one on the array too.
-            /// Unaligned joins pad short arrays with defaults, so theirs is not.
-            const auto & input_header = *array_join_step->getInputHeaders().front();
-            const auto & columns = array_join_step->getColumns();
-            if (array_join_step->isUnaligned()
-                || (array_join_step->isLeft()
-                    && !std::ranges::all_of(columns, [&](const auto & name) { return isArray(input_header.getByName(name).type); })))
+            auto dag = array_join_step->toActionsDAG();
+            if (!dag)
                 break;
-
-            auto & dag = array_join_dags.emplace_back(input_header.getNamesAndTypesList());
-            for (const auto & name : columns)
-            {
-                const auto * array = &dag.findInOutputs(name);
-                /// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col))
-                if (array_join_step->isLeft())
-                    array = &dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(FunctionEmptyArrayToSingle::createImpl()), {array}, {});
-                /// The atom must be `arrayJoin(col)`, not something named like the array column; the alias just keeps the name.
-                dag.addOrReplaceInOutputs(dag.addAlias(dag.addArrayJoin(*array, {}), name));
-            }
-            expression_dags.push_back(&dag);
+            expression_dags.push_back(&array_join_dags.emplace_back(std::move(*dag)));
 
             /// The fused element filter is just a filter right above the join.
             if (const auto & element_filter = array_join_step->getElementFilter())
