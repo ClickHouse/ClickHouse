@@ -101,6 +101,58 @@ ALWAYS_INLINE auto makeJoinPrefetcher(bool use_prefetch, size_t total, PrefetchA
         use_prefetch, total, std::forward<PrefetchAction>(prefetch_action)};
 }
 
+/// The number of leading maps of a multi-disjunct join that are worth prefetching. The caller checks the first map with
+/// `shouldUseJoinPrefetch`. A later map of a two-level layout counts only when it does not fit in the cache.
+template <typename Map>
+size_t numPrefetchableMaps(const std::vector<const Map *> & mapv)
+{
+    size_t num_maps = 1;
+    if constexpr (Map::NUM_BUCKETS > 1)
+        while (num_maps < mapv.size() && mapv[num_maps]->getBufferSizeInBytes() > getMinBytesForPrefetchInJoin())
+            ++num_maps;
+    return num_maps;
+}
+
+/// Counts the map lookups of a sample of the probe rows of a multi-disjunct join. A row looks the maps up in order, and
+/// a join that stops at the first match may never reach the later maps. Prefetching a map that few rows look up costs
+/// more than it saves. So after every `period_samples` sampled rows the probe prefetches only the leading maps that at
+/// least a quarter of those rows looked up. One row in every `sample_stride` is sampled, at an offset that cycles through
+/// the stride, so data that repeats every few rows does not bias the sample.
+class MultiMapLookupSampler
+{
+public:
+    explicit MultiMapLookupSampler(size_t num_maps) : lookups(num_maps) {}
+
+    static size_t nextSampledRow(size_t row)
+    {
+        const size_t stride_idx = row / sample_stride + 1;
+        return stride_idx * sample_stride + stride_idx % sample_stride;
+    }
+
+    void countLookup(size_t map_idx) { ++lookups[map_idx]; }
+
+    /// Returns true when this sampled row ends a period.
+    bool sampleDone() { return ++samples % period_samples == 0; }
+
+    /// Returns the number of maps to prefetch, at most `max_maps`, and starts a new period.
+    NO_INLINE size_t takeLimit(size_t max_maps)
+    {
+        size_t limit = 1;
+        while (limit < max_maps && lookups[limit] >= min_lookups)
+            ++limit;
+        std::ranges::fill(lookups, 0);
+        return limit;
+    }
+
+private:
+    static constexpr size_t sample_stride = 16;
+    static constexpr size_t period_samples = 128;
+    static constexpr size_t min_lookups = period_samples / 4;
+
+    std::vector<UInt32> lookups;
+    size_t samples = 0;
+};
+
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     HashJoin & join,
@@ -801,19 +853,38 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.offsets_to_replicate.reserve(rows);
     }
 
-    /// Software prefetch for multi-map variant. Only prefetch the first map.
+    /// Software prefetch for multi-map variant. A one-bucket map prefetches only the first map. A two-level map also
+    /// prefetches the later maps that `numPrefetchableMaps` and `MultiMapLookupSampler` allow, because a lookup there
+    /// loads the bucket header before the cell. A sampled limit starts at one map: `PrefetchingHelper` sets the look-ahead
+    /// from the first rows, and a look-ahead measured while prefetching more maps is too short once the limit drops.
     chassert(!mapv.empty());
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
+    constexpr bool stops_at_first_match
+        = join_features.is_any_or_semi_join && !(join_features.is_any_join && (join_features.right || join_features.full));
 
     bool use_prefetch = false;
+    size_t max_prefetched_maps = 1;
     if constexpr (can_prefetch)
+    {
         use_prefetch = shouldUseJoinPrefetch(added_columns.enable_prefetch, mapv[0]);
+        if (use_prefetch)
+            max_prefetched_maps = numPrefetchableMaps(mapv);
+    }
+    const bool samples_lookups = stops_at_first_match && max_prefetched_maps > 1;
+    size_t num_prefetched_maps = samples_lookups ? 1 : max_prefetched_maps;
+    MultiMapLookupSampler sampler(samples_lookups ? mapv.size() : 0);
+    size_t next_sampled_row = samples_lookups ? 0 : rows;
 
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
         [&](size_t k) __attribute__((always_inline))
         {
             if constexpr (can_prefetch)
+            {
                 mapv[0]->prefetch(key_getter_vector[0].getKeyHolder(range.first + k, pool));
+                if constexpr (Map::NUM_BUCKETS > 1)
+                    for (size_t map_idx = 1; map_idx < num_prefetched_maps; ++map_idx)
+                        mapv[map_idx]->prefetch(key_getter_vector[map_idx].getKeyHolder(range.first + k, pool));
+            }
         });
 
     size_t max_joined_rows = added_columns.max_joined_block_rows > 0 ? added_columns.max_joined_block_rows : std::numeric_limits<size_t>::max();
@@ -829,7 +900,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         bool right_row_found = false;
         KnownRowsHolder<flag_per_row> known_rows;
-        for (size_t onexpr_idx = 0; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
+        size_t onexpr_idx = 0;
+        for (; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
         {
             bool skip_row = false;
             if constexpr (!fast_path)
@@ -846,9 +918,28 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                     processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
                         find_result, added_columns, used_flags, i, ind, current_offset, known_rows, is_last_disjunct);
 
-                    if constexpr (join_features.is_any_or_semi_join && !(join_features.is_any_join && (join_features.right || join_features.full)))
+                    if constexpr (stops_at_first_match)
                         break;
                 }
+            }
+        }
+
+        if constexpr (stops_at_first_match && Map::NUM_BUCKETS > 1)
+        {
+            if (i == next_sampled_row) [[unlikely]]
+            {
+                /// The row looked up every map up to the one it stopped at, except where its key is skipped.
+                const size_t reached_maps = std::min(onexpr_idx + 1, mapv.size());
+                for (size_t map_idx = 0; map_idx < reached_maps; ++map_idx)
+                {
+                    if constexpr (!fast_path)
+                        if (skip_datas[map_idx] && skip_datas[map_idx][ind])
+                            continue;
+                    sampler.countLookup(map_idx);
+                }
+                if (sampler.sampleDone())
+                    num_prefetched_maps = sampler.takeLimit(max_prefetched_maps);
+                next_sampled_row = MultiMapLookupSampler::nextSampledRow(i);
             }
         }
 
