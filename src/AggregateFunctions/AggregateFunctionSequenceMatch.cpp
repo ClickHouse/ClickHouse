@@ -624,16 +624,13 @@ protected:
                     sequence_match_max_iterations);
         }
 
-        /// if there are some actions remaining
-        if (action_it != action_end)
-        {
-            /// match multiple empty strings at end
-            while (action_it->type == PatternActionType::KleeneStar ||
-                   action_it->type == PatternActionType::TimeLessOrEqual ||
-                   action_it->type == PatternActionType::TimeLess ||
-                   (action_it->type == PatternActionType::TimeGreaterOrEqual && action_it->extra == 0))
-                ++action_it;
-        }
+        /// match multiple empty strings at end
+        while (action_it != action_end
+            && (action_it->type == PatternActionType::KleeneStar
+                || action_it->type == PatternActionType::TimeLessOrEqual
+                || action_it->type == PatternActionType::TimeLess
+                || (action_it->type == PatternActionType::TimeGreaterOrEqual && action_it->extra == 0)))
+            ++action_it;
 
         if (events_it == events_begin)
             ++events_it;
