@@ -825,10 +825,8 @@ private:
             const IColumn & then_value = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
             const IColumn & else_value = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
 
-            /// `index` allocates several columns per block (one per alternative of a `Variant`) and copies arrays element
-            /// by element, so it is used for large blocks of small values only; for `Dynamic` and `JSON` the gathered column
-            /// would also keep the type of the value that is never selected, and `byteSize` of an `AggregateFunction` does
-            /// not count the states in shared arenas, which the gather copies.
+            /// `index` has a per-block cost (a column per `Variant` alternative) and copies arrays element by element; a gathered
+            /// `Dynamic`/`JSON` keeps the unselected value's type; `AggregateFunction` `byteSize` omits states in shared arenas.
             constexpr size_t min_gathered_rows = 256;
             constexpr size_t max_gathered_value_bytes = 16;
             auto keeps_row_loop = [](const IDataType & type)
