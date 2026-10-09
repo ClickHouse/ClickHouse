@@ -27,9 +27,9 @@ function query()
 }
 
 # One stream: the footers are read ahead from its third object on.
-OFF="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 0, use_page_cache_for_object_storage = 0"
-ON="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0"
-CACHE="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 1, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0"
+OFF="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 0, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0"
+ON="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0"
+CACHE="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 1, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0"
 
 function run()
 {

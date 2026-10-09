@@ -425,10 +425,7 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
-    Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
-    Parquet::Prefetcher prefetcher;
-    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    auto metadata = readParquetFileMetaData(buf, format_settings_);
     std::vector<size_t> bucket_sizes;
     for (const auto & row_group : metadata.row_groups)
         bucket_sizes.push_back(size_t(row_group.total_byte_size));
