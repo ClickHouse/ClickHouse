@@ -75,6 +75,10 @@ private:
 
     FileStreams streams;
 
+    /// Guards `stream_names`: substreams of a single column can be deserialized in parallel.
+    std::mutex stream_names_mutex;
+    std::unordered_map<UInt128, std::optional<String>, ISerialization::SubstreamsCacheKeyHash> stream_names;
+
     void prefetchForAllColumns(
         Priority priority,
         size_t num_columns,
@@ -89,13 +93,17 @@ private:
     ReadBuffer * getStream(
         bool seek_to_start,
         const ISerialization::SubstreamPath & substream_path,
-        const MergeTreeDataPartChecksums & checksums,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         bool seek_to_mark,
         ISerialization::SubstreamsCache & cache);
 
     MergeTreeReaderStream * getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
+
+    /// Returns the name of the stream for the substream of the column, or `std::nullopt` if the part doesn't have it.
+    /// Building the name is expensive (escaping, splitting of nested names, lookups in checksums) and the name is
+    /// requested several times for every substream on every read, so the results are memoized for the lifetime of the reader.
+    const std::optional<String> & getStreamName(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path);
 
     void readData(
         const NameAndTypePair & name_and_type,
