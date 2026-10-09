@@ -272,8 +272,10 @@ static void registerGCSObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
     {
+        /// `getGCSClient` checks the endpoint against `remote_url_allow_hosts` for every disk.
         auto settings = GCSObjectStorageSettings::loadFromConfig(config, config_prefix, context);
         auto endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         auto client = getGCSClient(settings, context);
