@@ -4690,6 +4690,7 @@ void Server::createServers(
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
+                    ServerType::Type::REDIS,
                     "Redis compatibility protocol: " + address.toString(),
                     std::make_unique<TCPServer>(
                          new RedisHandlerFactory(*this),
