@@ -648,13 +648,11 @@ static MergeTreeReadRangesRefinerPtr createIndexReadRangesRefiner(
     return std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot);
 }
 
-/// Install the task-cut refiner chain of a pool which may be seal-gated: the seal refiner
-/// first (its PK cut is cheap and usually the most selective), the index refiner on the
-/// survivors. When the index refiner is disabled but the seal refiner can drop marks, an
-/// accounting-only `IndexReadRangesRefiner` keeps the per-part release accounting of the
-/// cached index read results correct (see `IndexReadRangesRefiner::onMarksDropped`); without
-/// the seal refiner nothing drops marks, and installing it would only make the pool stand
-/// down from the columns-cache write-estimate gating.
+/// Install the task-cut refiner chain of a pool: the seal refiner first (its PK cut is cheap
+/// and usually the most selective), the index refiner on the survivors. Whenever an index
+/// build context exists, the pool also gets its release accounting as the marks-dropped
+/// listener: no matter which refiner drops a mark, it never becomes a read task, so the
+/// context must count it to release the cached per-part index read results.
 static void addReadRangesRefiners(
     MergeTreeReadPoolBase & pool,
     const MergeTreeReadRangesRefinerPtr & seal_gate_refiner,
@@ -663,11 +661,12 @@ static void addReadRangesRefiners(
     const Settings & settings)
 {
     pool.addReadRangesRefiner(seal_gate_refiner);
+    pool.addReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, metadata_snapshot, settings));
 
-    auto index_refiner = createIndexReadRangesRefiner(index_build_context, metadata_snapshot, settings);
-    if (!index_refiner && seal_gate_refiner && index_build_context)
-        index_refiner = std::make_shared<IndexReadRangesRefiner>(index_build_context, metadata_snapshot, /*apply_index_filter=*/ false);
-    pool.addReadRangesRefiner(std::move(index_refiner));
+    if (index_build_context)
+        pool.setMarksDroppedListener(
+            [context = index_build_context](const MergeTreeReadTaskInfo & info, size_t dropped_marks)
+            { context->accountDroppedMarks(info.part_index_in_query, dropped_marks); });
 }
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
@@ -712,7 +711,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         block_size,
         context);
 
-    pool->addReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+    addReadRangesRefiners(*pool, /*seal_gate_refiner=*/ nullptr, index_build_context, storage_snapshot->metadata, context->getSettingsRef());
 
     /// Default pool ignores the announcement response. The latter is relevant only to InOrder
     /// reading where we split the table into multiple streams.
@@ -996,8 +995,8 @@ Pipe ReadFromMergeTree::readInOrder(
             block_size,
             context);
 
-        in_order_pool->addReadRangesRefiner(
-            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+        addReadRangesRefiners(
+            *in_order_pool, /*seal_gate_refiner=*/ nullptr, index_build_context, storage_snapshot->metadata, context->getSettingsRef());
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
         /// during source construction below, so the pool never sees `getTask` for them.

@@ -908,10 +908,8 @@ MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo &
         if (info.read_request_map)
             recordDroppedRanges(info, std::move(cut), refined);
 
-        /// Dropped marks never reach the readers; refiners with per-part state account for
-        /// them here. Each refiner is told the chain's total, exactly once per cut.
-        for (const auto & refiner : ranges_refiners)
-            refiner->onMarksDropped(info, dropped_marks);
+        if (marks_dropped_listener)
+            marks_dropped_listener(info, dropped_marks);
     }
 
     if (marks_after == 0)

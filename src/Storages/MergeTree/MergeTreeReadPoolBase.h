@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <mutex>
 #include <Storages/MergeTree/MergeTreeReadRangesRefiner.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
@@ -79,6 +80,20 @@ public:
     {
         if (refiner)
             ranges_refiners.push_back(std::move(refiner));
+    }
+
+    /// Called once per cut with the total number of marks the refiner chain dropped, each
+    /// dropped mark counted exactly once. Dropped marks never become read tasks, so state
+    /// whose release is keyed on "every mark of the part was read or dropped" (the cached
+    /// per-part index read results, see `MergeTreeIndexBuildContext::accountDroppedMarks`)
+    /// is accounted through this listener. Unlike a refiner, a listener does not make the
+    /// pool stand down from the columns-cache write-estimate gating.
+    using MarksDroppedListener = std::function<void(const MergeTreeReadTaskInfo &, size_t)>;
+
+    void setMarksDroppedListener(MarksDroppedListener listener)
+    {
+        chassert(!marks_dropped_listener);
+        marks_dropped_listener = std::move(listener);
     }
 
 protected:
@@ -164,6 +179,7 @@ protected:
     std::vector<MarkRangesPtr> getActualPatchReadRequestMaps(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & actual_map) const;
 
     std::vector<MergeTreeReadRangesRefinerPtr> ranges_refiners;
+    MarksDroppedListener marks_dropped_listener;
 
     /// Uncompressed bytes the selected mark ranges of this pool are estimated to read into the
     /// columns cache, and the budget they are compared against. Filled by
