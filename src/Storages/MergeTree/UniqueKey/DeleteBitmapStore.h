@@ -188,7 +188,7 @@ private:
 
     /// Give each link with no csn yet the one its holder committed at, and move it into place.
     /// Runs before every ordered search: a link left at the top is one a reader above its
-    /// version misses. Throws if a holder has left the part set: the index is corrupt.
+    /// version misses. Skips a holder that is not Active or Outdated.
     void resolveUnknownVersions(PartEntry & entry) const;
 
     static void addInwardLink(PartEntry & entry, const HeldBy & link);
@@ -207,8 +207,7 @@ private:
         const DataPartsAnyLock & lock) const;
 
     /// One version of one part, and a live handle on the part holding the bytes. The handle is
-    /// the point: `removePartsFinally` takes a part out of the set BEFORE `dropUniqueKeyBitmaps`
-    /// drops its links, so a winner chosen without one can be retired before it is read.
+    /// the point: `grabOldParts` takes only parts nobody holds, so the holder stays readable.
     struct Version
     {
         CSN csn = Tx::UnknownCSN;
@@ -227,9 +226,12 @@ private:
     /// not yet a committed one.
     static std::optional<Version> resolveOwnVersion(const DataPartPtr & holder);
 
-    /// Every version <= `snapshot_csn`, oldest first. A version is a delta, so the read owes the
-    /// union of all of them and not just the newest.
-    std::vector<Version> versionsUpTo(const MergeTreePartInfo & part, CSN snapshot_csn) const;
+    /// The csn of every version <= `snapshot_csn`, oldest first. A version is a delta, so the read
+    /// owes the union of all of them and not just the newest.
+    std::vector<CSN> versionsUpTo(const MergeTreePartInfo & part, CSN snapshot_csn) const;
+
+    /// Grab the parts holding the specified versions.
+    std::vector<Version> pinVersions(const MergeTreePartInfo & part, const std::vector<CSN> & csns) const;
 
     /// Read one version's bytes, from whichever of the two names its writer filed it under.
     DeleteBitmapPtr readVersion(const IMergeTreeDataPart & part, const Version & version) const;
