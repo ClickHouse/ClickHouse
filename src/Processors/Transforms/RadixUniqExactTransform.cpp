@@ -214,8 +214,10 @@ public:
         if (has_zero)
             func(Key{});
         for (size_t i = 0; i <= mask; ++i)
+        {
             if (cells[i] != Key{})
                 func(cells[i]);
+        }
     }
 
 private:
@@ -749,8 +751,10 @@ private:
             /// deduplication: once every key of the stream has been seen, the ratio of all the buffered keys to the
             /// distinct ones is `DEDUPLICATION_BUDGET_FACTOR` after every deduplication, whatever the number of repeats.
             if (before != known_distinct)
+            {
                 new_distinct_ratios.push_back(
                     static_cast<double>(after - known_distinct) / static_cast<double>(before - known_distinct));
+            }
         }
 
         auto median = [](std::vector<double> & values, double if_empty)
@@ -798,9 +802,13 @@ private:
         stream.mode = Mode::UnboundedSet;
 
         for (const auto & buffer : stream.local_buffers)
+        {
             for (const Block * block = buffer.head; block; block = block->next)
+            {
                 for (size_t i = 0; i < block->size; ++i)
                     insert(stream, block->keys()[i]);
+            }
+        }
 
         stream.local_buffers.clear();
         stream.free_blocks = {};

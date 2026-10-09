@@ -92,7 +92,11 @@ TEST(SipHash, PaddedMatchesUpdate)
         buffer[i] = static_cast<char>(i * 131 + 17);
 
     for (size_t offset = 0; offset < 8; ++offset)
+    {
         for (size_t size = 0; size <= 300; ++size)
+        {
             EXPECT_EQ(sipHash128(buffer.data() + offset, size), sipHash128Padded(buffer.data() + offset, size))
                 << "offset=" << offset << " size=" << size;
+        }
+    }
 }
