@@ -128,7 +128,7 @@ function makeContext(storage) {
 
 const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
     'resolvedImplicitUser', 'runEntryUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
-    'serverIdentityKey', 'implicitUsersStorageKey', 'loadImplicitUsers', 'learnedImplicitUser', 'rememberImplicitUser',
+    'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword'];
 
@@ -244,13 +244,15 @@ scenario('implicit-default-round-trip', async js => {
 });
 
 /// The password manager refills the login on the NEXT visit, where it is compared with history
-/// entries stamped with the empty user on the previous one: the learned name must survive a reload,
-/// and must not leak to a different server.
+/// entries stamped with the implicit user on the previous one: the stamp carries the name across the
+/// reload, and a name learned for one server must not leak to a different one.
 scenario('refilled-login-same-identity-after-reload', async js => {
     const storage = makeStorage();
     const first = boot(js, { storage });
     const { stamped: entry, unstamped } = await implicitRoundTrip(first, 'http://host:8123/', 'alice');
     const second = boot(js, { storage });
+    second.implicit_user = 'alice';
+    second.password_elem.value = 'secret';
     second.url_elem.value = 'http://host:8123';
     second.user_elem.value = 'alice';
     assertEqual(sameAsLive(second, entry), true, 'refilled login after reload (cosmetic URL difference)');
@@ -259,7 +261,15 @@ scenario('refilled-login-same-identity-after-reload', async js => {
     second.user_elem.value = 'bob';
     assertEqual(sameAsLive(second, entry), false, 'another explicit user after reload');
     second.user_elem.value = '';
-    assertEqual(stampConnection(second).implicitUser, 'alice', 'the learned user survives a reload');
+    /// The name learned by the previous visit is not trusted for the live connection: the server may
+    /// authenticate the empty field as someone else by now. Until this visit asks, the live implicit
+    /// connection is only its own marker.
+    if (!stampConnection(second).implicitUser.startsWith('\u0000pending:'))
+        throw new Error(`the live implicit connection after reload is stamped before this visit asked: ${JSON.stringify(stampConnection(second))}`);
+    assertEqual(sameAsLive(second, entry), false, 'implicit login after reload before the name is asked again');
+    await store(second);
+    assertEqual(stampConnection(second).implicitUser, 'alice', 'the name is learned again by this visit');
+    assertEqual(sameAsLive(second, entry), true, 'implicit login after reload once the same name is learned');
     assertEqual(sameAsLive(second, unstamped), false, 'implicit login after reload vs a marker of the previous visit');
     second.url_elem.value = 'http://other:8123/';
     assertEqual(stampedAccount(second), '', 'nothing learned for another server');
@@ -279,7 +289,17 @@ scenario('stored-implicit-entry-keeps-its-account', async js => {
     second.url_elem.value = 'http://host:8123/';
     second.user_elem.value = '';
     second.password_elem.value = 'secret';
+    /// Before this visit asks the server, nothing proves the empty field is still alice: the entry is
+    /// not the live connection (the selected database is not kept for it), and a `run=1` link of a run
+    /// launched now does not name alice for a query that runs as bob.
+    assertEqual(sameAsLive(second, entry), false, 'an entry recorded for alice before this visit asks the server');
+    const early_run = stampConnection(second);
+    second.entry = early_run;
+    assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', second), '',
+        'a run launched before this visit asks the server names no account');
     await store(second);
+    assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', second), 'bob',
+        'and names the account learned for it once this visit has asked');
     assertEqual(second.stored[0].id, 'bob', 'remembered under the newly reported implicit user');
     assertEqual(stampConnection(second).implicitUser, 'bob', 'new entries are stamped with the new implicit user');
     second.user_elem.value = 'bob';
@@ -304,27 +324,6 @@ scenario('stored-implicit-entry-keeps-its-account', async js => {
         'an unstamped implicit entry before the name is learned');
     assertEqual(sameAsLive(third, { server: 'http://host:8123/', user: '', implicitUser: '\u0000pending:earlier' }), false,
         'a marker of an earlier visit before the name is learned');
-});
-
-/// `localStorage` that throws or holds a malformed `implicit_users` must not break the page: nothing
-/// counts as learned, and the run still stores the login.
-scenario('implicit-users-storage-best-effort', async js => {
-    const malformed = makeStorage();
-    malformed.setItem('implicit_users', '{not json');
-    const throwing = {
-        getItem: () => { throw new Error('SecurityError: localStorage is not available'); },
-        setItem: () => { throw new Error('SecurityError: localStorage is not available'); },
-    };
-    for (const storage of [malformed, throwing]) {
-        const ctx = boot(js, { storage });
-        ctx.url_elem.value = 'http://host:8123/';
-        ctx.user_elem.value = '';
-        ctx.password_elem.value = 'secret';
-        assertEqual(stampedAccount(ctx), '', 'nothing learned from unusable storage');
-        await store(ctx);
-        assertEqual(ctx.stored.length, 1, 'the login is still stored');
-        assertEqual(ctx.stored[0].id, 'default', 'remembered under the server-reported implicit user');
-    }
 });
 
 /// A run launched on a fresh visit with an empty field is snapshotted before the implicit user is

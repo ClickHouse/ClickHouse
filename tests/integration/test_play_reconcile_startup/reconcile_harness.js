@@ -394,27 +394,18 @@ function makeHistory(initialState, location) {
 
 /// ----- Context assembly -------------------------------------------------------------------
 
-/// The `localStorage` of a page that has already learned the implicit user of `origin` (the server
-/// authenticates a request without a `user` as `default`, see `rememberImplicitUser`), so a stored
-/// implicit connection stamped with that name is the live one (`sameConnectionUser`).
-function learnedImplicitDefault(origin) {
-    return { implicit_users: JSON.stringify({ [new URL(origin).origin + '/']: 'default' }) };
-}
-
-function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm, seedLocalStorage }) {
+function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm }) {
     const document = makeDocument();
     const location = makeLocation(href);
     const history = makeHistory(historyState, location);
     const { indexedDB, stores, stats } = makeIndexedDB(seedTabs, seedMeta, openDelayMs);
-    const localStorage = makeStorage();
-    for (const [k, v] of Object.entries(seedLocalStorage || {})) localStorage.setItem(k, v);
 
     const sandbox = {
         document,
         location,
         history,
         indexedDB,
-        localStorage,
+        localStorage: makeStorage(),
         sessionStorage: makeStorage(),
         navigator: {
             clipboard: { writeText: async () => {}, readText: async () => '' },
@@ -494,6 +485,11 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function runScenario(js, config) {
     const { sandbox, stores, stats } = makeContext(config);
     vm.runInContext(js, sandbox, { filename: 'play.html.js' });
+    /// A scenario on the live implicit connection may need this visit to have learned its user, as
+    /// `checkCredentials` does when the server answers before `reconcileStartup` reads IndexedDB:
+    /// `config.learnImplicitUser` is the name the server reports for the origin of the page.
+    if (config.learnImplicitUser)
+        vm.runInContext(`rememberImplicitUser(${JSON.stringify(new URL(config.href).origin)}, ${JSON.stringify(config.learnImplicitUser)})`, sandbox);
     /// A scenario may interact with the bootstrap workspace while IndexedDB is still opening
     /// (see the dirty-startup scenario): run `config.duringLoad(sandbox)` inside the `openDelayMs`
     /// window, before `reconcileStartup` takes over the workspace (`bootstrap_settled`).
@@ -1112,7 +1108,7 @@ async function main() {
                   lastSavedQuery: 'SELECT 8' },
             ],
             seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
-            seedLocalStorage: learnedImplicitDefault(base),
+            learnImplicitUser: 'default',
         });
         /// Sanity: `Report` really is the clean, run-backed tab this contract is about — otherwise
         /// the assertion below would pass for the trivial reason that no tab could carry `run=1`.
@@ -1157,7 +1153,7 @@ async function main() {
                   lastSavedQuery: 'SELECT 8' },
             ],
             seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
-            seedLocalStorage: learnedImplicitDefault(base),
+            learnImplicitUser: 'default',
         });
         const entryState = (extra) => Object.assign({
             tabId: 't8', tabName: 'Report', query: 'SELECT 8', params: {},

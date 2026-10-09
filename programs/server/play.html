@@ -16754,27 +16754,32 @@ function effectiveConnectionUser(serverAddress, fieldUser) {
 }
 
 /// The implicit user to stamp next to a stored connection (a result snapshot, a history entry, a
-/// selection): the name the server was last reported to authenticate a request without a user as
-/// (`learnedImplicitUser`), or empty when the connection names its user explicitly. The stamp is taken
-/// when the connection is recorded, so a stored connection keeps denoting the account it was used with
-/// even when the server's `default_session_user` changes later.
+/// selection): the name the server last reported during this visit to authenticate a request without a
+/// user as (`learnedImplicitUser`), or empty when the connection names its user explicitly. The stamp
+/// is taken when the connection is recorded, so a stored connection keeps denoting the account it was
+/// used with even when the server's `default_session_user` changes later.
 /// When the name is not known yet, the stamp is a marker of this page visit
 /// (`pendingImplicitUserStamp`) instead: the name is typically learned moments later in the same visit
 /// (`checkCredentials`, or the `storeCredentials` probe of the very run being recorded), and then the
 /// marker resolves to it (`resolvedImplicitUser`), so a run launched before the name was known is not
 /// mistaken for a different connection than the one it ran on.
+/// A name learned by an earlier visit is deliberately not used: the server's `default_session_user` may
+/// have changed since, and the startup reconciliation (`reconcileStartup`) can run before this visit's
+/// probe returns, so a remembered name would claim the live connection is an account it may no longer
+/// be (keeping its selected database, or naming it in a `run=1` URL).
 function implicitUserStamp(serverAddress, fieldUser) {
     if (effectiveConnectionUser(serverAddress, fieldUser)) return '';
     return learnedImplicitUser(serverAddress) || pendingImplicitUserStamp();
 }
 
 /// The state of this page visit for the implicit users: a random id for the markers stamped while the
-/// name was not known (`pendingImplicitUserStamp`), and the first name learned for each server
-/// (`serverIdentityKey`) during this visit. Kept on the function rather than in a `let`, because it is
-/// consulted at load, by `initial_connection`, before this point of the script runs.
+/// name was not known (`pendingImplicitUserStamp`), and, for each server (`serverIdentityKey`), the
+/// first name learned during this visit (`first`, what such a marker resolves to) and the latest one
+/// (`latest`, what the live connection is stamped with). Kept on the function rather than in a `let`,
+/// because it is consulted at load, by `initial_connection`, before this point of the script runs.
 function implicitUserVisitState() {
     if (!implicitUserVisitState.state)
-        implicitUserVisitState.state = {id: Date.now().toString(36) + Math.random().toString(36).slice(2), learned: {}};
+        implicitUserVisitState.state = {id: Date.now().toString(36) + Math.random().toString(36).slice(2), first: {}, latest: {}};
     return implicitUserVisitState.state;
 }
 
@@ -16792,8 +16797,8 @@ function resolvedImplicitUser(serverAddress, stamp) {
     if (!stamp.startsWith('\u0000')) return stamp;
     if (stamp !== pendingImplicitUserStamp()) return '';
     const key = serverIdentityKey(serverAddress);
-    const learned = implicitUserVisitState().learned;
-    return (key !== null && Object.hasOwn(learned, key)) ? learned[key] : '';
+    const first = implicitUserVisitState().first;
+    return (key !== null && Object.hasOwn(first, key)) ? first[key] : '';
 }
 
 /// Do two connections on the same server (compared separately by `sameServerAddress`) use the same
@@ -16851,36 +16856,22 @@ function serverIdentityKey(server_address) {
     return url.protocol + '//' + url.host + path + url.search;
 }
 
-/// The users that servers authenticate a request without a `user` as (their `default_session_user`),
-/// as reported by the servers themselves (`currentUser` in `getServerStatus`). Kept in `localStorage`,
-/// because the case it serves spans page loads: a history entry stamped with the empty user on one
-/// visit is compared with the name the password manager refills on the next one.
-/// (A function rather than a constant: it is consulted at load, by `initial_connection`, before this
-/// point of the script runs.)
-/// Best-effort like `PASSWORDLESS_LOGINS_KEY`: an inaccessible `localStorage` or a malformed entry
-/// reads as nothing learned (so stored implicit connections fail closed) and skips the write, rather
-/// than breaking the page load or the run.
-function implicitUsersStorageKey() { return 'implicit_users'; }
-function loadImplicitUsers() {
-    let users = null;
-    try { users = JSON.parse(localStorage.getItem(implicitUsersStorageKey()) || '{}'); } catch (e) { /* malformed or inaccessible: nothing learned */ }
-    return (users !== null && typeof users === 'object' && !Array.isArray(users)) ? users : {};
-}
+/// The user that a server authenticates a request without a `user` as (its `default_session_user`),
+/// as last reported during this visit by the server itself (`currentUser` in `getServerStatus`), or
+/// empty if this visit has not asked yet. Not persisted across page loads, see `implicitUserStamp`:
+/// a stored entry carries its own stamp, so comparing it with the name the password manager refills on
+/// the next visit does not need the name remembered.
 function learnedImplicitUser(server_address) {
     const key = serverIdentityKey(server_address);
-    if (key === null) return '';
-    const users = loadImplicitUsers();
-    return (Object.hasOwn(users, key) && typeof users[key] === 'string') ? users[key] : '';
+    const latest = implicitUserVisitState().latest;
+    return (key !== null && Object.hasOwn(latest, key)) ? latest[key] : '';
 }
 function rememberImplicitUser(server_address, user) {
     const key = serverIdentityKey(server_address);
     if (key === null || !user) return;
-    const learned = implicitUserVisitState().learned;
-    if (!Object.hasOwn(learned, key)) learned[key] = user;
-    const users = loadImplicitUsers();
-    if (users[key] === user) return;
-    users[key] = user;
-    try { localStorage.setItem(implicitUsersStorageKey(), JSON.stringify(users)); } catch (e) { /* best-effort, see above */ }
+    const state = implicitUserVisitState();
+    if (!Object.hasOwn(state.first, key)) state.first[key] = user;
+    state.latest[key] = user;
 }
 
 /// Has the live target moved away from the connection/selection the query that produced this run
