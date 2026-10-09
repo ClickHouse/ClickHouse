@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A FileLog table parses its files with the format settings of its SETTINGS clause and, in a direct SELECT, of the query.
+# A FileLog table parses its files with the format settings of its SETTINGS clause, which take precedence over the query's, and, in a direct SELECT, of the query.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,7 +16,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_table (a String, b String) ENGINE
     SETTINGS format_csv_delimiter = ';'"
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_table"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_table"
-${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a, b FROM file_log_table"
+${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a, b FROM file_log_table SETTINGS format_csv_delimiter = ','"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_query (a String, b String) ENGINE = FileLog('${logs_dir}/query.csv', 'CSV')"
 ${CLICKHOUSE_CLIENT} --stream_like_engine_allow_direct_select=1 -q "SELECT a, b FROM file_log_query SETTINGS format_csv_delimiter = ';'"
