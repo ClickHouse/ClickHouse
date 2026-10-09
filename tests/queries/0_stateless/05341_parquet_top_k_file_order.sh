@@ -12,7 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DIR=$(mktemp -d "${CLICKHOUSE_TMP}/05341_parquet_topk_files_XXXXXX")
 trap 'rm -rf "${DIR}"' EXIT
 
+# The checks depend on the number of streams, so `max_threads` must not be lowered under the memory limit of the test.
 LOCAL=(${CLICKHOUSE_LOCAL}
+    --max_threads_min_free_memory_per_thread=0
     --use_top_k_dynamic_filtering_for_variable_length_types=0
     --query_plan_max_limit_for_top_k_optimization=10000
     --input_format_parquet_filter_push_down=1
