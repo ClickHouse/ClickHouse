@@ -228,6 +228,13 @@ void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k
     params.top_k = std::move(top_k);
 }
 
+void AggregatingStep::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker)
+{
+    if (!params.top_k)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set a top-K threshold tracker on an aggregation without the top-K optimization");
+    params.top_k->threshold_tracker = std::move(threshold_tracker);
+}
+
 std::vector<size_t> AggregatingStep::getStepGroups() const
 {
     return {
@@ -650,8 +657,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     counter++,
                     limit_hint,
                     limit_hint_prefix_columns,
-                    nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
-                );
+                    /// With `skip_merging` the `MergingAggregatedBucketTransform` below is never created,
+                    /// so these transforms are the last producers of this step's output and have to record
+                    /// it themselves. Otherwise the merging transform records it, and recording here too
+                    /// would count the same rows twice.
+                    skip_merging ? dataflow_cache_updater : nullptr);
             });
 
             if (skip_merging)
