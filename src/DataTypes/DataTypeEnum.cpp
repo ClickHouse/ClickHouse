@@ -77,6 +77,7 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_, RelativeF
     , type_name(generateName(this->getValues()))
     , is_add(is_add_)
     , relative_flags(is_add_ ? std::move(relative_flags_) : std::vector<UInt8>{})
+    , serialization_hash(SerializationEnum<Type>::getHash(this->getValues()))
 {
     if (is_add && relative_flags.size() != this->getValues().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
