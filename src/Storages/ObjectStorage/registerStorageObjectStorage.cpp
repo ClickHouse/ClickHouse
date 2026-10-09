@@ -1,5 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -8,10 +9,12 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #if USE_AWS_S3 && USE_GOOGLE_CLOUD
 #include <Storages/ObjectStorage/GCS/Configuration.h>
 #endif
@@ -139,6 +142,7 @@ static void registerStorageAzure(StorageFactory & factory)
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
+    azureTableEngineSecretArguments(),
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -766,6 +770,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
         auto configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
+    s3TableEngineSecretArguments(),
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -810,6 +815,7 @@ static void registerStorageHDFS(StorageFactory & factory)
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -1150,6 +1156,7 @@ void registerStorageIceberg(StorageFactory & factory)
             }
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1594,6 +1601,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1633,6 +1641,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1654,6 +1663,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1692,6 +1702,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1772,6 +1783,7 @@ void registerStoragePaimon(StorageFactory & factory)
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2138,6 +2150,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2185,6 +2198,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2210,6 +2224,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2256,6 +2271,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2312,6 +2328,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
 
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2492,6 +2509,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
 
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2530,6 +2548,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2567,6 +2586,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2592,6 +2612,7 @@ void registerStorageHudi(StorageFactory & factory)
             auto configuration = std::make_shared<StorageS3HudiConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = false,
             .supports_schema_inference = true,
