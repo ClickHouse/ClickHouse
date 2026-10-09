@@ -640,7 +640,7 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
-/// the array under arrayJoin, emptyArrayToSingle sets padded: it adds a default element that the index does not hold
+/// emptyArrayToSingle sets padded: the default element it adds is not in the index
 static RPNBuilderTreeNode unwrapArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded)
 {
     auto unwrapped = unwrapLosslessConversion(node);

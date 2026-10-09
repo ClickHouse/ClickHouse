@@ -1,4 +1,4 @@
--- skip indexes work for arrayJoin(emptyArrayToSingle(x)) and LEFT ARRAY JOIN when the filter rejects the default element
+-- LEFT ARRAY JOIN and arrayJoin(emptyArrayToSingle(x)) use the bloom filter unless the filter accepts the default
 
 SET explain_query_plan_default = 'legacy';
 SET use_skip_indexes = 1;
