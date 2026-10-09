@@ -158,7 +158,7 @@ TOKYO_MIDNIGHT="toDateTime('2026-01-01 00:00:00', 'Asia/Tokyo')"
 
 make_table dates d Date32 date 0 '["2025-12-31"]' '["2026-01-01"]' '["2026-01-02"]'
 for where in "d < ${DT}" "d <= ${DT}" "d > ${DT}" "d >= ${DT}" "d = ${DT}" \
-    "d != toDateTime('2026-01-01 00:00:01', 'UTC')" "${DT} > d" \
+    "d != toDateTime('2026-01-01 00:00:01', 'UTC')" "${DT} > d" "${DT} < d" "${DT} >= d" \
     "toDateTime64('2026-01-01 00:00:00.5', 3, 'UTC') <= d" "d < toDateTime64('2026-01-01 00:00:00.5', 3, 'UTC')" \
     "d < toDateTime('2026-01-01 00:00:00', 'UTC')" "d = toDateTime('2026-01-01 00:00:00', 'UTC')" \
     "d > ${TOKYO_MIDNIGHT}" "d > toDateTime64('2026-01-01 00:00:00', 0, 'Asia/Tokyo')" \
@@ -169,6 +169,19 @@ done
 # `Date32` and `DateTime` compare in a `DateTime64` of the session time zone.
 check dates Pacific/Kiritimati "d < ${DT}"
 check dates Pacific/Kiritimati "d < toDateTime64('2026-01-01 12:00:00', 0, 'UTC')"
+
+# A `Date` compared with a `DateTime` is out of order outside the `DateTime` range.
+make_table epoch d Date32 date 0 '["1970-01-01"]' '["2026-01-02"]' '["2120-01-01"]'
+check epoch UTC "toDate(d) > ${TOKYO_MIDNIGHT}"
+check epoch UTC "toDate(d) < ${DT}"
+check epoch UTC "toDate(d) <= toDateTime('2106-02-07 06:28:15', 'UTC')"
+
+# `Pacific/Apia` skipped 2011-12-30, which therefore starts at the same instant as 2011-12-31.
+APIA="toDateTime64('2011-12-31 00:00:00', 0, 'Pacific/Apia')"
+make_table skipped_day d Date32 date 0 '["2011-12-30"]' '["2011-12-31"]'
+for where in "d = ${APIA}" "d >= ${APIA}" "NOT (d < ${APIA})" "d < ${APIA}"; do
+    check skipped_day UTC "${where}"
+done
 
 make_table dates_nullable d 'Nullable(Date32)' date 0 '["2026-01-01"]' '["2026-01-02"]'
 check dates_nullable UTC "d < ${DT}"

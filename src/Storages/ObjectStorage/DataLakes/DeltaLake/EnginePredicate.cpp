@@ -158,14 +158,26 @@ namespace
         {
             /// Compared in the common type, whose time zone can differ from the literal's.
             const auto common = DB::tryGetLeastSupertype(DB::DataTypes{type, literal_type});
-            if (!common)
+            /// A `Date` compared in a `DateTime` is out of order outside the `DateTime` range.
+            if (!common || isDateTime(common))
                 return std::nullopt;
             const auto instant = DB::tryConvertFieldToType(literal, *common, literal_type.get(), format_settings, /*strict=*/ true);
             const auto day = DB::tryConvertFieldToType(instant, *type, common.get(), format_settings, /*strict=*/ true);
             const auto day_start = DB::tryConvertFieldToType(day, *common, type.get(), format_settings, /*strict=*/ true);
             if (instant.isNull() || day.isNull() || day_start.isNull() || !DB::accurateLessOrEqual(day_start, instant))
                 return std::nullopt;
-            return ConvertedLiteral{day, DB::accurateEquals(day_start, instant)};
+            if (!DB::accurateEquals(day_start, instant))
+                return ConvertedLiteral{day, false};
+            /// A skipped day starts at the same instant as the next one.
+            const Int64 day_number = day.safeGet<Int64>();
+            if (day_number > (isDate(type) ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM))
+            {
+                const auto previous_start = DB::tryConvertFieldToType(
+                    DB::Field(day_number - 1), *common, type.get(), format_settings, /*strict=*/ true);
+                if (previous_start.isNull() || !DB::accurateLess(previous_start, day_start))
+                    return std::nullopt;
+            }
+            return ConvertedLiteral{day, true};
         }
         else
         {
