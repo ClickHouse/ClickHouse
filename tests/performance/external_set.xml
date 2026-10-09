@@ -4,10 +4,12 @@
          numbers and short `FixedString` values, and of the first 4 bytes of other strings. So lookups of
          sorted keys read the blocks of the set in order, and a set built from sorted rows gets its keys
          already sorted. The set packs the gaps between keys that are close to each other, so it takes fewer
-         blocks, which the random lookups of the last three queries read again and again. A codec does not
+         blocks, which the random lookups of the next three queries read again and again. A codec does not
          shrink packed gaps, so the set writes these blocks uncompressed. The disk keys of strings are mostly
          hash bits, which compress too little to pay for a codec, so the set writes them uncompressed as well.
-         The lookups of both read blocks without decompressing them. -->
+         The lookups of both read blocks without decompressing them. The last two queries look up random
+         hashes, which do not pack. A chunk of lookups that needs most of the blocks in its range reads
+         neighboring blocks together, and a chunk that needs few of them reads one block at a time. -->
     <settings>
         <max_bytes_before_external_set>16777216</max_bytes_before_external_set>
         <max_bytes_ratio_before_external_set>0</max_bytes_ratio_before_external_set>
@@ -30,4 +32,10 @@
     <!-- The set holds tuples of slowly changing numbers, whose keys take 16 bytes, and the lookups come in
          random order. -->
     <query>SELECT count() FROM numbers_mt(10000000) WHERE (intDiv(cityHash64(number) % 10000000, 1000), toUInt32(cityHash64(number) % 1000)) IN (SELECT intDiv(number, 1000), toUInt32(number % 1000) FROM numbers(5000000))</query>
+    <!-- The set holds hashes, and the lookups come in random order, so each chunk needs most of the blocks
+         and reads neighboring blocks together. -->
+    <query>SELECT count() FROM numbers_mt(10000000) WHERE cityHash64(number) IN (SELECT cityHash64(number * 2) FROM numbers(5000000))</query>
+    <!-- The same lookups come in chunks of 1024 rows, each of which needs few blocks and reads them one at a
+         time. -->
+    <query>SELECT count() FROM numbers_mt(10000000) WHERE cityHash64(number) IN (SELECT cityHash64(number * 2) FROM numbers(5000000)) SETTINGS max_block_size = 1024</query>
 </test>
