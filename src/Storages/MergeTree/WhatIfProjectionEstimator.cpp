@@ -52,6 +52,8 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool optimize_use_projections;
@@ -79,6 +81,8 @@ struct ProjectionPartData
     /// sort permutation of key_block
     IColumn::Permutation order;
     size_t rows = 0;
+    /// parent rows read, the filter of the projection keeps a share of them
+    size_t read_rows = 0;
     /// uncompressed bytes with the key columns, used for granularity
     size_t bytes = 0;
     /// uncompressed bytes without the key columns, used for the part format
@@ -216,6 +220,48 @@ bool buildProjectionPart(
     PullingPipelineExecutor executor(pipeline);
 
     MutableColumns key_columns;
+    /// the stored columns of a batch, as the writer gets them
+    auto add_projected = [&](Block block)
+    {
+        /// the writer chooses the part format before the key expression and sizes the granules after it
+        out.format_bytes += block.bytes();
+        /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
+        for (const auto & required : proj_key.expression->getRequiredColumns())
+            if (!block.has(required))
+                block.insert(block.getSubcolumnByName(required));
+        proj_key.expression->execute(block);
+        out.bytes += getBlockSizeForGranularity(block);
+        if (need_row_bytes)
+            appendRowSizes(out.row_bytes, out.variable_width, block);
+
+        if (key_columns.empty())
+            for (const auto & name : proj_key.column_names)
+                key_columns.push_back(block.getByName(name).column->convertToFullColumnIfConst()->cloneEmpty());
+
+        for (size_t i = 0; i < key_columns.size(); ++i)
+        {
+            auto source = block.getByName(proj_key.column_names[i]).column->convertToFullColumnIfConst();
+            key_columns[i]->insertRangeFrom(*source, 0, source->size());
+        }
+    };
+
+    /// the writer computes the projection of each insert block, so compute it for batches of that size
+    const auto & settings = context->getSettingsRef();
+    Blocks batch;
+    size_t batch_rows = 0;
+    size_t batch_bytes = 0;
+    auto flush = [&]
+    {
+        if (batch.empty())
+            return;
+        auto projected = projection.calculate(concatenateBlocks(batch), out.read_rows - batch_rows, context);
+        batch.clear();
+        batch_rows = 0;
+        batch_bytes = 0;
+        if (projected.rows())
+            add_projected(std::move(projected));
+    };
+
     Block block;
     while (executor.pull(block))
     {
@@ -239,40 +285,19 @@ bool buildProjectionPart(
         for (auto & column : block)
             column.column = recursiveRemoveSparse(column.column);
 
-        /// the writer chooses the part format before the key expression and sizes the granules after it
-        out.format_bytes += block.bytes();
-        /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
-        for (const auto & required : proj_key.expression->getRequiredColumns())
-            if (!block.has(required))
-                block.insert(block.getSubcolumnByName(required));
-        proj_key.expression->execute(block);
-        out.bytes += getBlockSizeForGranularity(block);
-        if (need_row_bytes)
-            appendRowSizes(out.row_bytes, out.variable_width, block);
-
-        if (key_columns.empty())
-            for (const auto & name : proj_key.column_names)
-                key_columns.push_back(block.getByName(name).column->convertToFullColumnIfConst()->cloneEmpty());
-
-        for (size_t i = 0; i < key_columns.size(); ++i)
-        {
-            auto source = block.getByName(proj_key.column_names[i]).column->convertToFullColumnIfConst();
-            key_columns[i]->insertRangeFrom(*source, 0, source->size());
-        }
+        out.read_rows += block.rows();
+        batch_rows += block.rows();
+        batch_bytes += block.bytes();
+        batch.push_back(std::move(block));
+        if (batch_rows >= settings[Setting::min_insert_block_size_rows] || batch_bytes >= settings[Setting::min_insert_block_size_bytes])
+            flush();
     }
+    flush();
 
     if (key_columns.empty() || key_columns[0]->empty())
         return true;
 
     out.rows = key_columns[0]->size();
-    /// projection indexes also store the parent offset
-    if (projection.with_parent_part_offset)
-    {
-        out.bytes += out.rows * sizeof(UInt64);
-        out.format_bytes += out.rows * sizeof(UInt64);
-        for (auto & row_size : out.row_bytes)
-            row_size += sizeof(UInt64);
-    }
     for (size_t i = 0; i < key_columns.size(); ++i)
         out.key_block.insert({std::move(key_columns[i]), proj_key.data_types[i], proj_key.column_names[i]});
 
@@ -618,7 +643,7 @@ bool buildScenarios(
             return false;
         }
         /// a `break` time limit or a cancelled query stops the read silently
-        if (part_data.rows != part->index_granularity->getRowsCountInRanges(ranges))
+        if (part_data.read_rows != part->index_granularity->getRowsCountInRanges(ranges))
         {
             result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancelled query";
             /// the limit also drops the output, so log the reason
@@ -638,16 +663,14 @@ bool buildScenarios(
         }
         if (uneven_rows)
             ++out.uneven_width_parts;
-        /// no key rows from a non-empty part: the key needs a column we don't read, e.g. `_part_offset`
-        if (part_data.rows == 0 && part->rows_count > 0)
-        {
-            result.empirical_unsupported_reason = "The projection key could not be built from the columns the projection stores";
-            return false;
-        }
+        /// no row passes the filter of the projection, so the writer writes no projection part
         if (part_data.rows == 0)
             continue;
 
-        const size_t part_rows = plan.sample_step > 1 ? part->rows_count : part_data.rows;
+        /// a sample stands for the whole part, and the filter of the projection keeps the same share of its rows
+        const size_t part_rows = plan.sample_step > 1
+            ? static_cast<size_t>(UInt128(part->rows_count) * part_data.rows / part_data.read_rows)
+            : part_data.rows;
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
         out.scenarios[0]->parts[part->name] = parts[primary];
@@ -864,6 +887,13 @@ bool tryEstimateProjection(
         marks_low += part_low == std::numeric_limits<UInt64>::max() ? 0 : part_low;
         marks_high += part_high;
     }
+    /// the optimizer reads a part with no projection part from the base table, the same in every layout
+    UInt64 projection_marks = 0;
+    for (const auto & [_, ranges] : outcome.ranges)
+        projection_marks += ranges.getNumberOfMarks();
+    const UInt64 base_table_marks = *outcome.marks > projection_marks ? *outcome.marks - projection_marks : 0;
+    marks_low += base_table_marks;
+    marks_high += base_table_marks;
     widenForSamples(built.samples, outcome, marks_low, marks_high);
 
     result.estimated_marks = outcome.marks;
@@ -950,12 +980,6 @@ WhatIfCandidateResult evaluateProjection(
     {
         result.not_applicable_reason
             = "EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet";
-        return result;
-    }
-
-    if (projection->where_clause_ast)
-    {
-        result.not_applicable_reason = "EXPLAIN WHATIF does not estimate projections with a WHERE clause yet";
         return result;
     }
 

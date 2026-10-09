@@ -616,6 +616,9 @@ UseProjectionsResult optimizeUseNormalProjections(
             {
                 LOG_DEBUG(logger, "Projection {} skipped: query WHERE does not imply projection WHERE", projection->name);
                 result.projection_reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
+                /// the query alone decides it, so WHATIF does not read data for this projection
+                if (hypothetical && projection == &hypothetical->projection)
+                    hypothetical->outcome.rejected_for_query = true;
                 continue;
             }
         }
