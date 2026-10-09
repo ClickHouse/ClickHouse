@@ -1049,6 +1049,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// non-empty, forcing the slow recursive-removal fallback below.
         request.emplace_back(fs::path(dir) / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
+        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::MIN_MAX_TIME_OF_DATA_INSERT_FILE, true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME, true);
 
