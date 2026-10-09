@@ -271,6 +271,25 @@ void writeIPv6(const Tins::IPv6Address & addr, IPv6 & out)
         buf[i++] = byte;
 }
 
+/// Dissects a captured frame into a PDU chain according to the link type of the capture.
+/// `libtins` dissects Ethernet, Linux cooked capture, BSD loopback, PPI and 802.11 frames, but
+/// returns a raw PDU for the raw IP link types, so they are dispatched here: `DLT_RAW` carries
+/// either IP version, told apart by the version nibble, while `DLT_IPV4` and `DLT_IPV6` carry
+/// only one. The frames of all the other link types are kept as a single raw PDU.
+Tins::PDU * dissectFrame(int dlt, const uint8_t * data, UInt32 caplen)
+{
+    if (dlt == DLT_RAW || dlt == DLT_IPV4 || dlt == DLT_IPV6)
+    {
+        const int version = caplen == 0 ? 0 : data[0] >> 4;
+        if (version == 4 && dlt != DLT_IPV6)
+            return new Tins::IP(data, caplen);
+        if (version == 6 && dlt != DLT_IPV4)
+            return new Tins::IPv6(data, caplen);
+        return new Tins::RawPDU(data, caplen);
+    }
+    return Tins::Internals::pdu_from_dlt_flag(dlt, data, caplen, /*rawpdu_on_no_match=*/ true);
+}
+
 /// Byte offset of `target` inside the frame that starts with `root`: the sum of the header
 /// sizes of the layers above it.
 size_t offsetOfLayer(const Tins::PDU & root, const Tins::PDU & target)
@@ -505,10 +524,8 @@ Chunk PCAPBlockInputFormat::read()
         const UInt32 caplen = pkthdr->caplen;
         const UInt32 wire_len = pkthdr->len;
 
-        /// Dissect the raw bytes into a PDU chain (rawpdu_on_no_match=true keeps
-        /// undissected tails as a RAW pdu).
-        std::unique_ptr<Tins::PDU> pdu_owner(
-            Tins::Internals::pdu_from_dlt_flag(dlt, data, caplen, /*rawpdu_on_no_match=*/ true));
+        /// Dissect the raw bytes into a PDU chain; undissected tails are kept as a RAW pdu.
+        std::unique_ptr<Tins::PDU> pdu_owner(dissectFrame(dlt, data, caplen));
         Tins::PDU * pdu = pdu_owner.get();
         if (pdu == nullptr)
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
@@ -852,6 +869,19 @@ lo` - is rejected with an error, either when the file is opened or when the
 differing interface description block is reached while reading.
 :::
 
+:::note
+Frames are dissected according to the link type of the capture. The supported
+link types are Ethernet (`LINKTYPE_ETHERNET`), Linux cooked capture
+(`LINKTYPE_LINUX_SLL`), BSD loopback (`LINKTYPE_NULL`), PPI (`LINKTYPE_PPI`),
+IEEE 802.11 with or without a radiotap header (`LINKTYPE_IEEE802_11`,
+`LINKTYPE_IEEE802_11_RADIOTAP`), and raw IP (`LINKTYPE_RAW`, `LINKTYPE_IPV4`,
+`LINKTYPE_IPV6`). For raw IP captures the outermost layer is the IP header, so
+`link_type` is `IP` or `IPv6` and the Ethernet columns are empty. Frames of any
+other link type are not dissected: they still produce rows with the capture
+metadata and `raw`, but `link_type` is `RAW`, `protocols` is `['RAW']`, and the
+layer-specific columns are empty.
+:::
+
 :::info
 A capture file is a sequence of packet records. Each record stores the
 capture timestamp, the number of bytes that were actually saved
@@ -878,7 +908,7 @@ The `PCAP` format produces the following columns:
 | `timestamp` | `DateTime64(9)` | Capture time of the packet. The column type has nanosecond scale, but capture files are read with microsecond precision, so the value is currently truncated to microseconds even for nanosecond captures |
 | `capture_length` | `UInt32` | Number of bytes saved in the file for this packet; equals `length(raw)` |
 | `original_length` | `UInt32` | Size of the packet on the wire; `>= capture_length` |
-| `link_type` | `LowCardinality(String)` | Link-layer type of the outermost layer, for example `ETHERNET_II` |
+| `link_type` | `LowCardinality(String)` | Type of the outermost layer, for example `ETHERNET_II`, or `IP` / `IPv6` for raw IP captures |
 | `protocols` | `Array(LowCardinality(String))` | Ordered list of the protocol headers dissected from the captured bytes, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']`. IPv6 extension headers are listed right after `IPv6` by their IANA keywords: `HOPOPT`, `IPv6-Route`, `IPv6-Frag`, `AH`, `IPv6-Opts`, `Mobility Header`, `HIP` and `Shim6`. The list stops at the last header that could be decoded: when the transport header was cut off by the snapshot length or is not decodable, it ends with `IP` / `IPv6` (or `RAW`) even though `ip_protocol` names the transport. Use `ip_protocol` rather than `has(protocols, 'TCP')` to select packets by transport protocol |
 | `eth_src` | `Nullable(String)` | Source MAC address of the outermost Ethernet header, or `NULL` when the link layer is not Ethernet |
 | `eth_dst` | `Nullable(String)` | Destination MAC address of the outermost Ethernet header |

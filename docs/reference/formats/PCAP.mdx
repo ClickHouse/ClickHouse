@@ -35,6 +35,19 @@ lo` - is rejected with an error, either when the file is opened or when the
 differing interface description block is reached while reading.
 </Note>
 
+<Note>
+Frames are dissected according to the link type of the capture. The supported
+link types are Ethernet (`LINKTYPE_ETHERNET`), Linux cooked capture
+(`LINKTYPE_LINUX_SLL`), BSD loopback (`LINKTYPE_NULL`), PPI (`LINKTYPE_PPI`),
+IEEE 802.11 with or without a radiotap header (`LINKTYPE_IEEE802_11`,
+`LINKTYPE_IEEE802_11_RADIOTAP`), and raw IP (`LINKTYPE_RAW`, `LINKTYPE_IPV4`,
+`LINKTYPE_IPV6`). For raw IP captures the outermost layer is the IP header, so
+`link_type` is `IP` or `IPv6` and the Ethernet columns are empty. Frames of any
+other link type are not dissected: they still produce rows with the capture
+metadata and `raw`, but `link_type` is `RAW`, `protocols` is `['RAW']`, and the
+layer-specific columns are empty.
+</Note>
+
 <Info>
 A capture file is a sequence of packet records. Each record stores the
 capture timestamp, the number of bytes that were actually saved
@@ -61,7 +74,7 @@ The `PCAP` format produces the following columns:
 | `timestamp` | `DateTime64(9)` | Capture time of the packet. The column type has nanosecond scale, but capture files are read with microsecond precision, so the value is currently truncated to microseconds even for nanosecond captures |
 | `capture_length` | `UInt32` | Number of bytes saved in the file for this packet; equals `length(raw)` |
 | `original_length` | `UInt32` | Size of the packet on the wire; `>= capture_length` |
-| `link_type` | `LowCardinality(String)` | Link-layer type of the outermost layer, for example `ETHERNET_II` |
+| `link_type` | `LowCardinality(String)` | Type of the outermost layer, for example `ETHERNET_II`, or `IP` / `IPv6` for raw IP captures |
 | `protocols` | `Array(LowCardinality(String))` | Ordered list of the protocol headers dissected from the captured bytes, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']`. IPv6 extension headers are listed right after `IPv6` by their IANA keywords: `HOPOPT`, `IPv6-Route`, `IPv6-Frag`, `AH`, `IPv6-Opts`, `Mobility Header`, `HIP` and `Shim6`. The list stops at the last header that could be decoded: when the transport header was cut off by the snapshot length or is not decodable, it ends with `IP` / `IPv6` (or `RAW`) even though `ip_protocol` names the transport. Use `ip_protocol` rather than `has(protocols, 'TCP')` to select packets by transport protocol |
 | `eth_src` | `Nullable(String)` | Source MAC address of the outermost Ethernet header, or `NULL` when the link layer is not Ethernet |
 | `eth_dst` | `Nullable(String)` | Destination MAC address of the outermost Ethernet header |

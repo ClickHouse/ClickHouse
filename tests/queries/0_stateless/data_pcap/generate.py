@@ -97,10 +97,12 @@ packets.append(ethernet(ipv6(51, authentication_header + tcp), ether_type=0x86DD
 packets.append(ethernet(ipv6(140, ipv6_extension_header(140, 17, bytes(6)) + udp), ether_type=0x86DD))
 
 
-def write_pcap(path, records, snaplen=65535):
-    """Classic pcap; every record is a (captured bytes, original wire length) pair."""
+def write_pcap(path, records, snaplen=65535, linktype=1):
+    """Classic pcap; every record is a (captured bytes, original wire length) pair.
+
+    `linktype` is the link type of the capture, `LINKTYPE_ETHERNET` by default."""
     with path.open("wb") as file:
-        file.write(struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, snaplen, 1))
+        file.write(struct.pack("<IHHIIII", 0xA1B2C3D4, 2, 4, 0, 0, snaplen, linktype))
         for number, (packet, wire_length) in enumerate(records):
             file.write(struct.pack("<IIII", 1_700_000_000 + number, 0, len(packet), wire_length))
             file.write(packet)
@@ -159,3 +161,16 @@ inner_frame = ethernet(ipv4(6, tcp), vlan_id=99, addresses="02000000000202000000
 vxlan_payload = vxlan_header + inner_frame
 vxlan = ethernet(ipv4(17, struct.pack(">HHHH", 54321, 4789, 8 + len(vxlan_payload), 0) + vxlan_payload))
 write_pcap(out_dir / "vxlan.pcap", [(vxlan, len(vxlan))])
+
+# Raw IP captures have no link-layer header: `LINKTYPE_RAW` (101) carries IPv4
+# and IPv6 packets told apart by the version nibble, while `LINKTYPE_IPV4` (228)
+# and `LINKTYPE_IPV6` (229) carry only one version each.
+raw_ip = [ipv4(6, tcp), ipv6(17, udp), ipv4(1, icmp)]
+write_pcap(out_dir / "raw_ip.pcap", [(packet, len(packet)) for packet in raw_ip], linktype=101)
+write_pcap(out_dir / "ipv4.pcap", [(ipv4(17, udp), len(ipv4(17, udp)))], linktype=228)
+write_pcap(out_dir / "ipv6.pcap", [(ipv6(6, tcp), len(ipv6(6, tcp)))], linktype=229)
+
+# A link type that is not dissected (`LINKTYPE_LINUX_SLL2`, 276): the packet
+# still produces a row with the capture metadata and `raw`, but no layer columns.
+sll2 = bytes.fromhex("0800000000000001000106") + bytes(9) + ipv4(17, udp)
+write_pcap(out_dir / "sll2.pcap", [(sll2, len(sll2))], linktype=276)

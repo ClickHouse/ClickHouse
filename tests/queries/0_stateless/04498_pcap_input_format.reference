@@ -94,6 +94,10 @@ UDP	4	1
 packets.pcap	0	0	0
 packets.pcapng	0	0	0
 truncated.pcap	0	0	0
+raw_ip.pcap	0	0	0
+ipv4.pcap	0	0	0
+ipv6.pcap	0	0	0
+sll2.pcap	0	0	0
 --- padded short frame: payload excludes the Ethernet padding ---
 60	4	ping	0	42
 --- tunnels: IP columns describe the outer header ---
@@ -128,3 +132,11 @@ number
 timestamp
 --- payload covers only TCP and UDP: an ICMP packet has an empty payload ---
 3	ICMP	0	
+--- raw IP link types: the IP header is the outermost layer ---
+raw_ip.pcap	1	IP	['IP','TCP','RAW']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	22
+raw_ip.pcap	2	IPv6	['IPv6','UDP']	\N		6	2001:db8::1	2001:db8::2	UDP	68	67	0
+raw_ip.pcap	3	IP	['IP','ICMP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	ICMP	\N	\N	0
+ipv4.pcap	1	IP	['IP','UDP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	0
+ipv6.pcap	1	IPv6	['IPv6','TCP','RAW']	\N		6	2001:db8::1	2001:db8::2	TCP	12345	80	22
+--- a link type that is not dissected yields rows with the capture metadata only ---
+1	RAW	['RAW']	48	48	\N		\N
