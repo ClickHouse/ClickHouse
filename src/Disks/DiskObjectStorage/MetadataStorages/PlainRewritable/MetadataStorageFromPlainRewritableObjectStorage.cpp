@@ -104,6 +104,43 @@ std::optional<std::string> getBlobKeyIfExists(const FsSnapshot & snapshot, const
     return getBlobKey(*directory, path.filename(), it->second);
 }
 
+/// The keys of the blobs shared by more than one file among the files at or under the given paths.
+///
+/// Transactions on different paths run concurrently, so two of them may remove different links to the same blob, each
+/// seeing the other link left. The blob would then lose its last link only when the second one is published, with no
+/// tombstone marker (`PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`) written for it, and leak if the process
+/// dies before it is deleted. Locking these keys serializes such transactions, so the last one sees the blob with a
+/// single link in its own snapshot and removes it through the marker. A blob that has a single link here cannot gain
+/// another one while the paths are locked, because a hard link is created only from a locked path.
+KeyLocks::Keys collectSharedBlobKeys(const FsSnapshot & snapshot, const std::vector<std::string> & paths)
+{
+    KeyLocks::Keys keys;
+
+    auto add_if_shared = [&](std::string blob_key)
+    {
+        if (snapshot.getBlobLinkCount(blob_key) > 1)
+            keys.insert(std::move(blob_key));
+    };
+
+    for (const auto & path : paths)
+    {
+        if (snapshot.existsFile(path))
+        {
+            if (auto blob_key = getBlobKeyIfExists(snapshot, normalizePath(path)))
+                add_if_shared(std::move(*blob_key));
+        }
+        else
+        {
+            for (const auto & [_, info] : snapshot.getSubtreeRemoteInfo(path))
+                if (info)
+                    for (const auto & [file_name, file_info] : info->files)
+                        add_if_shared(getBlobKey(*info, file_name, file_info));
+        }
+    }
+
+    return keys;
+}
+
 /// The pages of one listing can only be fetched one after another, so enumerating a disk that holds
 /// hundreds of thousands of objects takes hundreds of sequential requests, and no amount of threads
 /// makes it faster. Directory names in this layout are random strings produced by `getRandomASCIIString`,
@@ -1155,6 +1192,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
         ///    while the locks are held. Transactions on unrelated paths proceed concurrently, including their
         ///    requests to the object storage, which may take a long time.
         const auto path_locks = metadata_storage.path_locks.lock(affected_paths);
+        const auto blob_locks = metadata_storage.blob_locks.lock(
+            collectSharedBlobKeys(*metadata_storage.fs.takeReadOnlySnapshot(), affected_paths));
 
         /// 2. Setup up-to-date fs into snapshot being used during commit, and start recording the changes made to it.
         commit_snapshot->resetToRoot(metadata_storage.fs.takeReadOnlySnapshot()->getRoot());

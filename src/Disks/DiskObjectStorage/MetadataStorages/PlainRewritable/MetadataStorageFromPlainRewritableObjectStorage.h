@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/KeyLocks.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/PathLocks.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
@@ -122,6 +123,8 @@ private:
     /// Transactions hold the locks for the paths they modify while they talk to the object storage and publish the result;
     /// full reloads of the metadata hold the lock for the root. Transactions on unrelated paths run concurrently.
     PathLocks path_locks;
+    /// Transactions also hold the locks for the shared blobs of the files they touch, see `collectSharedBlobKeys`.
+    KeyLocks blob_locks;
     FsMetadata fs;
     std::shared_ptr<PlainRewritableLayout> layout;
 

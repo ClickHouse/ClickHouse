@@ -237,9 +237,9 @@ MetadataStorageFromPlainObjectStoragePublishOperation::MetadataStorageFromPlainO
 
 void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
 {
-    /// A transaction that removes a link to a shared blob does not exclude the transactions removing the other links
-    /// to it, because they lock only the paths of their own files. Each of them may see the other link left and keep
-    /// the blob, so the last link is found only here, where the publications are serialized.
+    /// The transactions removing different links to a shared blob are serialized by the locks of the shared blobs
+    /// (see `collectSharedBlobKeys`), so the one that removes the last link sees it in its own snapshot and removes
+    /// the blob through a tombstone marker. Whatever still loses its last link only here is removed in `finalize`.
     for (const auto & blob_key : fs.applyJournal(fs_tree->getJournal()))
         unlinked_blobs.emplace_back(layout->constructBlobObjectKey(blob_key));
 }
