@@ -622,7 +622,7 @@ public:
     void killAllQueries();
 };
 
-/// `LoadJob::on_waiters_increment` / `on_waiters_decrement` for load jobs a user query may wait for.
+/// Waiter callbacks of the global `AsyncLoader`, see `AsyncLoader::setWaiterCallbacks`.
 void onLoadJobWaitersIncrement(const LoadJobPtr & job);
 void onLoadJobWaitersDecrement(const LoadJobPtr & job);
 

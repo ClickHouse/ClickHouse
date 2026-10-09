@@ -30,7 +30,6 @@
 #include <Storages/AlterCommands.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -184,8 +183,6 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
         base->goals(),
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup MaterializedPostgreSQL database {}", getDatabaseName()),
-        onLoadJobWaitersIncrement,
-        onLoadJobWaitersDecrement,
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             startup_task->activateAndSchedule();

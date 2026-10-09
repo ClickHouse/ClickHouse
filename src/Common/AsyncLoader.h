@@ -401,6 +401,12 @@ public:
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
+    using WaiterCallback = std::function<void(const LoadJobPtr & job)>;
+
+    // Called for every wait on any job of this loader, with the same contract as the job's own `on_waiters_increment` /
+    // `on_waiters_decrement`: the increment runs before the job's own, the decrement after it. Must be set before any job is scheduled.
+    void setWaiterCallbacks(WaiterCallback on_increment, WaiterCallback on_decrement);
+
     // Wait for all load jobs to finish, including all new jobs. So at first take care to stop adding new jobs.
     void wait();
 
@@ -434,7 +440,8 @@ public:
     void prioritize(const LoadJobPtr & job, size_t new_pool);
 
     // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
-    // Throws if job is FAILED or CANCELED unless `no_throw` is set, and also if `on_waiters_increment` throws to cancel the wait, which `no_throw` does not suppress.
+    // Throws if job is FAILED or CANCELED unless `no_throw` is set. Returns or throws immediately if called on non-pending job.
+    // Also throws if a waiter increment callback throws to cancel the wait, which `no_throw` does not suppress.
     // Waiting for a not scheduled job is considered to be LOGICAL_ERROR, use waitLoad() helper instead to make sure the job is scheduled.
     // There are more rules if `wait()` is called from another job:
     //  1) waiting on a dependent job is considered to be LOGICAL_ERROR;
@@ -493,6 +500,9 @@ private:
     const bool log_progress; // Periodically log total progress
     const bool log_events; // Log all important events: job start/end, waits, prioritizations
     LoggerPtr log;
+
+    WaiterCallback on_waiters_increment;
+    WaiterCallback on_waiters_decrement;
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = true;

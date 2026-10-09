@@ -4132,6 +4132,7 @@ AsyncLoader & Context::getAsyncLoader() const
             /* log_failures = */ true,
             /* log_progress = */ true,
             /* log_events = */ true);
+        shared->async_loader->setWaiterCallbacks(onLoadJobWaitersIncrement, onLoadJobWaitersDecrement);
     });
 
     return *shared->async_loader;
@@ -6089,8 +6090,6 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTask
         getGoals(startup_after),
         TablesLoaderBackgroundStartupPoolId,
         "startup ddl worker",
-        onLoadJobWaitersIncrement,
-        onLoadJobWaitersDecrement,
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             std::lock_guard lock2(shared->mutex);
