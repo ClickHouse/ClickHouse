@@ -322,6 +322,12 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
         findHMACSecretArguments();
         return;
     }
+    if ((name == "ipcryptEncrypt") || (name == "ipcryptDecrypt") || (name == "ipcryptPrefixEncrypt") || (name == "ipcryptPrefixDecrypt"))
+    {
+        /// ipcryptEncrypt('ip', 'key') -> ipcryptEncrypt('ip', '[HIDDEN]')
+        findIPCryptSecretArguments();
+        return;
+    }
     if (name == "bigquery")
     {
         /// Accepts positional arguments after named ones and models their slots itself.
@@ -1053,6 +1059,17 @@ void FunctionSecretArgumentsFinder::findHMACSecretArguments()
     /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
     result.start = 2;
     result.count = function->arguments->size() - 2;
+}
+
+void FunctionSecretArgumentsFinder::findIPCryptSecretArguments()
+{
+    if (function->arguments->size() < 2)
+        return;
+
+    /// We hide the key argument and any following for the case of using extra arguments by mistake:
+    /// ipcryptEncrypt('ip', 'key') -> ipcryptEncrypt('ip', '[HIDDEN]')
+    result.start = 1;
+    result.count = function->arguments->size() - 1;
 }
 
 void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()

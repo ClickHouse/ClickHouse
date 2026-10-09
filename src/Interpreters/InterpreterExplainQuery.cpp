@@ -360,12 +360,14 @@ namespace
             hideLiteralsInSubtree(child);
     }
 
-    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
-    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
+    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`,
+    /// `findHMACSecretArguments` and `findIPCryptSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
     bool isEncryptionOrHMACFunction(const ASTFunction & function)
     {
         return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
-            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
+            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC")
+            || function.name == "ipcryptEncrypt" || function.name == "ipcryptDecrypt" || function.name == "ipcryptPrefixEncrypt"
+            || function.name == "ipcryptPrefixDecrypt";
     }
 
     bool isKeyValueArgument(const IAST & node)

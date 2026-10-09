@@ -225,6 +225,7 @@ protected:
 
     void findEncryptionFunctionSecretArguments();
     void findHMACSecretArguments();
+    void findIPCryptSecretArguments();
     void findTableEngineSecretArguments();
     void findS3TableEngineSecretArguments();
     void findAzureBlobStorageTableEngineSecretArguments();
