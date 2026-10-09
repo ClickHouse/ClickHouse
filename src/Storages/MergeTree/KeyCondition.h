@@ -267,6 +267,14 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    /// How many times `applyMonotonicFunctionsChainToRange` answered "unknown" on the current thread because the chain
+    /// could not be evaluated on a range (rather than because it is not monotonic there). Such an answer is an
+    /// over-approximation, so it supports no exactness claim derived from `matchesExactContinuousRange`, and it
+    /// contradicts none either. The caller takes a snapshot before a check and compares after it: the analysis of a
+    /// part runs on one thread, and the counter is the only channel that reaches through every path applying a chain,
+    /// including `MergeTreeSetIndex`.
+    static size_t getNumUnevaluableChainApplications();
+
     bool matchesExactContinuousRange() const;
 
     /// Extract plain ranges of the condition.

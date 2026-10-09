@@ -3019,7 +3019,7 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getFormatSettings(client_context));
+            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
@@ -3048,7 +3048,6 @@ void ClientBase::processParsedSingleQuery(
         current_query_parse_json_ast_gate = changed_by_query("enable_json_ast_dialect", parse_json_ast_gate);
         current_query_parse_trino_gate = changed_by_query("enable_trino_dialect", parse_trino_gate);
         current_query_parse_logsql_gate = changed_by_query("enable_logsql_dialect", parse_logsql_gate);
-        connection->setFormatSettings(getFormatSettings(client_context));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -3059,6 +3058,7 @@ void ClientBase::processParsedSingleQuery(
         else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
+        connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
