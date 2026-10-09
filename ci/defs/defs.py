@@ -119,10 +119,10 @@ LOOM_SECRETS = [
 ]
 
 # This credential can write the private Vercel Blob store consumed as a build
-# input by the docs frontend. Keep it out of the shared SECRETS list: PR
-# workflows execute untrusted code and must never receive a storage writer.
+# input by the docs frontend. Attach it only to the publishing job, rather than
+# registering it with every workflow.
 REFERENCE_SNAPSHOT_PUBLISH_SECRET = Secret.Config(
-    name="vercel-reference-blob-read-write-token",
+    name="clickhouse-vercel-reference-blob-read-write-token",
     type=Secret.Type.AWS_SSM_PARAMETER,
     region="us-east-1",
 )

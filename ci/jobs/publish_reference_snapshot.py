@@ -15,7 +15,7 @@ from praktika.utils import Utils
 REPO_ROOT = Path(Utils.cwd())
 ARCHIVE = REPO_ROOT / "ci" / "tmp" / "reference-snapshot.tar.zst"
 PUBLISHER = REPO_ROOT / "ci" / "jobs" / "scripts" / "docs" / "reference_snapshot" / "publish_reference_snapshot.py"
-SECRET_NAME = "vercel-reference-blob-read-write-token"
+SECRET_NAME = "clickhouse-vercel-reference-blob-read-write-token"
 TOKEN_ENV = "VERCEL_REFERENCE_BLOB_READ_WRITE_TOKEN"
 
 
