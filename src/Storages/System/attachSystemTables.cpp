@@ -1792,6 +1792,10 @@ To show all possible error codes, including ones which were not triggered, set s
 .columns_notes
 <Note>
 Counters for some errors may increase during successful query execution. It's not recommended to use this table for server monitoring purposes unless you are sure that corresponding error can not be a false positive.
+
+`last_error_symbols` and `last_error_lines` are resolved from the binary's symbol table and debug info.
+`last_error_symbols` is populated wherever the symbol table is available (Linux and macOS builds).
+`last_error_lines` additionally requires DWARF debug info - read directly from the binary on Linux, or from a co-located `.dSYM` bundle on macOS - so it is empty when that debug info is not available. Both arrays are empty on platforms without introspection support (for example FreeBSD).
 </Note>
 
 .examples
@@ -2199,7 +2203,7 @@ Row 1:
 ──────
 resource:          network_read
 path:              /prio/fair/prod
-type:              fifo
+type:              request_queue
 weight:            5
 priority:          0
 is_active:         0
