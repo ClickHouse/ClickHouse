@@ -174,6 +174,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     else
         new_context->setClientInfo(context->getClientInfo());
     new_context->makeQueryContext();
+    new_context->setSQLSecurityOverriddenBody(true);
 
     const auto & database = context->getCurrentDatabase();
     if (!database.empty() && database != new_context->getCurrentDatabase())
