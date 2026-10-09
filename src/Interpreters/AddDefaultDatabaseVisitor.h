@@ -58,6 +58,10 @@ public:
         }
     }
 
+    /// The visited definition is new user input, not replayed stored metadata (see `isReplayedTableDefinition`).
+    /// Only then is the dictionary name of `assignCentroid` qualified: no loading dependency attaches its dictionary first.
+    void setIsNewDefinition(bool value) { is_new_definition = value; }
+
     void visitDDL(ASTPtr & ast) const
     {
         visitDDLWithParent(nullptr, ast);
@@ -174,6 +178,7 @@ private:
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
+    bool is_new_definition = false;
 
     void visitTableExpressionsImpl(IAST & ast) const
     {
@@ -260,7 +265,9 @@ private:
         const bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         const bool is_dict_get = functionIsDictGet(function.name);
         const bool is_join_get = functionIsJoinGet(function.name);
-        if (!is_operator_in && !is_dict_get && !is_join_get)
+        const auto dictionary_name_position = getDictionaryNameArgumentPosition(function.name);
+        const bool qualify_dictionary_name_literal = is_new_definition && dictionary_name_position && !is_dict_get;
+        if (!is_operator_in && !is_dict_get && !is_join_get && !qualify_dictionary_name_literal)
             return;
 
         auto & arguments = function.arguments->children;
@@ -316,6 +323,16 @@ private:
                     auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
                     literal_value = qualified_dictionary_name.getFullName();
                 }
+            }
+        }
+
+        if (qualify_dictionary_name_literal && *dictionary_name_position < arguments.size())
+        {
+            auto * literal = arguments[*dictionary_name_position]->as<ASTLiteral>();
+            if (literal && literal->value.getType() == Field::Types::String)
+            {
+                auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal->value.safeGet<String>(), database_name);
+                literal->value = qualified_dictionary_name.getFullName();
             }
         }
 
@@ -665,6 +682,7 @@ private:
     {
         bool is_operator_in = functionIsInOrGlobalInOperator(function.name);
         bool is_dict_get = functionIsDictGet(function.name);
+        auto dictionary_name_position = getDictionaryNameArgumentPosition(function.name);
 
         for (auto & child : function.children)
         {
@@ -672,7 +690,7 @@ private:
             {
                 for (size_t i = 0; i < child->children.size(); ++i)
                 {
-                    if (is_dict_get && i == 0)
+                    if (dictionary_name_position == i && (is_dict_get || (is_new_definition && child->children[i]->as<ASTLiteral>())))
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
