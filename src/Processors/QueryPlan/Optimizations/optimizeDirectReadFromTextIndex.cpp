@@ -633,6 +633,14 @@ private:
         ActionsDAGWithInversionPushDown canonical_dag(&function_node, context, /* boolean_context */ false);
         const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : function_node;
 
+        /// The index is analyzed under a `CAST` that drops `Nullable` and throws on NULL. Direct read replaces or
+        /// short-circuits the predicate, so `NOT hasToken(CAST(s, 'String'), 'a')` would return the NULL row
+        /// instead of throwing. Use the index only to skip granules then.
+        const bool drops_nullable = std::ranges::any_of(canonical_node.children, [](const auto * argument)
+        {
+            return unwrapLosslessConversion(argument, /*allow_drop_nullable=*/ false) != unwrapLosslessConversion(argument);
+        });
+
         NameSet used_index_columns;
         std::vector<SelectedCondition> selected_conditions;
 
@@ -662,7 +670,7 @@ private:
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`) and has no
             /// patched parts. Otherwise just inject the tokenizer/preprocessor/postprocessor (no virtual column),
             /// same as None mode.
-            if (!direct_read_from_text_index || !info.index || info.has_patched_parts
+            if (!direct_read_from_text_index || !info.index || info.has_patched_parts || drops_nullable
                 || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info, is_index_analyzed);
@@ -776,7 +784,8 @@ private:
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
             {
-                new_children[0] = haystack;
+                /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
+                new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);
 
                 if (apply_postprocessor)
                 {
@@ -785,7 +794,9 @@ private:
                 else
                 {
                     ActionsDAG::NodeRawConstPtrs merged_outputs;
-                    actions_dag.mergeNodes(preprocessor_dag.clone(), &merged_outputs);
+                    actions_dag.mergeNodes(
+                        preprocessor->getActionsDAGForColumn(new_children[0]->result_name, new_children[0]->result_type),
+                        &merged_outputs);
 
                     chassert(merged_outputs.size() == 1);
                     new_children[0] = merged_outputs.front();

@@ -70,6 +70,8 @@ struct FileCacheReserveStat
 
     Stat total_stat;
     std::array<Stat, magic_enum::enum_count<FileSegmentKind>()> stat_by_kind{};
+    /// Set if the reservation failed because the cache or the query limit had no room for it.
+    bool not_enough_space = false;
 
     Stat & getStatByKind(FileSegmentKind kind) { return stat_by_kind[static_cast<uint8_t>(kind)]; }
     const Stat & getStatByKind(FileSegmentKind kind) const { return stat_by_kind[static_cast<uint8_t>(kind)]; }
@@ -89,6 +91,7 @@ struct FileCacheReserveStat
         total_stat += other.total_stat;
         for (size_t i = 0; i < stat_by_kind.size(); ++i)
             stat_by_kind[i] += other.stat_by_kind[i];
+        not_enough_space |= other.not_enough_space;
         return *this;
     }
 };
@@ -127,7 +130,10 @@ public:
 
     static const OriginInfo & getInternalOrigin();
 
+    /// The common origin with a segment key type derived from the file extension or given explicitly.
+    /// Both return the common origin as is if the cache is not split (`use_split_cache`).
     OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path & filename) const;
+    OriginInfo getCommonOriginWithSegmentKeyType(FileSegmentKeyType segment_type) const;
 
     String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size = std::nullopt) const;
 
@@ -240,6 +246,9 @@ public:
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
+
+    /// Same as above, but returns an empty vector if there is no such key.
+    std::vector<FileSegment::Info> tryGetFileSegmentInfos(const Key & key, const UserID & user_id);
 
     IFileCachePriority::PriorityDumpPtr dumpQueue();
 
