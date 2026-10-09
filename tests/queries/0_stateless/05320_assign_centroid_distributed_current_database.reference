@@ -9,10 +9,10 @@
 1	[0]
 2	[7]
 2	[7]
-1	0	Nullable(UInt32)
-1	0	Nullable(UInt32)
-2	7	Nullable(UInt32)
-2	7	Nullable(UInt32)
+1	0	Nullable(UInt64)
+1	0	Nullable(UInt64)
+2	7	Nullable(UInt64)
+2	7	Nullable(UInt64)
 1	0
 1	0
 2	7
