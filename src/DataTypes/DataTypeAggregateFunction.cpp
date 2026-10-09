@@ -584,13 +584,18 @@ std::vector<size_t> getAggregateStateVersions(const IDataType & type)
     return versions;
 }
 
+/// The argument types are left to `equals`: one state can be spelled with different ones, e.g. with `LowCardinality`.
 std::vector<String> getAggregateFunctionNames(const IDataType & type)
 {
     std::vector<String> names;
     forEachInTypeTree(type, [&](const IDataType & child)
     {
-        if (WhichDataType(child).isAggregateFunction())
-            names.push_back(child.getName());
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+        {
+            const auto & function = *aggregate_type->getFunction();
+            names.push_back(std::to_string(aggregate_type->getVersion()) + ", " + function.getName()
+                + DataTypeAggregateFunction::formatParameters(function, function.getParameters()));
+        }
     });
     return names;
 }

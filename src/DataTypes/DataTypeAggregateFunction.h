@@ -119,7 +119,8 @@ bool hasAggregateFunctionType(const DataTypePtr & type);
 /// same position, which `IDataType::equals` and `IColumn::compareAt` cannot tell apart. `Dynamic` and `JSON` are not looked into.
 bool haveDifferentAggregateFunctionStates(const IDataType & lhs_type, const IColumn & lhs, const IDataType & rhs_type, const IColumn & rhs);
 
-/// Hashes the names of the `AggregateFunction` types nested in `type`, which `haveDifferentAggregateFunctionStates` compares.
+/// Hashes the aggregate functions with their parameters and state versions nested in `type`, which
+/// `haveDifferentAggregateFunctionStates` compares.
 void updateHashWithAggregateFunctionNames(const IDataType & type, SipHash & hash);
 
 /// Whether all `AggregateFunction` types nested in `lhs` and `rhs` have the same state versions.

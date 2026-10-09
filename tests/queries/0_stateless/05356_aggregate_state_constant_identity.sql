@@ -25,6 +25,7 @@ SELECT concat(initializeAggregation('groupArrayState', 'x'), toString(number)) A
 
 -- The same state is still the same expression.
 SELECT * FROM (SELECT concat(initializeAggregation('groupArrayState', 'x'), toString(number)) AS r, concat(initializeAggregation('groupArrayState', 'x'), toString(number)) AS r FROM numbers(2));
+SELECT count() FROM (SELECT * FROM (SELECT defaultValueOfTypeName('AggregateFunction(argMax, LowCardinality(String), DateTime)') AS r, defaultValueOfTypeName('AggregateFunction(argMax, String, DateTime)') AS r));
 SELECT GROUPING(tuple(initializeAggregation('groupArrayState', 'x'), toDateTime(0))) AS g FROM numbers(1) GROUP BY ROLLUP(tuple(initializeAggregation('groupArrayState', 'x'), toDateTime(0, 'UTC'))) ORDER BY g SETTINGS session_timezone = 'UTC';
 SELECT GROUPING((SELECT arrayResize([initializeAggregation('countState', 1)], 1000001))) AS g FROM numbers(1) GROUP BY ROLLUP((SELECT arrayResize([initializeAggregation('countState', 1)], 1000001))) ORDER BY g SETTINGS enable_scalar_subquery_optimization = 0;
 
