@@ -30,7 +30,10 @@
 #include <Poco/Timespan.h>
 
 #include <climits>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <queue>
 #include <unordered_set>
@@ -786,6 +789,26 @@ private:
             notifySocketInode();
         }
 
+        /// Local port of the current socket, or zero when it has none yet. Asks the OS directly
+        /// instead of `Poco::Net::Socket::address`, which throws for a socket that is not bound.
+        UInt16 getLocalPort()
+        {
+            const int fd = Session::socket().impl()->sockfd();
+            if (fd < 0)
+                return 0;
+
+            sockaddr_storage address{};
+            socklen_t address_length = sizeof(address);
+            if (0 != ::getsockname(fd, reinterpret_cast<sockaddr *>(&address), &address_length))
+                return 0;
+
+            if (address.ss_family == AF_INET)
+                return ntohs(reinterpret_cast<const sockaddr_in &>(address).sin_port);
+            if (address.ss_family == AF_INET6)
+                return ntohs(reinterpret_cast<const sockaddr_in6 &>(address).sin6_port);
+            return 0;
+        }
+
         /// Record which connection is carrying the current request, for whoever logs it. Every
         /// number here is scoped to the socket rather than to the session object wrapping it, so a
         /// row can never claim a socket is new but has been idle for a minute.
@@ -797,13 +820,7 @@ private:
             info.has_value = true;
             info.id = connection_id;
             info.socket_inode = socket_inode;
-            try
-            {
-                info.local_port = Session::socket().address().port();
-            }
-            catch (...) // NOLINT(bugprone-empty-catch) Ok: the socket may not be connected yet
-            {
-            }
+            info.local_port = getLocalPort();
             info.requests_served = requests_on_socket;
             info.age_microseconds = static_cast<UInt64>(std::max<Poco::Timestamp::TimeDiff>(0, Poco::Timestamp() - established_at));
             info.idle_microseconds = static_cast<UInt64>(std::max<Poco::Timespan::TimeDiff>(0, last_idle_time.totalMicroseconds()));
