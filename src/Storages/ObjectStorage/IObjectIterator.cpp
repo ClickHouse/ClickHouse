@@ -23,6 +23,7 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
@@ -247,11 +248,9 @@ public:
         bool need_only_count_,
         size_t num_streams)
         : inner(std::move(inner_))
-        , object_storage(std::move(object_storage_))
         , configuration(std::move(configuration_))
         , storage_id(std::move(storage_id_))
         , format_settings(std::move(format_settings_))
-        , effective_format_settings(format_settings ? *format_settings : getFormatSettings(context_))
         , format_filter_info(std::move(format_filter_info_))
         , context(std::move(context_))
         , need_only_count(need_only_count_)
@@ -266,13 +265,20 @@ public:
         read_settings.remote_fs_settings.random_access = true;
         if (format_filter_info && format_filter_info->condition_hash)
             query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+        resources = std::make_shared<const Resources>(Resources{
+            std::move(object_storage_),
+            context,
+            read_settings,
+            format_settings ? *format_settings : getFormatSettings(context),
+            metadata_cache,
+            CurrentThread::getGroup()});
     }
 
     ~ObjectIteratorWithParquetFooterPrefetch() override
     {
-        state->cancelled = true;
         std::unique_lock lock(state->mutex);
-        state->no_requests.wait(lock, [this] { return state->in_flight == 0; });
+        state->cancelled = true;
+        state->no_running_requests.wait(lock, [this] { return state->running == 0; });
     }
 
     ObjectInfoPtr next(size_t processor) override
@@ -316,9 +322,10 @@ private:
     struct State
     {
         std::mutex mutex;
-        std::condition_variable no_requests;
+        std::condition_variable no_running_requests;
         size_t in_flight = 0;
-        std::atomic<bool> cancelled = false;
+        size_t running = 0;
+        bool cancelled = false;
     };
 
     /// One of the `window` places for a read in flight, given back by the destructor.
@@ -333,7 +340,6 @@ private:
                 return;
             std::lock_guard lock(state->mutex);
             --state->in_flight;
-            state->no_requests.notify_all();
         }
 
         static std::unique_ptr<Slot> tryAcquire(const std::shared_ptr<State> & state_, size_t limit)
@@ -352,20 +358,26 @@ private:
         bool acquired = false;
     };
 
-    struct Request
+    /// What a footer read needs from the query, owned by the iterator.
+    struct Resources
     {
-        /// The first member, so it is destroyed last: when the iterator's destructor returns, no request holds anything of the query.
-        std::unique_ptr<Slot> slot;
-        std::shared_ptr<State> state;
-        /// Not owning: when nobody can open the object any more, its footer is not read.
-        std::weak_ptr<ParquetPrefetchedFooter> footer;
-        RelativePathWithMetadata object;
         ObjectStoragePtr object_storage;
         ContextPtr context;
         ReadSettings read_settings;
         FormatSettings format_settings;
         ParquetMetadataCachePtr metadata_cache;
         ThreadGroupPtr thread_group;
+    };
+
+    struct Request
+    {
+        std::unique_ptr<Slot> slot;
+        std::shared_ptr<State> state;
+        /// Not owning: when nobody can open the object any more, its footer is not read.
+        std::weak_ptr<ParquetPrefetchedFooter> footer;
+        RelativePathWithMetadata object;
+        /// Not owning: a request that has not started when the iterator is destroyed holds nothing of the query.
+        std::weak_ptr<const Resources> resources;
     };
 
     /// Nothing is read ahead while the sources take their first objects, so a query that stops early reads no extra footers.
@@ -430,17 +442,8 @@ private:
             return;
 
         auto footer = std::make_shared<ParquetPrefetchedFooter>();
-        auto request = std::make_shared<Request>(Request{
-            std::move(slot),
-            state,
-            footer,
-            object_info.relative_path_with_metadata,
-            object_storage,
-            context,
-            read_settings,
-            effective_format_settings,
-            metadata_cache,
-            CurrentThread::getGroup()});
+        auto request = std::make_shared<Request>(
+            Request{std::move(slot), state, footer, object_info.relative_path_with_metadata, resources});
 
         if (!getIOThreadPool().get().trySchedule([request] { runRequest(*request); }))
             return;
@@ -451,23 +454,40 @@ private:
 
     static void runRequest(Request & request)
     {
-        if (request.state->cancelled)
-            return;
+        {
+            std::lock_guard lock(request.state->mutex);
+            if (request.state->cancelled)
+                return;
+            ++request.state->running;
+        }
+        SCOPE_EXIT({
+            std::lock_guard lock(request.state->mutex);
+            --request.state->running;
+            request.state->no_running_requests.notify_all();
+        });
+        readFooter(request);
+    }
+
+    /// The references it takes are released before `running` is decremented, so none outlives the iterator.
+    static void readFooter(Request & request)
+    {
+        auto resources = request.resources.lock();
         auto footer = request.footer.lock();
-        if (!footer)
+        if (!resources || !footer)
             return;
 
         try
         {
             Exception::SuppressErrorCodesScope suppress_error_codes;
-            ThreadGroupSwitcher switcher(request.thread_group, ThreadName::PARQUET_PREFETCH);
+            ThreadGroupSwitcher switcher(resources->thread_group, ThreadName::PARQUET_PREFETCH);
             auto buf = createReadBuffer(
-                request.object, request.object_storage, request.context, getLogger("ParquetFooterPrefetch"), request.read_settings);
+                request.object, resources->object_storage, resources->context, getLogger("ParquetFooterPrefetch"),
+                resources->read_settings);
             if (!isBufferWithFileSize(*buf) || !(buf->supportsReadAt() || buf->checkIfActuallySeekable()))
                 return;
             if (!footer->tryStart())
                 return;
-            footer->finish(readParquetFileMetaDataAhead(*buf, request.format_settings, request.metadata_cache, request.object));
+            footer->finish(readParquetFileMetaDataAhead(*buf, resources->format_settings, resources->metadata_cache, request.object));
         }
         catch (...)
         {
@@ -476,11 +496,9 @@ private:
     }
 
     const ObjectIterator inner;
-    const ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
     const StorageID storage_id;
     const std::optional<FormatSettings> format_settings;
-    const FormatSettings effective_format_settings;
     const FormatFilterInfoPtr format_filter_info;
     const ContextPtr context;
     const bool need_only_count;
@@ -498,6 +516,7 @@ private:
     size_t num_handed_out = 0;
     bool inner_exhausted = false;
 
+    std::shared_ptr<const Resources> resources;
     const std::shared_ptr<State> state;
 };
 
