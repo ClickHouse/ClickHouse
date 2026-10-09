@@ -126,10 +126,15 @@ def test_full_compaction(started_cluster):
     )
     table_dir = upload(node, name)
 
-    assert (
-        node.query(f"SELECT * FROM paimonLocal('{table_dir}') ORDER BY id, val")
-        == "1\tnew\n2\ttwo\n"
-    )
+    query = f"SELECT * FROM paimonLocal('{table_dir}') ORDER BY id, val"
+    cached = {"use_paimon_metadata_files_cache": 1}
+    assert node.query(query) == "1\tnew\n2\ttwo\n"
+    assert node.query(query, settings=cached) == "1\tnew\n2\ttwo\n"
+
+    # Once cached, the index manifest is not read from storage again.
+    node.exec_in_container(["bash", "-c", f"rm {table_dir}/manifest/index-manifest-*"])
+    assert node.query(query, settings=cached) == "1\tnew\n2\ttwo\n"
+    assert "index-manifest-" in node.query_and_get_error(query)
 
 
 def test_table_engine_read_modes(started_cluster):

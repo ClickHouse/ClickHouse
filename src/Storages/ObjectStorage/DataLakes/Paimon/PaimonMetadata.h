@@ -151,6 +151,9 @@ private:
     /// Get or load manifest content (uses cache)
     ManifestConstPtr getManifest(const String & manifest_path, Int64 schema_id) const;
 
+    /// Get or load index manifest content (uses cache)
+    PaimonIndexManifest getIndexManifest(const String & index_manifest_path) const;
+
     /// Validate configuration
     void checkSupportedConfiguration() const;
 

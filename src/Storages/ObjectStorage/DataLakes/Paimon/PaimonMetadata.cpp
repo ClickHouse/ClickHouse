@@ -535,6 +535,25 @@ ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64
         table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name));
 }
 
+PaimonIndexManifest PaimonMetadata::getIndexManifest(const String & index_manifest_path) const
+{
+    if (persistent_components.isMetadataCacheActive())
+    {
+        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, index_manifest_path + ":index");
+        auto log_ptr = log;
+        auto client = table_client;
+        auto load_index_manifest = [log_ptr, client, index_manifest_path]()
+        {
+            LOG_TRACE(log_ptr, "Loading index manifest (cache miss): {}", index_manifest_path);
+            return client->getIndexManifest(index_manifest_path, /*disable_filesystem_cache=*/true);
+        };
+        return persistent_components.metadata_cache->getOrSetIndexManifest(cache_key, load_index_manifest);
+    }
+
+    LOG_TRACE(log, "Loading index manifest (no cache): {}", index_manifest_path);
+    return table_client->getIndexManifest(index_manifest_path);
+}
+
 ObjectIterator PaimonMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
@@ -734,7 +753,7 @@ void PaimonMetadata::runBackgroundRefresh()
 
 void PaimonMetadata::checkNoDeletionVectors(const PaimonTableState & state) const
 {
-    if (state.index_manifest && table_client->hasDeletionVectors(*state.index_manifest))
+    if (state.index_manifest && getIndexManifest(*state.index_manifest).has_deletion_vectors)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Reading Paimon snapshot {} with deletion vectors is not supported: "
