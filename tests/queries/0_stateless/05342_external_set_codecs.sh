@@ -20,8 +20,9 @@ YAML
 # compresses its runs with it. In its file, it compresses only the blocks that a codec can shrink. The packed
 # gaps of sequential `UInt64` keys are already dense, so the file of their set is the same with `LZ4` as with
 # `NONE`. Short codes in a `FixedString(16)` stay unpacked, and their padding fills most of their bytes, so
-# `LZ4` shrinks the file of their set. A set of `String` keys stores 128-bit hashes, which compress poorly, so
-# it writes its runs and its file uncompressed whatever the codec is.
+# `LZ4` shrinks the file of their set. A set of `String` keys stores disk keys that are mostly hash bits,
+# which compress too little to pay for a codec, so it writes its runs and its file uncompressed whatever the
+# codec is.
 #
 # With a threshold of 1 byte and one thread, each set spills before its first chunk and writes a run per
 # chunk, so both processes write the same runs. Each set logs a trace line with the bytes of its file when it
