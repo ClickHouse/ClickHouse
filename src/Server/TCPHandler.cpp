@@ -1532,13 +1532,9 @@ void TCPHandler::processTablesStatusRequest()
     request.read(*in, client_tcp_protocol_version);
 
     ContextPtr context_to_resolve_table_names;
-    /// In interserver mode the connection is not authenticated until a `Query` packet carries a valid
-    /// cluster-secret hash, and `ConnectionEstablisher` sends this request while establishing the
-    /// connection, before any query. A peer that has not proven knowledge of the secret gets a response
-    /// that hides the table status: every requested table is reported present, not replicated and
-    /// writable, independently of the actual state of the tables, so nothing is disclosed, while the
-    /// initiator still sees a usable replica and proceeds to the `Query`, which does authenticate.
-    /// `interserver_tables_status_allow_unauthenticated` restores the previous behavior.
+    /// An interserver connection is not authenticated until its first `Query`, but this request arrives
+    /// before it. Until then, report every table as present, not replicated and writable, so that nothing
+    /// is disclosed and the initiator still proceeds to the `Query`.
     bool hide_table_status = false;
     if (is_interserver_mode)
     {
