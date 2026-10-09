@@ -81,14 +81,6 @@ struct SetMethodString
     {
         key_columns[0]->insertData(key.data(), key.size());
     }
-
-    /// Returns the key that the `hashed` method computes for a row with this key.
-    static UInt128 getHashedKey(std::string_view key)
-    {
-        SipHash hash;
-        ColumnString::updateHashWithStringValue(key, hash);
-        return hash.get128();
-    }
 };
 
 /// For the case when there is one fixed-length string key.
@@ -106,14 +98,6 @@ struct SetMethodFixedString
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         key_columns[0]->insertData(key.data(), key.size());
-    }
-
-    /// Returns the key that the `hashed` method computes for a row with this key.
-    static UInt128 getHashedKey(std::string_view key)
-    {
-        SipHash hash;
-        ColumnFixedString::updateHashWithStringValue(key, hash);
-        return hash.get128();
     }
 };
 
