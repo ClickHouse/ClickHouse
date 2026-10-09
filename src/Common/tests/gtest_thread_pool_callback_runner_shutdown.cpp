@@ -401,7 +401,7 @@ TEST(ThreadPoolCallbackRunner, FailedUnsafeAttachmentReleasesBeforeFuture)
             }
         };
         std::function<void()> callback = [recorder = std::make_shared<Recorder>(&destroyed), &ran] { ran = true; };
-        detail::CallbackRunnerTask<void, std::function<void()>> task(
+        DB::detail::CallbackRunnerTask<void, std::function<void()>> task(
             target, ExecutionPhase::Cleanup, ThreadName::MERGE_MUTATE, std::move(callback));
         auto future = task.promise.get_future();
         FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);

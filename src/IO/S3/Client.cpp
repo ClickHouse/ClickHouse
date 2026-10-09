@@ -190,7 +190,7 @@ namespace
 class RequestRetryScope
 {
 public:
-    RequestRetryScope(Aws::AmazonWebServiceRequest & request_)
+    explicit RequestRetryScope(Aws::AmazonWebServiceRequest & request_)
         : request(request_)
         , previous(request.GetRequestRetryHandler())
     {
