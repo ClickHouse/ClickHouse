@@ -107,6 +107,8 @@ public:
     void setPathsUnlocked(const Paths & paths) override { blobs_paths = paths; }
 
     String getNamespace() const override { return connection_params.getContainer(); }
+
+    std::string getMetadataLocationURI() const override;
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
