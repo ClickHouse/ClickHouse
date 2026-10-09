@@ -64,7 +64,9 @@ ${CLICKHOUSE_LOCAL} --path "./${work_dir}/read" "${page_cache[@]}" --log_queries
     -- Warm cache: the same blocks are already held, and the rows must still be the same.
     SELECT count(), sum(k) FROM icebergLocal('${work_dir}/icedata/', 'Parquet') SETTINGS log_comment = 'warm';
     SYSTEM FLUSH LOGS query_log;
-    SELECT ProfileEvents['PageCacheMisses'] > 0 FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'cold';
-    SELECT ProfileEvents['PageCacheMisses'], ProfileEvents['PageCacheHits'] > 0 FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'warm';"
+    SELECT ProfileEvents['PageCacheMisses'] > 0 FROM system.query_log
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'cold';
+    SELECT ProfileEvents['PageCacheMisses'], ProfileEvents['PageCacheHits'] > 0 FROM system.query_log
+        WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'warm';"
 
 rm -rf "./${work_dir}"
