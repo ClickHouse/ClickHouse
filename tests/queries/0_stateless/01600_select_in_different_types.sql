@@ -30,8 +30,6 @@ SELECT '1' IN (SELECT 1);
 
 SELECT 1 IN (SELECT 1) SETTINGS transform_null_in = 1;
 SELECT 1 IN (SELECT 'a') SETTINGS transform_null_in = 1;
--- A value the set's key type cannot represent is simply not a member, which is what the same
--- query at the default `transform_null_in = 0` has always answered (#113854).
-SELECT 'a' IN (SELECT 1) SETTINGS transform_null_in = 1;
+SELECT 'a' IN (SELECT 1) SETTINGS transform_null_in = 1; -- { serverError CANNOT_PARSE_TEXT }
 SELECT 1 IN (SELECT -1) SETTINGS transform_null_in = 1;
-SELECT -1 IN (SELECT 1) SETTINGS transform_null_in = 1;
+SELECT -1 IN (SELECT 1) SETTINGS transform_null_in = 1; -- { serverError CANNOT_CONVERT_TYPE }

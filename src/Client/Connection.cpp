@@ -2,13 +2,11 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
-#include <optional>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/chooseNetworkCompressionCodec.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SocketPeerClosed.h>
@@ -28,7 +26,6 @@
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
-#include <Common/makeSocketAddress.h>
 #include <Common/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/formatReadable.h>
@@ -38,11 +35,11 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Compression/CompressionFactory.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISink.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Common/FailPoint.h>
 #include <Client/JWTProvider.h>
@@ -52,7 +49,6 @@
 #include "config.h"
 
 #include <base/scope_guard.h>
-#include <base/sleep.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL
@@ -73,6 +69,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
+}
+
 namespace FailPoints
 {
     extern const char receive_timeout_on_table_status_response[];
@@ -115,7 +117,6 @@ Connection::Connection(const String & host_, UInt16 port_,
 #if USE_JWT_CPP && USE_SSL
     , std::shared_ptr<JWTProvider> jwt_provider_
 #endif
-    , SocketFactory socket_factory_
 )
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
@@ -135,7 +136,6 @@ Connection::Connection(const String & host_, UInt16 port_,
     , secure(secure_)
     , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
-    , socket_factory(std::move(socket_factory_))
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -144,19 +144,6 @@ Connection::Connection(const String & host_, UInt16 port_,
         user = "default";
 
     setDescription();
-}
-
-std::unique_ptr<Poco::Net::StreamSocket> Connection::defaultSocketFactory(bool secure)
-{
-    if (secure)
-    {
-#if USE_SSL
-        return std::make_unique<Poco::Net::SecureStreamSocket>();
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
-#endif
-    }
-    return std::make_unique<Poco::Net::StreamSocket>();
 }
 
 
@@ -198,12 +185,6 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
     auto addresses = DNSResolver::instance().resolveAddressList(host, port);
     const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
 
-    /// The local address to bind to is resolved once, before the loop over the peer addresses: it
-    /// does not change between the attempts.
-    std::optional<Poco::Net::SocketAddress> bind_address;
-    if (!bind_host.empty())
-        bind_address = makeBindAddress(bind_host, 0);
-
     /// An address that is already known to accept connections goes first: the addresses are tried
     /// one by one, and every unresponsive one in front of it costs a whole connection timeout.
     if (preferred_address)
@@ -222,11 +203,11 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
         if (isConnected())
             disconnect();
 
-        socket = socket_factory(static_cast<bool>(secure));
-
         if (static_cast<bool>(secure))
         {
 #if USE_SSL
+            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+
             /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
             /// work we need to pass host name separately. It will be send into TLS Hello packet to let
             /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
@@ -236,16 +217,26 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
             /// so any errors during negotiation would be properly processed
             static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
 
-            if (bind_address)
-                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->bind(*bind_address, true);
+            if (!bind_host.empty())
+            {
+                Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
+            }
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
         }
         else
         {
-            if (bind_address)
-                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(*bind_address, true);
+            socket = std::make_unique<Poco::Net::StreamSocket>();
+
+            if (!bind_host.empty())
+            {
+                Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
+            }
         }
 
         try
@@ -306,17 +297,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     disconnect();
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
-
-    /// Remove the possibly stale entries from the DNS cache. The local `bind_host` too: a client
-    /// program has no `DNSCacheUpdater`, so a cached source address that is no longer assigned to
-    /// this host would otherwise fail every bind until the process is restarted.
-    auto remove_stale_entries_from_dns_cache = [this]
-    {
-        DNSResolver::instance().removeHostFromCache(host);
-        if (!bind_host.empty())
-            DNSResolver::instance().removeHostFromCache(bind_host);
-    };
-
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -432,7 +412,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        remove_stale_entries_from_dns_cache();
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Exception will preserve stack trace.
         e.addMessage("({})", getDescription(/*with_extra*/ true));
@@ -442,7 +423,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        remove_stale_entries_from_dns_cache();
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         throw NetException(ErrorCodes::NETWORK_ERROR, "{} ({})", e.displayText(), getDescription(/*with_extra*/ true));
@@ -451,7 +433,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     {
         disconnect();
 
-        remove_stale_entries_from_dns_cache();
+        /// Remove this possible stale entry from cache
+        DNSResolver::instance().removeHostFromCache(host);
 
         /// Add server address to exception. Also Exception will remember new stack trace. It's a pity that more precise exception type is lost.
         /// This exception can only be thrown from socket->connect(), so add information about connection timeout.
@@ -1041,7 +1024,28 @@ void Connection::sendQuery(
     socket->setReceiveTimeout(timeouts.receive_timeout);
     socket->setSendTimeout(timeouts.send_timeout);
 
-    compression_codec = chooseNetworkCompressionCodec(settings);
+    if (settings)
+    {
+        std::optional<int> level;
+        std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
+
+        /// Bad custom logic
+        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+        /// be broken afterwards.
+        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+        /// More bad custom logic
+        if (method == "ZSTD")
+            level = (*settings)[Setting::network_zstd_compression_level];
+
+        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
+    }
+    else
+        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
 
@@ -1403,7 +1407,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     for (auto & elem : data)
     {
-        CompletedPipelineExecutor * executor = nullptr;
+        PipelineExecutorPtr executor;
         auto on_cancel = [& executor]() { executor->cancel(); };
 
         if (!elem->pipe)
@@ -1419,13 +1423,8 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
                 return nullptr;
             return sink;
         });
-        auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
-        query_pipeline.setNumThreads(1);
-        query_pipeline.setConcurrencyControl(false);
-        query_pipeline.disableReadProgress();
-        CompletedPipelineExecutor completed_executor(query_pipeline);
-        executor = &completed_executor;
-        completed_executor.execute();
+        executor = pipeline.execute();
+        executor->execute(/*num_threads = */ 1, false);
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;

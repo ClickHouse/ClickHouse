@@ -1,7 +1,3 @@
-#include "config.h"
-
-#if USE_NURAFT
-
 #include <gtest/gtest.h>
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
@@ -41,5 +37,3 @@ TEST(KeeperAsynchronousMetrics, UnlimitedMaxFileDescriptorCount)
 
     ASSERT_EQ(values.at("KeeperMaxFileDescriptorCount").value, static_cast<double>(std::numeric_limits<size_t>::max()));
 }
-
-#endif
