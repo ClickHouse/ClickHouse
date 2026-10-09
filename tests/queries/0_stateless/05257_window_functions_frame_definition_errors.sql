@@ -47,6 +47,9 @@ SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.
 SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.5 PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY toFloat64(number) RANGE BETWEEN 0.5 PRECEDING AND 0.5 FOLLOWING) AS c FROM numbers(3));
 SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number RANGE BETWEEN 4294967296 PRECEDING AND CURRENT ROW) AS c FROM numbers(3));
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.0::Decimal64(3) PRECEDING AND CURRENT ROW) AS c FROM numbers(3));
+SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.5::Decimal32(1) PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY toFloat64(number) RANGE BETWEEN 0.5::Decimal32(1) PRECEDING AND 0.5::Decimal32(1) FOLLOWING) AS c FROM numbers(3));
 
 SELECT '-- Constant expressions are accepted as offsets';
 SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number RANGE BETWEEN 1 + 1 PRECEDING AND CURRENT ROW) AS c FROM numbers(4));

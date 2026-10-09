@@ -4,12 +4,15 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 
+#include <DataTypes/DataTypeNullable.h>
+
 #include <Interpreters/convertFieldToType.h>
 
 #include <WindowFunctions/IWindowFunction.h>
 
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -24,6 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
@@ -188,12 +192,29 @@ WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vect
     return window_function->getDefaultFrame().value_or(frame);
 }
 
+/// `convertFieldToType` converts a `Decimal` only to another `Decimal`.
+Field decimalToNativeNumber(const Field & offset, const IDataType & order_by_type)
+{
+    if (isFloat(order_by_type))
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), offset);
+
+    Field integer = applyVisitor(FieldVisitorConvertToNumber<Int256>(), offset);
+    if (!accurateEquals(integer, offset))
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot convert value '{}': it cannot be represented as {}", offset, order_by_type.getName());
+    return integer;
+}
+
 /// We need convert offsets to order by type to be able to use them in shift function.
 WindowFrame prepareRangeOffsets(const WindowFrame & frame, const DataTypePtr & order_by_type)
 {
+    const auto key_type = removeNullable(order_by_type);
     auto convert = [&](const Field & offset, std::string_view bound_name)
     {
-        const Field converted = convertFieldToTypeOrThrow(offset, *order_by_type, nullptr, {}, /*convert_inexact_floats=*/true);
+        const Field source = Field::isDecimal(offset.getType()) && isNativeNumber(key_type)
+            ? decimalToNativeNumber(offset, *key_type)
+            : offset;
+        const Field converted = convertFieldToTypeOrThrow(source, *order_by_type, nullptr, {}, /*convert_inexact_floats=*/true);
         if (accurateLess(converted, Field(0)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame {} offset must be nonnegative, {} given", bound_name, converted);
 
