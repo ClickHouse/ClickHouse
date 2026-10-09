@@ -29,6 +29,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
 
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -535,6 +536,34 @@ int SecureSocketImpl::completeHandshake()
 }
 
 
+SecureSocketImpl::HandshakeDriver::HandshakeDriver(SecureSocketImpl & impl_)
+	: impl(impl_), drives(impl_._pSocket->getBlocking() && impl_._pSocket->supportsNonBlocking())
+{
+	if (drives)
+	{
+		impl._pSocket->setBlocking(false);
+		impl._drivingHandshake = true;
+	}
+}
+
+
+SecureSocketImpl::HandshakeDriver::~HandshakeDriver()
+{
+	if (!drives)
+		return;
+
+	impl._drivingHandshake = false;
+	try
+	{
+		impl._pSocket->setBlocking(true);
+	}
+	catch (...)
+	{
+		DB::tryLogCurrentException("SecureSocketImpl", "Cannot restore the blocking mode after the handshake");
+	}
+}
+
+
 int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 {
 	ScopedLock lock(*_mutex);
@@ -544,6 +573,10 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 	HandshakeProfileEventCounter handshakeCounter(SSL_is_server(_pSSL) != 0);
 
 	int rc;
+	/// Non-blocking, so that OpenSSL hands control back with WANT_READ/WANT_WRITE instead of
+	/// reading in its own loop, where only SO_RCVTIMEO applies and only per read.
+	HandshakeDriver handshake_driver(*this);
+
 	try
 	{
 		SSLOperationResult result;
@@ -556,13 +589,13 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 				return SSL_do_handshake(_pSSL);
 			});
 		}
-		/// `mustRetry` itself throws `Poco::TimeoutException` when a blocking socket runs out of time.
+		/// `mustRetry` itself throws `Poco::TimeoutException` when the budget runs out.
 		while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
 		rc = result.rc;
 		if (rc <= 0)
 		{
 			rc = handleError(rc, result.sslError, result.socketError, result.errorCode);
-			if (rc < 0 && _pSocket->getBlocking())
+			if (rc < 0 && waitHere())
 				throw Poco::TimeoutException("SSL handshake timed out");
 			/// A negative `rc` on a non-blocking socket means the handshake wants more data and will be
 			/// resumed by the next read or write, so it has neither succeeded nor failed yet. Zero means
@@ -576,6 +609,12 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 		/// certificate is accounted as a handshake error rather than as a successful handshake.
 		if (verifyPeer)
 			verifyPeerCertificate();
+	}
+	catch (const Poco::TimeoutException &)
+	{
+		/// `mustRetry` is shared with ordinary reads and writes, so it cannot say this itself.
+		handshakeCounter.failed();
+		throw Poco::TimeoutException("SSL handshake timed out");
 	}
 	catch (...)
 	{
@@ -695,8 +734,11 @@ bool SecureSocketImpl::mustRetry(int rc, int sslError, int socketError, Poco::Ti
 		switch (sslError)
 		{
 		case SSL_ERROR_WANT_READ:
-			if (_pSocket->getBlocking())
+			if (waitHere())
 			{
+				/// Charge the wait too, or a peer sending a byte before every timeout never
+				/// depletes the budget.
+				RemainingTimeCounter counter(remaining_time);
 				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_READ))
 					return true;
 				else
@@ -704,8 +746,9 @@ bool SecureSocketImpl::mustRetry(int rc, int sslError, int socketError, Poco::Ti
 			}
 			break;
 		case SSL_ERROR_WANT_WRITE:
-			if (_pSocket->getBlocking())
+			if (waitHere())
 			{
+				RemainingTimeCounter counter(remaining_time);
 				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_WRITE))
 					return true;
 				else
