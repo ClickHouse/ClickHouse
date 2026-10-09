@@ -112,17 +112,16 @@ DROP TABLE t_04512_scalar;
 -- `x IN (subquery)` into a correlated `EXISTS` before the regular IN handling runs. Without
 -- flattening the array subquery there too, the rewrite would compare `x = <array>` and keep the
 -- reported bug alive whenever this setting is enabled.
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
 SELECT count() FROM numbers(10) WHERE number IN (SELECT groupArray(number) FROM numbers(10));
 SELECT count() FROM numbers(10) WHERE number NOT IN (SELECT groupArray(number) FROM numbers(5));
 
--- Under `rewrite_in_to_join` the non-constant `x IN (subquery)` is lowered to a correlated EXISTS
--- that compares with `equals`, which does not honor `transform_null_in` for a NULL set element.
--- This is a pre-existing property of the rewrite that applies to a scalar subquery too, so the
--- flattened array subquery behaves exactly like the equivalent `SELECT arrayJoin(...)` scalar
--- subquery and adds no new inconsistency: the NULL row is 0 under the rewrite (it honors
--- `transform_null_in` only on the regular IN path above, tested with the same data).
+-- The EXISTS lowering compares with `equals`, which is not null-aware, so the rewrite is skipped
+-- entirely when `transform_null_in = 1` and `IN` keeps the regular null-aware path: the NULL row
+-- matches the NULL set element and gives 1, exactly like the queries above without the rewrite.
+-- The flattened array subquery behaves exactly like the equivalent `SELECT arrayJoin(...)` scalar
+-- subquery.
 SELECT x, x IN (SELECT [NULL, toNullable(1)]) AS in_res
 FROM (SELECT arrayJoin([NULL, toNullable(1), toNullable(2)]) AS x)
 ORDER BY x

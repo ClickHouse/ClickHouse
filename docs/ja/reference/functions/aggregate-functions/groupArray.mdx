@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 導入バージョン: v1.1.0
 
-引数の値からArrayを作成します。
+引数値からArrayを作成します。
 値は任意の (不定な) 順序でArrayに追加されます。
 
 2 番目のバージョン (`max_size` パラメータ付き) は、結果のArrayのサイズを `max_size` 要素に制限します。たとえば、`groupArray(1)(x)` は `[any(x)]` と同等です。
@@ -38,18 +38,21 @@ groupArray(max_size)(x)
 
 **引数**
 
-* `x` — Arrayにまとめる引数の値。[`Any`](/ja/reference/data-types/index)
+* `x` — Arrayにまとめる引数値。[`Any`](/ja/reference/data-types/index)
 
 **戻り値**
 
-引数の値からなるArrayを返します。[`Array`](/ja/reference/data-types/array)
+引数値からなるArrayを返します。[`Array`](/ja/reference/data-types/array)
 
 **例**
 
 **基本的な使い方**
 
 ```sql title=Query
-SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
+INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
+
+SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
 ```
 
 ```response title=Response

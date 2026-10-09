@@ -329,7 +329,7 @@ if err := rows.Err(); err != nil {
   ## 异步插入
 </div>
 
-可通过 `ExecContext` 方法执行插入来实现异步插入。如下面所示，需要向其传入启用了异步模式的上下文。这样，用户便可指定客户端是等待服务器完成插入，还是在接收到数据后就立即返回响应。这实际上控制的是参数 [wait&#95;for&#95;async&#95;insert](/zh/reference/settings/session-settings#wait_for_async_insert)。
+可通过 `ExecContext` 方法执行插入来实现异步插入。如下面所示，需要向其传入启用了异步模式的上下文。这样，用户便可指定客户端是等待服务器完成插入，还是在接收到数据后就立即返回响应。这实际上控制的是参数 [wait&#95;for&#95;async&#95;insert](/zh/reference/settings/session-settings/wait-for#wait_for_async_insert)。
 
 ```go
 const ddl = `

@@ -52,6 +52,9 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
 
+    /// Read per executing node, so two nodes can disagree.
+    bool isServerConstant() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > 1)

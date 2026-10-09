@@ -23,7 +23,7 @@ Duas funções auxiliares, `MVTBoundingBox` e `MVTBoundingBoxMercator`, retornam
 restritas a ela na cláusula `WHERE` usando um índice.
 
 Há suporte para geometrias de ponto, linha e polígono, incluindo o tipo `Geometry` e os tipos geo concretos (`Point`,
-`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
+`MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
 
 Os bytes resultantes formam um tile completo que pode ser retornado diretamente pela interface HTTP com `FORMAT RawBLOB`.
 
@@ -51,7 +51,7 @@ As coordenadas de polígonos são limitadas a uma window `2^30` antes da valida�
 `zoom` 18 e `extent` 4096 — portanto, para tiles realistas, a geometria é validada, mas nunca recortada, e o limite só
 afeta geometrias posicionadas em valores extremos de `zoom` ou `extent`.
 
-O tipo da geometria de saída depende da entrada: um `Point` retorna um `Point`; um `LineString` ou `MultiLineString` retorna uma
+O tipo da geometria de saída depende da entrada: um `Point` retorna um `Point`; um `MultiPoint` retorna um `MultiPoint`; um `LineString` ou `MultiLineString` retorna uma
 `MultiLineString`; um `Ring`, `Polygon` ou `MultiPolygon` retorna uma `MultiPolygon` (o recorte pode dividir uma geometria em
 várias partes).
 
@@ -63,7 +63,7 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 
 **Argumentos**
 
-* `geometry` — Geometria em graus de longitude/latitude. A longitude é limitada a `[-180, 180]` e a latitude ao intervalo do Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/pt-BR/reference/data-types/geo) / [`LineString`](/pt-BR/reference/data-types/geo) / [`MultiLineString`](/pt-BR/reference/data-types/geo) / [`Ring`](/pt-BR/reference/data-types/geo) / [`Polygon`](/pt-BR/reference/data-types/geo) / [`MultiPolygon`](/pt-BR/reference/data-types/geo) / [`Geometry`](/pt-BR/reference/data-types/geo).
+* `geometry` — Geometria em graus de longitude/latitude. A longitude é limitada a `[-180, 180]` e a latitude ao intervalo do Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/pt-BR/reference/data-types/geo) / [`MultiPoint`](/pt-BR/reference/data-types/geo) / [`LineString`](/pt-BR/reference/data-types/geo) / [`MultiLineString`](/pt-BR/reference/data-types/geo) / [`Ring`](/pt-BR/reference/data-types/geo) / [`Polygon`](/pt-BR/reference/data-types/geo) / [`MultiPolygon`](/pt-BR/reference/data-types/geo) / [`Geometry`](/pt-BR/reference/data-types/geo).
 * `zoom` — Nível de zoom do mapa Slippy, no intervalo `[0, 32]`. [`UInt8`](/pt-BR/reference/data-types/int-uint).
 * `tile_x` — Índice da coluna do tile, no intervalo `[0, 2^zoom - 1]`. [`UInt32`](/pt-BR/reference/data-types/int-uint).
 * `tile_y` — Índice da linha do tile, no intervalo `[0, 2^zoom - 1]`. [`UInt32`](/pt-BR/reference/data-types/int-uint).

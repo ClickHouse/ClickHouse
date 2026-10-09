@@ -28,8 +28,9 @@ SET query_plan_join_swap_table='false';
 SET query_plan_optimize_join_order_randomize=0;
 -- Keep the runtime join filters pinned ON (their default): the added `BuildRuntimeFilterStep` /
 -- filter steps around the JOIN are a supported plan shape for the input-bytes instrumentation, and
--- this test doubles as the regression coverage for it -- it must not be randomized off.
-SET enable_join_runtime_filters=1;
+-- this test doubles as the regression coverage for it -- it must not be randomized off. Pin the
+-- probe-rows threshold to its default too, so a randomized value cannot skip building the filter.
+SET enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows=1000;
 
 -- Reading aggregation states / external sort spills from disk would inflate `ReadCompressedBytes`.
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
@@ -37,7 +38,15 @@ SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
 
 SET max_threads=0;
 SET use_uncompressed_cache=0;
+
+-- `apply_string_filters_during_scan` materializes the values that do not match a substring condition
+-- of PREWHERE as empty strings, so the in-memory size of the read block, which the estimation is based on,
+-- becomes much smaller than the amount of data actually read from disk.
+SET apply_string_filters_during_scan=0;
 SET use_query_condition_cache=0;
+-- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the
+-- estimate for every query after the first one.
+SET use_columns_cache=0;
 
 DROP TABLE IF EXISTS ij_big;
 DROP TABLE IF EXISTS ij_small;

@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
+#include <Poco/JSON/Array.h>
 #include "delta_kernel_ffi.hpp"
 
 namespace DeltaLake
@@ -48,6 +49,9 @@ public:
 
     /// Get schema from DeltaLake table metadata.
     const DB::NamesAndTypesList & getTableSchema() const;
+    /// Raw Delta `StructType.fields` JSON of this snapshot, preserving exact Delta types (`binary`,
+    /// `timestamp_ntz`, ...) that `getTableSchema` collapses. Used for catalog registration.
+    Poco::JSON::Array::Ptr getRawDeltaSchemaFields() const;
     /// Get read schema derived from data files.
     /// (In most cases it would be the same as table schema).
     const DB::NamesAndTypesList & getReadSchema() const;

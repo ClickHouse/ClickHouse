@@ -38,7 +38,7 @@ ENGINE = ODBC(datasource, external_database, external_table)
 
 * カラム名はソーステーブルのものと同じである必要がありますが、それらの一部だけを任意の順序で使用できます。
 * カラムの型は、ソーステーブルのものと異なる場合があります。ClickHouse は値を ClickHouse のデータ型に [キャスト](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) しようとします。
-* [external&#95;table&#95;functions&#95;use&#95;nulls](/ja/reference/settings/session-settings#external_table_functions_use_nulls) 設定は、Nullable カラムの処理方法を定義します。デフォルト値: 1。0 の場合、テーブル関数は Nullable カラムを作成せず、NULL の代わりにデフォルト値を挿入します。これは Array 内の NULL 値にも適用されます。
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/ja/reference/settings/session-settings/external-table#external_table_functions_use_nulls) 設定は、Nullable カラムの処理方法を定義します。デフォルト値: 1。0 の場合、テーブル関数は Nullable カラムを作成せず、NULL の代わりにデフォルト値を挿入します。これは Array 内の NULL 値にも適用されます。
 
 **エンジンパラメータ**
 

@@ -213,8 +213,8 @@ NULLs are treated as equal.
 )";
     FunctionDocumentation::Syntax syntax = "arrayRemove(arr, elem)";
     FunctionDocumentation::Examples examples = {
-        {"Example 1", "SELECT arrayRemove([1, 2, 2, 3], 2)", "[1, 3]"},
-        {"Example 2", "SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)", "['a', 'b']"}
+        {"Example 1", "SELECT arrayRemove([1, 2, 2, 3], 2)", "[1,3]"},
+        {"Example 2", "SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)", "['a','b']"}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a subset of the source array", {"Array(T)"}};
 

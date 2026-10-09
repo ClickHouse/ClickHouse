@@ -10,6 +10,11 @@
 
 #include <Core/SettingsEnums.h>
 
+namespace DB
+{
+class RemoteHostFilter;
+}
+
 namespace DB::S3
 {
 
@@ -44,6 +49,8 @@ struct URI
         S3UriStyle uri_style = S3UriStyle::AUTO);
     void addRegionToURI(const std::string & region);
 
+    void checkRemoteHostFilter(const RemoteHostFilter & filter) const;
+
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
 
@@ -51,6 +58,8 @@ private:
     bool tryInitPathStyle();
     bool tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern);
 };
+
+std::string expandRegionToAmazonPath(const std::string & region);
 
 }
 

@@ -18,13 +18,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 仕組み
 </div>
 
-このモードでは、S3 ClickPipe は選択したパス内の**すべてのファイル**に対して初期ロードを実行した後、指定したパスに一致するキュー内の `ObjectCreated:*` イベントを監視します。すでに処理済みのファイルに関するメッセージ、パスに一致しないファイル、または別種のイベントは、すべて**無視**されます。ファイルは、`max insert bytes` または `max file count` で設定されたしきい値に達した時点、または設定可能な間隔 (デフォルトでは 30 秒) 経過後に取り込まれます。特定のファイルや特定の時点からインジェストを開始することは**できません**。ClickPipes は常に、選択したパス内のすべてのファイルを読み込みます。
+このモードでは、S3 ClickPipe は選択したパス内の**すべてのファイル**に対して初期ロードを実行した後、指定したパスに一致するキュー内の `ObjectCreated:*` イベントを監視します。すでに処理済みのファイルに関するメッセージ、パスに一致しないファイル、または別種のイベントは、すべて**無視**されます。ファイルは、`max insert bytes` または `max file count` で設定されたしきい値に達した時点、または設定可能な間隔 (デフォルトでは 30 秒) 経過後に取り込まれます。
+
+キュー経由で配信されたファイルのみを取り込むには、**Skip initial load** を有効にします。有効にすると、ClickPipes は選択したパス内の既存ファイルの初期スキャンをスキップし、SQS キュー経由で配信されたファイルのみを処理します。
 
 データの取り込み時にはさまざまな障害が発生する可能性があり、その結果、一部のみが挿入されたり、重複データが発生したりすることがあります。Object Storage 用 ClickPipes は挿入の失敗に強く、一時的なステージングテーブルを使用して exactly-once セマンティクスを提供します。データはまずステージングテーブルに挿入され、問題が発生した場合はステージングテーブルを空にして、クリーンな状態から挿入を再試行します。挿入が正常に完了した場合にのみ、パーティションがターゲットテーブルに移動されます。
 
 <Steps>
   <Step title="Amazon SQS キューの作成" id="create-sqs-queue">
-    **1.** AWS Console で **Simple Queue Service &gt; Create queue** に移動します。デフォルト設定のまま新しい標準キューを作成します。
+    **1.** AWS コンソールで **Simple Queue Service &gt; Create queue** に移動します。デフォルトのまま新しい標準キューを作成します。
 
     <Warning>
       **ClickPipe ごとに 1 つのキュー**
@@ -36,7 +38,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       SQS キューに **Dead-Letter-Queue (DLQ)** を設定することを強く推奨します。これにより、失敗したメッセージのデバッグや再試行が容易になります。DLQ が設定されている場合、失敗したメッセージは再度エンキューされ、DLQ の `maxReceiveCount` パラメータで設定された回数まで再処理されます。
     </Tip>
 
-    **2.** 以下の2つのオプションのいずれかを使用して、S3バケットをSQSキューに接続します。EventBridgeは、ファンアウトのサポート、より柔軟なイベントフィルタリング、そしてイベントタイプおよびプレフィックスごとの通知ルール数が1つに制限されるS3の制約を受けないという利点があるため、ほとんどのユースケースで推奨されます。
+    **2.** 以下の2つのオプションのいずれかを使用して、S3バケットをSQSキューに接続します。EventBridgeはファンアウトのサポート、より柔軟なイベントフィルタリングを提供し、イベントタイプおよびプレフィックスごとに通知ルールが1つに制限されるS3の制約を受けないため、ほとんどのユースケースで推奨されます。
 
     <Tabs>
       <Tab title="EventBridge 経由">
@@ -196,10 +198,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="順不同モードで ClickPipe を作成する" id="create-clickpipe">
     **1.** ClickHouse Cloudコンソールで **Data Sources &gt; Create ClickPipe** に移動し、**Amazon S3** を選択します。S3 バケットへの接続に必要な情報を入力します。**Authentication method** で **IAM role** を選択し、前の手順で作成したロールの ARN を指定します。
 
-    **2.** **Incoming data** で **Continuous ingestion** をオンにします。インジェストモードとして **Any order** を選択し、バケットに接続されたキューの **SQS queue URL** を指定します。このキューはこの ClickPipe 専用に使用する必要があります。詳しくは [Amazon SQS キューの作成](#create-sqs-queue) を参照してください。
+    **2.** **Incoming data** で **Continuous ingestion** をオンにします。インジェストモードとして **Any order** を選択し、バケットに接続されたキューの **SQS queue URL** を指定します。キュー内のファイルのみを処理し、選択したパスにある既存ファイルの初回スキャンをスキップするには、**Skip initial load** を有効にします。このキューはこの ClickPipe 専用に使用する必要があります。詳しくは [Amazon SQS キューの作成](#create-sqs-queue) を参照してください。
 
     **3.** **Parse information** で、ターゲットテーブルの **Sorting key** を定義します。マッピングされたスキーマに必要な調整を加えたら、ClickPipes のデータベースユーザーに割り当てるロールを設定します。
 
-    **4.** 設定内容を確認し、**Create ClickPipe** をクリックします。ClickPipes はまずバケットを初回スキャンして、指定したパスに一致する既存のファイルをすべて読み込みます。その後、新しい `ObjectCreated:*` イベントがキューに到着すると、ファイルの処理を開始します。
+    **4.** 設定内容を確認し、**Create ClickPipe** をクリックします。**Skip initial load** が有効でない限り、ClickPipes はまずバケットを初回スキャンして、指定したパスに一致する既存のファイルをすべて読み込みます。その後、一致する `ObjectCreated:*` イベントがキューから配信されると、ファイルの処理を開始します。
   </Step>
 </Steps>

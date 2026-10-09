@@ -1,15 +1,13 @@
 ---
-description: 'Le jeu de données et les requêtes du benchmark TPC-H.'
-sidebarTitle: 'TPC-H'
-slug: /getting-started/example-datasets/tpch
-title: 'TPC-H (1999)'
-doc_type: 'guide'
-keywords: ['jeu de données d’exemple', 'tpch', 'benchmark', 'données d’exemple', 'tests de performance']
+title: "TPC-H (1999)"
+description: "Le jeu de données et les requêtes du benchmark TPC-H."
+sidebarTitle: "TPC-H"
+slug: "/getting-started/example-datasets/tpch"
+doc_type: "guide"
+keywords: ["jeu de données d’exemple", "tpch", "benchmark", "données d’exemple", "tests de performance"]
 ---
 
-Un benchmark populaire qui modélise le data warehouse interne d’un grossiste.
-Les données sont stockées selon une modélisation en troisième forme normale, ce qui nécessite de nombreuses jointures lors de l’exécution des requêtes.
-Malgré son ancienneté et l’hypothèse irréaliste selon laquelle les données sont réparties de manière uniforme et indépendante, TPC-H reste à ce jour le benchmark OLAP le plus populaire.
+Un benchmark populaire qui modélise le data warehouse interne d’un grossiste. Les données sont stockées selon une modélisation en troisième forme normale, ce qui nécessite de nombreuses jointures lors de l’exécution des requêtes. Malgré son ancienneté et l’hypothèse irréaliste selon laquelle les données sont réparties de manière uniforme et indépendante, TPC-H reste à ce jour le benchmark OLAP le plus populaire.
 
 **Références**
 
@@ -76,8 +74,7 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
 ```
 
 <Note>
-  Plutôt que d&#39;utiliser tpch-kit et de générer les tables vous-même, vous pouvez également importer les données depuis un bucket S3 public. Veillez
-  à créer d&#39;abord des tables vides à l&#39;aide de [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql).
+  Plutôt que d&#39;utiliser tpch-kit et de générer les tables vous-même, vous pouvez également importer les données depuis un bucket S3 public. Veillez à créer d&#39;abord des tables vides à l&#39;aide de [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql).
 
   ```sql
   -- Scale factor 1
@@ -118,10 +115,14 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
 
 Les 22 requêtes TPC-H sont disponibles [ici](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-h/queries), dans le dépôt ClickHouse.
 
-Pour obtenir un comportement conforme au standard SQL et les résultats attendus, appliquez les paramètres de [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json).
-Consultez le [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md) pour connaître les problèmes connus et les remarques sur certaines requêtes.
+Pour obtenir un comportement conforme au standard SQL et les résultats attendus, appliquez les paramètres de [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json). Consultez le [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md) pour connaître les problèmes connus et les remarques sur certaines requêtes.
 
 **Exactitude**
 
-Les résultats des requêtes correspondent aux résultats officiels, sauf mention contraire. Pour le vérifier, générez une base de données TPC-H avec un facteur d&#39;échelle
-de 1 (`dbgen`, voir ci-dessus), puis comparez-les aux [résultats attendus dans tpch-kit](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers).
+Les résultats des requêtes correspondent aux résultats officiels, sauf mention contraire. Pour le vérifier, générez une base de données TPC-H avec un facteur d&#39;échelle de 1 (`dbgen`, voir ci-dessus), puis comparez-les aux [résultats attendus dans tpch-kit](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers).
+
+<div id="performance-benchmark">
+  ## Benchmark de performances
+</div>
+
+ClickHouse suit les performances des requêtes TPC-H dans chaque version publiée. Vous pouvez consulter les temps d’exécution des 22 requêtes TPC-H (facteur d’échelle 40) sur la page [benchmark des versions de ClickHouse](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ph\&metric=hot\&queries=-) afin de voir comment les performances ont évolué au fil du temps.

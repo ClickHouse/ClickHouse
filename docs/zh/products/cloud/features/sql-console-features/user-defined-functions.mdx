@@ -9,12 +9,14 @@ keywords: ['user defined function', 'UDF']
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
-用户自定义函数 (UDF) 允许用户将 ClickHouse 的功能扩展到其内置的一千多种[函数](/zh/reference/functions/regular-functions/regular-functions-index)之外。
+用户自定义函数 (UDF) 允许用户将 ClickHouse 的功能扩展到其内置的一千多种[函数](/zh/reference/functions/regular-functions/overview)之外。
 
-在 ClickHouse Cloud 中，创建用户自定义函数有两种方式：
+在 ClickHouse Cloud 中，有多种方式可以创建和管理用户自定义函数：
 
 1. 使用 SQL
 2. 使用 UI 和你自己的代码 (Public Beta)
+3. 使用 [Cloud API](#manage-udfs-with-the-cloud-api) (Beta)
+4. 使用 [Terraform](#manage-udfs-with-terraform) (Beta)
 
 <div id="sql-udfs">
   ## SQL 用户自定义函数
@@ -186,3 +188,82 @@ ClickHouse Cloud 提供了可通过 UI 创建用户自定义函数的配置界�
     你已成功通过 UI 添加了第一个用户自定义函数，确认其可正常运行，并了解了在需要时如何创建新版本。
   </Step>
 </Steps>
+
+<div id="manage-udfs-with-the-cloud-api">
+  ## 使用 Cloud API 管理 UDF
+</div>
+
+<BetaBadge />
+
+UI 中提供的所有功能也可通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 以编程方式使用。
+UDF 端点可让您通过脚本管理 UDF 的完整生命周期：上传源代码归档文件、创建函数和版本、将其附加到服务，以及进行清理。
+
+<Note>
+  这些端点目前处于 Beta 阶段，API 合约可能会变更。
+</Note>
+
+通过 API 创建和部署 UDF 的典型工作流如下：
+
+1. [创建上传 URL](/zh/products/cloud/api-reference/udf/udf-upload-session-create) 以获取预签名的 `application/zip` 上传 URL，然后将 ZIP 归档文件上传至该 URL。每个上传 ID 只能用于一次创建 UDF 或创建版本的尝试；重试时请申请新的上传 URL。
+2. 从上传的归档文件[创建 UDF](/zh/products/cloud/api-reference/udf/udf-create)，并指定函数名称、运行时、参数和返回类型。
+3. [将 UDF 附加到服务](/zh/products/cloud/api-reference/udf/udf-attach)。如果省略版本，则会附加最新的就绪版本。服务必须处于运行状态；可先唤醒空闲服务。
+
+完整端点列表如下：
+
+| 端点                                                                           | 描述                                  |
+| ---------------------------------------------------------------------------- | ----------------------------------- |
+| [创建 UDF 上传 URL](/zh/products/cloud/api-reference/udf/udf-upload-session-create) | 创建组织范围的预签名 `application/zip` 上传 URL |
+| [创建 UDF](/zh/products/cloud/api-reference/udf/udf-create)                       | 从已上传的归档文件创建新的 UDF                   |
+| [列出 UDF](/zh/products/cloud/api-reference/udf/udf-list)                         | 返回组织中每个 UDF 的最新版本                   |
+| [获取 UDF](/zh/products/cloud/api-reference/udf/udf-get)                          | 返回某个 UDF 的最新版本                      |
+| [删除 UDF](/zh/products/cloud/api-reference/udf/udf-delete)                       | 删除 UDF 的所有版本，并将其从所有服务中分离            |
+| [创建 UDF 版本](/zh/products/cloud/api-reference/udf/udf-version-create)            | 使用源代码归档文件创建版本，并启动 UDF 构建            |
+| [列出 UDF 版本](/zh/products/cloud/api-reference/udf/udf-version-list)              | 返回 UDF 的所有版本                        |
+| [删除 UDF 版本](/zh/products/cloud/api-reference/udf/udf-version-delete)            | 删除未附加到任何服务的 UDF 版本                  |
+| [将 UDF 附加到服务](/zh/products/cloud/api-reference/udf/udf-attach)                  | 将一个 UDF 版本附加到服务，必要时替换当前版本           |
+| [列出 UDF 附加关系](/zh/products/cloud/api-reference/udf/udf-attachment-list)         | 返回 UDF 当前附加到各服务的情况                  |
+| [获取 UDF 附加关系](/zh/products/cloud/api-reference/udf/udf-attachment-get)          | 返回 UDF 当前附加到某个服务的情况                 |
+| [从服务中分离 UDF](/zh/products/cloud/api-reference/udf/udf-detach)                   | 将 UDF 从服务中分离                        |
+
+有关请求和响应 schema，请参阅 [UDF API 参考文档](/zh/products/cloud/api-reference/udf/udf-create)。
+
+<div id="manage-udfs-with-terraform">
+  ## 使用 Terraform 管理 UDF
+</div>
+
+<BetaBadge />
+
+官方 [ClickHouse Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 提供了两个资源，可用于以基础设施即代码的方式管理 UDF：
+
+* [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) 用于管理函数本身。它接收包含函数源代码的 ZIP 归档文件，并在归档文件的哈希发生变化时发布新版本，同时等待构建完成。
+* [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) 用于将 UDF 版本附加到服务。一个服务在同一时间最多只能使用一个函数版本。您可以固定指定版本号，也可以引用 `clickhouse_udf.<name>.version`，以自动将服务升级到最新版本。
+
+<Note>
+  这些资源适用于 provider 3.24.0 及更高版本。它们目前处于 Beta 阶段，行为可能会在未来的 provider 版本中发生变化。
+</Note>
+
+例如，要使用 Terraform 部署前文示例中的 `isBusinessHours` UDF：
+
+```terraform
+resource "clickhouse_udf" "is_business_hours" {
+  function_name = "isBusinessHours"
+  runtime       = "python3.11"
+  type          = "executable_pool"
+  return_type   = "Bool"
+
+  arguments = [
+    { name = "timestamp", type = "DateTime" },
+  ]
+
+  source_archive_path = "${path.module}/is_business_hours.zip"
+  source_archive_hash = filebase64sha256("${path.module}/is_business_hours.zip")
+}
+
+resource "clickhouse_udf_attachment" "production" {
+  function_name = clickhouse_udf.is_business_hours.function_name
+  service_id    = var.service_id
+  version       = clickhouse_udf.is_business_hours.version
+}
+```
+
+仅当版本处于就绪状态时，附加操作才能成功，且可能需要数分钟；空闲服务会自动唤醒。删除 `clickhouse_udf` 资源会移除该函数的所有版本，并将其从所有服务中分离。

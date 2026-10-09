@@ -1,7 +1,6 @@
 #include <Interpreters/WasmModuleManager.h>
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmTimeRuntime.h>
-#include <Interpreters/WebAssembly/WasmEdgeRuntime.h>
 
 #include <Interpreters/Context.h>
 
@@ -29,7 +28,6 @@ namespace DB
 
 using WebAssembly::WasmModule;
 using WebAssembly::WasmTimeRuntime;
-using WebAssembly::WasmEdgeRuntime;
 using WebAssembly::FuelMode;
 
 namespace ErrorCodes
@@ -132,15 +130,19 @@ static std::expected<String, PreformattedMessage> validateModuleFile(const DiskP
     return module_name;
 }
 
-static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view engine_name)
+void WasmModuleManager::validateEngineName(std::string_view engine_name)
 {
     if (engine_name == "wasmtime")
-        return std::make_unique<WasmTimeRuntime>();
-    if (engine_name == "wasmedge")
-        return std::make_unique<WasmEdgeRuntime>();
+        return;
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-        "Unknown WebAssembly engine '{}', available engines: 'wasmtime', 'wasmedge'",
+        "Unknown WebAssembly engine '{}', available engines: 'wasmtime'",
         engine_name);
+}
+
+static std::unique_ptr<WebAssembly::IWasmEngine> createEngine(std::string_view engine_name)
+{
+    WasmModuleManager::validateEngineName(engine_name);
+    return std::make_unique<WasmTimeRuntime>();
 }
 
 WasmModuleManager::WasmModuleManager(DiskPtr user_scripts_disk_, std::filesystem::path user_scripts_path_, std::string_view engine_name)
@@ -219,8 +221,7 @@ std::string WasmModuleManager::loadModuleImpl(std::string_view module_name)
 
 std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std::string_view module_name, FuelMode fuel_mode)
 {
-    const bool requires_fuel_specialization = engine->requiresFuelSpecialization();
-    const size_t cache_idx = requires_fuel_specialization ? fuelModeIndex(fuel_mode) : 0;
+    const size_t cache_idx = fuelModeIndex(fuel_mode);
 
     {
         SharedLockGuard lock(modules_mutex);

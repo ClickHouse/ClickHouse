@@ -3,13 +3,13 @@ title: 'Observabilidade do BYOC'
 slug: /cloud/reference/byoc/observability
 sidebarTitle: 'Observabilidade'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'observabilidade', 'monitoramento', 'Prometheus', 'Grafana']
-description: 'Monitore e acompanhe sua implantação do ClickHouse em BYOC usando painéis nativos e métricas do Prometheus'
+description: 'Monitore e acompanhe sua implantação do ClickHouse em BYOC usando dashboards nativos e métricas do Prometheus'
 doc_type: 'referência'
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-As implantações BYOC incluem recursos completos de observabilidade, permitindo que você monitore seus serviços ClickHouse por meio de uma stack dedicada de monitoramento do Prometheus e de endpoints de métricas expostos diretamente pelos servidores ClickHouse. Todos os dados de observabilidade permanecem na sua conta na nuvem, dando a você controle total sobre sua infraestrutura de monitoramento.
+As implantações BYOC incluem recursos completos de observabilidade, permitindo que você monitore seus serviços ClickHouse por meio de uma stack dedicada de monitoramento do Prometheus e de endpoints de métricas expostos diretamente pelos servidores ClickHouse. Seus dados de monitoramento permanecem na sua conta na nuvem, dando a você controle total sobre sua infraestrutura de monitoramento. A telemetria limitada de uso e saúde listada em [limites de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security#outbound-connections) é o único dado de monitoramento exportado para a ClickHouse; separadamente, os dashboards da ClickHouse e, mediante escalonamento aprovado, seus engenheiros podem consultar essa stack no local por meio do Tailscale, sem que nada seja persistido do lado da ClickHouse — consulte [ClickHouse data access](/pt-BR/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
 <div id="prometheus-monitoring">
   ## Abordagens de monitoramento com Prometheus
@@ -34,7 +34,7 @@ O BYOC oferece duas formas principais de coletar e visualizar métricas com o Pr
 | **Best Suited For**       | Monitoramento abrangente da infraestrutura e dos serviços                                             | Monitoramento e integração específicos do serviço                                        |
 | **How to Integrate**      | Configure a federação no Prometheus externo para fazer a ingestão das métricas do cluster             | Adicione os endpoints de métricas do ClickHouse diretamente à configuração do Prometheus |
 
-**Recomendação**: Para a maioria dos casos de uso, recomendamos a integração com a stack do Prometheus integrada, pois ela fornece métricas abrangentes de todos os componentes da sua implantação BYOC (serviços ClickHouse, cluster Kubernetes e serviços de suporte), em vez de apenas métricas do servidor ClickHouse. 
+**Recomendação**: Para a maioria dos casos de uso, recomendamos a integração com a stack do Prometheus integrada, pois ela fornece métricas abrangentes de todos os componentes da sua implantação BYOC (serviços ClickHouse, cluster Kubernetes e serviços de suporte), em vez de apenas métricas do servidor ClickHouse.
 
 <div id="builtin-prometheus-stack">
   ## A stack do Prometheus integrada do BYOC
@@ -46,25 +46,25 @@ O ClickHouse BYOC implanta uma stack completa de monitoramento com Prometheus no
 * componentes do sistema e do cluster Kubernetes
 * nós da infraestrutura subjacente
 
-<div id="accessing-prometheus-stack">
-  ### Acessando a stack do Prometheus
-</div>
+### Como acessar a stack do Prometheus {#accessing-prometheus-stack}
 
-Para se conectar à stack integrada do Prometheus:
+Para se conectar à stack do Prometheus integrada:
 
-1. **Entre em contato com o suporte do ClickHouse** para habilitar o balanceador de carga privado no seu ambiente BYOC.
+1. **Habilite o balanceador de carga privado** da sua infraestrutura BYOC no console do ClickHouse Cloud (consulte [Balanceadores de carga](/pt-BR/products/bring-your-own-cloud/configuration/configurations#load-balancers)).
 2. **Solicite a URL do endpoint do Prometheus** ao suporte do ClickHouse.
-3. **Verifique a conectividade da rede privada** com o endpoint do Prometheus — normalmente por meio de VPC peering ou outra configuração de rede privada.
+3. **Verifique a conectividade de rede privada** com o endpoint do Prometheus — normalmente por meio de peering de VPC/VNet ou outra configuração de rede privada.
 
-Os formatos de endpoint variam de acordo com o tipo de conectividade:
+Os formatos de endpoint variam conforme o tipo de conectividade:
 
-| Conectividade     | Formato do endpoint                                                            |
-| ----------------- | ------------------------------------------------------------------------------ |
-| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+| Conectividade       | Formato do endpoint                                                            |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Peering de VPC/VNet | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| Endpoint privado    | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`  |
+
+`<cloud>` pode ser `aws`, `gcp` ou `azure`. Para endpoints privados, `<label>` é específico da nuvem: `vpce` na AWS, `p` no GCP e `privatelink` no Azure.
 
 <Note>
-  A URL da stack do Prometheus só pode ser acessada por conexões de rede privada e não requer autenticação. O acesso é restrito a redes que consigam alcançar sua VPC BYOC por meio de VPC peering ou outras opções de conectividade privada.
+  A URL da stack do Prometheus é acessível somente por conexões de rede privada e não requer autenticação. O acesso é restrito a redes que conseguem alcançar sua VPC/VNet BYOC por peering ou outras opções de conectividade privada.
 </Note>
 
 <div id="prometheus-stack-integration">
@@ -112,26 +112,24 @@ scrape_configs:
 
 Os serviços ClickHouse expõem um endpoint de métricas compatível com o Prometheus, que você pode coletar diretamente usando sua própria instância do Prometheus. Essa abordagem fornece métricas específicas do ClickHouse, mas não inclui métricas do Kubernetes nem dos serviços de suporte.
 
-<div id="metrics-endpoint">
-  ### Acessando o endpoint de métricas
-</div>
+### Acessando o endpoint de métricas {#metrics-endpoint}
 
 O endpoint de métricas está disponível em `/metrics_all` no endpoint do seu serviço ClickHouse:
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **Exemplo de resposta:**
 
 ```bash
-# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes A quantidade de bytes armazenados no disco `s3disk` no banco de dados do sistema
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes The amount of bytes stored on disk `s3disk` in system database
 # TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
 ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
-# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts O número de partes desanexadas corrompidas
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts The number of broken detached parts
 # TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
 ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
-# HELP ClickHouse_CustomMetric_TotalNumberOfErrors O número total de erros no servidor desde a última reinicialização
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors The total number of errors on server since the last restart
 # TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
 ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
 ```
@@ -169,9 +167,7 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-<div id="configuring-prometheus">
-  ### Configurando o Prometheus
-</div>
+### Configurando o Prometheus {#configuring-prometheus}
 
 Configure sua instância do Prometheus para coletar as métricas expostas no endpoint de métricas do ClickHouse:
 
@@ -182,7 +178,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -193,7 +189,7 @@ scrape_configs:
 
 Substitua:
 
-* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` pelo endpoint do seu serviço
+* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` pelo endpoint do seu serviço
 * `<username>` e `<password>` pelas credenciais do seu usuário de coleta
 
 <div id="clickhouse-mixin">
@@ -202,9 +198,7 @@ Substitua:
 
 Para equipes que desejam um conjunto pronto de dashboards, o ClickHouse oferece um **ClickHouse Mixin** para o Prometheus. Trata-se de um dashboard pré-configurado do Grafana, projetado especificamente para monitorar clusters do ClickHouse.
 
-<div id="setup-grafana-mixin">
-  ### Configurando o Grafana e importando o ClickHouse Mix-in
-</div>
+### Configurando o Grafana e importando o ClickHouse Mix-in {#setup-grafana-mixin}
 
 Depois que sua instância do Prometheus estiver integrada à stack de monitoramento do ClickHouse, você poderá visualizar as métricas no Grafana seguindo estas etapas:
 

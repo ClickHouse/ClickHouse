@@ -85,9 +85,7 @@ Keeper 集群为元数据提供了单一事实来源。
 分片架构中，这一点很容易理解，因为每个分片实际上都可以
 在部分数据子集上执行查询。那么在没有分片的情况下，它是如何工作的呢？
 
-<div id="introducing-parallel-replicas">
-  ## 介绍并行副本
-</div>
+## 介绍并行副本 {#introducing-parallel-replicas}
 
 要通过多台服务器并行执行查询，首先需要能够将其中一台服务器指定为协调器。协调器负责创建待执行的任务列表，确保这些任务全部得到执行、完成聚合，并将结果返回给客户端。与大多数分布式系统一样，这一角色通常由接收初始查询的节点承担。我们还需要定义工作单元。在分片架构中，工作单元是分片，即数据的一个子集。而在并行副本中，我们将使用表中的一小部分，也就是[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)，作为工作单元。
 
@@ -142,9 +140,7 @@ Keeper 集群为元数据提供了单一事实来源。
 
 我们将在接下来的章节中说明如何克服这些因素。
 
-<div id="announcements">
-  ### 通知
-</div>
+### 通知 {#announcements}
 
 为了解决上述列表中的 (1) 和 (2)，我们引入了“通知”这一概念。下面通过下图来说明其工作方式：
 
@@ -177,9 +173,7 @@ Keeper 集群为元数据提供了单一事实来源。
   </li>
 </ol>
 
-<div id="dynamic-coordination">
-  ### 动态协调
-</div>
+### 动态协调 {#dynamic-coordination}
 
 为了解决长尾延迟问题，我们引入了动态协调。这意味着，
 不会在一次请求中将所有粒度都发送给某个副本，而是每个副本
@@ -297,9 +291,7 @@ Keeper 集群为元数据提供了单一事实来源。
 “窃取”按哈希原本应分配给该副本的任务，以降低
 长尾延迟。
 
-<div id="limitations">
-  ### 限制
-</div>
+### 限制
 
 此功能存在一些已知限制，其中较为主要的限制记录在
 本节中。
@@ -310,14 +302,14 @@ Keeper 集群为元数据提供了单一事实来源。
   标签 `comp-parallel-replicas` 提交 issue。
 </Note>
 
-| 限制                | 描述                                                                                                                                                                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 复杂查询              | 目前，并行副本对简单查询的支持效果较好。像 CTE、子查询、JOIN、非扁平查询等较复杂的查询层次结构，可能会对查询性能产生负面影响。                                                                                                                                                                  |
-| 小型查询              | 如果你执行的查询处理的行数不多，那么在多个副本上执行它未必会带来更好的性能，因为副本之间协调所需的网络开销可能会为查询执行增加额外轮次。你可以使用以下设置来减少这些问题：[`parallel_replicas_min_number_of_rows_per_replica`](/zh/reference/settings/session-settings#parallel_replicas_min_number_of_rows_per_replica)。 |
-| 启用 FINAL 时会禁用并行副本 |                                                                                                                                                                                                                                      |
-| 投影不会与并行副本一同使用     |                                                                                                                                                                                                                                      |
-| 高基数数据和复杂聚合        | 需要传输大量数据的高基数聚合可能会显著拖慢查询。                                                                                                                                                                                                             |
-| 与 analyzer 的兼容性   | analyzer 在某些场景下可能会显著减慢或加快查询执行速度。                                                                                                                                                                                                     |
+| 限制                | 描述                                                                                                                                                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 复杂查询              | 目前，并行副本对简单查询的支持效果较好。像 CTE、子查询、JOIN、非扁平查询等较复杂的查询层次结构，可能会对查询性能产生负面影响。                                                                                                                                                                                 |
+| 小型查询              | 如果你执行的查询处理的行数不多，那么在多个副本上执行它未必会带来更好的性能，因为副本之间协调所需的网络开销可能会为查询执行增加额外轮次。你可以使用以下设置来减少这些问题：[`parallel_replicas_min_number_of_rows_per_replica`](/zh/reference/settings/session-settings/parallel-replicas#parallel_replicas_min_number_of_rows_per_replica)。 |
+| 启用 FINAL 时会禁用并行副本 |                                                                                                                                                                                                                                                     |
+| 投影不会与并行副本一同使用     |                                                                                                                                                                                                                                                     |
+| 高基数数据和复杂聚合        | 需要传输大量数据的高基数聚合可能会显著拖慢查询。                                                                                                                                                                                                                            |
+| 与 analyzer 的兼容性   | analyzer 在某些场景下可能会显著减慢或加快查询执行速度。                                                                                                                                                                                                                    |
 
 <div id="settings-related-to-parallel-replicas">
   ## 与并行副本相关的设置
@@ -329,15 +321,12 @@ Keeper 集群为元数据提供了单一事实来源。
 | `cluster_for_parallel_replicas`                    | 用于并行副本的集群名称；如果你使用的是 ClickHouse Cloud，请使用 `default`。                                                     |
 | `max_parallel_replicas`                            | 在多个副本上执行查询时可使用的最大副本数；如果指定的数值小于集群中的副本数，则会随机选择节点。该值也可以 overcommit，以适应横向扩缩容。                               |
 | `parallel_replicas_min_number_of_rows_per_replica` | 有助于根据需要处理的行数限制所使用的副本数，使用的副本数由以下公式确定：<br /> `estimated rows to read` / `min_number_of_rows_per_replica`。 |
-| `enable_analyzer`                                  | 仅在启用 analyzer 时，才支持使用并行副本执行查询                                                                           |
 
-<div id="investigating-issues-with-parallel-replicas">
-  ## 排查并行副本问题
-</div>
+## 排查并行副本问题
 
 你可以在
 [`system.query_log`](/zh/reference/system-tables/query_log) 表中查看每个查询使用了哪些设置。你还可以查看 [`system.events`](/zh/reference/system-tables/events)
-表，了解 server 上发生的所有事件；也可以使用
+表，了解 服务器 上发生的所有事件；也可以使用
 [`clusterAllReplicas`](/zh/reference/functions/table-functions/cluster) 表函数查看所有副本上的表
 (如果你是 Cloud 用户，请使用 `default`) 。
 

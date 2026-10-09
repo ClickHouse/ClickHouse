@@ -1,14 +1,21 @@
 ---
-sidebarTitle: 'Confluent Platform'
+sidebarTitle: 'Confluent'
 slug: /integrations/kafka/cloud/confluent
-description: 'Kafka Connectivity with Confluent Cloud'
-title: 'Integrating Confluent Cloud with ClickHouse'
+description: 'Options for connecting Confluent Kafka to ClickHouse'
+title: 'Integrating Confluent with ClickHouse'
 doc_type: 'guide'
 keywords: ['Confluent Cloud ClickHouse', 'Confluent ClickHouse integration', 'Kafka ClickHouse connector', 'Confluent Platform ClickHouse', 'ClickHouse Connect Sink']
 ---
 
-Confluent platform provides two options to integration with ClickHouse
+Confluent provides three options to integrate with ClickHouse:
 
-* [ClickHouse Connect Sink on Confluent Cloud](/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud)
-* [ClickHouse Connect Sink on Confluent Platform](/integrations/connectors/data-ingestion/kafka/confluent/custom-connector) using the custom connectors feature
+* [ClickHouse Connect Sink on Confluent Cloud](/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud), the fully managed connector
+* [ClickHouse Connect Sink as a Custom Connector on Confluent Cloud](/integrations/connectors/data-ingestion/kafka/confluent/custom-connector), where you upload the connector yourself
 * [HTTP Sink Connector for Confluent Platform](/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http) that integrates Apache Kafka with an API via HTTP or HTTPS
+
+## Which Confluent Cloud option should I use? {#which-confluent-cloud-option-should-i-use}
+
+Both of the first two options run the same ClickHouse Connect Sink on Confluent Cloud. The difference is who manages the connector:
+
+* **Fully managed connector**: Confluent installs and upgrades the connector for you. Start here unless you need something it doesn't offer.
+* **Custom Connector**: you download a release of the connector from [GitHub](https://github.com/ClickHouse/clickhouse-kafka-connect/releases) and upload it to Confluent Cloud yourself. Use this when you need a specific connector version, or want to override settings that the fully managed connector only changes through a Confluent support case. Custom Connectors are only available in some AWS regions.

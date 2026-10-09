@@ -31,7 +31,7 @@ namespace YTsaurusSetting
 
 YTsaurusTableSourceStaticTable::YTsaurusTableSourceStaticTable(
     YTsaurusClientPtr client_, const String & cypress_path_, std::pair<size_t, size_t> rows_range_, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_)
-    : ISource(sample_block_)
+    : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
     , client(std::move(client_))
     , cypress_path(cypress_path_)
     , rows_range(std::move(rows_range_))
@@ -62,7 +62,7 @@ Chunk YTsaurusTableSourceStaticTable::generate()
 
 YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
     YTsaurusClientPtr client_, const String & cypress_path, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_)
-    : ISource(sample_block_)
+    : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
     , client(std::move(client_))
     , sample_block(sample_block_)
     , max_block_size(max_block_size_)

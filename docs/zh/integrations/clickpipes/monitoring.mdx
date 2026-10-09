@@ -1,5 +1,6 @@
 ---
 sidebarTitle: '监控'
+icon: 'chart-line'
 description: '使用 Prometheus 指标监控 ClickPipes。'
 slug: /integrations/clickpipes/monitoring
 title: '监控 ClickPipes'
@@ -102,10 +103,12 @@ ClickPipes_Latency{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickho
   ### 延迟
 </div>
 
-| 指标                                        | 类型            | 适用于               | 描述                                                          |
-| ----------------------------------------- | ------------- | ----------------- | ----------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | 流式、对象存储           | 从记录在源端生成到写入 ClickHouse 之间的时间，单位为毫秒。                         |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (仅 Postgres)  | 源端的 replication slot 滞后量，单位为 MiB。仅由 Postgres ClickPipes 发出。 |
+| 指标                                        | 类型            | 适用于              | 描述                                                          |
+| ----------------------------------------- | ------------- | ---------------- | ----------------------------------------------------------- |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | 全部               | 从记录在源端生成到写入 ClickHouse 之间的时间，单位为毫秒。                         |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (仅 Postgres) | 源端的 replication slot 滞后量，单位为 MiB。仅由 Postgres ClickPipes 发出。 |
+| `ClickPipes_CDC_SourceLatency`            | Gauge (*avg*) | CDC              | 从源事件时间戳到 ClickPipes 处理的滞后时间，单位为毫秒。                          |
+| `ClickPipes_CDC_DestinationLatency`       | Gauge (*avg*) | CDC              | 从 ClickPipe 接收事件到将其写入 ClickHouse 表的滞后时间，单位为毫秒。              |
 
 <div id="metrics-resources">
   ### 资源利用率

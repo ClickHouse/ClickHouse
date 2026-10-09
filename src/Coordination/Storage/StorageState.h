@@ -6,11 +6,17 @@
 #include <Coordination/Storage/SortedRun.h>
 #include <Coordination/Storage/Memtable.h>
 #include <Common/SharedMutex.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
 
-/// White-box unit tests that inspect StorageState internals (befriended inside StorageState).
-class KeeperStorage_BackgroundFlushAndMerge_Test;
-class KeeperStorage_SnapshotWriter_Test;
-class KeeperStorage_WriteThrottling_Test;
+namespace DB
+{
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
+struct AsynchronousMetricValue;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
+}
 
 namespace Coordination::Storage
 {
@@ -21,16 +27,6 @@ struct BackgroundWork;
 /// flushes and merges.
 struct StorageState
 {
-private:
-    /// Internal collaborators that operate directly on this storage's committed state.
-    friend struct BackgroundWork;
-    friend struct SortedRunWriter;
-    friend struct SnapshotWriterNodeStream;
-    /// White-box unit tests.
-    friend class ::KeeperStorage_BackgroundFlushAndMerge_Test;
-    friend class ::KeeperStorage_SnapshotWriter_Test;
-    friend class ::KeeperStorage_WriteThrottling_Test;
-
     struct UncommittedMemtable
     {
         MemtablePtr memtable;
@@ -48,6 +44,12 @@ private:
 
     /// In memory-only mode stays null (blocks are owned by SortedFile-s instead).
     std::unique_ptr<BlockCache> block_cache;
+
+    /// IO environment used for all file reads and writes. `disk` is assigned in startup and
+    /// stays null in memory-only mode. Files live at the root of the disk.
+    DB::DiskPtr disk;
+    DB::ReadSettings read_settings;
+    DB::WriteSettings write_settings;
 
     /// Protects committed state (`files`, `{mutable,immutable}_memtables`, `node_cache`, etc).
     DB::SharedMutex * storage_mutex = nullptr;
@@ -70,7 +72,6 @@ private:
     std::vector<MemtablePtr> immutable_memtables;
     MemtablePtr mutable_memtable; // may be nullptr
 
-    /// TODO: On startup, initialize to (maximum max_file_seqno over preexisting files) + 1.
     uint32_t next_file_seqno = 1;
 
     /// Latest occurrence of each node in files and memtables. Doesn't contain removed nodes.
@@ -85,12 +86,16 @@ private:
     /// its max_zxid gets committed. This vector usually has two elements.
     std::vector<UncommittedMemtable> uncommitted;
 
+    /// Sum of Memtable::total_bytes across `uncommitted`. Duplicates information that's already
+    /// in `uncommitted`, as an atomic, so that fillAsynchronousMetrics can read it without
+    /// holding the mutex that protects uncommitted state.
+    std::atomic<size_t> uncommitted_bytes{};
+
     std::unique_ptr<BackgroundWork> background;
 
     /// How long to sleep before each write, in microseconds.
     std::atomic<int64_t> write_throttling_us{};
 
-public:
     explicit StorageState(DB::KeeperContextPtr keeper_context_, DB::SharedMutex * storage_mutex_);
     ~StorageState(); // calls shutdown()
 
@@ -122,9 +127,11 @@ public:
     ///  NodeRefCache lookup, but it's unclear whether this is worth the trouble.)
     void listCommittedChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const;
 
-    /// Very minimal stats.
-    /// TODO: Make AsynchronousMetrics call into StorageState to directly populate the metrics map with lots of stats like number and size of memtables and runs and files, compressed and uncompressed sizes, number of blocks, number of entries and nodes in memtables and files.
+    /// Very minimal stats. Caller must hold storage_mutex.
     void getNodeCountAndDataSize(uint64_t & out_node_count, uint64_t & out_data_size) const;
+
+    /// Various metrics. Caller must hold storage_mutex.
+    void fillAsynchronousMetrics(DB::AsynchronousMetricValues & new_values) const;
 
     /// ========== Operations on uncommitted state. ==========
 
@@ -137,6 +144,8 @@ public:
     /// uncommitted state.
     NodeRef getUncommittedNode(const NodePathWithHash & path);
 
+    /// Updates `node.data_ptr` to point into the block, so it stays valid as long as the returned
+    /// NodeRef is alive. (But `node.path` is left unchanged.)
     NodeRef appendUncommittedNode(FullNode & node, int64_t zxid);
 
     /// Call periodically to remove obsolete UncommittedMemtable-s.
@@ -145,7 +154,8 @@ public:
     void listUncommittedChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const;
 
     /// Sleeps for a short time if background work fell behind.
-    /// Call before each write, with storage_mutex unlocked.
+    /// Call before each write transaction (and periodically during snapshot load), with
+    /// storage_mutex unlocked.
     void throttleWrite() const;
 
     /// TODO: listRecursive of some kind. It can be faster than normal tree traversal because
@@ -153,9 +163,21 @@ public:
     ///       memtable can only list children of one node at a time, and also uncommitted state may
     ///       remove children (which may've been listed as part of SortedFile scan).
 
-private:
+    /// ========== Private methods ==========
+
     /// Call when memtables or sorted runs were added or removed, with storage_mutex held.
     void recalculateWriteThrottling();
+
+    /// Generates a unique file name for a new SortedFile. We don't rely on the file name format
+    /// anywhere, the min_file_seqno/max_file_seqno/file_idx_in_run are just for debugging
+    /// convenience; this function could equally well return a random string.
+    std::string makeSortedFilePath(uint32_t min_file_seqno, uint32_t max_file_seqno, size_t file_idx_in_run) const;
+
+    /// On startup we write a mostly useless file and read it back, to fail early if the disk
+    /// doesn't work (e.g. no directory) or doesn't support positioned reads (readBigAt).
+    /// Otherwise the problem would only be reported by background thread after filling a memtable
+    /// and flushing it, potentially a long time after startup.
+    void writeInfoFile() const;
 };
 
 }

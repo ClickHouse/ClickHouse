@@ -118,7 +118,11 @@ bool injectRequiredColumnsRecursively(
             /// This can happen if the column was dropped and then re-added with the same name.
             && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
         {
-            if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
+            /// Resolved against the serialization the part holds for the column - which it always does, the column
+            /// comes from its own list - instead of a newly built one.
+            if (!column_in_storage->isSubcolumn()
+                || column_in_part->type->tryGetSubcolumnType(
+                       column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
             {
                 add_column(column_name);
                 return true;
@@ -401,7 +405,7 @@ void addPatchPartsColumns(
     if (patch_parts.empty())
         return;
 
-    NameSet required_virtuals;
+    NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
 
     for (size_t i = 0; i < patch_parts.size(); ++i)
@@ -432,9 +436,9 @@ void addPatchPartsColumns(
             patch_columns_to_read_set.insert(RowExistsColumn::name);
         }
 
-        auto patch_system_columns = getVirtualsRequiredForPatch(patch_parts[i]);
-        patch_columns_to_read_set.insert(patch_system_columns.begin(), patch_system_columns.end());
-        required_virtuals.insert(patch_system_columns.begin(), patch_system_columns.end());
+        auto patch_key_columns = getKeyColumnsRequiredForPatch(patch_parts[i]);
+        patch_columns_to_read_set.insert(patch_key_columns.begin(), patch_key_columns.end());
+        required_key_columns.insert(patch_key_columns.begin(), patch_key_columns.end());
 
         Names patch_columns_to_read_names(patch_columns_to_read_set.begin(), patch_columns_to_read_set.end());
 
@@ -454,11 +458,11 @@ void addPatchPartsColumns(
     auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();
     auto first_step_columns_set = first_step_columns.getNameSet();
 
-    for (const auto & virtual_name : required_virtuals)
+    for (const auto & key_column_name : required_key_columns)
     {
-        if (!first_step_columns_set.contains(virtual_name))
+        if (!first_step_columns_set.contains(key_column_name))
         {
-            auto column = storage_snapshot->getColumn(options, virtual_name);
+            auto column = storage_snapshot->getColumn(options, key_column_name);
             first_step_columns.push_back(std::move(column));
         }
     }
@@ -551,6 +555,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps,
             reader_settings.force_short_circuit_execution,
+            reader_settings.read_ahead_prewhere_columns,
             &storage_snapshot->metadata->getColumns());
 
         for (const auto & step : prewhere_actions.steps)

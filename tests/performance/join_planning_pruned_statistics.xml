@@ -1,0 +1,67 @@
+<test>
+    <!-- Join-order planning cost when partition pruning changes the set of parts used
+         for column statistics (issue #110281): EXPLAIN measures planning only.
+         fact_1000p_cached has refresh_statistics_interval = 1, so the background task
+         warms the table-wide estimator cache during fill (the trailing sleep(2) gives
+         it at least one full cycle); the other tables use interval = 0 (cache always
+         cold) to benchmark loading and merging statistics from individual parts. -->
+
+    <settings>
+        <use_statistics>1</use_statistics>
+        <collect_hash_table_stats_during_joins>0</collect_hash_table_stats_during_joins>
+        <max_partitions_per_insert_block>2000</max_partitions_per_insert_block>
+        <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
+    </settings>
+
+    <create_query>
+        CREATE TABLE fact_1000p (p UInt16, id UInt64)
+        ENGINE = MergeTree PARTITION BY p ORDER BY id
+        SETTINGS refresh_statistics_interval = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE fact_1000p_cached (p UInt16, id UInt64)
+        ENGINE = MergeTree PARTITION BY p ORDER BY id
+        SETTINGS refresh_statistics_interval = 1
+    </create_query>
+    <create_query>
+        CREATE TABLE dim_j (id UInt64)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS refresh_statistics_interval = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE rmt_final_j (p UInt16, id UInt64, version UInt64, status String)
+        ENGINE = ReplacingMergeTree(version) PARTITION BY p ORDER BY id
+        SETTINGS refresh_statistics_interval = 0
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES fact_1000p</fill_query>
+    <fill_query>SYSTEM STOP MERGES fact_1000p_cached</fill_query>
+    <fill_query>SYSTEM STOP MERGES rmt_final_j</fill_query>
+    <fill_query>INSERT INTO fact_1000p SELECT number % 1000, number FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO fact_1000p_cached SELECT number % 1000, number FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO dim_j SELECT number FROM numbers(100000)</fill_query>
+    <!-- 200 parts total: 100 partitions x 2 overlapping inserts -->
+    <fill_query>INSERT INTO rmt_final_j SELECT number % 100, number, 1, if(number % 100 = 0, 'target', 'other') FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO rmt_final_j SELECT number % 100, number, 2, if(number % 100 = 0, 'target', 'other') FROM numbers(500000)</fill_query>
+    <!-- let the background refresh warm the estimator cache of fact_1000p_cached -->
+    <fill_query>SELECT sleep(2) FORMAT Null</fill_query>
+
+    <!-- cold cache after pruning: load and merge statistics from 950 of 1000 parts -->
+    <query>EXPLAIN SELECT count() FROM fact_1000p AS f INNER JOIN dim_j AS d ON f.id = d.id WHERE f.p &lt; 950 SETTINGS use_statistics_cache = 0 FORMAT Null</query>
+    <!-- warm cache, unpruned: full-set hit exercises the O(parts) part-set comparison over 1000 parts -->
+    <query>EXPLAIN SELECT count() FROM fact_1000p_cached AS f INNER JOIN dim_j AS d ON f.id = d.id SETTINGS use_statistics_cache = 1 FORMAT Null</query>
+    <!-- warm cache bypass after pruning: load and merge statistics from 950 parts -->
+    <query>EXPLAIN SELECT count() FROM fact_1000p_cached AS f INNER JOIN dim_j AS d ON f.id = d.id WHERE f.p &lt; 950 SETTINGS use_statistics_cache = 1 FORMAT Null</query>
+    <!-- unpruned, cold cache: full part-set estimation baseline -->
+    <query>EXPLAIN SELECT count() FROM fact_1000p AS f INNER JOIN dim_j AS d ON f.id = d.id SETTINGS use_statistics_cache = 0 FORMAT Null</query>
+    <!-- planning-only lazy FINAL join over a 200-part ReplacingMergeTree: guards the
+         duplicate index-analysis regression (2 passes -> 1) -->
+    <query>EXPLAIN SELECT count() FROM rmt_final_j AS f FINAL INNER JOIN dim_j AS d ON f.id = d.id WHERE f.status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, use_statistics_cache = 0 FORMAT Null</query>
+    <!-- end-to-end execution of the same shape (kept separate; not a planning guard) -->
+    <query>SELECT count() FROM rmt_final_j AS f FINAL INNER JOIN dim_j AS d ON f.id = d.id WHERE f.status = 'target' SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000, use_statistics_cache = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS fact_1000p</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fact_1000p_cached</drop_query>
+    <drop_query>DROP TABLE IF EXISTS dim_j</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rmt_final_j</drop_query>
+</test>
