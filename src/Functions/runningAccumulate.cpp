@@ -49,7 +49,7 @@ public:
         if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
             throw Exception(
                 ErrorCodes::DEPRECATED_FUNCTION,
-                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Function {} is deprecated since its usage is error-prone (see docs). "
                 "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
                 name);
 
@@ -80,7 +80,11 @@ public:
         return false;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Finalizing an arbitrary aggregate state can throw. The declaration above answers a different
+    /// question, so it must not decide whether unused rows of a replicated argument are finalized.
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

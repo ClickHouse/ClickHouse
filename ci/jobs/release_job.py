@@ -9,6 +9,7 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
+import dataclasses
 import os
 import re
 import shlex
@@ -78,12 +79,6 @@ def parse_args() -> argparse.Namespace:
         help="Git reference (branch or commit sha) from which the release was created",
     )
     parser.add_argument(
-        "--release-type",
-        choices=("new", "patch"),
-        default=None,
-        help="The type of release",
-    )
-    parser.add_argument(
         "--assignee",
         type=str,
         default=None,
@@ -115,8 +110,6 @@ def parse_args() -> argparse.Namespace:
 
     if args.ref is None:
         args.ref = _wi("ref")
-    if args.release_type is None:
-        args.release_type = _wi("type") or None
     if not args.dry_run:
         args.dry_run = _wi("dry-run").lower() == "true"
     if not args.skip_repo:
@@ -127,10 +120,6 @@ def parse_args() -> argparse.Namespace:
         args.assignee = _wi("assignee")
 
     assert args.ref, "ref must be set via --ref or workflow dispatch input 'ref'"
-    assert args.release_type in (
-        "new",
-        "patch",
-    ), "release-type must be 'new' or 'patch'"
 
     return args
 
@@ -177,11 +166,22 @@ def main():
 
     results = []
     ok = True
+    log_files = ["/tmp/reprepro.log", "/tmp/createrepo_c.log", os.path.expanduser("~/fuse_mount.log")]
+    for log_file in log_files:
+        Path(log_file).touch()
+    log_files.append(RELEASE_INFO_FILE)
+
+    def existing_files():
+        return [p for p in log_files if os.path.isfile(p)]
 
     def step(**kwargs):
         nonlocal ok
         if not ok:
             return
+        # A timeout kill skips complete_job, so the runner uploads the files of the last checkpoint
+        Result.create_from(
+            results=results, stopwatch=stopwatch, status=Result.Status.RUNNING, files=existing_files()
+        ).dump_atomically()
         results.append(Result.from_commands_run(**kwargs))
         if results[-1].status != Result.Status.OK:
             ok = False
@@ -217,11 +217,11 @@ def main():
         name="Configure Git Auth for Release Pushes",
         command=[
             # The checkout step authenticates `origin` with the default
-            # GITHUB_TOKEN through an http extraheader. Release pushes (tags,
-            # the new release branch, the version-bump branch) must use the
-            # robot token instead so they carry the right permissions and
-            # trigger downstream workflows such as ReleaseBranchCI. Drop the
-            # extraheader and let gh's credential helper supply $GH_TOKEN.
+            # GITHUB_TOKEN through an http extraheader. Release pushes (the tag,
+            # the changelog/version-bump commit) must use the robot token instead
+            # so they carry the right permissions and trigger downstream workflows
+            # such as ReleaseBranchCI. Drop the extraheader and let gh's
+            # credential helper supply $GH_TOKEN.
             "git config --unset-all http.https://github.com/.extraheader || true",
             "gh auth setup-git",
         ],
@@ -232,8 +232,8 @@ def main():
     # mutation (tag push, GitHub release, repo export). Pushing docker images
     # is part of the release contract, so a missing/expired registry token must
     # stop the run before partial publication. Gated on the docker phase running
-    # this attempt (patch, not dry-run, docker not skipped).
-    if args.release_type == "patch" and not args.dry_run and not args.skip_docker:
+    # this attempt (not dry-run, docker not skipped).
+    if not args.dry_run and not args.skip_docker:
 
         def docker_login():
             Shell.check(
@@ -250,7 +250,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.skip_repo:
+    if not args.skip_repo:
         # Skipped on dry-run (local convenience).
         if not args.dry_run:
             step(
@@ -322,7 +322,7 @@ def main():
         name="Prepare Release Info",
         command=[
             f"python3 ./ci/jobs/scripts/create_release.py --prepare-release-info"
-            f" --ref {shlex.quote(args.ref)} --release-type {args.release_type}"
+            f" --ref {shlex.quote(args.ref)} --release-type patch"
             f"{' --skip-repo' if args.skip_repo else ''}"
             f"{' --skip-docker' if args.skip_docker else ''}"
             f" {dry_run_flag}".strip()
@@ -341,12 +341,6 @@ def main():
         ) as release_info:
             release_info.push_release_tag(dry_run=args.dry_run)
 
-    def _push_new_release_branch():
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
-        ) as release_info:
-            release_info.push_new_release_branch(dry_run=args.dry_run)
-
     def _bump_version():
         with ReleaseContextManager(
             release_progress=ReleaseProgress.BUMP_VERSION
@@ -355,7 +349,7 @@ def main():
 
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag, so a missing-artifacts run aborts without leaving a tag behind.
-    if args.release_type == "patch" and not args.skip_repo:
+    if not args.skip_repo:
         step(
             name="Download All Release Artifacts",
             command=[
@@ -371,23 +365,9 @@ def main():
         workdir=REPO_PATH,
     )
 
-    if args.release_type == "new":
-        step(
-            name="Push New Release Branch",
-            command=_push_new_release_branch,
-            workdir=REPO_PATH,
-        )
-        # "new" bumps master here (idempotent — it self-checks master's version). "patch" defers its branch bump to the end of the run for recovery-safety; see the deferred step near the end of main.
-        step(
-            name="Bump CH Version and Update Contributors' List",
-            command=_bump_version,
-            workdir=REPO_PATH,
-        )
-
-    # patch generates its changelog and pushes it (with the version bump) to
-    # master, but only when it is not already there so a rerun is idempotent; the
-    # "new" bump self-checks the master version instead. Detection and both uses
-    # of the result live in this one step, so the state stays a local.
+    # Generate the changelog and push it (with the version bump) to master, but
+    # only when it is not already there so a rerun is idempotent. Detection and
+    # both uses of the result live in this one step, so the state stays a local.
     def _push_changelog_to_master():
         if args.dry_run:
             changelog_absent = not release_info.is_tag_pushed
@@ -420,7 +400,7 @@ def main():
             f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
             f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
             f" clickhouse/style-test:latest"
-            f" ./tests/ci/changelog.py -v --debug-helpers"
+            f" ./ci/tools/changelog.py -v --debug-helpers"
             f' --gh-user-or-token "$GH_TOKEN"'
             f" --jobs=5"
             f" --output=./docs/changelogs/{release_info.release_tag}.md {release_info.release_tag}",
@@ -498,14 +478,13 @@ def main():
         finally:
             shutil.rmtree(backup_dir, ignore_errors=True)
 
-    if args.release_type == "patch":
-        step(
-            name="Bump Changelog and Push to master",
-            command=_push_changelog_to_master,
-            workdir=REPO_PATH,
-        )
+    step(
+        name="Bump Changelog and Push to master",
+        command=_push_changelog_to_master,
+        workdir=REPO_PATH,
+    )
 
-    if args.release_type == "patch" and not args.skip_repo:
+    if not args.skip_repo:
         # Restore the working tree after the changelog/version-bump steps, which
         # dirty it. A no-op on recovery / out-of-order runs (they skip the
         # changelog steps); the always-run "Checkout Back" below is the safety net
@@ -528,7 +507,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.skip_repo:
+    if not args.skip_repo:
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
@@ -546,12 +525,7 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if (
-        ok
-        and args.release_type == "patch"
-        and not args.dry_run
-        and not args.skip_docker
-    ):
+    if ok and not args.dry_run and not args.skip_docker:
 
         def _make_docker_build(
             image: str,
@@ -719,30 +693,11 @@ def main():
         ok = False
 
     # Deferred to the end so a rerun before it sees an un-bumped branch and prepare recovers the release; the step self-skips a landed bump (late recovery), so it completes an unfinished bump once and never rewrites a landed one.
-    if args.release_type == "patch":
-        step(
-            name="Bump CH Version and Update Contributors' List",
-            command=_bump_version,
-            workdir=REPO_PATH,
-        )
-
-    # Post the final release status — but only when "Prepare Release Info" ran
-    # this attempt and produced RELEASE_INFO_FILE. If an early setup step failed
-    # before prepare, the file is absent (cleared at the top of main), so
-    # --post-status would raise FileNotFoundError trying to read it; skip it and
-    # let the aggregated job Result (praktika Slack feed) report the failing
-    # setup step instead.
-    if os.path.exists(RELEASE_INFO_FILE):
-        results.append(
-            Result.from_commands_run(
-                name="Post Slack Message",
-                command=[
-                    f"python3 ./ci/jobs/scripts/create_release.py --post-status"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
-        )
+    step(
+        name="Bump CH Version and Update Contributors' List",
+        command=_bump_version,
+        workdir=REPO_PATH,
+    )
 
     # Always remove the publishing credentials and the signing-key home so they
     # do not persist for a later job on a reused self-hosted runner.
@@ -778,18 +733,40 @@ def main():
             workdir=REPO_PATH,
         )
     )
+    if results[-1].status != Result.Status.OK:
+        ok = False
 
-    log_files = [
-        p
-        for p in [
-            "/tmp/reprepro.log",
-            "/tmp/createrepo_c.log",
-            os.path.expanduser("~/fuse_mount.log"),
-            RELEASE_INFO_FILE,
-        ]
-        if os.path.isfile(p)
-    ]
-    Result.create_from(results=results, stopwatch=stopwatch, files=log_files).complete_job()
+    def post_slack_message():
+        release_info = ReleaseInfo.from_file()
+        title = "New release branch" if release_info.is_new_release_branch() else "New release"
+        print(f"{title}: {release_info.release_tag}")
+        # ci_buddy needs PyGithub and unidiff; importing here keeps the other steps free of them
+        from ci_buddy import CIBuddy
+        from slack_ids import LESHIKUS
+
+        buddy = CIBuddy(dry_run=args.dry_run)
+        if ok:
+            buddy.post_done(f"Completed: {title}", dataclasses.asdict(release_info))
+        else:
+            buddy.post_critical(
+                f"<@{LESHIKUS}> Failed: {title}",
+                dataclasses.asdict(release_info),
+                channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
+            )
+
+    # RELEASE_INFO_FILE exists only if "Prepare Release Info" ran this attempt
+    if os.path.exists(RELEASE_INFO_FILE):
+        results.append(
+            Result.from_commands_run(
+                name="Post Slack Message",
+                command=post_slack_message,
+                workdir=REPO_PATH,
+            )
+        )
+
+    Result.create_from(
+        results=results, stopwatch=stopwatch, files=existing_files()
+    ).complete_job()
 
 
 if __name__ == "__main__":

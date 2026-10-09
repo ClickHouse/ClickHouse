@@ -1,10 +1,15 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/PostingListSegment.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
+#include <mutex>
 
 namespace DB
 {
+
+class ColumnString;
 
 /// Drives text-index analysis during a granule's dictionary scan: folds per-query
 /// token postings and row ranges, then bypasses queries that have failed or are no
@@ -12,6 +17,14 @@ namespace DB
 class TextIndexAnalyzer
 {
 public:
+    /// Half-open range of dictionary token keys. An empty `end` reaches the end of the dictionary.
+    /// Equal bounds are the single key `begin`, not an empty range.
+    struct TokenKeyRange
+    {
+        String begin;
+        String end;
+    };
+
     struct ReadableRows
     {
     public:
@@ -56,6 +69,14 @@ public:
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(const PostingList & token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
+
+        /// Sorted array of `postings`, built once and shared by all readers of the granule.
+        /// It is clipped to this query's readable rows, so it must never go to the server-wide postings cache.
+        FlatPostingsPtr getFlatPostings() const;
+
+    private:
+        mutable std::once_flag flat_postings_once;
+        mutable FlatPostingsPtr flat_postings;
     };
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
@@ -79,13 +100,17 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
+    /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
+    std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
+    bool canFilterTokensByLiterals() const;
+    /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
+    void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 
     /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
     /// estimates for unread multi-block tokens) exceeds `selectivity_threshold * total_rows`.
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
-    size_t memoryUsageBytes() const;
 
 private:
     using QueryHashes = absl::flat_hash_set<UInt128>;
@@ -94,6 +119,9 @@ private:
     /// then cleans up `queries_by_token` for any query that just failed.
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
+
+    static void markPatternCandidateTokens(
+        const OptimizedRegularExpression & pattern, const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks);
 
     /// Removes the query from `queries_by_token` for all affected tokens, so they stop passing `isTokenNeeded`.
     void detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder);
@@ -107,8 +135,8 @@ private:
     /* Fields built in the constructor from MergeTreeIndexConditionText. */
 
     TextSearchMode global_search_mode;
-    /// One builder per parsed query, keyed by the query's stable hash.
-    absl::flat_hash_map<UInt128, QueryBuilder> query_builders;
+    /// One builder per parsed query, keyed by the query's stable hash. Node map because `QueryBuilder` is not movable.
+    absl::node_hash_map<UInt128, QueryBuilder> query_builders;
     /// Active queries that still depend on a given token.
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.

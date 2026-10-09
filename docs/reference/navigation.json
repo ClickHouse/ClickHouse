@@ -196,9 +196,7 @@
           "expanded": false,
           "group": "Operators",
           "pages": [
-            "reference/operators/index",
-            "reference/operators/exists",
-            "reference/operators/distributed-ddl"
+            "reference/operators/index"
           ]
         }
       ]
@@ -420,14 +418,23 @@
             "reference/engines/database-engines/index",
             "reference/engines/database-engines/atomic",
             "reference/engines/database-engines/backup",
+            "reference/engines/database-engines/cluster",
             "reference/engines/database-engines/datalake",
+            "reference/engines/database-engines/dictionary",
+            "reference/engines/database-engines/filesystem",
+            "reference/engines/database-engines/hdfs",
             "reference/engines/database-engines/materialized-postgresql",
+            "reference/engines/database-engines/memory",
             "reference/engines/database-engines/mysql",
+            "reference/engines/database-engines/ordinary",
+            "reference/engines/database-engines/overlay",
             "reference/engines/database-engines/postgresql",
             "reference/engines/database-engines/remote",
             "reference/engines/database-engines/replicated",
+            "reference/engines/database-engines/s3",
             "reference/engines/database-engines/shared",
-            "reference/engines/database-engines/sqlite"
+            "reference/engines/database-engines/sqlite",
+            "reference/engines/database-engines/url"
           ]
         }
       ]
@@ -591,6 +598,7 @@
                 "reference/functions/aggregate-functions/maxIntersectionsPosition",
                 "reference/functions/aggregate-functions/maxMap",
                 "reference/functions/aggregate-functions/meanZTest",
+                "reference/functions/aggregate-functions/mergedJSONPatch",
                 "reference/functions/aggregate-functions/median",
                 "reference/functions/aggregate-functions/min",
                 "reference/functions/aggregate-functions/minMap",
@@ -632,6 +640,15 @@
                 "reference/functions/aggregate-functions/quantileTimingWeighted",
                 "reference/functions/aggregate-functions/quantilesTimingWeighted",
                 "reference/functions/aggregate-functions/rankCorr",
+                "reference/functions/aggregate-functions/regr_avgx",
+                "reference/functions/aggregate-functions/regr_avgy",
+                "reference/functions/aggregate-functions/regr_count",
+                "reference/functions/aggregate-functions/regr_intercept",
+                "reference/functions/aggregate-functions/regr_r2",
+                "reference/functions/aggregate-functions/regr_slope",
+                "reference/functions/aggregate-functions/regr_sxx",
+                "reference/functions/aggregate-functions/regr_sxy",
+                "reference/functions/aggregate-functions/regr_syy",
                 "reference/functions/aggregate-functions/simpleLinearRegression",
                 "reference/functions/aggregate-functions/singleValueOrNull",
                 "reference/functions/aggregate-functions/skewPop",
@@ -652,17 +669,38 @@
                 "reference/functions/aggregate-functions/sumMapWithOverflow",
                 "reference/functions/aggregate-functions/sumWithOverflow",
                 "reference/functions/aggregate-functions/theilsU",
+                "reference/functions/aggregate-functions/timeSeriesAvgToGrid",
+                "reference/functions/aggregate-functions/timeSeriesBottomKMasks",
                 "reference/functions/aggregate-functions/timeSeriesChangesToGrid",
+                "reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "reference/functions/aggregate-functions/timeSeriesDerivToGrid",
+                "reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "reference/functions/aggregate-functions/timeSeriesGroupArray",
+                "reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
                 "reference/functions/aggregate-functions/timeSeriesInstantDeltaToGrid",
                 "reference/functions/aggregate-functions/timeSeriesInstantRateToGrid",
+                "reference/functions/aggregate-functions/timeSeriesLastToGrid",
                 "reference/functions/aggregate-functions/timeSeriesLastTwoSamples",
+                "reference/functions/aggregate-functions/timeSeriesLimitKMasks",
+                "reference/functions/aggregate-functions/timeSeriesLinearRegressionToGrid",
+                "reference/functions/aggregate-functions/timeSeriesMadToGrid",
+                "reference/functions/aggregate-functions/timeSeriesMaxToGrid",
+                "reference/functions/aggregate-functions/timeSeriesMinToGrid",
                 "reference/functions/aggregate-functions/timeSeriesPredictLinearToGrid",
+                "reference/functions/aggregate-functions/timeSeriesPresentToGrid",
+                "reference/functions/aggregate-functions/timeSeriesQuantileToGrid",
                 "reference/functions/aggregate-functions/timeSeriesRateToGrid",
                 "reference/functions/aggregate-functions/timeSeriesResampleToGridWithStaleness",
                 "reference/functions/aggregate-functions/timeSeriesResetsToGrid",
+                "reference/functions/aggregate-functions/timeSeriesStddevToGrid",
+                "reference/functions/aggregate-functions/timeSeriesStdvarToGrid",
+                "reference/functions/aggregate-functions/timeSeriesSumToGrid",
+                "reference/functions/aggregate-functions/timeSeriesTimestampOfFirstToGrid",
+                "reference/functions/aggregate-functions/timeSeriesTimestampOfLastToGrid",
+                "reference/functions/aggregate-functions/timeSeriesTimestampOfMaxToGrid",
+                "reference/functions/aggregate-functions/timeSeriesTimestampOfMinToGrid",
+                "reference/functions/aggregate-functions/timeSeriesTopKMasks",
                 "reference/functions/aggregate-functions/topK",
                 "reference/functions/aggregate-functions/topKWeighted",
                 "reference/functions/aggregate-functions/uniq",
@@ -735,7 +773,7 @@
             "reference/functions/table-functions/s3Cluster",
             "reference/functions/table-functions/sqlite",
             "reference/functions/table-functions/timeSeriesData",
-            "reference/functions/table-functions/timeSeriesMetrics",
+            "reference/functions/table-functions/timeSeriesMetricFamilies",
             "reference/functions/table-functions/timeSeriesSamples",
             "reference/functions/table-functions/timeSeriesSelector",
             "reference/functions/table-functions/timeSeriesTags",
@@ -938,6 +976,7 @@
           ]
         },
         "reference/formats/SQLInsert",
+        "reference/formats/SQLite",
         {
           "expanded": false,
           "group": "TabSeparated",
@@ -962,15 +1001,6 @@
         "reference/formats/Values",
         "reference/formats/Vertical",
         "reference/formats/XML"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
-      "group": "Interfaces",
-      "pages": [
-        "reference/interfaces/specs/NativeProtocol",
-        "reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1022,6 +1052,7 @@
         "reference/system-tables/codecs",
         "reference/system-tables/collations",
         "reference/system-tables/columns",
+        "reference/system-tables/columns_cache",
         "reference/system-tables/completions",
         "reference/system-tables/constraints",
         "reference/system-tables/contributors",
@@ -1076,9 +1107,9 @@
         "reference/system-tables/instrumentation",
         "reference/system-tables/jemalloc_arena_bins",
         "reference/system-tables/jemalloc_bins",
-        "reference/system-tables/jemalloc_stats",
         "reference/system-tables/jemalloc_profile_text",
         "reference/system-tables/jemalloc_sampled_allocations",
+        "reference/system-tables/jemalloc_stats",
         "reference/system-tables/kafka_consumers",
         "reference/system-tables/keeper_changelogs",
         "reference/system-tables/keeper_cluster",

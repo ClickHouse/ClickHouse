@@ -21,7 +21,7 @@ namespace DB
   *
   * Plain `SET` and `SET ROLE` queries are handled by the standard parser before
   * the feature gate so that settings like `dialect` can always be changed back,
-  * even when `allow_experimental_trino_dialect` is off (recovery from
+  * even when `enable_trino_dialect` is off (recovery from
   * misconfigured profiles). The Trino `SET SESSION ...` form is excluded from
   * this shortcut: it is rewritten by the translator instead.
   * INSERT statements with inline data (VALUES or FORMAT) are
