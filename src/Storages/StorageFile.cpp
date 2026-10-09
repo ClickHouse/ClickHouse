@@ -2782,10 +2782,11 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     for (const auto & path : paths)
     {
         struct stat file_stat{};
-        if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode))
+        PlatformFileVersion file_version;
+        if (0 != platformStat(path, file_stat) || !S_ISREG(file_stat.st_mode) || 0 != platformFileVersion(path, file_version))
             return {};
 
-        String token = computeFileCacheVersionToken(file_stat);
+        String token = computeFileCacheVersionToken(file_version);
         files_hash.update(path.size());
         files_hash.update(path);
         files_hash.update(token.size());
