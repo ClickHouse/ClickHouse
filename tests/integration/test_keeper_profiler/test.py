@@ -27,6 +27,19 @@ node3 = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
+
+        if node.is_built_with_memory_sanitizer():
+            pytest.skip("The sampling query profiler is unavailable under MemorySanitizer")
+
+        for instance, config_name in (
+            (node, "keeper_config1.xml"),
+            (node2, "keeper_config2.xml"),
+            (node3, "keeper_config3.xml"),
+        ):
+            config_path = f"/etc/clickhouse-server/config.d/{config_name}"
+            instance.replace_in_config(config_path, ">0<", ">1000000000<")
+            instance.restart_clickhouse()
+
         yield cluster
 
     finally:

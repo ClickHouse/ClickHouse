@@ -21,6 +21,7 @@ struct OptimizerContext
     bool distributed_plan_execute_locally = false;
     bool distributed_aggregation_memory_efficient = true;
     bool distributed_plan_force_shuffle_aggregation = false;
+    bool cascades_aggregation_pushdown = true;
     bool exact_rows_before_limit = false;
     /// Sort settings taken from the query (size limits, spill thresholds), used when
     /// SortingEnforcer builds a new sort so it matches the rest of the query's pipeline.

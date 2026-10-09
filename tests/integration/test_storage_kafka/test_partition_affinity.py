@@ -64,7 +64,7 @@ def create_affinity_shard(instance, topic_name, shard_num, shard_count, keeper_p
                  kafka_replica_name = '{replica_name}',
                  kafka_partition_shard_num = '{shard_num}',
                  kafka_shard_count = {shard_count}
-        SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+        SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 
         CREATE TABLE test.dst_{table_suffix} (partition_id UInt64, value UInt64)
         ENGINE = MergeTree() ORDER BY (partition_id, value);
@@ -162,7 +162,7 @@ def test_partition_affinity_backward_compatible(kafka_cluster):
             ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_name}', '{topic_name}_cg', 'JSONEachRow', '\\n')
             SETTINGS kafka_keeper_path = '/clickhouse/test/affinity_compat',
                      kafka_replica_name = 'r1'
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 
             CREATE TABLE test.dst_all (partition_id UInt64, value UInt64)
             ENGINE = MergeTree() ORDER BY (partition_id, value);
@@ -200,7 +200,7 @@ def test_partition_affinity_settings_validation(kafka_cluster):
             SETTINGS kafka_keeper_path = '/clickhouse/test/bad1',
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '1'
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
             """
         )
     assert "must be specified together" in str(exc_info.value)
@@ -214,7 +214,7 @@ def test_partition_affinity_settings_validation(kafka_cluster):
             SETTINGS kafka_keeper_path = '/clickhouse/test/bad2',
                      kafka_replica_name = 'r1',
                      kafka_shard_count = 2
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
             """
         )
     assert "must be specified together" in str(exc_info.value)
@@ -229,7 +229,7 @@ def test_partition_affinity_settings_validation(kafka_cluster):
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = 'abc',
                      kafka_shard_count = 2
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
             """
         )
     assert "must be a valid non-negative integer" in str(exc_info.value)
@@ -244,7 +244,7 @@ def test_partition_affinity_settings_validation(kafka_cluster):
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '{{kafka_shard_num_bad}}',
                      kafka_shard_count = 2
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
             """
         )
     assert "must be between 1 and" in str(exc_info.value)
@@ -259,7 +259,7 @@ def test_partition_affinity_settings_validation(kafka_cluster):
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '0',
                      kafka_shard_count = 2
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
             """
         )
     assert "must be between 1 and" in str(exc_info.value)
@@ -274,7 +274,7 @@ def test_partition_affinity_settings_validation(kafka_cluster):
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '{{kafka_shard_num_empty}}',
                      kafka_shard_count = 2
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
             """
         )
     assert "expanded to an empty string" in str(exc_info.value)
@@ -467,7 +467,7 @@ def test_partition_affinity_multi_replica_failover(kafka_cluster):
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '1',
                      kafka_shard_count = {shard_count}
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 
             CREATE TABLE test.dst_mr_r1 (partition_id UInt64, value UInt64)
             ENGINE = MergeTree() ORDER BY (partition_id, value);
@@ -486,7 +486,7 @@ def test_partition_affinity_multi_replica_failover(kafka_cluster):
                      kafka_replica_name = 'r2',
                      kafka_partition_shard_num = '1',
                      kafka_shard_count = {shard_count}
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 
             CREATE TABLE test.dst_mr_r2 (partition_id UInt64, value UInt64)
             ENGINE = MergeTree() ORDER BY (partition_id, value);
@@ -508,7 +508,7 @@ def test_partition_affinity_multi_replica_failover(kafka_cluster):
                      kafka_replica_name = 'r3',
                      kafka_partition_shard_num = '2',
                      kafka_shard_count = {shard_count}
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 
             CREATE TABLE test.dst_mr_r3 (partition_id UInt64, value UInt64)
             ENGINE = MergeTree() ORDER BY (partition_id, value);
@@ -613,7 +613,7 @@ def test_partition_affinity_with_shard_macro(kafka_cluster):
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '{{shard}}',
                      kafka_shard_count = {shard_count}
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 
             CREATE TABLE test.dst_macro (partition_id UInt64, value UInt64)
             ENGINE = MergeTree() ORDER BY (partition_id, value);
@@ -661,7 +661,7 @@ def test_partition_affinity_shard_macro_reattach(kafka_cluster):
                      kafka_replica_name = 'r1',
                      kafka_partition_shard_num = '{{shard}}',
                      kafka_shard_count = {shard_count}
-            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 
             CREATE TABLE test.dst_reattach (partition_id UInt64, value UInt64)
             ENGINE = MergeTree() ORDER BY (partition_id, value);
@@ -736,7 +736,7 @@ def test_partition_affinity_layout_change_rejected(kafka_cluster):
                          kafka_replica_name = 'r1',
                          kafka_partition_shard_num = '2',
                          kafka_shard_count = 2
-                SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+                SETTINGS allow_kafka_offsets_storage_in_keeper=1;
                 """
             )
         assert "does not match" in str(exc_info.value)
