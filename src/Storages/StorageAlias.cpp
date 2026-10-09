@@ -681,6 +681,7 @@ void registerStorageAlias(StorageFactory & factory)
             target_database,
             target_table);
     },
+    SecretArgumentsSpec{},
     {
         .supports_schema_inference = true
     },

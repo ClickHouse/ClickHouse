@@ -21,6 +21,7 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/SipHash.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
@@ -41,6 +42,7 @@ namespace Setting
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
+    extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_download_buffer_size;
@@ -248,6 +250,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
+    format_settings.parquet.apply_string_filters = settings[Setting::apply_string_filters_during_scan];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
     format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];
@@ -309,6 +312,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.squash_consecutive_ms = settings[Setting::output_format_pretty_squash_consecutive_ms];
     format_settings.pretty.squash_max_wait_ms = settings[Setting::output_format_pretty_squash_max_wait_ms];
     format_settings.pretty.highlight_trailing_spaces = settings[Setting::output_format_pretty_highlight_trailing_spaces];
+    format_settings.pretty.display_control_characters = settings[Setting::output_format_pretty_display_control_characters];
     format_settings.pretty.multiline_fields = settings[Setting::output_format_pretty_multiline_fields];
     format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
     format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
@@ -465,6 +469,53 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     }
 
     return format_settings;
+}
+
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context)
+{
+    auto format_settings = getFormatSettings(context);
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        format_settings.native.encode_types_in_binary_format = false;
+        format_settings.native.decode_types_in_binary_format = false;
+    }
+    return format_settings;
+}
+
+UInt64 getFormatSettingsHash(const Settings & settings)
+{
+    /// The settings `getFormatSettings` reads: every one of `FORMAT_FACTORY_SETTINGS`, so that a setting
+    /// added there is covered without anyone remembering this place, plus the core settings it reads
+    /// besides.
+    ///
+    /// A format setting is hashed only when its effective value differs from the declared default, so a
+    /// session that spells a default explicitly shares the hash of a session that left it alone, and
+    /// sessions at the defaults all share one hash. The `changed` flag is checked first, so only the
+    /// few settings a session actually set are compared. The order is the declaration order, so the
+    /// hash does not depend on the order the session set them in.
+    SipHash hash;
+#define HASH_FORMAT_SETTING_IF_NOT_DEFAULT(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    if (const auto & field = settings[Setting::NAME]; field.changed) \
+    { \
+        String value = field.toString(); \
+        if (value != SettingField##TYPE{DEFAULT}.toString()) \
+        { \
+            hash.update(std::string_view(#NAME)); \
+            hash.update(value); \
+        } \
+    }
+    /// No format setting has an alias, so the alias macro is never expanded (an alias names the same
+    /// field as its setting anyway).
+    FORMAT_FACTORY_SETTINGS(HASH_FORMAT_SETTING_IF_NOT_DEFAULT, HASH_FORMAT_SETTING_IF_NOT_DEFAULT)
+#undef HASH_FORMAT_SETTING_IF_NOT_DEFAULT
+
+    /// The core settings `getFormatSettings` reads besides; keep in step with the function above.
+    hash.update(static_cast<UInt64>(settings[Setting::aggregate_function_input_format].value));
+    hash.update(settings[Setting::allow_special_serialization_kinds_in_output_formats].value);
+    hash.update(settings[Setting::enable_nullable_tuple_type].value);
+    hash.update(settings[Setting::http_write_exception_in_output_format].value);
+    hash.update(settings[Setting::max_parser_depth].value);
+    return hash.get64();
 }
 
 FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)

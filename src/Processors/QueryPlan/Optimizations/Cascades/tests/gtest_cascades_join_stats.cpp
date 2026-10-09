@@ -4,6 +4,8 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Core/Joins.h>
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <utility>
 
 using namespace DB;
@@ -76,4 +78,20 @@ TEST(CascadesJoinStats, MaxRowCountUpperBound)
     EXPECT_DOUBLE_EQ(clampJoinMaxRowCount(JoinKind::Inner, JoinStrictness::All, /*product=*/1000, /*left=*/100, /*right=*/10), 1000.0);
     /// Left outer never drops below the preserved side even when the right side is empty.
     EXPECT_GE(clampJoinMaxRowCount(JoinKind::Left, JoinStrictness::All, /*product=*/0, /*left=*/100, /*right=*/0), 100.0);
+}
+
+TEST(CascadesJoinStats, ToUInt64Saturating)
+{
+    using QueryPlanOptimizations::toUInt64Saturating;
+    constexpr UInt64 max = std::numeric_limits<UInt64>::max();
+    constexpr Float64 two_to_64 = 18446744073709551616.0;
+
+    EXPECT_EQ(toUInt64Saturating(0.0), 0u);
+    EXPECT_EQ(toUInt64Saturating(-5.0), 0u);
+    EXPECT_EQ(toUInt64Saturating(std::numeric_limits<Float64>::quiet_NaN()), 0u);
+    EXPECT_EQ(toUInt64Saturating(12345.9), 12345u);
+    EXPECT_EQ(toUInt64Saturating(std::nextafter(two_to_64, 0.0)), max - 2047);
+    EXPECT_EQ(toUInt64Saturating(two_to_64), max);
+    EXPECT_EQ(toUInt64Saturating(1e22), max);
+    EXPECT_EQ(toUInt64Saturating(std::numeric_limits<Float64>::infinity()), max);
 }
