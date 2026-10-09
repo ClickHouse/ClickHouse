@@ -383,6 +383,7 @@ Settings:
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Not supported together with `json`. Default: 0.
+- `fragments` — For a query executed by stateless workers (`make_distributed_plan = 1`), prints the plan of every query fragment, the exchanges between the fragments and their dependencies. Requires `optimize = 1`. Not supported together with `json` or `distributed`. Default: 0. See [Query fragments](#explain-plan-fragments).
 - `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1.
 - `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
@@ -847,6 +848,64 @@ Join (JOIN FillRightFirst)
          Read type: Default
          Parts: 1 | Granules: 1
          Output: id, value
+```
+
+#### Query fragments {#explain-plan-fragments}
+
+With `fragments` = 1, a query that is executed by stateless workers (`make_distributed_plan = 1`) is shown as it is cut for execution: one plan per query fragment. A query fragment is a part of the plan that is executed as one or more parallel tasks; the fragment run by the initiator is printed first, and the other fragments follow in the reverse order of their ids, so that data flows upward as in a plan tree. Every fragment starts with a header that shows its id, its stage name, its role (`initiator` or `worker`) and its number of tasks. The send and receive steps show the name of the exchange they write to or read from.
+
+The fragments are followed by three sections:
+
+- `Exchanges` — how the data is transferred between two fragments: by the hash of the keys (`hash(...)`), to every task of the consumer (`broadcast`), into one task (`gather`, with `sorted by` when the sort order is kept) or without regard to the values (`any`); whether it is sent over the network while it is produced (`pipelined`) or written to temporary files first (`materialised`); and the number of source and destination buckets.
+- `Dependencies` — for every fragment, the fragments it reads from. A `streaming` dependency is processed as the rows arrive; a `blocking` dependency must be finished before the consumer produces output, for example the build side of a join, a merge of aggregation states, or a full sort. The reason is printed next to it.
+- `Levels` — fragment ids grouped by their depth, from the fragments without dependencies to the initiator. The fragments of one level do not depend on each other.
+
+When the query is not distributed, the plan is printed as without `fragments`. If the query could not be distributed and fell back to local execution, the reason is printed after the plan as `Not distributed: <reason>`.
+
+Example:
+
+```sql
+EXPLAIN fragments = 1
+SELECT count()
+FROM big, small
+WHERE small.sid = (big.bid + 1) % 5000
+SETTINGS make_distributed_plan = 1, explain_query_plan_default = 'legacy';
+```
+
+```text
+Fragment 3 (main, initiator, tasks=1)
+GatherSend (final_result)
+  Expression ((Project names + Projection))
+    MergingAggregated (merge)
+      GatherReceive (exchange_2)
+
+Fragment 2 (stage_2, worker, tasks=3)
+GatherSend (exchange_2)
+  Aggregating (partial)
+    Expression (Before GROUP BY)
+      JoinLogical
+        ShuffleReceive (exchange_0)
+        BroadcastReceive (exchange_1)
+
+Fragment 1 (stage_1, worker, tasks=1)
+BroadcastSend (exchange_1)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.small)
+
+Fragment 0 (stage_0, worker, tasks=1)
+ShuffleSend (exchange_0)
+  Expression (Change column names to column identifiers)
+    ReadFromMergeTree (default.big)
+
+Exchanges:
+  exchange_0: any, pipelined, Fragment 0 -> Fragment 2, buckets 1 -> 3
+  exchange_1: broadcast, pipelined, Fragment 1 -> Fragment 2, buckets 1 -> 3
+  exchange_2: gather, pipelined, Fragment 2 -> Fragment 3, buckets 3 -> 1
+Dependencies:
+  Fragment 3 <- Fragment 2 (exchange_2, blocking: merge of aggregation states)
+  Fragment 2 <- Fragment 0 (exchange_0, streaming)
+  Fragment 2 <- Fragment 1 (exchange_1, blocking: build side of JoinLogical)
+Levels: [0, 1] -> [2] -> [3]
 ```
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
