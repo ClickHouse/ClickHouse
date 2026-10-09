@@ -33,6 +33,10 @@ public:
     /// reads and decodes whole blocks.
     static constexpr size_t block_bytes = 4096;
 
+    /// A block takes at most this many bytes with its header, which records the layout and the number of
+    /// keys, and the size of the payload of packed gaps.
+    static constexpr size_t max_block_bytes_with_header = sizeof(UInt8) + 2 * sizeof(UInt32) + block_bytes;
+
     /// Receives the blocks that an `Encoder` writes, in ascending order of their keys. The sink decides how
     /// to store the blocks, so the encoder does not depend on files, frames, or codecs.
     class BlockSink

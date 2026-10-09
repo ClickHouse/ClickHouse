@@ -97,12 +97,16 @@ void DiskSetBlockFormat<Key>::Encoder::writeBlock(size_t count, BlockSink & sink
     const std::span<const Key> block_keys(pending_keys.data(), count);
 
     WriteBuffer & out = sink.startBlock(block_keys.front(), /*compressible=*/pending_layout == Layout::Unpacked);
+    [[maybe_unused]] const size_t block_start = out.count();
     writeBinaryLittleEndian(static_cast<UInt8>(pending_layout), out); /// Header: packed, or keys as they are
     writeBinaryLittleEndian(static_cast<UInt32>(count), out); /// Header: the number of keys
     if (pending_layout == Layout::Unpacked)
         out.write(reinterpret_cast<const char *>(block_keys.data()), count * sizeof(Key)); /// Raw keys
     else
         writePackedGaps(block_keys, out);
+
+    /// Readers size their buffers for `max_block_bytes_with_header`, which the block must not exceed.
+    chassert(out.count() - block_start <= max_block_bytes_with_header);
 
     pending_keys.erase(pending_keys.begin(), pending_keys.begin() + count); /// The rest starts the next block
 }

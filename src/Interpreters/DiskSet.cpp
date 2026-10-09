@@ -28,7 +28,7 @@ class DiskSetImpl<Key>::BlockReader
 public:
     explicit BlockReader(const DiskSetImpl & set_)
         : set(set_)
-        , in(set.file->readRaw(BlockFormat::block_bytes))
+        , in(set.file->readRaw(getBufferSize(set)))
     {
     }
 
@@ -49,11 +49,20 @@ public:
     }
 
 private:
+    /// Returns the size of the buffer: the largest frame of a block, with the bytes that its codec needs
+    /// after it.
+    static size_t getBufferSize(const DiskSetImpl & set)
+    {
+        return std::max(
+            CompressedReadBufferBase::getInPlaceInputBufferSize(*set.compressible_block_codec, BlockFormat::max_block_bytes_with_header),
+            CompressedReadBufferBase::getInPlaceInputBufferSize(*set.incompressible_block_codec, BlockFormat::max_block_bytes_with_header));
+    }
+
     /// The set whose file and directory the reader reads. It outlives the reader, which exists for one call.
     const DiskSetImpl & set;
 
-    /// The reader reads the file through its own buffer of the size of a block. A frame that does not
-    /// compress, such as one of hashes, is slightly larger, so it takes two reads.
+    /// The buffer holds the largest frame of a block, so that each block takes one read and its frame is
+    /// decompressed where it is read instead of being copied first.
     std::unique_ptr<SeekableReadBuffer> in;
 
     typename BlockFormat::Decoder decoder;
