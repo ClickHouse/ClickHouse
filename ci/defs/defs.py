@@ -121,13 +121,12 @@ LOOM_SECRETS = [
 # This credential can write the private Vercel Blob store consumed as a build
 # input by the docs frontend. Keep it out of the shared SECRETS list: PR
 # workflows execute untrusted code and must never receive a storage writer.
-REFERENCE_SNAPSHOT_PUBLISH_SECRETS = [
-    Secret.Config(
-        name="vercel-reference-blob-read-write-token",
-        type=Secret.Type.AWS_SSM_PARAMETER,
-        region="us-east-1",
-    ),
-]
+REFERENCE_SNAPSHOT_PUBLISH_SECRET = Secret.Config(
+    name="vercel-reference-blob-read-write-token",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
+)
+REFERENCE_SNAPSHOT_PUBLISH_SECRETS = [REFERENCE_SNAPSHOT_PUBLISH_SECRET]
 
 # In-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com (amd64) /
 # ports.ubuntu.com (arm64) are frequently unreachable over IPv4 from the runners

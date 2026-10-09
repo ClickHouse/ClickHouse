@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from ci.defs.defs import BASE_BRANCH
 from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Utils
@@ -31,14 +32,35 @@ def publish_snapshot() -> bool:
     return True
 
 
+def on_base_branch() -> bool:
+    """Refuse to replace the shared Head archive from a feature branch."""
+    branch = Info().git_branch
+    if branch != BASE_BRANCH:
+        print(
+            "Refusing to publish the shared Head reference snapshot from "
+            f"'{branch}': run this workflow against '{BASE_BRANCH}' instead "
+            "(for example, a workflow_dispatch from the base branch).",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 if __name__ == "__main__":
     os.chdir(REPO_ROOT)
-    Result.create_from(
-        results=[
+    results = [
+        Result.from_commands_run(
+            name="Run against base branch", command=on_base_branch
+        )
+    ]
+    # A scheduled workflow also exposes workflow_dispatch. Fail closed when it
+    # is run from another branch, before resolving the Vercel Blob writer.
+    if results[-1].is_ok():
+        results.append(
             Result.from_commands_run(
                 name="Publish reference snapshot to Vercel Blob",
                 command=publish_snapshot,
                 with_info_on_failure=True,
             )
-        ]
-    ).complete_job()
+        )
+    Result.create_from(results=results).complete_job()

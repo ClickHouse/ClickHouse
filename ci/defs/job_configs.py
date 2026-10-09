@@ -15,6 +15,7 @@ from ci.defs.defs import (
     ArtifactNames,
     BuildTypes,
     JobNames,
+    REFERENCE_SNAPSHOT_PUBLISH_SECRETS,
     RunnerLabels,
 )
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
@@ -1955,6 +1956,10 @@ class JobConfigs:
                 "./ci/jobs/scripts/docs/reference_snapshot/publish_reference_snapshot.py",
             ],
         ),
+        # The Vercel Blob writer is intentionally available only to the final,
+        # trusted transport step. The binary build and snapshot export must not
+        # be able to resolve it.
+        secrets=REFERENCE_SNAPSHOT_PUBLISH_SECRETS,
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
