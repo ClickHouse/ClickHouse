@@ -5,6 +5,7 @@
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -45,6 +46,7 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NO_FILE_IN_DATA_PART;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
@@ -126,6 +128,15 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 
     try
     {
+        /// Keep a stable read order; presence streams are independent of value streams.
+        read_order.reserve(columns_to_read.size());
+        for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+            if (!typeid_cast<const SerializationMapKeyPresence *>(serializations[pos].get()))
+                read_order.push_back(pos);
+        for (size_t pos = 0; pos < columns_to_read.size(); ++pos)
+            if (typeid_cast<const SerializationMapKeyPresence *>(serializations[pos].get()))
+                read_order.push_back(pos);
+
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
             /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
@@ -336,7 +347,7 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
     deserializePrefixForAllColumns(num_columns, from_mark);
 
     size_t read_rows = 0;
-    for (size_t pos = 0; pos < num_columns; ++pos)
+    for (size_t pos : read_order)
     {
         /// Column was dropped by a pending mutation or invalidated.
         /// Don't read stale data; let defaults be used.
@@ -351,6 +362,16 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
             continue;
 
         const auto & column_to_read = columns_to_read[pos];
+        /// Do not turn an absent Map column into a present empty Map (or a missing key).
+        /// Leaving the result null lets the normal missing-column path evaluate DEFAULT.
+        if ((typeid_cast<const SerializationMapKeyColumns *>(serializations[pos].get())
+             || typeid_cast<const SerializationMapKeyColumn *>(serializations[pos].get())
+             || typeid_cast<const SerializationMapKeyPresence *>(serializations[pos].get()))
+            && !data_part_info_for_read->getColumnsDescription().hasPhysical(column_to_read.getNameInStorage()))
+        {
+            res_columns[pos] = nullptr;
+            continue;
+        }
 
         /// The column may already be present (we append the values to the end) or empty; either way it is
         /// uniquely owned here, so we read into it directly without cloning.
@@ -1034,10 +1055,37 @@ void MergeTreeReaderWide::addStreams(
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
           */
+        bool is_map_key_columns_key = false;
+        for (const auto & elem : substream_path)
+        {
+            if (elem.type == ISerialization::Substream::MapKeyValue || elem.type == ISerialization::Substream::MapKeyPresence)
+            {
+                is_map_key_columns_key = true;
+                break;
+            }
+        }
+
         if (!stream_name)
         {
-            has_all_streams = false;
+            /// A `with_key_columns` Map key that is absent from this part has no `m.values.<key>` /
+            /// `m.exists.<key>` files. That is expected: the reader fills `NULL`s. Treating it as
+            /// a partial read would make `fillMissingColumns` replace those `NULL`s with the basic
+            /// `V` default.
+            if (!is_map_key_columns_key)
+                has_all_streams = false;
             return;
+        }
+
+        /// Checksums list a key that the manifest recorded. A missing data file is
+        /// corruption, not "key does not exist".
+        if (is_map_key_columns_key
+            && !data_part_info_for_read->getDataPartStorage()->existsFile(*stream_name + DATA_FILE_EXTENSION))
+        {
+            throw Exception(
+                ErrorCodes::NO_FILE_IN_DATA_PART,
+                "Data file '{}.bin' for with_key_columns Map key is missing from part {}",
+                *stream_name,
+                data_part_info_for_read->getPartName());
         }
 
         getOrAddStream(substream_path, *stream_name);

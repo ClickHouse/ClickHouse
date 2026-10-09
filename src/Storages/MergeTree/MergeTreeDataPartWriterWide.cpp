@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Logger.h>
+#include <base/scope_guard.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -127,14 +128,15 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     MergeTreeIndexGranularityPtr index_granularity_,
-    WrittenOffsetSubstreams * written_offset_substreams_)
+    WrittenOffsetSubstreams * written_offset_substreams_,
+    const PlannedMapKeyColumnsKeys & map_key_columns_keys_)
     : MergeTreeDataPartWriterOnDisk(
             data_part_name_, logger_name_, serializations_,
             data_part_storage_, index_granularity_info_, storage_settings_,
             columns_list_, metadata_snapshot_,
             indices_to_recalc_, marks_file_extension_,
             default_codec_, settings_, std::move(index_granularity_),
-            written_offset_substreams_)
+            written_offset_substreams_, map_key_columns_keys_)
 {
     if (settings.save_marks_in_cache)
     {
@@ -285,6 +287,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     auto serialization = getSerialization(name_and_type.name);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
+    enumerate_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type.name);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
@@ -365,6 +368,9 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
 
 void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
+    /// A rejected later block can leave streams from earlier blocks open after the caller catches the exception.
+    /// A partially written part cannot be reused; cancel all buffers while unwinding this write.
+    scope_guard cancel_on_exception([this] { cancel(); });
     Block block_to_write = block;
 
     /// For some columns the set of streams may depend on the actual column data.
@@ -373,6 +379,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     /// preparations to achieve it.
     prepareBlockForWriting(block_to_write);
 
+    initMapKeyColumnsKeysIfNeeded(block_to_write);
     initStreamsAndSubstreamsIfNeeded();
 
     /// Fill index granularity for this block
@@ -458,6 +465,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
     shiftCurrentMark(granules_to_write);
+    cancel_on_exception.release();
 }
 
 void MergeTreeDataPartWriterWide::writeSingleMark(const NameAndTypePair & name_and_type,
@@ -522,6 +530,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
     auto serialization = getSerialization(name_and_type.name);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
+    enumerate_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type.name);
     serialization->enumerateStreams(enumerate_settings, callback, data);
     return result;
 }
@@ -538,6 +547,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
 
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
+    enumerate_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type.name);
 
     serialization->serializeBinaryBulkWithMultipleStreams(column, granule.start_row, granule.rows_to_write, serialize_settings, serialization_state);
 
@@ -603,6 +613,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     {
         auto serialize_settings = getSerializationSettings();
         serialize_settings.getter = createStreamGetter(name_and_type, offset_substreams);
+        serialize_settings.map_key_columns_keys = getMapKeyColumnsKeys(name);
         /// Use the sample column (from block_sample) for the state prefix because
         /// serializeBinaryBulkStatePrefix only reads column structure and statistics
         /// (not actual row data) to determine things like the number of Map buckets.
@@ -614,6 +625,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     auto serialize_settings = getSerializationSettings();
     serialize_settings.getter = createStreamGetter(name_and_type, offset_substreams);
+    serialize_settings.map_key_columns_keys = getMapKeyColumnsKeys(name);
     serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
     serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
     {
@@ -631,6 +643,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     {
         auto vector_dim_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
         auto vector_dim_enumerate_settings = getEnumerateSettings(settings);
+        vector_dim_enumerate_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type.name);
         serialization->enumerateStreams(vector_dim_enumerate_settings, [&] (const ISerialization::SubstreamPath & substream_path)
         {
             if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
@@ -692,6 +705,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     };
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
+    enumerate_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type.name);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
@@ -862,6 +876,7 @@ void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
             if (!serialization_states.empty())
             {
                 serialize_settings.getter = createStreamGetter(*it, offset_substreams);
+                serialize_settings.map_key_columns_keys = getMapKeyColumnsKeys(it->name);
                 getSerialization(it->name)->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }
 
@@ -973,6 +988,7 @@ void MergeTreeDataPartWriterWide::writeFinalMark(const NameAndTypePair & name_an
     auto serialization = getSerialization(name_and_type.name);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
+    enumerate_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type.name);
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 

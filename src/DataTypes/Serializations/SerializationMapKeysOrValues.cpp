@@ -69,6 +69,11 @@ struct DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets : public ISerializat
 void SerializationMapKeysOrValues::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Map keys/values subcolumns with map_serialization_version = 'with_key_columns' is not implemented yet");
+
     auto next_data = SubstreamData(keys_or_values_serialization)
         .withType(data.type)
         .withColumn(data.column)
@@ -147,6 +152,11 @@ void SerializationMapKeysOrValues::serializeBinaryBulkStateSuffix(
 void SerializationMapKeysOrValues::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Map keys/values subcolumns with map_serialization_version = 'with_key_columns' is not implemented yet");
+
     /// BASIC format has no bucketing, delegate directly.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
@@ -316,6 +326,11 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Map keys/values subcolumns with map_serialization_version = 'with_key_columns' is not implemented yet");
+
     /// BASIC format has no bucketing, delegate directly.
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {

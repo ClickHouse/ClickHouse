@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
+#include <algorithm>
+
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -39,6 +41,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace ErrorCodes
@@ -60,7 +63,8 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     MergeTreeIndexGranularityPtr index_granularity_,
-    WrittenOffsetSubstreams * written_offset_substreams_)
+    WrittenOffsetSubstreams * written_offset_substreams_,
+    const PlannedMapKeyColumnsKeys & map_key_columns_keys_)
     : IMergeTreeDataPartWriter(
         data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
         storage_settings_, columns_list_, metadata_snapshot_, settings_, std::move(index_granularity_))
@@ -70,6 +74,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , compute_granularity(index_granularity->empty())
     , compress_primary_key(settings.compress_primary_key)
     , written_offset_substreams(written_offset_substreams_)
+    , map_key_columns_keys(map_key_columns_keys_)
     , execution_stats(skip_indices.size())
     , log(getLogger(logger_name_ + " (DataPartWriter)"))
 {
@@ -687,8 +692,55 @@ void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
     }
 }
 
+void MergeTreeDataPartWriterOnDisk::initMapKeyColumnsKeysIfNeeded(const Block & block)
+{
+    if (map_key_columns_keys_initialized)
+        return;
+    map_key_columns_keys_initialized = true;
+
+    if ((*storage_settings)[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return;
+
+    for (const auto & [name, type] : columns_list)
+    {
+        const auto * block_column = block.findByName(name);
+        if (!block_column)
+            continue;
+
+        ISerialization::MapKeyColumnsKeys keys;
+        ISerialization::EnumerateStreamsSettings enumerate_settings;
+        enumerate_settings.collect_map_key_columns_keys = &keys;
+        auto serialization = getSerialization(name);
+        auto data = ISerialization::SubstreamData(serialization).withType(type).withColumn(block_column->column->convertToFullColumnIfConst());
+        serialization->enumerateStreams(enumerate_settings, [](const ISerialization::SubstreamPath &) {}, data);
+        if (keys.empty())
+            continue;
+
+        auto & column_keys = map_key_columns_keys[name];
+        for (auto & [path, path_keys] : keys)
+        {
+            auto & fixed = column_keys[path];
+            fixed.insert(fixed.end(), path_keys.begin(), path_keys.end());
+            std::sort(fixed.begin(), fixed.end());
+            fixed.erase(std::unique(fixed.begin(), fixed.end()), fixed.end());
+        }
+    }
+}
+
+const ISerialization::MapKeyColumnsKeys * MergeTreeDataPartWriterOnDisk::getMapKeyColumnsKeys(const String & column_name) const
+{
+    auto it = map_key_columns_keys.find(column_name);
+    if (it != map_key_columns_keys.end())
+        return &it->second;
+    /// Without a fixed key set, `with_key_columns` Maps write no per-key streams.
+    static const ISerialization::MapKeyColumnsKeys empty;
+    return map_key_columns_keys_initialized ? &empty : nullptr;
+}
+
 void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 {
+    initMapKeyColumnsKeysIfNeeded({});
+
     if (streams_initialized)
         return;
 
@@ -724,11 +776,14 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
             block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
     }
 
+    initMapKeyColumnsKeysIfNeeded({});
+
     NullWriteBuffer buf;
     auto serialize_settings = getSerializationSettings();
     for (const auto & name_and_type : columns_list)
     {
         columns_substreams.addColumn(name_and_type.name);
+        serialize_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type.name);
         serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
             columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));

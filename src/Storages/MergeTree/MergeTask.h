@@ -288,6 +288,10 @@ private:
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
+        /// Columns with `with_key_columns` Maps whose key sets are unknown before the merge
+        /// (some source part has no manifest): their pipelines are squashed into a single
+        /// block, from which the writer takes the key sets.
+        NameSet map_key_columns_with_unknown_keys{};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 

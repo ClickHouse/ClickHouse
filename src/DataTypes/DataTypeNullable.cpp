@@ -98,7 +98,7 @@ MutableColumnConstPtr DataTypeNullable::createColumnConst(size_t size, const Fie
 SerializationPtr DataTypeNullable::doGetSerialization(const SerializationInfoSettings & settings) const
 {
     if (settings.propagate_types_serialization_versions_to_nested_types)
-        return SerializationNullable::create(nested_data_type->getSerialization(settings));
+        return SerializationNullable::create(nested_data_type->getSerialization(settings.withoutMapKeyColumns()));
     return SerializationNullable::create(nested_data_type->getDefaultSerialization());
 }
 

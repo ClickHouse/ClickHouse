@@ -177,8 +177,9 @@ bool DataTypeObject::equals(const IDataType & rhs) const
     return false;
 }
 
-SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
+SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings_) const
 {
+    const auto settings = settings_.withoutMapKeyColumns();
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
