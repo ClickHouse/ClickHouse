@@ -112,6 +112,8 @@ Poller::Poller()
 {
     epoll.add(wakeup_signal.fd(), &wakeup_signal);
     epoll.add(timer_signal.getDescriptor(), &timer_signal);
+    Wyrd::setName(mutex, "poller.mutex");
+    Wyrd::setName(pending_count, "poller.pending_count");
 }
 
 Poller::~Poller() = default;

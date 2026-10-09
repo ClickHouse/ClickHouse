@@ -33,6 +33,7 @@ ProcessorState & addState(std::unordered_map<const IProcessor *, ProcessorState>
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
 
     it->second.processor = processor;
+    it->second.lock.setName(fmt::format("processor[{}]", processor->getUniqID()));
     return it->second;
 }
 
@@ -89,6 +90,7 @@ void checkNeighboursHaveChannels(ProcessorState & state)
 ProcessorStates::ProcessorStates(std::shared_ptr<Processors> processors_)
     : processors(std::move(processors_))
 {
+    Wyrd::setName(mutex, "processor_states.mutex");
     for (const auto & processor : *processors)
         addState(states, processor.get());
 

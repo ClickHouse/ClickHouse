@@ -50,12 +50,12 @@ Task getSlot(const auto & buffer, UInt32 index)
 
 }
 
-LocalTasks::LocalTasks()
+LocalTasks::LocalTasks(std::string name)
 {
-    Wyrd::setName(head, "local_tasks.head");
-    Wyrd::setName(bounds, "local_tasks.bounds");
+    Wyrd::setName(head, fmt::format("{}.head", name));
+    Wyrd::setName(bounds, fmt::format("{}.bounds", name));
     for (UInt32 index = 0; index < capacity; ++index)
-        Wyrd::setName(buffer[index].packed, fmt::format("local_tasks.slot[{}]", index));
+        Wyrd::setName(buffer[index].packed, fmt::format("{}.slot[{}]", name, index));
 }
 
 UInt32 LocalTasks::pushManyLifo(std::span<const Task> many)

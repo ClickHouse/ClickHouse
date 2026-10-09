@@ -15,6 +15,12 @@ WorkersCoordinator::WorkersCoordinator(WorkerPool & pool_, size_t max_workers)
     , is_registered(max_workers, false)
 {
     sleeping_workers.reserve(max_workers);
+    Wyrd::setName(mutex, "coordinator.mutex");
+    Wyrd::setName(registered_workers, "coordinator.registered_workers");
+    Wyrd::setName(sleepers_count, "coordinator.sleepers_count");
+    Wyrd::setName(stealing_count, "coordinator.stealing_count");
+    Wyrd::setName(is_polling, "coordinator.is_polling");
+    Wyrd::setName(is_stopped, "coordinator.is_stopped");
 }
 
 bool WorkersCoordinator::isFinished() const

@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <optional>
 
 namespace DB
@@ -26,6 +27,7 @@ public:
         Finished,
     };
 
+    void setName(std::string name);
     std::unique_lock<Wyrd::Mutex> lockRound();
 
     /// Decisions are made under the round lock; `isFinished` is a lock-free look.

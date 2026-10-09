@@ -37,7 +37,7 @@ bool pushOne(LocalTasks & ring, const Task & task)
 WYRD_TEST(LocalTasks, OwnerTakesNewestAndThiefTakesOldest)
 {
     std::vector<ProcessorState> states(3);
-    LocalTasks ring;
+    LocalTasks ring("ring");
     for (auto & state : states)
         EXPECT_TRUE(pushOne(ring, taskFor(state)));
 
@@ -56,7 +56,7 @@ WYRD_TEST(LocalTasks, OwnerTakesNewestAndThiefTakesOldest)
 WYRD_TEST(LocalTasks, StealTakesHalfRoundedUpWithinSpan)
 {
     std::vector<ProcessorState> states(5);
-    LocalTasks ring;
+    LocalTasks ring("ring");
     for (auto & state : states)
         EXPECT_TRUE(pushOne(ring, taskFor(state)));
 
@@ -77,7 +77,7 @@ WYRD_TEST(LocalTasks, StealTakesHalfRoundedUpWithinSpan)
 WYRD_TEST(LocalTasks, FullRingRefusesPushUntilSteal)
 {
     std::vector<ProcessorState> states(LocalTasks::capacity + 1);
-    LocalTasks ring;
+    LocalTasks ring("ring");
     for (UInt32 index = 0; index < LocalTasks::capacity; ++index)
         EXPECT_TRUE(pushOne(ring, taskFor(states[index])));
     EXPECT_FALSE(pushOne(ring, taskFor(states.back())));
@@ -100,7 +100,7 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
     std::vector<Wyrd::Atomic<UInt32>> taken(total);
     auto take = [&](Task task) { taken[&task.state() - states.data()].fetch_add(1); };
 
-    LocalTasks ring;
+    LocalTasks ring("ring");
     Wyrd::Atomic<bool> owner_done{false};
     Wyrd::Atomic<UInt32> successful_steals{0};
 

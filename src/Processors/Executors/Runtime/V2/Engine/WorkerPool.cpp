@@ -92,6 +92,9 @@ WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, size_t max_threads_, bool 
     , cpu_slots(allocateCPU(concurrency_control, requested_threads))
     , threads(max_threads)
 {
+    Wyrd::setName(spawn_mutex, "pool.spawn_mutex");
+    Wyrd::setName(workers_count, "pool.workers_count");
+
     for (size_t worker_id = 0; worker_id < max_threads; ++worker_id)
         workers.emplace_back(*this, worker_id);
 

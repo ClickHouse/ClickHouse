@@ -24,6 +24,8 @@ class RemovalGroups
     };
 
 public:
+    RemovalGroups();
+
     void submitForRemoval(Processors processors);
     void markFinished(IProcessor * processor);
 

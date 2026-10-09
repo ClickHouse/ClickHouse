@@ -13,6 +13,12 @@ namespace ErrorCodes
 namespace Runtime::V2
 {
 
+RemovalGroups::RemovalGroups()
+{
+    Wyrd::setName(mutex, "removal_groups.mutex");
+    Wyrd::setName(ready_groups, "removal_groups.ready_groups");
+}
+
 void RemovalGroups::submitForRemoval(Processors processors)
 {
     std::lock_guard lock(mutex);

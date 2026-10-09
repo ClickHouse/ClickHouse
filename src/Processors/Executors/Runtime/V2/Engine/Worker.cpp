@@ -5,6 +5,8 @@
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 
+#include <fmt/format.h>
+
 #include <Interpreters/ProcessList.h>
 
 #include <span>
@@ -22,7 +24,9 @@ Worker::Worker(WorkerPool & pool_, size_t worker_id_)
     : pool(pool_)
     , worker_id(worker_id_)
     , runner(pool.pipeline, worker_id)
+    , local_tasks(fmt::format("worker[{}].local_tasks", worker_id))
 {
+    Wyrd::setName(wakeups, fmt::format("worker[{}].wakeups", worker_id));
 }
 
 bool Worker::keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag)

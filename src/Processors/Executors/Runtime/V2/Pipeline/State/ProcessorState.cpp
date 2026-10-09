@@ -1,10 +1,18 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorState.h>
 
+#include <fmt/format.h>
+
 namespace DB
 {
 
 namespace Runtime::V2
 {
+
+void ProcessorLock::setName(std::string name)
+{
+    Wyrd::setName(mutex, fmt::format("{}.round_mutex", name));
+    Wyrd::setName(value, fmt::format("{}.status", name));
+}
 
 std::unique_lock<Wyrd::Mutex> ProcessorLock::lockRound()
 {

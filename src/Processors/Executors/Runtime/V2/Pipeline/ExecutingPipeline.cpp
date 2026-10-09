@@ -87,6 +87,8 @@ ExecutingPipeline::ExecutingPipeline(std::shared_ptr<Processors> processors_, Qu
     , process_list_element(std::move(process_list_element_))
     , states(std::move(processors_))
 {
+    Wyrd::setName(cancel_reason, "pipeline.cancel_reason");
+    Wyrd::setName(failed, "pipeline.failed");
 }
 
 std::vector<ProcessorState *> ExecutingPipeline::sinks()

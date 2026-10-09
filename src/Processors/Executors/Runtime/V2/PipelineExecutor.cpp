@@ -32,6 +32,7 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors_, Quer
     : processors(std::move(processors_))
     , process_list_element(std::move(elem))
 {
+    Wyrd::setName(mutex, "executor.mutex");
     if (process_list_element)
         process_list_element->addPipelineExecutor(this);
 }

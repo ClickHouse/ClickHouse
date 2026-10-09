@@ -7,6 +7,7 @@
 #include <array>
 #include <optional>
 #include <span>
+#include <string>
 
 namespace DB
 {
@@ -26,7 +27,7 @@ class LocalTasks
 public:
     static constexpr UInt32 capacity = Wyrd::enabled() ? 8 : 256;
 
-    LocalTasks();
+    explicit LocalTasks(std::string name);
 
     UInt32 pushManyLifo(std::span<const Task> many);
 
