@@ -5263,8 +5263,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
             for (const auto & alias_column : alias_columns_to_resolve)
                 data.unresolved_alias_columns.insert(alias_column.get());
 
-            /** An ALIAS column can read an ALIAS column declared after it: that one is resolved in its own scope when
-              * it is read (see `tryResolveIdentifier`), and is skipped here.
+            /** An ALIAS column read by an earlier one is resolved when it is read (see `tryResolveIdentifier`) and skipped here.
               * Example: CREATE TABLE test_table (id UInt64, alias_value_1 ALIAS id + alias_value_2, alias_value_2 ALIAS id + 5) ENGINE=TinyLog;
               */
             for (const auto & alias_column : alias_columns_to_resolve)
