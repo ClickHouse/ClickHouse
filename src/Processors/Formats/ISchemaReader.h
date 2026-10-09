@@ -71,7 +71,8 @@ public:
     /// types entirely and reads the data by value (and, for `JSONCompact`, positionally). The inferred
     /// schema therefore does not correspond to what is parsed. It is also false for `SQLite`, whose parser
     /// selects the expected columns by name and reads every value as text, ignoring the declared column
-    /// order and types. In these cases a caller comparing an inferred schema
+    /// order and types, and for `Freeform`, whose parser maps fields by name or by position depending
+    /// on whether the data names them. In these cases a caller comparing an inferred schema
     /// against an expected one must not draw any conclusion from it.
     virtual bool schemaDescribesParsedData() const { return true; }
 

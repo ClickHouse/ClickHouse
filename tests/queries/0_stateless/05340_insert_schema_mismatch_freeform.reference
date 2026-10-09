@@ -1,0 +1,5 @@
+-- positional fields are read fine
+ok
+-- value parse error in a positional field
+parse error
+explanation missing
