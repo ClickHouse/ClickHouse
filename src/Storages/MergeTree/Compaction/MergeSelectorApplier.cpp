@@ -46,12 +46,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
     extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
-    extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
-    extern const MergeTreeSettingsUInt64 min_rows_for_wide_part;
-    extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
-    extern const MergeTreeSettingsUInt64 min_bytes_for_full_part_storage;
-    extern const MergeTreeSettingsUInt64 min_rows_for_full_part_storage;
-    extern const MergeTreeSettingsUInt32 min_level_for_full_part_storage;
     extern const MergeTreeSettingsMergeTreePartMinMaxIndexColumns part_minmax_index_columns;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
@@ -70,6 +64,7 @@ struct ChooseContext
     const MergeConstraints & merge_constraints;
     const StorageInMemoryMetadata & metadata_snapshot;
     const MergeTreeSettings & merge_tree_settings;
+    const MergeTreeData & data;
     const MergeTreeData::MergingParams & merging_params;
     const PartitionIdToTTLs & next_delete_times;
     const PartitionIdToTTLs & next_recompress_times;
@@ -303,12 +298,13 @@ bool rangeRemovesExpiredValues(const ChooseContext & ctx, PartsRangeView range)
     if (!metadata.hasAnyTTL())
         return false;
 
-    /// A merge treats the finished `GROUP BY` TTLs of its source parts as unfinished again (see
-    /// `MergeTreeDataPartTTLInfos::update`), so their due times are not in the `part_min_ttl` of the parts.
-    if (metadata.hasAnyGroupByTTL())
-        return true;
-
     time_t min_ttl = 0;
+    auto update_min_ttl = [&](time_t ttl)
+    {
+        if (ttl && (!min_ttl || ttl < min_ttl))
+            min_ttl = ttl;
+    };
+
     for (const auto & part : range)
     {
         if (!part.all_ttl_calculated_if_any)
@@ -316,9 +312,10 @@ bool rangeRemovesExpiredValues(const ChooseContext & ctx, PartsRangeView range)
 
         if (part.general_ttl_info)
         {
-            const time_t part_min_ttl = part.general_ttl_info->part_min_ttl;
-            if (part_min_ttl && (!min_ttl || part_min_ttl < min_ttl))
-                min_ttl = part_min_ttl;
+            update_min_ttl(part.general_ttl_info->part_min_ttl);
+            /// A merge treats the finished `GROUP BY` TTLs of its source parts as unfinished again (see
+            /// `MergeTreeDataPartTTLInfos::update`), so their due times count for the merged part.
+            update_min_ttl(part.general_ttl_info->group_by_min_ttl);
         }
     }
 
@@ -348,16 +345,10 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool 
         sum_bytes += part.size_uncompressed;
         max_level = std::max(max_level, part.info.level);
     }
-    const UInt32 result_level = max_level + 1;
 
-    /// See `MergeTreeData::choosePartFormat`.
-    const bool wide_part = sum_bytes >= settings[MergeTreeSetting::min_bytes_for_wide_part]
-        && sum_rows >= settings[MergeTreeSetting::min_rows_for_wide_part]
-        && result_level >= settings[MergeTreeSetting::min_level_for_wide_part];
-    const bool full_storage = sum_bytes >= settings[MergeTreeSetting::min_bytes_for_full_part_storage]
-        && sum_rows >= settings[MergeTreeSetting::min_rows_for_full_part_storage]
-        && result_level >= settings[MergeTreeSetting::min_level_for_full_part_storage];
-    if (!wide_part || !full_storage)
+    /// The same choice as `FutureMergedMutatedPart` makes for the result of the merge.
+    const auto part_format = ctx.data.choosePartFormat(sum_bytes, sum_rows, max_level + 1, /*projection=*/nullptr);
+    if (part_format.part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return false;
 
     if (removes_expired_values && !rangeCanMergeVerticallyWhileRemovingExpiredValues(ctx, range))
@@ -704,7 +695,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const IMergePredicate & predicate,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & merge_tree_settings,
-    const MergeTreeData::MergingParams & merging_params,
+    const MergeTreeData & data,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
@@ -719,7 +710,8 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .merge_constraints = merge_constraints,
         .metadata_snapshot = *metadata_snapshot,
         .merge_tree_settings = *merge_tree_settings,
-        .merging_params = merging_params,
+        .data = data,
+        .merging_params = data.merging_params,
         .next_delete_times = next_delete_times,
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,

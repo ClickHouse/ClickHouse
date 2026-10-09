@@ -21,6 +21,11 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
     if (!metadata_snapshot->hasAnyTTL())
         return std::nullopt;
 
+    time_t group_by_min_ttl = 0;
+    for (const auto & [name, info] : part->ttl_infos.group_by_ttl)
+        if (info.min && (!group_by_min_ttl || info.min < group_by_min_ttl))
+            group_by_min_ttl = info.min;
+
     return PartProperties::GeneralTTLInfo{
         .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
         .has_any_non_finished_row_ttls = part->ttl_infos.hasAnyNonFinishedRowTTLs(),
@@ -28,6 +33,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
         .part_min_ttl = part->ttl_infos.part_min_ttl,
         .part_max_ttl = part->ttl_infos.part_max_ttl,
         .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
+        .group_by_min_ttl = group_by_min_ttl,
     };
 }
 

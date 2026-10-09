@@ -69,6 +69,10 @@ struct PartProperties
         /// The earliest due time among the unfinished column TTLs, as opposed to `part_min_ttl`,
         /// which is the minimum across the row TTLs as well.
         const time_t column_min_ttl;
+        /// The earliest due time among the `GROUP BY` TTLs, finished or not. A merge treats the finished ones as
+        /// unfinished again (see `MergeTreeDataPartTTLInfos::update`), so they are not in `part_min_ttl` of the
+        /// part but are in that of the merged part.
+        const time_t group_by_min_ttl;
     };
     const std::optional<GeneralTTLInfo> general_ttl_info = std::nullopt;
 

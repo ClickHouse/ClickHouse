@@ -47,7 +47,7 @@ public:
         const IMergePredicate & predicate,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeSettingsPtr & merge_tree_settings,
-        const MergeTreeData::MergingParams & merging_params,
+        const MergeTreeData & data,
         const PartitionIdToTTLs & next_delete_times,
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
