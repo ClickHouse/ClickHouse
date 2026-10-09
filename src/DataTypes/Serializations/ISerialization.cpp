@@ -97,7 +97,7 @@ ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
     return {Kind::DEFAULT};
 }
 
-static String kindToString(ISerialization::Kind kind)
+String ISerialization::kindToString(ISerialization::Kind kind)
 {
     switch (kind)
     {
@@ -807,7 +807,8 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
     }
 }
 
-ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
+ISerialization::SubstreamData
+ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, const Substream * selected_terminal)
 {
     chassert(prefix_len <= path.size());
     if (prefix_len == 0)
@@ -823,11 +824,16 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
     if (!res.column && res.lazy_column_creator)
         res.column = res.lazy_column_creator();
 
+    const auto & terminal = selected_terminal ? *selected_terminal : path[last_elem];
+
     for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
-        const auto & creator = path[i].creator;
+        auto creator = path[i].creator;
         if (creator)
         {
+            if (auto specialized = creator->specializeForSelectedSubcolumn(terminal))
+                creator = std::move(specialized);
+
             res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
             res.type = res.type ? creator->create(res.type) : res.type;
             res.column = res.column ? creator->create(res.column) : res.column;

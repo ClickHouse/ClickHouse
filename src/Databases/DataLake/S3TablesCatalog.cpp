@@ -39,7 +39,6 @@ namespace DB::ErrorCodes
 
 namespace DB::Setting
 {
-    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
@@ -327,7 +326,7 @@ DB::ReadWriteBufferFromHTTPPtr S3TablesCatalog::createReadBuffer(
         .create(credentials);
 }
 
-void S3TablesCatalog::sendRequest(
+String S3TablesCatalog::sendRequest(
     const CatalogState & /* catalog_state */,
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
@@ -375,6 +374,7 @@ void S3TablesCatalog::sendRequest(
         readJSONObjectPossiblyInvalid(response_str, *wb);
     else
         wb->ignoreAll();
+    return response_str;
 }
 
 }
