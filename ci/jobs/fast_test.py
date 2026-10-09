@@ -138,14 +138,6 @@ class JobStages(metaclass=MetaClasses.WithIter):
     TEST = "test"
 
 
-def _load_darwin_skip_tests():
-    skip_file = Path(__file__).resolve().parent.parent / "defs" / "darwin.skip"
-    return tuple(
-        line
-        for line in skip_file.read_text().splitlines()
-        if line.strip() and not line.lstrip().startswith("#"))
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
     parser.add_argument(
@@ -165,8 +157,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    if platform.system() == "Darwin":
-        args.skip = list(_load_darwin_skip_tests()) + args.skip
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
