@@ -10,6 +10,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Functions/castTypeToEither.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -21,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
 }
@@ -184,10 +186,10 @@ timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness)(t
 timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples, phi)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesQuantileToGrid = {
-        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
+        {"start_timestamp", "Specifies start of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum \"staleness\" in seconds of the considered samples. The staleness window is a left-open and right-closed interval. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesQuantileToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
@@ -195,7 +197,7 @@ timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness)(s
         {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}},
         {"phi", "Quantile level, normally in the range [0, 1]: either one number for the whole grid or an array with one number per grid point. Must be the same in every row.", {"Float*", "UInt8/16/32/64", "Int8/16/32/64", "Array(Float*)", "Array(UInt8/16/32/64)", "Array(Int8/16/32/64)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileToGrid = {"Returns the phi-quantile of values on the specified grid, of the same type as `value`. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float*))"}};
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesQuantileToGrid = {"Returns the phi-quantile of values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are no samples within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesQuantileToGrid = {};
     FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantileToGrid = {26, 9};
     FunctionDocumentation::Category category_timeSeriesQuantileToGrid = FunctionDocumentation::Category::AggregateFunction;
@@ -205,11 +207,21 @@ timeSeriesQuantileToGrid(start_timestamp, end_timestamp, grid_step, staleness)(s
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+
+            auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesQuantileToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                /// The quantile level follows the samples: a number for the whole grid, or an array with a number for each grid point.
+                const auto & phi_type = argument_types.back();
+                const auto * array_type = typeid_cast<const DataTypeArray *>(phi_type.get());
+                if (!isNativeNumber(array_type ? array_type->getNestedType() : phi_type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of the last argument for aggregate function {}, expected a number or an array of numbers",
+                        phi_type->getName(), name);
+
+                return std::make_shared<AggregateFunctionTimeseriesQuantileToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function, /* has_grid_argument = */ true);
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function,
+                AggregateFunctionTimeseriesQuantileToGrid<DateTime64, Float64>::num_extra_arguments);
         },
         documentation_timeSeriesQuantileToGrid});
 }

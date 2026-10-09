@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the fast test build has no NATS, RabbitMQ or Kafka, whose settings it then does not mask
 
 # A password embedded in the value of a setting must not reach any place that prints setting values.
 # The test server does not enable `display_secrets_in_show_and_select`, so everything below is always

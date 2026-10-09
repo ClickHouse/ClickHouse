@@ -1,0 +1,7 @@
+=== the table is created before the trace has any spans ===
+No spans found for trace_id
+=== the spans are read when the table is read ===
+root	4000
+└─ child	1000
+=== attaching the table again does not read the span log ===
+2

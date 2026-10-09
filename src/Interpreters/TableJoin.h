@@ -232,7 +232,6 @@ private:
 
     std::optional<bool> join_expression_value = std::nullopt;
 
-    bool enable_analyzer = false;
 
     /// Which statistics EXPLAIN ANALYZ` needs from this join
     JoinAnalyzeMode analyze_mode = JoinAnalyzeMode::None;
@@ -294,8 +293,6 @@ public:
 
     VolumePtr getGlobalTemporaryVolume() { return tmp_volume; }
 
-    bool enableAnalyzer() const { return enable_analyzer; }
-    void assertEnableAnalyzer() const;
 
     JoinAnalyzeMode analyzeMode() const { return analyze_mode; }
 

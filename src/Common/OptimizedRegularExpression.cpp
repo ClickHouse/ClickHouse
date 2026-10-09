@@ -432,10 +432,16 @@ const char * analyzeImpl(
                         /// if this group only contains flags, we have nothing to do.
                         if (*pos == ')')
                         {
-                            has_capture = true;
+                            /// A flag group captures nothing - RE2 counts no capture group for
+                            /// `(?i)` - and `extract` returns the whole match for such a pattern.
                             ++pos;
                             break;
                         }
+
+                        /// `(?flags:regex)` sets the flags for the group it opens, and captures
+                        /// nothing either.
+                        if (*pos == ':')
+                            is_non_capturing_group = true;
                     }
                     /// (?:regex) means non-capturing parentheses group
                     else if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
@@ -457,7 +463,9 @@ const char * analyzeImpl(
                     if (pos == end)
                         return pos;
 
-                    has_capture = !is_non_capturing_group;
+                    /// A capture anywhere counts: one seen before this group, one nested inside it,
+                    /// or this group itself when it captures.
+                    has_capture = has_capture || group_has_capture || !is_non_capturing_group;
 
                     /// For ()? or ()* or (){0,1}, we can just ignore the whole group.
                     if ((pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
