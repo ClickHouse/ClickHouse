@@ -178,7 +178,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
 
     {
@@ -250,7 +250,7 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Memory", create_fn, {}, Documentation{
+    factory.registerDatabase("Memory", create_fn, SecretArgumentsSpec{}, {}, Documentation{
         .description = R"DOCS_MD(
 The `Memory` database engine keeps its metadata and table definitions only in memory. It is intended for temporary databases: the database and its tables are lost when the server stops or restarts.
 

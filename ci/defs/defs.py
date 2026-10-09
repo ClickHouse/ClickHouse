@@ -398,7 +398,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     # browser. A CMake project of its own rather than a target of this tree, with its own
     # toolchain and its own job script - see `build_wasm_parser.py`.
     WASM_PARSER = "wasm_parser"
-    AMD_FUZZERS = "amd_fuzzers"
+    ARM_FUZZERS = "arm_fuzzers"
     AMD_CFI = "amd_cfi"
 
 
@@ -543,7 +543,7 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
-    AMD_FUZZERS = "AMD_FUZZERS"
+    ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
     CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
@@ -638,6 +638,21 @@ BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_ARM_TSAN,
     ArtifactNames.CH_ARM_MSAN,
 ]
+
+
+def with_long_retention_tags(artifacts):
+    """Tag the long-retention binaries among `artifacts`, leaving the rest as is.
+
+    The tags feed the job digest, so workflows sharing a build cache entry have to
+    apply the same ones. They cannot overwrite each other's uploads: the S3 prefix
+    carries the workflow and the job name as well as the branch and the commit.
+    """
+    return [
+        artifact.add_tags({"retention": "long"})
+        if artifact.name in BINARIES_WITH_LONG_RETENTION
+        else artifact
+        for artifact in artifacts
+    ]
 
 
 class ArtifactConfigs:
@@ -791,7 +806,7 @@ class ArtifactConfigs:
         ],
     )
     fuzzers = Artifact.Config(
-        name=ArtifactNames.AMD_FUZZERS,
+        name=ArtifactNames.ARM_FUZZERS,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",

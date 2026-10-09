@@ -17,6 +17,31 @@ struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+class ITopKThresholdTracker;
+using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+
+/// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
+/// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove
+/// the same, by comparing the sort column against the running threshold of the top-K heap
+/// (published by the sorting transforms into the shared tracker). The tracker carries the sort
+/// direction, NULLS FIRST/LAST and collation. Only supported by the Parquet format.
+struct FormatTopKFilterInfo
+{
+    /// Name of the first ORDER BY column in the format's output block.
+    String column_name;
+    TopKThresholdTrackerPtr threshold_tracker;
+    /// Hash of the planning-time parameters of the TopK (sort column and its type, number of sort
+    /// columns, `LIMIT`, direction, NULLS FIRST/LAST, collation). Which row groups the filter lets
+    /// through depends on these, so a query condition cache entry written by a TopK read is keyed
+    /// by it (see `StorageFileSource`).
+    UInt64 plan_hash = 0;
+    /// Remember, for each row group, the best value of the sort column among the rows the format
+    /// returned (see `IInputFormat::getTopKBestValuesOfBuckets`), which tells a row group whose every
+    /// row is beyond the final threshold - even if the rows were returned before the threshold got
+    /// tight enough to drop them. Set by a reading step that writes such verdicts to the query
+    /// condition cache.
+    bool track_row_group_best_values = false;
+};
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
 class ColumnMapper
@@ -120,6 +145,12 @@ struct FormatFilterInfo
     /// return exactly these rows; with `FormatSettings::parquet::preserve_order` they are returned
     /// in this exact order. Only supported by the Parquet format.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    /// TopN dynamic filtering; see the struct comment. Assigned by the reading step when the plan
+    /// optimization applies (`SourceStepWithFilterBase::setTopKFilter`); formats that don't support
+    /// it just ignore it - the filter only ever removes rows the sort + limit above would discard,
+    /// so applying it partially or not at all is always correct.
+    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;

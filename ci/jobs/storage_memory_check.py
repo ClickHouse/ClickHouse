@@ -3,7 +3,8 @@
 
 Runs a stateful sequence of SQL scenarios with the PR and master
 `clickhouse-examples` binaries, then compares each checkpoint-to-checkpoint
-live-allocation delta.
+live-allocation delta. Each binary runs the sequence twice and only the second
+pass is measured.
 """
 
 import glob
@@ -198,8 +199,12 @@ def main():
         return
     setup_results.append(Result(name="Download master binary", status=Result.Status.OK))
 
-    master_run = run_scenarios(master_binary, "master", scenarios)
-    pr_run = run_scenarios(pr_binary, "pr", scenarios)
+    # One-time process initialization is charged to whichever checkpoint window
+    # first touches it, and two binaries reach those first touches at different
+    # scenarios, so run the sequence once unmeasured before the measured pass.
+    profiled_scenarios = scenarios + scenarios
+    master_run = run_scenarios(master_binary, "master", profiled_scenarios)
+    pr_run = run_scenarios(pr_binary, "pr", profiled_scenarios)
     if master_run["error"] or pr_run["error"]:
         setup_results.append(
             make_error_result(
@@ -210,6 +215,10 @@ def main():
         Result.create_from(results=setup_results, stopwatch=stopwatch).complete_job()
         return
     setup_results.append(Result(name="Run storage scenarios", status=Result.Status.OK))
+
+    # Drop the first pass, keeping its last checkpoint as the baseline.
+    master_heap_files = master_run["heap_files"][len(scenarios) :]
+    pr_heap_files = pr_run["heap_files"][len(scenarios) :]
 
     async_no_cache_scenario = Path(TEMP_DIR) / "storage_async_no_cache.sql"
     async_no_cache_scenario.write_text(
@@ -253,7 +262,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
     shutil.rmtree(async_no_cache_run["data_dir"])
     async_no_cache_scenario.unlink()
 
-    if not batch_symbolize(master_binary, master_run["heap_files"], timeout=1800):
+    if not batch_symbolize(master_binary, master_heap_files, timeout=1800):
         setup_results.append(
             Result(
                 name="Symbolize master profiles",
@@ -263,7 +272,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
         )
         Result.create_from(results=setup_results, stopwatch=stopwatch).complete_job()
         return
-    if not batch_symbolize(pr_binary, pr_run["heap_files"], timeout=1800):
+    if not batch_symbolize(pr_binary, pr_heap_files, timeout=1800):
         setup_results.append(
             Result(
                 name="Symbolize PR profiles",
@@ -285,12 +294,12 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
 
     for index, scenario in enumerate(scenarios, start=1):
         master_analysis = analyze_heap_profiles(
-            master_run["heap_files"][index - 1],
-            master_run["heap_files"][index],
+            master_heap_files[index - 1],
+            master_heap_files[index],
         )
         pr_analysis = analyze_heap_profiles(
-            pr_run["heap_files"][index - 1],
-            pr_run["heap_files"][index],
+            pr_heap_files[index - 1],
+            pr_heap_files[index],
         )
         master_bytes = master_analysis["heap_diff"]
         pr_bytes = pr_analysis["heap_diff"]

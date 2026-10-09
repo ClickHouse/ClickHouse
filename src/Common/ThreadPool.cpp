@@ -10,6 +10,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <base/scope_guard.h>
 
 #include <map>
@@ -238,6 +239,9 @@ public:
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
+    /// Propagated like the tracing context: a job scheduled under `QueryCancellationBlocker` runs under one.
+    bool query_cancellation_blocked = false;
+
     /// Call stacks of all jobs' schedulings leading to this one
     std::vector<FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
@@ -253,11 +257,12 @@ public:
 
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
-        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
+        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool query_cancellation_blocked_,
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
         : job(job_), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
-        thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
+        thread_trace_context(thread_trace_context_), query_cancellation_blocked(query_cancellation_blocked_),
+        enable_job_stack_trace(capture_frame_pointers)
     {
         if (!capture_frame_pointers)
             return;
@@ -401,7 +406,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -467,7 +472,12 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Wait for available threads or timeout
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
         {
-            if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
+            /// The timeout is user-controlled: it comes from settings such as `lock_acquire_timeout`, whose
+            /// Int64 microsecond value can be negative or huge. `wait_for` turns the duration into
+            /// nanoseconds (x 1'000) on top of `steady_clock::now()`, which overflows Int64 for such a
+            /// count. Clamping keeps the wait well-defined: a negative timeout has already expired, so it
+            /// gives up at once, and a count above the cap keeps meaning "wait until a thread frees up".
+            if (!job_finished.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
         else
@@ -542,6 +552,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     metric_scheduled_jobs,
                     /// Tracing context on this thread is used as parent context for the sub-thread that runs the job
                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
+                    /// Not for pool worker threads (created without propagation), which outlive the scheduling scope
+                    propagate_opentelemetry_tracing_context && DB::ThreadStatus::QueryCancellationBlocker::isActive(),
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
                     std::move(available_threads_decrement));
@@ -644,13 +656,13 @@ void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, Priority priority)
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, Priority priority, uint64_t wait_microseconds) noexcept
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, Priority priority, Int64 wait_microseconds) noexcept
 {
     return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, Int64 wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     scheduleImpl<void>(std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
 }
@@ -1107,6 +1119,11 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 
         /// Set up tracing context for this thread by its parent context.
         DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
+
+        /// The job may attach to the thread group of the scheduling thread and inherit its cancellation predicates.
+        std::optional<DB::ThreadStatus::QueryCancellationBlocker> cancellation_blocker;
+        if (job_data->query_cancellation_blocked)
+            cancellation_blocker.emplace();
 
         DB::Exception::enable_job_stack_trace = job_data->enable_job_stack_trace;
         if (DB::Exception::enable_job_stack_trace)

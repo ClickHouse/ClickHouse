@@ -671,6 +671,9 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto size = S3::getObjectSize(*client.get(), src_bucket, src_key, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
         const auto read_settings_to_use = patchSettings(read_settings);
+        auto blob_storage_log = BlobStorageLogWriter::create(dest_s3->disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object_to.local_path;
 
         try
         {
@@ -684,7 +687,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*dest_key=*/dest_key,
                 settings_ptr->request_settings,
                 read_settings_to_use,
-                BlobStorageLogWriter::create(disk_name),
+                blob_storage_log,
                 scheduler,
                 [&, this]{ return readObject(object_from, read_settings_to_use);},
                 object_to_attributes);
@@ -733,6 +736,9 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto size = S3::getObjectSize(*current_client, src_bucket, src_key, {});
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object_to.local_path;
 
     copyS3File(
         /*src_s3_client=*/current_client,
@@ -744,7 +750,7 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*dest_key=*/dest_key,
         settings_ptr->request_settings,
         read_settings_to_use,
-        BlobStorageLogWriter::create(disk_name),
+        blob_storage_log,
         scheduler,
         [&, this]{ return readObject(object_from, read_settings_to_use);},
         object_to_attributes);
@@ -824,13 +830,18 @@ void S3ObjectStorage::applyNewSettings(
     const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
 
     auto current_settings = s3_settings.get();
+    /// The client is rebuilt only when a setting it is built from changes (see `S3Settings::hasChangesAffectingClient`):
+    /// this method may run on every query of a table (see `StorageObjectStorageConfiguration::update`), including a
+    /// table working on a copy of a server disk's object storage. Changes the settings comparison does not cover (the
+    /// proxy resolver is re-created from the config on every call) reach the client only on a forced rebuild, which
+    /// the config reload of a server disk requests (see `DiskObjectStorage::applyNewSettings`).
+    ///
     /// A change in the accessing session's restriction mode forces a client rebuild even for an otherwise static
     /// configuration: the restriction is a per-session security property, not a stored setting. Without this, a
     /// table whose client was built credentialed by an opt-in session (or at create) would keep serving those
     /// server credentials to later restricted sessions. The rebuild under the restricted context fails closed
     /// (getClient throws ACCESS_DENIED), which read() propagates instead of falling back to the cached client.
-    if ((options.allow_client_change
-            && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
+    if ((options.allow_client_change && current_settings->hasChangesAffectingClient(*modified_settings))
         || restriction_mode_changed
         || options.force_client_rebuild)
     {
@@ -839,6 +850,22 @@ void S3ObjectStorage::applyNewSettings(
         client_restricts_server_credentials = restricts_now;
     }
     s3_settings.set(std::move(modified_settings));
+}
+
+ObjectStoragePtr S3ObjectStorage::cloneImpl() const
+{
+    /// `S3::Client::clone` builds an equivalent client sharing no mutable state with the
+    /// original, so the copy can later rebuild its client without affecting this storage.
+    return std::make_shared<S3ObjectStorage>(
+        client.get()->clone(),
+        std::make_unique<S3Settings>(*s3_settings.get()),
+        uri,
+        s3_capabilities,
+        key_generator,
+        disk_name,
+        for_disk_s3,
+        credentials_refresh_callback,
+        client_restricts_server_credentials.load());
 }
 
 ObjectStorageKeyGeneratorPtr S3ObjectStorage::createKeyGenerator() const
