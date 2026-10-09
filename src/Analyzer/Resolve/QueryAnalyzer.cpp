@@ -8015,7 +8015,7 @@ static bool readSameColumnSources(const IQueryTreeNode & lhs, const IQueryTreeNo
         if (const auto * lhs_column = lhs_node->as<ColumnNode>())
         {
             auto lhs_source = lhs_column->getColumnSourceOrNull();
-            if (lhs_source && lhs_source->getNodeType() != QueryTreeNodeType::LAMBDA
+            if (lhs_source && lhs_source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS
                 && lhs_source != rhs_node->as<ColumnNode>()->getColumnSourceOrNull())
                 return false;
         }
