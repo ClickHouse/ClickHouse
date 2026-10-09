@@ -2,6 +2,7 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/Context.h>
@@ -27,6 +28,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool leader_election;
 }
 
 void FreezeMetaData::fill(const StorageReplicatedMergeTree & storage)
@@ -201,10 +207,23 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
 
                     auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Skip);
 
+                    /// A `data/{database}/{table}` path is resolved by name, so it can hit a later table that
+                    /// reused the name of a dropped one, while a `UUID` identifies the table instance. A later
+                    /// `leader_election` table at the same path shares the lease of the dropped one (the lease
+                    /// lives under the same data path), so it can fence the removal, but a table without
+                    /// `leader_election` cannot: its fence is a no-op, and it must not authorize removing a
+                    /// snapshot of a shared `leader_election` table.
+                    const bool resolved_by_name = store_path.filename() != "store";
+                    auto cannot_fence_by_name = [&]
+                    {
+                        return resolved_by_name && merge_tree && !(*merge_tree->getSettings())[MergeTreeSetting::leader_election];
+                    };
+
                     /// Only a snapshot carrying the marker written at `FREEZE` time needs any of
                     /// the leader-election handling below, and the marker lookup costs an object
-                    /// storage request per directory, so keep it behind the failed cast.
-                    if (!merge_tree
+                    /// storage request per directory, so keep it behind the failed cast (or a table
+                    /// resolved by name that cannot fence it).
+                    if ((!merge_tree || cannot_fence_by_name())
                         && disk->existsFile(table_directory / MergeTreeData::LEADER_ELECTION_SNAPSHOT_MARKER_FILE_NAME))
                     {
                         /// A lazily loaded table (`lazy_load_tables = 1`) is attached, but the
@@ -214,7 +233,17 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                         /// `leader_election` table whose lease this node can, in fact, check.
                         /// Restricting this to marker-bearing snapshots keeps an ordinary
                         /// `SYSTEM UNFREEZE` from starting every lazy table in the server.
-                        merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
+                        if (!merge_tree)
+                            merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
+
+                        if (cannot_fence_by_name())
+                        {
+                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                "Snapshot {} on disk {} belongs to a `leader_election` table, but the table {} now at its "
+                                "path does not use `leader_election`, so the lease of the snapshot cannot be checked here. "
+                                "Removing it could delete shared data owned by the current leader.",
+                                table_directory.generic_string(), disk->getName(), merge_tree->getStorageID().getNameForLogs());
+                        }
 
                         /// Still unresolved: the table is genuinely not loaded on this node — it
                         /// was dropped locally, or never attached here. Removing the snapshot
