@@ -640,14 +640,13 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
-/// emptyArrayToSingle sets padded: the default element it adds is not in the index
+/// LEFT ARRAY JOIN is arrayJoin(emptyArrayToSingle(col)), the default element it adds is not in the index
 static RPNBuilderTreeNode unwrapArrayJoinArgument(const RPNBuilderTreeNode & node, bool & padded)
 {
-    auto unwrapped = unwrapLosslessConversion(node);
-    if (!unwrapped.isFunction() || unwrapped.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
-        return unwrapped;
+    if (!node.isFunction() || node.toFunctionNode().getFunctionName() != "emptyArrayToSingle")
+        return node;
     padded = true;
-    return unwrapLosslessConversion(unwrapped.toFunctionNode().getArgumentAt(0));
+    return node.toFunctionNode().getArgumentAt(0);
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
