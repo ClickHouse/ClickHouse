@@ -335,6 +335,7 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     ONCE(mt_alter_throw_in_start_mutation) \
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
+    ONCE(mt_throw_after_renaming_empty_parts) \
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
     PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
@@ -360,6 +361,7 @@ static struct InitFiu
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
+    ONCE(disk_set_builder_stop_before_finish) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
     REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \
     ONCE(parallel_replicas_insert_select_drop_active_replica) \

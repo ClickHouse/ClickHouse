@@ -780,7 +780,7 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         return std::make_shared<DatabaseOverlayReadOnly>(args.database_name, std::move(sources), args.context);
     };
 
-    factory.registerDatabase("Overlay", create_fn, {.supports_arguments = true}, Documentation{
+    factory.registerDatabase("Overlay", create_fn, SecretArgumentsSpec{}, {.supports_arguments = true}, Documentation{
         .description = R"DOCS_MD(
 The `Overlay` database engine exposes the union of the tables of several existing databases.
 
