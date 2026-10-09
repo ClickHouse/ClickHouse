@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
@@ -13,14 +12,12 @@ namespace DB
 namespace Runtime::V2
 {
 
-class Worker;
 class WorkerPool;
 
 class WorkersCoordinator
 {
-    bool allIdle() const;
-    Worker * takeAnySleepingWorker();
-    void wakeOneLocked();
+    bool isFinished() const;
+    std::optional<size_t> takeAnySleepingWorker();
     void stopLocked();
 
 public:
@@ -29,24 +26,33 @@ public:
     void enter(size_t worker_id);
     void leave(size_t worker_id);
 
-    std::optional<Task> wait(Worker & worker);
-    size_t wake(size_t to_wake);
-    bool isPolling() const;
+    bool startStealing();
+    void stopStealing();
+    bool hasStealer() const;
+
+    bool startPolling();
+    void stopPolling();
+    bool hasPoller() const;
+
+    bool startParking(size_t worker_id);
+    void becomeNormal(size_t worker_id);
+    bool wakeOne();
+    bool hasSleepers() const;
 
     void stop();
-    bool stopped() const;
-    size_t idle() const;
+    bool isStopped() const;
 
 private:
     WorkerPool & pool;
 
     mutable Wyrd::Mutex mutex;
     std::vector<bool> is_registered;
-    std::vector<Worker *> sleeping_workers;
+    std::vector<size_t> sleeping_workers;
 
-    Wyrd::Atomic<size_t> registered_workers = 0;
-    Wyrd::Atomic<size_t> idle_count = 0;
-    Wyrd::Atomic<size_t> polling_count = 0;
+    Wyrd::Atomic<Int32> registered_workers = 0;
+    Wyrd::Atomic<Int32> sleepers_count = 0;
+    Wyrd::Atomic<Int32> stealing_count = 0;
+    Wyrd::Atomic<bool> is_polling = false;
     Wyrd::Atomic<bool> is_stopped = false;
 };
 
