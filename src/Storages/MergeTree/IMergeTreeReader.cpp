@@ -7,6 +7,9 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
+#endif
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
@@ -197,10 +200,13 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     chassert(columns.size() == getColumns().size());
 
     const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
-    if (!loaded_part_info)
+    bool is_borrowed = false;
+#if CLICKHOUSE_CLOUD
+    is_borrowed = typeid_cast<const BorrowedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get()) != nullptr;
+#endif
+    if (!loaded_part_info && !is_borrowed)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
-    const auto & data_part = loaded_part_info->getDataPart();
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
@@ -234,8 +240,10 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
             field = field_it->second;
+        else if (loaded_part_info)
+            field = getFieldForConstVirtualColumn(it->name, *loaded_part_info->getDataPart());
         else
-            field = getFieldForConstVirtualColumn(it->name, *data_part);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Virtual column {} is not supported for this part", it->name);
 
         columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
     }
