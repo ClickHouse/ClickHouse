@@ -381,43 +381,33 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
 namespace
 {
 
-/// Whether converting a value of type `from` to type `to` never changes it and never throws.
-/// `Nullable` cannot be dropped, because it may throw on NULL.
-bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
+/// Whether converting a value of type `from` to type `to` never changes a non-NULL value.
+/// Dropping `Nullable` throws on NULL. Such a query may not throw if the index skips the granules
+/// with NULL, which is accepted.
+bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool allow_drop_nullable)
 {
     auto from_type = removeLowCardinality(from);
     auto to_type = removeLowCardinality(to);
 
-    if (to_type->isNullable())
-    {
-        from_type = removeNullable(from_type);
-        to_type = removeNullable(to_type);
-    }
-    else if (from_type->isNullable())
-    {
+    if (!allow_drop_nullable && from_type->isNullable() && !to_type->isNullable())
         return false;
-    }
 
-    if (from_type->equals(*to_type))
+    from_type = removeNullable(from_type);
+    to_type = removeNullable(to_type);
+
+    /// Not `equals`: it ignores the time zone of `DateTime`, which changes how a literal is parsed,
+    /// and the custom name of `Bool`, to which `CAST` converts a `UInt8` 2 as 1.
+    if (from_type->getName() == to_type->getName())
         return true;
 
     const auto * from_array = typeid_cast<const DataTypeArray *>(from_type.get());
     const auto * to_array = typeid_cast<const DataTypeArray *>(to_type.get());
-    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
-}
-
-bool isCast(const ActionsDAG::Node & node)
-{
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.size() != 2)
-        return false;
-
-    const auto function_name = node.function_base->getName();
-    return function_name == "CAST" || function_name == "_CAST";
+    return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType(), allow_drop_nullable);
 }
 
 }
 
-bool isLosslessConversionFunction(const ActionsDAG::Node & node)
+bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
         return false;
@@ -425,36 +415,35 @@ bool isLosslessConversionFunction(const ActionsDAG::Node & node)
     const auto function_name = node.function_base->getName();
     const size_t arguments_size = node.children.size();
 
+    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
     const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
 
-    if (!isCast(node) && !is_wrapper)
+    if (!is_cast && !is_wrapper)
         return false;
 
-    return isLosslessConversion(node.children.front()->result_type, node.result_type);
+    return isLosslessConversion(node.children.front()->result_type, node.result_type, allow_drop_nullable);
 }
 
-RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable)
 {
-    return RPNBuilderTreeNode(unwrapLosslessConversion(node.getDAGNode()), node.getContext());
+    if (!node.isFunction())
+        return node;
+
+    const auto function = node.toFunctionNode();
+    if (!isLosslessConversionFunction(*function.getDAGNode(), allow_drop_nullable))
+        return node;
+
+    return unwrapLosslessConversion(function.getArgumentAt(0), allow_drop_nullable);
 }
 
-const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node)
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable)
 {
     const auto * node_without_alias = getNodeWithoutAlias(node);
 
-    if (isLosslessConversionFunction(*node_without_alias))
-        return unwrapLosslessConversion(node_without_alias->children.front());
+    if (!isLosslessConversionFunction(*node_without_alias, allow_drop_nullable))
+        return node;
 
-    /// `CAST(CAST(x, 'Dynamic'), T)` keeps the value of `x` when `x` converts to `T` losslessly.
-    if (isCast(*node_without_alias))
-    {
-        const auto * to_dynamic = getNodeWithoutAlias(node_without_alias->children.front());
-        if (isCast(*to_dynamic) && isDynamic(to_dynamic->result_type)
-            && isLosslessConversion(to_dynamic->children.front()->result_type, node_without_alias->result_type))
-            return unwrapLosslessConversion(to_dynamic->children.front());
-    }
-
-    return node;
+    return unwrapLosslessConversion(node_without_alias->children.front(), allow_drop_nullable);
 }
 
 template <typename RPNElement>
