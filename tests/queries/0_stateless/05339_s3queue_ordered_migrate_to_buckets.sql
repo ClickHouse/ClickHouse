@@ -72,18 +72,21 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_fresh' AND name = 'bucke
 -- 3. The migration removes the old node and creates the bucket nodes in one Keeper
 --    transaction, so when the removal is rejected the whole migration must be rejected and
 --    the old pointer must survive. The removal is made to fail deterministically by giving
---    the old node a child: the second queue below registers itself under it. (In production
---    the same request fails because another replica removed the node first.)
+--    the old node a child: the replicated table below keeps its metadata under it. (In
+--    production the same request fails because another replica removed the node first.)
+--    The holder is deliberately not a second queue: a queue removes its whole `keeper_path`
+--    when its last registration goes, so a holder queue would be left without its own
+--    registry node whenever `q_block` happened to be dropped first, which aborts a debug
+--    build. A replicated table only turns readonly when its path disappears.
 
 CREATE TABLE q_block (x UInt64)
 ENGINE = S3Queue('http://localhost:11111/test/05339_block/', 'username', 'password', CSV)
 SETTINGS mode = 'ordered', processing_threads_num = 1, last_processed_path = 'block.csv',
          keeper_path = '/clickhouse/{database}/q_block';
 
-CREATE TABLE q_block_child (x UInt64)
-ENGINE = S3Queue('http://localhost:11111/test/05339_block_child/', 'username', 'password', CSV)
-SETTINGS mode = 'ordered', processing_threads_num = 1,
-         keeper_path = '/clickhouse/{database}/q_block/processed/holder';
+CREATE TABLE q_block_holder (x UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/{database}/q_block/processed/holder', '{replica}')
+ORDER BY tuple();
 
 SELECT 'block / children before', count() FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_block/processed';
@@ -98,14 +101,7 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_block' AND name = 'proce
 SELECT 'block / bucket 0 after', count() FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_block/buckets/0' AND name = 'processed';
 
--- The helper queue sits inside `q_block`'s own Keeper subtree, so it has to go away while that
--- subtree is still there. The teardown `DROP DATABASE` does not order table drops by
--- `keeper_path` nesting, and dropping `q_block` first removes the helper's own path with it
--- (`ObjectStorageQueueMetadata::unregisterNonActive` deletes the whole `zookeeper_path` when the
--- last registration goes), which then aborts a debug build.
-DROP TABLE q_block_child;
-
--- The other three tables are left to the teardown of the test database, which drops them in one
+-- All four tables are left to the teardown of the test database, which drops them in one
 -- batch. An explicit `DROP TABLE` costs about a second each here: the test profile waits for
 -- the dropped table to leave the drop queue of DatabaseCatalog, and that queue is polled once
 -- a second (tests/config/users.d/database_atomic_drop_detach_sync.xml).
