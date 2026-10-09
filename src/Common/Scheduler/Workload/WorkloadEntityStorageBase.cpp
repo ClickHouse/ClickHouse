@@ -810,6 +810,25 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
             });
     }
 
+    // Reject parent cycles. The current state has none, so a new cycle passes through a changed workload.
+    for (const String & name : changed_names)
+    {
+        std::unordered_set<String> visited;
+        String current = name;
+        while (!current.empty())
+        {
+            auto it = merged_new_entities.find(current);
+            if (it == merged_new_entities.end())
+                break;
+            auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(it->second.get());
+            if (workload == nullptr)
+                break;
+            if (!visited.insert(current).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed");
+            current = workload->getWorkloadParent();
+        }
+    }
+
     // Validate new/changed workloads' setting VALUES on the config/Keeper/disk load path (which
     // bypasses storeEntity) — otherwise a bad value (e.g. scheduler = 'bogus', a negative weight, or
     // such a value inside a `... FOR <resource>` clause) is accepted here and only surfaces later,

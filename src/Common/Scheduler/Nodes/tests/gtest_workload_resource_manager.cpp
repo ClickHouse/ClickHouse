@@ -3892,6 +3892,15 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadRejectsDroppingReferencedEntity
         EXPECT_NO_THROW(t.storage.loadFromString("CREATE WORKLOAD other;\nCREATE WORKLOAD child IN other"));
         EXPECT_FALSE(t.storage.has("all"));
     }
+    {
+        ResourceTest t;
+        // Parent cycles are rejected, like on the SQL path.
+        t.storage.loadFromString("CREATE WORKLOAD a;\nCREATE WORKLOAD b IN a");
+        EXPECT_THROW(t.storage.loadFromString("CREATE WORKLOAD a IN b;\nCREATE WORKLOAD b IN a"), DB::Exception);
+        EXPECT_THROW(t.storage.loadFromString("CREATE WORKLOAD a IN a;\nCREATE WORKLOAD b IN a"), DB::Exception);
+        EXPECT_EQ(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get("a").get())->getWorkloadParent(), "");
+        EXPECT_THROW(t.storage.loadFromString("CREATE WORKLOAD x IN y;\nCREATE WORKLOAD y IN x"), DB::Exception);
+    }
 }
 
 // The last storage in the chain (the configuration) does not see entities of the storage above it,
