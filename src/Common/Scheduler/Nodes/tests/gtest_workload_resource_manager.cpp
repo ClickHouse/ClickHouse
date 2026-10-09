@@ -4414,7 +4414,8 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotUpdateRateLimitAndConcurrency)
     ResourceTest t;
 
     t.query("CREATE RESOURCE query (QUERY)");
-    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1, max_queries_per_second = 0.001, max_burst_queries = 1");
+    // A tiny rate makes the throttling delay exceed the `Int64` nanosecond range, so it must saturate
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1, max_queries_per_second = 1e-12, max_burst_queries = 1");
 
     ClassifierPtr c = t.manager->acquire("all");
     ResourceLink link = c->get("query");
@@ -4423,7 +4424,7 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotUpdateRateLimitAndConcurrency)
     { QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "first"); }
     { QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "second"); }
 
-    // The next query is throttled for ~1000 seconds; removing the rate limit must admit it
+    // The next query is throttled practically forever; removing the rate limit must admit it
     std::atomic<bool> acquired = false;
     auto * waiter = t.async([&]
     {

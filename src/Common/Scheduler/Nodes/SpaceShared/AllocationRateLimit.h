@@ -55,6 +55,13 @@ private:
 
     bool satisfied() const { return tokens >= 0.0; }
 
+    /// Converts a delay in nanoseconds to a duration, saturating at `max_delay`.
+    /// A tiny `max_speed` may lead to a delay that does not fit into `Int64` nanoseconds.
+    static std::chrono::nanoseconds saturatingDelay(double delay_ns);
+
+    /// Postponing an admission for longer than this is meaningless; when the event fires early the delay is recomputed.
+    static constexpr auto max_delay = std::chrono::nanoseconds(std::chrono::hours(24 * 365));
+
     double max_speed = 0; /// in tokens per second
     double max_burst = 0; /// in tokens
 

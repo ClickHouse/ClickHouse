@@ -187,11 +187,19 @@ void AllocationRateLimit::postponeIfNeeded()
     if (postponed != EventQueue::not_postponed || satisfied() || max_speed <= 0.0)
         return;
     // Round up, so the event never fires while the bucket is still (slightly) in debt
-    auto delay_ns = std::chrono::nanoseconds(static_cast<Int64>(std::ceil(-tokens / max_speed * 1e9)));
+    auto delay_ns = saturatingDelay(std::ceil(-tokens / max_speed * 1e9));
     postponed = event_queue.postpone(
         std::chrono::time_point_cast<EventQueue::Duration>(event_queue.now() + delay_ns),
         [this] { onPostponed(); });
-    throttling_duration += delay_ns;
+    // The total accumulates for the node's lifetime, so it saturates as well
+    throttling_duration += std::min(delay_ns, std::chrono::nanoseconds::max() - throttling_duration);
+}
+
+std::chrono::nanoseconds AllocationRateLimit::saturatingDelay(double delay_ns)
+{
+    if (delay_ns < static_cast<double>(max_delay.count()))
+        return std::chrono::nanoseconds(static_cast<Int64>(delay_ns));
+    return max_delay;
 }
 
 void AllocationRateLimit::onPostponed()
