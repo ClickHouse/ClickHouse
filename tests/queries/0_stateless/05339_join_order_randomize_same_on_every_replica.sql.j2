@@ -43,8 +43,8 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Mismatches, executed replica queries, and both join orders occur across the seeds (the randomizer is live).
-SELECT countIf(p.kind != s.kinds[1]), count() > 0, uniqExact(p.kind)
+-- Every seed has executed replica queries, they all match the initiator's plan, and both join orders occur.
+SELECT countIf(p.kind != s.kinds[1]), uniqExact(i.seed), uniqExact(p.kind)
 FROM
 (
     SELECT query_id, toUInt64(extract(log_comment, '-(\\d+)$')) AS seed FROM system.query_log
