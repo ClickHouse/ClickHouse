@@ -27,12 +27,6 @@ WYRD_TEST(Wyrd, AtomicIntegerOperations)
     {
     }
     EXPECT_EQ(counter.load(), 10u);
-
-    counter = 4;
-    UInt64 copy = counter;
-    EXPECT_EQ(copy, 4u);
-
-    EXPECT_EQ(counter.load(), 4u);
 }
 
 WYRD_TEST(Wyrd, AtomicWaitAndNotify)

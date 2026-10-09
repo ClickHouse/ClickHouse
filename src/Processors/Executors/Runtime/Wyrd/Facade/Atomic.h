@@ -123,17 +123,6 @@ public:
         futexWake(this, std::numeric_limits<size_t>::max(), location);
     }
 
-    operator T() const /// NOLINT(google-explicit-constructor)
-    {
-        return load();
-    }
-
-    T operator=(T desired) /// NOLINT(misc-unconventional-assign-operator)
-    {
-        store(desired);
-        return desired;
-    }
-
     std::atomic<T> & underlying()
     {
         return impl;
@@ -237,17 +226,6 @@ public:
     {
         injectFault("atomic::notify_all", location);
         impl.notify_all();
-    }
-
-    operator T() const /// NOLINT(google-explicit-constructor)
-    {
-        return load();
-    }
-
-    T operator=(T desired) /// NOLINT(misc-unconventional-assign-operator)
-    {
-        store(desired);
-        return desired;
     }
 
     std::atomic<T> & underlying()
