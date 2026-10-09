@@ -11,6 +11,8 @@
 
 #include <Functions/logical.h>
 
+#include <Interpreters/JoinUtils.h>
+
 #include <Core/Settings.h>
 
 
@@ -212,6 +214,12 @@ public:
                             edge = &graph.edges.emplace_back();
                             graph.nodes[*rhs_index].edges[*lhs_index] = edge;
                         }
+
+                        /// A join key matches a NULL nested in a Tuple or a NULL Variant, for which `equals` returns NULL,
+                        /// so WHERE keeps the condition too.
+                        if (JoinCommon::keyMatchesNullAsValue(lhs_equi_argument->getResultType())
+                            || JoinCommon::keyMatchesNullAsValue(rhs_equi_argument->getResultType()))
+                            other_conditions.push_back(condition->clone());
 
                         edge->equi_conditions.push_back(std::move(condition));
                     }
