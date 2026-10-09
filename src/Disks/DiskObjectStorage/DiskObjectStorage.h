@@ -89,6 +89,9 @@ public:
 
     bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path) override;
 
+    /// Completes every `renameExchange` that a crash interrupted. Must run before anything reads the disk.
+    void finishInterruptedRenameExchanges();
+
     void removeFile(const String & path) override { removeSharedFile(path, false); }
 
     void removeFileIfExists(const String & path) override { removeSharedFileIfExists(path, false); }
@@ -259,6 +262,8 @@ private:
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
     DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
+
+    void finishRenameExchange(const String & old_path, const String & new_path);
 
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;

@@ -1,0 +1,40 @@
+-- test_db_disk_plain_rewritable_05340: a finished exchange leaves no record
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: first move copied
+a	30
+b	6
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: first move done
+a	30
+b	6
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: second move copied
+a	30
+b	6
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: second move done
+a	30
+b	6
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: third move copied
+a	30
+b	6
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_plain_rewritable_05340: an entry that is not a record is left as is
+a	6
+b	30
+journal: [hello], metadata: [a.sql b.sql]
+-- test_db_disk_local_metadata_05340: a finished exchange leaves no record
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_local_metadata_05340: first move done
+a	30
+b	6
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_local_metadata_05340: second move done
+a	30
+b	6
+journal: [], metadata: [a.sql b.sql]
+-- test_db_disk_local_metadata_05340: an entry that is not a record is left as is
+a	6
+b	30
+journal: [hello], metadata: [a.sql b.sql]
