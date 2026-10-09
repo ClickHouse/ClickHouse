@@ -45,3 +45,14 @@ ${CLICKHOUSE_CLIENT} -q "
             'ATTACH TABLE ${CLICKHOUSE_DATABASE}.t_reattach_internal_settings')"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_internal_settings"
+
+# A table with a text index must be reattached even when the triggering query disables the feature: the short
+# `ATTACH` re-parses the stored definition, and `InterpreterCreateQuery` rejects a text index unless
+# `enable_full_text_index` is set, so the internal `ATTACH` forces it on. Otherwise both `ATTACH` attempts
+# fail and the table stays detached, which the final `SELECT` would report as `UNKNOWN_TABLE`.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_text_index"
+${CLICKHOUSE_CLIENT} --enable_full_text_index=1 -q "CREATE TABLE t_reattach_text_index (s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY tuple()"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_text_index VALUES ('hello world')"
+check_if_detached "SELECT count() FROM t_reattach_text_index SETTINGS enable_full_text_index = 0" "t_reattach_text_index"
+${CLICKHOUSE_CLIENT} -q "SELECT s FROM t_reattach_text_index"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_text_index"
