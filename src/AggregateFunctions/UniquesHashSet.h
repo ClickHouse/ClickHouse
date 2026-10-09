@@ -882,8 +882,8 @@ public:
         }
 
         const size_t rhs_buf_size = rhs.buf_size();
-        size_t i = 0;
-        while (i < rhs_buf_size)
+        size_t rhs_pos = 0;
+        while (rhs_pos < rhs_buf_size)
         {
             /// Enough spare capacity: no resize/rehash can happen mid-batch, so place() can be
             /// computed for the whole batch upfront, letting misses on the destination overlap.
@@ -891,10 +891,10 @@ public:
             {
                 std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
                 size_t cnt = 0;
-                while (i < rhs_buf_size && cnt < insert_many_batch_size)
+                while (rhs_pos < rhs_buf_size && cnt < insert_many_batch_size)
                 {
-                    const HashValue x = rhs.buf[i];
-                    ++i;
+                    const HashValue x = rhs.buf[rhs_pos];
+                    ++rhs_pos;
                     if (x && good(x))
                         hash_value[cnt++] = x;
                 }
@@ -909,8 +909,8 @@ public:
             else
             {
                 /// good() must be re-evaluated per element: shrinkIfNeed() can raise skip_degree.
-                const HashValue x = rhs.buf[i];
-                ++i;
+                const HashValue x = rhs.buf[rhs_pos];
+                ++rhs_pos;
                 if (x && good(x))
                     insertImpl(x);
             }
