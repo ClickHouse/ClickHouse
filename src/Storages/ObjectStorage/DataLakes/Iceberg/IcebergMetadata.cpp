@@ -541,8 +541,15 @@ bool IcebergMetadata::optimize(
 
     if (settings[Setting::allow_experimental_iceberg_compaction])
     {
+        auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(metadata_snapshot);
+        if (!table_state_snapshot)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Can't extract iceberg table state from storage snapshot for table location {}",
+                persistent_components.table_location);
+
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-        auto snapshots_info = getHistory(context);
+        auto snapshots_info = getHistory(context, /* ignore_metadata_pointer_overrides */ true);
         compactIcebergTable(
             snapshots_info,
             persistent_components,
@@ -550,6 +557,7 @@ bool IcebergMetadata::optimize(
             getMetadataLookupSettings(),
             format_settings,
             sample_block,
+            table_state_snapshot->metadata_file_path,
             context,
             write_format);
         return true;
@@ -1089,7 +1097,8 @@ DataLakeMetadataPtr IcebergMetadata::create(
 }
 
 
-IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
+IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(
+    ContextPtr local_context, bool ignore_metadata_pointer_overrides) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
@@ -1099,7 +1108,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         local_context,
         log.get(),
         persistent_components.table_uuid,
-        persistent_components.metadata_compression_method);
+        persistent_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ ignore_metadata_pointer_overrides,
+        ignore_metadata_pointer_overrides);
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);

@@ -1,6 +1,4 @@
-import glob
 import json
-import os
 import re
 import time
 
@@ -9,8 +7,8 @@ import pytest
 from helpers.iceberg_utils import (
     create_iceberg_table,
     default_download_directory,
-    default_upload_directory,
     get_uuid_str,
+    spark_alter_table,
 )
 
 
@@ -56,38 +54,6 @@ def update_iceberg_metadata(instance, table_name, updater_fn):
     meta, prev_path = _read_iceberg_metadata(instance, table_name)
     updater_fn(meta)
     _write_iceberg_metadata(instance, table_name, meta, prev_path)
-
-
-def _fix_version_hint_for_spark(table_name):
-    """Rewrite version-hint.text as a plain version number.
-    ClickHouse writes the full filename (e.g. 'v3.metadata.json');
-    Spark's Hadoop catalog expects just the number (e.g. '3').
-    """
-    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
-    latest = 0
-    for f in glob.glob(os.path.join(metadata_dir, "*.metadata.json")):
-        m = re.search(r"v(\d+)", os.path.basename(f))
-        if m:
-            latest = max(latest, int(m.group(1)))
-    with open(os.path.join(metadata_dir, "version-hint.text"), "w") as f:
-        f.write(str(latest))
-
-
-def spark_alter_table(cluster, spark, storage_type, table_name, *sql_fragments):
-    """Execute Spark SQL ALTER TABLE on a ClickHouse-created Iceberg table.
-
-    Downloads the table from storage to the host (so Spark can see it),
-    executes the SQL statements, then uploads the result back.
-
-    Each sql_fragment is appended to 'ALTER TABLE {table_name} '.
-    Example: spark_alter_table(..., "SET TBLPROPERTIES('key' = 'val')")
-    """
-    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/"
-    default_download_directory(cluster, storage_type, table_dir, table_dir)
-    _fix_version_hint_for_spark(table_name)
-    for fragment in sql_fragments:
-        spark.sql(f"ALTER TABLE {table_name} {fragment}")
-    default_upload_directory(cluster, storage_type, table_dir, table_dir)
 
 
 def create_and_populate(cluster, instance, storage_type, table_name, n_rows, format_version=2):
@@ -234,6 +200,49 @@ def test_expire_snapshots_no_expirable(started_cluster_iceberg_with_spark, stora
     counts = parse_expire_result(result)
     assert all(v == 0 for v in counts.values()), f"Expected all zeros for no-op, got {counts}"
     assert_data_intact(instance, TABLE_NAME, 1)
+
+
+@pytest.mark.parametrize("gc_enabled", ["false", "1", "garbage"])
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_rejected_when_gc_is_not_true(
+    started_cluster_iceberg_with_spark, storage_type, gc_enabled
+):
+    """expire_snapshots must not commit or delete files unless gc.enabled is true."""
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = make_table_name("test_expire_gc_not_true", storage_type)
+
+    create_and_populate(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME, 2
+    )
+    spark_alter_table(
+        started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
+        f"SET TBLPROPERTIES('gc.enabled' = '{gc_enabled}', "
+        "'history.expire.max-snapshot-age-ms' = '1', "
+        "'history.expire.min-snapshots-to-keep' = '1')",
+    )
+
+    metadata_before, metadata_path_before = _read_iceberg_metadata(instance, TABLE_NAME)
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/"
+    files_before = set(default_download_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    ))
+    for dry_run in [0, 1]:
+        error = instance.query_and_get_error(
+            f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots(dry_run = {dry_run});",
+            settings=ICEBERG_SETTINGS,
+        )
+        assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS error, got: {error}"
+        assert "GC is disabled" in error, f"Expected GC-disabled error, got: {error}"
+
+    metadata_after, metadata_path_after = _read_iceberg_metadata(instance, TABLE_NAME)
+    files_after = set(default_download_directory(
+        started_cluster_iceberg_with_spark, storage_type, table_dir, table_dir,
+    ))
+    assert metadata_path_after == metadata_path_before
+    assert metadata_after["snapshots"] == metadata_before["snapshots"]
+    assert files_after == files_before
+    assert_data_intact(instance, TABLE_NAME, 2)
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
