@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 -q "CREATE TABLE $db
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table=1 -q "CREATE MATERIALIZED VIEW $db.mv ENGINE = TimeSeries AS SELECT 1 AS a"
 
 for t in $($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database = '$db' AND name LIKE '.inner_id.tags.%'"); do
-    $CLICKHOUSE_CLIENT -q "DROP TABLE $db.\`$t\` SYNC"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE $db.\`$t\` SYNC SETTINGS ignore_drop_queries_probability = 0"
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT countIf(name LIKE '.inner_id.tags.%'), count() FROM system.tables WHERE database = '$db'"
