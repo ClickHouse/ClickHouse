@@ -25,3 +25,11 @@ source	z	local
 restored	k	
 restored	c	y
 restored	z	local
+restart before the queued ALTER_METADATA is applied
+before backup	old	1
+source	k	
+source	c	
+source	x	
+restored	k	
+restored	c	
+restored	x	

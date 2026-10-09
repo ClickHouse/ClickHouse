@@ -12150,6 +12150,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
     {
         /// Try to adjust the create query using values from ZooKeeper.
         auto zookeeper = getZooKeeper();
+        const bool alter_metadata_queued = queue.getStatus().metadata_alters_in_queue != 0;
         auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
         auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
         Coordination::Stat metadata_stat;
@@ -12157,7 +12158,8 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
 
         /// Comment ALTERs are not replicated through ZooKeeper, so the backup keeps the comments this replica has applied.
         /// Not before it applies the last replicated ALTER: that replaces all its columns with the columns node.
-        if (current_metadata->getMetadataVersion() >= metadata_stat.version)
+        /// After a restart the metadata version is set from ZooKeeper before a queued ALTER_METADATA is applied locally.
+        if (!alter_metadata_queued && current_metadata->getMetadataVersion() >= metadata_stat.version)
         {
             for (const auto & column : current_metadata->columns)
             {
