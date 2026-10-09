@@ -125,48 +125,74 @@ void TopKThresholdCollector::add(const IColumn & sorted, size_t rows)
     if (rows == 0)
         return;
 
-    std::lock_guard lock(mutex);
-
-    /// Only values before the published one can change it; `sorted` is sorted, so they are a prefix of it.
-    if (boundary)
+    MutableColumnPtr to_merge;
     {
-        size_t lo = 0;
-        size_t hi = rows;
-        while (lo < hi)
+        std::lock_guard lock(mutex);
+
+        /// Only values before the published one can change it; `sorted` is sorted, so they are a prefix of it.
+        if (boundary)
         {
-            size_t mid = lo + (hi - lo) / 2;
-            if (compare(sorted, mid, *boundary, 0) < 0)
-                lo = mid + 1;
-            else
-                hi = mid;
+            size_t lo = 0;
+            size_t hi = rows;
+            while (lo < hi)
+            {
+                size_t mid = lo + (hi - lo) / 2;
+                if (compare(sorted, mid, *boundary, 0) < 0)
+                    lo = mid + 1;
+                else
+                    hi = mid;
+            }
+            rows = lo;
+            if (rows == 0)
+                return;
         }
-        rows = lo;
-        if (rows == 0)
+
+        if (!values)
+            values = sorted.cloneEmpty();
+        values->insertRangeFrom(sorted, 0, rows);
+
+        if (merging || values->size() < limit + (boundary ? limit / 2 : 0))
             return;
+
+        to_merge = std::move(values);
+        values = to_merge->cloneEmpty();
+        merging = true;
     }
 
-    if (!values)
-        values = sorted.cloneEmpty();
-    values->insertRangeFrom(sorted, 0, rows);
-
-    if (values->size() < limit + (boundary ? limit / 2 : 0))
-        return;
-
-    IColumn::Permutation perm;
     auto direction = description.direction == -1 ? IColumn::PermutationSortDirection::Descending
                                                  : IColumn::PermutationSortDirection::Ascending;
-    if (description.collator)
-        values->getPermutationWithCollation(
-            *description.collator, direction, IColumn::PermutationSortStability::Unstable, limit, description.nulls_direction, perm);
-    else
-        values->getPermutation(direction, IColumn::PermutationSortStability::Unstable, limit, description.nulls_direction, perm);
+    while (to_merge)
+    {
+        IColumn::Permutation perm;
+        if (description.collator)
+            to_merge->getPermutationWithCollation(
+                *description.collator, direction, IColumn::PermutationSortStability::Unstable, limit, description.nulls_direction, perm);
+        else
+            to_merge->getPermutation(direction, IColumn::PermutationSortStability::Unstable, limit, description.nulls_direction, perm);
 
-    values = IColumn::mutate(values->permute(perm, limit));
-    boundary = values->cut(limit - 1, 1);
+        ColumnPtr best = to_merge->permute(perm, limit);
 
-    Field value;
-    values->get(limit - 1, value);
-    tracker->testAndSet(value);
+        Field value;
+        best->get(limit - 1, value);
+        tracker->testAndSet(value);
+
+        std::lock_guard lock(mutex);
+        size_t added_meanwhile = values->size();
+        values->insertRangeFrom(*best, 0, limit);
+        boundary = best->cut(limit - 1, 1);
+
+        /// Other threads did not merge what they added meanwhile because `merging` was set.
+        if (added_meanwhile && values->size() >= limit + limit / 2)
+        {
+            to_merge = std::move(values);
+            values = to_merge->cloneEmpty();
+        }
+        else
+        {
+            to_merge = nullptr;
+            merging = false;
+        }
+    }
 }
 
 PartialSortingTransform::PartialSortingTransform(

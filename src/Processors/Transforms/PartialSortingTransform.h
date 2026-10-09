@@ -21,6 +21,9 @@ public:
 
     static bool isSupportedType(const IDataType & type);
 
+    /// Above it the values copied per block make the streams contend for `mutex`.
+    static constexpr size_t max_limit = 1000;
+
     /// `sorted` is the first sort column of a sorted block; its first `rows` values are added.
     void add(const IColumn & sorted, size_t rows);
 
@@ -35,6 +38,8 @@ private:
     MutableColumnPtr values TSA_GUARDED_BY(mutex);
     /// One row: the value published by the last merge, null before it.
     ColumnPtr boundary TSA_GUARDED_BY(mutex);
+    /// A thread is sorting the values it took out of `values`; it puts the `limit` best back.
+    bool merging TSA_GUARDED_BY(mutex) = false;
 };
 
 using TopKThresholdCollectorPtr = std::shared_ptr<TopKThresholdCollector>;

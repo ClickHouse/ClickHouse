@@ -382,7 +382,7 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 static TopKThresholdCollectorPtr createThresholdCollector(
     const TopKThresholdTrackerPtr & threshold_tracker, const Block & header, const SortDescription & sort_description, UInt64 limit)
 {
-    if (!threshold_tracker || !limit)
+    if (!threshold_tracker || !limit || limit > TopKThresholdCollector::max_limit)
         return nullptr;
 
     const auto & sort_column_description = sort_description.front();
