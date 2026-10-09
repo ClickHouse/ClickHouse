@@ -7,6 +7,7 @@
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/FieldVisitors.h>
@@ -71,8 +72,9 @@ public:
         size_t expr_idx = 1 - const_idx;
         const auto & expr_node = args[expr_idx];
 
+        /// For Nullable, both the comparison and the function return NULL for NULL.
         const auto expr_type = expr_node->getResultType();
-        if (!expr_type || !isStringOrFixedString(expr_type))
+        if (!expr_type || !isStringOrFixedString(removeNullable(expr_type)))
             return;
 
         const String replacement_func = (func_name == "equals") ? "empty" : "notEmpty";
