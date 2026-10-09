@@ -146,12 +146,10 @@ bool mayExist(const DiskPtr & disk, const String & path) noexcept
     }
     catch (...)
     {
-        /// Ok: an unknown answer counts as "may exist".
         return true;
     }
 }
 
-/// Returns the paths of the written records.
 Strings writeExchangeRecords(const DiskPtr & disk, const String & old_path, const String & new_path, ContextPtr local_context)
 {
     const bool fsync = local_context->getSettingsRef()[Setting::fsync_metadata];
