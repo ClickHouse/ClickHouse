@@ -30,6 +30,12 @@ public:
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }
 
+    /// Check the limits on the amount of data to read and the speed limits against the progress of this callback only,
+    /// instead of the progress of the whole query in the process list element. The progress is still reported to the
+    /// process list element. Used when a query executes a pipeline that may be abandoned and replaced by another one,
+    /// so that the data read by the abandoned pipeline is not counted against the limits of the next one.
+    void checkLimitsOnOwnProgress() { check_limits_on_own_progress = true; }
+
     bool onProgress(uint64_t read_rows, uint64_t read_bytes, const StorageLimitsList & storage_limits);
 
 private:
@@ -46,6 +52,10 @@ private:
     Stopwatch total_stopwatch{CLOCK_MONOTONIC_COARSE};  /// Including waiting time
 
     bool update_profile_events = true;
+
+    /// See `checkLimitsOnOwnProgress`.
+    bool check_limits_on_own_progress = false;
+    Progress own_progress;
 };
 
 }

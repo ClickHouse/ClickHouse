@@ -598,12 +598,29 @@ public:
 
     using QueryPrivilegesInfoPtr = std::shared_ptr<QueryPrivilegesInfo>;
 
+    /// Information about the routing of a query by the `ABR` table engine, written to `system.query_log`.
+    /// Shared by the contexts copied from the query context, so that the contexts of the attempts can write back.
+    struct ABRQueryInfo
+    {
+        std::atomic<UInt64> duration_ms{0}; /// Wall-clock time for the table selection and all attempts, in milliseconds.
+        std::atomic<UInt64> interval{0};    /// The sample interval ultimately used.
+        std::atomic<UInt64> min_date{0};    /// The lower bound on the time column extracted from the query, as a Unix timestamp.
+
+        /// Per-interval fallback error codes. Key = sample interval that was skipped or failed,
+        /// Value = error code that explains why (e.g. `TOO_MANY_ROWS`).
+        mutable std::mutex mutex;
+        std::map<UInt64, Int32> exception_codes TSA_GUARDED_BY(mutex);
+    };
+    using ABRQueryInfoPtr = std::shared_ptr<ABRQueryInfo>;
+
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
     /// Created by `makeQueryContext` and shared by every context copied from the query context.
     DistributedPlanLocalObjectPtr distributed_plan_local_object;
     QueryPrivilegesInfoPtr query_privileges_info;
+    /// Created by `makeQueryContext` and shared by every context copied from the query context.
+    ABRQueryInfoPtr abr_query_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
     /// Query metrics about the execution of a query.
@@ -1221,6 +1238,8 @@ public:
     /// a copy of the original query context but should still account its access checks to the original query.
     void setQueryPrivilegesInfo(const QueryPrivilegesInfoPtr & query_privileges_info_) { query_privileges_info = query_privileges_info_; }
     void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
+
+    ABRQueryInfoPtr getABRQueryInfoPtr() const { return abr_query_info; }
 
     /// For table functions s3/file/url/hdfs/input we can use structure from
     /// insertion table depending on select expression.

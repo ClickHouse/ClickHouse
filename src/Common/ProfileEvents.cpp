@@ -519,6 +519,7 @@
     M(SelectedMarksTotal, "Number of total marks (index granules) before selecting which ones to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRows, "Number of rows SELECTed from all tables.", ValueType::Number) \
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
+    M(ABRChooseBestTableDurationMicroseconds, "Total time spent by the `ABR` table engine choosing the underlying table.", ValueType::Microseconds) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
     M(StringValueFilterValuesChecked, "Number of string values checked during a scan against a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \

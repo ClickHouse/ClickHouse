@@ -3658,6 +3658,38 @@ If enable, remove duplicated rows during FINAL by marking rows as deleted and fi
       * Almost all limits apply to each stream individually. \
       */ \
     \
+    DECLARE(UInt64, abr_memory_buffer_size, 16 * 1024 * 1024, R"(
+Size in bytes of the in-memory buffer used by the `ABR` table engine to materialize each query attempt's results before they are
+replayed to the client. When the buffer is exhausted, additional output spills to temporary data on disk.
+
+Buffering is required because `ABR` may retry a query on a coarser underlying table after a fallback error
+(`TOO_MANY_ROWS`, `TIMEOUT_EXCEEDED`); rows produced by a failed attempt must never reach the client.
+
+Set to `0` to skip the in-memory buffer entirely and always spill to disk.
+)", 0, \
+        {"26.10", 16 * 1024 * 1024, 16 * 1024 * 1024, "New setting for the ABR table engine."}) \
+    DECLARE(UInt64, abr_first_table_suffix, 0, R"(
+Minimum sample interval (suffix) to consider when the `ABR` table engine chooses an underlying table. Tables with a smaller sample
+interval are skipped even if their retention covers the query range.
+
+Useful when the finest-grained tables are known to be too expensive for a class of queries.
+
+`0` means no minimum: the finest available resolution is eligible.
+)", 0, \
+        {"26.10", 0, 0, "New setting for the ABR table engine."}) \
+    DECLARE(UInt64, abr_last_table_suffix, 0, R"(
+Maximum sample interval (suffix) to consider when the `ABR` table engine chooses an underlying table. Tables with a larger sample
+interval are excluded from selection.
+
+This setting overrides retention-based selection: if no table within `[abr_first_table_suffix, abr_last_table_suffix]` has enough
+retention for the query's time range, the query falls back to the table at `abr_last_table_suffix` rather than to a coarser one.
+
+The retries after `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED` do not go beyond this table either, and the limits of the query are split
+only between the tables up to it.
+
+`0` means no maximum: the coarsest available table is eligible.
+)", 0, \
+        {"26.10", 0, 0, "New setting for the ABR table engine."}) \
     DECLARE(UInt64, max_rows_to_read, 0, R"(
 The maximum number of rows that can be read from a table when running a query.
 The restriction is checked for each processed chunk of data, applied only to the

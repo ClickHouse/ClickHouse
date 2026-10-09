@@ -534,6 +534,15 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     }
 
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
+
+    if (auto abr_info = context_ptr->getABRQueryInfoPtr())
+    {
+        element.abr_duration_ms = abr_info->duration_ms.load();
+        element.abr_interval = abr_info->interval.load();
+        element.abr_min_date = abr_info->min_date.load();
+        std::lock_guard lock(abr_info->mutex);
+        element.abr_exception_codes = abr_info->exception_codes;
+    }
 }
 
 static UInt64 getQueryMetricLogInterval(ContextPtr context)

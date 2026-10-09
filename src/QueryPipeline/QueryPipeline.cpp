@@ -914,6 +914,9 @@ std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() c
     callback->setProgressCallback(progress_callback);
     callback->setQuota(quota);
     callback->setNormalizedQueryHash(normalized_query_hash);
+    /// Before `setProcessListElement`, which already reports the approximate number of rows to read.
+    if (check_read_limits_on_own_progress)
+        callback->checkLimitsOnOwnProgress();
     callback->setProcessListElement(process_list_element);
 
     if (!update_profile_events)
