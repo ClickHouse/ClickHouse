@@ -4,6 +4,7 @@
 #include <Columns/Collator.h>
 #include <Core/CompareHelper.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -174,6 +175,11 @@ TopKThresholdTrackerPtr createTopKThresholdTracker(const SortColumnDescription &
     }
 
     return std::make_shared<TopKThresholdTrackerGeneric>(sort_desc);
+}
+
+bool isTopKThresholdRepresentable(const IDataType & data_type)
+{
+    return !anyInTypeTree(data_type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); });
 }
 
 }
