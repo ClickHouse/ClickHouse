@@ -67,7 +67,7 @@ std::optional<ActionsDAG> ArrayJoinStep::toActionsDAG() const
                 return {};
             array = &dag.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(FunctionEmptyArrayToSingle::createImpl()), {array}, {});
         }
-        /// the atom must be arrayJoin(col), not something named like the array column, the alias only keeps the name
+        /// the alias keeps the column name, the index still sees arrayJoin(col)
         dag.addOrReplaceInOutputs(dag.addAlias(dag.addArrayJoin(*array, {}), name));
     }
     return dag;
