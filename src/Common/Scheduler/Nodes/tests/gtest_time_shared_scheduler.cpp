@@ -6,10 +6,13 @@
 #include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/randomSeed.h>
 
 #include <barrier>
 #include <future>
+#include <stdexcept>
+#include <thread>
 #include <pcg_random.hpp>
 
 using namespace DB;
@@ -258,4 +261,27 @@ TEST(SchedulerTimeShared, Cancel)
     consumer2.join();
 
     EXPECT_TRUE(fc1->getInflights().first == 0);
+}
+
+TEST(SchedulerTimeShared, ExceptionInSchedulerThreadTerminates)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+    {
+        TimeSharedScheduler scheduler;
+        scheduler.start(ThreadName::TEST_SCHEDULER);
+        scheduler.event_queue.enqueue([] { throw std::runtime_error("Test exception in the scheduler thread"); });
+        std::this_thread::sleep_for(std::chrono::seconds(60));
+    }, "Test exception in the scheduler thread");
+}
+
+TEST(SchedulerTimeShared, MemoryTrackerDoesNotThrowInSchedulerThread)
+{
+    ResourceTest t;
+    std::promise<bool> blocked;
+    t.scheduler.event_queue.enqueue([&]
+    {
+        blocked.set_value(LockMemoryExceptionInThread::isBlocked(VariableContext::Global, /* fault_injection = */ true));
+    });
+    EXPECT_TRUE(blocked.get_future().get());
 }

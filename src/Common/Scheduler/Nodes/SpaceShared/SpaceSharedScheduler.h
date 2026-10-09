@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -47,6 +48,9 @@ public:
             scheduler.join();
             if (graceful)
             {
+                // Callbacks run in the current thread, which must not throw either (see `EventQueue::runSchedulerThread`)
+                LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 while (true)
                 {
@@ -140,19 +144,20 @@ public:
 private:
     void schedulerThread(ThreadName name)
     {
-        setThreadName(name);
-        EventQueue::SchedulerThread scheduler_thread(&events);
-        while (!stop_flag.load())
+        events.runSchedulerThread(name, [this]
         {
-            if (events.tryProcess()) // Priority 0: process events
-                continue;
-            else if (decrease) // Priority 1: process decrease requests
-                approveDecrease();
-            else if (increase) // Priority 2: process increase requests
-                approveIncrease();
-            else // Block until any event happens
-                events.process();
-        }
+            while (!stop_flag.load())
+            {
+                if (events.tryProcess()) // Priority 0: process events
+                    continue;
+                else if (decrease) // Priority 1: process decrease requests
+                    approveDecrease();
+                else if (increase) // Priority 2: process increase requests
+                    approveIncrease();
+                else // Block until any event happens
+                    events.process();
+            }
+        });
     }
 
     SpaceSharedNodePtr child;
