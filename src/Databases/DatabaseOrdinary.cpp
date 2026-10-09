@@ -27,6 +27,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/TemporaryReplaceTableName.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -428,7 +429,60 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
         }
     };
 
-    iterateMetadataFiles(process_metadata);
+    /// The metadata files of the temporary tables of `CREATE OR REPLACE` are processed after all other files,
+    /// because they may duplicate the metadata of another table. On a disk without atomic renames (such as
+    /// `plain_rewritable` object storage), a rename copies the file and then removes the source, so if the
+    /// server is killed in between, both the temporary name and the final name refer to the same table
+    /// (with the same UUID).
+    std::mutex tmp_replace_files_mutex;
+    std::vector<String> tmp_replace_files;
+
+    iterateMetadataFiles([&](const String & file_name)
+    {
+        if (endsWith(file_name, ".sql")
+            && TemporaryReplaceTableName::fromString(unescapeForFileName(file_name.substr(0, file_name.size() - strlen(".sql")))))
+        {
+            std::lock_guard lock(tmp_replace_files_mutex);
+            tmp_replace_files.push_back(file_name);
+            return;
+        }
+        process_metadata(file_name);
+    });
+
+    for (const auto & file_name : tmp_replace_files)
+    {
+        String full_path = (fs::path(getMetadataPath()) / file_name).string();
+        auto ast = parseQueryFromMetadata(log, local_context, db_disk, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
+        const auto * create_query = ast ? ast->as<ASTCreateQuery>() : nullptr;
+
+        std::optional<String> duplicate_of_path;
+        if (create_query && create_query->uuid != UUIDHelpers::Nil)
+        {
+            std::lock_guard lock{metadata.mutex};
+            for (const auto & [name, parsed] : metadata.parsed_tables)
+            {
+                if (name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name)
+                    && parsed.ast->as<const ASTCreateQuery &>().uuid == create_query->uuid)
+                {
+                    duplicate_of_path = parsed.path;
+                    break;
+                }
+            }
+        }
+
+        if (!duplicate_of_path)
+        {
+            process_metadata(file_name);
+            continue;
+        }
+
+        /// The data of an `Atomic` table is addressed by its UUID, so only the metadata file is removed.
+        LOG_WARNING(log, "Metadata file {} refers to the same table (UUID {}) as {}, which is a leftover of an interrupted rename"
+            " of a temporary table of `CREATE OR REPLACE`. Removing it.",
+            full_path, create_query->uuid, *duplicate_of_path);
+        if (!db_disk->isReadOnly())
+            db_disk->removeFile(full_path);
+    }
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
