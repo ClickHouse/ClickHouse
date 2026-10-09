@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -48,7 +49,9 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <array>
+#include <bit>
 #include <cstring>
+#include <type_traits>
 #include <typeinfo>
 #include <unordered_set>
 
@@ -285,6 +288,33 @@ bool isSupportedLeafType(const IDataType & type)
         || typeid(type) == typeid(DataTypeUUID) || typeid(type) == typeid(DataTypeIPv4) || typeid(type) == typeid(DataTypeIPv6);
 }
 
+template <typename T>
+bool sameEnumType(const DataTypeEnum<T> & left, const DataTypeEnum<T> & right, ExpressionMatchBudget & budget)
+{
+    if (left.isAdd() || right.isAdd()
+        || left.getRelativeFlagsSize() != 0 || right.getRelativeFlagsSize() != 0)
+        return false;
+
+    /// A shared normal Enum type is identical to itself; avoid rescanning its full map.
+    if (&left == &right)
+        return true;
+
+    const auto & left_values = left.getValues();
+    const auto & right_values = right.getValues();
+    if (left_values.size() != right_values.size() || !budget.consume(left_values.size()))
+        return false;
+
+    for (size_t i = 0; i < left_values.size(); ++i)
+    {
+        const auto & [left_name, left_value] = left_values[i];
+        const auto & [right_name, right_value] = right_values[i];
+        if (!budget.consume(left_name.size()) || !budget.consume(right_name.size())
+            || left_name != right_name || left_value != right_value)
+            return false;
+    }
+    return true;
+}
+
 bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMatchBudget & budget)
 {
     if (!left || !right)
@@ -307,6 +337,37 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
         /// Function-typed arguments carry lambda captures outside the ordinary child structure.
         if (typeid_cast<const DataTypeFunction *>(left_type.get()) || typeid_cast<const DataTypeFunction *>(right_type.get()))
             return false;
+
+        if (const auto * left_datetime64 = typeid_cast<const DataTypeDateTime64 *>(left_type.get()))
+        {
+            const auto * right_datetime64 = typeid_cast<const DataTypeDateTime64 *>(right_type.get());
+            if (!right_datetime64
+                || left_datetime64->getScale() != right_datetime64->getScale()
+                || left_datetime64->hasExplicitTimeZone() != right_datetime64->hasExplicitTimeZone())
+                return false;
+
+            const auto & left_time_zone = left_datetime64->getTimeZone().getTimeZone();
+            const auto & right_time_zone = right_datetime64->getTimeZone().getTimeZone();
+            if (!budget.consume(left_time_zone.size()) || !budget.consume(right_time_zone.size())
+                || left_time_zone != right_time_zone)
+                return false;
+            continue;
+        }
+
+        if (const auto * left_enum8 = typeid_cast<const DataTypeEnum8 *>(left_type.get()))
+        {
+            const auto * right_enum8 = typeid_cast<const DataTypeEnum8 *>(right_type.get());
+            if (!right_enum8 || !sameEnumType(*left_enum8, *right_enum8, budget))
+                return false;
+            continue;
+        }
+        if (const auto * left_enum16 = typeid_cast<const DataTypeEnum16 *>(left_type.get()))
+        {
+            const auto * right_enum16 = typeid_cast<const DataTypeEnum16 *>(right_type.get());
+            if (!right_enum16 || !sameEnumType(*left_enum16, *right_enum16, budget))
+                return false;
+            continue;
+        }
 
         if (left_type.get() == right_type.get())
         {
@@ -423,6 +484,14 @@ bool isArrayOfStringType(const DataTypePtr & type)
     return array_type && isStringType(array_type->getNestedType());
 }
 
+bool isSupportedBloomFilterArrayElementType(const DataTypePtr & type);
+
+bool isSupportedBloomFilterArrayType(const DataTypePtr & type)
+{
+    const auto * array_type = type ? typeid_cast<const DataTypeArray *>(type.get()) : nullptr;
+    return array_type && isSupportedBloomFilterArrayElementType(array_type->getNestedType());
+}
+
 bool compareColumnStringStorage(
     const ColumnString & left,
     const ColumnString & right,
@@ -466,7 +535,12 @@ bool compareSupportedNumericConstant(
         || !budget.consume(2 * sizeof(T)))
         return false;
 
-    return std::memcmp(&left_vector->getElement(0), &right_vector->getElement(0), sizeof(T)) == 0;
+    if constexpr (std::is_same_v<T, Float32>)
+        return std::bit_cast<UInt32>(left_vector->getElement(0)) == std::bit_cast<UInt32>(right_vector->getElement(0));
+    else if constexpr (std::is_same_v<T, Float64>)
+        return std::bit_cast<UInt64>(left_vector->getElement(0)) == std::bit_cast<UInt64>(right_vector->getElement(0));
+    else
+        return std::memcmp(&left_vector->getElement(0), &right_vector->getElement(0), sizeof(T)) == 0;
 }
 
 bool compareSupportedNumericConstant(
@@ -617,8 +691,8 @@ bool isSupportedArrayFunctionPair(
         || left_function->isStateful() || right_function->isStateful()
         || !left_function->isDeterministic() || !right_function->isDeterministic()
         || !left_function->isDeterministicInScopeOfQuery() || !right_function->isDeterministicInScopeOfQuery()
-        || !isArrayOfStringType(left.function_base->getResultType())
-        || !isArrayOfStringType(right.function_base->getResultType()))
+        || !isSupportedBloomFilterArrayType(left.function_base->getResultType())
+        || !isSupportedBloomFilterArrayType(right.function_base->getResultType()))
         return false;
 
     const auto & left_argument_types = left.function_base->getArgumentTypes();
@@ -634,11 +708,17 @@ bool isSupportedArrayFunctionPair(
         return false;
 
     for (const auto & argument_type : left_argument_types)
-        if (!isArrayOfStringType(argument_type) || !sameType(argument_type, left.function_base->getResultType(), budget))
+    {
+        if (!isSupportedBloomFilterArrayType(argument_type)
+            || !sameType(argument_type, left.function_base->getResultType(), budget))
             return false;
+    }
     for (const auto & argument_type : right_argument_types)
-        if (!isArrayOfStringType(argument_type) || !sameType(argument_type, right.function_base->getResultType(), budget))
+    {
+        if (!isSupportedBloomFilterArrayType(argument_type)
+            || !sameType(argument_type, right.function_base->getResultType(), budget))
             return false;
+    }
 
     return true;
 }
@@ -741,11 +821,11 @@ bool structurallyMatchesIndexedExpression(
             case ActionsDAG::ActionType::INPUT:
                 if (left->result_name.size() != right->result_name.size()
                     || !budget.consume(left->result_name.size()) || left->result_name != right->result_name
-                    || left->children.size() || right->children.size())
+                    || !left->children.empty() || !right->children.empty())
                     return false;
                 break;
             case ActionsDAG::ActionType::COLUMN:
-                if (left->children.size() || right->children.size()
+                if (!left->children.empty() || !right->children.empty()
                     || !compareSupportedConstant(*left, *right, mode, budget))
                     return false;
                 break;
