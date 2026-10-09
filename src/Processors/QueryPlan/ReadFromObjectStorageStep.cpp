@@ -179,6 +179,10 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
     }
 
+    auto file_iterator = iterator_wrapper;
+    if (top_k_query_condition_cache_key && !top_k_query_condition_cache_key->condition_hash)
+        file_iterator = std::make_shared<ObjectIteratorListingAllForTopKQueryConditionCache>(file_iterator, top_k_query_condition_cache_key);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
@@ -191,7 +195,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             format_settings,
             context,
             max_block_size,
-            iterator_wrapper,
+            file_iterator,
             parser_shared_resources,
             format_filter_info,
             need_only_count,
@@ -236,7 +240,7 @@ void ReadFromObjectStorageStep::createIterator()
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
 
-ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const
+std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const
 {
     const auto & settings = getContext()->getSettingsRef();
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
@@ -254,12 +258,14 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     /// The threshold of the TopN filter comes from the rows of every file of the query, so the key
     /// must identify the set of files and their contents. A data lake snapshot does: it lists the data
     /// files (and the deletes applied to them), which are never modified in place, and the read
-    /// iterates exactly the snapshot pinned in the storage metadata (see `createFileIterator`). Plain
-    /// object storage has no such identity before the objects are listed.
-    if (!configuration->isDataLakeConfiguration())
-        return {};
+    /// iterates exactly the snapshot pinned in the storage metadata (see `createFileIterator`). For
+    /// plain object storage, the key covers the ETags of all objects as they are listed (see
+    /// `ObjectIteratorListingAllForTopKQueryConditionCache`). An object can be overwritten after it is
+    /// listed, so the read of every object must be pinned to the listed ETag: otherwise an entry of
+    /// one file could be used while another file is read in a version the key does not describe.
+    const bool is_data_lake = configuration->isDataLakeConfiguration();
     const auto & datalake_table_state = storage_snapshot->metadata->datalake_table_state;
-    if (!datalake_table_state)
+    if (is_data_lake ? !datalake_table_state : !isReadPinnedToListedGeneration())
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
@@ -282,14 +288,42 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
 
     key->condition += fmt::format("TopK by {}", top_k_filter->column_name);
 
-    WriteBufferFromOwnString table_state;
-    serializeDataLakeTableStateSnapshot(*datalake_table_state, table_state);
-    table_state.finalize();
-
     boost::hash_combine(condition_hash, top_k_filter->plan_hash);
-    boost::hash_combine(condition_hash, sipHash64(table_state.str()));
-    key->condition_hash = condition_hash;
+    key->condition_hash_without_files = condition_hash;
+
+    if (is_data_lake)
+    {
+        WriteBufferFromOwnString table_state;
+        serializeDataLakeTableStateSnapshot(*datalake_table_state, table_state);
+        table_state.finalize();
+
+        boost::hash_combine(condition_hash, sipHash64(table_state.str()));
+        key->condition_hash = condition_hash;
+    }
     return key;
+}
+
+bool ReadFromObjectStorageStep::isReadPinnedToListedGeneration() const
+{
+    /// On most backends a read is unconditional: `HDFSObjectStorage` and the local disk ignore
+    /// `StoredObject::etag`, so a concurrent in-place overwrite after the object was listed goes
+    /// unnoticed. A read is pinned to the listed generation when the backend issues it with the
+    /// captured `ETag` and rejects a response whose `ETag` drifted from it, which is atomic with respect
+    /// to an overwrite: S3 with `s3_validate_etag_on_read` (see `ReadBufferFromS3`), and Azure with
+    /// `azure_validate_etag_on_read` (see `ReadBufferFromAzureBlobStorage`). The pin only takes effect
+    /// when the captured metadata actually carries a non-empty `ETag` (see `createReadBuffer`), and
+    /// `GCS` accessed through the S3 API is documented to legitimately return objects without one -
+    /// so a `GCS`-provider client is not considered pinned even with the setting on.
+#if USE_AWS_S3
+    if (object_storage->getType() == ObjectStorageType::S3
+        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
+    {
+        const auto s3_client = object_storage->tryGetS3StorageClient();
+        return s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
+    }
+#endif
+    return object_storage->getType() == ObjectStorageType::Azure
+        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read];
 }
 
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)
@@ -325,36 +359,16 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     if (!object_storage->supportsObjectGenerationComparison())
         return false;
 
-    /// Even when the two generations are comparable, on most backends the second pass opens an
-    /// unconditional read: `HDFSObjectStorage` and the local disk ignore `StoredObject::etag`, so a concurrent in-place overwrite between the metadata probe and the
-    /// read could still stitch together rows of two versions of the file. The reread is only
-    /// generation-safe when either:
+    /// Even when the two generations are comparable, the second pass could still stitch together rows
+    /// of two versions of a file overwritten in place between the metadata probe and the read. The
+    /// reread is only generation-safe when either:
     ///   - the data files are immutable by the format's contract — a data lake never overwrites a
     ///     data file in place, so a file identified by path is always the same generation; or
-    ///   - the backend pins the actual read to the captured generation — S3 with
-    ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag and
-    ///     rejects a response whose ETag drifted from it (see `ReadBufferFromS3`), which is atomic
-    ///     with respect to an overwrite; Azure with `azure_validate_etag_on_read` does the same
-    ///     (see `ReadBufferFromAzureBlobStorage`).
-    /// The pin only takes effect when the captured metadata actually carries a non-empty `ETag`
-    /// (see `createReadBuffer`), and `GCS` accessed through the S3 API is documented to legitimately
-    /// return objects without one — so a `GCS`-provider client is not pinned even with the setting
-    /// on. Any other provider that unexpectedly yields an empty `ETag` at read time fails close in
+    ///   - the backend pins the actual read to the captured generation (see `isReadPinnedToListedGeneration`).
+    /// Any provider that unexpectedly yields an empty `ETag` at read time fails close in
     /// `LazyRowsObjectIterator::validateObjectGeneration` instead of degrading to an unpinned read.
     /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
-    bool reread_is_generation_pinned = false;
-#if USE_AWS_S3
-    if (object_storage->getType() == ObjectStorageType::S3
-        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
-    {
-        const auto s3_client = object_storage->tryGetS3StorageClient();
-        reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
-    }
-#endif
-    if (object_storage->getType() == ObjectStorageType::Azure
-        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read])
-        reread_is_generation_pinned = true;
-    if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
+    if (!configuration->dataFilesAreImmutable() && !isReadPinnedToListedGeneration())
         return false;
 
 #if CLICKHOUSE_CLOUD

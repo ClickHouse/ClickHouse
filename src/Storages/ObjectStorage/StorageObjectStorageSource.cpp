@@ -55,6 +55,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/operators.hpp>
+#include <boost/functional/hash.hpp>
 #include <Common/FailPoint.h>
 #include <Poco/String.h>
 #include <Common/assert_cast.h>
@@ -420,12 +421,89 @@ void StorageObjectStorageSource::writePendingTopKQueryConditionCacheEntries()
         query_condition_cache->write(
             storage_id.uuid,
             entry.cache_file_key,
-            top_k_query_condition_cache_key->condition_hash,
+            *top_k_query_condition_cache_key->condition_hash,
             top_k_query_condition_cache_key->condition,
             unmatched_ranges,
             entry.total_row_groups,
             /*has_final_mark=*/false);
     }
+}
+
+ObjectIteratorListingAllForTopKQueryConditionCache::ObjectIteratorListingAllForTopKQueryConditionCache(
+    ObjectIterator iterator_, std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_)
+    : iterator(std::move(iterator_))
+    , key(std::move(key_))
+{
+}
+
+ObjectInfoPtr ObjectIteratorListingAllForTopKQueryConditionCache::next(size_t processor)
+{
+    /// The inner iterator has advanced past the objects listed before a failure, so listing cannot
+    /// be retried: every caller gets the exception.
+    std::call_once(listed, [&]
+    {
+        try
+        {
+            listObjects(processor);
+        }
+        catch (...)
+        {
+            listing_exception = std::current_exception();
+        }
+    });
+    if (listing_exception)
+        std::rethrow_exception(listing_exception);
+
+    size_t current_index = index.fetch_add(1);
+    if (current_index < objects.size())
+        return objects[current_index];
+    if (listed_all)
+        return nullptr;
+    return iterator->next(processor);
+}
+
+void ObjectIteratorListingAllForTopKQueryConditionCache::listObjects(size_t processor)
+{
+    while (objects.size() < MAX_OBJECTS)
+    {
+        auto object = iterator->next(processor);
+        if (!object || object->getPath().empty())
+        {
+            listed_all = true;
+            break;
+        }
+        objects.push_back(std::move(object));
+    }
+
+    if (!listed_all)
+        return;
+
+    /// The cache entries of a file are keyed by its path and ETag (`makeQueryConditionCacheKey`), and the
+    /// TopK key covers these keys of all files, in any order. An object without a usable ETag (or one
+    /// inside an archive, or a part of an object) makes no key.
+    std::vector<String> file_keys;
+    file_keys.reserve(objects.size());
+    for (const auto & object : objects)
+    {
+        if (object->isArchive() || object->file_bucket_info)
+            return;
+        auto file_key = StorageObjectStorageSource::makeQueryConditionCacheKey(*object, /*is_data_lake=*/ false);
+        if (!file_key)
+            return;
+        file_keys.push_back(std::move(*file_key));
+    }
+    std::sort(file_keys.begin(), file_keys.end());
+
+    SipHash files_hash;
+    for (const auto & file_key : file_keys)
+    {
+        files_hash.update(file_key.size());
+        files_hash.update(file_key);
+    }
+
+    UInt64 condition_hash = key->condition_hash_without_files;
+    boost::hash_combine(condition_hash, files_hash.get64());
+    key->condition_hash = condition_hash;
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
@@ -1136,7 +1214,7 @@ Chunk StorageObjectStorageSource::generate()
 
         /// TopN dynamic filtering: such an entry must never land under the plain predicate key (see
         /// above), but it is sound under the TopK key (`ObjectStorageTopKQueryConditionCacheKey`), which
-        /// only the same TopN over the same data lake snapshot consults: the threshold only ever tightens
+        /// only the same TopN over the same set of files consults: the threshold only ever tightens
         /// towards the final one and `__topKFilter` keeps ties, so a row group that returned no row, or
         /// whose best returned value sorts strictly beyond the threshold, holds no row of the result - a
         /// rerun reading only the other row groups finds the same top-K. The rows of this file may still
@@ -1280,7 +1358,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// consult nor populate the cache. A file that does not apply the filter is read as without TopN.
     /// With the TopK key of this query (`ObjectStorageTopKQueryConditionCacheKey`, made only while the
     /// setting is on), a file also consults the entries a previous run of the same TopN over the same
-    /// snapshot has written. They tell which row groups hold no row of the result, which holds whether
+    /// set of files has written. They tell which row groups hold no row of the result, which holds whether
     /// or not this file applies the filter. A row group may be skipped iff either verdict excludes it.
     const bool use_query_condition_cache_for_top_k = context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k];
     QueryConditionCachePtr query_condition_cache;
@@ -1319,7 +1397,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             continue;
 
         /// A file the iterator has split into buckets is read in parts, and an entry describes a whole file.
-        use_top_k_query_condition_cache_key = top_k_query_condition_cache_key && !object_info->file_bucket_info;
+        /// The key is final once the iterator has returned an object (see `ObjectStorageTopKQueryConditionCacheKey`).
+        use_top_k_query_condition_cache_key = top_k_query_condition_cache_key && top_k_query_condition_cache_key->condition_hash
+            && !object_info->file_bucket_info;
         skipped_row_groups_by_top_k_entry = false;
 
         const bool consult_plain_condition = format_filter_info && format_filter_info->condition_hash
@@ -1351,7 +1431,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (use_top_k_query_condition_cache_key)
                 {
                     auto marks = query_condition_cache->read(
-                        storage_id.uuid, *query_condition_cache_key, top_k_query_condition_cache_key->condition_hash, /*increment_profile_events=*/false);
+                        storage_id.uuid, *query_condition_cache_key, *top_k_query_condition_cache_key->condition_hash, /*increment_profile_events=*/false);
                     if (marks)
                     {
                         if (!matching_marks)

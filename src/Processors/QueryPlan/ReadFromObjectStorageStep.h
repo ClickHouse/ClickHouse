@@ -12,7 +12,6 @@ class LazilyReadFromObjectStorage;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 struct ObjectStorageTopKQueryConditionCacheKey;
-using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
 
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
@@ -108,7 +107,10 @@ private:
 
     void createIterator();
 
-    ObjectStorageTopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+    std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+
+    /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
+    bool isReadPinnedToListedGeneration() const;
 };
 
 }
