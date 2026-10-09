@@ -42,6 +42,8 @@
 
 namespace DB
 {
+class ReadBuffer;
+struct ManifestFileCacheKey;
 
 String removeEscapedSlashes(const String & json_str);
 
@@ -120,7 +122,20 @@ struct ManifestListEntryCounts
     /// forward into this manifest list.
     std::optional<Int64> added_snapshot_id;
     std::optional<Int64> added_sequence_number;
+    Int64 deleted_files_count = 0;
+    Int64 deleted_rows_count = 0;
+    /// Source bounds remain valid when a manifest rewrite only removes live files.
+    Iceberg::PartitionFieldSummaries partition_summaries;
 };
+
+/// Preserve source Avro records while recording selected file entries as deleted by this snapshot.
+ManifestListEntryCounts rewriteManifestForDelete(
+    ReadBuffer & input,
+    WriteBuffer & output,
+    const ManifestFileCacheKey & source,
+    const std::unordered_set<Int64> & rows_to_delete,
+    Int64 snapshot_id,
+    Int64 sequence_number);
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
