@@ -44,7 +44,8 @@ hits()
     $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['QueryPlanCacheHits']
         FROM system.query_log
-        WHERE event_date >= yesterday()
+        WHERE current_database = currentDatabase()
+          AND event_date >= yesterday()
           AND type = 'QueryFinish'
           AND query_id = '04494_${CLICKHOUSE_DATABASE}_$1'
           AND user = '$user'"
