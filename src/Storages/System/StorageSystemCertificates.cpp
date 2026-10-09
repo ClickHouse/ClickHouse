@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemCertificates.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include "config.h"
 
@@ -15,7 +14,6 @@
     #include <Poco/Net/SSLManager.h>
     #include <Poco/Net/SSLException.h>
     #include <Common/Crypto/X509Certificate.h>
-    #include <Server/CertificateReloader.h>
 #endif
 
 #include <boost/algorithm/string/classification.hpp>
@@ -40,7 +38,7 @@ ColumnsDescription StorageSystemCertificates::getColumnsDescription()
         {"version",         std::make_shared<DataTypeNumber<Int32>>(), "Version of the certificate. Values are 0 for v1, 1 for v2, 2 for v3."},
         {"serial_number",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Serial Number of the certificate assigned by the issuer."},
         {"signature_algo",  std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Signature Algorithm - an algorithm used by the issuer to sign this certificate."},
-        {"issuer",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Issuer - a unique identifier for the Certificate Authority issuing this certificate."},
+        {"issuer",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Issuer - an unique identifier for the Certificate Authority issuing this certificate."},
         {"not_before",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The beginning of the time window when this certificate is valid."},
         {"not_after",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The end of the time window when this certificate is valid."},
         {"subject",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Subject - identifies the owner of the public key."},
@@ -81,7 +79,7 @@ static void populateTable(const X509Certificate & certificate, MutableColumns & 
 static void enumCertificates(const std::string & dir, bool def, MutableColumns & res_columns, const std::string & protocol)
 {
     static const RE2 cert_name("^[a-fA-F0-9]{8}\\.\\d$");
-    chassert(cert_name.ok());
+    assert(cert_name.ok());
 
     const std::filesystem::path p(dir);
 
@@ -141,19 +139,12 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
         }
     };
 
-    /// The CA certificates may have been reloaded since the context was created, `CertificateReloader` knows the current ones.
-    auto current_ca_paths = [](const std::string & prefix, Poco::Net::Context::Ptr ssl_context)
-    {
-        if (auto reloaded_ca_paths = CertificateReloader::instance().getCAPaths(prefix))
-            return *reloaded_ca_paths;
-        return ssl_context->getCAPaths();
-    };
-
     const auto & config = Context::getGlobalContextInstance()->getConfigRef();
 
     try
     {
-        process_ca_paths(current_ca_paths(Poco::Net::SSLManager::CFG_SERVER_PREFIX, Poco::Net::SSLManager::instance().defaultServerContext()), "");
+        const auto & ca_paths = Poco::Net::SSLManager::instance().defaultServerContext()->getCAPaths();
+        process_ca_paths(ca_paths, "");
     }
     catch (const Poco::Net::SSLException &)
     {
@@ -170,12 +161,12 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
             continue;
 
         if (auto ctx = Poco::Net::SSLManager::instance().getCustomServerContext(prefix))
-            process_ca_paths(current_ca_paths(prefix, ctx), protocol_name);
+        {
+            const auto & ca_paths = ctx->getCAPaths();
+            process_ca_paths(ca_paths, protocol_name);
+        }
     }
 #endif
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCertificates) }

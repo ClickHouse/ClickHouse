@@ -21,12 +21,6 @@ namespace DimensionalMetrics
     using Labels = std::vector<String>;
     using LabelValues = std::vector<String>;
 
-    enum class MetricType
-    {
-        Gauge,
-        Counter,
-    };
-
     struct Metric
     {
         Metric() : value(0.0) {}
@@ -51,12 +45,7 @@ namespace DimensionalMetrics
         using MetricsMap = std::unordered_map<LabelValues, std::unique_ptr<Metric>, LabelValuesHash>;
 
     public:
-        MetricFamily(
-            String name_,
-            String documentation_,
-            Labels labels_,
-            std::vector<LabelValues> initial_label_values = {},
-            MetricType type_ = MetricType::Gauge);
+        MetricFamily(String name_, String documentation_, Labels labels_, std::vector<LabelValues> initial_label_values = {});
         Metric & withLabels(LabelValues label_values);
 
         template <typename Func>
@@ -72,7 +61,6 @@ namespace DimensionalMetrics
         const Labels & getLabels() const;
         const String & getName() const;
         const String & getDocumentation() const;
-        const String & getTypeString() const;
 
     private:
         mutable DB::SharedMutex mutex;
@@ -80,7 +68,6 @@ namespace DimensionalMetrics
         const String name;
         const String documentation;
         const Labels labels;
-        const String type_string;
     };
 
     using MetricFamilyPtr = std::unique_ptr<MetricFamily>;
@@ -98,8 +85,7 @@ namespace DimensionalMetrics
             String name,
             String documentation,
             Labels labels,
-            std::vector<LabelValues> initial_label_values = {},
-            MetricType type = MetricType::Gauge);
+            std::vector<LabelValues> initial_label_values = {});
 
         template <typename Func>
         void forEachFamily(Func && func) const

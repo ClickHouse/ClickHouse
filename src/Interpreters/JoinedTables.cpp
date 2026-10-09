@@ -1,5 +1,7 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
@@ -25,7 +27,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
-#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
@@ -289,14 +290,13 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & 
 {
     if (storage)
     {
-        const ColumnsDescription & storage_columns = metadata_snapshot->columns;
-        const VirtualColumnsDescription & virtual_columns = metadata_snapshot->virtuals;
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
 
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
-        table.addHiddenColumns(virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+        table.addHiddenColumns(storage->getVirtualsList());
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());
@@ -333,8 +333,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     const auto & settings = context->getSettingsRef();
     MultiEnum<JoinAlgorithm> join_algorithm = settings[Setting::join_algorithm];
     bool try_use_direct_join = join_algorithm.isSet(JoinAlgorithm::DIRECT) || join_algorithm.isSet(JoinAlgorithm::DEFAULT);
-    auto table_join = std::make_shared<TableJoin>(
-        settings, context->getJoinAnalyzeMode(), context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());
+    auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query_.join();
     const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
@@ -344,6 +343,14 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+
+        /// A special storage replaces the right-side plan, and with it the `FilterStep` carrying the
+        /// table's row policy, so such a table has to be joined as an ordinary stream.
+        auto joined_table_row_policy = context->getRowPolicyFilter(
+            joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (joined_table_row_policy && !joined_table_row_policy->isAlwaysTrue())
+            storage = nullptr;
+
         if (storage)
         {
             if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)

@@ -28,7 +28,7 @@ WriteBuffer::~WriteBuffer()
             log,
             "WriteBuffer is neither finalized nor canceled when destructor is called. "
             "No exceptions in flight are detected. "
-            "The file might not be written at all or might be truncated. "
+            "The file might not be written at all or might be truncated."
             "Stack trace: {}",
             StackTrace().toString());
         chassert(false && "WriteBuffer is neither finalized nor canceled in destructor.");
@@ -46,7 +46,7 @@ void WriteBuffer::write(const char * from, size_t n)
     size_t bytes_copied = 0;
 
     /// Produces endless loop
-    chassert(!working_buffer.empty());
+    assert(!working_buffer.empty());
 
     while (bytes_copied < n)
     {

@@ -20,14 +20,14 @@ SELECT
     ) AS res,
     toTypeName(res),
     isNull(res);
-\N	Nullable(Tuple(a Nullable(Int32)))	1
+(NULL)	Nullable(Tuple(a Nullable(Int32)))	0
 SELECT
     flattenTuple(
         CAST(NULL AS Nullable(Tuple(a Int32, b Array(Int32))))
     ) AS res,
     toTypeName(res),
     isNull(res);
-\N	Nullable(Tuple(a Int32, b Array(Int32)))	1
+(0,[])	Nullable(Tuple(a Int32, b Array(Int32)))	0
 SELECT
     flattenTuple(
         CAST((1, ('x', NULL)) AS Nullable(Tuple(a Int32, b Nullable(Tuple(String, Nullable(Tuple(Int32, Nullable(Int32))))))))

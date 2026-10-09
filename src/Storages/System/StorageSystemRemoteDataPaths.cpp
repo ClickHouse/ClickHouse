@@ -1,24 +1,21 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Interpreters/FileCache/FileCache.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/VirtualColumnUtils.h>
 
 namespace fs = std::filesystem;
 
@@ -38,7 +35,7 @@ namespace ErrorCodes
 }
 
 
-class SystemRemoteDataPathsSource final : public ISource
+class SystemRemoteDataPathsSource : public ISource
 {
 public:
     SystemRemoteDataPathsSource(
@@ -152,7 +149,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    /// TODO: void applyFilters(ActionDAGNodes added_filter_nodes) can be implemented to filter out disk names
 
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
@@ -162,7 +159,7 @@ private:
 
 
 StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -176,19 +173,10 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
         {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Common prefix for blobs in object storage."},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Cache files for corresponding blob."},
     }));
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageSystemRemoteDataPaths::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StorageSystemRemoteDataPaths::readImpl(
+void StorageSystemRemoteDataPaths::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -199,7 +187,7 @@ void StorageSystemRemoteDataPaths::readImpl(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
     auto read_step = std::make_unique<ReadFromSystemRemoteDataPaths>(
         context->getDisksMap(),
         column_names,
@@ -209,44 +197,6 @@ void StorageSystemRemoteDataPaths::readImpl(
         header,
         max_block_size);
     query_plan.addStep(std::move(read_step));
-}
-
-void ReadFromSystemRemoteDataPaths::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
-    const ActionsDAG::Node * predicate = nullptr;
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
-
-    if (!predicate)
-        return;
-
-    /// Reading one disk walks its whole `store` and `data` subtree and reads the metadata of every
-    /// file in it, which on a disk with shared metadata (`plain`, `plain_rewritable`) or on a `web`
-    /// disk means listing the object storage. There is no way to narrow that traversal down, so a
-    /// query that names the disks it is interested in must not pay for all the others: on a server
-    /// that holds a large table on some other object-storage disk, the difference is minutes.
-    auto disk_name_column = ColumnString::create();
-    for (const auto & [disk_name, _] : disks)
-        disk_name_column->insertData(disk_name.data(), disk_name.size());
-
-    Block block{ColumnWithTypeAndName(std::move(disk_name_column), std::make_shared<DataTypeString>(), "disk_name")};
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
-
-    /// A predicate that says nothing about `disk_name` leaves every row in place.
-    const auto & filtered_column = *block.getByPosition(0).column;
-    NameSet requested_disks;
-    for (size_t i = 0; i < filtered_column.size(); ++i)
-        requested_disks.emplace(filtered_column.getDataAt(i));
-
-    for (auto it = disks.begin(); it != disks.end();)
-    {
-        if (requested_disks.contains(it->first))
-            ++it;
-        else
-            it = disks.erase(it);
-    }
 }
 
 void ReadFromSystemRemoteDataPaths::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
@@ -484,6 +434,3 @@ Chunk SystemRemoteDataPathsSource::generate()
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRemoteDataPaths) }

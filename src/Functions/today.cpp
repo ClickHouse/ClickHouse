@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Columns/ColumnConst.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 
@@ -12,7 +11,7 @@ namespace DB
 namespace
 {
 
-class ExecutableFunctionToday final : public IExecutableFunction
+class ExecutableFunctionToday : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionToday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
@@ -28,7 +27,7 @@ private:
     DayNum day_value;
 };
 
-class FunctionBaseToday final : public IFunctionBase
+class FunctionBaseToday : public IFunctionBase
 {
 public:
     explicit FunctionBaseToday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
@@ -59,7 +58,7 @@ private:
     DataTypePtr return_type;
 };
 
-class TodayOverloadResolver final : public IFunctionOverloadResolver
+class TodayOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "today";
@@ -98,7 +97,7 @@ R"(
 ┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃      today ┃    curdate ┃ current_date ┃
 ┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
+│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
 └────────────┴────────────┴──────────────┘
 )"
         },
@@ -106,8 +105,10 @@ R"(
 SELECT TODAY, CURDATE,CURRENT_DATE
         )",
         R"(
-┌──────TODAY─┬────CURDATE─┬─CURRENT_DATE─┐
-│ 2026-08-02 │ 2026-08-02 │   2026-08-02 │
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
 └────────────┴────────────┴──────────────┘
         )"}
     };

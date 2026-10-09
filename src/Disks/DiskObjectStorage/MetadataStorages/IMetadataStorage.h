@@ -141,24 +141,6 @@ public:
         throwNotImplemented();
     }
 
-    /// Increment the reference count of a data blob shared between metadata files.
-    virtual void incrementBlobRefCount(const std::string & /* blob */)
-    {
-        throwNotImplemented();
-    }
-
-    /// Decrement the reference count of a data blob; at zero the blob becomes eligible for removal.
-    virtual void decrementBlobRefCount(const std::string & /* blob */)
-    {
-        throwNotImplemented();
-    }
-
-    /// Register a data blob for background removal, atomically with the commit.
-    virtual void submitBlobForRemoval(const std::string & /* remote_path */)
-    {
-        throwNotImplemented();
-    }
-
     virtual ~IMetadataTransaction() = default;
 
 protected:
@@ -190,10 +172,6 @@ public:
     /// E.g. metadata storage can store the empty list of blobs corresponding to a file without actually storing any blobs.
     /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
     virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
-
-    /// Whether small file content can be stored inside the metadata itself, with no backing blob
-    /// (see `WriteSettings::inline_file_max_bytes`).
-    virtual bool supportsInlineData() const { return false; }
 
     /// Returns true if underlying blob ids generator uses random.
     virtual bool areBlobPathsRandom() const = 0;
@@ -296,18 +274,6 @@ public:
 
     virtual bool isReadOnly() const = 0;
 
-    /// True if transactions apply operations immediately instead of accumulating them until commit.
-    virtual bool appliesOperationsEagerly() const
-    {
-        return false;
-    }
-
-    /// The generator of object storage keys for new blobs, if this storage owns one.
-    virtual ObjectStorageKeyGeneratorPtr getKeyGenerator() const
-    {
-        return nullptr;
-    }
-
     virtual bool isTransactional() const
     {
         return false;
@@ -327,7 +293,6 @@ public:
     virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
     virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
-    virtual int64_t getDeadBlobsQueueEstimate() { return 0; }
 
     struct BlobsReplication
     {
@@ -339,7 +304,6 @@ public:
     virtual BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
     virtual int64_t recordAsReplicated(const BlobsToReplicate & /*blobs*/) { return 0; }
     virtual bool hasUnreplicatedBlobs(const Location & /*location_to_check*/) { return false; }
-    virtual int64_t getMissingBlobsQueueEstimate() { return 0; }
 
     /// Re-read paths or their full subtrees from disk and update cache.
     /// Can return serialized description of cache update which can be used to populate cache on other nodes.

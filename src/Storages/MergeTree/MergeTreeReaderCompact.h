@@ -42,8 +42,9 @@ protected:
 
     void readData(
         size_t column_idx,
-        IColumn & column,
+        ColumnPtr & column,
         size_t rows_to_read,
+        size_t rows_offset,
         size_t from_mark,
         size_t column_size_before_reading,
         MergeTreeReaderStream & stream,
@@ -55,10 +56,10 @@ protected:
 
     void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
 
-    void readSubcolumnsPrefixes(size_t from_mark);
+    void readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark);
     void initSubcolumnsDeserializationOrder();
 
-    void createColumnsForReading(MutableColumns & res_columns) const;
+    void createColumnsForReading(Columns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
 
     const ColumnsSubstreams & columns_substreams;

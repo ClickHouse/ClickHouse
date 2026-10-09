@@ -44,7 +44,6 @@
         </coordination_settings>
 
         <!-- DISK DEFINITION PLACEHOLDER -->
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
 
         <raft_configuration>
             <server>

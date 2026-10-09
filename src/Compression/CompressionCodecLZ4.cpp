@@ -4,11 +4,14 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/registerCompressionCodecs.h>
 #include <Compression/LZ4_decompress_faster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/Exception.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/BufferWithOwnMemory.h>
 
 #pragma clang diagnostic ignored "-Wold-style-cast"
 
@@ -19,10 +22,9 @@ namespace DB
 class CompressionCodecLZ4 : public ICompressionCodec
 {
 public:
-    CompressionCodecLZ4() = default;
+    explicit CompressionCodecLZ4();
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDesc() const override;
 
     UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER; }
 
@@ -48,7 +50,6 @@ class CompressionCodecLZ4HC : public CompressionCodecLZ4
 {
 public:
     explicit CompressionCodecLZ4HC(int level_);
-    ASTPtr getCodecDesc() const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -71,9 +72,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
-ASTPtr CompressionCodecLZ4::getCodecDesc() const
+CompressionCodecLZ4::CompressionCodecLZ4()
 {
-    return makeCodecDescription("LZ4");
+    setCodecDescription("LZ4");
 }
 
 uint8_t CompressionCodecLZ4::getMethodByte() const
@@ -151,11 +152,9 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     : level(level_)
 {
-}
-
-ASTPtr CompressionCodecLZ4HC::getCodecDesc() const
-{
-    return makeCodecDescription("LZ4HC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(level))});
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    setCodecDescription("LZ4HC", arguments);
 }
 
 

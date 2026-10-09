@@ -27,7 +27,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             if (parsing_finished)
                 break;
 
-            chassert(unit.status == READY_TO_INSERT);
+            assert(unit.status == READY_TO_INSERT);
 
             // Segmentating the original input.
             unit.segment.resize(0);
@@ -196,7 +196,7 @@ Chunk ParallelParsingInputFormat::read()
                 return {};
             }
 
-            chassert(unit->status == READY_TO_READ);
+            assert(unit->status == READY_TO_READ);
 
             if (!unit->chunk_ext.chunk.empty())
                 break;
@@ -222,7 +222,7 @@ Chunk ParallelParsingInputFormat::read()
         next_block_in_current_unit = 0;
     }
 
-    chassert(next_block_in_current_unit.value() < unit->chunk_ext.chunk.size());
+    assert(next_block_in_current_unit.value() < unit->chunk_ext.chunk.size());
 
     Chunk res = std::move(unit->chunk_ext.chunk.at(*next_block_in_current_unit));
     last_block_missing_values = std::move(unit->chunk_ext.block_missing_values[*next_block_in_current_unit]);

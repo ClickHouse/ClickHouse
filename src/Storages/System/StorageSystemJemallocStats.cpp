@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemJemallocStats.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
@@ -41,6 +40,3 @@ void StorageSystemJemallocStats::fillData(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemJemallocStats) }

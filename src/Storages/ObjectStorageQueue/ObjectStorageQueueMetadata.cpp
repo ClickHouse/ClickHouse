@@ -10,14 +10,11 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueExclusiveFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
-#include <Common/DimensionalMetrics.h>
-#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -39,12 +36,6 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageQueueMetadataCacheSizeBytes;
     extern const Metric ObjectStorageQueueMetadataCacheSizeElements;
 };
-
-namespace DimensionalMetrics
-{
-    extern MetricFamily & ObjectStorageQueueNewestSeenTimestamp;
-    extern MetricFamily & ObjectStorageQueueNewestCommittedTimestamp;
-}
 
 namespace DB
 {
@@ -95,11 +86,6 @@ namespace
         return mode == ObjectStorageQueueMode::UNORDERED;
     }
 
-    bool isExclusive(ObjectStorageQueueMode mode)
-    {
-        return mode == ObjectStorageQueueMode::EXCLUSIVE;
-    }
-
     UInt128 getMetadataCacheKey(const std::string & path)
     {
         SipHash hash;
@@ -129,8 +115,8 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
+    , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
+    , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
@@ -167,12 +153,11 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     }
 
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, metadata_cache_size_bytes: {},"
-        "metadata_cache_size_elements: {}, result buckets num: {}, use persistent processing nodes: {}, "
+        log, "Mode: {}, buckets: {}, processing threads: {}, "
+        "result buckets num: {}, use persistent processing nodes: {}, "
         "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), metadata_cache_size_bytes_,
-        metadata_cache_size_elements_, buckets_num,
+        table_metadata.processing_threads_num.load(), buckets_num,
         use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
 }
 
@@ -185,10 +170,10 @@ ZooKeeperWithFaultInjection::Ptr ObjectStorageQueueMetadata::getZooKeeper(Logger
 {
     auto context = Context::getGlobalContextInstance();
     auto zk_client = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
-    if (context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability] != 0.0f)
+    if (context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability] != 0.0)
     {
         return ZooKeeperWithFaultInjection::createInstance(
-            static_cast<double>(context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability]),
+            context->getSettingsRef()[Setting::s3queue_keeper_fault_injection_probability],
             /* seed */0,
             zk_client,
             "S3Queue",
@@ -219,7 +204,7 @@ void ObjectStorageQueueMetadata::startup()
     if (!cleanup_task
         && (cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
     {
-        cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
+        cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
             [this] { cleanupThreadFunc(); });
 
@@ -278,28 +263,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 use_persistent_processing_nodes,
                 zookeeper_name,
                 log);
-        case ObjectStorageQueueMode::EXCLUSIVE:
-            return std::make_shared<ObjectStorageQueueExclusiveFileMetadata>(
-                path,
-                file_status,
-                table_metadata.loading_retries,
-                *metadata_ref_count,
-                *this,
-                zookeeper_name,
-                log);
     }
-}
-
-bool ObjectStorageQueueMetadata::tryAcquireExclusiveProcessing(const std::string & path)
-{
-    std::lock_guard lock(exclusive_processing_paths_mutex);
-    return exclusive_processing_paths.insert(getMetadataCacheKey(path)).second;
-}
-
-void ObjectStorageQueueMetadata::releaseExclusiveProcessing(const std::string & path)
-{
-    std::lock_guard lock(exclusive_processing_paths_mutex);
-    exclusive_processing_paths.erase(getMetadataCacheKey(path));
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -565,10 +529,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
         metadata_paths = ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num);
     }
-    else if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
-    {
-        metadata_paths = ObjectStorageQueueExclusiveFileMetadata::getMetadataPaths();
-    }
     else
     {
         metadata_paths = ObjectStorageQueueUnorderedFileMetadata::getMetadataPaths();
@@ -749,41 +709,13 @@ namespace
     };
 }
 
-void ObjectStorageQueueMetadata::updateNewestSeenTimestamp(time_t timestamp, const StorageID & storage_id)
-{
-    std::lock_guard lock(pipeline_lag_watermarks_mutex);
-    auto & watermarks = pipeline_lag_watermarks[storage_id.getFullTableName()];
-    if (timestamp > watermarks.newest_seen)
-    {
-        watermarks.newest_seen = timestamp;
-        DimensionalMetrics::set(
-            DimensionalMetrics::ObjectStorageQueueNewestSeenTimestamp,
-            {storage_id.getDatabaseName(), storage_id.getTableName()},
-            static_cast<double>(timestamp));
-    }
-}
-
-void ObjectStorageQueueMetadata::updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id)
-{
-    std::lock_guard lock(pipeline_lag_watermarks_mutex);
-    auto & watermarks = pipeline_lag_watermarks[storage_id.getFullTableName()];
-    if (timestamp > watermarks.newest_committed)
-    {
-        watermarks.newest_committed = timestamp;
-        DimensionalMetrics::set(
-            DimensionalMetrics::ObjectStorageQueueNewestCommittedTimestamp,
-            {storage_id.getDatabaseName(), storage_id.getTableName()},
-            static_cast<double>(timestamp));
-    }
-}
-
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
     const auto id = getProcessorID(storage_id);
     const auto table_path = zookeeper_path / "registry" / id;
     const auto self = Info::create(storage_id);
 
-    Coordination::Error code = {};
+    Coordination::Error code;
     getKeeperRetriesControl(log).retryLoop([&]
     {
         code = getZooKeeper()->tryCreate(
@@ -807,7 +739,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
     auto zk_retries = getKeeperRetriesControl(log);
 
-    Coordination::Error code = {};
+    Coordination::Error code;
     const size_t max_tries = 1000;
     for (size_t i = 0; i < max_tries; ++i)
     {
@@ -895,7 +827,7 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     Strings registered;
     if (active)
     {
-        Coordination::Error code = {};
+        Coordination::Error code;
         zk_retries.retryLoop([&] { code = getZooKeeper()->tryGetChildren(registry_path, registered); });
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException(code);
@@ -915,7 +847,7 @@ void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
     const auto registry_path = zookeeper_path / "registry";
     const auto table_path = registry_path / getProcessorID(storage_id);
 
-    Coordination::Error code = {};
+    Coordination::Error code;
     getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(table_path); });
 
     if (code == Coordination::Error::ZOK)
@@ -1166,7 +1098,7 @@ private:
     const size_t total_nodes;
     LoggerPtr log;
     std::map<UInt128, std::string> virtual_nodes;
-    size_t nodes_num{};
+    size_t nodes_num;
 };
 
 std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage_id)
@@ -1330,7 +1262,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     LOG_TEST(log, "Checking {} nodes for tracking limits", description);
 
     Strings nodes;
-    Coordination::Error code = {};
+    Coordination::Error code;
     auto zk_retries = getKeeperRetriesControl(log);
     zk_retries.retryLoop([&]
     {
@@ -1558,7 +1490,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
     Strings persistent_processing_nodes;
 
-    Coordination::Error code = {};
+    Coordination::Error code;
     zk_retries.retryLoop([&]
     {
         code = getZooKeeper()->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);

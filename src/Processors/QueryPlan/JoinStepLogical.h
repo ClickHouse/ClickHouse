@@ -9,8 +9,6 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/JoinEstimation.h>
-#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -104,9 +102,8 @@ public:
 
     const JoinSettings & getSettings() const { return join_settings; }
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
@@ -118,11 +115,7 @@ public:
     }
 
     void addConditions(ActionsDAG actions_dag);
-
-    /// Extract the part of the JOIN ON expression that can be evaluated on `side` alone, to be applied
-    /// as a filter on that input.
-    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(
-        JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header);
+    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const SharedHeader & stream_header);
 
     struct ActionsDAGWithKeys
     {
@@ -141,77 +134,48 @@ public:
     std::unordered_set<JoinTableSide> typeChangingSides() const;
 
     bool isOptimized() const { return optimized; }
-
-    /// The runtime filter pass records its small-probe decision here instead of re-deciding per plan
-    /// build, because the estimate it compares against is absent from a deserialized step. See
-    /// `tryAddJoinRuntimeFilter`.
-    bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
-    void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
-    std::optional<double> getEstimatedCost() const { return estimated_cost; }
-    std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
-    bool hasImpreciseEstimate() const { return imprecise_estimate; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
-    std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
-
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
-        std::unordered_map<String, ColumnStats> column_stats_ = {},
-        bool imprecise_estimate_ = false,
-        std::optional<double> estimated_cost_ = {},
-        std::optional<double> estimated_selectivity_ = {},
-        UInt64 cluster_id_ = 0)
+        std::optional<UInt64> left_rows_ = {},
+        std::optional<UInt64> right_rows_ = {},
+        std::unordered_map<String, ColumnStats> column_stats_ = {})
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
+        left_rows_estimation = left_rows_;
+        right_rows_estimation = right_rows_;
         result_column_stats = std::move(column_stats_);
-        imprecise_estimate = imprecise_estimate_;
-        estimated_cost = estimated_cost_;
-        estimated_selectivity = estimated_selectivity_;
-        cluster_id = cluster_id_;
     }
-
-    UInt64 getClusterId() const { return cluster_id; }
 
     void setInputLabels(String left_table_label_, String right_table_label_)
     {
-        left_relation = RelationEstimateInfo{.name = std::move(left_table_label_)};
-        right_relation = RelationEstimateInfo{.name = std::move(right_table_label_)};
-    }
-
-    void setInputRelations(RelationEstimateInfo left_relation_, RelationEstimateInfo right_relation_)
-    {
-        left_relation = std::move(left_relation_);
-        right_relation = std::move(right_relation_);
+        left_table_label = std::move(left_table_label_);
+        right_table_label = std::move(right_table_label_);
     }
 
     std::pair<std::reference_wrapper<const String>, std::reference_wrapper<const String>> getInputLabels() const
     {
-        return {std::cref(left_relation.name), std::cref(right_relation.name)};
+        return {std::cref(left_table_label), std::cref(right_table_label)};
     }
 
     String getReadableRelationName() const;
 
     ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
 
-    std::string_view getTableStatsHint() const { return table_stats_hint; }
-    void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
+    std::string_view getDummyStats() const { return dummy_stats; }
+    void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    /// Swap left and right sides
-    void swapInputs();
-
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
-
-    UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
-    void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }
 
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
@@ -220,7 +184,6 @@ protected:
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
-    JoinEstimation getEstimation() const;
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
@@ -233,41 +196,27 @@ protected:
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
 
-    /// Whether the join order was already chosen. A copy of this step, whether made by `clone` or taken
-    /// over the wire, carries it, so that whoever receives the copy does not choose an order again.
-    bool optimized = false;
-
-    /// Whether the runtime filter pass already declined this join because its probe side is small
-    /// (`join_runtime_filter_min_probe_rows`). Travels with the step for the same reason `optimized`
-    /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
-    bool runtime_filter_declined_small_probe = false;
-
     /// Runtime info, do not serialize
 
+    bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
-    std::optional<double> estimated_cost = {};
-    std::optional<double> estimated_selectivity = {};
-    UInt64 cluster_id = 0;
+    std::optional<UInt64> left_rows_estimation = {};
+    std::optional<UInt64> right_rows_estimation = {};
     std::unordered_map<String, ColumnStats> result_column_stats = {};
-
-    /// True when the row count estimation used by join reordering was derived from the primary index
-    /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
-    bool imprecise_estimate = false;
     UInt64 right_hash_table_cache_key = 0;
-    UInt64 join_output_cache_key = 0;
 
-    RelationEstimateInfo left_relation;
-    RelationEstimateInfo right_relation;
+    String left_table_label;
+    String right_table_label;
 
-    /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
-    String table_stats_hint;
+    /// Dummy stats retrieved from hints, used for debugging
+    String dummy_stats;
+
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
 
 private:
-
     bool disjunctions_optimization_applied = false;
 };
 
@@ -279,8 +228,6 @@ public:
 
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
-
-    QueryPlanRawPtrs getChildPlans() override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 
@@ -296,14 +243,6 @@ private:
 };
 
 std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
-
-/// Whether the IEJoin algorithm is preferred for this join: `ie_join` is listed first in
-/// `join_algorithm` and the ON expression has two inequality conditions the operator can take.
-/// For optimization passes that would otherwise claim the join for a hash-family algorithm
-/// (e.g. runtime filters). The condition eligibility is the same one the conversion to the
-/// physical step applies, so `true` means IEJoin takes the join unless the right side is a
-/// prepared `Join` storage (which those passes exclude on their own).
-bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
 
 }

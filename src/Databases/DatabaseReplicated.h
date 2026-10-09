@@ -30,20 +30,19 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
-struct DatabaseReplicaInfo;
 
 struct ReplicaInfo
 {
-    bool is_active{};
-    bool unsynced_after_recovery{};
+    bool is_active;
+    bool unsynced_after_recovery;
     std::optional<UInt32> replication_lag;
-    UInt64 recovery_time{};
+    UInt64 recovery_time;
 };
 
 struct ReplicasInfo
 {
     std::vector<ReplicaInfo> replicas;
-    bool replicas_belong_to_shared_catalog = false;
+    bool replicas_belong_to_shared_catalog;
 };
 
 class DatabaseReplicated : public DatabaseAtomic
@@ -57,15 +56,15 @@ public:
     /** For the system table database replicas. */
     struct ReplicatedStatus
     {
-        bool is_readonly{};
-        bool is_session_expired{};
-        UInt32 max_log_ptr{};
+        bool is_readonly;
+        bool is_session_expired;
+        UInt32 max_log_ptr;
         String replica_name;
         String replica_path;
         String zookeeper_path;
         String shard_name;
-        UInt32 log_ptr{};
-        UInt32 total_replicas{};
+        UInt32 log_ptr;
+        UInt32 total_replicas;
         String zookeeper_exception;
     };
 
@@ -106,11 +105,6 @@ public:
     private:
         DatabaseReplicated & db;
     };
-
-    /// Called when SYSTEM RESTART REPLICA fails after detaching a table.
-    /// Adjusts tables_metadata_digest to account for the table being absent
-    /// from the in-memory tables map, preventing false "Digest does not match" assertions.
-    void adjustDigestOnTableLostFromRestart(const String & table_name);
 
     bool hasReplicationThread() const override { return true; }
 
@@ -172,13 +166,8 @@ protected:
     void commitAlterTable(const StorageID & table_id,
                           const String & table_metadata_tmp_path, const String & table_metadata_path,
                           const String & statement, ContextPtr query_context) override;
-    /// We need to reset the cached cluster objects, if `cluster_secret` is used, since the authentication is affected.
-    void onDatabaseRenamed() override TSA_REQUIRES(mutex);
 
 private:
-    using Shard = std::vector<DatabaseReplicaInfo>;
-    using Shards = std::vector<Shard>;
-
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
     void initDatabaseReplica(const ZooKeeperPtr & current_zookeeper, LoadingStrictnessLevel mode);
     Coordination::Requests buildDatabaseNodesInZooKeeper();
@@ -202,35 +191,20 @@ private:
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
 
 
-    /// `expected_max_log_ptr_czxid` lets the caller pin the database identity it observed in the
-    /// pre-read of `/max_log_ptr` (in `DatabaseReplicatedWorker`) so that a `DROP`+recreate at the
-    /// same Keeper path between that read and the snapshot inside this call is rejected with
-    /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` instead of silently substituting metadata from a
-    /// different database instance. Pass `0` from callers that have not pre-observed an identity.
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr,
-                            int64_t expected_max_log_ptr_czxid = 0);
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
 
-    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr,
-                                                              int64_t expected_max_log_ptr_czxid = 0) const;
+    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const;
 
-    /// `expected_max_log_ptr_czxid` lets the caller pin the database identity it
-    /// observed before this call: if it is non-zero, the snapshot is aborted with
-    /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` when the `czxid` of `/max_log_ptr`
-    /// at function entry differs (the database was dropped and recreated at the same
-    /// Keeper path between the caller's read and the snapshot). Pass `0` from
-    /// callers that have not pre-observed an identity.
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
-                                                               size_t max_retries, UInt32 & max_log_ptr,
-                                                               int64_t expected_max_log_ptr_czxid = 0) const;
+                                                               size_t max_retries, UInt32 & max_log_ptr) const;
 
     static ASTPtr parseQueryFromMetadata(
         ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
     ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 
-    Shards fetchClusterTopology(bool all_groups) const TSA_REQUIRES(cluster_update_mutex);
-    ClusterPtr updateCluster(bool all_groups, bool force_overwrite) const;
-    void setClusterLocked(ClusterPtr && new_cluster, bool all_groups = false) TSA_REQUIRES(mutex);
+    ClusterPtr getClusterImpl(bool all_groups = false) const;
+    void setCluster(ClusterPtr && new_cluster, bool all_groups = false);
 
     void createEmptyLogEntry(const ZooKeeperPtr & current_zookeeper);
 
@@ -291,10 +265,6 @@ private:
     /// but StorageReplicatedMergeTree may call alterTable outside from DatabaseReplicatedDDLWorker causing race conditions.
     std::mutex metadata_mutex;
 
-    /// Used to serialize cluster topology fetching in `updateCluster`.
-    /// The intended lock order: `cluster_update_mutex` -> `mutex`.
-    mutable std::mutex cluster_update_mutex;
-
     /// Sum of hashes of pairs (table_name, table_create_statement).
     /// We calculate this sum from local metadata files and compare it will value in ZooKeeper.
     /// It allows to detect if metadata is broken and recover replica.
@@ -306,10 +276,8 @@ private:
     /// while any restart is in progress to avoid false LOGICAL_ERROR exceptions in debug builds.
     std::atomic<int> tables_being_restarted{0};
 
-    /// If `cluster_secret` is used, the connection handshake depends on the database name.
-    /// Thus cluster object should be protected by `mutex` to synchronize with concurrent `RENAME DATABASE ...` query.
-    mutable ClusterPtr cluster TSA_GUARDED_BY(mutex);
-    mutable ClusterPtr cluster_all_groups TSA_GUARDED_BY(mutex);
+    mutable ClusterPtr cluster;
+    mutable ClusterPtr cluster_all_groups;
 
     LoadTaskPtr startup_replicated_database_task TSA_GUARDED_BY(mutex);
 };
