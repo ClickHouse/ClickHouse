@@ -1,0 +1,3 @@
+active parts after OPTIMIZE:	1
+columns:	['b','id']
+rows:	300	sum(b):	300	b = 1:	300

@@ -1,6 +1,8 @@
 #pragma once
 #include <Core/Types.h>
+#include <optional>
 #include <set>
+#include <vector>
 
 namespace DB
 {
@@ -36,6 +38,28 @@ struct LessCommittingBlock
 };
 
 using CommittingBlocksSet = std::set<CommittingBlock, LessCommittingBlock>;
+
+/// Committing blocks and the block counter copied together: every later block is above `last_allocated_block`. A reservation
+/// is an `Update` or `Mutation` block (a version allocated but not visible yet), never a `NewPart` block.
+class CommittingBlocksSnapshot
+{
+public:
+    CommittingBlocksSnapshot(const CommittingBlocksSet & blocks, Int64 last_allocated_block_);
+
+    /// Lowest reservation strictly above `data_version`, or nullopt. The lookup is table-wide: an `Update`
+    /// reservation bounds every partition, the same scope as the `min_update_block` rule.
+    std::optional<CommittingBlock> firstReservationAfter(Int64 data_version) const;
+
+    std::optional<Int64> minUpdateBlock() const { return min_update_block; }
+
+    Int64 lastAllocatedBlock() const { return last_allocated_block; }
+
+private:
+    /// Sorted by number.
+    std::vector<CommittingBlock> reservations;
+    std::optional<Int64> min_update_block;
+    Int64 last_allocated_block;
+};
 
 struct PlainCommittingBlockHolder
 {

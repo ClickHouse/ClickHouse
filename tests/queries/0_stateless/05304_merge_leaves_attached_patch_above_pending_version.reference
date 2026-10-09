@@ -1,0 +1,9 @@
+--- patch above a mutation that is not registered yet
+merged part:	1	2	1
+1	105
+2	100
+--- patch attached after the OPTIMIZE snapshot
+OPTIMIZE FINAL exit code: 0
+merged part:	1	2	1
+1	5
+2	0

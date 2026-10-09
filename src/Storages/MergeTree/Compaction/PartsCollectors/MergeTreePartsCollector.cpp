@@ -11,14 +11,24 @@ namespace DB
 namespace
 {
 
-MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeTreeTransactionPtr & tx)
+MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeTreeTransactionPtr & tx, Int64 last_allocated_block)
 {
     MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
+
+    /// Parts created after the snapshot are the newest, so dropping them leaves no gap; refusing them would
+    /// fail 'OPTIMIZE FINAL' whenever an insert lands between the snapshot and this collection.
+    /// `min_block` alone identifies a late candidate. A restored or attached part may carry a foreign
+    /// mutation version above this table's counter; it is not a late allocation and stays a candidate.
+    auto drop_parts_after_snapshot = [&](MergeTreeDataPartsVector parts)
+    {
+        std::erase_if(parts, [&](const auto & part) { return part->info.min_block > last_allocated_block; });
+        return parts;
+    };
 
     if (!tx)
     {
         /// Simply get all active parts
-        return data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds);
+        return drop_parts_after_snapshot(data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds));
     }
 
     /// Merge predicate (for simple MergeTree) allows to merge two parts only if both parts are visible for merge transaction.
@@ -74,7 +84,7 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
         std::back_inserter(data_parts),
         MergeTreeData::LessDataPart());
 
-    return data_parts;
+    return drop_parts_after_snapshot(std::move(data_parts));
 }
 
 auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
@@ -116,10 +126,12 @@ std::expected<void, PreformattedMessage> checkAllParts(
 
 }
 
-MergeTreePartsCollector::MergeTreePartsCollector(StorageMergeTree & storage_, MergeTreeTransactionPtr tx_, MergeTreeMergePredicatePtr merge_pred_)
+MergeTreePartsCollector::MergeTreePartsCollector(
+    StorageMergeTree & storage_, MergeTreeTransactionPtr tx_, MergeTreeMergePredicatePtr merge_pred_, Int64 last_allocated_block_)
     : storage(storage_)
     , tx(std::move(tx_))
     , merge_pred(std::move(merge_pred_))
+    , last_allocated_block(last_allocated_block_)
 {
 }
 
@@ -130,7 +142,7 @@ CollectedPartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     const std::optional<PartitionIdsHint> & partitions_hint,
     LogSeriesLimiter & series_log) const
 {
-    auto parts = filterByPartitions(collectInitial(storage, tx), partitions_hint);
+    auto parts = filterByPartitions(collectInitial(storage, tx, last_allocated_block), partitions_hint);
     auto partitions_stats = calculateStatisticsForParts(parts, current_time);
     auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, tx, merge_pred, series_log);
     return {constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time), std::move(partitions_stats)};
@@ -142,7 +154,7 @@ std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllP
     const time_t & current_time,
     const std::string & partition_id) const
 {
-    auto parts = filterByPartitions(collectInitial(storage, tx), PartitionIdsHint{partition_id});
+    auto parts = filterByPartitions(collectInitial(storage, tx, last_allocated_block), PartitionIdsHint{partition_id});
     if (auto result = checkAllParts(parts, storage_policy, tx, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 

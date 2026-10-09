@@ -1,0 +1,10 @@
+--- the guard of the mutation selector does not depend on the table settings
+postponed:	['Lightweight update with a lower block number is not committed yet']
+update survived	1000
+mutation applied	1000
+--- a cancelled pending update releases the postponed mutation
+no patch committed	0
+mutation applied	1000
+--- a lower registered mutation applies while a higher one waits behind a pending update
+after K, before U:	1	1000
+after U and M:	4	11	1000

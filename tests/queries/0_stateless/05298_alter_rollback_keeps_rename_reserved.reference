@@ -1,0 +1,18 @@
+=== the durable rollback fails: the rename is kept
+--- paused in the durable-rollback interval: the rename is un-registered but its block should still be reserved
+the update is waiting behind the reservation: 1
+the update waits behind the rename's reservation: 1
+OPTIMIZE FINAL exit code: 0
+update exit code: 0
+z
+a	2	3
+b	2	3
+=== the durable rollback succeeds: the rename is undone
+--- paused in the durable-rollback interval: the rename is un-registered but its block should still be reserved
+the update is waiting behind the reservation: 1
+the update waits behind the rename's reservation: 1
+OPTIMIZE FINAL exit code: 0
+update exit code: 0
+x
+a	2	3
+b	2	3
