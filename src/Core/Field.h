@@ -8,8 +8,6 @@
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <fmt/format.h>
 
@@ -20,7 +18,7 @@ constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
 constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
-using FieldVector = VectorWithMemoryTracking<Field>;
+using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -43,7 +41,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = MapWithMemoryTracking<String, Field, std::less<>>;
+using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -98,29 +96,6 @@ struct CustomType
     bool operator == (const CustomType & rhs) const { return *impl == *rhs.impl; }
 
     std::shared_ptr<const CustomTypeImpl> impl;
-};
-
-/// Holds the unparsed string representation of a numeric literal.
-/// Used when the literal doesn't fit in Int64/UInt64 (e.g. big integers).
-/// The actual parsing to a concrete numeric type is deferred until the target type is known.
-struct NumberLiteral
-{
-    String value;
-
-    NumberLiteral() = default;
-    explicit NumberLiteral(String s) : value(std::move(s)) {}
-
-    /// Parse the literal text as Float64. This is the single place that turns a numeric literal
-    /// into a float, so every resolution path stays consistent. Decimal/exponent literals go
-    /// through ClickHouse's own precise reader (deterministic, locale-independent); hex floats,
-    /// which the reader can't parse, fall back to strtod.
-    Float64 toFloat64() const;
-
-    bool operator == (const NumberLiteral & rhs) const { return value == rhs.value; }
-    bool operator < (const NumberLiteral &) const;
-    bool operator <= (const NumberLiteral &) const;
-    bool operator > (const NumberLiteral &) const;
-    bool operator >= (const NumberLiteral &) const;
 };
 
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -251,7 +226,6 @@ template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 template <> struct NearestFieldTypeImpl<CustomType> { using Type = CustomType; };
-template <> struct NearestFieldTypeImpl<NumberLiteral> { using Type = NumberLiteral; };
 
 // For enum types, use the field type that corresponds to their underlying type.
 template <typename T>
@@ -300,10 +274,6 @@ public:
             Null    = 0,
             UInt64  = 1,
             Int64   = 2,
-            /// Note: there's no Float32. In theory, all Float32 values are exactly representable in
-            /// Float64. But in C++ if you static_cast back and forth, the result may change.
-            /// In particular, NaN may change to a different NaN, e.g. by cvtsd2ss instruction on x86.
-            /// So when a Float32 needs to be passed-through exactly, don't use Field.
             Float64 = 3,
             UInt128 = 4,
             Int128  = 5,
@@ -325,7 +295,6 @@ public:
             IPv4 = 30,
             IPv6 = 31,
             CustomType = 32,
-            Number = 33,
         };
     };
 
@@ -342,56 +311,17 @@ public:
             || which == Types::Decimal256;
     }
 
-    /// Whether values of the type are single scalar values with a plain value comparison, as opposed
-    /// to composite values (Array, Tuple, Map, Object — compared element-wise, where elements of
-    /// different types are ordered by type index rather than by value) and opaque values
-    /// (AggregateFunctionState, CustomType).
-    static bool isScalar(Types::Which which)
-    {
-        switch (which)
-        {
-            case Types::Null:
-            case Types::UInt64:
-            case Types::Int64:
-            case Types::Float64:
-            case Types::UInt128:
-            case Types::Int128:
-            case Types::String:
-            case Types::Decimal32:
-            case Types::Decimal64:
-            case Types::Decimal128:
-            case Types::Decimal256:
-            case Types::UInt256:
-            case Types::Int256:
-            case Types::UUID:
-            case Types::Bool:
-            case Types::IPv4:
-            case Types::IPv6:
-                return true;
-            case Types::Array:
-            case Types::Tuple:
-            case Types::Map:
-            case Types::Object:
-            case Types::CustomType:
-            case Types::AggregateFunctionState:
-            /// A NumberLiteral holds unparsed literal text and throws on comparison.
-            case Types::Number:
-                return false;
-        }
-        UNREACHABLE();
-    }
-
     Field() : Field(Null{}) {}
 
     /** Despite the presence of a template constructor, this constructor is still needed,
       *  since, in its absence, the compiler will still generate the default constructor.
       */
-    Field(const Field & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `create` before any read; zero-initializing it would clear the whole buffer on every construction of this very hot object
+    Field(const Field & rhs)
     {
         create(rhs);
     }
 
-    Field(Field && rhs) noexcept // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
+    Field(Field && rhs) noexcept
     {
         create(std::move(rhs));
     }
@@ -412,7 +342,7 @@ public:
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
 
     template <typename CharT>
-    Field(const CharT * data, size_t size) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
+    Field(const CharT * data, size_t size)
     {
         create(data, size);
     }
@@ -576,26 +506,20 @@ public:
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
-            case Types::Number: return f(field.template get<NumberLiteral>());
         }
     }
 
     String dump() const;
     static Field restoreFromDump(std::string_view dump_);
 
-    /// If this Field is a NumberLiteral, resolve it to a concrete numeric type
-    /// (Float64 for decimal-looking strings, UInt128/Int128/etc for big integers).
-    /// Returns *this unchanged if it's not a NumberLiteral.
-    Field resolveNumberLiteral() const;
-
 private:
     AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData, CustomType, NumberLiteral
-        > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
+        AggregateFunctionStateData, CustomType
+        > storage;
 
-    Types::Which which{};
+    Types::Which which;
 
     /// This function is prone to type punning and should never be used outside of Field class,
     /// whenever it is used within this class the stored type should be checked in advance.
@@ -741,9 +665,6 @@ private:
             case Types::CustomType:
                 destroy<CustomType>();
                 break;
-            case Types::Number:
-                destroy<NumberLiteral>();
-                break;
             default: [[likely]]
                  break;
         }
@@ -795,7 +716,6 @@ template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static constexpr
 template <> struct Field::TypeToEnum<DecimalField<Time64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static constexpr Types::Which value = Types::AggregateFunctionState; };
 template <> struct Field::TypeToEnum<CustomType>{ static constexpr Types::Which value = Types::CustomType; };
-template <> struct Field::TypeToEnum<NumberLiteral>{ static constexpr Types::Which value = Types::Number; };
 template <> struct Field::TypeToEnum<bool>{ static constexpr Types::Which value = Types::Bool; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
@@ -820,7 +740,6 @@ template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = De
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = AggregateFunctionStateData; };
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
-template <> struct Field::EnumToType<Field::Types::Number> { using Type = NumberLiteral; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
 /// Use it to prevent inclusion of magic_enum in headers, which is very expensive for the compiler
@@ -841,7 +760,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
-Field::Field(T && rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `createConcrete` before any read
+Field::Field(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));
@@ -949,26 +868,6 @@ void writeFieldBinary(const Field & x, WriteBuffer & buf);
 Field readFieldBinary(ReadBuffer & buf);
 
 String fieldToString(const Field & x);
-
-/// Rewrite every `Bool`-tagged `Field` inside `field`, recursively through `Tuple`/`Array`/`Map`, as
-/// the `UInt64` form `IColumn::get` produces: a boolean has both representations, and `Field`
-/// comparison and hashing read the tag before the value, so the two forms neither compare equal nor
-/// hash alike. An `Object` is deliberately not entered, because its paths disagree: a dynamic path
-/// keeps the `Bool` form on both sides, since `ColumnDynamic::get` rebuilds it, while a typed path is
-/// read from its declared column as `UInt64`. Entering it needs path-aware handling, not this rewrite.
-void normalizeBoolFields(Field & field);
-
-/// Check if a Field contains a NaN value.
-/// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
-inline bool isNaNField(const Field & f)
-{
-    return f.isNaN();
-}
-
-/// True when `field`, or any Field nested inside it at any depth, satisfies `predicate`.
-/// The predicates above answer for a single value, while `Array`, `Tuple`, `Map` and `Object` hold Fields,
-/// so they say nothing about what a container carries.
-bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &));
 
 }
 

@@ -17,7 +17,7 @@
 namespace DB
 {
 
-class DWARFBlockInputFormat final : public IInputFormat
+class DWARFBlockInputFormat : public IInputFormat
 {
 public:
     DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, size_t num_threads_);
@@ -121,7 +121,7 @@ private:
         const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const;
 };
 
-class DWARFSchemaReader final : public ISchemaReader
+class DWARFSchemaReader : public ISchemaReader
 {
 public:
     explicit DWARFSchemaReader(ReadBuffer & in_);

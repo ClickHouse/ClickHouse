@@ -7,7 +7,6 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenizer.h>
-#include <Interpreters/TokenizerFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -16,7 +15,7 @@
 namespace DB
 {
 
-class FunctionNgrams final : public IFunction
+class FunctionNgrams : public IFunction
 {
 public:
 
@@ -54,20 +53,18 @@ public:
 
         Field ngram_argument_value;
         arguments[1].column->get(0, ngram_argument_value);
+        auto ngram_value = ngram_argument_value.safeGet<UInt64>();
 
-        FieldVector params;
-        params.push_back(ngram_argument_value);
-
-        auto ngram_tokenizer = TokenizerFactory::instance().get(NgramsTokenizer::getExternalName(), params);
+        NgramsTokenizer tokenizer(ngram_value);
 
         auto result_column_string = ColumnString::create();
 
         auto input_column = arguments[0].column;
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-            executeImpl(*ngram_tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-            executeImpl(*ngram_tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
 
         return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
     }

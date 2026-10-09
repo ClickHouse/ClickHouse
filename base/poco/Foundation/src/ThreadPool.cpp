@@ -20,9 +20,7 @@
 #include "Poco/ErrorHandler.h"
 #include <sstream>
 #include <ctime>
-
-#include <base/defines.h>
-#include <Common/ThreadStatus.h>
+#include <Common/ThreadPool.h>
 
 
 namespace Poco {
