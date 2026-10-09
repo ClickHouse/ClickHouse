@@ -37,6 +37,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/SecretArguments.h>
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
@@ -412,6 +413,8 @@ try
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
+    /// The engines are not registered, so the secrets of their arguments are shown.
+    setSecretArgumentsFinder(&NoSecretArgumentsFinder::instance());
 
     processConfig();
     adjustSettings(client_context);

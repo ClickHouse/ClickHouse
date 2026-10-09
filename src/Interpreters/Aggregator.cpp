@@ -1178,7 +1178,8 @@ void Aggregator::executeImpl(
             params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
             params.top_k->observation_rows,
-            params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr);
+            params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr,
+            params.top_k->threshold_tracker);
 
         /// Before the freeze check, which must judge the heap against the latest shared boundary.
         method.top_k_heap.exchangeSharedBoundary();
