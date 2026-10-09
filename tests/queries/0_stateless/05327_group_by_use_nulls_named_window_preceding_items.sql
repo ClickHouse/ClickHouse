@@ -21,13 +21,13 @@ ORDER BY t.c NULLS LAST, cnt, m
 SETTINGS group_by_use_nulls = 1;
 
 SELECT '-- OVER (w ORDER BY ...)';
-SELECT t.c, count() OVER (w ORDER BY t.c ROWS UNBOUNDED PRECEDING) AS cnt, max(* REPLACE (intDiv(c, 2) AS c)) AS m
+SELECT t.c, count() OVER (w ORDER BY t.c, count() ROWS UNBOUNDED PRECEDING) AS cnt, max(* REPLACE (intDiv(c, 2) AS c)) AS m
 FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP
 WINDOW w AS (PARTITION BY c)
 ORDER BY t.c NULLS LAST, cnt, m
 SETTINGS group_by_use_nulls = 0;
-SELECT t.c, count() OVER (w ORDER BY t.c ROWS UNBOUNDED PRECEDING) AS cnt, max(* REPLACE (intDiv(c, 2) AS c)) AS m
+SELECT t.c, count() OVER (w ORDER BY t.c, count() ROWS UNBOUNDED PRECEDING) AS cnt, max(* REPLACE (intDiv(c, 2) AS c)) AS m
 FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP
 WINDOW w AS (PARTITION BY c)
