@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int NO_ZOOKEEPER;
     extern const int REQUIRED_PASSWORD;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 using namespace IcebergRESTCatalogJSON;
@@ -387,6 +388,13 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
         {
             status = Poco::Net::HTTPResponse::HTTP_FORBIDDEN;
             type = "ForbiddenException";
+            message = getCurrentExceptionMessage(false);
+        }
+        /// A valid request that this build cannot serve, for example a partition spec on a build without Avro.
+        else if (code == ErrorCodes::SUPPORT_IS_DISABLED)
+        {
+            status = Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED;
+            type = "UnsupportedOperationException";
             message = getCurrentExceptionMessage(false);
         }
         /// The store handles expected Keeper errors. Anything else means the store is unavailable.
