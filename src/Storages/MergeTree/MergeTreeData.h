@@ -922,7 +922,7 @@ public:
     /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
     /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
     /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
-    /// `MOVE PARTITION TO TABLE` and `CREATE TEMPORARY TABLE ... CLONE AS`.
+    /// `MOVE PARTITION TO TABLE`, `CREATE TEMPORARY TABLE ... CLONE AS` and `RESTORE`.
     void throwIfTemporaryTableSizeLimitsExceededForReplacement(
         const ContextPtr & query_context,
         const DataPartsLock & parts_lock,
@@ -2113,7 +2113,7 @@ protected:
     MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+    virtual void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
