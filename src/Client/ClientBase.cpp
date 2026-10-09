@@ -3105,7 +3105,7 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getFormatSettings(client_context));
+            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
         /// Capture the dialect this query was parsed with, and whether it is a SQL `SET` escape, *before*
         /// applying any in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
@@ -3134,7 +3134,6 @@ void ClientBase::processParsedSingleQuery(
         for (auto & change : parse_dialect_settings)
             if (client_context->getSettingsRef().get(change.name) != change.value)
                 current_query_parse_settings_changed_by_query.push_back(std::move(change));
-        connection->setFormatSettings(getFormatSettings(client_context));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -3145,6 +3144,7 @@ void ClientBase::processParsedSingleQuery(
         else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
+        connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
