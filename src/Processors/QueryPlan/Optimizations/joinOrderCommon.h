@@ -67,8 +67,8 @@ struct JoinKeyEstimate
         {
             const double left_values = static_cast<double>(left.orRows());
             const double right_values = static_cast<double>(right.orRows());
-            left_within_fraction = std::min(left_within_fraction.value_or(1.0), std::min(1.0, right_values / left_values));
-            right_within_fraction = std::min(right_within_fraction.value_or(1.0), std::min(1.0, left_values / right_values));
+            left_within_fraction = std::min({left_within_fraction.value_or(1.0), 1.0, right_values / left_values});
+            right_within_fraction = std::min({right_within_fraction.value_or(1.0), 1.0, left_values / right_values});
         }
         if (!left.from_statistics || !right.from_statistics)
             return;

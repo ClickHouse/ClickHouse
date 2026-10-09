@@ -55,8 +55,7 @@ void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
         plan_step_estimate_source.clear();
         if (const auto & estimation = step->getEstimation())
         {
-            if (estimation->rows)
-                plan_step_estimated_rows = *estimation->rows;
+            plan_step_estimated_rows = estimation->rows;
             plan_step_estimate_source = String(rowEstimateSourceName(estimation->source));
         }
     }

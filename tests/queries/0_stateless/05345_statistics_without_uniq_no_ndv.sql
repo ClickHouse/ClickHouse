@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS t_nu_fact;
 DROP TABLE IF EXISTS t_nu_dim;
 
 -- Sparse serialization changes the bytes a read costs; the runner randomizes it.
-CREATE TABLE t_nu_fact (k UInt64 STATISTICS(countmin), v UInt64)
+CREATE TABLE t_nu_fact (k UInt64 STATISTICS(minmax), v UInt64)
     ENGINE = MergeTree ORDER BY v SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
 CREATE TABLE t_nu_dim (k UInt64 STATISTICS(uniq, basic))
     ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
