@@ -27,3 +27,13 @@ SQL
 # A setting value can be any kind of URI, so its password is hidden up to the last '@' before the first '/'.
 $CLICKHOUSE_CLIENT -q "SELECT 1 SETTINGS format_avro_schema_registry_url = 'mongodb://usr:999999?TOPSECRET@localhost:27017/db'" 2>&1 \
     | grep -o "while setting 'format_avro_schema_registry_url' to value '[^']*'"
+
+# The same in the query text of `system.query_log`. Sent over HTTP, because the client rejects the value before sending it.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=${CLICKHOUSE_DATABASE}_settings_in_query_log" \
+    -d "SELECT 1 SETTINGS format_avro_schema_registry_url = 'mongodb://usr:999999?TOPSECRET@localhost:27017/db'" | grep -o 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT type, countIf(query LIKE '%TOPSECRET%'), countIf(query LIKE '%usr:[HIDDEN]@localhost%')
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_settings_in_query_log'
+    GROUP BY type"
