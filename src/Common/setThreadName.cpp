@@ -18,7 +18,6 @@
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
-#include <base/defines.h>
 #include <base/scope_guard.h>
 
 #include <atomic>
@@ -75,7 +74,7 @@ static ThreadName parseThreadName(const std::string_view & name)
 }
 
 /// Cache thread_name to avoid prctl(PR_GET_NAME) for query_log/text_log
-SILK_THREAD_LOCAL_STORAGE_SANITIZER_BENIGN static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
+static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 
 #if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM)
 /// `PR_SET_VMA_ANON_NAME` was introduced in Linux 5.17. On older kernels

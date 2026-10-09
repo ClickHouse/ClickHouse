@@ -240,4 +240,4 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
     picked_tracker = query_tracker;
 }
 
-constinit FiberLocal<size_t, FiberLocalSlot::OVERCOMMIT_TRACKER_BLOCKER_COUNTER> OvercommitTrackerBlockerInThread::counter;
+thread_local size_t OvercommitTrackerBlockerInThread::counter = 0;

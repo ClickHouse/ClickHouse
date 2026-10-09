@@ -57,7 +57,7 @@ using ComparatorWrapper = DebugLessComparator<Comparator>;
 template <typename RandomIt>
 void shuffle(RandomIt first, RandomIt last)
 {
-    SILK_THREAD_LOCAL_STORAGE_SANITIZER_BENIGN static thread_local pcg64 rng(getThreadId());
+    static thread_local pcg64 rng(getThreadId());
     std::shuffle(first, last, rng);
 }
 

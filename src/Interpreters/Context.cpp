@@ -8,7 +8,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/FiberLocal.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
@@ -3184,7 +3183,7 @@ namespace
     /// Set on threads that are reading factory metadata for introspection (e.g. system.functions
     /// fillData), so that resolving every function — and the helper functions they construct
     /// internally — does not record entries in query_log.used_functions for the user's query.
-    constinit FiberLocal<bool, FiberLocalSlot::SUPPRESS_QUERY_FACTORIES_INFO> suppress_query_factories_info;
+    thread_local bool suppress_query_factories_info = false;
 }
 
 Context::SuppressQueryFactoriesInfoScope::SuppressQueryFactoriesInfoScope()

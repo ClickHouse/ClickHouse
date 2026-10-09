@@ -96,7 +96,7 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
         log->setLevel(0);
 }
 
-SILK_THREAD_LOCAL_STORAGE_SANITIZER_BENIGN static thread_local bool recursive_push_call = false;
+static thread_local bool recursive_push_call = false;
 
 template <typename LogElement>
 void SystemLogQueue<LogElement>::push(LogElement && element)

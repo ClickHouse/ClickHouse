@@ -33,7 +33,7 @@ LazyPipeFDs TraceSender::pipe;
 std::atomic<bool> TraceSender::shutdown{false};
 std::atomic<int> TraceSender::in_flight{0};
 
-SILK_THREAD_LOCAL_STORAGE_SANITIZER_BENIGN static thread_local bool inside_send = false;
+static thread_local bool inside_send = false;
 void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept
 {
     /** The method shouldn't be called recursively or throw exceptions.

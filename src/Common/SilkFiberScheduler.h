@@ -27,8 +27,6 @@ void destroyFiberScheduler();
 
 bool isFiberSchedulerInitialized();
 
-bool isInsideClickHouseFiber();
-
 bool isInsideFiber();
 
 using RuntimeCounters = std::vector<std::pair<std::string_view, uint64_t>>;
@@ -46,11 +44,6 @@ RuntimeCounters getRuntimeCounters();
 
 namespace Silk
 {
-
-inline bool isInsideClickHouseFiber()
-{
-    return false;
-}
 
 inline bool isInsideFiber()
 {

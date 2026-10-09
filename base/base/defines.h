@@ -146,11 +146,6 @@
 /// (Seems like there's no way to verify it, but it makes sense to distinguish it from TSA_SUPPRESS_WARNING_FOR_READ for readability)
 #define TSA_READ_ONE_THREAD(x) TSA_SUPPRESS_WARNING_FOR_READ(x)
 
-/// Marks a thread_local that the silk thread local storage sanitizer must not report: either the variable is
-/// per-thread by design (thread id, thread name), or it cannot be held across a fiber yield (a guard set and cleared
-/// within one non-yielding function body). A scope object that callers may hold anywhere must use FiberLocal instead.
-#define SILK_THREAD_LOCAL_STORAGE_SANITIZER_BENIGN [[clang::annotate("silk_thread_local_storage_sanitizer_benign")]]
-
 /// A template function for suppressing warnings about unused variables or function results.
 template <typename... Args>
 constexpr void UNUSED(Args &&... args [[maybe_unused]]) // NOLINT(cppcoreguidelines-missing-std-forward)

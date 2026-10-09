@@ -2,7 +2,6 @@
 #include <mutex>
 #include <Common/OSThreadNiceValue.h>
 #include <Common/Jemalloc.h>
-#include <Common/SilkFiberScheduler.h>
 #include <Common/ThreadStatus.h>
 
 #include <Core/ServerSettings.h>
@@ -401,13 +400,13 @@ void ThreadStatus::applyQuerySettings()
     resolveMemorySampleConfig();
 
 #if USE_JEMALLOC
-    if (settings[Setting::jemalloc_enable_profiler] && !Silk::isInsideFiber())
+    if (settings[Setting::jemalloc_enable_profiler])
     {
         jemalloc_profiler_enabled = true;
         Jemalloc::getThreadProfileActiveMib().setValue(true);
     }
 
-    if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log] && !Silk::isInsideFiber())
+    if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
         Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
 #endif
 }
