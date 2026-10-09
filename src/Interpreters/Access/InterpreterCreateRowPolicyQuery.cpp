@@ -77,11 +77,13 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();
     auto required_access = getRequiredAccess();
 
-    /// Reject invalid filters on user-facing CREATE/ALTER only. Deserialization of persisted
-    /// policies (ATTACH/replicated/restored) must not fail here; the query-time guard in
-    /// ContextAccess::getRowPolicyFilter rejects such policies when they are actually used.
-    for (const auto & [filter_type, filter] : query.filters)
-        checkRowPolicyFilterExpression(filter);
+    /// Reject invalid filters on user-facing CREATE/ALTER only. A persisted policy (`ATTACH ROW POLICY`) is attached
+    /// unchanged; the query-time guard in `ContextAccess::getRowPolicyFilter` rejects it when it is actually used.
+    if (!query.attach)
+    {
+        for (const auto & [filter_type, filter] : query.filters)
+            checkRowPolicyFilterExpression(filter);
+    }
 
     if (!query.cluster.empty())
     {
