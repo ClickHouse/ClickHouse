@@ -22,6 +22,8 @@ SELECT count() FROM s3('http://127.0.0.1:9/b/k.csv?X-Amz-Signature=SECRET_compat
 SELECT count() FROM s3('http://my-bucket-name.s3.amazonaws.com//a//b.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=SECRET_compat_key', 'CSV') SETTINGS compatibility_s3_presigned_url_query_in_path = 1; -- { serverError BAD_ARGUMENTS }
 -- ... or in the bucket.
 SELECT count() FROM s3('http://127.0.0.1:9/bucketname?X-Amz-Signature=SECRET_compat_bucket_0123456789abcdef0123456789abcdef', 'CSV') SETTINGS compatibility_s3_presigned_url_query_in_path = 1; -- { serverError BAD_ARGUMENTS }
+-- Any other query is folded into the key too, and a percent-encoded parameter name in it is masked like a plain one.
+SELECT count() FROM s3('http://my-bucket-name.s3.amazonaws.com//a//b.csv?%73ig=SECRET_encoded_name', 'CSV'); -- { serverError BAD_ARGUMENTS }
 -- The same through a table engine.
 CREATE TABLE s3_engine (x UInt8) ENGINE = S3('http://duser:SECRET_engine@127.0.0.1:9/b/x.csv', 'CSV'); -- { serverError BAD_ARGUMENTS }
 
