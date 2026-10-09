@@ -1132,7 +1132,7 @@ You can use the following modifiers in `SELECT` queries.
 | [`APPLY`](/reference/statements/select/apply_modifier)     | Allows you to invoke some function for each row returned by an outer table expression of a query.                                                                                                                                                                                                                                                                                        |
 | [`EXCEPT`](/reference/statements/select/except_modifier)   | Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.                                                                                                                                                                                                                                                            |
 | [`REPLACE`](/reference/statements/select/replace_modifier) | Specifies one or more [expression aliases](/reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`. This modifier does not change the names or order of columns. However, it can change the value and the value type. |
-| [`RENAME`](#rename-modifier) | Changes output column names after a `SELECT *` or `COLUMNS` expression is expanded, without changing column values, types, or order. |
+| [`RENAME`](/reference/statements/select/rename_modifier) | Changes output column names after a `SELECT *` or `COLUMNS` expression is expanded, without changing column values, types, or order. |
 
 ### Modifier Combinations {#modifier-combinations}
 
@@ -1166,107 +1166,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 ### `RENAME` modifier {#rename-modifier}
 
-Allows you to change output column names returned by a `SELECT *` or `COLUMNS` expression.
-
-The `RENAME` modifier changes column names only. It does not change column values, column types, or column order.
-
-#### Syntax {#rename-syntax}
-
-```sql
-SELECT <expr> RENAME <column_name> AS <new_column_name> FROM [db.]table_name
-SELECT <expr> RENAME (<column_name> AS <new_column_name> [, ...]) FROM [db.]table_name
-SELECT <expr> RENAME (<lambda>) FROM [db.]table_name
-```
-
-`RENAME` can be used after other column transformers. It is a terminal transformer: no other `APPLY`, `EXCEPT`, `REPLACE`, or `RENAME` modifier can follow it for the same `SELECT` expression.
-
-In the explicit form, each `<column_name>` must match a column name selected by the preceding `SELECT *` or `COLUMNS` expression. If a listed column is not selected, ClickHouse throws an exception.
-
-In the lambda form, ClickHouse passes each selected column name to the lambda as a `String` value. The lambda must evaluate to a constant `String` for each selected column name, and the result is used as the output column name.
-
-#### Explicit column rename {#rename-explicit-column-rename}
-
-```sql
-CREATE TABLE columns_transformers
-(
-    i Int64,
-    j Int16,
-    k Int64
-)
-ENGINE = MergeTree
-ORDER BY i;
-
-INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
-
-SELECT * RENAME i AS total_i
-FROM columns_transformers;
-```
-
-```response
-┌─total_i─┬──j─┬───k─┐
-│     100 │ 10 │ 324 │
-│     120 │  8 │  23 │
-└─────────┴────┴─────┘
-```
-
-#### Multiple column rename {#rename-multiple-column-rename}
-
-```sql
-SELECT * RENAME (i AS total_i, k AS total_k)
-FROM columns_transformers;
-```
-
-```response
-┌─total_i─┬──j─┬─total_k─┐
-│     100 │ 10 │     324 │
-│     120 │  8 │      23 │
-└─────────┴────┴─────────┘
-```
-
-#### Lambda rename {#rename-lambda-rename}
-
-```sql
-SELECT COLUMNS('[jk]') RENAME (col -> concat(col, '_value'))
-FROM columns_transformers;
-```
-
-```response
-┌─j_value─┬─k_value─┐
-│      10 │     324 │
-│       8 │      23 │
-└─────────┴─────────┘
-```
-
-#### Using `RENAME` with other modifiers {#rename-using-rename-with-other-modifiers}
-
-`RENAME` is applied after the previous modifiers. For example, `REPLACE` changes the value and type, and `RENAME` changes the output name:
-
-```sql
-SELECT * REPLACE(i + 1 AS i) RENAME i AS next_i
-FROM columns_transformers;
-```
-
-```response
-┌─next_i─┬──j─┬───k─┐
-│    101 │ 10 │ 324 │
-│    121 │  8 │  23 │
-└────────┴────┴─────┘
-```
-
-When `RENAME` is used after `APPLY`, explicit `RENAME` still matches the original selected column names:
-
-```sql
-SELECT * APPLY(sum) RENAME (i AS i_sum, j AS j_sum, k AS k_sum)
-FROM columns_transformers;
-```
-
-```response
-┌─i_sum─┬─j_sum─┬─k_sum─┐
-│   220 │    18 │   347 │
-└───────┴───────┴───────┘
-```
-
-`RENAME` applies to query results. It is not supported in the target column list of `INSERT`, or in `EXPLAIN AST` with `optimize = 1`.
+The [`RENAME` modifier](/reference/statements/select/rename_modifier) changes output column names without changing values, types, or column order. It supports explicit names and a lambda, and must be the last modifier in the chain.
 
 ## SETTINGS in SELECT Query {#settings-in-select-query}
 
