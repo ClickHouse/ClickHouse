@@ -2914,6 +2914,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// this variable is stored to avoid reading the same granule twice.
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
+        /// Distance hints must cover every selected granule, not only those with ANN results.
+        bool vector_distance_hints_valid = true;
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -2930,6 +2932,23 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 {
                     auto vector_search_results = condition->calculateApproximateNearestNeighbors(granule);
 
+                    if (vector_search_results.scan_full_granule)
+                    {
+                        vector_distance_hints_valid = false;
+                        read_hints = {};
+
+                        MarkRange data_range(
+                            std::max(ranges[i].begin, index_mark * skip_index_granularity),
+                            std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+
+                        if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                            res.push_back(data_range);
+                        else
+                            res.back().end = data_range.end;
+
+                        continue;
+                    }
+
                     /// We need to sort the result ranges ascendingly
                     auto rows = vector_search_results.rows;
                     std::sort(rows.begin(), rows.end());
@@ -2941,9 +2960,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 #endif
                     if (!vector_search_results.distances.has_value())
                     {
+                        vector_distance_hints_valid = false;
                         read_hints = {};
                     }
-                    else
+                    else if (vector_distance_hints_valid)
                     {
                         const auto & distances = vector_search_results.distances.value();
                         if (vector_search_results.rows.size() != distances.size())

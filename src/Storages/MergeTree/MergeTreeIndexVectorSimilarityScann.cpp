@@ -1425,14 +1425,11 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     if (!granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has unexpected type");
 
-    /// Fallback: return all rows if index was not built (too few vectors).
-    /// Do not set distances so the executor treats this as a non-optimized granule and
-    /// computes exact distances for every returned row.
+    /// Request an exact scan without enumerating rows if the index was not built.
     if (!granule->searcher || !granule->searcher->inner)
     {
         NearestNeighbours result;
-        result.rows.resize(granule->num_vectors);
-        std::iota(result.rows.begin(), result.rows.end(), UInt64(0));
+        result.scan_full_granule = true;
         return result;
     }
 
@@ -1536,14 +1533,11 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
 
     /// If ScaNN returned fewer candidates than requested (e.g. scann_num_leaves_to_search
     /// searched too few IVF partitions), the approximate result set is incomplete.
-    /// Fall back to a full-granule scan without distances: returning all row offsets with
-    /// distances unset causes the upstream executor to read every row in the granule and
-    /// compute exact distances, guaranteeing correct result cardinality.
+    /// Request an exact scan without allocating a row offset for every vector.
     if (nn.size() < num_candidates)
     {
         NearestNeighbours result;
-        result.rows.resize(granule->num_vectors);
-        std::iota(result.rows.begin(), result.rows.end(), UInt64{0});
+        result.scan_full_granule = true;
         return result;
     }
 
