@@ -118,7 +118,7 @@ struct BitPackedRLEDecoder : public PageDecoder
             return true;
         }
 
-        /// `decodeAndIndexFixedSize` needs a non-empty dictionary; the loop below rejects every index of an empty one.
+        /// `decodeAndIndexFixedSize` requires a non-empty dictionary.
         if (dictionary.mode == Dictionary::Mode::FixedSize && limit != 0)
         {
             switch (dictionary.value_size)
@@ -205,7 +205,7 @@ struct BitPackedRLEDecoder : public PageDecoder
 
             if (run_is_rle)
             {
-                /// `val` was bounds-checked in startRun; a local copy, as the stores to `to` may alias `dict`.
+                /// `val` was bounds-checked in startRun.
                 const Value v = unalignedLoad<Value>(dict + size_t(val) * value_size);
                 for (size_t i = 0; i < n; ++i)
                     memcpy(to + i * value_size, &v, value_size);
