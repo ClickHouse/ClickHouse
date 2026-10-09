@@ -1,0 +1,8 @@
+rmt_level_gt0	1
+rmt_rows_final	3
+rep_level_gt0	1
+rep_rows_final	3
+rep_dst_level	0
+rep_dst_rows_final	3
+graphite_src_level_gt0	1
+graphite_level	0

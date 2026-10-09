@@ -4563,9 +4563,6 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
         throwIfTemporaryTableSizeLimitsExceededForReplacement(query_context, lock, parts, std::nullopt);
     }
 
-    /// A restored part may come from a table with other merge semantics, so FINAL must not see it as collapsed.
-    const bool reset_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-
     for (auto part : parts)
     {
         /// It's important to create it outside of lock scope because
@@ -4573,12 +4570,6 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         {
             auto lock = lockParts();
-            if (reset_level)
-            {
-                part->info.level = 0;
-                /// The legacy spelling of the level is only meaningful together with MAX_LEVEL.
-                part->info.use_legacy_max_level = false;
-            }
             /// Mutation versions are numbered per table, so a carried-over one would name a version this table never reached.
             part->info.mutation = 0;
             auto block_holder = fillNewPartName(part, lock);
