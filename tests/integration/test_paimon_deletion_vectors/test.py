@@ -78,8 +78,8 @@ def upload(node, name):
     return table_dir
 
 
-def assert_refused(node, query):
-    error = node.query_and_get_error(query)
+def assert_refused(node, query, settings=None):
+    error = node.query_and_get_error(query, settings=settings)
     assert (
         "NOT_IMPLEMENTED" in error and "deletion vectors are not applied" in error
     ), error
@@ -92,12 +92,19 @@ def test_full_scan(started_cluster):
     update(spark, name)
     table_dir = upload(node, name)
 
-    assert_refused(node, f"SELECT * FROM paimonLocal('{table_dir}') ORDER BY id, val")
+    query = f"SELECT * FROM paimonLocal('{table_dir}') ORDER BY id, val"
+    assert_refused(node, query)
     assert_refused(node, f"SELECT count() FROM paimonLocal('{table_dir}')")
     # The table stays inspectable.
     assert node.query(f"DESCRIBE paimonLocal('{table_dir}')").startswith(
         "id\tNullable(Int32)"
     )
+
+    # A cached index manifest keeps refusing the read after the file is gone.
+    cached = {"use_paimon_metadata_files_cache": 1}
+    assert_refused(node, query, cached)
+    node.exec_in_container(["bash", "-c", f"rm {table_dir}/manifest/index-manifest-*"])
+    assert_refused(node, query, cached)
 
 
 def test_deletion_vectors_turned_off(started_cluster):
