@@ -110,6 +110,7 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/Access/ASTCreateTokenQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/stripQuerySettings.h>
@@ -1333,6 +1334,8 @@ static bool isAccessControlQuery(const IAST * ast)
             || ast->as<ASTCreateRowPolicyQuery>()
             || ast->as<ASTCreateSettingsProfileQuery>()
             || ast->as<ASTCreateMaskingPolicyQuery>()
+            /// `CREATE TOKEN` adds an authentication method to the current user.
+            || ast->as<ASTCreateTokenQuery>()
             || ast->as<ASTDropAccessEntityQuery>()
             || ast->as<ASTSetRoleQuery>());
 }

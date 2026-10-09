@@ -859,6 +859,32 @@ def test_audit_log_access_control_statements_are_dcl(start_cluster):
     ), "table DDL must not be audited on a node with only USER and DCL audit types"
 
 
+def test_audit_log_create_token_is_dcl(start_cluster):
+    """`CREATE TOKEN` reports `QueryKind::Create`, but it adds an authentication method to the
+    current user, so it must be audited as DCL. node_user_dcl enables only USER and DCL."""
+    node_user_dcl.query("DROP USER IF EXISTS audit_token_user")
+    node_user_dcl.query("CREATE USER audit_token_user IDENTIFIED WITH plaintext_password BY 'audit_token_password'")
+    node_user_dcl.query("GRANT CREATE TOKEN ON *.* TO audit_token_user")
+
+    node_user_dcl.query(
+        "CREATE TOKEN VALID FOR INTERVAL 1 DAY /* audit_create_token */",
+        user="audit_token_user",
+        password="audit_token_password",
+    )
+
+    assert_audit_log_contain_with_retry(node_user_dcl, "audit_create_token")
+    log_content = node_user_dcl.grep_in_log(
+        "audit_create_token", from_host=True, filename="clickhouse-server.audit.log"
+    )
+    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line]
+    assert lines, "CREATE TOKEN must produce an audit record"
+    for line in lines:
+        fields = line.split("AUDIT: ", 1)[1].split(", ")
+        assert fields[0] == "DCL", f"CREATE TOKEN must be classified as DCL: {line}"
+
+    node_user_dcl.query("DROP USER IF EXISTS audit_token_user")
+
+
 def test_audit_log_execute_as_wrapped_statement_is_audited(start_cluster):
     """`EXECUTE AS <user> <statement>` runs the wrapped statement through
     `executeQuery(..., internal = true)`, which by itself would leave it out of the audit log. The
