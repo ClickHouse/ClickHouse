@@ -1,3 +1,4 @@
+import fcntl
 import glob
 import io
 import os
@@ -46,6 +47,13 @@ class ClickHouseProc:
     # Total wall-clock cap for symbolizing the jemalloc profiles of a job (seconds),
     # for the same reason.
     JEMALLOC_SYMBOLIZATION_BUDGET = 1200
+    # Lock wait after SIGTRAP. Must exceed the fault-signal handler's pre-core
+    # prologue (up to 300x1s for the reporting thread, then 3s to flush logs)
+    # plus core writing, or the escalation below truncates the core it asks for.
+    STOP_LOCK_WAIT_TIMEOUT_TRAP = 600
+    # Lock wait after SIGKILL. The kernel drops the flock with the open file
+    # description as the process dies, so this only absorbs scheduling delay.
+    STOP_LOCK_WAIT_TIMEOUT_KILL = 5
 
     def __init__(
         self,
@@ -105,7 +113,6 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.seaweedfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
         # The failing sub-command + its ClickHouse error tail from
@@ -152,52 +159,11 @@ class ClickHouseProc:
 """)
 
     def start_seaweedfs(self, test_type):
-        os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
-        command = [
-            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-            test_type,
-            "./tests",
-        ]
-        with open(self.SEAWEEDFS_LOG, "w") as log_file:
-            self.seaweedfs_proc = subprocess.Popen(
-                command, stdout=log_file, stderr=subprocess.STDOUT
-            )
-        print(
-            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
+        from ci.jobs.scripts import seaweedfs_service
+
+        return seaweedfs_service.start(
+            test_type, self.SEAWEEDFS_LOG, f"{Utils.cwd()}/ci/tmp"
         )
-
-        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
-        # be listable: the server's S3 disks authenticate at startup and need
-        # the whole identity/bucket setup in place. The seaweedfs server is
-        # nohup'd and outlives the script, so waiting on the script is safe.
-        # Its internal waits are bounded (60s each), so pad the timeout.
-        try:
-            returncode = self.seaweedfs_proc.wait(timeout=240)
-        except subprocess.TimeoutExpired:
-            print(
-                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
-            )
-            self.seaweedfs_proc.kill()
-            return False
-        if returncode != 0:
-            print(f"setup_seaweedfs.sh exited with code {returncode}")
-            return False
-
-        # pass the credentials explicitly: the setup script no longer writes
-        # ~/.aws, and without them the aws cli would sign with the runner's
-        # instance-role credentials, which SeaweedFS does not know
-        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
-        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
-        if not Shell.check(
-            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
-            "AWS_DEFAULT_REGION=us-east-1 "
-            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
-            verbose=False,
-            retries=3,
-        ):
-            print("Failed to start seaweedfs: bucket test not reachable")
-            return False
-        return True
 
     def start_azurite(self):
         # Raise the open files limit before launching azurite-rs.
@@ -371,6 +337,16 @@ class ClickHouseProc:
     def stop_log_exports():
         return log_export.stop()
 
+    def _set_pid(self, replica_num, pid):
+        if replica_num == 1:
+            self.pid_1 = pid
+        elif replica_num == 2:
+            self.pid_2 = pid
+        elif replica_num == 0:
+            self.pid_0 = pid
+        else:
+            assert False
+
     def start(self, replica_num=0):
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
@@ -394,6 +370,9 @@ class ClickHouseProc:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
+        # The cached pid mirrors this file and must not outlive it: `stop_server`
+        # keys its pid-less kill path off the cached value.
+        self._set_pid(replica_num, 0)
         Path(pid_file).unlink(missing_ok=True)
         Utils.clean_dir(Path(run_path))
         Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
@@ -446,14 +425,7 @@ class ClickHouseProc:
                     continue
                 started = True
                 print(f"Got pid from fs [{pid}]")
-                if replica_num == 1:
-                    self.pid_1 = int(pid)
-                elif replica_num == 2:
-                    self.pid_2 = int(pid)
-                elif replica_num == 0:
-                    self.pid_0 = int(pid)
-                else:
-                    assert False
+                self._set_pid(replica_num, int(pid))
                 break
         except Exception:
             pass
@@ -812,6 +784,80 @@ fi
 
         return self
 
+    @staticmethod
+    def _status_lock_free(run_path):
+        """Whether `clickhouse local --path run_path` could lock `status`.
+
+        Takes the same `flock(LOCK_EX|LOCK_NB)` as `StatusFile`, so this is that
+        predicate rather than a proxy for it. A missing file, or a stale one whose
+        holder is dead, is free; only a live holder is not.
+        """
+        try:
+            fd = os.open(f"{run_path}/status", os.O_RDONLY)
+        except OSError as ex:
+            return isinstance(ex, FileNotFoundError)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return True
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
+
+    @classmethod
+    def _wait_status_lock_free(cls, run_path, timeout):
+        deadline = time.monotonic() + timeout
+        while not cls._status_lock_free(run_path):
+            if time.monotonic() >= deadline:
+                return False
+            Utils.sleep(1)
+        return True
+
+    @classmethod
+    def _kill(cls, pid, sig, run_path, timeout):
+        try:
+            os.kill(pid, sig)
+        except OSError as ex:
+            print(f"WARNING: Cannot send signal {sig} to {pid}: {ex}")
+        return cls._wait_status_lock_free(run_path, timeout)
+
+    @classmethod
+    def _force_release_status_lock(cls, pid, run_path):
+        """Make `run_path/status` lockable again, so its tables can still be dumped.
+
+        `pid` must be the one from the pid file, never a `Popen.pid`: with
+        `shell=True` that is a `sh -c` wrapper, and the server forks a watchdog
+        under it, so signalling it leaves the lock holder running.
+        """
+        if cls._status_lock_free(run_path):
+            return
+        # Fail closed: signal only a pid the lock holder itself vouches for, so a
+        # reused pid belonging to an unrelated process is never touched.
+        first_line = Shell.get_output(f"head -1 {run_path}/status").strip()
+        if first_line != f"PID: {pid}":
+            print(f"WARNING: {run_path}/status disowns pid {pid}: {first_line!r}")
+        else:
+            print(
+                f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+            )
+            if cls._kill(
+                pid, signal.SIGTRAP, run_path, cls.STOP_LOCK_WAIT_TIMEOUT_TRAP
+            ):
+                return
+            print(f"WARNING: Process {pid} survived SIGTRAP - sending SIGKILL")
+            if cls._kill(
+                pid, signal.SIGKILL, run_path, cls.STOP_LOCK_WAIT_TIMEOUT_KILL
+            ):
+                return
+        if cls._status_lock_free(run_path):
+            return
+        print(f"WARNING: {run_path}/status is still locked")
+        Info().add_workflow_warning(
+            f"Failed to release the status file lock in {run_path},"
+            " system tables of that replica are lost, see job.log"
+        )
+
     def stop_server(self, force=False):
         """Gracefully stop only the ClickHouse server processes.
 
@@ -837,18 +883,34 @@ fi
                     proc.terminate()
                     try:
                         proc.wait(timeout=10)
-                        continue
                     except subprocess.TimeoutExpired:
-                        pass
+                        # Callers of this path dump their logs before stopping, so
+                        # no `clickhouse local` waits on this lock afterwards.
+                        print(
+                            f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+                        )
+                        proc.send_signal(signal.SIGTRAP)
+                        try:
+                            proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                    continue
                 elif Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
                     continue
-                print(
-                    f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
-                )
-                proc.send_signal(signal.SIGTRAP)
+                self._force_release_status_lock(pid, run_path)
+                # The wrapper exits with the server it forked, so waiting for it
+                # here is what keeps this object from accumulating zombies.
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+            elif proc:
+                # `proc` is the `sh -c` wrapper, not the server, so kill by the
+                # unique `--pid-file` token, then reap the wrapper.
+                Shell.check(f"pkill -9 -f -- '--pid-file {pid_file}'", verbose=True)
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:

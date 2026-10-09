@@ -81,6 +81,7 @@ public:
     void findRowIndexBatch(
         const std::vector<std::string_view> & encoded_keys,
         std::vector<std::optional<UInt64>> & out) const override;
+
     bool isRowDead(UInt64 row_number) const override;
     const IMergeTreeDataPart * getUnderlyingPart() const override { return part; }
 

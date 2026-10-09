@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-replicated-database, no-shared-merge-tree, no-fasttest
 # no-parallel: the failpoint applies to `table_readonly` 1 -> 0 ALTERs of all tables.
 # no-replicated-database, no-shared-merge-tree: `table_readonly` is a plain MergeTree setting.
 

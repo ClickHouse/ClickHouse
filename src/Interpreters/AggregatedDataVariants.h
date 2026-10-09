@@ -454,6 +454,27 @@ struct AggregatedDataVariants : private boost::noncopyable
     };
     Type type = Type::EMPTY;
     bool top_k_heap_ever_rejected = false;
+
+    /// The table was rebuilt to the frozen set of kept keys of the trivial `GROUP BY ... LIMIT`
+    /// cutoff (see `ManyAggregatedData::SharedKeptKeys`), so it admits no other key. Only such a
+    /// table may be flushed to a temporary file while the cutoff holds: everything it contains is
+    /// a kept key, and `Aggregator` re-seeds it with the kept keys after the flush so the
+    /// remaining rows of those keys keep being aggregated.
+    bool restricted_to_kept_keys = false;
+
+    /// The kept keys of the cutoff with empty aggregate states, in the mergeable block layout.
+    /// Set together with `restricted_to_kept_keys`; the `Aggregator` re-seeds the table from it
+    /// after an external-aggregation spill has emptied it. With the shared cutoff this is the
+    /// frozen set shared by all the streams (`ManyAggregatedData::SharedKeptKeys::seed`); on the
+    /// branches that cap every stream on its own it is the stream's own kept key set.
+    ConstBlockPtr kept_keys_seed;
+
+    /// The table is being rebuilt around the kept keys, or re-seeded with them after a flush.
+    /// Those merges only re-insert data the table already held, so an external-aggregation spill
+    /// in the middle of them must be skipped: it would empty the table while the rest of the
+    /// rebuild is merged into it under `no_more_keys`, dropping everything accumulated so far.
+    bool kept_keys_rebuild_in_progress = false;
+
     AggregatedDataVariants();
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }
@@ -497,8 +518,16 @@ struct AggregatedDataVariants : private boost::noncopyable
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
     bool isLowCardinality() const;
+    /// Serialized hash methods; `Aggregator` passes non-nullable `LowCardinality` key columns
+    /// to them without materializing full columns first.
+    bool isSerialized() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
     bool topKHeapEverRejected() const;
+    /// Whether the active method's top-K heap is inactive for the block about to be processed: it has
+    /// already frozen, or `Aggregator::executeImpl` will certainly freeze it before processing row 0 of
+    /// that block (see `TopKAggregationHeapBase::willBeInactive`). Conservative: when the shared-boundary
+    /// exchange may still keep the heap running, the heap is reported as active.
+    bool topKHeapInactive() const;
 
     /** Select the aggregation method based on the number and types of keys. */
     static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);

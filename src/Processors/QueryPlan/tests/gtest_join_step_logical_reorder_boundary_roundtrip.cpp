@@ -206,13 +206,21 @@ TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, UnmarkedJoinStaysUnmarked)
     EXPECT_FALSE(roundTripBoundary(/*mark_as_boundary=*/false));
 }
 
-/// Pins the wire encoding rather than only the accessor, and fails if a future second flag is given
-/// the same bit. The whole `flags` byte is asserted, not just the bit, because it is the only flag
-/// in it today.
-TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, BoundaryBitIsTheOnlyFlagInTheByte)
+/// Pins the wire encoding rather than only the accessor. The `flags` byte also carries the disjunction
+/// push-down mark, so each mark must round-trip without setting the other.
+TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, BoundaryBitDoesNotCollideWithOtherFlags)
 {
-    EXPECT_EQ(flagsByte(serializeStep(*makeStep(/*mark_as_boundary=*/true), boundary_step_version)), 1);
+    EXPECT_EQ(flagsByte(serializeStep(*makeStep(/*mark_as_boundary=*/true), boundary_step_version)), 2);
     EXPECT_EQ(flagsByte(serializeStep(*makeStep(/*mark_as_boundary=*/false), boundary_step_version)), 0);
+
+    auto marked = deserializeStep(serializeStep(*makeStep(/*mark_as_boundary=*/true), boundary_step_version), boundary_step_version);
+    EXPECT_FALSE(assert_cast<JoinStepLogical &>(*marked).isDisjunctionsOptimizationApplied());
+
+    auto pushed_down = makeStep(/*mark_as_boundary=*/false);
+    pushed_down->setDisjunctionsOptimizationApplied(true);
+    auto received = deserializeStep(serializeStep(*pushed_down, boundary_step_version), boundary_step_version);
+    EXPECT_TRUE(assert_cast<JoinStepLogical &>(*received).isDisjunctionsOptimizationApplied());
+    EXPECT_FALSE(boundaryOf(received));
 }
 
 /// A peer that reads this step at version 0 must see the bytes it read before the bit existed, so the
@@ -225,7 +233,7 @@ TEST_F(JoinStepLogicalReorderBoundaryRoundTrip, StepVersionZeroNeitherWritesNorR
     EXPECT_FALSE(boundaryOf(deserializeStep(v0, pre_boundary_step_version)));
 
     const String v1 = serializeStep(*makeStep(/*mark_as_boundary=*/true), boundary_step_version);
-    ASSERT_EQ(flagsByte(v1), 1);
+    ASSERT_EQ(flagsByte(v1), 2);
     EXPECT_FALSE(boundaryOf(deserializeStep(v1, pre_boundary_step_version)));
 }
 
