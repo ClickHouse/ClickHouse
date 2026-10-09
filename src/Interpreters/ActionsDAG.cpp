@@ -361,7 +361,7 @@ void ActionsDAG::Node::updateHash(
                 hash_state.update(argument.name);
                 hash_state.update(argument.type->getName());
             }
-            lambda_dag.updateHash(hash_state, build_independent, input_header);
+            lambda_dag.updateHash(hash_state, build_independent, input_header, with_variable_size_constant_values);
         };
 
         if (const auto * function_capture = typeid_cast<const FunctionCapture *>(function_base.get()))
