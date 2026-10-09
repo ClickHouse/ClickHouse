@@ -140,6 +140,8 @@ public:
     }
 
 protected:
+    void releaseObject(Connection & connection) noexcept override { connection.releaseQueryBuffers(); }
+
     /** Creates a new object to put in the pool. */
     ConnectionPtr allocObject() override
     {

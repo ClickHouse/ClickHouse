@@ -1165,14 +1165,7 @@ void Connection::sendQuery(
         /// round-trips intact.
         writeQueryParameters(query_parameters, *out);
 
-    maybe_compressed_in.reset();
-    if (maybe_compressed_out && maybe_compressed_out != out)
-        maybe_compressed_out->finalize();
-    maybe_compressed_out.reset();
-    block_in.reset();
-    block_logs_in.reset();
-    block_profile_events_in.reset();
-    block_out.reset();
+    resetQueryBuffers();
 
     out->finishChunk();
 
@@ -1184,6 +1177,28 @@ void Connection::sendQuery(
     }
 
     completed = true;
+}
+
+
+void Connection::resetQueryBuffers()
+{
+    maybe_compressed_in.reset();
+    if (maybe_compressed_out && maybe_compressed_out != out)
+        maybe_compressed_out->finalize();
+    maybe_compressed_out.reset();
+    block_in.reset();
+    block_logs_in.reset();
+    block_profile_events_in.reset();
+    block_out.reset();
+}
+
+
+void Connection::releaseQueryBuffers() noexcept
+{
+    /// Data still buffered is flushed by the next `sendQuery`.
+    if (maybe_compressed_out && maybe_compressed_out != out && maybe_compressed_out->offset())
+        return;
+    resetQueryBuffers();
 }
 
 

@@ -228,8 +228,9 @@ private:
         return Entry(std::make_shared<typename Entry::PoolEntryHelper>(
             item.object.get(),
             &item.is_expired,
-            [this, in_use]
+            [this, in_use, object = item.object.get()]
             {
+                releaseObject(*object);
                 std::lock_guard lock(mutex);
                 *in_use = false;
                 available.notify_one();
@@ -258,4 +259,6 @@ protected:
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
     virtual void expireObject(ObjectPtr) {}
+    /// Called by the thread that used the object, when it gives it back.
+    virtual void releaseObject(Object &) noexcept {}
 };
