@@ -153,7 +153,6 @@ namespace
         DB::Field value;
         if (isStringOrFixedString(literal_type))
         {
-            /// Parsed as the comparison parses a constant string: under the query's format settings, e.g. `date_time_overflow_behavior`.
             value = DB::tryConvertFieldToType(literal, *type, literal_type.get(), format_settings);
         }
         else if (isDateOrDate32(type) && isDateOrDate32OrDateTimeOrDateTime64(literal_type))
