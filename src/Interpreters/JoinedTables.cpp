@@ -26,6 +26,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 
 namespace DB
@@ -41,6 +42,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int LOGICAL_ERROR;
@@ -359,11 +361,6 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 storage = nullptr;
             }
         }
-        /// table's row policy, so such a table has to be joined as an ordinary stream.
-        auto joined_table_row_policy = context->getRowPolicyFilter(
-            joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        if (joined_table_row_policy && !joined_table_row_policy->isAlwaysTrue())
-            storage = nullptr;
 
         if (storage)
         {
