@@ -196,7 +196,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'alive'"
 # schema only through the consistency reload, which the table functions above never take.
 PM_TABLE="t_pm_${CLICKHOUSE_DATABASE}_${RANDOM}"
 PM_OK_TABLE="t_pm_ok_${CLICKHOUSE_DATABASE}_${RANDOM}"
-PAIMON_ENGINE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine=1"
+PAIMON_ENGINE_CLIENT="${CLICKHOUSE_CLIENT} --enable_paimon_storage_engine=1"
 
 ${PAIMON_ENGINE_CLIENT} --query "CREATE TABLE ${PM_TABLE} (f_boolean Nullable(Bool), f_int Nullable(Int32)) ENGINE = PaimonLocal('${LAKE_DIR}/pm')"
 ${PAIMON_ENGINE_CLIENT} --query "SELECT * FROM ${PM_TABLE} FORMAT Null" 2>&1 \

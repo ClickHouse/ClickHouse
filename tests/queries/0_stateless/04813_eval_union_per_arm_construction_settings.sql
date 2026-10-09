@@ -4,7 +4,7 @@
 -- `SETTINGS limit = ...` was consumed by `wrapNestedConstructionSettings` and re-scoped to the whole
 -- union, and the ambiguous mix of non-last-arm and last-arm construction `SETTINGS` was not rejected.
 
-SET allow_experimental_eval_table_function = 1;
+SET enable_eval_table_function = 1;
 
 -- { echoOn }
 -- A construction setting on a non-last arm caps only that arm, not the whole union.

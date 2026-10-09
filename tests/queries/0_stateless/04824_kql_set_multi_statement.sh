@@ -8,8 +8,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-url_gate_on="${CLICKHOUSE_URL}&dialect=kusto&allow_experimental_kusto_dialect=1"
-url_gate_off="${CLICKHOUSE_URL}&dialect=kusto&allow_experimental_kusto_dialect=0"
+url_gate_on="${CLICKHOUSE_URL}&dialect=kusto&enable_kusto_dialect=1"
+url_gate_off="${CLICKHOUSE_URL}&dialect=kusto&enable_kusto_dialect=0"
 
 echo '-- a single SET works, with and without the gate --'
 ${CLICKHOUSE_CURL} -sS "${url_gate_on}" -d "set max_threads = 1" && echo OK

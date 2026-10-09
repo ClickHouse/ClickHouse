@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-POLYGLOT_OPTS="--allow_experimental_polyglot_dialect 1 --dialect polyglot"
+POLYGLOT_OPTS="--enable_polyglot_dialect 1 --dialect polyglot"
 
 # SQLite: TYPEOF() does not exist in ClickHouse
 $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
@@ -52,7 +52,7 @@ $CLICKHOUSE_CLIENT $POLYGLOT_OPTS --polyglot_dialect sqlite \
     -q "SET ROLE NONE" && echo OK
 
 # Test that `SET TRANSACTION SNAPSHOT` is handled as ClickHouse SQL too, before the feature gate and the
-# transpiler: without `allow_experimental_polyglot_dialect` it still reaches the server, which rejects
+# transpiler: without `enable_polyglot_dialect` it still reaches the server, which rejects
 # it only because there is no open transaction
 $CLICKHOUSE_CLIENT --dialect polyglot --polyglot_dialect sqlite \
     -q "SET TRANSACTION SNAPSHOT 1" 2>&1 | grep -om1 'INVALID_TRANSACTION'

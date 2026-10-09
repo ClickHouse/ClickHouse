@@ -3,7 +3,7 @@
 -- Every expected value below is the one printed in Microsoft's own reference page for that
 -- function, so this file is a conformance check rather than a record of what we happen to do.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- binary --';

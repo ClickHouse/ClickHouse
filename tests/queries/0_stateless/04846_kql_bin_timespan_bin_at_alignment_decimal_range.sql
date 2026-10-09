@@ -2,7 +2,7 @@
 -- fixed point after the value, exact `Decimal` counting in `range`, and the wildcard
 -- rejection in `project-away` / `project-keep`.
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- bin and two-argument floor over timespans --';

@@ -161,7 +161,7 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
-    extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool enable_polyglot_dialect;
     extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 max_ast_depth;
@@ -712,7 +712,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else if (dialect == Dialect::polyglot)
-            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::enable_polyglot_dialect]);
         else if (dialect == Dialect::logsql)
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],

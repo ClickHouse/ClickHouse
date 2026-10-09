@@ -1,4 +1,4 @@
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 -- KQL `floor(x)` with a single argument: rounds down to the nearest integer

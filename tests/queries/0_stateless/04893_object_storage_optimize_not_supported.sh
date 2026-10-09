@@ -46,7 +46,7 @@ for kernel in 1 0; do
 done
 
 echo "-- paimon"
-${CLICKHOUSE_CLIENT} --allow_experimental_paimon_storage_engine=1 --query "
+${CLICKHOUSE_CLIENT} --enable_paimon_storage_engine=1 --query "
     DROP TABLE IF EXISTS t_paimon;
     CREATE TABLE t_paimon ENGINE = PaimonLocal('${ROOT}/paimon');
     OPTIMIZE TABLE t_paimon;

@@ -2,7 +2,7 @@
 -- (per row, since the bin size may be a column), and for a parameterless function whose
 -- tabular body is a bare tabular name (`let F = () { Base };`).
 
-SET allow_experimental_kusto_dialect = 1;
+SET enable_kusto_dialect = 1;
 SET dialect = 'kusto';
 
 print '-- a negative bin size yields null --';

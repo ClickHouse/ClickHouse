@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP SETTINGS PROFILE IF EXISTS ${profile}"
 
 # The shard-side user defaults to a foreign dialect. The initiator keeps speaking ClickHouse-SQL, so
 # this is exactly the state the override exists for: only the remote end would parse differently.
-${CLICKHOUSE_CLIENT} --query "CREATE SETTINGS PROFILE ${profile} SETTINGS dialect = 'kusto', allow_experimental_kusto_dialect = 1"
+${CLICKHOUSE_CLIENT} --query "CREATE SETTINGS PROFILE ${profile} SETTINGS dialect = 'kusto', enable_kusto_dialect = 1"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} SETTINGS PROFILE '${profile}'"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.* TO ${user}"
 ${CLICKHOUSE_CLIENT} --query "GRANT REMOTE, CREATE TEMPORARY TABLE ON *.* TO ${user}"
