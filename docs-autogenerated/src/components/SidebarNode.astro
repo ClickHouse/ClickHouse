@@ -1,0 +1,112 @@
+---
+import { containsPath, isNavGroup, isNavPage, type NavEntry, type NavGroup } from '@mintlify/astro/helpers';
+
+interface Props {
+  entry: NavEntry;
+  currentRoute: string;
+  depth?: number;
+  featureStateByRoute: Record<string, 'beta' | 'experimental'>;
+}
+
+interface DisclosureGroup extends NavGroup {
+  expandable?: boolean;
+  expanded?: boolean;
+}
+
+const { entry, currentRoute, depth = 0, featureStateByRoute } = Astro.props;
+const page = isNavPage(entry) ? entry : null;
+const group = isNavGroup(entry) ? entry as DisclosureGroup : null;
+const active = page ? page.href === currentRoute : containsPath(group?.pages ?? [], currentRoute);
+const label = page?.title ?? group?.group ?? '';
+const children = group?.pages ?? [];
+const featureState = page ? featureStateByRoute[page.href] : undefined;
+const rootGroup = depth === 0 && group;
+const expanded = (active || group?.expanded === true) && children.length > 0;
+function firstPageHref(candidate: NavEntry): string | null {
+  if (isNavPage(candidate)) return candidate.href;
+  if (!isNavGroup(candidate)) return null;
+  for (const child of candidate.pages) {
+    const href = firstPageHref(child);
+    if (href) return href;
+  }
+  return null;
+}
+const groupHref = group ? firstPageHref(group) : null;
+---
+
+<li class:list={['sidebar-node', `sidebar-depth-${depth}`, { active, expanded }] }>
+  {rootGroup ? (
+    <>
+      {active || !groupHref
+        ? (
+          <div class="sidebar-group-heading">
+            <span>{label}</span>
+            <span class="sidebar-chevron" aria-hidden="true"></span>
+          </div>
+        )
+        : (
+          <a class="sidebar-group-heading sidebar-group-heading-link" href={groupHref}>
+            <span>{label}</span>
+            <span class="sidebar-chevron" aria-hidden="true"></span>
+          </a>
+        )}
+      {expanded && (
+        <ul>
+          {children.map((child) => (
+            <Astro.self
+              entry={child}
+              currentRoute={currentRoute}
+              depth={depth + 1}
+              featureStateByRoute={featureStateByRoute}
+            />
+          ))}
+        </ul>
+      )}
+    </>
+  ) : page ? (
+    <a href={page.href} aria-current={page.href === currentRoute ? 'page' : undefined}>
+      {featureState && (
+        <span
+          class:list={['sidebar-setting-state-icon', `sidebar-setting-state-icon-${featureState}`]}
+          role="img"
+          aria-label={`${featureState === 'beta' ? 'Beta' : 'Experimental'} setting`}
+          title={`${featureState === 'beta' ? 'Beta' : 'Experimental'} setting`}
+        >
+          {featureState === 'experimental' ? (
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M5.5 2h5M9.5 2v4.196l3.928 6.547a.5.5 0 0 1-.428.757H3a.5.5 0 0 1-.429-.757L6.5 6.196V2" />
+              <path d="M4.477 9.568c.826-.155 2-.089 3.523.682 2.015 1.021 3.422.807 4.218.478" />
+            </svg>
+          ) : (
+            <span aria-hidden="true">β</span>
+          )}
+        </span>
+      )}
+      <span class="sidebar-page-label">
+        <span class="sidebar-page-label-text">{label}</span>
+      </span>
+    </a>
+  ) : group && expanded ? (
+    <details class="sidebar-disclosure" open={expanded}>
+      <summary>
+        <span>{label}</span>
+        <span class="sidebar-chevron" aria-hidden="true"></span>
+      </summary>
+      <ul>
+        {children.map((child) => (
+          <Astro.self
+            entry={child}
+            currentRoute={currentRoute}
+            depth={depth + 1}
+            featureStateByRoute={featureStateByRoute}
+          />
+        ))}
+      </ul>
+    </details>
+  ) : group && groupHref ? (
+    <a class="sidebar-group-link" href={groupHref}>
+      <span>{label}</span>
+      <span class="sidebar-chevron" aria-hidden="true"></span>
+    </a>
+  ) : null}
+</li>

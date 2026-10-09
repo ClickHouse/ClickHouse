@@ -71,13 +71,31 @@
     document.head.appendChild(script);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', insertKapaWidget);
-  } else {
+  function initializeKapaWidget() {
     try {
       insertKapaWidget();
     } catch (e) {
       console.log('An error occurred while trying to load the Kapa.ai widget:', e);
     }
   }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeKapaWidget);
+  } else {
+    initializeKapaWidget();
+  }
+
+  // Astro replaces the page body during client-side navigation. Give Kapa's
+  // mounted container a matching placeholder in the incoming document so the
+  // router moves the live widget, including its event handlers, into the new
+  // body instead of discarding it.
+  document.addEventListener('astro:before-swap', function (event) {
+    var widget = document.getElementById('kapa-widget-container');
+    if (!widget || !event.newDocument) return;
+    var persistKey = 'kapa-widget-container';
+    widget.setAttribute('data-astro-transition-persist', persistKey);
+    var placeholder = event.newDocument.createElement('div');
+    placeholder.setAttribute('data-astro-transition-persist', persistKey);
+    event.newDocument.body.appendChild(placeholder);
+  });
 })();

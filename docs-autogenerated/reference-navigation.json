@@ -1,0 +1,335 @@
+{
+  "schemaVersion": 1,
+  "id": "reference",
+  "label": "Reference",
+  "excludedSourcePaths": [
+    "engines/database-engines/index.mdx",
+    "engines/table-engines/integrations/index.mdx",
+    "engines/table-engines/mergetree-family/index.mdx",
+    "engines/table-engines/special/index.mdx",
+    "functions/aggregate-functions/reference-index.mdx"
+  ],
+  "groups": [
+    {
+      "id": "reference.data-types",
+      "label": "Data Types",
+      "match": { "sourcePrefix": "data-types/" },
+      "documentsPosition": "after",
+      "groups": [
+        {
+          "id": "reference.data-types.numeric",
+          "label": "Numeric types",
+          "documentIds": [
+            "reference:data-types/int-uint",
+            "reference:data-types/float",
+            "reference:data-types/decimal",
+            "reference:data-types/boolean"
+          ]
+        },
+        {
+          "id": "reference.data-types.string",
+          "label": "String types",
+          "documentIds": [
+            "reference:data-types/string",
+            "reference:data-types/fixedstring"
+          ]
+        },
+        {
+          "id": "reference.data-types.date-time",
+          "label": "Date and time types",
+          "documentIds": [
+            "reference:data-types/date",
+            "reference:data-types/date32",
+            "reference:data-types/datetime",
+            "reference:data-types/datetime64",
+            "reference:data-types/time",
+            "reference:data-types/time64"
+          ]
+        },
+        {
+          "id": "reference.data-types.network",
+          "label": "Network types",
+          "documentIds": [
+            "reference:data-types/ipv4",
+            "reference:data-types/ipv6"
+          ]
+        },
+        {
+          "id": "reference.data-types.composite",
+          "label": "Composite types",
+          "documentIds": [
+            "reference:data-types/array",
+            "reference:data-types/tuple",
+            "reference:data-types/map"
+          ]
+        },
+        {
+          "id": "reference.data-types.semi-structured",
+          "label": "Semi-structured types",
+          "documentIds": [
+            "reference:data-types/newjson",
+            "reference:data-types/dynamic",
+            "reference:data-types/variant"
+          ]
+        },
+        {
+          "id": "reference.data-types.nullable-optional",
+          "label": "Nullable and optional types",
+          "documentIds": [
+            "reference:data-types/nullable",
+            "reference:data-types/lowcardinality"
+          ]
+        },
+        {
+          "id": "reference.data-types.specialized",
+          "label": "Specialized types",
+          "documentIds": [
+            "reference:data-types/uuid",
+            "reference:data-types/enum",
+            "reference:data-types/geo",
+            "reference:data-types/qbit"
+          ]
+        },
+        {
+          "id": "reference.data-types.aggregate-function",
+          "label": "Aggregate function types",
+          "documentIds": [
+            "reference:data-types/aggregatefunction",
+            "reference:data-types/simpleaggregatefunction"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reference.engines",
+      "label": "Engines",
+      "match": { "sourcePrefix": "engines/" },
+      "documentsPosition": "after",
+      "groups": [
+        {
+          "id": "reference.engines.table",
+          "label": "Table Engines",
+          "match": { "sourcePrefix": "engines/table-engines/" },
+          "documentsPosition": "after",
+          "groups": [
+            {
+              "id": "reference.engines.table.integrations",
+              "label": "Integrations",
+              "match": { "sourcePrefix": "engines/table-engines/integrations/" }
+            },
+            {
+              "id": "reference.engines.table.log-family",
+              "label": "Log Family",
+              "match": { "sourcePrefix": "engines/table-engines/log-family/" }
+            },
+            {
+              "id": "reference.engines.table.mergetree-family",
+              "label": "MergeTree Family",
+              "match": { "sourcePrefix": "engines/table-engines/mergetree-family/" }
+            },
+            {
+              "id": "reference.engines.table.special",
+              "label": "Special",
+              "match": { "sourcePrefix": "engines/table-engines/special/" }
+            }
+          ]
+        },
+        {
+          "id": "reference.engines.database",
+          "label": "Database Engines",
+          "match": { "sourcePrefix": "engines/database-engines/" }
+        }
+      ]
+    },
+    {
+      "id": "reference.functions",
+      "label": "Functions",
+      "match": { "sourcePrefix": "functions/" },
+      "documentsPosition": "after",
+      "groups": [
+        {
+          "id": "reference.functions.regular",
+          "label": "Regular",
+          "match": { "sourcePrefix": "functions/regular-functions/" },
+          "groupBySourcePage": true
+        },
+        {
+          "id": "reference.functions.aggregate",
+          "label": "Aggregate",
+          "match": { "sourcePrefix": "functions/aggregate-functions/" }
+        },
+        {
+          "id": "reference.functions.table",
+          "label": "Table",
+          "match": { "sourcePrefix": "functions/table-functions/" }
+        },
+        {
+          "id": "reference.functions.window",
+          "label": "Window",
+          "match": { "sourcePrefix": "functions/window-functions/" }
+        }
+      ]
+    },
+    {
+      "id": "reference.formats",
+      "label": "Formats",
+      "match": { "sourcePrefix": "formats/" },
+      "documentsPosition": "after",
+      "groups": [
+        { "id": "reference.formats.arrow", "label": "Arrow", "match": { "sourcePrefix": "formats/Arrow/" } },
+        { "id": "reference.formats.avro", "label": "Avro", "match": { "sourcePrefix": "formats/Avro/" } },
+        { "id": "reference.formats.csv", "label": "CSV", "match": { "sourcePrefix": "formats/CSV/" } },
+        { "id": "reference.formats.custom-separated", "label": "CustomSeparated", "match": { "sourcePrefix": "formats/CustomSeparated/" } },
+        { "id": "reference.formats.json", "label": "JSON", "match": { "sourcePrefix": "formats/JSON/" } },
+        { "id": "reference.formats.line-as-string", "label": "LineAsString", "match": { "sourcePrefix": "formats/LineAsString/" } },
+        { "id": "reference.formats.parquet", "label": "Parquet", "match": { "sourcePrefix": "formats/Parquet/" } },
+        { "id": "reference.formats.pretty", "label": "Pretty", "match": { "sourcePrefix": "formats/Pretty/" } },
+        { "id": "reference.formats.protobuf", "label": "Protobuf", "match": { "sourcePrefix": "formats/Protobuf/" } },
+        { "id": "reference.formats.row-binary", "label": "RowBinary", "match": { "sourcePrefix": "formats/RowBinary/" } },
+        { "id": "reference.formats.tab-separated", "label": "TabSeparated", "match": { "sourcePrefix": "formats/TabSeparated/" } },
+        { "id": "reference.formats.template", "label": "Template", "match": { "sourcePrefix": "formats/Template/" } }
+      ]
+    },
+    {
+      "id": "reference.settings",
+      "label": "Settings",
+      "match": { "sourcePrefix": "settings/" },
+      "documentsPosition": "after",
+      "groups": [
+        {
+          "id": "reference.settings.server",
+          "label": "Server settings",
+          "match": { "sourcePrefix": "settings/server-settings/" },
+          "groupBySourcePage": true
+        },
+        {
+          "id": "reference.settings.session",
+          "label": "Session settings",
+          "match": { "sourcePrefix": "settings/session-settings/" },
+          "groupBySourcePage": true
+        },
+        {
+          "id": "reference.settings.mergetree",
+          "label": "MergeTree settings",
+          "match": { "sourcePrefix": "settings/merge-tree-settings/" },
+          "groupBySourcePage": true,
+          "documentIds": ["reference:settings/merge-tree-settings"]
+        },
+        {
+          "id": "reference.settings.formats",
+          "label": "Format settings",
+          "match": { "sourcePrefix": "settings/formats/" },
+          "groupBySourcePage": true
+        }
+      ]
+    },
+    {
+      "id": "reference.statements",
+      "label": "Statements",
+      "match": { "entityKinds": ["statement"] },
+      "documentsPosition": "after",
+      "groups": [
+        {
+          "id": "reference.statements.alter",
+          "label": "ALTER",
+          "match": { "routePrefix": "/docs/reference/statements/alter" },
+          "documentIds": ["reference:statement:alter"],
+          "childrenOrder": [
+            "reference:statement:alter",
+            "reference.statements.alter.table"
+          ],
+          "groups": [
+            {
+              "id": "reference.statements.alter.table",
+              "label": "ALTER TABLE",
+              "match": {
+                "routePrefix": "/docs/reference/statements/alter/table/",
+                "titlePrefix": "ALTER TABLE"
+              },
+              "stripDocumentTitlePrefix": "ALTER TABLE "
+            }
+          ]
+        },
+        {
+          "id": "reference.statements.check",
+          "label": "CHECK",
+          "match": { "routePrefix": "/docs/reference/statements/check-" }
+        },
+        {
+          "id": "reference.statements.create",
+          "label": "CREATE",
+          "match": { "routePrefix": "/docs/reference/statements/create" },
+          "documentIds": ["reference:statement:create"],
+          "childrenOrder": [
+            "reference:statement:create",
+            "reference.statements.create-dictionary",
+            "reference.statements.create-table"
+          ],
+          "groups": [
+            {
+              "id": "reference.statements.create-dictionary",
+              "label": "CREATE DICTIONARY",
+              "match": { "sourcePrefix": "statements/create/dictionary" },
+              "documentIds": ["reference:statement:create-dictionary"],
+              "childrenOrder": [
+                "reference:statement:create-dictionary",
+                "reference.statements.create-dictionary.layouts",
+                "reference.statements.create-dictionary.sources"
+              ],
+              "groups": [
+                {
+                  "id": "reference.statements.create-dictionary.layouts",
+                  "label": "Layouts",
+                  "match": { "sourcePrefix": "statements/create/dictionary/layouts/" }
+                },
+                {
+                  "id": "reference.statements.create-dictionary.sources",
+                  "label": "Sources",
+                  "match": { "sourcePrefix": "statements/create/dictionary/sources/" }
+                }
+              ]
+            },
+            {
+              "id": "reference.statements.create-table",
+              "label": "CREATE TABLE",
+              "match": { "routePrefix": "/docs/reference/statements/create/table" },
+              "documentIds": ["reference:statement:create-table"],
+              "childrenOrder": ["reference:statement:create-table"]
+            }
+          ]
+        },
+        {
+          "id": "reference.statements.select",
+          "label": "SELECT",
+          "match": { "routePrefix": "/docs/reference/statements/select" },
+          "documentIds": ["reference:statement:select"],
+          "childrenOrder": ["reference:statement:select"]
+        },
+        {
+          "id": "reference.statements.set",
+          "label": "SET",
+          "match": { "routePrefix": "/docs/reference/statements/set" },
+          "documentIds": [
+            "reference:statement:set",
+            "reference:statement:set-role"
+          ],
+          "childrenOrder": [
+            "reference:statement:set",
+            "reference:statement:set-role"
+          ]
+        },
+        {
+          "id": "reference.statements.system",
+          "label": "SYSTEM",
+          "match": { "routePrefix": "/docs/reference/statements/system" },
+          "groupBySourcePage": true
+        }
+      ]
+    },
+    {
+      "id": "reference.system-tables",
+      "label": "System Tables",
+      "match": { "sourcePrefix": "system-tables/" }
+    }
+  ]
+}
