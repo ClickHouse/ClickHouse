@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-replicated-database
+# Tags: zookeeper, no-parallel, no-fasttest, no-replicated-database
 # Tag no-parallel: the failpoint pauses any `SYSTEM RESTART REPLICA` on the server.
 # Tag no-replicated-database: the failpoint is enabled on one server only.
 
