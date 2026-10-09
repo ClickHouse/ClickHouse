@@ -58,6 +58,11 @@ WorkloadResourceManager::NodeInfo::NodeInfo(CostUnit unit_, const ASTPtr & ast, 
     // We ignore unknown settings here for forward-compatibility.
     // There is no way to report error at this point other than stop server.
     settings.initFromChanges(create->changes, resource_name, /*throw_on_unknown_setting=*/ false);
+    // Query slots are space-shared, but never evicted, so ordering of sibling workloads only affects
+    // the order of admission. This is what `priority` means for other resources, so admission follows
+    // `priority` instead of `precedence`, which is reserved for resources that evict (memory).
+    if (unit == CostUnit::QuerySlot)
+        settings.precedence = settings.priority;
 }
 
 WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)

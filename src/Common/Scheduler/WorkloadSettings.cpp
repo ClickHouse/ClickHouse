@@ -25,7 +25,7 @@ bool WorkloadSettings::hasThrottler(CostUnit unit) const
         case CostUnit::IOByte: return max_bytes_per_second != 0;
         case CostUnit::CPUNanosecond: return max_cpus != 0;
         case CostUnit::QuerySlot: return max_queries_per_second != 0;
-        case CostUnit::MemoryByte: chassert(false); return false;
+        case CostUnit::MemoryByte: return false;
     }
 }
 
@@ -57,7 +57,7 @@ bool WorkloadSettings::hasSemaphore(CostUnit unit) const
     {
         case CostUnit::IOByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
         case CostUnit::CPUNanosecond: return max_concurrent_threads != unlimited;
-        case CostUnit::QuerySlot: return max_concurrent_queries != unlimited;
+        case CostUnit::QuerySlot: chassert(false); return false;
         case CostUnit::MemoryByte: chassert(false); return false;
     }
 }
@@ -68,7 +68,7 @@ Int64 WorkloadSettings::getSemaphoreMaxRequests(CostUnit unit) const
     {
         case CostUnit::IOByte: return max_io_requests;
         case CostUnit::CPUNanosecond: return max_concurrent_threads;
-        case CostUnit::QuerySlot: return max_concurrent_queries;
+        case CostUnit::QuerySlot: chassert(false); return 0;
         case CostUnit::MemoryByte: chassert(false); return 0;
     }
 }
@@ -79,7 +79,7 @@ Int64 WorkloadSettings::getSemaphoreMaxCost(CostUnit unit) const
     {
         case CostUnit::IOByte: return max_bytes_inflight;
         case CostUnit::CPUNanosecond: return unlimited;
-        case CostUnit::QuerySlot: return unlimited;
+        case CostUnit::QuerySlot: chassert(false); return 0;
         case CostUnit::MemoryByte: chassert(false); return 0;
     }
 }
@@ -116,8 +116,8 @@ bool WorkloadSettings::hasAllocationLimit(CostUnit unit) const
     {
         case CostUnit::IOByte:
         case CostUnit::CPUNanosecond:
-        case CostUnit::QuerySlot:
             return false;
+        case CostUnit::QuerySlot: return max_concurrent_queries != unlimited;
         case CostUnit::MemoryByte: return max_memory != unlimited;
     }
 }
@@ -128,8 +128,8 @@ Int64 WorkloadSettings::getAllocationLimit(CostUnit unit) const
     {
         case CostUnit::IOByte:
         case CostUnit::CPUNanosecond:
-        case CostUnit::QuerySlot:
             chassert(false); return 0;
+        case CostUnit::QuerySlot: return max_concurrent_queries;
         case CostUnit::MemoryByte: return max_memory;
     }
 }
