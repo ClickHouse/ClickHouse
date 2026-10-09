@@ -142,6 +142,10 @@ std::vector<Poco::JSON::Object::Ptr> getAndValidateSpecFields(const Poco::JSON::
         const auto & field_object = field.extract<Poco::JSON::Object::Ptr>();
 
         /// Validate spec references a real column.
+        /// TODO: Create currently accepts partition transforms on nested fields.
+        /// For example, the key of a `map<string, int>` column.
+        /// However, `ChunkPartitioner` on the insert path throws when writing to such a table.
+        /// We need to either reject nested source-ids or teach `ChunkPartitioner` to find nested fields.
         const auto source_id = getInteger(*field_object, f_source_id);
         if (!schema_ids.contains(source_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown source-id {}", source_id);
