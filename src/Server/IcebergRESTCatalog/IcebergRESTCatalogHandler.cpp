@@ -691,6 +691,11 @@ void IcebergRESTCatalogHandler::handleCreateTable(
 {
     checkDDLAllowed(context, "create table");
 
+    /// Read the body before any early return, so a keep-alive connection has no unread bytes left.
+    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
+    if (!body)
+        return;
+
     /// The properties double as the existence check.
     const auto ns = splitNamespace(match.path_params.at("namespace"));
     const auto namespace_properties = warehouse.store->getNamespaceProperties(ns);
@@ -699,10 +704,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         sendNoSuchNamespace(response, ns);
         return;
     }
-
-    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
-    if (!body)
-        return;
 
     const auto uuid = toString(UUIDHelpers::generateV4());
 
