@@ -16,6 +16,11 @@
 3
 3	3
 3	3
+-- Dynamic with allow_dynamic_type_in_join_keys = 0: the equality stays a filter, not a JOIN key
+1	1
+2	2
+1	1
+2	2
 -- The comma join is still a hash join on the key
 inner
 inner

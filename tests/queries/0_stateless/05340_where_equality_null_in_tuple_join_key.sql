@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS ta;
 DROP TABLE IF EXISTS tb;
 DROP TABLE IF EXISTS va;
 DROP TABLE IF EXISTS vb;
+DROP TABLE IF EXISTS da;
+DROP TABLE IF EXISTS db;
 
 CREATE TABLE ta (k UInt8, t Tuple(Nullable(UInt64)), n Tuple(UInt64, Tuple(LowCardinality(Nullable(String)))), u Tuple(UInt64)) ENGINE = Memory;
 CREATE TABLE tb AS ta;
@@ -22,6 +24,11 @@ CREATE TABLE va (k UInt8, v Variant(UInt64, String), w Tuple(Variant(UInt64, Str
 CREATE TABLE vb AS va;
 INSERT INTO va VALUES (1, 1::UInt64, tuple(1::UInt64)), (2, NULL, tuple(NULL)), (3, 'x', tuple('x'));
 INSERT INTO vb VALUES (1, 'z', tuple('z')), (2, NULL, tuple(NULL)), (3, 'x', tuple('x'));
+
+CREATE TABLE da (k UInt8, a Int32) ENGINE = Memory;
+CREATE TABLE db (k UInt8, d Dynamic) ENGINE = Memory;
+INSERT INTO da VALUES (1, 1), (2, 2), (3, 3);
+INSERT INTO db VALUES (1, 1), (2, 2), (3, 5);
 
 SELECT '-- Tuple(Nullable(UInt64))';
 SELECT ta.k, tb.k FROM ta, tb WHERE ta.t = tb.t ORDER BY ALL;
@@ -45,6 +52,10 @@ SELECT va.k, vb.k FROM va, vb WHERE va.v = vb.v ORDER BY ALL SETTINGS cross_to_i
 SELECT k FROM (SELECT va.k AS k, va.v AS a, vb.v AS b FROM va INNER JOIN vb ON va.k = vb.k) WHERE a = b ORDER BY ALL;
 SELECT va.k, vb.k FROM va INNER JOIN vb ON va.k = vb.k WHERE va.w = vb.w ORDER BY ALL;
 SELECT va.k, vb.k FROM va, vb WHERE identity(tuple(va.v)) = identity(tuple(vb.v)) ORDER BY ALL;
+
+SELECT '-- Dynamic with allow_dynamic_type_in_join_keys = 0: the equality stays a filter, not a JOIN key';
+SELECT da.k, db.k FROM da, db WHERE da.a = db.d ORDER BY ALL SETTINGS allow_dynamic_type_in_join_keys = 0;
+SELECT da.k, db.k FROM da, db WHERE da.a = db.d AND da.k = db.k ORDER BY ALL SETTINGS allow_dynamic_type_in_join_keys = 0;
 
 SELECT '-- The comma join is still a hash join on the key';
 SELECT extract(arrayStringConcat(groupArray(explain), '\n'), 'Type: (\\w+)')
@@ -77,3 +88,5 @@ DROP TABLE ta;
 DROP TABLE tb;
 DROP TABLE va;
 DROP TABLE vb;
+DROP TABLE da;
+DROP TABLE db;
