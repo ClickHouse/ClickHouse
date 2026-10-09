@@ -298,7 +298,7 @@ String jsonElementToString(const typename JSONParser::Element & element, const F
 }
 
 /// A message quotes untrusted input, so producing one must not recurse deeply or grow huge.
-static constexpr size_t MAX_DEPTH_IN_ERROR_MESSAGE = 64;
+constexpr size_t MAX_DEPTH_IN_ERROR_MESSAGE = 64;
 
 template <typename JSONParser>
 String jsonElementToStringForError(const typename JSONParser::Element & element, const FormatSettings & format_settings)
