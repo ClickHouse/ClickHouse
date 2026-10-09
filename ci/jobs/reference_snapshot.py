@@ -11,6 +11,7 @@ import os
 import stat
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 from praktika.result import Result
@@ -32,6 +33,52 @@ def source_revision() -> str:
         cwd=REPO_ROOT,
         text=True,
     ).strip()
+
+
+def _normalized_tarinfo(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo:
+    """Normalize archive metadata so equal snapshots have equal bytes."""
+    if tarinfo.issym() or tarinfo.islnk():
+        raise ValueError(f"Reference snapshot must not contain links: {tarinfo.name}")
+    tarinfo.mtime = 0
+    tarinfo.uid = 0
+    tarinfo.gid = 0
+    tarinfo.uname = ""
+    tarinfo.gname = ""
+    tarinfo.mode = 0o755 if tarinfo.isdir() else 0o644
+    return tarinfo
+
+
+def create_deterministic_archive(snapshot_dir: Path, archive_path: Path) -> None:
+    """Write a reproducible ``.tar.zst`` archive for a snapshot directory."""
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    with archive_path.open("wb") as output:
+        compressor = subprocess.Popen(
+            ["zstd", "-q", "-c"], stdin=subprocess.PIPE, stdout=output
+        )
+        assert compressor.stdin is not None
+        try:
+            with tarfile.open(
+                mode="w|", fileobj=compressor.stdin, format=tarfile.USTAR_FORMAT
+            ) as tar:
+                tar.add(
+                    snapshot_dir,
+                    arcname=snapshot_dir.name,
+                    recursive=False,
+                    filter=_normalized_tarinfo,
+                )
+                for source in sorted(snapshot_dir.rglob("*")):
+                    tar.add(
+                        source,
+                        arcname=str(
+                            Path(snapshot_dir.name) / source.relative_to(snapshot_dir)
+                        ),
+                        recursive=False,
+                        filter=_normalized_tarinfo,
+                    )
+        finally:
+            compressor.stdin.close()
+        if compressor.wait() != 0:
+            raise subprocess.CalledProcessError(compressor.returncode, compressor.args)
 
 
 def export_snapshot() -> bool:
@@ -63,7 +110,7 @@ def export_snapshot() -> bool:
         ],
         check=True,
     )
-    Utils.compress_zst(SNAPSHOT_DIR, SNAPSHOT_ARCHIVE)
+    create_deterministic_archive(SNAPSHOT_DIR, SNAPSHOT_ARCHIVE)
     return SNAPSHOT_ARCHIVE.is_file()
 
 
