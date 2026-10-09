@@ -66,13 +66,17 @@ private:
         /// Appends the next block, whose first key is greater than the keys of the blocks before it.
         void addBlock(const Key & first_key, size_t offset) { entries.push_back({first_key, offset}); }
 
-        /// Returns the only block that can hold `key`, or nothing when `key` is below the first block.
-        std::optional<size_t> findBlock(const Key & key) const
+        /// Returns the only block that can hold `key`, which is not below the first key of block `from`.
+        /// Lookups of ascending keys pass the block of the previous key, so that a key in the same block
+        /// takes one comparison, and the search for another block covers only the blocks after it.
+        size_t findBlock(const Key & key, size_t from) const
         {
+            chassert(from < entries.size() && entries[from].first_key <= key);
+            if (from + 1 == entries.size() || key < entries[from + 1].first_key)
+                return from;
+
             const auto it = std::upper_bound(
-                entries.begin(), entries.end(), key, [](const Key & value, const Entry & entry) { return value < entry.first_key; });
-            if (it == entries.begin())
-                return {};
+                entries.begin() + from + 2, entries.end(), key, [](const Key & value, const Entry & entry) { return value < entry.first_key; });
             return static_cast<size_t>(it - entries.begin() - 1);
         }
 

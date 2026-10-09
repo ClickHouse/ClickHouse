@@ -158,41 +158,69 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
     chassert(keys.size() == found.size());
     std::fill(found.begin(), found.end(), 0);
 
+    /// A set without keys has no blocks and finds nothing.
+    if (!rows)
+        return;
+
+    /// The rows with keys in the range of the set are probed.
     struct Probe
     {
-        size_t block;
+        Key key;
         size_t row;
     };
 
     VectorWithMemoryTracking<Probe> probes;
     probes.reserve(keys.size());
+    const Key & first_key = directory.getFirstKey(0);
     for (size_t row = 0; row < keys.size(); ++row)
     {
         const auto & key = keys[row];
-        if (key > last_key)
-            continue;
-
-        if (const auto block = directory.findBlock(key))
-            probes.push_back({*block, row});
+        if (first_key <= key && key <= last_key)
+            probes.push_back({key, row});
     }
 
     if (probes.empty())
         return;
 
-    /// Probes from one input chunk share a read when they land in the same block. Results are
-    /// scattered back to their original rows, so evaluating `IN` does not reorder the input.
-    ::sort(probes.begin(), probes.end(), [](const Probe & lhs, const Probe & rhs) { return lhs.block < rhs.block; });
+    /// Sorted by key, the probes of equal keys come together, so that each distinct key is looked up once,
+    /// and the probes of each block come together in the order of the blocks, so that they share a read.
+    /// Results are scattered back to their original rows, so evaluating `IN` does not reorder the input.
+    ::sort(probes.begin(), probes.end(), [](const Probe & lhs, const Probe & rhs) { return lhs.key < rhs.key; });
+
+    /// Each distinct key gets its block. The keys ascend, so the search for each block starts at the block of
+    /// the previous key.
+    struct Lookup
+    {
+        size_t block;
+
+        /// The probes of the key end here, and they start where the probes of the previous key end.
+        size_t probes_end;
+    };
+
+    VectorWithMemoryTracking<Lookup> lookups;
+    size_t needed_blocks = 0;
+    for (size_t begin = 0; begin < probes.size();)
+    {
+        size_t end = begin + 1;
+        while (end < probes.size() && probes[end].key == probes[begin].key)
+            ++end;
+
+        const size_t block = directory.findBlock(probes[begin].key, lookups.empty() ? 0 : lookups.back().block);
+        needed_blocks += lookups.empty() || block != lookups.back().block;
+        lookups.push_back({block, end});
+        begin = end;
+    }
 
     /// The reader sizes its reads from how many blocks the probes need and how far apart they are.
-    size_t needed_blocks = 1;
-    for (size_t i = 1; i < probes.size(); ++i)
-        needed_blocks += probes[i].block != probes[i - 1].block;
-
-    BlockReader blocks(*this, needed_blocks, /*range_blocks=*/probes.back().block - probes.front().block + 1);
-    for (const Probe & probe : probes)
+    BlockReader blocks(*this, needed_blocks, /*range_blocks=*/lookups.back().block - lookups.front().block + 1);
+    size_t begin = 0;
+    for (const Lookup & lookup : lookups)
     {
-        const auto block_keys = blocks.read(probe.block);
-        found[probe.row] = std::binary_search(block_keys.begin(), block_keys.end(), keys[probe.row]);
+        const auto block_keys = blocks.read(lookup.block);
+        if (std::binary_search(block_keys.begin(), block_keys.end(), probes[begin].key))
+            for (size_t i = begin; i < lookup.probes_end; ++i)
+                found[probes[i].row] = 1;
+        begin = lookup.probes_end;
     }
 }
 
