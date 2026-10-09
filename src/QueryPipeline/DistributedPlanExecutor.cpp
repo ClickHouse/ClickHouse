@@ -445,6 +445,8 @@ private:
             /// forwarding them would only grow the queue and wake the consumer for nothing.
             if (!chunk.hasRows() && chunk.getChunkInfos().empty())
                 return;
+            /// The consumer's header is deserialized without constants, so a constant column must not cross this exchange.
+            convertToFullIfConst(chunk);
             exchange->appendChunk(std::move(chunk));
         }
 
@@ -944,7 +946,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     String object_storage_path = getTemporaryFilesPath(unique_temp_file_path, context);
     if (config.has(config_prefix))
     {
-        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false);
+        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false, /*run_remote_host_filter_check=*/false);
         return {object_storage, object_storage_path};
     }
     return {nullptr, object_storage_path};

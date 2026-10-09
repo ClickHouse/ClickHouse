@@ -9,7 +9,12 @@ SET max_query_size = 0;
 
 system flush logs system.metric_log;
 
-create table metric_log as system.metric_log
+-- `system.metric_log` uses the `bucketed` schema by default, where the per-metric columns are
+-- `ALIAS` columns over a single `Map` column. `asterisk_include_alias_columns` materializes them,
+-- so the table below has one column per metric regardless of the configured `schema_type`.
+SET asterisk_include_alias_columns = 1;
+
+create table metric_log
 engine = MergeTree
 partition by ()
 order by ()
@@ -30,7 +35,10 @@ settings
     min_columns_to_activate_adaptive_write_buffer = 100,
     auto_statistics_types = '',
     -- the test caps memory tightly; per-column auto minmax indices add overhead and trigger MEMORY_LIMIT_EXCEEDED
-    add_minmax_index_for_numeric_columns = 0;
+    add_minmax_index_for_numeric_columns = 0
+empty as select * from system.metric_log;
+
+SET asterisk_include_alias_columns = 0;
 
 insert into metric_log select * from generateRandom() limit 10;
 
