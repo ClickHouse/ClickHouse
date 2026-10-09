@@ -124,6 +124,41 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT secret FROM $db.definer_view AS v WHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = length(v.secret))
     SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0"
 
+# The plan of the view is optimized after it is cloned: once optimized, a join, a set, a lazy read or a sort in it cannot be cloned.
+${CLICKHOUSE_CLIENT} <<EOF
+CREATE TABLE $db.t_left (k UInt64, s String) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE $db.t_right (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO $db.t_left VALUES (1, 'a'), (2, 'b'), (3, 'c');
+INSERT INTO $db.t_right VALUES (1), (3);
+CREATE VIEW $db.join_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT t_left.k AS k FROM $db.t_left INNER JOIN $db.t_right ON t_left.k = t_right.k;
+CREATE VIEW $db.in_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM $db.t_left WHERE k IN (SELECT k FROM $db.t_right);
+CREATE VIEW $db.top_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM $db.t_left ORDER BY s LIMIT 2;
+CREATE VIEW $db.order_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM $db.t_left ORDER BY k;
+GRANT SELECT ON $db.in_view TO $user;
+EOF
+for arm in "correlated_subqueries_use_in_memory_buffer = 0" "correlated_subqueries_default_join_kind = 'left'"; do
+    for view in join_view in_view top_view order_view; do
+        echo "$view"
+        ${CLICKHOUSE_CLIENT} --query "
+            SELECT k, (SELECT count() FROM numbers(5) WHERE number < x.k) FROM $db.$view AS x ORDER BY k
+            SETTINGS allow_experimental_correlated_subqueries = 1, $arm, optimize_read_in_order = 1, query_plan_read_in_order = 1,
+                query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10" 2>&1
+    done
+done
+
+echo "the plan of the view is still optimized"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT countIf(explain LIKE '%InOrder%') FROM (EXPLAIN actions = 1 SELECT k FROM $db.order_view SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1)"
+
+echo "a set built by the outer plan stays hidden"
+# Without the index for IN, the set is not built during the analysis of the view's plan, but by the outer plan.
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    EXPLAIN SELECT k, (SELECT count() FROM numbers(5) WHERE number < x.k) FROM $db.in_view AS x ORDER BY k
+    SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0, use_index_for_in_with_subqueries = 0" | grep -c ReadFromMergeTree
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+    SELECT k, (SELECT count() FROM numbers(5) WHERE number < x.k) FROM $db.in_view AS x ORDER BY k
+    SETTINGS allow_experimental_correlated_subqueries = 1, correlated_subqueries_use_in_memory_buffer = 0, use_index_for_in_with_subqueries = 0" 2>&1
+
 echo "--- only a view that runs with other privileges and can hide rows is sealed"
 for view in definer_view none_view invoker_view projection_view policy_view; do
     echo -n "$view: "
@@ -136,4 +171,4 @@ ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%'
 echo -n "view_policy_view for the user with the policy: "
 ${CLICKHOUSE_CLIENT} --user "$user" --query "EXPLAIN SELECT * FROM $db.view_policy_view WHERE secret = 'x'" | grep -c ReadFromSealedView
 
-${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer"
+${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP ROW POLICY view_policy05257 ON $db.view_policy_view; DROP USER $user, $definer; DROP VIEW $db.join_view, $db.in_view, $db.top_view, $db.order_view; DROP TABLE $db.t_left, $db.t_right"
