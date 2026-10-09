@@ -1,4 +1,4 @@
--- with transform_null_in = 1, bloom_filter on an array works for arrayJoin(...) IN (set) when the set has no NULL
+-- nullIn over arrayJoin uses the bloom filter when the set has no NULL
 
 SET explain_query_plan_default = 'legacy';
 SET use_skip_indexes = 1;
