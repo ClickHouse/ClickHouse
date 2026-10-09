@@ -194,7 +194,7 @@ merge(['db_name',] 'tables_regexp')
 ## Related {#related}
 
 - [Merge](/reference/engines/table-engines/special/merge) table engine
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
     );
 }

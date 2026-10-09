@@ -925,7 +925,7 @@ Block HashJoin::prepareRightBlock(const Block & block) const
     return prepareRightBlock(block, savedBlockSample());
 }
 
-bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
+bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */, JoinBuildContext context)
 {
     /// `materializeColumnsFromRightBlock` dereferences `data`, so the identical check in the
     /// overload below is reached too late to guard it.
@@ -933,7 +933,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, bool check_limits)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
     auto materialized = materializeColumnsFromRightBlock(source_block);
-    return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), check_limits);
+    return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), context.joinChecksLimits());
 }
 
 bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store)

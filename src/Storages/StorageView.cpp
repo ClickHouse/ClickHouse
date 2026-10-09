@@ -923,6 +923,7 @@ void registerStorageView(StorageFactory & factory)
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     },
+    SecretArgumentsSpec{},
     {},
     Documentation{
         .description = R"DOCS_MD(
