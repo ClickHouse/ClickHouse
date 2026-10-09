@@ -93,15 +93,15 @@ struct HashJoinMatchEntry
     size_t matches; // number of hash-table matches for a specific hash join.
 };
 
-/// How many next runs of a query skip counting the bins of the bucket Top-K bound of the aggregation merge (see
-/// `ConvertingAggregatedToChunksTransform`), because its last counted run skipped too few buckets to pay for them.
+/// Runs of a query until the next one that counts the bins of the bucket Top-K bound of the aggregation merge (see
+/// `ConvertingAggregatedToChunksTransform`), after a counted run skipped too few buckets to pay for them; 0 - every run.
 struct AggregationBucketTopKEntry
 {
-    bool shouldBeUpdated(const AggregationBucketTopKEntry & new_entry) const { return new_entry.runs_to_skip != runs_to_skip; }
+    bool shouldBeUpdated(const AggregationBucketTopKEntry & new_entry) const { return new_entry.runs_to_probe != runs_to_probe; }
 
-    std::string dump() const { return fmt::format("runs_to_skip={}", runs_to_skip); }
+    std::string dump() const { return fmt::format("runs_to_probe={}", runs_to_probe); }
 
-    size_t runs_to_skip = 0;
+    size_t runs_to_probe = 0;
 };
 
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.

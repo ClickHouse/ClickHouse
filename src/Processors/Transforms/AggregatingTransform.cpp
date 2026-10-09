@@ -149,16 +149,19 @@ namespace
     }
 
     template <typename Table>
-    void addBucketTopKBinsOfTable(Table & table, UInt64 * bins)
+    bool addBucketTopKBinsOfTable(Table & table, UInt64 * bins, const std::atomic<bool> & is_cancelled)
     {
         static_assert(Table::NUM_BUCKETS * BUCKET_TOP_K_BINS_PER_BUCKET == BUCKET_TOP_K_BINS);
         for (size_t bucket = 0; bucket < Table::NUM_BUCKETS; ++bucket)
         {
+            if (is_cancelled.load(std::memory_order_seq_cst))
+                return false;
             UInt64 * bucket_bins = bins + bucket * BUCKET_TOP_K_BINS_PER_BUCKET;
             auto & impl = table.impls[bucket];
             for (auto it = impl.begin(), end = impl.end(); it != end; ++it)
                 bucket_bins[(it.getHash() >> 16) & 0xFF] += getInlineCountState(it->getMapped());
         }
+        return true;
     }
 
 /// The two-level methods whose bucket tables iterate cells with their hashes (not the `StringHashMap` of `key_string`).
@@ -173,15 +176,14 @@ namespace
     M(serialized_two_level) \
     M(prealloc_serialized_two_level)
 
-    /// Adds the counts of the groups of `variants` to `bins`. False for a method without the bound.
-    bool addBucketTopKBins(AggregatedDataVariants & variants, UInt64 * bins)
+    /// Adds the counts of the groups of `variants` to `bins`. False for a method without the bound or on cancellation.
+    bool addBucketTopKBins(AggregatedDataVariants & variants, UInt64 * bins, const std::atomic<bool> & is_cancelled)
     {
         switch (variants.type)
         {
 #define M(NAME) \
             case AggregatedDataVariants::Type::NAME: \
-                addBucketTopKBinsOfTable(variants.NAME->data, bins); \
-                return true;
+                return addBucketTopKBinsOfTable(variants.NAME->data, bins, is_cancelled);
             APPLY_FOR_BUCKET_TOP_K_BOUND_VARIANTS(M)
 #undef M
             default:
@@ -216,9 +218,15 @@ namespace
         std::lock_guard lock(bucket_top_k_verdict_mutex);
         auto & stats = getHashTablesStatistics<AggregationBucketTopKEntry>();
         const auto entry = stats.getSizeHint(*stats_params);
-        if (!entry || entry->runs_to_skip == 0)
+        if (!entry || entry->runs_to_probe == 0)
             return true;
-        stats.update({.runs_to_skip = entry->runs_to_skip - 1}, *stats_params);
+        /// The probe keeps the countdown armed until its own verdict lands, so concurrent runs do not probe too.
+        if (entry->runs_to_probe == 1)
+        {
+            stats.update({.runs_to_probe = BUCKET_TOP_K_PROBE_PERIOD}, *stats_params);
+            return true;
+        }
+        stats.update({.runs_to_probe = entry->runs_to_probe - 1}, *stats_params);
         return false;
     }
 
@@ -228,12 +236,16 @@ namespace
         {
             std::lock_guard lock(bucket_top_k_verdict_mutex);
             getHashTablesStatistics<AggregationBucketTopKEntry>().update(
-                {.runs_to_skip = productive ? 0 : BUCKET_TOP_K_PROBE_PERIOD - 1}, *stats_params);
+                {.runs_to_probe = productive ? 0 : BUCKET_TOP_K_PROBE_PERIOD}, *stats_params);
         }
     }
 
     /// Adds the groups of one finished producer to the bins of the merge.
-    void addToSharedBucketTopKBins(ManyAggregatedData & many_data, AggregatedDataVariants & variants, const Aggregator::Params & params)
+    void addToSharedBucketTopKBins(
+        ManyAggregatedData & many_data,
+        AggregatedDataVariants & variants,
+        const Aggregator::Params & params,
+        const std::atomic<bool> & is_cancelled)
     {
         if (variants.empty())
             return;
@@ -254,7 +266,7 @@ namespace
         }
 
         auto bins = std::make_shared<UInt64[]>(BUCKET_TOP_K_BINS);
-        if (!addBucketTopKBins(variants, bins.get()))
+        if (!addBucketTopKBins(variants, bins.get(), is_cancelled))
         {
             many_data.bucket_top_k_bins_invalid.store(true, std::memory_order_relaxed);
             return;
@@ -1856,7 +1868,7 @@ void AggregatingTransform::initGenerate()
     const bool bucket_top_k_bound
         = !skip_merging && !updater && !adaptive_engaged && !params->aggregator.hasTemporaryData() && bucketTopKBoundApplies(*params);
     if (bucket_top_k_bound)
-        addToSharedBucketTopKBins(*many_data, variants, params->params);
+        addToSharedBucketTopKBins(*many_data, variants, params->params, is_cancelled);
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
@@ -1959,7 +1971,7 @@ void AggregatingTransform::initGenerate()
             {
                 /// The single-level producers are small; every producer has finished, so their tables are stable.
                 for (auto * single_level : many_data->bucket_top_k_single_level)
-                    if (!addBucketTopKBins(*single_level, many_data->bucket_top_k_bins.get()))
+                    if (!addBucketTopKBins(*single_level, many_data->bucket_top_k_bins.get(), is_cancelled))
                         many_data->bucket_top_k_bins_invalid.store(true, std::memory_order_relaxed);
                 if (!many_data->bucket_top_k_bins_invalid.load(std::memory_order_relaxed))
                     converting->setBucketTopKBins(many_data->bucket_top_k_bins);
