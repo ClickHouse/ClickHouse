@@ -1643,6 +1643,10 @@ void MergeTreeData::setProperties(
         patch_parts_sorting_keys_cache.clear();
     }
 
+    /// Tables with an IVF index are maintained by a background task, which visits only registered tables.
+    if (std::ranges::any_of(new_metadata.secondary_indices, isVectorSimilarityIvfIndex))
+        registerVectorSimilarityIvfTable(getStorageID().uuid);
+
     /// Invalidate the columns cache when column identity changes: cache keys identify
     /// columns by name, so any operation that makes a name refer to a different column
     /// (drop, rename, or single-statement `RENAME a TO b, ADD COLUMN a` where the old

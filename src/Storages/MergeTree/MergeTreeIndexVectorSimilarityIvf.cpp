@@ -6,6 +6,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
@@ -1093,38 +1095,71 @@ void trySplitLargeClusters(const StorageID & table_id, const StorageInMemoryMeta
     LOG_INFO(log, "Split clusters [{}] of IVF index {} of table {}", fmt::join(clusters, ", "), index.name, table_id.getNameForLogs());
 }
 
+/// The tables with an IVF index, by UUID, so that the background task does not have to look at every table of the server.
+struct VectorSimilarityIvfTables
+{
+    std::mutex mutex;
+    UnorderedSetWithMemoryTracking<UUID> uuids;
+
+    static VectorSimilarityIvfTables & instance()
+    {
+        static VectorSimilarityIvfTables tables;
+        return tables;
+    }
+};
+
 void runVectorSimilarityIvfMaintenance(ContextPtr global_context)
 {
     auto context = Context::createCopy(global_context);
     auto thread_group = ThreadGroup::createForQuery(context);
     ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
 
-    for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    auto & tables = VectorSimilarityIvfTables::instance();
+    VectorWithMemoryTracking<UUID> uuids;
     {
-        for (auto iterator = database->getTablesIterator(context, {}, /*skip_not_loaded=*/ true); iterator->isValid(); iterator->next())
+        std::lock_guard lock(tables.mutex);
+        uuids.assign(tables.uuids.begin(), tables.uuids.end());
+    }
+
+    for (const auto & uuid : uuids)
+    {
+        /// A table which was dropped is no longer found by its UUID (or is marked as dropped) and leaves the registry.
+        const auto table = DatabaseCatalog::instance().tryGetByUUID(uuid).second;
+        if (!table || table->is_dropped)
         {
-            const auto table = iterator->table();
-            if (!castStorage<MergeTreeData>(table, DeferredTable::Skip))
+            std::lock_guard lock(tables.mutex);
+            tables.uuids.erase(uuid);
+            continue;
+        }
+        if (!castStorage<MergeTreeData>(table, DeferredTable::Skip))
+            continue;
+        const auto metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+        for (const auto & index : metadata->getSecondaryIndices())
+        {
+            if (!isVectorSimilarityIvfIndex(index))
                 continue;
-            const auto metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-            for (const auto & index : metadata->getSecondaryIndices())
+            try
             {
-                if (!isVectorSimilarityIvfIndex(index))
-                    continue;
-                try
-                {
-                    trySplitLargeClusters(table->getStorageID(), *metadata, index, context);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(getLogger("VectorSimilarityIvfMaintenance"),
-                        fmt::format("Failed to maintain IVF index {} of table {}", index.name, table->getStorageID().getNameForLogs()));
-                }
+                trySplitLargeClusters(table->getStorageID(), *metadata, index, context);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger("VectorSimilarityIvfMaintenance"),
+                    fmt::format("Failed to maintain IVF index {} of table {}", index.name, table->getStorageID().getNameForLogs()));
             }
         }
     }
 }
 
+}
+
+void registerVectorSimilarityIvfTable(const UUID & table_uuid)
+{
+    if (table_uuid == UUIDHelpers::Nil)
+        return;
+    auto & tables = VectorSimilarityIvfTables::instance();
+    std::lock_guard lock(tables.mutex);
+    tables.uuids.insert(table_uuid);
 }
 
 void startVectorSimilarityIvfMaintenance()

@@ -123,6 +123,10 @@ StorageID getVectorSimilarityIvfCentroidsDictionaryID(const StorageID & table_id
 /// Starts (once per server) the background task which splits overgrown clusters of IVF indexes.
 void startVectorSimilarityIvfMaintenance();
 
+/// Registers a table with an IVF index for the background task, which visits only registered tables. Called whenever the
+/// metadata of such a table is set (CREATE, ATTACH, startup); tables which no longer exist are removed by the task itself.
+void registerVectorSimilarityIvfTable(const UUID & table_uuid);
+
 /// If the name refers to a table with an IVF index or to the centroids dictionary of an IVF index, returns the qualified name
 /// of the dictionary and the table. The dictionary is found through the table UUID in its name, so it does not depend on the
 /// table name. Access to the hidden objects is granted through access to the table.
