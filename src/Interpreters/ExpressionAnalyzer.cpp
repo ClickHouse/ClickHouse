@@ -144,9 +144,8 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
 
 LoggerPtr getLogger() { return ::getLogger("ExpressionAnalyzer"); }
 
-/// `WindowFrame` keeps only the erased field, which cannot stand in for the type: a `DateTime64` or
-/// `Time64` constant is a decimal field, and a `LowCardinality` one is its nested field. An `Int64`
-/// or `UInt64` field is exempt because a `RANGE` offset has always been taken from those.
+/// The frame keeps only the offset's `Field`, in which a `DateTime64` or `Time64` constant is a decimal
+/// and a `LowCardinality` one is its nested value. Integer fields stay accepted for every type.
 void checkFrameOffsetType(
     WindowFrame::FrameType frame_type, const Field & value, const DataTypePtr & type, std::string_view bound)
 {

@@ -20,8 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// `Bool` is not a number here: a `true` offset arrives as an integer field, so a frame offset
-/// never reaches this in that field alternative.
+/// No `Bool` case: a `true` frame offset arrives as an integer field.
 bool isNumericFieldType(Field::Types::Which which)
 {
     return isInt64OrUInt64FieldType(which)
@@ -31,9 +30,8 @@ bool isNumericFieldType(Field::Types::Which which)
         || which == Field::Types::UInt256 || which == Field::Types::Int256;
 }
 
-/// A `RANGE` offset is added to the `ORDER BY` value, so it has to order against zero, which a
-/// non-finite one does not: `nan` compares false both ways, and an infinite offset added to an
-/// infinite value yields `nan`.
+/// A `RANGE` offset is added to the `ORDER BY` value: `nan` orders neither way against zero, and an
+/// infinite offset added to an infinite value yields `nan`.
 bool isValidRangeOffset(const Field & offset)
 {
     if (!isNumericFieldType(offset.getType()))
@@ -120,9 +118,7 @@ void WindowFrame::toString(WriteBuffer & buf) const
 
 void WindowFrame::checkValid() const
 {
-    // `ROWS` and `GROUPS` offsets count rows and must be integer. `RANGE` offsets are in
-    // units of the `ORDER BY` column and may be fractional, so their value is checked by
-    // the window transform after coercion to that column's type.
+    // `ROWS` and `GROUPS` offsets count rows, a `RANGE` offset is in units of the `ORDER BY` column.
     if (type == FrameType::ROWS || type == FrameType::GROUPS)
     {
         if (begin_type == BoundaryType::Offset
@@ -153,9 +149,7 @@ void WindowFrame::checkValid() const
     }
     else
     {
-        // Checked before the coercion in `WindowTransformParams`: coercion to a lower scale can
-        // truncate a negative offset to zero, and coercion of a non-finite offset to an
-        // integer or `Decimal` column rejects it as out of range instead.
+        // Before the coercion in `WindowTransformParams`, which can truncate a negative offset to zero.
         if (begin_type == BoundaryType::Offset && !isValidRangeOffset(begin_offset))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

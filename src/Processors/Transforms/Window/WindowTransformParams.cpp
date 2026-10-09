@@ -163,7 +163,7 @@ std::vector<bool> markColumnsToMaterialize(
     for (const auto & column : partition_by)
         should_materialize[header.getPositionByName(column.column_name)] = true;
 
-    /// Compared across blocks for peer groups, and cast to a concrete ColumnVector or ColumnDecimal by the RANGE comparator.
+    /// Compared across blocks for peer groups, and cast to a concrete `ColumnVector` or `ColumnDecimal` by the `RANGE` comparator.
     for (const auto & column : order_by)
         should_materialize[header.getPositionByName(column.column_name)] = true;
 
