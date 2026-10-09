@@ -3385,6 +3385,19 @@ class TestCase:
         self.effective_settings = fixed_settings if fixed_settings else base_settings
         self.effective_merge_tree_settings = fixed_mt_settings if fixed_mt_settings else base_mt_settings
 
+        # The `no-random-detach` tag keeps the `DETACH`/`ATTACH` hook off unless the test itself enables it,
+        # so the hook settings passed explicitly via `--settings` / `--settings-file` are not forwarded either.
+        if has_no_random_detach_tag:
+            self.effective_settings = {
+                k: v
+                for k, v in self.effective_settings.items()
+                if k
+                not in (
+                    "reattach_tables_before_query_execution",
+                    "reattach_tables_before_query_execution_probability",
+                )
+            }
+
         # The default compression codec is randomized at the server level (see the
         # <compression> override in tests/config/install.sh). Tests that opt out of
         # settings randomization expect the stable historical default, so pin the codec
