@@ -14,6 +14,9 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Joins.h>
@@ -24,6 +27,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
@@ -721,6 +725,159 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
 }
 
 
+/// The secret options of a MongoDB connection string or option list, after the password and the uri are hidden.
+static void findMongoDBConnectionStringSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    auto & result = finder.result;
+    const auto & function = finder.function;
+
+    auto is_masked = [&](size_t index)
+    {
+        return result.replaced_arguments.contains(index) || result.masked_arguments.contains(index)
+            || (result.start <= index && index < result.start + result.count);
+    };
+
+    auto mask_argument = [&](size_t index, bool hide_unreadable)
+    {
+        const auto argument = function->arguments->at(index);
+        String value;
+        if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*argument, &value))
+        {
+            if (hide_unreadable)
+                result.replaced_arguments[index] = HIDDEN_SECRET_LITERAL;
+        }
+        else if (maskMongoDBConnectionString(value))
+        {
+            result.replaced_arguments[index] = argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value);
+        }
+    };
+
+    const bool is_engine = function->name() == "MongoDB";
+    const bool is_named_collection = finder.isNamedCollectionName(0);
+    const size_t size = function->arguments->size();
+
+    /// The table function appends `options` and `oid_columns` to the positionals before index 5, so a named argument
+    /// there can move them into the user or password slot.
+    bool shifted = false;
+    if (!is_engine && size > 4 && !is_named_collection)
+    {
+        for (size_t i = 0; i < 5; ++i)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+                shifted = true;
+        }
+    }
+
+    bool seen_named = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const auto equals = function->arguments->at(i)->getFunction();
+        if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+        {
+            seen_named = true;
+            if (is_masked(i))
+                continue;
+
+            String key;
+            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(0), &key))
+            {
+                /// The key is evaluated as a constant expression, so it can name `options`.
+                result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+                continue;
+            }
+            if (shifted && (equalsCaseInsensitive(key, "options") || equalsCaseInsensitive(key, "oid_columns")))
+            {
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
+                continue;
+            }
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
+                continue;
+
+            String value;
+            if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*equals->arguments->at(1), &value))
+                result.replaced_arguments[i] = key + " = " + String(HIDDEN_SECRET_LITERAL);
+            else if (maskMongoDBConnectionString(value))
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
+            continue;
+        }
+
+        if (is_masked(i))
+            continue;
+
+        /// A positional after a collection name is rejected or ignored, but only after the statement is logged.
+        if ((shifted && i > 5) || (is_named_collection && i > 0))
+        {
+            result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+            continue;
+        }
+
+        if (seen_named)
+        {
+            /// A positional argument after a named one shifts the others, so its role is unknown.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (i == 0)
+        {
+            /// The URI.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (is_engine ? i == 5 : i >= 6)
+        {
+            /// The positional `options` of the `host:port` forms.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+    }
+}
+
+SecretArgumentsSpec mongoDBSecretArguments()
+{
+    /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
+    /// MongoDB(named_collection, ..., password = 'password', ...)
+    return {.positional_secret_slots = {4}, .secret_keys = {"password"}, .custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        /// Hides the secrets of a uri, or the whole value when it is not a plain string literal.
+        auto mask_uri = [&finder](size_t index, const AbstractFunction::Argument & value, std::string_view prefix, bool argument_is_named)
+        {
+            String uri;
+            if (!value.tryGetString(&uri, /* allow_identifier= */ false))
+                finder.markSecretArgument(index, argument_is_named);
+            else if (maskMongoDBConnectionString(uri))
+                finder.result.replaced_arguments[index] = String(prefix) + quoteString(uri);
+        };
+
+        /// MongoDB('mongodb://username:password@127.0.0.1:27017/database', 'collection'[, ...]). Not gated
+        /// on the argument count, which a rejected named argument changes; a `host:port` has no password.
+        if (finder.function->arguments->size() != 0)
+        {
+            const auto first = finder.function->arguments->at(0);
+            const auto first_function = first->getFunction();
+            if (first->isIdentifier())
+            {
+                String name;
+                /// A collection name has no password; a backquoted uri, rejected as an unknown collection, can.
+                if (first->tryGetString(&name, /* allow_identifier= */ true) && maskMongoDBConnectionString(name))
+                    finder.result.replaced_arguments[0] = backQuoteIfNeed(name);
+            }
+            else if (!first_function || first_function->name() != "equals")
+            {
+                mask_uri(0, *first, "", /* argument_is_named= */ false);
+            }
+        }
+
+        /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+        /// Every occurrence: a duplicated or conflicting override is logged before validation rejects it.
+        for (ssize_t i = finder.findNamedArgument(nullptr, "uri"); i >= 0;
+             i = finder.findNamedArgument(nullptr, "uri", static_cast<size_t>(i) + 1))
+        {
+            const auto index = static_cast<size_t>(i);
+            mask_uri(index, *finder.function->arguments->at(index)->getFunction()->arguments->at(1), "uri = ", /* argument_is_named= */ true);
+        }
+
+        findMongoDBConnectionStringSecretArguments(finder);
+    }};
+}
+
 void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDB(StorageFactory & factory)
 {
@@ -737,6 +894,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.constraints,
             args.comment);
     },
+    mongoDBSecretArguments(),
     {
         .source_access_type = AccessTypeObjects::Source::MONGO,
     },
