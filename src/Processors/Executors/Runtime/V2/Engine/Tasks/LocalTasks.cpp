@@ -58,19 +58,7 @@ LocalTasks::LocalTasks()
         Wyrd::setName(buffer[index].packed, fmt::format("local_tasks.slot[{}]", index));
 }
 
-bool LocalTasks::push(const Task & task)
-{
-    const UInt32 current_head = head.load();
-    const auto [tail, taken] = unpackBounds(bounds.load());
-    if (current_head - tail >= capacity)
-        return false;
-
-    setSlot(buffer, current_head, task);
-    head.store(current_head + 1);
-    return true;
-}
-
-UInt32 LocalTasks::pushMany(std::span<const Task> many)
+UInt32 LocalTasks::pushManyLifo(std::span<const Task> many)
 {
     const UInt32 current_head = head.load();
     const auto [tail, taken] = unpackBounds(bounds.load());
@@ -82,7 +70,7 @@ UInt32 LocalTasks::pushMany(std::span<const Task> many)
     return count;
 }
 
-std::optional<Task> LocalTasks::pop()
+std::optional<Task> LocalTasks::popLifo()
 {
     const UInt32 new_head = head.load() - 1;
     head.store(new_head);
@@ -131,7 +119,7 @@ std::optional<Task> LocalTasks::pop()
     }
 }
 
-UInt32 LocalTasks::steal(std::span<Task> out)
+UInt32 LocalTasks::stealFifo(std::span<Task> out)
 {
     /// Try lock steal range.
     Wyrd::SpinWait spin_wait;
@@ -179,6 +167,13 @@ UInt32 LocalTasks::size() const
     const UInt32 current_head = head.load();
     const auto [tail, taken] = unpackBounds(bounds.load());
     return std::max<Int32>(signedDifference(current_head, tail), 0);
+}
+
+UInt32 LocalTasks::freeSlots() const
+{
+    const UInt32 current_head = head.load();
+    const auto [tail, taken] = unpackBounds(bounds.load());
+    return capacity - (current_head - tail);
 }
 
 }

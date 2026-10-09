@@ -7,6 +7,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
 
 #include <array>
+#include <span>
 #include <vector>
 
 using namespace DB::Runtime;
@@ -22,8 +23,13 @@ Task taskFor(ProcessorState & state)
 
 const ProcessorState * popped(LocalTasks & ring)
 {
-    auto task = ring.pop();
+    auto task = ring.popLifo();
     return task ? &task->state() : nullptr;
+}
+
+bool pushOne(LocalTasks & ring, const Task & task)
+{
+    return ring.pushManyLifo(std::span(&task, 1)) == 1;
 }
 
 }
@@ -33,17 +39,17 @@ WYRD_TEST(LocalTasks, OwnerTakesNewestAndThiefTakesOldest)
     std::vector<ProcessorState> states(3);
     LocalTasks ring;
     for (auto & state : states)
-        EXPECT_TRUE(ring.push(taskFor(state)));
+        EXPECT_TRUE(pushOne(ring, taskFor(state)));
 
     std::array<Task, 1> stolen{};
-    EXPECT_EQ(ring.steal(stolen), 1u);
+    EXPECT_EQ(ring.stealFifo(stolen), 1u);
     EXPECT_EQ(&stolen[0].state(), states.data());
     EXPECT_EQ(stolen[0].step(), Task::Step::Work);
 
     EXPECT_EQ(popped(ring), &states[2]);
     EXPECT_EQ(popped(ring), &states[1]);
     EXPECT_EQ(popped(ring), nullptr);
-    EXPECT_EQ(ring.steal(stolen), 0u);
+    EXPECT_EQ(ring.stealFifo(stolen), 0u);
     EXPECT_EQ(ring.size(), 0u);
 }
 
@@ -52,15 +58,15 @@ WYRD_TEST(LocalTasks, StealTakesHalfRoundedUpWithinSpan)
     std::vector<ProcessorState> states(5);
     LocalTasks ring;
     for (auto & state : states)
-        EXPECT_TRUE(ring.push(taskFor(state)));
+        EXPECT_TRUE(pushOne(ring, taskFor(state)));
 
     std::array<Task, 8> stolen{};
-    EXPECT_EQ(ring.steal(stolen), 3u);
+    EXPECT_EQ(ring.stealFifo(stolen), 3u);
     for (size_t index = 0; index < 3; ++index)
         EXPECT_EQ(&stolen[index].state(), &states[index]);
 
     std::array<Task, 1> one{};
-    EXPECT_EQ(ring.steal(one), 1u);
+    EXPECT_EQ(ring.stealFifo(one), 1u);
     EXPECT_EQ(&one[0].state(), &states[3]);
 
     EXPECT_EQ(popped(ring), &states[4]);
@@ -73,12 +79,12 @@ WYRD_TEST(LocalTasks, FullRingRefusesPushUntilSteal)
     std::vector<ProcessorState> states(LocalTasks::capacity + 1);
     LocalTasks ring;
     for (UInt32 index = 0; index < LocalTasks::capacity; ++index)
-        EXPECT_TRUE(ring.push(taskFor(states[index])));
-    EXPECT_FALSE(ring.push(taskFor(states.back())));
+        EXPECT_TRUE(pushOne(ring, taskFor(states[index])));
+    EXPECT_FALSE(pushOne(ring, taskFor(states.back())));
 
     std::array<Task, LocalTasks::capacity> stolen{};
-    EXPECT_EQ(ring.steal(stolen), LocalTasks::capacity / 2);
-    EXPECT_TRUE(ring.push(taskFor(states.back())));
+    EXPECT_EQ(ring.stealFifo(stolen), LocalTasks::capacity / 2);
+    EXPECT_TRUE(pushOne(ring, taskFor(states.back())));
     EXPECT_EQ(ring.size(), LocalTasks::capacity / 2 + 1);
 }
 
@@ -106,9 +112,9 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
             Wyrd::LockFreeScope scope;
             for (auto & state : states)
             {
-                while (!ring.push(taskFor(state)))
+                while (!pushOne(ring, taskFor(state)))
                 {
-                    if (auto task = ring.pop())
+                    if (auto task = ring.popLifo())
                         take(*task);
                     Wyrd::progress();
                 }
@@ -116,13 +122,13 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
 
                 if (Wyrd::randomNumber() % owner_pops_one_in == 0)
                 {
-                    if (auto task = ring.pop())
+                    if (auto task = ring.popLifo())
                         take(*task);
                     Wyrd::progress();
                 }
             }
 
-            while (auto task = ring.pop())
+            while (auto task = ring.popLifo())
             {
                 take(*task);
                 Wyrd::progress();
@@ -137,7 +143,7 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
             std::array<Task, batch> stolen{};
             while (!owner_done.load())
             {
-                const UInt32 count = ring.steal(stolen);
+                const UInt32 count = ring.stealFifo(stolen);
                 for (UInt32 offset = 0; offset < count; ++offset)
                     take(stolen[offset]);
                 if (count > 0)

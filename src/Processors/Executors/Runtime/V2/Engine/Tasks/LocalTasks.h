@@ -28,13 +28,13 @@ public:
 
     LocalTasks();
 
-    bool push(const Task & task);
-    UInt32 pushMany(std::span<const Task> many);
+    UInt32 pushManyLifo(std::span<const Task> many);
 
-    std::optional<Task> pop();
-    UInt32 steal(std::span<Task> out);
+    std::optional<Task> popLifo();
+    UInt32 stealFifo(std::span<Task> out);
 
     UInt32 size() const;
+    UInt32 freeSlots() const;
 
 private:
     std::array<Slot, capacity> buffer;
