@@ -9039,6 +9039,8 @@ function docsURL() {
         const win = window.open(relay_url.href, '_blank');
         if (!win) return;
         event.preventDefault();
+        /// The relay forwards these credentials to the docs page (see `dropAutofilledStalePassword`).
+        dropAutofilledStalePassword();
         docs_windows = docs_windows.filter(entry => !entry.win.closed);
         docs_windows.push({
             win,

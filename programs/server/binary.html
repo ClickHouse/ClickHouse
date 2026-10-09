@@ -100,7 +100,20 @@
             const params = new URLSearchParams(window.location.search);
             if (params.has('host')) { host = params.get('host'); }
             if (params.has('user')) { user = params.get('user'); }
-            if (params.has('password')) { password = params.get('password'); }
+            if (params.has('password')) {
+                password = params.get('password');
+                /// The password is now kept in memory: scrub it from the URL right away, so that it does not
+                /// stay in the address bar, in the browser history or in the `Referer` of later requests
+                /// (`file:` URLs disallow `history` edits). `updateHistory` drops it again on every later
+                /// position change.
+                if (location.protocol != 'file:') {
+                    params.delete('password');
+                    const search = params.toString();
+                    window.history.replaceState(history.state, '',
+                        window.location.origin + window.location.pathname + (search ? '?' + search : '')
+                        + window.location.hash);
+                }
+            }
         }
 
         function buildURL() {
