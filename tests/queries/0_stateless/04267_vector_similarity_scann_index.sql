@@ -635,3 +635,46 @@ SELECT number, [toFloat32(1e20 + number * 1e15), toFloat32(number)]
 FROM numbers(1990); -- { serverError INCORRECT_DATA }
 SELECT 1;
 DROP TABLE tab_scann_dot_overflow;
+
+-- Test 25: Gate fresh definitions, including full-definition `ATTACH TABLE`,
+-- while allowing short `ATTACH TABLE` to reload an existing table.
+SELECT '25. Experimental gate covers full-definition ATTACH';
+SET allow_experimental_scann_index = 0;
+
+CREATE TABLE scann_gate_create
+(
+    id UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError SUPPORT_IS_DISABLED }
+
+ATTACH TABLE scann_gate_attach UUID '04267000-0000-4000-8000-000000000025'
+(
+    id UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError SUPPORT_IS_DISABLED }
+
+SET allow_experimental_scann_index = 1;
+
+ATTACH TABLE scann_gate_attach UUID '04267000-0000-4000-8000-000000000025'
+(
+    id UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO scann_gate_attach VALUES (1, [1, 0]), (2, [0, 1]);
+
+SET allow_experimental_scann_index = 0;
+DETACH TABLE scann_gate_attach SYNC;
+ATTACH TABLE scann_gate_attach;
+
+SELECT id FROM scann_gate_attach ORDER BY id;
+SELECT id FROM scann_gate_attach ORDER BY L2Distance(vec, [1., 0.]) LIMIT 1;
+
+DROP TABLE scann_gate_attach;
+SET allow_experimental_scann_index = 1;

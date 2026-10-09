@@ -62,3 +62,7 @@ unrelated ALTER succeeds
 24. Partition training rejects Float32 squared-norm overflow
 1
 1
+25. Experimental gate covers full-definition ATTACH
+1
+2
+1
