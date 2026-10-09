@@ -255,6 +255,9 @@ struct IntConverter : public FixedSizeConverter
     /// Only allowed if input_size is 4.
     std::optional<size_t> output_size;
 
+    /// The output type is `Bool`: a nonzero value is read as 1, and so is a nonzero statistic.
+    bool output_bool = false;
+
     /// These determine the type of Field produced by convertField (when parsing min/max stats).
     /// No effect on convertColumn - it just copies bytes and doesn't care what they mean.
     std::optional<UInt32> field_decimal_scale; // Decimal{32,64}(scale)
@@ -262,7 +265,6 @@ struct IntConverter : public FixedSizeConverter
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
     bool field_datetime = false; // DateTime; the cast saturates values above UINT32_MAX
     bool field_signed = true; // Int64, otherwise UInt64
-    bool field_bool = false; // Bool; an endpoint above 1 bounds nothing, as a nonzero value may be read as 1
     /// If not Ignore, it's a date column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
     /// Only used when date_overflow_behavior is not Ignore: the requested output type is Date rather
