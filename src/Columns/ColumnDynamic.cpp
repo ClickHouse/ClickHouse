@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
@@ -293,6 +294,14 @@ void ColumnDynamic::insert(const Field & x)
         /// We reached maximum number of variants and couldn't add new variant.
         /// In this case we add the value of this new variant into special shared variant.
         /// We store values in shared variant in binary form with binary encoded type.
+        if (hasAggregateFunctionType(field_data_type))
+        {
+            auto tmp_column = field_data_type->createColumn();
+            tmp_column->insert(x);
+            insertValueIntoSharedVariant(*tmp_column, field_data_type, field_data_type_name, 0);
+            return;
+        }
+
         auto & shared_variant = getSharedVariant();
         auto & chars = shared_variant.getChars();
         {
@@ -340,7 +349,18 @@ void ColumnDynamic::get(size_t n, Field & res) const
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data);
     auto type = decodeDataType(buf);
-    type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
+    /// The binary form of a `Field` differs from the binary form of a column only for aggregate function states.
+    if (!hasAggregateFunctionType(type))
+    {
+        type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
+        return;
+    }
+
+    auto tmp_column = type->createColumn();
+    type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
+    tmp_column->get(0, res);
+    if (!res.isNull())
+        res = convertFieldToType(res, *type);
 }
 
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
