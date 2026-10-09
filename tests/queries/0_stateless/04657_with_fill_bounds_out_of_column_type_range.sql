@@ -270,3 +270,6 @@ SELECT 'the runtime check covers a trailing fill column as well';
 SELECT a, b FROM (SELECT 1 AS a, toUInt8(13) AS b UNION ALL SELECT 3, toUInt8(20)) ORDER BY a WITH FILL, b WITH FILL TO 257 STEP 3 FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 -- Anchored at 11 it stops at 254 and stays an ordinary fill.
 SELECT count(), max(b) FROM (SELECT a, b FROM (SELECT 1 AS a, toUInt8(11) AS b UNION ALL SELECT 3, toUInt8(20)) ORDER BY a WITH FILL, b WITH FILL TO 257 STEP 3);
+-- The walk of a trailing fill column towards a TO past the range of the column type is rejected when the walk
+-- starts, not after generating every value up to the boundary of the type (2^32 rows for `DateTime`).
+SELECT a, t FROM (SELECT 1 AS a, toDateTime(5, 'UTC') AS t UNION ALL SELECT 2 AS a, toDateTime(5, 'UTC') AS t) ORDER BY a ASC WITH FILL, t ASC WITH FILL TO 4294967297 STEP 1 FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }

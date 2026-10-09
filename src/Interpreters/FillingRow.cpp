@@ -141,6 +141,8 @@ FillingRow::FillingRow(const SortDescription & sort_description_)
     : sort_description(sort_description_)
 {
     row.resize(sort_description.size());
+    checked_walk_cursor.resize(sort_description.size());
+    checked_walk_constraint.resize(sort_description.size());
 
     constraints.reserve(sort_description.size());
     for (size_t i = 0; i < size(); ++i)
@@ -266,33 +268,36 @@ void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t c
 void FillingRow::checkFillingTowardsConstraintsFitsColumnTypes()
 {
     for (size_t i = 0; i < size(); ++i)
-    {
-        const auto & descr = getFillDescription(i);
+        checkFillingTowardsConstraintFitsColumnType(i);
+}
 
-        if (row[i].isNull() || constraints[i].isNull() || descr.fill_representable_min.isNull())
-            continue;
+void FillingRow::checkFillingTowardsConstraintFitsColumnType(size_t i)
+{
+    const auto & descr = getFillDescription(i);
 
-        /// `doLongJump` advances by many steps at once, which lands exactly where the filling would get one step
-        /// at a time only for a step of a fixed length: a calendar step over months or years saturates the day
-        /// of the month, and a day step over `DateTime` follows the time zone. These are long enough to reach the
-        /// boundary of the type in a few thousand steps anyway, so they are left to the per-value check.
-        if (descr.step_kind && descr.step_kind->getKind() > IntervalKind::Kind::Hour)
-            continue;
+    if (row[i].isNull() || constraints[i].isNull() || descr.fill_representable_min.isNull())
+        return;
 
-        const int direction = getDirection(i);
-        const Field & type_boundary = direction > 0 ? descr.fill_representable_max : descr.fill_representable_min;
+    /// `doLongJump` advances by many steps at once, which lands exactly where the filling would get one step
+    /// at a time only for a step of a fixed length: a calendar step over months or years saturates the day
+    /// of the month, and a day step over `DateTime` follows the time zone. These are long enough to reach the
+    /// boundary of the type in a few thousand steps anyway, so they are left to the per-value check.
+    if (descr.step_kind && descr.step_kind->getKind() > IntervalKind::Kind::Hour)
+        return;
 
-        /// A constraint within the range of the column type stops the filling before it could leave the range.
-        if (!less(type_boundary, constraints[i], direction))
-            continue;
+    const int direction = getDirection(i);
+    const Field & type_boundary = direction > 0 ? descr.fill_representable_max : descr.fill_representable_min;
 
-        Field last_value = doLongJump(descr, i, type_boundary);
-        Field next_value = last_value;
-        descr.step_func(next_value, 1);
+    /// A constraint within the range of the column type stops the filling before it could leave the range.
+    if (!less(type_boundary, constraints[i], direction))
+        return;
 
-        if (less(last_value, next_value, direction) && less(next_value, constraints[i], direction))
-            checkGeneratedValueFitsColumnType(next_value, i);
-    }
+    Field last_value = doLongJump(descr, i, type_boundary);
+    Field next_value = last_value;
+    descr.step_func(next_value, 1);
+
+    if (less(last_value, next_value, direction) && less(next_value, constraints[i], direction))
+        checkGeneratedValueFitsColumnType(next_value, i);
 }
 
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
@@ -369,6 +374,18 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         /// filling of this column has passed its constraint and stops here, like it does at any other overshoot.
         if (!less(row[i], next_value, getDirection(i)))
             continue;
+
+        /// The column is walked towards its constraint one step at a time, independently of the data, so a
+        /// constraint past the range of the column type is checked once when the walk starts - otherwise it
+        /// would be rejected only after generating every value up to the boundary of the type. The walk from
+        /// a value depends only on that value and the constraint, so a step continuing an already checked
+        /// walk is not checked again.
+        if (!equals(row[i], checked_walk_cursor[i]) || !equals(constraints[i], checked_walk_constraint[i]))
+        {
+            checkFillingTowardsConstraintFitsColumnType(i);
+            checked_walk_constraint[i] = constraints[i];
+        }
+        checked_walk_cursor[i] = next_value;
 
         checkGeneratedValueFitsColumnType(next_value, i);
 

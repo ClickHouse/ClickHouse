@@ -29,6 +29,7 @@ class FillingRow
     Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
 
     void checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const;
+    void checkFillingTowardsConstraintFitsColumnType(size_t column_ind);
 
     bool hasSomeConstraints(size_t pos) const;
     bool isConstraintsSatisfied(size_t pos) const;
@@ -73,6 +74,10 @@ public:
 private:
     Row row;
     Row constraints;
+    /// The value and the constraint of each column whose walk towards its constraint in `next` was last checked
+    /// by `checkFillingTowardsConstraintFitsColumnType`, so that the check runs once per walk, not once per step.
+    Row checked_walk_cursor;
+    Row checked_walk_constraint;
     SortDescription sort_description;
 };
 
