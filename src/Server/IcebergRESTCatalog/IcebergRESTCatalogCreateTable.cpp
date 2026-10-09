@@ -1,4 +1,4 @@
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogTableMetadata.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
 
 #include "config.h"
 

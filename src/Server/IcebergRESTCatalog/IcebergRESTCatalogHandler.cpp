@@ -21,7 +21,7 @@
 #include <Server/IServer.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogStorage.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogTableMetadata.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
