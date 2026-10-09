@@ -52,6 +52,8 @@ SELECT {{ s }},
 
 -- Parallel replicas: the replicas, which get the query re-spelled by the initiator, execute the join
 -- the initiator plans for the user's spelling. Without a local plan the replicas do all the reading.
+-- The start time keeps the queries of an earlier run in the same database out of the check below.
+CREATE TEMPORARY TABLE run_start AS SELECT now64(6) AS t;
 {% for s in seeds -%}
 SELECT * FROM l AS a LEFT JOIN r AS b ON a.k = b.k
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
@@ -68,6 +70,7 @@ FROM
 (
     SELECT query_id, toUInt64(extract(log_comment, '-(\\d+)$')) AS seed FROM system.query_log
     WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND is_initial_query
+        AND query_start_time_microseconds >= (SELECT t FROM run_start)
         AND log_comment LIKE '05339_join_order_randomize_same_on_every_replica-%'
 ) AS i
 INNER JOIN
