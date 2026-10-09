@@ -852,17 +852,20 @@ void ColumnString::validate() const
                         last_offset, chars.size());
 }
 
-void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+void ColumnString::updateHashWithStringValue(std::string_view value, SipHash & hash)
 {
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
     /// For compatibility, which is required in certain aggregate function states.
-    size_t size_used_in_hash = string_size + 1;
+    size_t size_used_in_hash = value.size() + 1;
 
     hash.update(reinterpret_cast<const char *>(&size_used_in_hash), sizeof(size_used_in_hash));
-    hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+    hash.update(value.data(), value.size());
     /// This is for compatibility
     hash.update(UInt8(0));
+}
+
+void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    updateHashWithStringValue({reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, hash);
 }
 
 void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
