@@ -8,11 +8,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the pattern answers with the number it embeds, so reading one address is enough to satisfy a LIMIT.
 URL="${CLICKHOUSE_URL}&query=SELECT+{0..19}"
 
+# `LIMIT 1` returns the first address only on the local plan: with parallel replicas `url` is served by
+# `StorageURLCluster`, which reads several addresses at once, so the arms printing that row pin the local plan.
 echo "--- reading one address out of twenty, with room for five"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM url('$URL', TSV, 'x UInt64') LIMIT 1 SETTINGS glob_expansion_max_elements = 5, max_threads = 1"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM url('$URL', TSV, 'x UInt64') LIMIT 1 SETTINGS glob_expansion_max_elements = 5, max_threads = 1, parallel_replicas_for_cluster_engines = 0"
 
 echo "--- schema inference reads one address as well"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM url('$URL', TSV) LIMIT 1 SETTINGS glob_expansion_max_elements = 5, max_threads = 1"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM url('$URL', TSV) LIMIT 1 SETTINGS glob_expansion_max_elements = 5, max_threads = 1, parallel_replicas_for_cluster_engines = 0"
 
 echo "--- reading all of them is still limited"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM url('$URL', TSV, 'x UInt64') SETTINGS glob_expansion_max_elements = 5, max_threads = 1" 2>&1 \
@@ -22,7 +24,7 @@ echo "--- a pattern that fits into the limit is read in full"
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM url('$URL', TSV, 'x UInt64') SETTINGS glob_expansion_max_elements = 20, max_threads = 1"
 
 echo "--- a hundred million addresses under the default limit"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM url('${CLICKHOUSE_URL}&query=SELECT+{0..10000}{0..10000}', TSV, 'x UInt64') LIMIT 1 SETTINGS max_threads = 1"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM url('${CLICKHOUSE_URL}&query=SELECT+{0..10000}{0..10000}', TSV, 'x UInt64') LIMIT 1 SETTINGS max_threads = 1, parallel_replicas_for_cluster_engines = 0"
 
 echo "--- a _path predicate is applied to every generated address, which counts against the limit"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM url('$URL', TSV, 'x UInt64') WHERE _path = '/no-such-path' SETTINGS glob_expansion_max_elements = 5, max_threads = 1" 2>&1 \

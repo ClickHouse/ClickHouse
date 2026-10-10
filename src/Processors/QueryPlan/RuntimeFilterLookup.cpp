@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
@@ -177,6 +178,11 @@ static constexpr size_t HASH_BATCH_SIZE = 1024;
 
 bool detail::RuntimeFilterIndexAnalysis::supportsDataType(const DataTypePtr & data_type)
 {
+    return runtimeFilterKeySupportsMinMaxRange(data_type);
+}
+
+bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & data_type)
+{
     if (!data_type)
         return false;
 
@@ -250,11 +256,7 @@ namespace
 /// float can appear on a path discovered while reading, which is not among the type's static children.
 bool equalsCanDisagreeWithHashTable(const IDataType & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & nested) { result |= isFloat(nested) || isObject(nested); };
-    check(type);
-    type.forEachChild(check);
-    return result;
+    return anyInTypeTree(type, [](const IDataType & nested) { return isFloat(nested) || isObject(nested); });
 }
 
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)

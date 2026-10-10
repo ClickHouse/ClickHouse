@@ -201,7 +201,7 @@ static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std
     std::unordered_set<const ActionsDAG::Node *> visited;
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         size_t next_child = 0;
     };
     std::stack<Frame> stack;
