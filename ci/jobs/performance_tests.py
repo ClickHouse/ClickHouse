@@ -152,6 +152,8 @@ TEST_PERF_CHANGES_TABLE = "perf_test_perf_changes_v1"
 PARTIAL_QUERIES_TABLE = "perf_partial_queries_v1"
 SKIPPED_TESTS_TABLE = "perf_skipped_tests_v1"
 RUN_ERRORS_TABLE = "perf_run_errors_v1"
+# Run warnings share the run errors table, told apart by this `test` value.
+RUN_WARNING_TEST = "(warning)"
 METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
 FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
 
@@ -343,6 +345,13 @@ REPORT_UPLOADS = [
         "table_columns": ["test", "error"],
         "input_schema": "test String, error String",
         "select_exprs": ["test", "error"],
+    },
+    {
+        "table": RUN_ERRORS_TABLE,
+        "source": f"{perf_wd}/run-warnings.tsv",
+        "table_columns": ["test", "error"],
+        "input_schema": "warning String",
+        "select_exprs": [f"'{RUN_WARNING_TEST}'", "warning"],
     },
     {
         "table": METRIC_CHANGES_TABLE,
@@ -1032,7 +1041,7 @@ def export_system_logs(servers):
     return True
 
 
-def insert_into_cidb(cidb, info, table, query, data, deadline):
+def insert_into_cidb(cidb, info, table, query, data, deadline, token_key=None):
     """Run a REPORT-stage INSERT into `table`. Returns None on success and the
     reason of the failure otherwise.
 
@@ -1040,8 +1049,9 @@ def insert_into_cidb(cidb, info, table, query, data, deadline):
     `DASHBOARD_INPUT_TABLES` that CIDB failed without rejecting it
     (`last_rejected`) is retried while another attempt fits. Every attempt
     carries the same `insert_deduplication_token`, so the server drops a
-    resent block that an attempt abandoned by the client did commit."""
-    token = f"{info.pr_number}/{info.sha}/{info.job_name}/{get_check_start_time()}/{table}"
+    resent block that an attempt abandoned by the client did commit.
+    `token_key` tells apart several uploads into the same table."""
+    token = f"{info.pr_number}/{info.sha}/{info.job_name}/{get_check_start_time()}/{token_key or table}"
     settings = {"insert_deduplication_token": token}
     if deadline is None:
         if cidb.do_insert_query(
@@ -1116,7 +1126,9 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, d
     )
     line_count = data.count("\n")
     print(f"Do insert into [{cfg['table']}]: >>>\n{query}\n<<<")
-    error = insert_into_cidb(cidb, info, cfg["table"], query, data, deadline)
+    error = insert_into_cidb(
+        cidb, info, cfg["table"], query, data, deadline, token_key=f"{cfg['table']}/{source_path.name}"
+    )
     if error is None:
         print(f"Inserted [{line_count}] rows into [{cfg['table']}]")
     else:
@@ -1400,11 +1412,12 @@ def master_build_links(sha, build_type):
 
 
 def find_master_build(commits, build_type):
-    for sha in commits:
+    """The build link of the first of `commits` that has a build and its index in `commits`, or `(None, None)`."""
+    for index, sha in enumerate(commits):
         for link in master_build_links(sha, build_type):
             if Shell.check(f"curl -sfI {link} > /dev/null"):
-                return link
-    return None
+                return link, index
+    return None, None
 
 
 def local_master_track_commits(local_master_commits_to_check_for_build):
@@ -1473,44 +1486,46 @@ PR_FLAGS_BUILD_JOBS = {
 
 
 def find_pr_flags_build(commits, build_type):
-    """The newest master build of `commits` made with the PR build flags, or None.
+    """The newest master build of `commits` made with the PR build flags and the index in `commits`
+    of the commit whose sources it was built from, or `(None, None)`.
 
     Commits before the first one with an official build are passed over, as in
     `find_master_build`. From that commit on, the walk goes further back only over
     commits where `MasterCI` skipped the PR-flags build job: such a commit changed
     none of the job's inputs, so an older build has the same sources."""
     job_name = PR_FLAGS_BUILD_JOBS[build_type]
-    official_found = False
-    for sha in commits:
-        link = find_master_build([sha], Utils.normalize_string(job_name))
+    official_index = None
+    for index, sha in enumerate(commits):
+        link, _ = find_master_build([sha], Utils.normalize_string(job_name))
         if link:
-            return link
-        if not official_found:
-            official_found = find_master_build([sha], build_type) is not None
-            if not official_found:
+            return link, index if official_index is None else official_index
+        if official_index is None:
+            if find_master_build([sha], build_type)[0] is None:
                 continue
+            official_index = index
         state, status = master_job_status(job_name, sha)
         if state != FETCH_OK or status != Result.Status.SKIPPED:
-            return None
+            return None, None
         print(f"INFO: [{job_name}] was skipped at master {sha}, its sources are the ones of its parent")
-    return None
+    return None, None
 
 
 def find_prev_build(info, build_type):
+    """The reference build link and the master commits from the tested one down to the reference."""
     commits = info.get_kv_data("master_track_commits_sha") or []
     if not commits and info.is_local_run:
         # for a local run let's check 50 commits
         commits = local_master_track_commits(50)
     # A PR candidate is a PR-flags build. Private PR builds keep debug info.
     if info.pr_number > 0 and info.repo_name == "ClickHouse/ClickHouse":
-        link = find_pr_flags_build(commits, build_type)
+        link, index = find_pr_flags_build(commits, build_type)
         if link:
             print(f"Reference: build with the PR flags {link}")
-            return link
+            return link, commits[: index + 1]
         print("WARNING: no master build with the PR build flags, the reference is the official build")
-    link = find_master_build(commits, build_type)
+    link, index = find_master_build(commits, build_type)
     if link or not info.is_local_run:
-        return link
+        return link, commits[: index + 1] if link else []
 
     # `build_master_head_hook` publishes these release binaries even when the
     # master tip has no build yet. No local history or GitHub credentials are needed.
@@ -1518,15 +1533,30 @@ def find_prev_build(info, build_type):
     link = f"{LATEST_MASTER_BUILD_PREFIX}{arch}/clickhouse"
     if Shell.check(f"curl --connect-timeout 5 --max-time 15 -sfI {link} > /dev/null"):
         print(f"WARNING: {LOCAL_REFERENCE_FALLBACK_WARNING} Reference: {link}")
-        return link
+        return link, []
     print(f"WARNING: latest master reference build is also unavailable: {link}")
-    return None
+    return None, []
+
+
+def stale_reference_warning(reference_chain):
+    """Why the reference build is older than the tested master revision, or "" when it is not.
+
+    `reference_chain` is the master commits from the tested one down to the reference, as `find_prev_build` returns."""
+    if len(reference_chain) < 2:
+        return ""
+    tested, reference = reference_chain[0], reference_chain[-1]
+    behind = len(reference_chain) - 1
+    return (
+        f"The reference is master {reference[:12]}, {behind} commit{'s' if behind > 1 else ''} behind master {tested[:12]} "
+        "tested with this change, which had no build yet. Changes merged into master in between show up as "
+        f"changes of this PR: https://github.com/ClickHouse/ClickHouse/compare/{reference}...{tested}"
+    )
 
 
 def find_base_release_build(info, build_type):
     commits = info.get_kv_data("release_branch_base_sha_with_predecessors") or []
     assert commits, "No commits found to fetch reference build"
-    return find_master_build(commits, build_type)
+    return find_master_build(commits, build_type)[0]
 
 
 # The number of distinct "slower" queries that fails the whole performance
@@ -2333,10 +2363,11 @@ def main():
 
     # release_version = CHVersion.get_release_version()
     info = Info()
+    reference_chain = []
 
     if Utils.is_arm():
         if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_arm_release")
+            link_for_ref_ch, reference_chain = find_prev_build(info, "build_arm_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_arm_release")
@@ -2345,7 +2376,7 @@ def main():
             assert False
     elif Utils.is_amd():
         if compare_against_master:
-            link_for_ref_ch = find_prev_build(info, "build_amd_release")
+            link_for_ref_ch, reference_chain = find_prev_build(info, "build_amd_release")
             assert link_for_ref_ch, "reference clickhouse build has not been found"
         elif compare_against_release:
             link_for_ref_ch = find_base_release_build(info, "build_amd_release")
@@ -2355,11 +2386,13 @@ def main():
     else:
         Utils.raise_with_error("Unknown processor architecture")
 
-    reference_warning = (
-        LOCAL_REFERENCE_FALLBACK_WARNING
-        if info.is_local_run and link_for_ref_ch.startswith(LATEST_MASTER_BUILD_PREFIX)
-        else ""
+    use_latest_master = info.is_local_run and link_for_ref_ch.startswith(
+        LATEST_MASTER_BUILD_PREFIX
     )
+    if use_latest_master:
+        reference_warning = LOCAL_REFERENCE_FALLBACK_WARNING
+    else:
+        reference_warning = stale_reference_warning(reference_chain)
 
     if compare_against_release:
         print("It's a comparison against latest release baseline")
@@ -2507,7 +2540,7 @@ def main():
         # The latest-master URL is mutable: refresh it when entering the install
         # stage. Also invalidate a cached binary when the selected baseline changes.
         if (
-            reference_warning
+            use_latest_master
             or not Path(f"{perf_left}/.done").is_file()
             or not reference_source.is_file()
             or reference_source.read_text() != link_for_ref_ch
@@ -2837,6 +2870,8 @@ def main():
                 reference.write(
                     f"\nWARNING: {reference_warning}\nReference commit: {reference_sha}\n"
                 )
+        with open(f"{perf_wd}/run-warnings.tsv", "w", encoding="utf-8") as warnings:
+            warnings.write(reference_warning + "\n" if reference_warning else "")
         Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
             Utils.normalize_string(info.job_name)

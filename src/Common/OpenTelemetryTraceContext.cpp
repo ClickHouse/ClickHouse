@@ -234,7 +234,9 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
 
 SpanHolder::~SpanHolder()
 {
-    finish(std::chrono::system_clock::now());
+    /// Check before reading the clock: most spans are not traced, and the read is the dominant cost of an untraced span.
+    if (this->isTraceEnabled())
+        finish(std::chrono::system_clock::now());
 }
 
 ManualSpan::ManualSpan(std::string_view operation_name, SpanKind kind)
