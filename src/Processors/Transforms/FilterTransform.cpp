@@ -172,6 +172,8 @@ FilterTransform::FilterTransform(
 
         if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "ignore")
             always_false = true;
+
+        input_positions = expression->getInputPositions(*header_);
     }
 
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
@@ -288,18 +290,10 @@ void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-    DataTypes types;
 
-    {
-        Block block = getInputPort().getHeader().cloneWithColumns(columns);
-        columns.clear();
-
-        if (expression)
-            expression->execute(block, num_rows_before_filtration);
-
-        columns = block.getColumns();
-        types = block.getDataTypes();
-    }
+    if (expression)
+        columns = expression->executeOnColumns(
+            std::move(columns), getInputPort().getHeader(), input_positions, num_rows_before_filtration);
 
     size_t num_columns = columns.size();
     ColumnPtr filter_column = columns[filter_column_position];
@@ -355,10 +349,11 @@ void FilterTransform::doTransform(Chunk & chunk)
     size_t min_size_in_memory = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        DataTypePtr type_not_null = removeNullableOrLowCardinalityNullable(types[i]);
+        const auto & type = transformed_header.getByPosition(i).type;
+        DataTypePtr type_not_null = removeNullableOrLowCardinalityNullable(type);
         if (i != filter_column_position && !isColumnConst(*columns[i]) && type_not_null->isValueRepresentedByNumber())
         {
-            size_t size_in_memory = type_not_null->getSizeOfValueInMemory() + (isNullableOrLowCardinalityNullable(types[i]) ? 1 : 0);
+            size_t size_in_memory = type_not_null->getSizeOfValueInMemory() + (isNullableOrLowCardinalityNullable(type) ? 1 : 0);
             if (size_in_memory < min_size_in_memory)
             {
                 min_size_in_memory = size_in_memory;

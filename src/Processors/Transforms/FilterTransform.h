@@ -73,6 +73,10 @@ private:
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
+    /// Mapping from required input slot to input-header position, precomputed once (the input header is fixed).
+    /// Lets doTransform run the expression positionally without rebuilding a Block name index per chunk.
+    std::vector<ssize_t> input_positions;
+
     bool are_prepared_sets_initialized = false;
 
     void doTransform(Chunk & chunk);
