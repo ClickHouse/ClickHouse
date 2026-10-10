@@ -282,7 +282,8 @@ public:
 
     /// Called by `Changelog::writeAt` under `writer_mutex` before it rewrites or supersedes any existing
     /// segment, after every scheduled relink was applied by `LogEntryStorage::refreshCache`.
-    virtual void prepareRewrite() {}
+    /// `index` is the first log index that is rewritten.
+    virtual void prepareRewrite(uint64_t /* index */) {}
 
     ChangelogFileDescriptionPtr getCurrentFileDescription() const { return current_file_description; }
 
@@ -566,10 +567,6 @@ private:
                 if (existing_changelogs.empty())
                     continue;
 
-                auto it = existing_changelogs.upper_bound(last_merged_index);
-                if (it == existing_changelogs.end())
-                    continue;
-
                 /// The segment the writer has open (it is already listed when `writeAt` reopened it for append)
                 /// and everything after it are still changing, so only the segments before it are merged.
                 const auto is_open_for_write = [&](const ChangelogFileDescriptionPtr & changelog)
@@ -577,47 +574,66 @@ private:
                     return current_file_description && changelog->from_log_index >= current_file_description->from_log_index;
                 };
 
-                if (is_open_for_write(it->second))
+                /// A compressed changelog (carried over from `old_log_storage_disk`) is never merged: its recorded
+                /// positions are offsets into the decompressed stream, so the relink would point into the wrong
+                /// bytes of the merged object, and the raw concatenation could not be decoded on restart.
+                const auto can_be_merged = [&](const ChangelogFileDescriptionPtr & changelog)
+                {
+                    return !changelog->is_compressed && changelog->to_log_index - changelog->from_log_index + 1 < log_file_settings.rotate_interval;
+                };
+
+                /// Skip the segments that are never merged, so they do not hold back the ones after them.
+                auto it = existing_changelogs.upper_bound(last_merged_index);
+                while (it != existing_changelogs.end() && !is_open_for_write(it->second) && !can_be_merged(it->second))
+                {
+                    last_merged_index = it->second->to_log_index;
+                    ++it;
+                }
+
+                if (it == existing_changelogs.end() || is_open_for_write(it->second))
                     continue;
 
                 uint64_t current_from_index = it->second->from_log_index;
                 uint64_t current_to_index = it->second->to_log_index;
 
-                /// A compressed changelog (carried over from `old_log_storage_disk`) is never merged: its recorded
-                /// positions are offsets into the decompressed stream, so the relink would point into the wrong
-                /// bytes of the merged object, and the raw concatenation could not be decoded on restart.
-                if (it->second->is_compressed || current_to_index - current_from_index + 1 >= log_file_settings.rotate_interval)
-                {
-                    last_merged_index = current_to_index;
-                    continue;
-                }
-
                 to_merge.push_back(it->second);
+
+                /// Set when the segment after the merged range can never be appended to it, as opposed to one that
+                /// is still being written or not published yet.
+                bool range_is_final = false;
 
                 ++it;
                 while (it != existing_changelogs.end())
                 {
                     auto next_changelog = it->second;
 
-                    if (next_changelog->from_log_index == current_to_index + 1 && !is_open_for_write(next_changelog)
-                        && !next_changelog->is_compressed)
-                    {
-                        to_merge.push_back(next_changelog);
-                        current_to_index = next_changelog->to_log_index;
+                    if (next_changelog->from_log_index != current_to_index + 1 || is_open_for_write(next_changelog))
+                        break;
 
-                        if (current_to_index - current_from_index >= log_file_settings.rotate_interval)
-                            break;
-                    }
-                    else
+                    /// `rotate_interval` caps the number of entries in a merged object, so check the candidate
+                    /// before taking it rather than after it has already pushed the range past the cap.
+                    if (next_changelog->is_compressed || next_changelog->to_log_index - current_from_index + 1 > log_file_settings.rotate_interval)
                     {
+                        range_is_final = true;
                         break;
                     }
+
+                    to_merge.push_back(next_changelog);
+                    current_to_index = next_changelog->to_log_index;
+
+                    if (current_to_index - current_from_index + 1 >= log_file_settings.rotate_interval)
+                        break;
 
                     ++it;
                 }
 
                 if (to_merge.size() <= 1)
+                {
+                    /// Nothing can ever be merged into this segment, so do not let it stall the planner.
+                    if (range_is_final)
+                        last_merged_index = current_to_index;
                     continue;
+                }
 
                 merged_changelog = std::make_shared<ChangelogFileDescription>();
                 merged_changelog->prefix = to_merge.front()->prefix;
@@ -818,8 +834,16 @@ private:
     /// next startup replay the stale sources over the rewritten range and resurrect the overwritten entries.
     /// So the sources are removed synchronously here, before anything is rewritten. `writeAt` applied every
     /// relink under `writer_mutex` right before, and new relinks are scheduled only under `writer_mutex`.
-    void prepareRewrite() override
+    void prepareRewrite(uint64_t index) override
     {
+        /// The segments from the one containing `index` onwards are rewritten and published anew, so move the
+        /// compaction cursor back before them: otherwise the planner and the backlog count, which only look past
+        /// `last_merged_index`, would never consider the rewritten segments until the log grows past it again.
+        if (auto it = existing_changelogs.upper_bound(index); it != existing_changelogs.begin())
+            last_merged_index = std::min(last_merged_index, std::prev(it)->second->from_log_index - 1);
+        else
+            last_merged_index = std::min(last_merged_index, index - 1);
+
         std::lock_guard lock(relinked_sources_mutex);
         if (relinked_sources.empty())
             return;
@@ -5363,7 +5387,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             /// The S3 compaction thread may have scheduled a relink after the `refreshCache` in `flush` above.
             /// It schedules them only under `writer_mutex`, so this applies all of them before `prepareRewrite`.
             entry_storage.refreshCache();
-            current_writer->prepareRewrite();
+            current_writer->prepareRewrite(index);
         }
 
         /// This write_at require to overwrite everything in this file and also in previous file(s)
