@@ -154,6 +154,13 @@ namespace
     }
 
 
+    void createNeedRebuildListsMark(const String & directory_path)
+    {
+        WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
+        out.close();
+    }
+
+
     bool tryParseUUID(const String & str, UUID & id)
     {
         return tryParse(id, str);
@@ -320,8 +327,7 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
     /// Created on every call, because `reloadAllAndRebuildLists` can remove it while the lists-writing thread is waiting.
-    WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
-    out.close();
+    createNeedRebuildListsMark(directory_path);
 
     if (failed_to_write_lists)
         return; /// We don't try to write list files after the first fail.
@@ -497,6 +503,18 @@ void DiskAccessStorage::reload(ReloadMode reload_mode)
         return;
 
     std::lock_guard lock{mutex};
+
+    /// Stays on disk if `reloadAllAndRebuildLists` fails to write the lists.
+    /// Best effort, so that a directory which refuses new files is still reloadable.
+    try
+    {
+        createNeedRebuildListsMark(directory_path);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger(), "Could not create need_rebuild_lists.mark");
+    }
+
     reloadAllAndRebuildLists();
 }
 

@@ -146,6 +146,30 @@ TEST(DiskAccessStorageRecovery, KeepsUserCreatedAfterFailedListWrite)
     EXPECT_TRUE(restarted.find<User>("bob").has_value());
 }
 
+TEST(DiskAccessStorageRecovery, KeepsReloadedUserAfterFailedListWrite)
+{
+    Poco::TemporaryFile temp_dir;
+    temp_dir.createDirectories();
+    String dir = temp_dir.path() + "/";
+    const std::filesystem::path users_list = dir + "users.list";
+    const std::filesystem::path saved_users_list = dir + "users.list.saved";
+
+    AccessChangesNotifier notifier;
+    {
+        DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+        writeEntityToFile(std::filesystem::path(dir) / (toString(UUIDHelpers::generateV4()) + ".sql"), *makeUser("carol"));
+        std::filesystem::rename(users_list, saved_users_list);
+        std::filesystem::create_directory(users_list);
+        storage.reload(IAccessStorage::ReloadMode::ALL); /// Loads `carol`, fails to write `users.list`.
+        EXPECT_TRUE(storage.find<User>("carol").has_value());
+    }
+    std::filesystem::remove(users_list);
+    std::filesystem::rename(saved_users_list, users_list);
+
+    DiskAccessStorage restarted("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+    EXPECT_TRUE(restarted.find<User>("carol").has_value());
+}
+
 TEST(DiskAccessStorageRecovery, KeepsUserWhenMarkCannotBeCreated)
 {
     Poco::TemporaryFile temp_dir;
@@ -162,4 +186,7 @@ TEST(DiskAccessStorageRecovery, KeepsUserWhenMarkCannotBeCreated)
     EXPECT_THROW(storage.remove(id), Exception);
     EXPECT_TRUE(storage.find<User>("alice").has_value());
     EXPECT_TRUE(std::filesystem::exists(path));
+
+    EXPECT_NO_THROW(storage.reload(IAccessStorage::ReloadMode::ALL));
+    EXPECT_TRUE(storage.find<User>("alice").has_value());
 }
