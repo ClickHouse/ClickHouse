@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 
 namespace DB
@@ -66,29 +67,12 @@ bool isRuntimeTyped(const IDataType & type)
 
 bool hasTypeThatCanContainFloat(const DataTypePtr & type)
 {
-    if (WhichDataType(*type).isFloat())
-        return true;
-
-    /// forEachChild recurses on its own, so one call visits the whole type tree.
-    bool found = false;
-    type->forEachChild([&found](const IDataType & child)
-    {
-        found = found || WhichDataType(child).isFloat();
-    });
-    return found;
+    return anyInTypeTree(*type, [](const IDataType & node) { return WhichDataType(node).isFloat(); });
 }
 
 bool hasRuntimeTypedType(const DataTypePtr & type)
 {
-    if (isRuntimeTyped(*type))
-        return true;
-
-    bool found = false;
-    type->forEachChild([&found](const IDataType & child)
-    {
-        found = found || isRuntimeTyped(child);
-    });
-    return found;
+    return anyInTypeTree(*type, [](const IDataType & node) { return isRuntimeTyped(node); });
 }
 
 }

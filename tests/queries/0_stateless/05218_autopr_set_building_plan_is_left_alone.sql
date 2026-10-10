@@ -63,7 +63,7 @@ WITH refused AS
 (
     SELECT DISTINCT query_id
     FROM system.text_log
-    WHERE (event_date >= yesterday()) AND (logger_name = 'optimizeTree')
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (logger_name = 'optimizeTree')
       AND (message LIKE '%The plan builds a set, its root must be preserved%')
 )
 SELECT log_comment, query_id IN (SELECT query_id FROM refused) AS set_plan_left_alone
@@ -72,6 +72,7 @@ WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTE
   AND (current_database = currentDatabase()) AND startsWith(log_comment, '05218_autopr_set_root_global_in')
   AND (type = 'QueryFinish')
 ORDER BY log_comment
+SETTINGS max_rows_to_read = 0 -- system.text_log can be really big
 FORMAT TSVWithNames;
 
 DROP TABLE t_autopr_set_root_hits;

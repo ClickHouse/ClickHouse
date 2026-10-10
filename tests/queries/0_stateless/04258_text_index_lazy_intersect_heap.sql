@@ -1,12 +1,6 @@
--- Exercises intersectLeapfrogHeap, the >8-cursor variant of the leapfrog AND
--- algorithm. Dispatch in MergeTreeIndexTextPostingListCursor.cpp:
---   n == 2 -> intersectTwo
---   n == 3 -> intersectThree
---   n == 4 -> intersectFour
---   n <= 8 -> intersectLeapfrogLinear
---   n  > 8 -> intersectLeapfrogHeap        <- this file
--- Unit tests cover the heap variant up to 10 cursors, but no SQL test exercises
--- it through the production reader path. This file fills that gap.
+-- Exercises the leapfrog AND (`intersectLeapfrog` in MergeTreeIndexTextPostingListCursor.cpp)
+-- with more than 8 cursors through the production reader path. It used to be served by a separate
+-- min-heap variant; a single loop led by the sparsest cursor now handles every cursor count.
 
 SET enable_full_text_index = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
@@ -114,10 +108,9 @@ SELECT 'materialize 11-way:', count() FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki', 'tkj', 'tkk'])
 SETTINGS text_index_posting_list_apply_mode = 'materialize';
 
--- Telemetry assertions: the heap variant must have run (LeapfrogIntersections > 0),
+-- Telemetry assertions: the leapfrog must have run (LeapfrogIntersections > 0),
 -- the brute-force variant must NOT have (the setting forces leapfrog), and
--- advance() must have been called many times (every match in the heap calls
--- advance ~n times across iterations).
+-- advance() must have been called many times (the cursors behind the lead advance to its doc ids).
 SYSTEM FLUSH LOGS query_log;
 
 -- The counters are incremented on whichever replica reads the granule, so under
