@@ -4408,16 +4408,20 @@ A set on disk keeps a Bloom filter of its keys in memory, so that lookups of key
 can skip reading the disk. `max_bytes_for_external_set_bloom_filter` limits the memory of the filter,
 128 MiB by default.
 
+A set on disk also caches in memory the blocks that its lookups read, so that later lookups of keys in
+the same blocks do not read the disk again. `max_bytes_for_external_set_cache` limits the memory of the
+cache, 128 MiB by default.
+
 A set written to disk while it is built cannot be used by the primary key or data skipping indexes. With
 `GLOBAL IN`, the temporary table that sends the result of the subquery to the remote servers stays in
 memory, while the sets that the remote servers build from it can be written to disk.
 
 When a set is written to disk while it is built, the whole subquery is read before the size limits of
 the set are checked: `max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts only its
-part in memory, without the Bloom filter. With `set_overflow_mode = 'break'`, the set keeps the keys
-that come first in the order in which it stores them on disk, up to the limits, and not the keys of the
-first rows of the subquery. For keys of numbers, dates and short `FixedString` values, alone or in a
-tuple, these are the smallest keys. Other keys, such as `String`, form an arbitrary subset.
+part in memory, without the Bloom filter and the cache. With `set_overflow_mode = 'break'`, the set
+keeps the keys that come first in the order in which it stores them on disk, up to the limits, and not
+the keys of the first rows of the subquery. For keys of numbers, dates and short `FixedString` values,
+alone or in a tuple, these are the smallest keys. Other keys, such as `String`, form an arbitrary subset.
 
 ## Distributed Subqueries {#distributed-subqueries}
 
