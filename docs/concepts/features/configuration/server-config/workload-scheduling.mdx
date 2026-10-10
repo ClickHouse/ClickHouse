@@ -243,6 +243,8 @@ A query can run as several parts on one server: its subqueries, the subqueries o
 
 A part of a query is always scheduled under the `workload` and the settings from the table above of its query. If a part sets its own values, for example with its own `SETTINGS` clause, they are not used for scheduling.
 
+On a server that runs tasks of a query but not the query itself, the tasks of the query are scheduled as one query while at least one of them runs there. If all of them finish and more tasks of the query come later, for example from a later stage of its plan, they are scheduled as a new query, with no attained service.
+
 ## Threads vs. CPUs {#threads_vs_cpus}
 
 There are two ways to control CPU consumption of a workload:

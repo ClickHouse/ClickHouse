@@ -67,7 +67,8 @@ using QuerySchedulingGroupPtr = std::shared_ptr<QuerySchedulingGroup>;
 /// Groups of the queries whose distributed plans run on this server, by the id of the initiator's
 /// group. The initiator registers the group of its query, and the tasks of the query that run on
 /// this server join it here (the first task registers its own group if the initiator runs elsewhere).
-/// An entry does not keep a group alive.
+/// An entry does not keep a group alive: on a server where the initiator does not run, the group lives
+/// while a task of the query runs, and tasks that come after all of them finished get a new group.
 class DistributedQuerySchedulingGroups : private boost::noncopyable
 {
 public:
