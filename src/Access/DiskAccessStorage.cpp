@@ -317,6 +317,14 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 {
     LOG_TRACE(getLogger(), "Scheduling writing .list file for type {}, failed_to_write_lists={}, lists_writing_thread_is_waiting={}",
         AccessEntityTypeInfo::get(type).plural_raw_name, failed_to_write_lists, lists_writing_thread_is_waiting);
+
+    /// Create the 'need_rebuild_lists.mark' file.
+    /// This file will be used later to find out if writing lists is successful or not.
+    /// It's created on every call because `reloadAllAndRebuildLists` can remove it while the lists-writing thread is waiting,
+    /// and the lists are never written again after a failed write.
+    std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
+    out.close();
+
     if (failed_to_write_lists)
         return; /// We don't try to write list files after the first fail.
                 /// The next restart of the server will invoke rebuilding of the list files.
@@ -329,11 +337,6 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 
     if (lists_writing_thread && lists_writing_thread->joinable())
         lists_writing_thread->join();
-
-    /// Create the 'need_rebuild_lists.mark' file.
-    /// This file will be used later to find out if writing lists is successful or not.
-    std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
-    out.close();
 
     LOG_TRACE(getLogger(), "Created need_rebuild_lists.mark, starting background lists-writing thread");
 
