@@ -65,10 +65,8 @@ public:
         virtual ~BlockSink() = default;
 
         /// Starts the block of `block_keys`, which ascend. Returns the buffer to write the bytes of the block
-        /// into until the next block starts. `compressible` tells the sink whether a general-purpose codec
-        /// can shrink the block: it can shrink the keys of an unpacked block, which can repeat bytes, but not
-        /// packed gaps, which are already dense.
-        virtual WriteBuffer & startBlock(std::span<const Key> block_keys, bool compressible) = 0;
+        /// into until the next block starts.
+        virtual WriteBuffer & startBlock(std::span<const Key> block_keys) = 0;
     };
 
     class Encoder;

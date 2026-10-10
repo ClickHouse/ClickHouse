@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Compression/ICompressionCodec.h>
 #include <Interpreters/DiskSet.h>
 #include <Interpreters/DiskSetBlockCache.h>
 #include <Interpreters/DiskSetBlockFilters.h>
@@ -28,11 +27,11 @@ public:
     /// A set without keys has no file.
     DiskSetImpl() = default;
 
-    /// Creates the file of the set in `tmp_data`. The size of the file is unknown until the merge ends, so
-    /// creating it checks only that `min_free_disk_space` is free. The set keeps Bloom filters of its blocks
-    /// in at most `max_bytes_for_bloom_filter` bytes, sized for about `expected_keys` keys, as
-    /// `DiskSetBlockFilters::create` decides, and a cache of the blocks that its lookups read in at most
-    /// `max_bytes_for_cache` bytes.
+    /// Creates the file of the set in `tmp_data`, as `createFileScope` describes. The size of the file is
+    /// unknown until the merge ends, so creating it checks only that `min_free_disk_space` is free. The set
+    /// keeps Bloom filters of its blocks in at most `max_bytes_for_bloom_filter` bytes, sized for about
+    /// `expected_keys` keys, as `DiskSetBlockFilters::create` decides, and a cache of the blocks that its
+    /// lookups read in at most `max_bytes_for_cache` bytes.
     DiskSetImpl(
         TemporaryDataOnDiskScopePtr tmp_data,
         size_t min_free_disk_space,
@@ -59,14 +58,21 @@ private:
     using BlockFormat = DiskSetBlockFormat<Key>;
 
     /// The encoder calls this before it writes each block, and writes the block into the returned buffer. It
-    /// ends the frame of the previous block, so that a lookup can seek to each block and decompress it alone.
-    /// It also records the first key of the block and the position of its frame in the directory, and adds
-    /// the filter of the block. An unpacked block holds the keys as they are, so its frame uses the codec of
-    /// the file, which can shrink them. A block of packed gaps is already dense, so its frame is not
-    /// compressed, which saves the lookups the work of decompressing it.
-    WriteBuffer & startBlock(std::span<const Key> block_keys, bool compressible) override;
+    /// ends the frame of the previous block, so that a lookup can read each block alone. It also records the
+    /// first key of the block and the position of its frame in the directory, and adds the filter of the
+    /// block.
+    WriteBuffer & startBlock(std::span<const Key> block_keys) override;
 
-    /// The file holds the blocks in ascending order of their keys, one frame per block.
+    /// Returns the scope of the file of the set: a child of `tmp_data` that writes frames without compression
+    /// (see `file`).
+    static TemporaryDataOnDiskScopePtr createFileScope(const TemporaryDataOnDiskScopePtr & tmp_data);
+
+    /// The file holds the blocks in ascending order of their keys, one frame per block. The frames are not
+    /// compressed, whatever the codec of the temporary data is. The encoder already packs the gaps between
+    /// close keys, so a codec shrinks only the unpacked blocks of keys with repeating bytes, such as short
+    /// `FixedString` values with their padding. Decompressing each block that a lookup reads costs more than
+    /// reading the larger file from the page cache. With `LZ4`, the lookups that read the file are up to 2
+    /// times slower for such keys, and up to 17% slower for hashes, which `LZ4` makes slightly larger.
     TemporaryDataBufferPtr file;
 
     /// The first key and the file position of each block, in file order. A block holds the keys up to the
@@ -94,7 +100,7 @@ private:
 
         const Key & getFirstKey(size_t block) const { return entries[block].first_key; }
 
-        /// Returns the position of the compressed frame of `block` in the file.
+        /// Returns the position of the frame of `block` in the file.
         size_t getOffset(size_t block) const { return entries[block].offset; }
 
         size_t size() const { return entries.size(); }
@@ -125,11 +131,6 @@ private:
     std::unique_ptr<DiskSetBlockCache> block_cache;
 
     std::optional<typename BlockFormat::Encoder> encoder;
-
-    /// The frames of the blocks that a codec can shrink use the codec of the temporary data scope of the
-    /// file. The frames of the other blocks use `NONE`.
-    CompressionCodecPtr compressible_block_codec;
-    CompressionCodecPtr incompressible_block_codec;
 
     /// Reads the blocks of the file for one lookup call. `DiskSetBlockReader.h` defines it.
     class BlockReader;

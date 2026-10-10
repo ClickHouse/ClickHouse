@@ -47,7 +47,8 @@ public:
 };
 
 /// Creates a builder of a `DiskSet` of `Key` keys, where `Key` is an unsigned integer of 8 to 256 bits.
-/// `tmp_data` holds the runs of the sorter and the finished set, and `limits` are the size limits of the set.
+/// `tmp_data` holds the runs of the sorter, which use its codec, and the finished set, whose file is not
+/// compressed (see `DiskSetImpl::createFileScope`). `limits` are the size limits of the set.
 /// `max_bytes_before_external_set` is the spill threshold of the set: the builder writes a run of buffered
 /// keys only while tracked query memory exceeds it. The finished set keeps Bloom filters of its blocks in at
 /// most `max_bytes_for_bloom_filter` bytes, sized for the number of distinct keys that the builder counts as

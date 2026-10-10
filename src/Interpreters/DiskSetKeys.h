@@ -9,11 +9,11 @@
 namespace DB
 {
 
-/// In `x IN (subquery)`, the rows of the right-hand side (RHS) are the keys of the set, and each value of
-/// the left-hand side (LHS) is looked up among them. A set on disk stores each RHS key as a disk key, an
-/// unsigned integer of a fixed width, in sorted, compressed blocks. An LHS value is converted to a disk key
-/// in the same way, and its lookup reads and decompresses the one block that can hold it, so the cost of the
-/// lookups is mostly the number of blocks that they read.
+/// In `x IN (subquery)`, the rows of the right-hand side (RHS) are the keys of the set, and each value of the
+/// left-hand side (LHS) is looked up among them. A set on disk stores each RHS key as a disk key, an unsigned
+/// integer of a fixed width, in sorted blocks. An LHS value is converted to a disk key in the same way, and
+/// its lookup reads and decodes the one block that can hold it, so the cost of the lookups is mostly the
+/// number of blocks that they read.
 ///
 /// LHS values often arrive sorted: a table is read in the order of its sorting key, values such as dates
 /// and identifiers grow with time, and a subquery can sort them. If the conversion keeps the order, so that

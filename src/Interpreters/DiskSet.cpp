@@ -1,7 +1,6 @@
 #include <Interpreters/DiskSetImpl.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Compression/CompressionFactory.h>
 #include <Interpreters/DiskSetBlockReader.h>
 #include <base/sort.h>
 #include <Common/assert_cast.h>
@@ -20,15 +19,19 @@ DiskSetImpl<Key>::DiskSetImpl(
     size_t expected_keys,
     size_t max_bytes_for_bloom_filter,
     size_t max_bytes_for_cache)
-    : file(std::make_unique<TemporaryDataBuffer>(std::move(tmp_data), min_free_disk_space))
+    : file(std::make_unique<TemporaryDataBuffer>(createFileScope(tmp_data), min_free_disk_space))
     , encoder(std::in_place)
-    , compressible_block_codec(file->getCompressedWriteBuffer().getCodec())
-    , incompressible_block_codec(CompressionCodecFactory::instance().get("NONE"))
 {
     if (max_bytes_for_bloom_filter)
         filters = DiskSetBlockFilters<Key>::create(expected_keys, BlockFormat::keys_per_unpacked_block, max_bytes_for_bloom_filter);
     if (max_bytes_for_cache)
         block_cache = std::make_unique<DiskSetBlockCache>(max_bytes_for_cache);
+}
+
+template <typename Key>
+TemporaryDataOnDiskScopePtr DiskSetImpl<Key>::createFileScope(const TemporaryDataOnDiskScopePtr & tmp_data)
+{
+    return tmp_data->childScope(tmp_data->getSettings().metrics, /*buffer_size_=*/0, "NONE");
 }
 
 template <typename Key>
@@ -44,15 +47,13 @@ void DiskSetImpl<Key>::add(std::span<const Key> keys)
 }
 
 template <typename Key>
-WriteBuffer & DiskSetImpl<Key>::startBlock(std::span<const Key> block_keys, bool compressible)
+WriteBuffer & DiskSetImpl<Key>::startBlock(std::span<const Key> block_keys)
 {
-    /// `next` must end the frame of the previous block before `setCodec` picks the codec of this one. The
-    /// file writes into the memory of its compressed buffer but keeps its own position there, so only `next`
-    /// hands the bytes of the previous block to the compressed buffer.
+    /// The file writes into the memory of its compressed buffer but keeps its own position there, so only
+    /// `next` hands the bytes of the previous block to the compressed buffer, which writes them as one frame.
+    /// The stat of the file then counts that frame, so it gives the position of the frame of this block.
     file->next();
-    auto & compressed = file->getCompressedWriteBuffer();
-    compressed.setCodec(compressible ? compressible_block_codec : incompressible_block_codec);
-    directory.addBlock(block_keys.front(), compressed.getCompressedBytes());
+    directory.addBlock(block_keys.front(), file->getStat().compressed_size);
     if (filters)
         filters->addBlock(block_keys);
     return *file;

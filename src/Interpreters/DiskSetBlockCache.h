@@ -11,14 +11,14 @@
 namespace DB
 {
 
-/// A block of a set on disk in the layout of `DiskSetBlockFormat`, decompressed but not yet decoded into
-/// keys: its header, and its body in an allocation of its own. The body of a full block takes exactly 4 KiB,
-/// a size class of the allocator, which the block with its header would exceed. Lookups decode the body just
-/// as they decode a block read from the file. The cache keeps blocks in this form rather than as keys for two
-/// reasons: a decoded block of packed gaps takes many times more memory, 8 times for 64-bit keys, and lookups
-/// search keys faster in the buffer of their decoder, which stays in the CPU caches, than in memory written
-/// by other threads. A lookup holds a block until it decodes it, so evicting the block from the cache does
-/// not free its body.
+/// A block of a set on disk in the layout of `DiskSetBlockFormat`, not yet decoded into keys: its header, and
+/// its body in an allocation of its own. The body of a full block takes exactly 4 KiB, a size class of the
+/// allocator, which the block with its header would exceed. Lookups decode the body just as they decode a
+/// block read from the file. The cache keeps blocks in this form rather than as keys for two reasons: a
+/// decoded block of packed gaps takes many times more memory, 8 times for 64-bit keys, and lookups search
+/// keys faster in the buffer of their decoder, which stays in the CPU caches, than in memory written by other
+/// threads. A lookup holds a block until it decodes it, so evicting the block from the cache does not free
+/// its body.
 struct DiskSetCachedBlock
 {
     DiskSetBlockHeader header;

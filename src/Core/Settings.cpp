@@ -4483,6 +4483,9 @@ Compatibility ignore collation in create table
     DECLARE(String, temporary_files_codec, "LZ4", R"(
 Sets compression codec for temporary files used in sorting and joining operations on disk.
 
+Sets of `IN` that spill to disk do not compress the files that their lookups read, whatever this setting is,
+because decompressing the blocks that each lookup reads costs more than reading the larger files.
+
 Possible values:
 
 - LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.

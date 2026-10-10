@@ -4,17 +4,15 @@
          numbers and short `FixedString` values, and of the first 4 bytes of other strings. So lookups of
          sorted keys read the blocks of the set in order, and a set built from sorted rows gets its keys
          already sorted. The set packs the gaps between keys that are close to each other, so it takes fewer
-         blocks, which the random lookups of the next three queries read again and again. A codec does not
-         shrink packed gaps, so the set writes these blocks uncompressed. The disk keys of strings are mostly
-         hash bits, which compress too little to pay for a codec, so the set writes them uncompressed as well.
-         The lookups of both read blocks without decompressing them. The next two queries look up random
-         hashes, which do not pack. A chunk of lookups that needs most of the blocks in its range reads
-         neighboring blocks together, and a chunk that needs few of them reads one block at a time. In the
-         next two queries, the keys repeat, and each chunk looks up each of its distinct keys once. In the next
-         query, the set does not have the keys of the lookups, and its Bloom filters rule them out without
-         reading blocks. In the last query, the lookups of `String` keys come in random order. The set caches
-         the blocks that lookups read, so in the queries whose chunks need the same blocks, the chunks after
-         the first get most of them from the cache instead of reading them again. -->
+         blocks, which the random lookups of the next three queries read again and again. The set writes its
+         blocks uncompressed, so its lookups read them without decompressing them. The next two queries look
+         up random hashes, which do not pack. A chunk of lookups that needs most of the blocks in its range
+         reads neighboring blocks together, and a chunk that needs few of them reads one block at a time. In
+         the next two queries, the keys repeat, and each chunk looks up each of its distinct keys once. In the
+         next query, the set does not have the keys of the lookups, and its Bloom filters rule them out
+         without reading blocks. In the last query, the lookups of `String` keys come in random order. The set
+         caches the blocks that lookups read, so in the queries whose chunks need the same blocks, the chunks
+         after the first get most of them from the cache instead of reading them again. -->
     <settings>
         <max_bytes_before_external_set>16777216</max_bytes_before_external_set>
         <max_bytes_ratio_before_external_set>0</max_bytes_ratio_before_external_set>

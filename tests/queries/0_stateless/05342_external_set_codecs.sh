@@ -17,12 +17,10 @@ query_log:
 YAML
 
 # The test checks which temporary files of a set `temporary_files_codec` compresses. A set of fixed-size keys
-# compresses its runs with it. In its file, it compresses only the blocks that a codec can shrink. The packed
-# gaps of sequential `UInt64` keys are already dense, so the file of their set is the same with `LZ4` as with
-# `NONE`. Short codes in a `FixedString(16)` stay unpacked, and their padding fills most of their bytes, so
-# `LZ4` shrinks the file of their set. A set of `String` keys stores disk keys that are mostly hash bits,
-# which compress too little to pay for a codec, so it writes its runs and its file uncompressed whatever the
-# codec is.
+# compresses its runs with it, but a set never compresses its file. So the file of a set is the same with
+# `LZ4` as with `NONE`, even for short codes in a `FixedString(16)`, which stay unpacked and whose padding
+# fills most of their bytes. A set of `String` keys stores disk keys that are mostly hash bits, which compress
+# too little to pay for a codec, so it writes its runs uncompressed too, whatever the codec is.
 #
 # With a threshold of 1 byte and one thread, each set spills before its first chunk and writes a run per
 # chunk, so both processes write the same runs. Each set logs a trace line with the bytes of its file when it
