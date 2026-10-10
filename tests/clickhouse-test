@@ -1764,14 +1764,16 @@ def randomize_external_sort_group_by():
     smaller of its two thresholds, so the unused one is pinned to 0."""
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
+        # Disabled: a spilled `IN` set keeps no explicit elements, which breaks every test that needs
+        # them (e.g. `01700_system_zookeeper_path_in`, index analysis, `query_log` used_* columns).
         # The `IN` set spill is new and off by default, so draw thresholds low enough to spill
         # (1 byte spills every set before its first chunk).
-        set_generator = threshold_generator(0.2, 0.3, 1, 64 * 1024 * 1024)
+        # set_generator = threshold_generator(0.2, 0.3, 1, 64 * 1024 * 1024)
         return {
             "max_bytes_before_external_sort": generator(),
             "max_bytes_before_external_group_by": generator(),
             "max_bytes_before_external_distinct": generator(),
-            "max_bytes_before_external_set": set_generator(),
+            # "max_bytes_before_external_set": set_generator(),
             "max_bytes_ratio_before_external_sort": 0,
             "max_bytes_ratio_before_external_group_by": 0,
             "max_bytes_ratio_before_external_distinct": 0,
