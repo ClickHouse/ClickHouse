@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionCodecAdaptive.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
@@ -294,46 +295,70 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
 }
 
 /// The number of compressors a compact part writer keeps alive. `MergeTreeDataPartWriterCompact` shares one
-/// `CompressedWriteBuffer` between all substreams with the same codec (`streams_by_codec`, keyed by the codec
-/// hash), and creates every such compressor at the default `DBMS_DEFAULT_BUFFER_SIZE`, not at
-/// `max_compress_block_size`. The substreams of a column with the default codec share the part's default
-/// codec, except when adaptive codec selection wraps it per substream (`CompressionCodecAdaptive`, whose hash
-/// follows the candidate pool of the substream type), so those are keyed by the substream type. A column with
-/// an explicit codec is counted once per substream: its data and structural substreams get different codecs,
-/// and a codec that needs the vector dimension up front is never shared, so per substream is the bound that
-/// holds for every codec - and it is exact for the common single-stream column. The dynamic substreams of a
-/// JSON / Dynamic column with adaptive codec selection can bring types the default serialization does not
-/// know; their compressors are the residual left to the reactive `background_memory_tracker`.
+/// `CompressedWriteBuffer` between all streams whose resolved codec has the same hash (`streams_by_codec`), and
+/// creates every such compressor at the default `DBMS_DEFAULT_BUFFER_SIZE`, not at `max_compress_block_size`.
+/// This mirrors its keying (`MergeTreeDataPartWriterCompact::addStreams`): the codec of every stream is resolved
+/// the same way `MergeTreeDataPartWriterOnDisk::getSubstreamCodec` does - the column's codec (or the part's default
+/// one) for a data substream, its generic codecs only for a structural substream, wrapped in
+/// `CompressionCodecAdaptive` for a default-codec column under adaptive codec selection - and keyed by its hash,
+/// salted with the stream name for a codec that needs the vector dimension up front, so such a codec is never
+/// shared. Streams with the same file name (the shared offsets of `Nested`) are counted once. The dynamic
+/// substreams of a JSON / Dynamic column can bring types the default serialization does not know; their
+/// compressors are the residual left to the reactive `background_memory_tracker`.
 size_t countCompactWriterCompressors(
-    const NamesAndTypesList & columns, const ColumnsDescription & columns_description, bool adaptive_codec)
+    const NamesAndTypesList & columns,
+    const StorageInMemoryMetadata & metadata,
+    const MergeTreeData::PartCompressionCodec & part_codec,
+    const MergeTreeSettings & settings)
 {
-    std::unordered_set<String> codec_keys;
+    /// Like `MergeTreeWriterSettings::apply_adaptive_codec`: an explicit `RECOMPRESS` codec is never made adaptive.
+    const bool adaptive_codec = settings[MergeTreeSetting::enable_adaptive_codec_selection] && !part_codec.is_explicit_recompression;
+    const CompressionCodecPtr & default_codec = part_codec.codec;
+    const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
+    const ASTPtr default_codec_desc = default_codec->getFullCodecDescription();
+    const auto & columns_description = metadata.getColumns();
+
+    std::unordered_set<String> stream_names;
+    std::unordered_set<UInt64> codec_ids;
     for (const auto & column : columns)
     {
-        const auto column_desc = columns_description.tryGetColumnDescription(
-            GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
-        const bool explicit_codec = column_desc && column_desc->codec && !CompressionCodecFactory::isDefaultCodec(column_desc->codec);
-        size_t substream_index = 0;
+        const String name_in_storage = column.getNameInStorage();
+        ASTPtr column_codec_desc;
+        if (const auto * column_desc = columns_description.tryGet(name_in_storage))
+            column_codec_desc = column_desc->codec;
+        else if (const auto * virtual_desc = metadata.virtuals.tryGetDescription(
+                     name_in_storage, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+            column_codec_desc = virtual_desc->codec;
+        const bool column_uses_default_codec = CompressionCodecFactory::isDefaultCodec(column_codec_desc);
+        const ASTPtr & effective_codec_desc = column_codec_desc ? column_codec_desc : default_codec_desc;
+
         column.type->getDefaultSerialization()->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
             if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                 return;
-            if (explicit_codec)
+            String stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+            if (!stream_names.insert(stream_name).second)
+                return;
+
+            const auto & substream_type = substream_path.back().data.type;
+            const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
+            CompressionCodecPtr codec = CompressionCodecFactory::instance().get(
+                effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
+            if (adaptive_codec && column_uses_default_codec && !codec->isEncryption())
+                codec = std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+
+            UInt64 codec_id = codec->getHash();
+            if (codec->needsVectorDimensionUpfront())
             {
-                codec_keys.insert(fmt::format("explicit {} {}", column.name, substream_index++));
+                SipHash codec_hash;
+                codec_hash.update(codec_id);
+                codec_hash.update(stream_name.data(), stream_name.size());
+                codec_id = codec_hash.get64();
             }
-            else if (adaptive_codec)
-            {
-                const auto & substream_type = substream_path.back().data.type;
-                codec_keys.insert("adaptive " + (substream_type ? substream_type->getName() : String{}));
-            }
-            else
-            {
-                codec_keys.insert("default");
-            }
+            codec_ids.insert(codec_id);
         }, column.type);
     }
-    return std::max<size_t>(codec_keys.size(), 1);
+    return std::max<size_t>(codec_ids.size(), 1);
 }
 
 /// A count of writer streams together with the share of them the writer opens WITHOUT an adaptive write
@@ -1909,7 +1934,23 @@ UInt64 estimateNeededMemoryForMerge(
             compact_block_size = context->getSettingsRef()[Setting::max_compress_block_size];
         return std::min<UInt64>(compact_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
     };
-    const bool adaptive_codec = settings[MergeTreeSetting::enable_adaptive_codec_selection];
+    /// The default codec of the result part, resolved like MergeTask resolves it (MergeTreeData::getCompressionCodecForPart):
+    /// the compact writer keys its compressors by the resolved codecs. The TTL infos of the result part are not known
+    /// before the merge; the union of the source parts' ones is what the merge starts from.
+    const MergeTreeData::PartCompressionCodec part_codec = [&]
+    {
+        if (future_part.parts.empty())
+            return MergeTreeData::PartCompressionCodec{.codec = CompressionCodecFactory::instance().getDefaultCodec()};
+        IMergeTreeDataPart::TTLInfos merged_ttl_infos;
+        UInt64 total_size_compressed = 0;
+        for (const auto & part : future_part.parts)
+        {
+            merged_ttl_infos.update(part->ttl_infos);
+            total_size_compressed += part->getBytesOnDisk();
+        }
+        return future_part.parts.front()->storage.getCompressionCodecForPart(
+            metadata_snapshot, total_size_compressed, merged_ttl_infos, time_of_merge);
+    }();
     const auto compact_eager_buffers = [&](UInt64 compact_block_size, size_t compressors)
     {
         const UInt64 file_buffer_size = remote_write_buffer_size != 0
@@ -1929,7 +1970,7 @@ UInt64 estimateNeededMemoryForMerge(
     };
     const UInt64 output_compact_block_size = resolve_compact_block_size(settings);
     const size_t output_compact_compressors = output_is_compact
-        ? countCompactWriterCompressors(output_columns, columns_description, adaptive_codec)
+        ? countCompactWriterCompressors(output_columns, *metadata_snapshot, part_codec, settings)
         : 0;
 
     const UInt64 output_worst_case = output_is_compact
@@ -2566,7 +2607,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// with the projection's own table-level block size and the codecs of the projection columns.
                 const UInt64 projection_compact_block_size = resolve_compact_block_size(projection_settings);
                 const size_t projection_compact_compressors = countCompactWriterCompressors(
-                    projection_column_list, projection.metadata->getColumns(), projection_settings[MergeTreeSetting::enable_adaptive_codec_selection]);
+                    projection_column_list, *projection.metadata, part_codec, projection_settings);
                 const auto projection_format_worst_case = [&](bool is_compact)
                 {
                     return is_compact
