@@ -15,13 +15,16 @@
 #
 # A small `remote_read_min_bytes_for_seek` makes the reader split the file into many small read
 # tasks, so that many file segments (1 MiB in `cache_for_readbigat`) are shared by two tasks.
-# The file has a unique name, so its cache key (path + etag) is fresh and the cache starts empty.
+# The file name is unique per run, so its cache key (path + etag) is fresh and the cache starts empty
+# even when the test is rerun in the same database.
+# Parallel replicas are disabled, so that the reads (and their profile events) happen in this query.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-FILE="${CLICKHOUSE_DATABASE}_03988_cached_read_big_at.parquet"
+RUN_ID="${CLICKHOUSE_DATABASE}_03988_$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")"
+FILE="${RUN_ID}.parquet"
 ROWS=50000
 
 $CLICKHOUSE_CLIENT -q "
@@ -50,13 +53,14 @@ function check()
 {
     local name=$1
     local result
-    result=$($CLICKHOUSE_CLIENT --query_id "${CLICKHOUSE_DATABASE}_03988_${name}" -q "
+    result=$($CLICKHOUSE_CLIENT --query_id "${RUN_ID}_${name}" -q "
         SELECT sum(cityHash64(a)), sum(cityHash64(b)), sum(cityHash64(c))
         FROM s3(s3_conn, filename = '$FILE', format = Parquet, structure = 'a String, b String, c String')
         SETTINGS
             filesystem_cache_name = 'cache_for_readbigat',
             enable_filesystem_cache = 1,
             max_download_threads = 1,
+            enable_parallel_replicas = 0,
             remote_read_min_bytes_for_seek = 65536" 2>&1)
     if [ "$result" == "$EXPECTED" ]; then
         echo "$name OK"
@@ -75,11 +79,11 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 # Make sure that the reads actually went through the filesystem cache.
 $CLICKHOUSE_CLIENT -q "
     SELECT
-        replaceOne(query_id, '${CLICKHOUSE_DATABASE}_03988_', '') AS name,
+        replaceOne(query_id, '${RUN_ID}_', '') AS name,
         ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0,
         ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish'
-        AND query_id IN ('${CLICKHOUSE_DATABASE}_03988_download', '${CLICKHOUSE_DATABASE}_03988_cached')
+        AND query_id IN ('${RUN_ID}_download', '${RUN_ID}_cached')
     ORDER BY name DESC
 "
