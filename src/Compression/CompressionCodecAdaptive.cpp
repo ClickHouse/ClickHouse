@@ -47,14 +47,11 @@ constexpr std::array T64_TYPES = {
 constexpr std::array ALP_TYPES = {TypeIndex::Float32, TypeIndex::Float64};
 
 /// Candidate codecs for the adaptive pool. Each one is also tried followed by the deployment default if it's a general-purpose compressor.
-constexpr std::array<CandidateGroup, 3> CANDIDATES = {{
+constexpr auto CANDIDATES = std::to_array<CandidateGroup>({
     /// T64 defaults to the byte flavour (over bit). Good: same size + faster [de]compression.
     {"T64", T64_TYPES},
-    /// Do not use AUTO as it picks STD or RD per block from a sample. With sampled adaptive compression, that is sample of a sample.
-    /// STD before RD because STD decompressed faster (we want it in case of tie).
-    {"ALP(STD)", ALP_TYPES},
-    {"ALP(RD)", ALP_TYPES},
-}};
+    {"ALP(AUTO)", ALP_TYPES},
+});
 
 /// Build the codec described by `expr` for `type` so type-aware codecs get the type they need.
 /// E.g. T64 derives its type_idx from it, to compress and to calculate its size.

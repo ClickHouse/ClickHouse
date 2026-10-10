@@ -1,0 +1,207 @@
+---
+description: '클라이언트 연결과 무관하게 쿼리를 실행하고 그 실행 상태를 모니터링합니다.'
+sidebarTitle: '백그라운드 쿼리'
+slug: /operations/background-queries
+title: '백그라운드 쿼리'
+doc_type: 'guide'
+---
+
+## 개요 {#overview}
+
+백그라운드 쿼리를 사용하면 클라이언트가 `run_query_in_background=1`을 설정하여 클라이언트 세션과 독립적으로 실행되는 쿼리를 제출할 수 있습니다. 쿼리가 제출되면 ClickHouse 서버는 클라이언트에 즉시 응답하고, 쿼리는 서버 측에서 완료(성공 또는 실패)될 때까지 계속 실행됩니다.
+
+쿼리 실행이 클라이언트 네트워크 연결과 분리되므로, 백그라운드 작업은 클라이언트 측 연결 끊김이나 일시적인 네트워크 장애의 영향을 전혀 받지 않습니다.
+
+백그라운드 쿼리는 주로 클라이언트 연결이 끊어져도 중단되어서는 안 되는 `INSERT ... SELECT`,
+`CREATE TABLE ... AS SELECT`, `CREATE MATERIALIZED VIEW ... POPULATE`, `OPTIMIZE TABLE ... FINAL`과 같은
+장기 실행 작업을 위한 기능입니다.
+
+모든 쿼리를 연결에서 분리할 수 있는 것은 아닙니다. 대신 거부되는 요청은 [지원되지 않는 쿼리 형식](#unsupported-query-forms)을
+참조하십시오.
+
+<Warning>
+  백그라운드 쿼리의 결과는 폐기됩니다. 나중에 결과를 조회하거나 쿼리에 다시 연결할 수 없습니다.
+  쿼리의 `query_id`를 사용하여 실행 중에는 `system.processes`에서, 완료된 후에는 `system.query_log`에서 모니터링하십시오.
+</Warning>
+
+백그라운드 쿼리는 서버를 재시작하면 유지되지 않습니다. 서버 종료 시 동작은
+`shutdown_wait_unfinished_queries`와 `shutdown_wait_unfinished`로 제어됩니다.
+
+## 지원되지 않는 쿼리 형태 {#unsupported-query-forms}
+
+백그라운드 쿼리는 이를 제출한 연결(connection)이 종료된 뒤에도 계속 실행되므로, 서버는 쿼리를 수락하는 시점에 이미 해당 쿼리를 실행하는 데 필요한 모든 것을 갖추고 있어야 합니다. 이 조건을 충족하지 못하는 요청은 제출한 연결에서 동기적으로 거부되며, 쿼리는 시작되지 않습니다.
+
+### 연결을 통해 스트리밍되는 데이터 {#data-that-streams-over-the-connection}
+
+쿼리를 디스패치한 이후에도 서버가 쿼리를 제출한 연결에서 데이터를 계속 읽어야 하는 경우, 해당 `INSERT`는 거부됩니다.
+
+이는 `INSERT ... FORMAT ...`과 `input`을 통해 데이터를 읽는 쿼리 모두에 영향을 줄 수 있습니다. 이러한 요청은 `A query whose data streams over the connection cannot be run in the background` 오류와 함께 거부됩니다:
+
+```sql
+-- Rejected over the native protocol: the client sends the data separately
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+`clickhouse-client`는 `INSERT ... FORMAT ...`의 데이터를 별도의 패킷으로 전송하므로, 이 형태는 네이티브 프로토콜에서 백그라운드로 실행될 수 없습니다.
+
+HTTP에서는 전체 쿼리와 해당 데이터가 초기 파싱 버퍼에 모두 들어가면 두 형태 모두 허용됩니다. 이 버퍼의 크기는 `max_query_size`로 제한됩니다.
+
+여기에는 `input`을 통해 인라인 페이로드를 읽는 HTTP 쿼리도 포함됩니다. 본문이 더 크면 버퍼에 담긴 쿼리 텍스트를 넘어 계속 스트리밍되므로 거부됩니다.
+
+이러한 크기 경계에 의존하지 마십시오. 백그라운드에서 로드해야 하는 데이터에는 `INSERT ... SELECT`나 `url`, `s3` 같은 테이블 함수를 사용하십시오.
+
+### 거부되는 기타 요청 {#other-rejected-requests}
+
+| 요청                                                                                       | 오류                                                                                           |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `SET run_query_in_background = 1`                                                        | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| 명시적 트랜잭션 내부의 쿼리                                                                          | `Background queries inside transactions are not supported`                                   |
+| `implicit_transaction = 1`이 지정된 쿼리                                                       | `Background queries with 'implicit_transaction' are not supported`                           |
+| 예를 들어 `clickhouse-client --query_kind secondary_query`로 요청한 secondary 쿼리                 | `run_query_in_background cannot be used for a secondary query`                               |
+| 예를 들어 `clickhouse-client --stage with_mergeable_state`로 요청한 `Complete` 이외의 쿼리 처리 stage   | `run_query_in_background cannot be used with the WithMergeableState query processing stage`  |
+| 스토리지 정의를 포함하는 `CREATE` 또는 `ATTACH`의 `SETTINGS` 절. 클라이언트가 이 절을 해석하지 않은 상태로 서버에 전송하기 때문입니다 | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query`  |
+
+이 설정은 분산 쿼리의 secondary 쿼리로는 전파되지 않습니다. 즉, 백그라운드 분산 `INSERT`는 백그라운드 원본 쿼리 내에서
+세그먼트별 쿼리를 포그라운드로 실행합니다.
+
+## 백그라운드 쿼리 제출 {#submit-a-background-query}
+
+### 네이티브 TCP 프로토콜 {#native-tcp-protocol}
+
+`clickhouse-client`에서는 `run_query_in_background`를 명령줄 설정으로 전달하십시오:
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+인라인 `SETTINGS` 절을 사용할 수도 있습니다:
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+네이티브 프로토콜은 쿼리 설정을 SQL 텍스트와 분리하여 전달합니다.
+`clickhouse-client`는 대부분의 인라인 쿼리 설정을 파싱하여 이 설정 섹션에 담아 전송합니다.
+
+네이티브 프로토콜 드라이버는 SQL 텍스트를 그대로 둔 채, 쿼리별 설정 맵으로 `run_query_in_background`를 전달할 수도 있습니다.
+
+네이티브 프로토콜은 서버가 생성한 `query_id`를 반환하지 않습니다. 따라서 네이티브 클라이언트는 고유한 ID를 생성하여 쿼리와 함께 전송해야 합니다.
+
+`clickhouse-client --echo-query-id`는 이 작업을 수행하며, 쿼리를 제출하기 전에 해당 ID를 출력합니다:
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### HTTP protocol {#http-protocol}
+
+HTTP request에서는 `run_query_in_background`를 URL 매개변수로 전달합니다:
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+응답의 `X-ClickHouse-Query-Id` 헤더에 생성된 쿼리 ID가 포함됩니다:
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+해당 헤더는 응답을 읽는 클라이언트에만 전달됩니다. 응답 수신 여부와 관계없이 쿼리에 대한 handle이 필요하다면, 직접 지정한 `query_id`를 URL 매개변수로 전송하십시오.
+
+이렇게 하면 클라이언트가 요청을 보내기 전에 이미 ID를 알고 있으므로, 응답을 전혀 받지 못하더라도 요청을 수락한 node에서 해당 쿼리를 모니터링하거나 `KILL`할 수 있습니다:
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+네이티브 프로토콜과 달리 HTTP에서는 인라인 SQL `SETTINGS` 절로 백그라운드 실행을 활성화할 수 없습니다:
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+이 요청은 `BAD_ARGUMENTS` 예외를 반환합니다. HTTP handler는 request body를 파싱하기 전에 분리된 쿼리 Context를 생성할지 여부를 결정해야 합니다.
+
+해당 설정은 URL로 전달하거나 USER 또는 profile 수준에서 구성하십시오.
+
+## 실행 모니터링 {#monitor-execution}
+
+`query_id`를 사용하여 쿼리가 현재 실행 중인지 확인합니다:
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+쿼리가 완료되면 `system.query_log`에서 최종 status를 확인하십시오:
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+백그라운드 실행이 나중에 실패하더라도 제출 요청 자체는 성공할 수 있습니다. 이 경우 예외는 원래의 연결(connection)로 반환되지 않고 `system.query_log`에 기록됩니다.
+
+<Note title="클러스터 및 로드 밸런싱 배포 환경">
+  `system.processes`, `system.query_log`, `KILL QUERY`는 노드 로컬로 동작합니다. 즉, 요청에 응답한 서버의 쿼리만 확인할 수 있습니다.
+
+  백그라운드 쿼리는 해당 쿼리를 수락한 서버에 속하며, 이 서버가 로드 밸런서를 통해 다음 요청이 도달하는 서버와 반드시 같지는 않습니다. 따라서 클러스터 전체를 조회하십시오:
+
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+
+  `system.query_log`에도 동일하게 적용되며, 취소 시에는 클러스터 전체를 대상으로 하는 형태를 사용해야 합니다:
+
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
+
+## 쿼리 로그 플러시 지연 {#query-log-flush-delay}
+
+항목은 `system.query_log`에 표시되기 전에 버퍼에 저장됩니다.
+자가 관리형 ClickHouse의 예시 서버 구성에서는 `query_log.flush_interval_milliseconds`를 `7500`으로 설정합니다.
+
+ClickHouse Cloud에서는 항목이 표시되기까지 최대 30초가 걸릴 수 있습니다. 짧게 실행되는 백그라운드 쿼리를 모니터링할 때는 이 지연을 고려하십시오.
+
+자가 관리형 서버에서는 충분한 권한을 가진 사용자가 쿼리 로그를 강제로 플러시할 수 있습니다. 다른 시스템 로그가 영향을 받지 않도록 로그 이름을 명시적으로 지정하십시오:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+```
+
+플러시는 해당 statement를 수신한 서버에서 수행됩니다.
+
+백그라운드 쿼리는 해당 쿼리를 수락한 서버에서 추적되며, 이 서버가 반드시 현재 세션이 연결된 서버인 것은 아닙니다. 따라서 클러스터 환경에서는 쿼리를 조회하기 전에 모든 서버에서 플러시를 수행하십시오:
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
+```
+
+클러스터 전체에 플러시를 수행하더라도 각 서버가 자신의 버퍼에 있는 항목을 기록할 뿐입니다. 다른 서버의 `system.query_log`를 로컬에서 조회할 수 있게 되는 것은 아니므로, [실행 모니터링](#monitor-execution)에서 설명한 대로 여전히 `clusterAllReplicas`를 통해 로그를 조회해야 합니다.
