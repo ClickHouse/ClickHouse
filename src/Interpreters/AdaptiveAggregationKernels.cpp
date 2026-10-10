@@ -1033,10 +1033,13 @@ void NO_INLINE Aggregator::appendDelayedRecords(
         if constexpr (!adaptive_key_stages_bytes<RecordKey>)
             fixed_stride = variable_sources.empty();
 
-        /// A value whose serialized size cannot be computed in advance is serialized into the scratch arena first and
-        /// copied from there.
+        /// A value whose serialized size cannot be computed in advance is serialized into a scratch arena first and
+        /// copied from there. The values of one row form one contiguous range, which is rolled back once the record is
+        /// written, so the scratch copies do not accumulate until the spill check. The arena is separate from
+        /// `scratch_pool`, where the key holders of `write_key` allocate and roll back in between.
         const IColumn::SerializationSettings serialization_settings;
-        std::vector<std::optional<std::string_view>> serialized_in_scratch(variable_sources.size());
+        std::vector<std::optional<size_t>> serialized_in_scratch(variable_sources.size());
+        std::optional<Arena> argument_scratch;
 
         std::array<char *, adaptive_argument_staging_batch_rows> argument_rows{};
         for (size_t batch_begin = 0; batch_begin < total; batch_begin += argument_rows.size())
@@ -1067,6 +1070,8 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                     const size_t row = source_rows[i];
 
                     size_t variable_bytes = 0;
+                    const char * scratch_begin = nullptr;
+                    size_t scratch_bytes = 0;
                     for (size_t j = 0; j < variable_sources.size(); ++j)
                     {
                         if (const auto size = variable_sources[j]->getSerializedValueSize(row, &serialization_settings))
@@ -1076,9 +1081,15 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                         }
                         else
                         {
-                            const char * begin = nullptr;
-                            serialized_in_scratch[j] = variable_sources[j]->serializeValueIntoArena(row, scratch_pool, begin, &serialization_settings);
-                            variable_bytes += serialized_in_scratch[j]->size();
+                            /// Continuing the range may move it, so only the sizes are kept, and the values are read
+                            /// from `scratch_begin` afterwards.
+                            if (!argument_scratch)
+                                argument_scratch.emplace();
+                            const size_t size_of_value
+                                = variable_sources[j]->serializeValueIntoArena(row, *argument_scratch, scratch_begin, &serialization_settings).size();
+                            serialized_in_scratch[j] = size_of_value;
+                            variable_bytes += size_of_value;
+                            scratch_bytes += size_of_value;
                         }
                     }
 
@@ -1096,17 +1107,21 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                     write_key(i, key_size, key);
 
                     char * variable = key + key_size;
+                    const char * scratch = scratch_begin;
                     for (size_t j = 0; j < variable_sources.size(); ++j)
                     {
-                        if (const auto & serialized = serialized_in_scratch[j])
+                        if (const auto & serialized_size = serialized_in_scratch[j])
                         {
-                            memcpy(variable, serialized->data(), serialized->size());
-                            variable += serialized->size();
+                            memcpy(variable, scratch, *serialized_size);
+                            variable += *serialized_size;
+                            scratch += *serialized_size;
                         }
                         else
                             variable = variable_sources[j]->serializeValueIntoMemory(row, variable, &serialization_settings);
                     }
                     zeroStagedRecordPadding(variable);
+                    if (scratch_bytes)
+                        argument_scratch->rollback(scratch_bytes);
 
                     key_bytes += key_size;
                     variable_argument_bytes += variable_bytes;
