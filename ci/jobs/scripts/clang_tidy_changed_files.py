@@ -53,6 +53,17 @@ ANALYZED_ROOTS = ("base", "src", "programs", "utils")
 SOURCE_SUFFIXES = (".cpp", ".cc", ".cxx")
 HEADER_SUFFIXES = (".h", ".hpp")
 
+# C++ fragments that analyzed translation units `#include` but that are neither
+# compiled on their own nor matched by `HeaderFilterRegex`: generated keyword
+# lists (`SQLKeywordsForHighlighting.inc`), template implementations shared by
+# several translation units (`RangeHashedDictionaryGetItemsImpl.txx`). The full
+# check never reports a finding located in one, but a change to one can still
+# break the compilation of its includers, which it does report as
+# `clang-diagnostic-error`. So a changed fragment is covered like a changed
+# header, through the translation units including it, and only their compile
+# errors and their own findings are reported.
+FRAGMENT_SUFFIXES = (".inc", ".inl", ".ipp", ".tcc", ".tpp", ".txx")
+
 # A changed header can be included by thousands of translation units, and
 # analyzing all of them is exactly the full check this job exists to avoid. The
 # sibling translation unit (`Foo.h` -> `Foo.cpp`) is the one that covers a header
@@ -204,6 +215,7 @@ CANARY_TRANSLATION_UNITS = (
 SELF_PATH = "ci/jobs/scripts/clang_tidy_changed_files.py"
 SELF_TEST_CHANGED_HEADER = "base/base/wide_integer_impl.h"
 SELF_TEST_GENERATOR_INPUT = "src/Common/config.h.in"
+SELF_TEST_CHANGED_FRAGMENT = "src/Dictionaries/RangeHashedDictionaryGetItemsImpl.txx"
 
 # Upper bound on the translation units one run analyzes, so that a sweeping
 # change cannot turn the merge-queue gate back into a multi-hour build. Beyond
@@ -325,6 +337,17 @@ def is_analyzed_path(path):
     return root in ANALYZED_ROOTS and path.endswith(SOURCE_SUFFIXES + HEADER_SUFFIXES)
 
 
+def is_fragment_path(path):
+    """True for a C++ fragment under a root clang-tidy analyzes, see `FRAGMENT_SUFFIXES`."""
+    root = path.split("/", 1)[0]
+    return root in ANALYZED_ROOTS and path.endswith(FRAGMENT_SUFFIXES)
+
+
+def is_selectable_path(path):
+    """True for a changed file that selects translation units to analyze."""
+    return is_analyzed_path(path) or is_fragment_path(path)
+
+
 _TIDY_OPT_OUT_RE = re.compile(r'\bCXX_CLANG_TIDY\s+""')
 
 
@@ -399,19 +422,23 @@ def normalize_changed_path(path):
 def analyzable_changed_files(changed_files, repo_dir):
     """The change's C/C++ files clang-tidy can analyze, repo-relative and sorted.
 
-    `changed_files` carries removed files and the pre-rename path of a rename.
-    A translation unit that no longer exists cannot be analyzed and is dropped.
-    A header that no longer exists is kept: the translation units that still
-    include it by its old path now fail to compile, and finding them is the
-    point of selecting it. A file of a target that opts out of clang-tidy is
-    dropped, see `tidy_disabled_dirs`.
+    That includes the C++ fragments (see `FRAGMENT_SUFFIXES`), which are covered
+    through their includers. `changed_files` carries removed files and the
+    pre-rename path of a rename. A translation unit that no longer exists cannot
+    be analyzed and is dropped. A header or fragment that no longer exists is
+    kept: the translation units that still include it by its old path now fail
+    to compile, and finding them is the point of selecting it. A file of a
+    target that opts out of clang-tidy is dropped, see `tidy_disabled_dirs`.
     """
     return sorted(
         path
         for path in {normalize_changed_path(f) for f in changed_files}
-        if is_analyzed_path(path)
+        if is_selectable_path(path)
         and not is_tidy_disabled_path(path, repo_dir)
-        and (path.endswith(HEADER_SUFFIXES) or os.path.isfile(f"{repo_dir}/{path}"))
+        and (
+            not path.endswith(SOURCE_SUFFIXES)
+            or os.path.isfile(f"{repo_dir}/{path}")
+        )
     )
 
 
@@ -659,15 +686,24 @@ def is_coverable(path, repo_dir, compile_commands):
     return bool(find_includers(path, repo_dir, 1, is_built))
 
 
-def select_translation_units(changed, repo_dir, compile_commands, config_changed=()):
+def select_translation_units(
+    changed, repo_dir, compile_commands, config_changed=(), pinned=()
+):
     """Pick the translation units to analyze for `changed`.
 
     Returns `(translation_units, notes)`: the selected paths as the compilation
     database spells them, and human-readable notes about what the selection
     could and could not cover. When `config_changed` is not empty, the
     `CANARY_TRANSLATION_UNITS` are selected as well.
+
+    The canaries and the translation units selected for the paths of `changed`
+    that are also in `pinned` are kept ahead of `MAX_TRANSLATION_UNITS`: they
+    validate a change to the configuration or to this module, and a large
+    accompanying source change must not crowd them out. Only the remaining
+    budget is spent on the other affected translation units.
     """
     selected = {}
+    pinned_units = set()
     notes = []
     unbuilt = []
     uncovered_headers = []
@@ -675,31 +711,36 @@ def select_translation_units(changed, repo_dir, compile_commands, config_changed
     def lookup(path):
         return lookup_translation_unit(path, repo_dir, compile_commands)
 
-    def add(path, reason):
+    def add(path, reason, pin=False):
         entry = lookup(path)
         if entry is None:
             return False
         selected.setdefault(entry["file"], reason)
+        if pin:
+            pinned_units.add(entry["file"])
         return True
 
     if config_changed:
         for canary in CANARY_TRANSLATION_UNITS:
             # A fixed list: a canary missing from the build is a bug in this
             # module, and skipping it would leave the change unvalidated.
-            if not add(canary, f"canary for changed {', '.join(config_changed)}"):
+            if not add(
+                canary, f"canary for changed {', '.join(config_changed)}", pin=True
+            ):
                 raise RuntimeError(
                     f"Canary translation unit {canary} is not in the compilation database"
                 )
 
     for path in changed:
+        pin = path in pinned
         if path.endswith(SOURCE_SUFFIXES):
-            if not add(path, f"changed: {path}"):
+            if not add(path, f"changed: {path}", pin):
                 unbuilt.append(path)
             continue
 
         stem = path.rsplit(".", 1)[0]
         if any(
-            add(f"{stem}{suffix}", f"sibling of changed {path}")
+            add(f"{stem}{suffix}", f"sibling of changed {path}", pin)
             for suffix in SOURCE_SUFFIXES
         ):
             continue
@@ -710,7 +751,9 @@ def select_translation_units(changed, repo_dir, compile_commands, config_changed
             MAX_INCLUDERS_PER_HEADER,
             lambda includer: lookup(includer) is not None,
         )
-        covered = [inc for inc in includers if add(inc, f"includes changed {path}")]
+        covered = [
+            inc for inc in includers if add(inc, f"includes changed {path}", pin)
+        ]
         if not covered:
             uncovered_headers.append(path)
 
@@ -726,14 +769,17 @@ def select_translation_units(changed, repo_dir, compile_commands, config_changed
             + ", ".join(uncovered_headers)
         )
 
-    translation_units = sorted(selected)
-    if len(translation_units) > MAX_TRANSLATION_UNITS:
+    mandatory = sorted(pinned_units)
+    others = sorted(set(selected) - pinned_units)
+    budget = max(MAX_TRANSLATION_UNITS - len(mandatory), 0)
+    if len(others) > budget:
         notes.append(
-            f"{len(translation_units)} translation units are affected, analyzing "
-            f"the first {MAX_TRANSLATION_UNITS}; the full clang-tidy check covers the rest"
+            f"{len(mandatory) + len(others)} translation units are affected, "
+            f"analyzing {len(mandatory) + budget} of them; the full clang-tidy "
+            f"check covers the rest"
         )
-        translation_units = translation_units[:MAX_TRANSLATION_UNITS]
-    return translation_units, notes
+        others = others[:budget]
+    return sorted(mandatory + others), notes
 
 
 def escape_for_llvm_regex(value):
@@ -1031,6 +1077,38 @@ def self_test(repo_dir, build_dir, compile_commands):
         f"`select_translation_units` did not cover {header}: {units}, {notes}",
     )
 
+    # A changed C++ fragment is covered through the translation units including it.
+    fragment = SELF_TEST_CHANGED_FRAGMENT
+    expect(
+        analyzable_changed_files([fragment], repo_dir) == [fragment],
+        f"{fragment} is not selected as a changed file",
+    )
+    units, notes = select_translation_units([fragment], repo_dir, compile_commands)
+    expect(
+        units and not notes,
+        f"`select_translation_units` did not cover {fragment}: {units}, {notes}",
+    )
+
+    # The canaries survive the truncation of a selection exceeding
+    # `MAX_TRANSLATION_UNITS` with the ordinary units alone.
+    canaries = {
+        lookup_translation_unit(canary, repo_dir, compile_commands)["file"]
+        for canary in CANARY_TRANSLATION_UNITS
+    }
+    many = sorted(
+        os.path.relpath(unit, repo_dir)
+        for unit in compile_commands
+        if unit not in canaries and is_analyzed_path(os.path.relpath(unit, repo_dir))
+    )[: MAX_TRANSLATION_UNITS + 1]
+    units, _ = select_translation_units(
+        many, repo_dir, compile_commands, config_changed=[".clang-tidy"]
+    )
+    expect(
+        len(units) == MAX_TRANSLATION_UNITS and canaries <= set(units),
+        f"Truncating {len(many)} changed translation units dropped a canary "
+        f"or kept {len(units)} units",
+    )
+
     generator_input = SELF_TEST_GENERATOR_INPUT
     expect(
         changed_generator_inputs([generator_input]) == [generator_input],
@@ -1171,10 +1249,21 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
 
     compile_commands = load_compile_commands(build_dir, repo_dir)
     self_results = []
+    # The files analyzed to validate a change to this module, kept ahead of the
+    # truncation in `select_translation_units`.
+    pinned = set()
     if SELF_PATH in config_changed:
         self_results.append(self_test(repo_dir, build_dir, compile_commands))
         changed = sorted(set(changed) | {SELF_TEST_CHANGED_HEADER})
         generator_inputs = sorted(set(generator_inputs) | {SELF_TEST_GENERATOR_INPUT})
+        pinned = {SELF_TEST_CHANGED_HEADER} | set(
+            generated_header_consumers(
+                [SELF_TEST_GENERATOR_INPUT],
+                repo_dir,
+                MAX_INCLUDERS_PER_HEADER,
+                lambda path: is_coverable(path, repo_dir, compile_commands),
+            )
+        )
         print(
             f"This module changed, also analyzing as changed: "
             f"{SELF_TEST_CHANGED_HEADER}, {SELF_TEST_GENERATOR_INPUT}"
@@ -1191,7 +1280,7 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
     # regenerated header introduced.
     changed = sorted(set(changed) | set(consumers))
     translation_units, notes = select_translation_units(
-        changed, repo_dir, compile_commands, config_changed
+        changed, repo_dir, compile_commands, config_changed, pinned
     )
     if generator_inputs and not consumers:
         notes.append(
@@ -1243,7 +1332,13 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
         [path for path in changed if path.endswith(HEADER_SUFFIXES)]
         + sorted(generated.names)
     )
-    changed_real_paths = {os.path.realpath(f"{repo_dir}/{path}") for path in changed}
+    # The full check never reports a finding located in a fragment, so only the
+    # compile errors of the translation units including it are reported.
+    changed_real_paths = {
+        os.path.realpath(f"{repo_dir}/{path}")
+        for path in changed
+        if not is_fragment_path(path)
+    }
     canary_units = (
         {
             lookup_translation_unit(canary, repo_dir, compile_commands)["file"]

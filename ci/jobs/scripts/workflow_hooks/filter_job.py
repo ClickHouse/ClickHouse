@@ -4,7 +4,7 @@ from pathlib import PurePosixPath
 from ci.defs.defs import BuildTypes, JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
 from ci.jobs.scripts.clang_tidy_changed_files import (
-    is_analyzed_path as is_analyzed_by_clang_tidy,
+    is_selectable_path as is_analyzed_by_clang_tidy,
     is_generator_input,
     is_tidy_config_path,
     normalize_changed_path as normalize_tidy_path,
