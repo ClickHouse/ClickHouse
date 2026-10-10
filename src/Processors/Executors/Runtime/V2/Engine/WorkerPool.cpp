@@ -207,6 +207,7 @@ void WorkerPool::run()
         fail(std::current_exception());
     }
 
+    /// TODO: Find out how to normalize stacks in flamegraph.
     runSlot(std::move(slot), nullptr);
     workers_count.fetch_sub(1);
 }
