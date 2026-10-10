@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
+#include <Core/Block.h>
 #include <Core/Field.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -399,9 +400,6 @@ void applyActionsToSortDescription(
     if (description.empty())
         return;
 
-    if (dag.hasArrayJoin())
-        return;
-
     const size_t descr_size = description.size();
 
     const auto & inputs = dag.getInputs();
@@ -440,13 +438,16 @@ void applyActionsToSortDescription(
         if (output == output_to_skip)
             continue;
 
+        /// An output that is not computed from a sort column (a constant, a function of several columns or of
+        /// a column the input is not sorted by) says nothing about the sort columns, so it is skipped. Stopping
+        /// here instead would keep the order only when the sort columns happen to lead the list of outputs.
         auto chain = buildPossiblyMonitinicChain(output);
         if (!chain.input_node)
-            break;
+            continue;
 
         auto it = input_to_sort_column.find(chain.input_node);
         if (it == input_to_sort_column.end())
-            break;
+            continue;
 
         SortColumn & sort_column = sort_columns[it->second];
 
@@ -454,14 +455,16 @@ void applyActionsToSortDescription(
         bool has_functions = !chain.non_const_arg_pos.empty();
         bool is_monotonicity_improved = !has_functions && sort_column.is_monotonic_chain;
         if (sort_column.output && !is_monotonicity_improved && sort_column.is_strict)
-            break;
+            continue;
 
+        /// A non-monotonic function of a sort column (e.g. `toMonth(k)`) is unusable as well, but a later
+        /// output may still carry the column itself.
         if (has_functions && !isMonotonicChain(output, chain))
-            break;
+            continue;
 
         bool is_strictness_improved = chain.is_strict && !sort_column.is_strict;
         if (sort_column.output && !is_strictness_improved)
-            break;
+            continue;
 
         sort_column.output = output;
         sort_column.is_monotonic_chain = has_functions;
@@ -655,9 +658,75 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
     return result;
 }
 
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto & child : node.children)
+        arguments.push_back({child->column, child->result_type, child->result_name});
+    return arguments;
+}
+
+HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+{
+    /// Input positions are pushed in reverse so that the front-most one is taken first, which pairs the
+    /// n-th input of a name with the n-th header column of that name.
+    std::unordered_map<std::string_view, std::vector<size_t>> name_to_inputs;
+    for (size_t position = inputs.size(); position != 0; --position)
+        name_to_inputs[inputs[position - 1]->result_name].push_back(position - 1);
+
+    HeaderColumnsToInputs result;
+    result.read_by.resize(header.columns(), HeaderColumnsToInputs::passes_through);
+
+    size_t read_columns = 0;
+    for (size_t position = 0; position < header.columns(); ++position)
+    {
+        auto it = name_to_inputs.find(header.getByPosition(position).name);
+        if (it == name_to_inputs.end() || it->second.empty())
+            continue;
+
+        result.read_by[position] = it->second.back();
+        it->second.pop_back();
+        ++read_columns;
+    }
+
+    if (read_columns != inputs.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The header [{}] has a column for only {} of the DAG's {} inputs",
+            header.dumpNames(), read_columns, inputs.size());
+
+    return result;
+}
+
+NodeSet findReachableNodes(
+    const ActionsDAG::NodeRawConstPtrs & roots,
+    const std::function<bool(const ActionsDAG::Node *)> & is_barrier)
+{
+    NodeSet visited;
+    std::stack<const ActionsDAG::Node *> stack;
+    for (const auto * root : roots)
+        if (visited.insert(root).second)
+            stack.push(root);
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (is_barrier && is_barrier(current))
+            continue;
+
+        for (const auto * child : current->children)
+            if (visited.insert(child).second)
+                stack.push(child);
+    }
+
+    return visited;
+}
+
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    if (node->function_base->isInjective({}))
+    if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
         return true;
 
     const auto & name = node->function_base->getName();
@@ -774,6 +843,74 @@ bool allOutputsDependsOnlyOnAllowedNodes(
     for (const auto * node : key_nodes)
         res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
     return res;
+}
+
+
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate)
+{
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> res;
+    if (!predicate)
+        return res;
+
+    /// Decompose the AND chain of the predicate: only a top-level conjunct is guaranteed to
+    /// be applied to every row. An `__applyFilter` sitting elsewhere in the DAG — under an
+    /// OR or a NOT, or in an unrelated expression computed alongside the filter — must not
+    /// be used for pruning.
+    std::vector<const ActionsDAG::Node *> conjuncts = {predicate};
+    while (!conjuncts.empty())
+    {
+        const auto * node = conjuncts.back();
+        conjuncts.pop_back();
+
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            continue;
+
+        if (node->function_base->getName() == "and")
+        {
+            conjuncts.insert(conjuncts.end(), node->children.begin(), node->children.end());
+            continue;
+        }
+
+        if (node->function_base->getName() != "__applyFilter" || node->children.size() != 2)
+            continue;
+
+        /// Argument 0: const String label whose VALUE is the runtime filter rendezvous key.
+        const auto * label = node->children[0];
+        if (!label->column || !isColumnConst(*label->column) || !isString(label->result_type))
+            continue;
+        String filter_id(label->column->getDataAt(0));
+
+        /// Argument 1: the probe key column, possibly wrapped in a CAST and/or aliases
+        /// (composing the filter through expression steps turns a renamed key into an alias
+        /// of the physical column - looking through it reports the physical name).
+        const auto * key_arg = node->children[1];
+        while ((key_arg->type == ActionsDAG::ActionType::ALIAS
+                || (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+                    && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")))
+               && !key_arg->children.empty())
+            key_arg = key_arg->children.front();
+
+        /// Only bare key columns are reported. This intentionally excludes the `tuple(key1, key2, ...)`
+        /// argument built for multi-key LEFT ANTI joins: that filter has NOT IN semantics, so a positive
+        /// IN-set / range predicate derived from it would prune exactly the granules the join must keep.
+        /// (Multi-key non-ANTI joins are unaffected: they build one per-column filter per key, and each
+        /// is reported here. Single-key ANTI filters reported here stay fail-open at read time:
+        /// the negating filter exposes neither recorded key values nor a key range.)
+        if (key_arg->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        res.push_back({std::move(filter_id), key_arg->result_name, key_arg->result_type});
+    }
+
+    return res;
+}
+
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name)
+{
+    return findAppliedRuntimeFilters(dag.tryFindInOutputs(filter_column_name));
 }
 
 }

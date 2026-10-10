@@ -8,6 +8,7 @@ DATABASE database_name          [AS database_name_in_backup] |
 TEMPORARY TABLE table_name      [AS table_name_in_backup] |
 VIEW view_name                  [AS view_name_in_backup] |
 [EXCEPT TABLES ...] |
+[EXCEPT DATA FROM {TABLE|TABLES} ...] | -- BACKUP only, rejected on RESTORE
 ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
 --- 
 [ON CLUSTER 'cluster_name']
