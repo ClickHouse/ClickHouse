@@ -1,0 +1,66 @@
+-- B2. a completed conversion on a part written column per column
+B2 recorded type	Float32
+B2 projection kept	0
+B2 authoritative	1073741824	4
+B2 with projections	1073741824	4
+B2 check
+1
+B2 restored	1073741824	4
+-- B3. a completed conversion on a part written as one file
+B3 recorded type	Float32
+B3 authoritative	1073741824	4
+B3 projection kept	1
+B3 with projections	1073741824	4
+B3 check
+1
+-- C2. merging parts cloned from a table where the conversion was still pending
+C2 parts	1
+C2 authoritative	1073741824	8
+C2 with projections	1073741824	8
+C2 check
+1
+-- K. a cancelled conversion, then an unrelated mutation that rewrites the part
+K recorded type	Float32
+K authoritative	1073741824	4
+K with projections	1073741824	4
+K projection present	1
+K forced	1073741824	4
+K check
+1
+-- F2. control: an ordinary mutation with no type change keeps its projections
+F2 projection kept	1
+F2 with projections	1073741825	1
+F2 with projections	1073741827	1
+F2 with projections	1073741829	1
+F2 with projections	1073741831	1
+F2 check
+1
+-- L. control: a mutation that only removes files keeps the projection on disk
+L recorded type	Int32
+L projection kept	1
+L authoritative	1073741824	4
+L with projections	1073741824	4
+L check
+1
+-- U. a merge of a projection whose key the source part does not record
+U parts	1
+U authoritative	6	1767211200
+U with projections	6	1767211200
+U check
+1
+-- X. a merge of an aggregate projection grouped by a column the source part does not record
+X parts	1
+X authoritative	0	1
+X authoritative	1	1
+X authoritative	9	1
+X authoritative	10	1
+X authoritative	11	1
+X authoritative	12	1
+X with projections	0	1
+X with projections	1	1
+X with projections	9	1
+X with projections	10	1
+X with projections	11	1
+X with projections	12	1
+X check
+1
