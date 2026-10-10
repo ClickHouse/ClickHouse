@@ -351,17 +351,14 @@ void writeMessageToFile(
     }
 }
 
-bool writeMetadataFileAndVersionHint(
+bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
-    const IcebergPathFromMetadata & version_hint_path,
     DB::ObjectStoragePtr object_storage,
-    DB::ContextPtr context,
-    bool try_write_version_hint)
+    DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
-    auto storage_version_hint_path = resolver.resolve(version_hint_path);
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
@@ -392,16 +389,33 @@ bool writeMetadataFileAndVersionHint(
         return false;
     }
 
+    return true;
+}
+
+bool tryWriteVersionHintFile(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    bool create,
+    bool assert_version_exactly)
+{
+    auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    auto storage_version_hint_path = resolver.resolve(version_hint_path);
+
     /// Once any writer has created `version-hint.text`, every subsequent writer must keep it in
     /// sync, otherwise readers with `iceberg_use_version_hint = 1` observe stale data when a
     /// writer that does not have the setting enabled advances the table.
-    size_t i = 0;
-    while (i < MAX_TRANSACTION_RETRIES)
+    for (size_t attempt = 0; attempt < MAX_TRANSACTION_RETRIES; ++attempt)
     {
         StoredObject object_info(storage_version_hint_path);
         std::string version_hint_value;
         std::string etag;
         std::string write_if_none_match = "*";
+        Int32 old_version = 0;
+
+        /// first, let's resolve an existing hint and the version it points to
         if (object_storage->exists(object_info))
         {
             auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
@@ -410,50 +424,78 @@ bool writeMetadataFileAndVersionHint(
             etag = object_metadata.etag;
             write_if_none_match.clear();
         }
-        else if (!try_write_version_hint)
-        {
-            /// The file does not exist and this writer was not asked to create it.
-            break;
-        }
+        else if (!create)
+            return true;
 
-        Int32 old_version = 0;
         if (!version_hint_value.empty())
         {
             if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
-            {
                 old_version = parseMetadataVersion(version_hint_value, version_hint_value);
-            }
             else
-            {
                 old_version = getMetadataFileAndVersion(version_hint_value).version;
-            }
         }
-        if (old_version < metadata_file_info.version)
+
+        /// second, let's check exit conditions on the hint's state
+        if (assert_version_exactly)
         {
-            try
+            if (old_version > metadata_file_info.version)
+                return false;
+            else if (old_version == metadata_file_info.version)
             {
-                /// Write just the version number for Spark/spec compatibility.
-                Iceberg::writeMessageToFile(
-                    std::to_string(metadata_file_info.version),
-                    storage_version_hint_path,
-                    object_storage,
-                    context,
-                    write_if_none_match,
-                    /* write-if-match */ etag);
-                break;
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                auto resolved = resolveMetadataFilenameFromVersionHint(
+                    version_hint_value, resolver.getTableRoot(), object_storage, metadata_file_info.compression_method, context);
+                return resolved && std::filesystem::path(*resolved).filename() == std::filesystem::path(storage_metadata_path).filename();
             }
         }
         else
         {
-            break;
+            if (old_version >= metadata_file_info.version)
+                return true;
         }
-        ++i;
-    }
 
+        /// lastly, let's update it
+        try
+        {
+            /// Write just the version number for Spark/spec compatibility.
+            Iceberg::writeMessageToFile(
+                std::to_string(metadata_file_info.version),
+                storage_version_hint_path,
+                object_storage,
+                context,
+                write_if_none_match,
+                /* write-if-match */ etag);
+
+            if (!assert_version_exactly)
+                return true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+    return false;
+}
+
+bool writeMetadataFileAndVersionHint(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    const IcebergPathFromMetadata & version_hint_path,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    bool try_write_version_hint)
+{
+    if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
+        return false;
+
+    (void)tryWriteVersionHintFile(
+        resolver,
+        metadata_file_info,
+        version_hint_path,
+        object_storage,
+        context,
+        /* create */ try_write_version_hint,
+        /* assert_version_exactly */ false);
     return true;
 }
 
@@ -1153,9 +1195,11 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
-    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, 0);
+    /// The spec reserves sort order id 0 for the unsorted order.
+    const Int64 sort_order_id = order_by ? 1 : 0;
+    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
     Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
-    sort_order->set(Iceberg::f_order_id, 0);
+    sort_order->set(Iceberg::f_order_id, sort_order_id);
 
     if (order_by)
     {
@@ -1741,7 +1785,22 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             auto column_name = source_id_to_column_name[source_id];
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
-            auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            std::optional<TransformAndArgument> clickhouse_transform_name;
+            try
+            {
+                clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                    throw;
+            }
+            if (!clickhouse_transform_name.has_value())
+            {
+                /// An unknown or malformed transform is not a reason to reject the table: an Iceberg
+                /// sort order is only an optimization hint, so drop it and read/write the table as unsorted.
+                return KeyDescription{};
+            }
             /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
             /// produce a parseable ORDER BY clause.
             auto quoted_column_name = backQuoteIfNeed(column_name);
@@ -1839,10 +1898,125 @@ void forEachAvroEntry(
         callback(datum);
 }
 
+namespace
+{
+
+/// Iceberg keeps a decimal partition value as an Avro `fixed`: the unscaled value in two's-complement
+/// big-endian form, using the minimum number of bytes. ClickHouse reads such a `fixed` as a `String`,
+/// so restore the decimal here. Accumulate into the unsigned counterpart, pre-filled with the sign
+/// bits, so that the sign extension comes out of the shifts themselves.
+///
+/// The result always uses `Decimal256` as its carrier, whatever the width of the ClickHouse type of the
+/// column is: Iceberg allows widening `decimal(P, S)` to `decimal(P', S)`, and `Field` ordering and
+/// equality dispatch on the variant tag before they look at the number, so a `Decimal64` written before
+/// the widening would never match the `Decimal128` of a manifest written after it. Keeping one carrier
+/// makes the normalized tuple of a partition independent of the schema of the manifest that wrote it.
+/// The scale is unaffected: widening a decimal may not change it.
+template <typename DecimalType>
+Field decodePartitionDecimal(const String & bytes, const IDataType & type)
+{
+    using NativeType = typename DecimalType::NativeType;
+    using UnsignedType = make_unsigned_t<NativeType>;
+
+    if (bytes.empty() || bytes.size() > sizeof(NativeType))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg partition value of a decimal column is {} bytes long, which does not fit into {} bytes of {}",
+            bytes.size(),
+            sizeof(NativeType),
+            type.getName());
+
+    UnsignedType unscaled_value = (bytes[0] & 0x80) ? ~UnsignedType(0) : UnsignedType(0);
+    for (const auto byte : bytes)
+        unscaled_value = (unscaled_value << 8) | static_cast<UInt8>(byte);
+
+    return DecimalField<Decimal256>(Int256(static_cast<NativeType>(unscaled_value)), getDecimalScale(type));
+}
+
+Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
+{
+    if (checkDecimal<Decimal32>(type))
+        return decodePartitionDecimal<Decimal32>(bytes, type);
+    if (checkDecimal<Decimal64>(type))
+        return decodePartitionDecimal<Decimal64>(bytes, type);
+    if (checkDecimal<Decimal128>(type))
+        return decodePartitionDecimal<Decimal128>(bytes, type);
+    if (checkDecimal<Decimal256>(type))
+        return decodePartitionDecimal<Decimal256>(bytes, type);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected decimal type {} of an Iceberg partition column", type.getName());
+}
+
+}
+
+Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
+{
+    const auto & value_type = removeNullable(type);
+
+    /// ClickHouse used to write a timestamp partition value as a simple long in Avro.
+    if (value.getType() == Field::Types::Int64 && WhichDataType(value_type).isDateTime64())
+        return DecimalField<Decimal64>(value.safeGet<Int64>(), getDecimalScale(*value_type));
+
+    if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
+        return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
+
+    /// A decimal that a manifest already carried in a decoded form: bring it to the canonical carrier
+    /// too, so that it matches the value decoded from the raw `fixed` of another manifest.
+    if (Field::isDecimal(value.getType()) && value.getType() != Field::Types::Decimal256
+        && WhichDataType(value_type).isDecimal())
+        return convertFieldToTypeOrThrow(value, DataTypeDecimal<Decimal256>(DecimalUtils::max_precision<Decimal256>, getDecimalScale(*value_type)));
+
+    return value;
+}
+
+Field convertPartitionValueToType(const Field & value, const DataTypePtr & type)
+{
+    Field normalized = normalizePartitionValue(value, type);
+
+    /// Partition values are kept in a canonical decimal carrier, which is not the carrier of the column
+    /// type in general; a consumer that hands the value to code typed by the column has to bring it back.
+    const auto & value_type = removeNullable(type);
+    if (Field::isDecimal(normalized.getType()) && WhichDataType(value_type).isDecimal())
+        return convertFieldToTypeOrThrow(normalized, *value_type);
+
+    return normalized;
+}
+
+DB::Row normalizePartitionKeyValue(
+    const DB::Row & partition_key_value,
+    const PartitionSpecification & partition_specification,
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id)
+{
+    DB::Row result = partition_key_value;
+
+    for (const auto & partition_field : partition_specification)
+    {
+        /// Only these transforms keep the type of the source column, so only for them the ClickHouse
+        /// type of the source column tells how the stored partition value has to be interpreted.
+        /// A `bucket`, `year`, `month`, `day` or `hour` value is an integer of its own, unrelated to
+        /// the type of the source column, and must be left alone.
+        const auto transform_name = Poco::toLower(partition_field.transform_name);
+        if (transform_name != "identity" && !transform_name.starts_with("truncate"))
+            continue;
+
+        if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= result.size())
+            continue;
+
+        const auto name_and_type = schema_processor.tryGetFieldCharacteristics(schema_id, partition_field.source_id);
+        if (!name_and_type.has_value())
+            continue;
+
+        auto & value = result[partition_field.tuple_index];
+        value = normalizePartitionValue(value, name_and_type->type);
+    }
+
+    return result;
+}
+
 PartitionColumnValues getIdentityPartitionColumnValues(
     const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor)
 {
-    const auto & partition_key_value = manifest_file_entry.parsed_entry->partition_key_value;
+    const auto & partition_key_value = manifest_file_entry.normalized_partition_key_value;
     if (partition_key_value.empty())
         return {};
 
@@ -1860,7 +2034,8 @@ PartitionColumnValues getIdentityPartitionColumnValues(
         if (!name_and_type.has_value())
             continue;
 
-        Field value = convertFieldToTypeOrThrow(partition_key_value[partition_field.tuple_index], *name_and_type->type);
+        Field value = convertFieldToTypeOrThrow(
+            normalizePartitionValue(partition_key_value[partition_field.tuple_index], name_and_type->type), *name_and_type->type);
         if (value.isNull())
             continue;
 
