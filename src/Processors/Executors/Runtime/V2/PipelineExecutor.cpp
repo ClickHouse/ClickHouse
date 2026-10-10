@@ -1,4 +1,5 @@
 #include <Processors/Executors/Runtime/V2/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ProcessList.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -9,11 +10,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace Runtime::V2
 {
@@ -78,7 +74,7 @@ void PipelineExecutor::finalize()
         return;
 
     if (!pipeline->allProcessorsFinished())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}", pipeline->dump());
+        Wyrd::abort("Pipeline stuck. Current state:\n{}", pipeline->dump());
 
     if (read_progress_callback)
         pipeline->reportReadProgress(*read_progress_callback);

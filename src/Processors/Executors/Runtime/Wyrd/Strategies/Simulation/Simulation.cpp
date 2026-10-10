@@ -26,7 +26,6 @@ struct TraceRecord
     std::optional<std::source_location> location;
 };
 
-
 namespace
 {
 
