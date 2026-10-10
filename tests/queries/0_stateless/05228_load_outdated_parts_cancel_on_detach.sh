@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-parallel, no-fasttest
+# Tags: no-shared-merge-tree, no-parallel, no-fasttest, no-random-detach
 # no-shared-merge-tree: SharedMergeTree doesn't load inactive parts to memory after restart
 # no-parallel: SYSTEM ENABLE FAILPOINT is process-wide, the pause failpoint would block the
 # loading of outdated parts of the tables of other tests.
+# no-random-detach: test uses DETACH/ATTACH itself and counts the loaded outdated parts.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
