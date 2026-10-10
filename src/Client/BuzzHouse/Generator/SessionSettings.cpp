@@ -581,6 +581,11 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"read_in_order_use_buffering", trueOrFalseSetting},
        {"read_in_order_use_virtual_row", trueOrFalseSetting},
        {"read_in_order_use_virtual_row_per_block", trueOrFalseSetting},
+       {"read_in_order_virtual_row_block_interval",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); },
+            {"1", "2", "4", "16"},
+            false)},
        {"rewrite_count_distinct_if_with_count_distinct_implementation", trueOrFalseSetting},
        {"rewrite_in_to_join", trueOrFalseSetting},
        {"short_circuit_function_evaluation",

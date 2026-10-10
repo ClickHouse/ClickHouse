@@ -22,7 +22,7 @@ SELECT k, s FROM t_vrow_set WHERE (s, s) IN (('8', '8')) ORDER BY k WITH FILL FR
 SELECT k, s FROM t_vrow_set WHERE has(['8'], s) ORDER BY k WITH FILL FROM 0 TO 4 INTERPOLATE (s AS '7');
 SELECT k, s FROM t_vrow_set WHERE s IN ('8') ORDER BY k DESC WITH FILL FROM 4 TO 0 STEP -1 INTERPOLATE (s AS '7');
 SELECT k, s FROM t_vrow_set WHERE s IN ('8') ORDER BY k WITH FILL FROM 0 TO 4 INTERPOLATE (s AS '7')
-SETTINGS read_in_order_use_virtual_row_per_block = 1;
+SETTINGS read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 SELECT DISTINCT k, s FROM t_vrow_set WHERE s IN ('8') ORDER BY k WITH FILL FROM 0 TO 4 INTERPOLATE (s AS '7');
 
 DROP TABLE t_vrow_set;

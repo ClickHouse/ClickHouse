@@ -16,6 +16,7 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Transforms/VirtualRowReadAheadTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/scatterByPartition.h>
 #include <Common/JSONBuilder.h>
@@ -88,6 +89,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool read_in_order_use_buffering;
+    extern const SettingsInt64 read_in_order_virtual_row_prefetch_window;
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsString temporary_files_codec;
@@ -163,6 +165,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_virtual_row_per_block = settings[Setting::read_in_order_use_virtual_row] && settings[Setting::read_in_order_use_virtual_row_per_block];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
+    virtual_row_prefetch_window = settings[Setting::read_in_order_virtual_row_prefetch_window];
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
 }
@@ -414,17 +417,46 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)
     {
-        /// Disable buffering when `read_in_order_use_virtual_row_per_block` is enabled, these optimizations are incompatible.
-        /// Buffering would need to flush virtual rows, otherwise virtual rows lose their purpose while reading from the stream.
-        /// But flushing a virtual row between every block effectively turns buffering into a no-op.
-        ///
-        /// Buffering combined with the initial virtual rows is fine: after `BufferChunksTransform`
-        /// delivers a virtual row it does not read ahead until the merge actually demands data
-        /// from that source, so buffering does not defeat the deferral of the sources behind
-        /// virtual rows (and the prefetch window below keeps its meaning). Once the merge
-        /// releases a source, buffering works for it as usual.
-        bool use_virtual_row_per_block = apply_virtual_row_conversions && sort_settings.read_in_order_use_virtual_row_per_block;
-        if (use_buffering && sort_settings.read_in_order_use_buffering && !use_virtual_row_per_block)
+        /// One thread alternates between the merge and the source it demands; only the
+        /// remaining threads have capacity for speculative reads.
+        size_t read_ahead_window = sort_settings.virtual_row_prefetch_window < 0
+            ? pipeline.getNumThreads() - std::min<size_t>(1, pipeline.getNumThreads())
+            : static_cast<size_t>(sort_settings.virtual_row_prefetch_window);
+
+        /// Buffering in the transform is the same optimization `BufferChunksTransform`
+        /// provides and follows its setting; without it a lane keeps just its next chunk
+        /// ready, the one the merge used to request ahead into its input port.
+        bool buffering = use_buffering && sort_settings.read_in_order_use_buffering;
+
+        /// The transform ranks lane boundaries with collation-unaware comparisons. Virtual
+        /// rows follow the binary order of the primary key, which a collated ORDER BY does
+        /// not, so this is defensive rather than a reachable case.
+        bool has_collation = false;
+        for (const auto & desc : result_sort_desc)
+            has_collation |= desc.collator != nullptr;
+
+        /// With the read-ahead disabled and no buffering the transform would be a plain
+        /// pass-through: the merge alone already consumes the streams strictly on demand (a
+        /// port is left NotNeeded after a virtual row). Skip the extra hop then.
+        bool read_ahead_transform = apply_virtual_row_conversions && !has_collation && (read_ahead_window > 0 || buffering);
+        if (read_ahead_transform)
+        {
+            /// The streams announce their positions with virtual rows; this transform owns the
+            /// buffering and the read-ahead policy for the sources deferred behind them, so the
+            /// merge itself can consume the streams strictly on demand.
+            pipeline.addTransform(std::make_shared<VirtualRowReadAheadTransform>(
+                pipeline.getSharedHeader(),
+                pipeline.getNumStreams(),
+                result_sort_desc,
+                apply_virtual_row_conversions,
+                limit_,
+                buffering ? sort_settings.max_block_size : 0,
+                buffering ? sort_settings.max_block_bytes : 0,
+                read_ahead_window));
+        }
+        /// Without virtual rows (the setting is disabled, or the query uses FINAL) the
+        /// plain buffering path remains.
+        else if (!apply_virtual_row_conversions && use_buffering && sort_settings.read_in_order_use_buffering)
         {
             pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
@@ -446,10 +478,10 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             /*filter_column_name=*/ std::nullopt,
             /*use_average_block_sizes=*/ false,
             apply_virtual_row_conversions,
-            /// Allow this many sources deferred behind virtual rows to read ahead in
-            /// parallel, so that the merge does not serialize reads that previously
-            /// ran concurrently. Bounds the number of concurrently open readers.
-            /*virtual_row_prefetch_window=*/ pipeline.getNumThreads());
+            /*have_all_inputs_=*/ true,
+            /// The transform keeps the next chunk of every lane ready, and the window is
+            /// refilled on the merge's requests, so those must be its actual demand.
+            /*input_read_ahead_=*/ !read_ahead_transform);
 
         pipeline.addTransform(std::move(transform));
     }
