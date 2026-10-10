@@ -62,19 +62,21 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
 
         if (pool.poller.pending() > 0 && pool.coordinator.startPolling())
         {
-            auto * picked = tryPickBeforePark();
-            if (!picked)
+            if (anyWorkHasAppeared())
             {
-                const auto fired = pool.poller.poll(-1);
-                if (!fired.empty())
-                {
-                    picked = pickFromBatch(fired);
-                    wakeFor(fired.size() - 1);
-                }
+                pool.coordinator.stopPolling();
+                continue;
             }
+
+            const auto fired = pool.poller.poll(-1);
             pool.coordinator.stopPolling();
-            if (picked)
+
+            if (!fired.empty())
+            {
+                auto * picked = pickFromBatch(fired);
+                wakeFor(fired.size() - 1);
                 return picked;
+            }
         }
         else
         {
@@ -82,12 +84,10 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
             if (!pool.coordinator.startParking(worker_id))
                 continue;
 
-            auto * picked = tryPickBeforePark();
-            if (!picked)
+            if (!anyWorkHasAppeared())
                 futexWaitFetch(wakeups, wakeups_before);
+
             pool.coordinator.becomeNormal(worker_id);
-            if (picked)
-                return picked;
         }
     }
 }
@@ -124,16 +124,6 @@ ExecutingProcessor * Worker::tryPick()
     return nullptr;
 }
 
-ExecutingProcessor * Worker::tryPickBeforePark()
-{
-    if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
-        return pickFromBatch(std::span(tmp_buffer).first(count));
-
-    auto * picked = trySteal(/*rounds=*/1);
-    wakeFor(picked != nullptr);
-    return picked;
-}
-
 ExecutingProcessor * Worker::trySteal(size_t rounds)
 {
     const size_t workers = pool.workers.size();
@@ -161,6 +151,18 @@ ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor * const>
 {
     pushManyLifo(batch.first(batch.size() - 1));
     return batch.back();
+}
+
+bool Worker::anyWorkHasAppeared() const
+{
+    if (pool.global_tasks.size() > 0)
+        return true;
+
+    for (const Worker & other : pool.workers)
+        if (&other != this && other.local_tasks.size() > 0)
+            return true;
+
+    return false;
 }
 
 void Worker::pushManyLifo(std::span<ExecutingProcessor * const> many)

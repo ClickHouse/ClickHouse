@@ -1,7 +1,9 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
 
+#include <algorithm>
 #include <mutex>
 
 namespace DB
@@ -71,11 +73,8 @@ void WorkersCoordinator::leave(size_t worker_id)
     is_registered[worker_id] = false;
     registered_workers.fetch_sub(1);
 
-    if (std::erase(sleeping_workers, worker_id) > 0)
-    {
-        sleepers_count.fetch_sub(1);
-        pool.workers[worker_id].wake();
-    }
+    if (std::ranges::contains(sleeping_workers, worker_id))
+        Wyrd::abort("A worker left the pool while it was listed as a sleeper");
 
     if (isFinished())
         stopLocked();

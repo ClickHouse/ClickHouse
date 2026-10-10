@@ -1,4 +1,5 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
@@ -20,11 +21,6 @@ namespace Setting
 {
     extern const SettingsBool opentelemetry_trace_cpu_scheduling;
     extern const SettingsString workload;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
 }
 
 namespace Runtime::V2
@@ -215,7 +211,7 @@ void WorkerPool::run()
 void WorkerPool::runUntil(std::atomic_bool * yield_flag)
 {
     if (max_threads != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step by step execution needs a pool of one thread, got {}", max_threads);
+        Wyrd::abort("Step by step execution needs a pool of one thread, got {}", max_threads);
 
     if (!single_slot)
     {

@@ -23,9 +23,9 @@ class Worker
     bool keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag);
     ExecutingProcessor * pick(WorkerSlot & slot, std::atomic_bool * yield_flag);
     ExecutingProcessor * tryPick();
-    ExecutingProcessor * tryPickBeforePark();
     ExecutingProcessor * trySteal(size_t rounds);
     ExecutingProcessor * pickFromBatch(std::span<ExecutingProcessor * const> batch);
+    bool anyWorkHasAppeared() const;
 
     /// Population.
     void pushManyLifo(std::span<ExecutingProcessor * const> many);
