@@ -494,7 +494,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
                 VirtualColumnUtils::filterByPathOrFile(
                     paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
                     /*format_settings=*/std::nullopt,
@@ -502,7 +502,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             }
             else
             {
-                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
             }
         }
 
@@ -687,7 +687,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             /// FILE_DOESNT_EXIST.
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
                 VirtualColumnUtils::filterByPathOrFile(
                     keys, paths, actions, virtual_columns, hive_columns, local_context,
                     /*format_settings=*/std::nullopt,
@@ -695,7 +695,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             }
             else
             {
-                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
             }
         }
         else
@@ -2113,7 +2113,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
-            filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(getContext()));
         }
     }
     else

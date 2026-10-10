@@ -561,8 +561,7 @@ bool ReadWriteBufferFromHTTP::isReadCancelled() const
 void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
 {
     /// Holds the thread right before the check, so that a test can deliver a cancellation to a
-    /// request which had already failed on its own, see
-    /// 04869_url_function_stale_metadata_error_after_soft_cancel.
+    /// request which had already failed on its own.
     FailPointInjection::pauseFailPoint(FailPoints::http_read_buffer_pause_before_metadata_fallback);
 
     try
