@@ -130,3 +130,25 @@ TEST(AggregateMergeWork, FunctionsWithoutWorkEstimates)
     const auto function = getFunction("uniqIf", {type, std::make_shared<DataTypeUInt8>()});
     checkWork(*function, function->getBaseAggregateFunctionWithSameStateRepresentation(), {values()}, 0, false);
 }
+
+TEST(AggregateMergeWork, RetainedStateCostThroughWrappers)
+{
+    const auto type = std::make_shared<DataTypeUInt64>();
+    const auto nullable_type = std::make_shared<DataTypeNullable>(type);
+    const auto condition_type = std::make_shared<DataTypeUInt8>();
+    const size_t bytes = getFunction("uniqExact", {type})->getStateBytesPerDistinctInput();
+    ASSERT_GT(bytes, 0);
+
+    /// These wrappers apply the nested function at most once per row, so the distinct argument tuples the adaptive
+    /// sampler hashes bound its distinct inputs from above.
+    EXPECT_EQ(getFunction("uniqExactIf", {type, condition_type})->getStateBytesPerDistinctInput(), bytes);
+    EXPECT_EQ(getFunction("uniqExactState", {type})->getStateBytesPerDistinctInput(), bytes);
+    EXPECT_EQ(getFunction("uniqExact", {nullable_type})->getStateBytesPerDistinctInput(), bytes);
+    EXPECT_EQ(
+        getFunction("uniqExactTuple", {std::make_shared<DataTypeTuple>(DataTypes{type, type})})->getStateBytesPerDistinctInput(),
+        2 * bytes);
+
+    /// An array argument adds several values per row, which a distinct array does not bound.
+    EXPECT_EQ(getFunction("uniqExactArray", {std::make_shared<DataTypeArray>(type)})->getStateBytesPerDistinctInput(), 0);
+    EXPECT_EQ(getFunction("uniqIf", {type, condition_type})->getStateBytesPerDistinctInput(), 0);
+}

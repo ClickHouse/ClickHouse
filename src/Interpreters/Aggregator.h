@@ -605,6 +605,9 @@ private:
     std::unique_ptr<const AdaptiveArgumentLayout> adaptive_argument_layout;
     /// Per-query aggregate metadata used to estimate the cost of retaining states and merging them.
     size_t adaptive_state_bytes_per_distinct_input = 0;
+    /// The only aggregate whose state grows per distinct input; its arguments are sampled when
+    /// `adaptive_state_bytes_per_distinct_input` is non-zero.
+    size_t adaptive_distinct_input_aggregate = 0;
     std::vector<size_t> adaptive_parallel_merge_indices;
 
     /// The tightest top-K skip boundary any aggregation thread has published; shared by the

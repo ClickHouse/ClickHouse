@@ -930,10 +930,21 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (params.enable_adaptive_aggregator && params.aggregates_size)
     {
         adaptive_argument_layout = buildAdaptiveArgumentLayout(header_, keys_positions, aggregates_positions);
-        /// Distinct tuples of all arguments describe one set-valued aggregate. Multiple independent sets
-        /// can have different reduction factors, so they cannot share this estimate.
-        if (params.aggregates_size == 1)
-            adaptive_state_bytes_per_distinct_input = aggregate_functions[0]->getStateBytesPerDistinctInput();
+        /// Distinct tuples of the arguments describe one set-valued aggregate. Multiple independent sets
+        /// can have different reduction factors, so they cannot share this estimate. The fixed states of
+        /// the other aggregates are covered by the per-key state cost.
+        size_t growing_aggregates = 0;
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+        {
+            if (const size_t bytes = aggregate_functions[i]->getStateBytesPerDistinctInput())
+            {
+                ++growing_aggregates;
+                adaptive_state_bytes_per_distinct_input = bytes;
+                adaptive_distinct_input_aggregate = i;
+            }
+        }
+        if (growing_aggregates != 1)
+            adaptive_state_bytes_per_distinct_input = 0;
         for (size_t i = 0; i < params.aggregates_size; ++i)
             if (aggregate_functions[i]->isAbleToParallelizeMerge() && aggregate_functions[i]->isParallelizeMergePrepareNeeded())
                 adaptive_parallel_merge_indices.push_back(i);

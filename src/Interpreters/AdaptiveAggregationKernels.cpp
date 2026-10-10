@@ -1164,7 +1164,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     ///   separate states.
     if (adaptiveMayThaw(*adaptive.session))
     {
-        chassert(!adaptive_state_bytes_per_distinct_input || aggregates_positions.size() == 1);
+        chassert(!adaptive_state_bytes_per_distinct_input || adaptive_distinct_input_aggregate < aggregates_positions.size());
         size_t batch_bytes = key_bytes + (counts_only ? total * sizeof(UInt32) : variable_argument_bytes);
         batch_bytes += total * (sizeof(UInt64) + (adaptive_key_stages_bytes<RecordKey> ? sizeof(UInt64) : 0));
 
@@ -1181,7 +1181,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
                 {
                     SipHash input_hash;
                     input_hash.update(hash);
-                    for (const auto position : aggregates_positions[0])
+                    for (const auto position : aggregates_positions[adaptive_distinct_input_aggregate])
                         columns[position]->updateHashWithValue(source_rows[i], input_hash);
                     frozen.addSampledInputHash(input_hash.get64());
                 }
