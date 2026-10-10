@@ -532,6 +532,13 @@
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
+    <!-- Size of cache for deserialized columns from MergeTree tables.
+         In bytes. Cache is single for server. Memory is allocated only on demand.
+         Cache is used when the experimental 'use_columns_cache' user setting is explicitly enabled.
+         When not set, the cache is sized to 'columns_cache_size_to_ram_ratio' (10% by default)
+         of the memory available to the server. -->
+    <!-- <columns_cache_size>17179869184</columns_cache_size> -->
+
     <!-- Approximate size of mark cache, used in tables of MergeTree family.
          In bytes. Cache is single for server. Memory is allocated only on demand.
          You should not lower this value. -->
@@ -977,6 +984,16 @@
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>
 
+    <!-- Allow the server to make only the system calls it uses (a seccomp filter, Linux only).
+         With "trap", a system call outside the policy terminates the server with SIGSYS, writing the system call number
+         and a stack trace to the log. Other values: "kill", "errno", "log" (only record, the default without this line), "disabled".
+         If the filter cannot be installed, for example because a container runtime refuses the seccomp system call,
+         the server does not start: set it to "log" or "disabled" in that case.
+         The policy is implemented for x86_64 and aarch64 only. On other architectures the server only sets
+         PR_SET_NO_NEW_PRIVS, logs a warning and runs without a seccomp policy.
+    -->
+    <seccomp>trap</seccomp>
+
     <![CDATA[
          Uncomment below in order to use JDBC table engine and function.
 
@@ -1077,6 +1094,16 @@
         <!-- Regular expression can be specified. RE2 engine is used for regexps.
             Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
             (forgetting to do so is a common source of error).
+        -->
+
+        <!-- A single bucket on an S3-like endpoint can be allowed with the s3_bucket xml tag, as host/bucket or host:port/bucket.
+            Use it when the endpoint is shared by many parties, e.g. a path-style AWS endpoint such as s3.us-west-2.amazonaws.com,
+            and allowing the whole host would allow every bucket on it. The bucket is taken from the parsed S3 URL,
+            so the entry matches both https://s3.us-west-2.amazonaws.com/my-bucket/ and https://my-bucket.s3.us-west-2.amazonaws.com/.
+            Applies to S3 URLs only (the s3 table functions and engines, the S3 database engine, BACKUP and RESTORE to S3,
+            and S3 disks created in SQL with the disk function). A permanent (301) redirect returned by S3 is checked against
+            the bucket entries as well; a temporary (307) redirect is checked by host only and is rejected under a bucket-only list:
+                    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
         -->
     <!--</remote_url_allow_hosts>-->
 
@@ -1397,7 +1424,19 @@
         <level>trace</level>
     </text_log>
 
-    <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
+    <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
+
+         The schema of the table is selected by "schema_type":
+         - "bucketed" (default) - all metrics in a single Map column with the bucketed serialization,
+           plus an ALIAS column per metric, so the table has a few columns instead of thousands;
+         - "wide" - a separate column per metric;
+         - "transposed" - metrics as rows, similar to system.asynchronous_metric_log.
+         Note that "bucketed" gets the settings of the bucketed Map serialization from the
+         default table definition, so specifying "engine" below replaces them; for that reason,
+         and because every metric is an ALIAS column of that schema, the default stays "wide"
+         when "engine" is specified or when alias columns are disabled with
+         "default_system_log_flush_policy.skip_alias_columns".
+    -->
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
@@ -1407,6 +1446,7 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
+        <!-- <schema_type>bucketed</schema_type> -->
     </metric_log>
 
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
