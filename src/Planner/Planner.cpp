@@ -136,6 +136,7 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsBool group_by_use_nulls_with_totals;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
@@ -3130,7 +3131,7 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
-                if (settings[Setting::group_by_use_nulls])
+                if (settings[Setting::group_by_use_nulls] && settings[Setting::group_by_use_nulls_with_totals])
                     addConvertGroupByKeysToNullableStep(query_plan, aggregation_analysis_result);
                 addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
                 having_executed = true;
