@@ -387,6 +387,11 @@ static bool insertDeduplicationNeedsSingleStream(const StoragePtr & table, const
     /// This includes strict block limits on a direct deduplicating destination, forwarding storages
     /// that restamp ids in another context, and dependent views hidden behind a forwarding storage.
     /// Keep the pipeline single-stream in all those cases before `AddDeduplicationInfoTransform` runs.
+    /// A `Buffer` over a destination that neither deduplicates nor has dependent views has none of
+    /// those hazards, see `InsertDependenciesBuilder::bufferWriteIsInsensitiveToFanOut`.
+    if (InsertDependenciesBuilder::bufferWriteIsInsensitiveToFanOut(table))
+        return false;
+
     const bool dedup_enabled_for_insert = isDeduplicationEnabledForInsert(async_insert, settings);
     const bool source_deduplicates = InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(table)
         && dedup_enabled_for_insert;
@@ -574,7 +579,8 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
     /// single-stream; the nested `INSERT` then observes the same settings and serializes its own
     /// view graph.
     const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
-        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table, context);
+        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table, context)
+        && !InsertDependenciesBuilder::bufferWriteIsInsensitiveToFanOut(table);
     const bool dedup_single_stream = insertDeduplicationNeedsSingleStream(table, settings, async_insert, context);
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
@@ -1011,7 +1017,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // deduplication hazard. (`Distributed` and `Buffer` also hide their dependent views, but they
     // are already kept single-stream by `forwards_to_separate_context`.)
     const bool serial_hidden_views = !settings[Setting::parallel_view_processing]
-        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table, context);
+        && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table, context)
+        && !InsertDependenciesBuilder::bufferWriteIsInsensitiveToFanOut(table);
 
     const bool dedup_single_stream = insertDeduplicationNeedsSingleStream(table, settings, async_insert, context);
 

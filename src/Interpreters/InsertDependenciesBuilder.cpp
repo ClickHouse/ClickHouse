@@ -934,6 +934,26 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
 }
 
 
+bool InsertDependenciesBuilder::bufferWriteIsInsensitiveToFanOut(const StoragePtr & storage)
+{
+    const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get());
+    if (!buffer)
+        return false;
+
+    /// A destination that is not configured or cannot be resolved right now may still appear before
+    /// the buffer is flushed: fail closed.
+    auto destination = buffer->getDestinationTable();
+    if (!destination || !castStorage<MergeTreeData>(destination, DeferredTable::Load))
+        return false;
+
+    /// The flush runs in the buffer's own context, so only the properties of the destination table
+    /// itself are considered: its deduplication window, and every dependent view registered for it,
+    /// regardless of the settings that could make the nested `INSERT` skip some of them.
+    return !storageDeduplicatesBlocksOnInsert(destination)
+        && DatabaseCatalog::instance().getDependentViews(destination->getStorageID()).empty();
+}
+
+
 bool InsertDependenciesBuilder::hasExecutableDependentView(const StoragePtr & storage, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();

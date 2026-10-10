@@ -178,6 +178,16 @@ public:
     /// insert single-stream when this probe reports true and that setting is disabled.
     static bool forwardedInsertHidesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth = 0);
 
+    /// Whether `storage` is a `Buffer` whose writes cannot be affected by the parallel write fan-out of
+    /// an `INSERT` into it. Every block a `BufferSink` writes directly, and every flush, is written by its
+    /// own nested `INSERT` into the destination, which numbers its source blocks from zero, so the number
+    /// of sink streams does not change which deduplication ids those writes produce; and the fan-out can
+    /// only push dependent views concurrently if the destination has any. This is true only when the
+    /// destination resolves to a `MergeTree`-family table that never deduplicates and has no dependent
+    /// views at all - then neither the deduplication guard nor `parallel_view_processing = 0` has anything
+    /// to protect, and `max_insert_threads` keeps applying. Anything else fails closed (returns false).
+    static bool bufferWriteIsInsensitiveToFanOut(const StoragePtr & storage);
+
     /// Whether `storage` has a dependent materialized view which the nested `INSERT` will execute.
     /// This mirrors the pruning done by `collectAllDependencies` for unavailable views, dropped
     /// targets, stale dependency entries, and errors ignored by `materialized_views_ignore_errors`.
