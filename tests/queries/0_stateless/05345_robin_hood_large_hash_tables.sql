@@ -3,7 +3,8 @@
 
 -- 10 million keys is about 39 thousand keys per bucket, above the switching point of 32768.
 -- With few threads, the per-thread tables also become large, not only the merged one.
-SET max_threads = 2, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+-- The `JOIN` queries read 30 million rows, above the default limit of the test runner.
+SET max_threads = 2, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_rows_to_read = 0;
 
 SELECT 'UInt64 keys';
 SELECT count(), min(c), max(c)

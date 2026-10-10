@@ -650,7 +650,7 @@ protected:
         size_t place_value = grower.place(hash_value);
         if (isRobinHood())
         {
-            bool found;
+            bool found = false;
             place_value = findCellRobinHood(x, hash_value, place_value, found);
             return found ? &buf[place_value] : nullptr;
         }
@@ -1422,7 +1422,7 @@ protected:
     void NO_INLINE emplaceNonZeroRobinHood(KeyHolder && key_holder, LookupResult & it,
                                            bool & inserted, size_t hash_value)
     {
-        bool found;
+        bool found = false;
         size_t place_value = findCellRobinHood(keyHolderGetKey(key_holder), hash_value, grower.place(hash_value), found);
         it = &buf[place_value];
 
@@ -1588,15 +1588,15 @@ public:
     /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
     void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
     {
-        size_t place_value;
+        size_t place_value = grower.place(hash_value);
         if (isRobinHood())
         {
-            place_value = findInsertionPlaceRobinHood(grower.place(hash_value));
+            place_value = findInsertionPlaceRobinHood(place_value);
             if (!buf[place_value].isZero(*this))
                 shiftCellsRight(place_value);
         }
         else
-            place_value = findEmptyCell(grower.place(hash_value));
+            place_value = findEmptyCell(place_value);
 
         memcpy(static_cast<void*>(&buf[place_value]), cell, sizeof(*cell));
         ++m_size;
