@@ -123,7 +123,7 @@ TEST(HashMethodKeyViews, NumericDictionaryHasNoByteView)
 
 TEST(HashMethodKeyViews, BatchSerializedBytesSurviveOtherRows)
 {
-    using Method = ColumnsHashing::HashMethodSerialized<StringValue, UInt64, false, true>;
+    using Method = ColumnsHashing::HashMethodSerialized<StringValue, char *, false, true>;
     auto column = ColumnString::create();
     column->insertData("first", 5);
     column->insertData("second", 6);
@@ -142,7 +142,7 @@ TEST(HashMethodKeyViews, BatchSerializedBytesSurviveOtherRows)
 
 TEST(HashMethodKeyViews, ArenaSerializedBytesAreTemporary)
 {
-    using Method = ColumnsHashing::HashMethodSerialized<StringValue, UInt64, false, false>;
+    using Method = ColumnsHashing::HashMethodSerialized<StringValue, char *, false, false>;
     const auto column = stringKeys();
     const Method method({column.get()}, {}, Method::createContext({}));
     EXPECT_FALSE(method.keyViewsAreBlockStable());
@@ -151,7 +151,7 @@ TEST(HashMethodKeyViews, ArenaSerializedBytesAreTemporary)
 #if !defined(__aarch64__)
 TEST(HashMethodKeyViews, ScratchSerializedBytesAreTemporary)
 {
-    using Method = ColumnsHashing::HashMethodSerialized<StringValue, UInt64, false, true>;
+    using Method = ColumnsHashing::HashMethodSerialized<StringValue, char *, false, true>;
     auto column = ColumnString::create();
     for (char value : {'a', 'b'})
     {
