@@ -41,6 +41,15 @@ if (ENABLE_LANCE AND ENABLE_FUZZING)
     set (ENABLE_LANCE OFF)
 endif()
 
+# The Lance crates triple the DWARF unwind info (`__eh_frame`) of the Darwin binary, pushing it past 16 MiB.
+# Compact-unwind entries that defer to DWARF store the FDE offset in 24 bits, so the offsets of the FDEs past
+# 16 MiB (including `__cxa_throw`) get truncated, and the unwinder falls back to a linear scan of all FDEs on
+# every thrown exception, making exceptions thousands of times slower.
+if (ENABLE_LANCE AND OS_DARWIN)
+    message (STATUS "Disabling Lance on macOS")
+    set (ENABLE_LANCE OFF)
+endif()
+
 # The Lance crates generate code from `.proto` files at build time, which needs the `protoc` built
 # from `contrib/google-protobuf`.
 if (ENABLE_LANCE AND NOT TARGET protoc)
