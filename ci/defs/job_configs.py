@@ -709,6 +709,8 @@ class JobConfigs:
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
+                # The parameter sets below choose which package flavour each job installs.
+                "./ci/defs/job_configs.py",
             ],
         ),
         timeout=1800,
@@ -783,6 +785,7 @@ class JobConfigs:
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
+                "./ci/defs/job_configs.py",
             ],
         ),
         timeout=1800,
