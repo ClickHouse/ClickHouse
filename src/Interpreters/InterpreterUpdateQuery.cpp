@@ -16,6 +16,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTDataType.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
@@ -40,6 +41,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUUIDTypeVersion uuid_type_version;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsBool use_legacy_to_time;
@@ -103,6 +105,11 @@ BlockIO InterpreterUpdateQuery::execute()
     /// otherwise resolve `toTime` with its own default.
     if (settings[Setting::use_legacy_to_time])
         replaceLegacyToTime(*query_ptr);
+
+    /// Materialize the `uuid_type_version` setting on the initiator for the same reason: a bare `UUID` in the predicate
+    /// or in an assignment (`CAST(x, 'UUID')`) would otherwise be resolved with the setting of the replaying host.
+    if (!getContext()->isDDLOrOnClusterInternal())
+        applyUUIDTypeVersionInPlace(*query_ptr, settings[Setting::uuid_type_version]);
 
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
