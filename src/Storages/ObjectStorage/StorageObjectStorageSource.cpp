@@ -1891,6 +1891,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_page_cache = false;
     }
 
+    if (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    {
+        LOG_DEBUG(log, "Cannot use distributed cache, etag is missing or not a strong content identifier");
+        use_distributed_cache = false;
+    }
+
     const auto & object_size = object_info.metadata->size_bytes;
     const bool is_size_known = object_info.metadata->is_size_known;
 
@@ -1965,6 +1971,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
     if (validate_etag_on_read && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
+    /// The distributed cache keys on the etag whether or not this read validates it.
+    if (use_distributed_cache)
+        stored_object.etag_hash = getETagHash(object_info.metadata->etag);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
@@ -2007,7 +2016,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// Distributed cache
     if (use_distributed_cache)
-        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true);
+        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true, /* include_etag_in_cache_key */ true);
 
     /// Page cache
     if (use_page_cache)
