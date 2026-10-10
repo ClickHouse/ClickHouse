@@ -181,7 +181,12 @@ void ch_lance_cancel_handle_free(ch_lance_cancel_handle * handle);
 ch_lance_dataset * ch_lance_open_dataset(const ch_lance_dataset_options * options, ch_lance_error * error);
 void ch_lance_free_dataset(ch_lance_dataset * dataset);
 
-bool ch_lance_current_snapshot(ch_lance_dataset * dataset, ch_lance_snapshot_info * snapshot, ch_lance_error * error);
+/// `cancel` may be null (no cooperative cancel for this call).
+bool ch_lance_current_snapshot(
+    ch_lance_dataset * dataset,
+    ch_lance_snapshot_info * snapshot,
+    ch_lance_cancel_handle * cancel,
+    ch_lance_error * error);
 bool ch_lance_export_schema(
     ch_lance_dataset * dataset,
     const ch_lance_snapshot_info * snapshot,

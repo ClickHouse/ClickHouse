@@ -870,7 +870,7 @@ NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
         auto snapshot = session->getPinnedSnapshot(dataset.identityKey());
         if (!snapshot)
         {
-            snapshot = dataset.currentSnapshot();
+            snapshot = dataset.currentSnapshot(session->getCancelHandle());
             session->pinSnapshot(dataset.identityKey(), *snapshot);
         }
         auto schema = dataset.tableSchema(*snapshot, local_context, session->getCancelHandle());
@@ -894,7 +894,7 @@ std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(C
             return DataLakeTableStateSnapshot{*snapshot};
 
         dataset = session->getOrOpen(options);
-        const auto snapshot = dataset.currentSnapshot();
+        const auto snapshot = dataset.currentSnapshot(session->getCancelHandle());
         if (snapshot.version == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` returned zero as the current dataset version");
         session->pinSnapshot(dataset.identityKey(), snapshot);

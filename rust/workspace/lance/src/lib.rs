@@ -1773,6 +1773,7 @@ unsafe fn ch_lance_free_dataset_impl(dataset: *mut ch_lance_dataset) {
 unsafe fn ch_lance_current_snapshot_impl(
     dataset: *mut ch_lance_dataset,
     snapshot: *mut ch_lance_snapshot_info,
+    cancel: *mut ch_lance_cancel_handle,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
@@ -1785,7 +1786,11 @@ unsafe fn ch_lance_current_snapshot_impl(
     }
 
     let dataset = &*dataset;
-    match block_on_lance(snapshot_identity(&dataset.dataset, dataset.origin)) {
+    let cancel = optional_cancel_from_ptr(cancel);
+    match block_on_lance(with_cancel(
+        cancel.as_deref(),
+        snapshot_identity(&dataset.dataset, dataset.origin),
+    )) {
         Ok(Ok(identity)) => {
             *snapshot = identity;
             true
@@ -2610,6 +2615,7 @@ pub unsafe extern "C" fn ch_lance_free_dataset(dataset: *mut ch_lance_dataset) {
 pub unsafe extern "C" fn ch_lance_current_snapshot(
     dataset: *mut ch_lance_dataset,
     snapshot: *mut ch_lance_snapshot_info,
+    cancel: *mut ch_lance_cancel_handle,
     error: *mut ch_lance_error,
 ) -> bool {
     let reset = || {
@@ -2620,7 +2626,7 @@ pub unsafe extern "C" fn ch_lance_current_snapshot(
     reset();
     ffi_bool_guard(
         error,
-        || ch_lance_current_snapshot_impl(dataset, snapshot, error),
+        || ch_lance_current_snapshot_impl(dataset, snapshot, cancel, error),
         reset,
     )
 }
@@ -3710,7 +3716,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let ordered_rows =
@@ -3759,7 +3765,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let mut list: *mut ch_lance_fragment_info = ptr::null_mut();
@@ -3936,7 +3942,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
         assert!(snapshot.version > 0);
 
@@ -4071,7 +4077,7 @@ mod tests {
         assert!(!dataset.is_null());
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let scan = plan_full_scan(dataset, snapshot, addr_of_mut!(error));
@@ -4112,7 +4118,7 @@ mod tests {
         assert!(!dataset.is_null());
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let scan = plan_full_scan(dataset, snapshot, addr_of_mut!(error));
@@ -4225,7 +4231,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         // Cancel before plan: planScan must fail with CANCELLED.
@@ -4319,7 +4325,7 @@ mod tests {
         assert!(!dataset.is_null());
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let cancel = unsafe { ch_lance_cancel_handle_create() };
@@ -4445,7 +4451,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let mut rows = 1;
@@ -4522,7 +4528,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let mut rows = 0;
@@ -4570,6 +4576,7 @@ mod tests {
             ch_lance_current_snapshot(
                 latest_dataset,
                 addr_of_mut!(latest_snapshot),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -4635,7 +4642,7 @@ mod tests {
         assert!(!original.is_null());
         let mut pinned = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(original, addr_of_mut!(pinned), addr_of_mut!(error))
+            ch_lance_current_snapshot(original, addr_of_mut!(pinned), ptr::null_mut(), addr_of_mut!(error))
         });
         unsafe { ch_lance_free_dataset(original) };
 
@@ -4660,6 +4667,7 @@ mod tests {
             ch_lance_current_snapshot(
                 replacement,
                 addr_of_mut!(replacement_snapshot),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -4753,10 +4761,10 @@ mod tests {
         let mut first = ch_lance_snapshot_info::default();
         let mut second = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(first), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(first), ptr::null_mut(), addr_of_mut!(error))
         });
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(second), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(second), ptr::null_mut(), addr_of_mut!(error))
         });
         assert_eq!(first, second);
         assert!(first.manifest_size > 0);
@@ -4959,7 +4967,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let projection = [CString::new("id").unwrap()];
@@ -4999,7 +5007,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
 
         let predicate = CString::new("id = 1 OR id = 3").unwrap();
@@ -5441,7 +5449,7 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
         });
         let projection = [
             CString::new("id").unwrap(),

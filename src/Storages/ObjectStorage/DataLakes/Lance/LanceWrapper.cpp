@@ -347,11 +347,11 @@ ch_lance_dataset * DatasetHandle::raw() const
     return impl->dataset;
 }
 
-TableStateSnapshot DatasetHandle::currentSnapshot() const
+TableStateSnapshot DatasetHandle::currentSnapshot(const CancelHandlePtr & cancel) const
 {
     ch_lance_snapshot_info snapshot{};
     ch_lance_error error{};
-    if (!ch_lance_current_snapshot(raw(), &snapshot, &error))
+    if (!ch_lance_current_snapshot(raw(), &snapshot, cancel ? cancel->raw() : nullptr, &error))
         throwLanceError(error);
     TableStateSnapshot result{
         .version = snapshot.version,

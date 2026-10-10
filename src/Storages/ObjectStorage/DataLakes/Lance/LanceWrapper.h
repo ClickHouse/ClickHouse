@@ -113,7 +113,7 @@ public:
     const DatasetOptions & options() const;
     String identityKey() const;
 
-    TableStateSnapshot currentSnapshot() const;
+    TableStateSnapshot currentSnapshot(const CancelHandlePtr & cancel = {}) const;
     NamesAndTypesList tableSchema(
         const TableStateSnapshot & snapshot,
         ContextPtr context,
