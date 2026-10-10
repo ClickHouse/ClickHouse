@@ -3,16 +3,19 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <absl/container/inlined_vector.h>
 
 #include <array>
+#include <type_traits>
 
 #include "config.h"
 
@@ -105,6 +108,63 @@ public:
     {
         /// This is just a wrapper. The function for Nullable arguments is named the same as the nested function itself.
         return nested_function->getName();
+    }
+
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        const auto * rhs_null = typeid_cast<const Derived *>(&rhs);
+        if (!rhs_null)
+            return false;
+
+        auto rhs_nested = rhs_null->getNestedFunction();
+        chassert(rhs_nested != nullptr);
+        return nested_function->haveSameStateRepresentation(*rhs_nested);
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        const auto & nested_state = assert_cast<const DataTypeAggregateFunction &>(*nested_function->getNormalizedStateType());
+        auto normalized_argument_types = nested_state.getArgumentsDataTypes();
+        const auto & arguments = this->getArgumentTypes();
+
+        /// The Null adapter changes the serialized state, so unlike -If/-Array it must keep its
+        /// wrapper. Reapply the nullable argument shape around the nested function's normalized
+        /// argument types so finalization-only parameters do not make compatible states distinct.
+        if (normalized_argument_types.size() == arguments.size())
+        {
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (arguments[i]->isNullable() && !normalized_argument_types[i]->isNullable())
+                    normalized_argument_types[i] = makeNullable(normalized_argument_types[i]);
+            }
+        }
+        else
+        {
+            /// Keep normalization safe for aggregates whose canonical state changes argument arity.
+            normalized_argument_types.clear();
+            normalized_argument_types.reserve(arguments.size());
+            for (const auto & argument : arguments)
+                normalized_argument_types.emplace_back(argument->getNormalizedType());
+        }
+
+        auto normalized_parameters = nested_state.getParameters();
+
+        AggregateFunctionPtr normalized_function;
+        if constexpr (std::is_constructible_v<Derived, const String &, AggregateFunctionPtr, const DataTypes &, const Array &>)
+        {
+            /// AggregateFunctionIfNullUnary caches the full combinator name separately from
+            /// its nested function, so preserve it when reconstructing the normalized wrapper.
+            normalized_function = std::make_shared<Derived>(
+                this->getName(), nested_state.getFunction(), normalized_argument_types, normalized_parameters);
+        }
+        else
+        {
+            normalized_function = std::make_shared<Derived>(
+                nested_state.getFunction(), normalized_argument_types, normalized_parameters);
+        }
+
+        return std::make_shared<DataTypeAggregateFunction>(
+            std::move(normalized_function), normalized_argument_types, normalized_parameters);
     }
 
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
