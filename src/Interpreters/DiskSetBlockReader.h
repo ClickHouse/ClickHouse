@@ -103,12 +103,11 @@ public:
         chassert(position < blocks.size()); /// `block` is one of the blocks of the reader
         current_block = block;
 
-        /// A cached block is decoded from its cached bytes, without reading the file.
+        /// A cached block is decoded from its header and body, without reading the file.
         if (const auto & cached_block = cached_blocks[position])
         {
-            ReadBufferFromMemory cached_bytes(cached_block->bytes.data(), cached_block->bytes.size()); /// The decompressed frame
-            const DiskSetBlockHeader cached_header = BlockFormat::Decoder::readHeader(cached_bytes);
-            current_keys = decoder.decode(cached_header, cached_bytes, set.directory.getFirstKey(block));
+            ReadBufferFromMemory body(cached_block->body.data(), cached_block->body.size());
+            current_keys = decoder.decode(cached_block->header, body, set.directory.getFirstKey(block));
             return current_keys;
         }
 
@@ -119,12 +118,15 @@ public:
         compressed->next();
         const DiskSetBlockHeader header = BlockFormat::Decoder::readHeader(*compressed);
 
-        /// The working buffer of the compressed buffer now holds the decompressed bytes of the block. If the
-        /// cache admitted the block, the reader keeps a copy for `addReadBlocksToCache`.
+        /// After `readHeader`, the rest of the working buffer of the compressed buffer is the body of
+        /// the block. If the cache admitted the block, the reader keeps the header and a copy of the
+        /// body for `addReadBlocksToCache`.
         if (admitted_blocks[position])
         {
+            chassert(compressed->available() == header.body_bytes); /// A frame holds one block
             auto read_block = std::make_shared<DiskSetCachedBlock>();
-            read_block->bytes.assign(compressed->buffer().begin(), compressed->buffer().end()); /// Allocates the exact size of the frame
+            read_block->header = header;
+            read_block->body.assign(compressed->position(), compressed->position() + header.body_bytes); /// Allocates the exact size
             blocks_to_cache.push_back(block);
             read_blocks_to_cache.push_back(std::move(read_block));
         }

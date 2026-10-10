@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/DiskSetBlockFormat.h>
 #include <Common/PODArray.h>
 #include <base/unit.h>
 
@@ -10,15 +11,18 @@
 namespace DB
 {
 
-/// The encoded bytes of a block of a set on disk, in the layout of `DiskSetBlockFormat`: its frame after
-/// decompression and before decoding into keys. Lookups decode the bytes just as they decode a block read
-/// from the file. The cache keeps blocks in this form rather than as keys for two reasons: a decoded block of
-/// packed gaps takes many times more memory, 8 times for 64-bit keys, and lookups search keys faster in the
-/// buffer of their decoder, which stays in the CPU caches, than in memory written by other threads. A lookup
-/// holds a block until it decodes it, so evicting the block from the cache does not free its bytes.
+/// A block of a set on disk in the layout of `DiskSetBlockFormat`, decompressed but not yet decoded into
+/// keys: its header, and its body in an allocation of its own. The body of a full block takes exactly 4 KiB,
+/// a size class of the allocator, which the block with its header would exceed. Lookups decode the body just
+/// as they decode a block read from the file. The cache keeps blocks in this form rather than as keys for two
+/// reasons: a decoded block of packed gaps takes many times more memory, 8 times for 64-bit keys, and lookups
+/// search keys faster in the buffer of their decoder, which stays in the CPU caches, than in memory written
+/// by other threads. A lookup holds a block until it decodes it, so evicting the block from the cache does
+/// not free its body.
 struct DiskSetCachedBlock
 {
-    PODArray<char> bytes;
+    DiskSetBlockHeader header;
+    PODArray<char> body;
 };
 
 /// The cache of the blocks of a set on disk, keyed by block number and shared by the lookups of all threads.
@@ -58,7 +62,7 @@ public:
     void setMany(const std::vector<size_t> & blocks, const std::vector<BlockPtr> & read_blocks);
 
 private:
-    /// Weighs a cached block by its bytes plus what the cache keeps for it.
+    /// Weighs a cached block by its body plus what the cache keeps for it.
     struct Weight;
 
     /// A shard of the cache, which marks the cache full when it evicts its first block.

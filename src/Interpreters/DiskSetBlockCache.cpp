@@ -19,7 +19,7 @@ struct DiskSetBlockCache::Weight
     /// the mark cache estimates for its marks.
     static constexpr size_t overhead = 128;
 
-    size_t operator()(const DiskSetCachedBlock & block) const { return block.bytes.allocated_bytes() + overhead; }
+    size_t operator()(const DiskSetCachedBlock & block) const { return block.body.allocated_bytes() + overhead; }
 };
 
 class DiskSetBlockCache::Shard : public CacheBase<size_t, DiskSetCachedBlock, std::hash<size_t>, Weight>

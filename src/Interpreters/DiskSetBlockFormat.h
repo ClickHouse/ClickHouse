@@ -14,7 +14,9 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-/// The header of a block of `DiskSetBlockFormat`, which tells how to decode the body that follows it.
+/// The header of a block of `DiskSetBlockFormat`, which tells how to decode the body that follows it. A
+/// reader can keep the body apart from the header, as the cache of a set on disk does, so that the body of a
+/// full block takes exactly `DiskSetBlockFormat::block_bytes`.
 struct DiskSetBlockHeader
 {
     /// Whether the body holds the offsets of the keys packed by `PFor`, or the keys as they are.
