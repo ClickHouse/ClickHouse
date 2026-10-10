@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
+#include <Storages/MergeTree/SkippingIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -60,6 +61,7 @@ public:
         MarkCachePtr mark_cache_,
         UncompressedCachePtr uncompressed_cache_,
         VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
+        SkippingIndexCachePtr skipping_index_cache_,
         MergeTreeReaderSettings reader_settings_,
         DynamicPredicateBuilder dynamic_predicate_builder_,
         bool prune_primary_key_,
@@ -92,6 +94,7 @@ private:
     MarkCachePtr mark_cache;
     UncompressedCachePtr uncompressed_cache;
     VectorSimilarityIndexCachePtr vector_similarity_index_cache;
+    SkippingIndexCachePtr skipping_index_cache;
     MergeTreeReaderSettings reader_settings;
 
     DynamicPredicateBuilder dynamic_predicate_builder;
