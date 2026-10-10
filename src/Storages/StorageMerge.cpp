@@ -889,8 +889,19 @@ static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool
         || typeid_cast<FilterStep *>(node->step.get()) != nullptr
         || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;
 
-    for (auto * child : node->children)
-        preferMultipleStreamsForResidualCPUWork(child, passed_residual_cpu_step);
+    /// Follow only the ordered pipeline that reaches the sort. The children of a `UnionStep` all
+    /// belong to it, but for any other step with several children (a set-creating step, a join) only
+    /// the first one does: the others build sets or the right side of a join from unrelated reads,
+    /// which the residual work of the main pipeline does not run on.
+    if (typeid_cast<UnionStep *>(node->step.get()))
+    {
+        for (auto * child : node->children)
+            preferMultipleStreamsForResidualCPUWork(child, passed_residual_cpu_step);
+    }
+    else if (!node->children.empty())
+    {
+        preferMultipleStreamsForResidualCPUWork(node->children.front(), passed_residual_cpu_step);
+    }
 }
 
 namespace
