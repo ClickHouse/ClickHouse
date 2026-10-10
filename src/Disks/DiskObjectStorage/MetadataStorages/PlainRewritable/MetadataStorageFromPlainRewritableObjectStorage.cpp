@@ -220,7 +220,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::isSnapshotReader() const
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataStorageFromPlainRewritableObjectStorage::tryReadSnapshotFile(
-    const LoggerPtr & log) const
+    const LoggerPtr & log, bool skip_if_unchanged) const
 {
     SnapshotFileContents result;
     const auto key = layout->constructSnapshotObjectKey();
@@ -236,7 +236,7 @@ MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataSt
 
     /// The same snapshot was already applied, there is nothing new to read.
     /// Only a strong ETag proves that: a weak or missing one may stay the same after a rewrite.
-    if (metadata->isEtagUsableAsCacheKey() && metadata->etag == applied_snapshot_etag)
+    if (skip_if_unchanged && metadata->isEtagUsableAsCacheKey() && metadata->etag == applied_snapshot_etag)
     {
         result.unchanged = true;
         return result;
@@ -261,6 +261,85 @@ MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataSt
         tryLogCurrentException(log, fmt::format("Cannot read the snapshot file '{}', the state will be loaded by listing the object storage", key));
     }
 
+    return result;
+}
+
+std::vector<MetadataStorageFromPlainRewritableObjectStorage::TombstoneMarkerObject>
+MetadataStorageFromPlainRewritableObjectStorage::readTombstoneMarkers(const ReadSettings & settings) const
+{
+    std::vector<TombstoneMarkerObject> result;
+    for (auto iterator = object_storage->iterate(layout->constructTombstoneDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
+    {
+        const auto marker = iterator->current();
+        auto removed_name = layout->parseTombstoneMarkerKey(marker->getPath());
+        if (!removed_name)
+            continue;
+
+        std::string content;
+        try
+        {
+            auto read_buf = object_storage->readObject(StoredObject(marker->getPath()), settings);
+            readStringUntilEOF(content, *read_buf);
+        }
+#if USE_AWS_S3
+        catch (const S3Exception & e)
+        {
+            /// The removal has just been finished or rolled back by a concurrent transaction.
+            if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+                continue;
+            throw;
+        }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+        catch (const Azure::Storage::StorageException & e)
+        {
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                continue;
+            throw;
+        }
+#endif
+        catch (const ErrnoException & e)
+        {
+            /// The same for the local object storage.
+            if (e.getErrno() == ENOENT)
+                continue;
+            throw;
+        }
+        catch (...)
+        {
+            throw;
+        }
+
+        result.push_back({std::move(removed_name.value()), marker->getPath(), std::move(content)});
+    }
+    return result;
+}
+
+std::vector<MetadataStorageFromPlainRewritableObjectStorage::TargetReadFromBackup>
+MetadataStorageFromPlainRewritableObjectStorage::findTargetsToReadFromBackups(const LoggerPtr & log) const
+{
+    auto settings = getReadSettings();
+    settings.enable_filesystem_cache = false;
+    settings.useForSmallRemoteRead(1024);  /// These files are small.
+
+    std::vector<TargetReadFromBackup> result;
+    for (const auto & [removed_name, marker_path, content] : readTombstoneMarkers(settings))
+    {
+        auto parsed = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name);
+        if (parsed.kind != PlainRewritableLayout::TombstoneMarker::Kind::PendingReplace)
+            continue;
+
+        /// The same as `loadRemoteLayout` does on a read-only disk: without a complete backup the target is intact,
+        /// and a backup of an unexpected size is left alone.
+        const auto backup_key = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, removed_name);
+        const auto backup_metadata = object_storage->tryGetObjectMetadata(backup_key, /*with_tags=*/ false);
+        if (!backup_metadata || backup_metadata->size_bytes != parsed.pending_replace.size)
+            continue;
+
+        LOG_DEBUG(log, "Reading '{}' from its backup '{}' left by a replacement that was not committed",
+            layout->constructFileObjectKey(parsed.pending_replace.directory_remote_path, parsed.pending_replace.file_name), backup_key);
+        result.push_back({std::move(parsed.pending_replace), backup_key, *backup_metadata});
+    }
     return result;
 }
 
@@ -341,65 +420,25 @@ bool MetadataStorageFromPlainRewritableObjectStorage::loadRemoteLayout(
     std::unordered_map<std::string, PlainRewritableLayout::PendingReplace> pending_replaces;
     /// The backups of pending replacements that can be neither restored nor reclaimed: they are not loaded and not deleted.
     std::unordered_set<std::string> kept_backups;
-    for (auto iterator = object_storage->iterate(layout->constructTombstoneDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
+    for (auto & [removed_name, marker_path, content] : readTombstoneMarkers(settings))
     {
-        const auto marker = iterator->current();
-        auto removed_name = layout->parseTombstoneMarkerKey(marker->getPath());
-        if (!removed_name)
-            continue;
-
-        std::string content;
-        try
-        {
-            auto read_buf = object_storage->readObject(StoredObject(marker->getPath()), settings);
-            readStringUntilEOF(content, *read_buf);
-        }
-#if USE_AWS_S3
-        catch (const S3Exception & e)
-        {
-            /// The removal has just been finished or rolled back by a concurrent transaction.
-            if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
-                continue;
-            throw;
-        }
-#endif
-#if USE_AZURE_BLOB_STORAGE
-        catch (const Azure::Storage::StorageException & e)
-        {
-            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-                continue;
-            throw;
-        }
-#endif
-        catch (const ErrnoException & e)
-        {
-            /// The same for the local object storage.
-            if (e.getErrno() == ENOENT)
-                continue;
-            throw;
-        }
-        catch (...)
-        {
-            throw;
-        }
-
-        auto parsed = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name.value());
+        auto parsed = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name);
         switch (parsed.kind)
         {
             case PlainRewritableLayout::TombstoneMarker::Kind::Committed:
-                tombstones.emplace(std::move(removed_name.value()), std::nullopt);
+                tombstones.emplace(std::move(removed_name), std::nullopt);
                 break;
             case PlainRewritableLayout::TombstoneMarker::Kind::PendingRemoval:
-                tombstones.emplace(std::move(removed_name.value()), std::move(parsed.pending_original_path));
+                tombstones.emplace(std::move(removed_name), std::move(parsed.pending_original_path));
                 break;
             case PlainRewritableLayout::TombstoneMarker::Kind::PendingReplace:
                 /// The backup of a pending replacement is not loaded either, like one of a committed removal.
-                pending_replaces.emplace(removed_name.value(), std::move(parsed.pending_replace));
-                tombstones.emplace(std::move(removed_name.value()), std::nullopt);
+                pending_replaces.emplace(removed_name, std::move(parsed.pending_replace));
+                tombstones.emplace(std::move(removed_name), std::nullopt);
                 break;
             case PlainRewritableLayout::TombstoneMarker::Kind::Malformed:
-                LOG_WARNING(log, "The marker '{}' of an unfinished operation is malformed: '{}'", marker->getPath(), content);
-                malformed_markers.insert(std::move(removed_name.value()));
+                LOG_WARNING(log, "The marker '{}' of an unfinished operation is malformed: '{}'", marker_path, content);
+                malformed_markers.insert(std::move(removed_name));
                 break;
         }
     }
@@ -1012,7 +1051,14 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
 
     if (isSnapshotReader())
     {
-        auto snapshot = tryReadSnapshotFile(log);
+        /// The only exception from trusting the snapshot is a replacement of a file that the writer is doing right now:
+        /// the target is overwritten in place, and until the replacement is committed, the committed content of the
+        /// target is in its backup (see `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`). Such files are read
+        /// from their backups, as on a listing of the object storage. Finding them takes a listing of the markers,
+        /// which is a single request, since there are no markers most of the time.
+        auto targets_read_from_backups = findTargetsToReadFromBackups(log);
+
+        auto snapshot = tryReadSnapshotFile(log, /*skip_if_unchanged=*/ targets_read_from_backups.empty() && !applied_snapshot_had_pending_replaces);
         if (snapshot.unchanged)
         {
             LOG_DEBUG(log, "The snapshot file did not change since it was loaded");
@@ -1023,9 +1069,31 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
         if (snapshot.layout)
         {
             ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotRead);
+
+            std::unordered_map<std::string, std::string> local_paths;
+            local_paths.reserve(snapshot.layout->size());
+            for (const auto & [local_path, info] : *snapshot.layout)
+                local_paths.emplace(info.remote_path, local_path);
+
+            auto backups_of_targets = std::make_shared<BlobObjectKeyRemap>();
+            for (const auto & [pending_replace, backup_key, backup_metadata] : targets_read_from_backups)
+            {
+                const auto local_directory = local_paths.find(pending_replace.directory_remote_path);
+                if (local_directory == local_paths.end())
+                    continue;
+
+                backups_of_targets->emplace(layout->constructFileObjectKey(pending_replace.directory_remote_path, pending_replace.file_name), backup_key);
+                (*snapshot.layout)[local_directory->second].files.insert_or_assign(pending_replace.file_name, FileRemoteInfo{
+                    .bytes_size = backup_metadata.size_bytes,
+                    .last_modified = backup_metadata.last_modified.epochTime(),
+                    .blob_key = {},
+                });
+            }
+
             const size_t directories = snapshot.layout->size();
-            fs.applyLayout(std::move(*snapshot.layout));
+            fs.applyLayout(std::move(*snapshot.layout), std::move(backups_of_targets));
             applied_snapshot_etag = std::move(snapshot.etag);
+            applied_snapshot_had_pending_replaces = !targets_read_from_backups.empty();
             /// The state came from the writer: the pending replacements seen by a previous listing are no longer relevant.
             remote_directories_of_pending_replaces.clear();
             previous_refresh.restart();

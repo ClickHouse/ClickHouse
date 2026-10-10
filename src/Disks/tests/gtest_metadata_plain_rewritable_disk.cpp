@@ -2543,7 +2543,9 @@ TEST_F(MetadataPlainRewritableDiskTest, ReaderTrustsSnapshot)
     public:
         using LocalObjectStorage::LocalObjectStorage;
         mutable std::atomic<size_t> reads = 0;
+        /// The listing of the markers of unfinished operations, which a reader of the snapshot does on every load, is not counted.
         mutable std::atomic<size_t> listings = 0;
+        mutable std::atomic<size_t> marker_listings = 0;
 
         std::unique_ptr<ReadBufferFromFileBase> readObject(
             const StoredObject & object, const ReadSettings & settings, std::optional<size_t> hint,
@@ -2553,17 +2555,14 @@ TEST_F(MetadataPlainRewritableDiskTest, ReaderTrustsSnapshot)
             return LocalObjectStorage::readObject(object, settings, hint, external_buffer, restrict_seek);
         }
 
+        /// `iterate` lists through this too.
         void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override
         {
-            ++listings;
+            if (path.contains(PlainRewritableLayout::TOMBSTONE_DIRECTORY_TOKEN))
+                ++marker_listings;
+            else
+                ++listings;
             LocalObjectStorage::listObjects(path, children, max_keys);
-        }
-
-        ObjectStorageIteratorPtr iterate(
-            const std::string & path_prefix, size_t max_keys, bool with_tags, const std::optional<std::string> & start_after) const override
-        {
-            ++listings;
-            return LocalObjectStorage::iterate(path_prefix, max_keys, with_tags, start_after);
         }
     };
 
@@ -2592,6 +2591,7 @@ TEST_F(MetadataPlainRewritableDiskTest, ReaderTrustsSnapshot)
     MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
     EXPECT_EQ(reader_storage->reads, 1);
     EXPECT_EQ(reader_storage->listings, 0);
+    EXPECT_EQ(reader_storage->marker_listings, 1);
     EXPECT_EQ(sorted(reader.listDirectory("")), std::vector<std::string>({"A", "B"}));
     EXPECT_EQ(reader.getFileSize("A/file"), 4u);
 

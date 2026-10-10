@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -116,8 +117,30 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
         std::string etag;
     };
 
-    /// Reads the snapshot file if it exists and differs from the one applied last time. Must be called under `load_mutex`.
-    SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log) const;
+    /// Reads the snapshot file if it exists, unless `skip_if_unchanged` and it is the same as the one applied last time.
+    /// Must be called under `load_mutex`.
+    SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log, bool skip_if_unchanged) const;
+
+    struct TombstoneMarkerObject
+    {
+        std::string removed_name;
+        std::string marker_path;
+        std::string content;
+    };
+
+    /// Lists and reads the markers of unfinished operations (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`).
+    /// A marker that disappears in the meantime is skipped.
+    std::vector<TombstoneMarkerObject> readTombstoneMarkers(const ReadSettings & settings) const;
+
+    struct TargetReadFromBackup
+    {
+        PlainRewritableLayout::PendingReplace pending_replace;
+        std::string backup_key;
+        ObjectMetadata backup_metadata;
+    };
+
+    /// The targets of the replacements that are not committed yet, which a read-only disk reads from their complete backups.
+    std::vector<TargetReadFromBackup> findTargetsToReadFromBackups(const LoggerPtr & log) const;
 
     /// Lists the object storage and publishes the result in `fs`. If `base` is provided, directories whose `prefix.path`
     /// has the same ETag as in `base` are taken from it without reading `prefix.path` and listing their files.
@@ -207,6 +230,9 @@ private:
     /// The ETag of the snapshot file applied by the last load of a reader, empty if the state was not loaded from it.
     /// Protected by `load_mutex`.
     std::string applied_snapshot_etag;
+    /// Some files of the state loaded from the snapshot file are read from the backups of pending replacements.
+    /// Protected by `load_mutex`.
+    bool applied_snapshot_had_pending_replaces = false;
     AtomicStopwatch previous_refresh;
 
     /// The version of `fs` after the latest change that has to be written to the snapshot.
