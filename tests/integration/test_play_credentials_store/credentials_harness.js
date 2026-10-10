@@ -127,7 +127,7 @@ function makeContext(storage) {
 }
 
 const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
-    'resolvedImplicitUser', 'runEntryUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
+    'resolvedImplicitUser', 'durableImplicitUserStamp', 'durableResultSnapshot', 'runEntryUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
     'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword'];
@@ -382,6 +382,37 @@ scenario('run-link-names-implicit-account', async js => {
     assertEqual(runUser(), 'bob', 'an explicit user is kept');
     ctx.entry = { server: 'http://dave@host:8123/', user: '', implicitUser: '' };
     assertEqual(runUser(), '', 'a userinfo connection keeps the empty field');
+});
+
+/// A result snapshot taken before the implicit user is known carries a marker of this visit; it is
+/// persisted (`IndexedDB`, `history.state`) as the name learned since, so after a reload it still
+/// matches the same account (and a download or `run=1` link still names it), while a marker that has
+/// not resolved is kept and fails closed.
+scenario('persisted-result-stamp-is-durable', async js => {
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.url_elem.value = 'http://host:8123/';
+    ctx.user_elem.value = '';
+    ctx.password_elem.value = 'secret';
+    ctx.result = { ...stampConnection(ctx), url: 'http://host:8123/', query: 'SELECT 1' };
+    const persisted = () => JSON.parse(vm.runInContext('JSON.stringify(durableResultSnapshot(result))', ctx));
+    assertEqual(persisted().implicitUser.startsWith('\u0000pending:'), true, 'an unresolved marker is kept');
+    await store(ctx);
+    const snapshot = persisted();
+    assertEqual(snapshot.implicitUser, 'alice', 'the marker is persisted as the learned name');
+    assertEqual(snapshot.query, 'SELECT 1', 'the rest of the snapshot is kept');
+
+    const reloaded = boot(js);
+    reloaded.implicit_user = 'alice';
+    reloaded.url_elem.value = 'http://host:8123/';
+    reloaded.user_elem.value = '';
+    reloaded.password_elem.value = 'secret';
+    await store(reloaded);
+    assertEqual(sameAsLive(reloaded, { server: snapshot.url, user: '', implicitUser: snapshot.implicitUser }), true,
+        'the persisted snapshot matches the same implicit account after a reload');
+    reloaded.entry = { server: snapshot.url, user: '', implicitUser: snapshot.implicitUser };
+    assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', reloaded), 'alice',
+        'a download of the persisted snapshot names the producing account');
 });
 
 scenario('implicit-default-round-trip-with-query-string', async js => {

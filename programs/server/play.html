@@ -12783,6 +12783,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
     cell.downloadDatabase = query_database;
     cell.downloadUrl = query_url;
     cell.downloadUser = query_user;
+    cell.downloadImplicitUser = query_implicit_user || '';
 
     if (result.is_raw || result.is_image) {
         el.elapsedNs = 1e6 * (performance.now() - query_start);
@@ -14005,6 +14006,7 @@ async function materializeResult(cell) {
     cell.downloadDatabase = result.database || '';
     cell.downloadUrl = result.url ?? '';
     cell.downloadUser = result.user ?? '';
+    cell.downloadImplicitUser = result.implicitUser || '';
     cell.progressPhase = 'done';
     cell.downloadVisible = download_reproducible;
     cell.copyVisible = is_raw;
@@ -14223,6 +14225,7 @@ const CELL_STATE_FIELDS = [
     /// result, which lives in one cell (see the result-shape block above).
     'sortColumns', 'filters', 'pagination', 'shapeQuery', 'shapeContext', 'downloadShape',
     'downloadQuery', 'downloadParams', 'downloadDatabase', 'downloadUrl', 'downloadUser',
+    'downloadImplicitUser',
     'downloadVisible', 'copyVisible',
     'launchQuery', 'launchRunId', 'runEditorInteraction', 'queryErrorOwnerStart',
     /// The Logs/Metrics view selection and the resource meters describe one run's output, which
@@ -14266,6 +14269,7 @@ function cellRuntimeDefaults() {
         downloadDatabase: '',   /// database the download should target (the producing connection)
         downloadUrl: '',        /// server address the download reproduces against (producing connection)
         downloadUser: '',       /// user the download reproduces against (producing connection)
+        downloadImplicitUser: '', /// stamp of the account an implicit `downloadUser` ran as (see `runEntryUser`)
         downloadVisible: false, /// whether the download / copy buttons apply to this cell
         copyVisible: false,
         launchQuery: undefined, /// editor text snapshotted when this cell's run was launched (see `saveHistory`)
@@ -14548,6 +14552,7 @@ function clearCell(cell) {
     cell.downloadDatabase = '';
     cell.downloadUrl = '';
     cell.downloadUser = '';
+    cell.downloadImplicitUser = '';
     cell.logoVisible = true;
     /// A cleared cell has no logs/metrics and shows the result view; its toggles are re-offered as
     /// the new run streams them (see `_markLogsAvailable`). Reset the shared toggles too when the
@@ -15431,6 +15436,7 @@ function paintDownloadCopy(cell) {
     last_database_for_download = cell.downloadDatabase || '';
     last_url_for_download = cell.downloadUrl || '';
     last_user_for_download = cell.downloadUser || '';
+    last_implicit_user_for_download = cell.downloadImplicitUser || '';
 }
 
 /// Repaint the shared chrome (Run/Stop button, favicon, progress bar, logo, download/copy) from
@@ -16493,7 +16499,7 @@ function serializeCell(cell) {
         /// The text `params` was last coherently committed for; persisting it lets the reload's
         /// restore recognize an incoherent pair (see `paramsSyncedQuery`).
         paramsSyncedQuery: cell.paramsSyncedQuery,
-        result: cell.result,
+        result: durableResultSnapshot(cell.result),
         /// The query as of the last URL/history sync. Persisting it lets startup reconciliation
         /// tell a stale reload (the URL hash is this cell's own last synced query, but it was
         /// edited afterwards) from a fresh external URL.
@@ -16607,7 +16613,7 @@ async function persist() {
                 /// provenance lets the reload's restore refuse to stamp that pair as coherent
                 /// (`restoreEditor`), keeping the stale binding out of the rebuilt history/URL.
                 paramsSyncedQuery: tab.paramsSyncedQuery,
-                result: tab.result,
+                result: durableResultSnapshot(tab.result),
                 /// The query as of the last URL/history sync. Persisting it lets startup
                 /// reconciliation tell a stale reload (the URL hash is this tab's own last
                 /// synced query, but the tab was edited afterwards) from a fresh external URL.
@@ -16801,6 +16807,24 @@ function resolvedImplicitUser(serverAddress, stamp) {
     return (key !== null && Object.hasOwn(first, key)) ? first[key] : '';
 }
 
+/// The form of a stamp to store beyond this visit: a marker of this visit is replaced with the name it
+/// has resolved to by now (`resolvedImplicitUser`), since the marker itself would no longer resolve on
+/// a later visit (after a reload, or when the link is shared) and would fail closed against the very
+/// account it denotes. A marker that has not resolved yet is kept as is.
+function durableImplicitUserStamp(serverAddress, stamp) {
+    return resolvedImplicitUser(serverAddress, stamp) || stamp;
+}
+
+/// A result snapshot (`cell.result`) as it is persisted (`IndexedDB`, `history.state`): with its
+/// implicit-user stamp in the durable form (`durableImplicitUserStamp`). The snapshot is recorded when
+/// the run completes, possibly before this visit has learned the implicit name, so the stamp is
+/// upgraded again on every write.
+function durableResultSnapshot(result) {
+    if (!result || !result.implicitUser) return result;
+    const implicit_user = durableImplicitUserStamp(result.url, result.implicitUser);
+    return implicit_user === result.implicitUser ? result : {...result, implicitUser: implicit_user};
+}
+
 /// Do two connections on the same server (compared separately by `sameServerAddress`) use the same
 /// account? Equal explicit effective users (`effectiveConnectionUser`) always do. Two implicit ones do
 /// when their stamps (`implicitUserStamp`) denote the same user, or, while neither denotes a known
@@ -16978,7 +17002,7 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     const entry_implicit_stamp = use_snapshot
         ? (run_snapshot.implicitUser || '')
         : implicitUserStamp(url_elem.value, user_elem.value);
-    const entry_implicit_user = resolvedImplicitUser(entry_server, entry_implicit_stamp) || entry_implicit_stamp;
+    const entry_implicit_user = durableImplicitUserStamp(entry_server, entry_implicit_stamp);
     const carries_run = fromRun && !live_diverged;
     /// `run=1` additionally requires the tab's own `runnableUrl` policy (see `makeTab`): only a tab
     /// whose entries a genuine run produced under a `?run=1` load — or that adopted such a policy
@@ -16999,7 +17023,7 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     const state = {
         query: recorded_query,
         params: recorded_params,
-        result: tab.result || null,
+        result: durableResultSnapshot(tab.result) || null,
         tabId: tab.id,
         tabName: tab.title,
         /// A history entry can outlive the tab it describes: Close tab followed by Back must
@@ -17248,8 +17272,9 @@ function saveHistory(stateData, titleForDoc, tab, cell) {
         /// connection has since changed. The password is deliberately never stored in history.
         url: stateData.url,
         user: stateData.user,
-        /// The account an implicit `user` was authenticated as (see `sameConnectionUser`).
-        implicitUser: stateData.implicitUser,
+        /// The account an implicit `user` was authenticated as (see `sameConnectionUser`), stored
+        /// durably like the history entry's stamp (`durableImplicitUserStamp`).
+        implicitUser: durableImplicitUserStamp(stateData.url, stateData.implicitUser),
         format: stateData.format,
         /// The `X-ClickHouse-Exception-Tag` of a failed run, so restoring the snapshot (tab switch,
         /// reload, Back/Forward) can split a transport `__exception__` marker on the validated block —
@@ -22283,6 +22308,10 @@ let last_database_for_download = '';
 /// rather than silently exporting data from the wrong server.
 let last_url_for_download = '';
 let last_user_for_download = '';
+/// The implicit-user stamp of the producing connection (see `sameConnectionUser`): an implicit run
+/// (no `user`) is downloaded as the account it was authenticated as once that name is known
+/// (`runEntryUser`), not as whatever the server's `default_session_user` is at download time.
+let last_implicit_user_for_download = '';
 
 // Toggle download dropdown
 document.getElementById('download-div').addEventListener('click', function(e) {
@@ -22416,10 +22445,10 @@ document.getElementById('download-button').addEventListener('click', async funct
     // snapshotted (never stored in history), so the live password is used — a mismatched
     // connection then surfaces as a visible authentication error rather than silently exporting
     // data from the wrong server.
-    const user = last_user_for_download;
+    const server_address = last_url_for_download || url_elem.value;
+    const user = runEntryUser(server_address, last_user_for_download, last_implicit_user_for_download);
     dropAutofilledStalePassword();
     const password = password_elem.value;
-    const server_address = last_url_for_download || url_elem.value;
     const query = last_query_for_download;
 
     if (!query) {
