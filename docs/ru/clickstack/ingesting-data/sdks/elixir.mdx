@@ -6,25 +6,15 @@ doc_type: 'guide'
 keywords: ['Elixir ClickStack SDK', 'Elixir обсервабилити', 'HyperDX Elixir', 'Elixir SDK для логирования', 'Интеграция ClickStack с Elixir']
 ---
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ Логи</td>
-      <td className="pe-2">✖️ Метрики</td>
-      <td className="pe-2">✖️ Трассировки</td>
-    </tr>
-  </tbody>
-</table>
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+<ClickStackIntegrates signals={['logs']} />
 
 *🚧 Инструментирование метрик и трассировки OpenTelemetry скоро будет доступно!*
 
-<div id="getting-started">
-  ## Начало работы
-</div>
+## Начало работы {#getting-started}
 
-<div id="install-hyperdx-logger-backend-package">
-  ### Установите пакет backend логгера ClickStack
-</div>
+### Установите пакет backend логгера ClickStack {#install-hyperdx-logger-backend-package}
 
 Пакет можно установить, добавив `hyperdx` в список зависимостей в
 `mix.exs`:
@@ -37,9 +27,7 @@ def deps do
 end
 ```
 
-<div id="configure-logger">
-  ### Настройте логгер
-</div>
+### Настройте логгер {#configure-logger}
 
 Добавьте следующее в файл `config.exs`:
 
@@ -51,9 +39,7 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-<div id="configure-environment-variables">
-  ### Настройте переменные окружения
-</div>
+### Настройте переменные окружения {#configure-environment-variables}
 
 После этого вам нужно настроить следующие переменные окружения в
 оболочке, чтобы отправлять телеметрию в ClickStack через OpenTelemetry Collector:
@@ -61,14 +47,14 @@ config :logger,
 <Tabs>
   <Tab title="Управляемый ClickStack">
     ```shell
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 
   <Tab title="ClickStack с открытым исходным кодом">
     ```shell
     export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 </Tabs>
