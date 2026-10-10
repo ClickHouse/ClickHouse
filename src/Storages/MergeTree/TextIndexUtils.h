@@ -223,4 +223,9 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
 /// Estimates the read buffer size for the posting list of a token based on max estimated segment size.
 size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);
 
+bool canReuseTextIndexForMerge(
+    const MergeTreeIndexPtr & index,
+    const IMergeTreeDataPart & part,
+    const MergeTreeReaderSettings & reader_settings);
+
 }
