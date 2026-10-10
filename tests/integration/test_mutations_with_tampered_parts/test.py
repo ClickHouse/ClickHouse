@@ -235,7 +235,7 @@ def test_mutate_repair_corrupted_missing_idx_checksums(started_cluster):
 
     # v = k is monotone, so a minmax index over v prunes a point query to a single
     # granule. `index_granularity` = 100 over 2000 rows gives 20 granules. m is a
-    # MATERIALIZED column so that `DROP COLUMN` m forces a full-part rewrite
+    # MATERIALIZED `Map` column so that `MATERIALIZE COLUMN` m forces a full-part rewrite
     # (`MutateAllPartColumnsTask`).
     node.query("""
         CREATE TABLE t_corrupt_minmax
@@ -286,11 +286,11 @@ def test_mutate_repair_corrupted_missing_idx_checksums(started_cluster):
         == "0\n"
     )
 
-    # Full-part rewrite (`MutateAllPartColumnsTask` via `DROP COLUMN` of a MATERIALIZED
-    # column). Before the fix the preserve path found no substreams in checksums and
+    # Full-part rewrite (`MutateAllPartColumnsTask` via `MATERIALIZE COLUMN` of a MATERIALIZED
+    # `Map` column). Before the fix the preserve path found no substreams in checksums and
     # dropped the orphan files, permanently losing the index. The fix forces a
     # recalculate so the writer rebuilds the index from column data.
-    node.query("ALTER TABLE t_corrupt_minmax DROP COLUMN m SETTINGS mutations_sync = 2")
+    node.query("ALTER TABLE t_corrupt_minmax MATERIALIZE COLUMN m SETTINGS mutations_sync = 2")
 
     new_part = active_part_path("t_corrupt_minmax")
     assert glob_exists(f"{new_part}skp_idx_mm_v.idx2")
@@ -458,8 +458,8 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
     # part has no skp_idx entries in checksums, then re-inject the files on disk.
     # Returns the poisoned part's path, so callers never re-query it.
     def make_corrupted_part(tbl, mode="all"):
-        # m mirrors 04426: a MATERIALIZED Map column, so `DROP COLUMN m` reaches
-        # `MutateAllPartColumnsTask`. A scalar MATERIALIZED column is not enough -- dropping one
+        # m mirrors 04426: a MATERIALIZED Map column, so `MATERIALIZE COLUMN m` reaches
+        # `MutateAllPartColumnsTask`. A scalar MATERIALIZED column is not enough -- materializing one
         # still takes the some-columns path (verified via `MutationAllPartColumns` in `system.part_log`).
         #
         # Granule-selective like t_txt_ok below: the phrase sits only in the first 100 rows, i.e. in one
@@ -650,14 +650,14 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
     )
     node.query("DROP TABLE t_txt_side SYNC")
 
-    # Path E is the full-rewrite arm of the same shape: dropping the MATERIALIZED Map column m
+    # Path E is the full-rewrite arm of the same shape: materializing the MATERIALIZED Map column m
     # reaches `MutateAllPartColumnsTask`, which rebuilds the index from column data instead of
     # leaving it absent (04426 asserts the same repair for a single-stream minmax index). So here
     # the index files are expected to be BACK and checksummed, and to prune again -- unlike paths
     # A/B/D, where the orphans are removed and the index stays absent until `MATERIALIZE INDEX`.
     corrupt_part = make_corrupted_part("t_txt_side_full", mode="side_streams_only")
     assert side_streams_on_disk(corrupt_part) == 6
-    node.query("ALTER TABLE t_txt_side_full DROP COLUMN m SETTINGS mutations_sync = 2")
+    node.query("ALTER TABLE t_txt_side_full MATERIALIZE COLUMN m SETTINGS mutations_sync = 2")
     new_part = active_part_path("t_txt_side_full")
     # All 8 files, not just the 6 injected ones: a rebuild writes the base pair too.
     assert side_streams_on_disk(new_part) == 8
@@ -887,19 +887,18 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
         )
         return int(container_bash(cmd).strip())
 
-    # --- Path A: full-part rewrite (`DROP COLUMN` of the MATERIALIZED `Map` column m) ---
-    # `m` is a MATERIALIZED `Map`, i.e. a column with dynamic subcolumns, so dropping it forces
-    # `MutateAllPartColumnsTask` (same device as 04426). Verified by `MutationAllPartColumns`: an
-    # ordinary `UInt64` column would be handled as a file rename and take the some-columns path
-    # instead, leaving this site unexercised.
+    # --- Path A: full-part rewrite (`MATERIALIZE COLUMN` of the MATERIALIZED `Map` column m) ---
+    # `m` is a MATERIALIZED `Map`, i.e. a column with dynamic subcolumns, so materializing it forces
+    # `MutateAllPartColumnsTask` (same device as 04426). Verified by `MutationAllPartColumns`: a
+    # scalar column would take the some-columns path instead, leaving this site unexercised.
     #
-    # The dropped column is deliberately NOT the indexed one. An `ALTER UPDATE w` would put the index
+    # The materialized column is deliberately NOT the indexed one. An `ALTER UPDATE w` would put the index
     # in `materialized_indices`, which forces a recalculate on its own and would make the assertion
     # vacuous - it would stay green even with the classification broken.
     make_corrupted_part("t_sib_full")
     assert orphan_on_disk("t_sib_full")
     assert text_streams_on_disk("t_sib_full") == 6
-    node.query("ALTER TABLE t_sib_full DROP COLUMN m SETTINGS mutations_sync = 2")
+    node.query("ALTER TABLE t_sib_full MATERIALIZE COLUMN m SETTINGS mutations_sync = 2")
     # The index must be REBUILT, so its file is present again - but this time as a checksummed member of
     # the new part rather than as the hardlinked-forward orphan. `CHECK TABLE` is what separates the two:
     # with the classification counting the sibling's file as evidence of health the index is not

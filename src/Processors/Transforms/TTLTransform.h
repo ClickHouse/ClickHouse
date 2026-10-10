@@ -63,6 +63,9 @@ private:
     };
     std::unordered_map<String, ExpiredColumnData> expired_columns_data;
 
+    /// TTL infos of the columns that do not pass through the transform, which are kept as they are.
+    TTLInfoMap unchanged_columns_ttl;
+
     /// A `MATERIALIZED` column whose expression reads a column that a column TTL resets to its default.
     /// Its stored value describes the pre-expiry data, so it is recomputed once the TTL algorithms that
     /// reset the columns it reads have run.

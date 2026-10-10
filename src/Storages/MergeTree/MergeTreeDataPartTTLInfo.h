@@ -74,6 +74,20 @@ struct MergeTreeDataPartTTLInfos
     /// The earliest time at which a column TTL becomes due. Zero if there is no unfinished column TTL.
     time_t getMinimalNonFinishedColumnTTL() const;
 
+    /// The earliest time at which every value of some unfinished column TTL has expired, so that the
+    /// column can be dropped from the part as a whole. Zero if there is no unfinished column TTL.
+    time_t getMinimalMaxNonFinishedColumnTTL() const;
+
+    /// The earliest time at which a row TTL (table, `WHERE` or `GROUP BY`) becomes due. Zero if there is
+    /// no unfinished row TTL.
+    time_t getMinimalNonFinishedRowTTL() const;
+
+    /// True if every value of the column `column_name` has expired by its TTL at `current_time`.
+    bool isColumnTTLFullyExpired(const String & column_name, time_t current_time) const;
+
+    /// Forgets the TTL of a column that has no values in the part anymore. Returns false if there was none.
+    bool removeColumnTTL(const String & column_name);
+
     void updatePartMinMaxTTL(const MergeTreeDataPartTTLInfo & ttl_info)
     {
         if (ttl_info.finished())
