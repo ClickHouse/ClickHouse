@@ -7,6 +7,8 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET explain_query_plan_default = 'legacy';
+-- The plan lines below show the filter moved to PREWHERE; the runner randomizes the move.
+SET optimize_move_to_prewhere = 1;
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 0;

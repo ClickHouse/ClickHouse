@@ -4,8 +4,6 @@
 -- of the log had no estimate at all.
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
-SET make_distributed_plan = 1;
-SET distributed_plan_execute_locally = 1;
 SET enable_cascades_optimizer = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_join_swap_table = 0;
@@ -25,7 +23,10 @@ CREATE TABLE t_fe_dim (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_sta
 INSERT INTO t_fe_fact SELECT number % 1000, number FROM numbers(100000);
 INSERT INTO t_fe_dim SELECT number FROM numbers(1000);
 
-SELECT count() FROM t_fe_fact AS f JOIN t_fe_dim AS d ON f.k = d.k SETTINGS log_comment = '05355_fragment_estimates';
+-- Only this query takes the distributed plan: the queries of the system logs below read tables whose
+-- parts merge while they run.
+SELECT count() FROM t_fe_fact AS f JOIN t_fe_dim AS d ON f.k = d.k
+SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, log_comment = '05355_fragment_estimates';
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
 -- The join runs in the tasks: their processors are logged under their own query ids. A read's

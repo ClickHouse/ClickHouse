@@ -10,6 +10,9 @@ SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_remove_unused_columns = 1;
 -- The plan lines below show the two filters merged into one expression; the runner randomizes the merge.
 SET query_plan_merge_filters = 1;
+-- The correlation equality is a key of the domain join only when the filter is merged into the join
+-- condition; the runner randomizes the merge.
+SET query_plan_merge_filter_into_join_condition = 1;
 SET use_statistics = 1;
 -- The test runner may turn this off; the inserted parts need their statistics.
 SET materialize_statistics_on_insert = 1;
