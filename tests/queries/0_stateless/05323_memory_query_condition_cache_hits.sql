@@ -26,7 +26,7 @@ SELECT count(), sum(length(s)) FROM t_memory_qcc_hits WHERE x = 1 SETTINGS optim
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0, ProfileEvents['QueryConditionCacheMisses'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05323\_%' AND event_date >= yesterday()
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05323_where_1', '05323_where_2', '05323_prewhere_1', '05323_prewhere_2') AND event_date >= yesterday()
 ORDER BY log_comment;
 
 DROP TABLE t_memory_qcc_hits;
