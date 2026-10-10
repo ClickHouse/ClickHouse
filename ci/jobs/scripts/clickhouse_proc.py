@@ -588,6 +588,7 @@ class ClickHouseProc:
         self,
         with_s3_storage,
         is_db_replicated,
+        no_stateful=False,
         build_type=None,
         step_timeout=None,
         stop_thread_fuzzer=False,
@@ -629,16 +630,18 @@ if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
 fi
 
 $PREP_TIMEOUT clickhouse-client --query "SHOW DATABASES"
-$PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
-$PREP_TIMEOUT clickhouse-client < ./tests/docker_scripts/create.sql
 $PREP_TIMEOUT bash ./tests/docker_scripts/create_tpcds.sh
 $PREP_TIMEOUT bash ./tests/docker_scripts/create_tpch.sh
-$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM datasets"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM tpcds"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM tpch"
 
 $PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE test"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
+# Only `stateful`-tagged tests read `datasets` and the `test` tables below.
+if [[ "$NO_STATEFUL" != "1" ]]; then
+$PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
+$PREP_TIMEOUT clickhouse-client < ./tests/docker_scripts/create.sql
+$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM datasets"
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16, EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32, UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String, RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8, MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16, ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32, SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8, FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32, HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String, HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32, FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32, LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String, OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String, UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64, URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String, ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64), IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8)
         ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate)
@@ -665,6 +668,7 @@ $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_parquet (Title S
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.hits"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
+fi
 
 if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
     $PREP_TIMEOUT clickhouse-client --query "SYSTEM START THREAD FUZZER"
@@ -674,6 +678,7 @@ fi
             f"PREP_TIMEOUT={shlex.quote(self.prep_timeout_prefix(step_timeout))}\n"
             f"MAX_INSERT_THREADS={max_insert_threads}\n"
             f"STOP_THREAD_FUZZER={1 if stop_thread_fuzzer else 0}\n"
+            f"NO_STATEFUL={1 if no_stateful else 0}\n"
         ) + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
