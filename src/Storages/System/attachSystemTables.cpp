@@ -102,6 +102,7 @@
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
 #include <Storages/System/StorageSystemTransactions.h>
+#include <Storages/System/StorageSystemColumnsCache.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Storages/System/StorageSystemFilesystemCacheSettings.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
@@ -1536,7 +1537,7 @@ The following kinds of entities are collected (the value of the `type` column is
 - System tables (`System Table`)
 - SQL statements (`Statement`)
 
-For settings (of any kind), the documentation is the setting's description, together with its type and default value; obsolete settings are not exposed. It also carries the history of the changes of the setting's default value across ClickHouse versions: the version in which the setting was introduced and every later change of its default, with the previous value, the new value and the reason for the change. This is the same data that backs the `compatibility` setting and [`system.settings_changes`](/reference/system-tables/settings_changes), so it covers the changes recorded since that mechanism was introduced: an older setting whose default never changed has no history, and neither do server settings, which `compatibility` does not cover. A change recorded under an alias of a setting belongs to the history of that setting, the same way `compatibility` applies it, so the history of a setting that was renamed is not cut at the rename; the exception is a record written under an alias for the sole purpose of registering that alias, which is the history of the alias alone. An alias carries the history of its own name: every record written under it, plus the record that registered it as an alias, which the history file sometimes writes under another name of the same setting.
+For settings (of any kind), the documentation is the setting's description, together with its type and default value; obsolete settings are not exposed. It also carries the history of the changes of the setting's default value across ClickHouse versions: the version in which the setting was introduced and every later change of its default, with the previous value, the new value and the reason for the change. This is the same data that backs the `compatibility` setting and [`system.settings_changes`](/reference/system-tables/settings_changes), so it covers the changes recorded since that mechanism was introduced: an older setting whose default never changed has no history, and neither do server settings, which `compatibility` does not cover. The records are part of the declaration of a setting, so the history of a setting that was renamed is not cut at the rename. An alias carries the history of its own name: the records of its setting that name it as an alias or as a former name of the setting.
 
 For system tables, the description, examples, and related material are stored in the table metadata comment using lightweight section markers. The complete generated page body is assembled from that comment and the live column schema. Event and metric catalogs are rendered from their registries, so generated details stay synchronized with the running binary.
 
@@ -1791,6 +1792,10 @@ To show all possible error codes, including ones which were not triggered, set s
 .columns_notes
 <Note>
 Counters for some errors may increase during successful query execution. It's not recommended to use this table for server monitoring purposes unless you are sure that corresponding error can not be a false positive.
+
+`last_error_symbols` and `last_error_lines` are resolved from the binary's symbol table and debug info.
+`last_error_symbols` is populated wherever the symbol table is available (Linux and macOS builds).
+`last_error_lines` additionally requires DWARF debug info - read directly from the binary on Linux, or from a co-located `.dSYM` bundle on macOS - so it is empty when that debug info is not available. Both arrays are empty on platforms without introspection support (for example FreeBSD).
 </Note>
 
 .examples
@@ -2198,7 +2203,7 @@ Row 1:
 ──────
 resource:          network_read
 path:              /prio/fair/prod
-type:              fifo
+type:              request_queue
 weight:            5
 priority:          0
 is_active:         0
@@ -3295,6 +3300,45 @@ Contains information about all entries inside filesystem cache for remote object
     attachNoDescription<StorageSystemFilesystemCacheSettings>(context, system_database, "filesystem_cache_settings", R"DOCS_MD(
 .description
 Contains information about all filesystem cache settings
+)DOCS_MD");
+    attachNoDescription<StorageSystemColumnsCache>(context, system_database, "columns_cache", R"DOCS_MD(
+.description
+Contains one row per entry currently stored in the deserialized columns cache. The cache keeps previously read and deserialized columns of `MergeTree` data parts in memory, so repeated reads of the same row range do not pay for decompression and deserialization again.
+
+Each entry corresponds to a contiguous range of granules `[row_begin, row_end)` of a single column of a single data part, within a fixed stripe of the part of about 65536 rows. Reads are served from the cache granule by granule, and the stripes are the same for every read of the part, so the entries do not depend on how a query splits the part into mark ranges: a read that touches only some granules of a stripe caches those, and adjacent ranges written by different reads are merged.
+
+The cache identifies entries by table UUID, so it is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud). Tables in legacy `Ordinary` databases have no UUID and are silently excluded from the cache. Only wide parts participate in the cache; compact parts are silently excluded.
+
+The cache is controlled by the server settings `columns_cache_size` (by default `columns_cache_size_to_ram_ratio` of the memory available to the server) and `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`, `enable_reads_from_columns_cache`, `enable_writes_to_columns_cache`, `columns_cache_max_estimated_bytes_to_write_to_cache`, and `columns_cache_max_bytes_to_write_to_cache`. It can be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/system).
+
+The rows are filtered by access rights: an entry is visible only to a user who may see both its table and its column, that is holds `SHOW TABLES` on the table and `SHOW COLUMNS` on the column. A grant of `SHOW COLUMNS` on `*.*` does not bypass a revoke on an individual table or column, because this table exposes operational data (part names, row ranges and cached sizes) and not only schema. Entries of a table that no longer exists carry no name to check, so they are visible only to a user holding `SHOW COLUMNS` globally.
+
+.examples
+Total memory consumed by cached columns, per table:
+
+```sql
+SELECT
+    database,
+    table,
+    formatReadableSize(sum(bytes)) AS size,
+    sum(rows) AS rows,
+    count() AS entries
+FROM system.columns_cache
+GROUP BY database, table
+ORDER BY sum(bytes) DESC
+```
+
+Largest individual cache entries:
+
+```sql
+SELECT database, table, part, column, row_begin, row_end, rows, formatReadableSize(bytes) AS size
+FROM system.columns_cache
+ORDER BY bytes DESC
+LIMIT 10
+```
+
+.see_also
+- [SYSTEM DROP COLUMNS CACHE](/reference/statements/system) — The statement which drops every entry of the columns cache.
 )DOCS_MD");
     attachNoDescription<StorageSystemQueryConditionCache>(context, system_database, "query_condition_cache", R"DOCS_MD(
 .description

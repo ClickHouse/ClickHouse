@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: every replica forwards its own `Reading tokens` log lines, https://github.com/ClickHouse/ClickHouse/issues/123994
 # Verifies that, after the first data part is analyzed, subsequent parts read text-index tokens
 # in order of increasing cardinality (rarest first) rather than alphabetically.
 # See PR https://github.com/ClickHouse/ClickHouse/pull/98226.

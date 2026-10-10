@@ -423,11 +423,11 @@ naming columns of derived tables. If omitted, columns are named `c1`, `c2`, etc.
 ## See also {#see-also}
 
 - [Values format](/reference/formats/Values)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}, TableFunctionFactory::Case::Insensitive);
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}, TableFunctionFactory::Case::Insensitive);
     factory.registerFunction<TableFunctionValues<false>>({.description = R"(
 Internal table function used to implement SQL standard VALUES clause syntax.
 Created automatically by the parser when it encounters (VALUES (row1), (row2), ...) in a FROM clause.
-)", .category = FunctionDocumentation::Category::Internal}, {.allow_readonly = true});
+)", .category = FunctionDocumentation::Category::Internal}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }

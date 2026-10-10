@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, shard
+# Tags: no-parallel, shard, no-fasttest
 # Tag no-parallel: waits on a server-global PAUSEABLE failpoint, so a concurrent instance would
 #   consume this one's pause and release the writing job early.
 # Tag shard: inserts into a Distributed table.
