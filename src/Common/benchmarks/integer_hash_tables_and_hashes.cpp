@@ -1,15 +1,24 @@
 #include <benchmark/benchmark.h>
 
-#include <bit>
-#include <functional>
+#include <iomanip>
 #include <random>
 #include <vector>
+
+#include <unordered_map>
+
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/sparse_hash_map>
+#include <absl/container/flat_hash_map.h>
+
+#include <Common/Stopwatch.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 //#define DBMS_HASH_MAP_DEBUG_RESIZES
 
 #include <farmhash.h>
 #include <wyhash.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <IO/ReadBufferFromFile.h>
 #include <base/types.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
@@ -100,11 +109,11 @@ namespace Hashes
         size_t operator()(Key x) const
         {
             x = (~x) + (x << 18);
-            x = x ^ std::rotr(x, 31);
+            x = x ^ ((x >> 31) | (x << 33));
             x = x * 21;
-            x = x ^ std::rotr(x, 11);
+            x = x ^ ((x >> 11) | (x << 53));
             x = x + (x << 6);
-            x = x ^ std::rotr(x, 22);
+            x = x ^ ((x >> 22) | (x << 42));
 
             return x;
         }

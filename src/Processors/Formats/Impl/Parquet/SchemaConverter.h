@@ -144,7 +144,6 @@ private:
     bool processSubtreeArrayOuter(TraversalNode & node);
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
-    bool processSubtreeDynamic(TraversalNode & node);
 
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint,
@@ -155,8 +154,7 @@ private:
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.
     /// For top-level columns (when current_path is empty), returns the full mapped name to support
     /// column names with dots (e.g. `integer.col` in Iceberg).
-    std::string_view useColumnMapperIfNeeded(
-        const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const;
+    std::string_view useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const;
 };
 
 }

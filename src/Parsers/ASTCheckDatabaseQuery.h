@@ -19,10 +19,8 @@ struct ASTCheckDatabaseQuery : public ASTQueryWithOutput
     {
         auto res = make_intrusive<ASTCheckDatabaseQuery>(*this);
         res->children.clear();
-        /// The parser adds the database child first and `ParserQueryWithOutput` appends the output
-        /// options last; reproduce that order so the clone has the same tree hash.
-        cloneDatabaseOptions(*res);
         cloneOutputOptions(*res);
+        cloneDatabaseOptions(*res);
         return res;
     }
 
