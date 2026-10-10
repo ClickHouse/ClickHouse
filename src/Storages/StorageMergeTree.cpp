@@ -2009,7 +2009,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         chassert(choices.size() == 1);
         MergeSelectorChoice choice = std::move(choices[0]);
 
-        auto future_part = [&]()
+        auto constructed_part = [&]()
         {
             if (txn != nullptr)
                 return constructFuturePart(*this, choice, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
@@ -2017,13 +2017,15 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             return constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
         }();
 
-        if (!future_part)
+        if (!constructed_part)
         {
             return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
+                .explanation = PreformattedMessage::create("Can't construct future part from source parts ({}). Probably there was a drop part/partition user query.", constructed_part.error().text),
             });
         }
+
+        auto future_part = std::move(*constructed_part);
 
         /// The mutation version of a patch part is the maximum data version its index covers, not a
         /// position in the mutation queue, so it cannot carry this. Patch parts store the updated
@@ -4554,8 +4556,15 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 }
 
 
-void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &)
+void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> &)
 {
+    /// The parts are committed one by one, so check the size limits of a temporary table for all of them beforehand,
+    /// with the settings of the `RESTORE` query: a restore that does not fit is rejected as a whole, as `ATTACH PARTITION`.
+    {
+        auto lock = lockParts();
+        throwIfTemporaryTableSizeLimitsExceededForReplacement(query_context, lock, parts, std::nullopt);
+    }
+
     for (auto part : parts)
     {
         /// It's important to create it outside of lock scope because
