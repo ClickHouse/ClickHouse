@@ -64,6 +64,9 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 
+    /// Take ownership of the states before appending, see `deserializeBinaryBulk`.
+    column_concrete.ensureOwnership();
+
     Arena & arena = column_concrete.createOrGetArena();
     size_t size_of_state = function->sizeOfData();
     AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
@@ -158,6 +161,9 @@ static String serializeToString(const AggregateFunctionPtr & function, const ICo
 static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s, size_t version)
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
+
+    /// Take ownership of the states before appending, see `SerializationAggregateFunction::deserializeBinaryBulk`.
+    column_concrete.ensureOwnership();
 
     Arena & arena = column_concrete.createOrGetArena();
     size_t size_of_state = function->sizeOfData();
