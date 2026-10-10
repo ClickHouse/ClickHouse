@@ -10,6 +10,11 @@ DROP TABLE IF EXISTS t_05328_mx;
 DROP TABLE IF EXISTS t_05328_mx0;
 DROP TABLE IF EXISTS t_05328_mrp;
 DROP TABLE IF EXISTS t_05328_mal2;
+DROP TABLE IF EXISTS t_05328_mq;
+DROP TABLE IF EXISTS t_05328_mv;
+DROP VIEW IF EXISTS t_05328_v;
+DROP TABLE IF EXISTS t_05328_mva;
+DROP VIEW IF EXISTS t_05328_va;
 DROP TABLE IF EXISTS t_05328_d;
 DROP TABLE IF EXISTS t_05328_c;
 DROP TABLE IF EXISTS t_05328_f;
@@ -76,6 +81,14 @@ SELECT x, n.b, y FROM t_05328_mal2;
 SELECT 'Memory child';
 SELECT n.b FROM t_05328_mmem;
 
+SELECT 'View child with a constant member';
+CREATE VIEW t_05328_v AS SELECT toUInt8(6) AS k, [toUInt8(1), 2] AS `n.a`;
+CREATE TABLE t_05328_mv (k UInt8, `n.a` Array(UInt8), `n.b` Array(Nullable(UInt8))) ENGINE = Merge(currentDatabase(), '^t_05328_v$');
+SELECT n.b FROM t_05328_mv;
+CREATE VIEW t_05328_va (`n.a` Array(UInt8), y UInt8 ALIAS 1) AS SELECT [toUInt8(1), 2] AS `n.a`;
+CREATE TABLE t_05328_mva (`n.a` Array(UInt8), `n.b` Array(Nullable(UInt8))) ENGINE = Merge(currentDatabase(), '^t_05328_va$');
+SELECT n.b FROM t_05328_mva;
+
 SELECT 'Distributed child';
 SELECT n.a, n.b, n.b.size0, n.b.null FROM t_05328_md;
 SELECT sum(length(n.b)), count() FROM t_05328_md;
@@ -85,6 +98,11 @@ SELECT sum(length(n.b)), count(), groupArray(n.d), groupArray(n.m) FROM t_05328_
 
 SELECT 'share_nested_offsets = 0 child next to a Distributed child';
 SELECT sum(length(n.b)), count() FROM t_05328_mx0;
+
+SELECT 'Quantized member of a Distributed child';
+SET enable_quantized_codec = 1;
+CREATE TABLE t_05328_mq (k UInt8, `n.a` Array(UInt8), `n.q` Array(Float32) CODEC(Quantized('int8', 8))) ENGINE = Merge(currentDatabase(), '^t_05328_d$');
+SELECT n.q, hex(n.q.quantized) FROM t_05328_mq;
 
 SELECT 'row policy on another member';
 CREATE ROW POLICY p_05328 ON t_05328_c USING length(n.a) > 0 AS PERMISSIVE TO ALL;
@@ -106,6 +124,11 @@ DROP TABLE t_05328_mx;
 DROP TABLE t_05328_mx0;
 DROP TABLE t_05328_mrp;
 DROP TABLE t_05328_mal2;
+DROP TABLE t_05328_mq;
+DROP TABLE t_05328_mv;
+DROP VIEW t_05328_v;
+DROP TABLE t_05328_mva;
+DROP VIEW t_05328_va;
 DROP TABLE t_05328_d;
 DROP TABLE t_05328_c;
 DROP TABLE t_05328_f;

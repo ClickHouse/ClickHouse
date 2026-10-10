@@ -542,18 +542,25 @@ bool sharesNestedOffsets(const StorageSnapshotPtr & snapshot)
 }
 
 /// The child's array of the same `Nested` group that a missing array `column` (a name in storage) takes its sizes from.
+/// The child reads it, so the user must be able to select it from the child.
 std::optional<NameAndTypePair> getNestedSiblingForSizes(
-    const NameAndTypePair & column, const ColumnsDescription & child_columns, bool shares_nested_offsets)
+    const NameAndTypePair & column, const IStorage & child, const StorageSnapshotPtr & child_snapshot, const ContextPtr & context)
 {
-    if (!shares_nested_offsets || !typeid_cast<const DataTypeArray *>(column.type.get()))
+    if (!sharesNestedOffsets(child_snapshot) || !typeid_cast<const DataTypeArray *>(column.type.get()))
         return {};
 
+    const auto & child_columns = child_snapshot->metadata->getColumns();
+    const auto child_id = child.getStorageID();
+    const auto * alias = child.as<StorageAlias>();
+    const auto access = context->getAccess();
     const String group = Nested::extractTableName(column.name);
     NamesAndTypesList candidates;
     for (const auto & child_column : child_columns.getAllPhysical())
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(child_column.type.get());
-        if (array_type && Nested::extractTableName(child_column.name) == group)
+        if (array_type && Nested::extractTableName(child_column.name) == group
+            && access->isGranted(AccessType::SELECT, child_id.database_name, child_id.table_name, child_column.name)
+            && (!alias || alias->isTargetTableGranted(context, AccessType::SELECT, child_column.name)))
             candidates.emplace_back(child_column.name, array_type->getNestedType());
     }
 
@@ -1463,19 +1470,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 if (common_processed_stage == QueryProcessingStage::FetchColumns)
                 {
                     const auto & child_physical_columns = nested_storage_snapshot->metadata->getColumns();
-                    const bool shares_offsets = sharesNestedOffsets(nested_storage_snapshot);
                     const auto with_subcolumns = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
                     for (const auto & column_name : missing_column_names)
                     {
                         auto merge_column = merge_columns.tryGetColumn(with_subcolumns, column_name);
-                        if (!merge_column)
+                        if (!merge_column || (merge_column->isSubcolumn() && !isSubcolumnOfDefaultValue(*merge_column)))
                             continue;
 
                         NameAndTypePair missing_column(merge_column->getNameInStorage(), merge_column->getTypeInStorage());
                         if (child_physical_columns.has(missing_column.name))
                             continue;
 
-                        auto sibling = getNestedSiblingForSizes(missing_column, child_physical_columns, shares_offsets);
+                        auto sibling = getNestedSiblingForSizes(missing_column, *storage, nested_storage_snapshot, modified_context);
                         if (!sibling)
                             continue;
 
@@ -1821,10 +1827,11 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             }
 
             /// A missing Nested member is sized like a sibling the child has, as addMissingDefaults does at FetchColumns.
-            if (common_processed_stage > QueryProcessingStage::FetchColumns)
+            if (common_processed_stage > QueryProcessingStage::FetchColumns
+                && (!merge_column->isSubcolumn() || isSubcolumnOfDefaultValue(*merge_column)))
             {
                 NameAndTypePair missing_column(merge_column->getNameInStorage(), merge_column->getTypeInStorage());
-                if (auto sibling = getNestedSiblingForSizes(missing_column, storage_columns, sharesNestedOffsets(storage_snapshot_)))
+                if (auto sibling = getNestedSiblingForSizes(missing_column, *storage, storage_snapshot_, modified_context))
                 {
                     const auto & element_type = assert_cast<const DataTypeArray &>(*missing_column.type).getNestedType();
                     auto element_default = foldConstantCast(createCastFunction(
@@ -2588,13 +2595,17 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             converted_columns.push_back(materializeIfSourceIsNotConst(header.getByName(source_elem.name), source_elem));
         }
+        else if (columns_read_for_nested_sizes.contains(source_elem.name))
+        {
+            /// `addMissingDefaults` takes the sizes only from a full array column.
+            ColumnWithTypeAndName materialized = source_elem;
+            if (materialized.column)
+                materialized.column = materialized.column->convertToFullColumnIfConst();
+            converted_columns.push_back(std::move(materialized));
+        }
         else if (is_smallest_column_requested && smallest_column_name == source_elem.name)
         {
             /// This column is unneeded in the result.
-            converted_columns.push_back(source_elem);
-        }
-        else if (columns_read_for_nested_sizes.contains(source_elem.name))
-        {
             converted_columns.push_back(source_elem);
         }
         else if (!has_columns_read_only_for_child && header.columns() == current_step_columns.size())

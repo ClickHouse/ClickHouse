@@ -26,6 +26,9 @@ ALIAS column read next to two missing columns
 \N	[NULL,NULL]	5
 Memory child
 [NULL,NULL]
+View child with a constant member
+[NULL,NULL]
+[NULL,NULL]
 Distributed child
 [1,2]	[NULL,NULL]	2	[1,1]
 2	1
@@ -33,6 +36,8 @@ MergeTree and Distributed children
 4	2	[[0,0],[0,0]]	[[{},{}],[{},{}]]
 share_nested_offsets = 0 child next to a Distributed child
 2	2
+Quantized member of a Distributed child
+[0,0]	000000000000000000000000
 row policy on another member
 [NULL,NULL]
 row policy on another column next to two missing columns
