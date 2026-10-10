@@ -1515,6 +1515,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         /// The interpolated values are only in the target columns, the columns of the target expressions keep
         /// their pre-fill values, so a target expression read by an INTERPOLATE expression reads the target.
         NameToNameMap target_by_expression_name;
+        NameSet ambiguous_expression_names;
         for (const auto & interpolate_node : interpolate_list_nodes)
         {
             const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
@@ -1527,8 +1528,13 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             if (order_by_column_names.contains(expression_name) || target_names.contains(expression_name))
                 continue;
 
-            target_by_expression_name[expression_name] = interpolate_node_typed.getExpressionName();
+            /// Several targets backed by one expression: a read of it does not tell which target it means.
+            if (!target_by_expression_name.emplace(expression_name, interpolate_node_typed.getExpressionName()).second)
+                ambiguous_expression_names.insert(expression_name);
         }
+
+        for (const auto & expression_name : ambiguous_expression_names)
+            target_by_expression_name.erase(expression_name);
 
         ActionsDAG interpolate_actions_dag;
         std::unordered_map<String, const ActionsDAG::Node *> input_by_name;

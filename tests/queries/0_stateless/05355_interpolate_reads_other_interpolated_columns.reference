@@ -74,3 +74,9 @@ a literal is not a target
 1	6	5
 2	7	10
 3	5	1
+a shared expression is not rebound
+0	1	1
+1	0	2
+2	0	2
+3	0	2
+4	2	2

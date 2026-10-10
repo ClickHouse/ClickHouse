@@ -1,4 +1,4 @@
--- An INTERPOLATE expression reads the previous interpolated value of every INTERPOLATE target it reads.
+-- An INTERPOLATE expression reads the previous interpolated value of another INTERPOLATE target it reads, unless several targets share that target's expression.
 
 SELECT 'other target';
 SELECT g, id, v FROM (SELECT toUInt16(number) AS g, toUInt32(number * 10) AS id, toUInt32(number) AS v FROM numbers(4))
@@ -46,3 +46,7 @@ ORDER BY g WITH FILL INTERPOLATE (h AS h + 10, x AS x + g);
 SELECT 'a literal is not a target';
 SELECT toUInt16(number * 3) AS g, 5 AS d, toUInt32(number) AS x FROM numbers(2)
 ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, x AS x + 5);
+
+SELECT 'a shared expression is not rebound';
+SELECT g, x AS a, x AS b FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x FROM numbers(2))
+ORDER BY g WITH FILL INTERPOLATE (a AS 0, b AS b + a);
