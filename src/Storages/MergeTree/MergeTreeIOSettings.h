@@ -1,11 +1,14 @@
 #pragma once
+#include <atomic>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/StringValueFilter.h>
 
 namespace DB
 {
@@ -70,6 +73,28 @@ struct MergeTreeReaderSettings
     bool use_query_condition_cache = false;
     /// Folded into every query condition cache key, see `queryConditionCacheSettingsSalt`.
     UInt64 query_condition_cache_settings_salt = 0;
+    bool enable_columns_cache_reads = false;
+    bool enable_columns_cache_writes = false;
+    /// Identity of the schema the read runs with: a hash of the column list of the metadata
+    /// snapshot of the query, computed once per read pool. It is part of every columns cache
+    /// key, so that data deserialized under one schema can never be served to a read that
+    /// runs with another one - see `ColumnsCacheKey::schema_identity`. Zero for readers that
+    /// do not use the columns cache.
+    UInt64 columns_cache_schema_identity = 0;
+    /// Per-query cap on bytes written to the columns cache. 0 means half of the current size
+    /// limit of the columns cache, resolved by the reader on every check.
+    size_t columns_cache_max_bytes_to_write_to_cache = 0;
+    /// Per-query running total of bytes written to the columns cache.
+    /// Shared across all readers of a single pool so the cap applies to the whole read.
+    std::shared_ptr<std::atomic<size_t>> columns_cache_bytes_written_so_far;
+    /// Per-query flag that disables further columns cache writes once the
+    /// estimated uncompressed bytes read by the query exceed the estimate budget
+    /// (`columns_cache_max_estimated_bytes_to_write_to_cache`). The estimate is
+    /// charged part by part as the read pools of the query are built, after the
+    /// full set of read columns (including prewhere, mutation and patch-part
+    /// columns) is known, so a pool built later in the query can latch it after
+    /// this reader was created: readers must consult it dynamically at write time.
+    std::shared_ptr<std::atomic<bool>> columns_cache_writes_disabled;
     /// Set for a TopK (`ORDER BY ... LIMIT n`) read whose granule drops may depend on the running
     /// `__topKFilter` threshold: the TopK plan salt (`TopKFilterInfo::condition_hash`) and the
     /// post-PREWHERE filter hash to fold into the query condition cache key when recording
@@ -99,6 +124,10 @@ struct MergeTreeReaderSettings
     /// maintain selectivity counters for system.predicate_statistics_log. When
     /// false (the default), the readers skip the per-granule counter work.
     bool collect_predicate_statistics = false;
+    /// Per-column filters extracted from substring search conditions in PREWHERE.
+    /// String values that do not match are replaced with empty strings during deserialization.
+    /// Set only for reading with PREWHERE that is guaranteed to filter the rows (see `StringValueFilter`).
+    StringValueFiltersPtr string_value_filters;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove

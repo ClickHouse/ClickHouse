@@ -1,6 +1,7 @@
 import random
 import re
 import string
+import uuid
 
 import pytest
 
@@ -21,6 +22,20 @@ node = cluster.add_instance(
     with_remote_database_disk=False,
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
+
+# The probes print the searched string in their own log entries, so the server log checks skip
+# every entry of a query whose id starts with this prefix.
+probe_query_id_prefix = "mask_sensitive_info_probe_"
+
+
+def server_log_contains(pattern):
+    # A multi-line log message (e.g. a plan dump) continues on lines without a timestamp or query id.
+    command = (
+        f"awk -v probe='] {{{probe_query_id_prefix}' "
+        "'/^[0-9][0-9][0-9][0-9][.][0-9][0-9][.][0-9][0-9] / { skip = index($0, probe) > 0 } !skip' "
+        f'/var/log/clickhouse-server/clickhouse-server.log | grep -a "{pattern}" || true'
+    )
+    return len(node.exec_in_container(["bash", "-c", command])) > 0
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -43,7 +58,7 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert node.contains_in_log(escaped_str, exclusion_substring=base_search_query)
+        assert server_log_contains(escaped_str)
 
     for str in must_not_contain:
         escaped_str = (
@@ -52,9 +67,7 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert not node.contains_in_log(
-            escaped_str, exclusion_substring=base_search_query
-        )
+        assert not server_log_contains(escaped_str)
 
     for str in must_contain:
         escaped_str = str.replace("'", "\\'")
@@ -70,7 +83,10 @@ def system_query_log_contains_search_pattern(search_pattern):
     return (
         int(
             node.query(
-                f"{base_search_query}'%{search_pattern}%' AND query NOT LIKE '{base_search_query}%'"
+                f"{base_search_query}'%{search_pattern}%' AND query NOT LIKE '{base_search_query}%'",
+                # Moves the LIKE alone to PREWHERE, whose log lines print the searched string without the rest of the probe.
+                settings={"apply_string_filters_during_scan": 1},
+                query_id=f"{probe_query_id_prefix}{uuid.uuid4()}",
             ).strip()
         )
         >= 1
@@ -482,7 +498,6 @@ def test_create_database():
 
 def test_table_functions():
     password = new_password()
-    has_delta_lake = int(node.query("SELECT count() FROM system.table_functions WHERE name = 'deltaLake'").strip()) > 0
     has_paimon = int(node.query("SELECT count() FROM system.table_functions WHERE name = 'paimonS3'").strip()) > 0
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     account_key_pattern = re.compile("AccountKey=.*?(;|$)")
@@ -523,7 +538,6 @@ def test_table_functions():
         f"remoteSecure(named_collection_6, addresses_expr = '127.{{2..11}}', database = 'default', table = 'remote_table', user = 'remote_user', password = '{password}')",
         "s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
         f"s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
         f"azureBlobStorage('{azure_conn_string}', 'cont', 'test_simple_2.csv', 'CSV', 'none', 'auto')",
@@ -537,7 +551,6 @@ def test_table_functions():
         f"gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
-        f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')" if has_delta_lake else (f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')", "UNKNOWN_FUNCTION"),
         f"hudi('http://minio1:9001/root/data/test7.csv', 'minio', '{password}')",
         f"arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
         f"arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
@@ -554,7 +567,6 @@ def test_table_functions():
         f"odbc(named_collection_1, connection_settings = 'odbc://user:{password}@localhost:5432/mydb')",
         (f"jdbc(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}', connection_settings = 'DSN=mydb2;Uid=user2;Pwd={password}')", "ARGUMENTS"),
         (f"jdbc(named_collection_1, connection_settings = 'jdbc://user2:{password}@localhost:5432/mydb2', external_database = 'mydb', datasource = 'jdbc://user:{password}@localhost:5432/mydb')", "ARGUMENTS"),
-        f"deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
         f"paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_paimon else (f"paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
         f"paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_paimon else (f"paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
         f"paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')" if has_paimon else (f"paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')", "UNKNOWN_FUNCTION"),
@@ -630,41 +642,38 @@ def test_table_functions():
             "CREATE TABLE tablefunc26 (`x` int) AS remoteSecure(named_collection_6, addresses_expr = '127.{2..11}', database = 'default', `table` = 'remote_table', user = 'remote_user', password = '[HIDDEN]')",
             "CREATE TABLE tablefunc27 (x int) AS s3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV')",
             "CREATE TABLE tablefunc28 (`x` int) AS s3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc29 (`x` int) AS deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            f"CREATE TABLE tablefunc30 (`x` int) AS azureBlobStorage('{masked_azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
-            f"CREATE TABLE tablefunc31 (`x` int) AS azureBlobStorage('{masked_azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
-            f"CREATE TABLE tablefunc32 (`x` int) AS azureBlobStorage('{masked_azure_conn_string}', 'cont', 'test_simple_2.csv', 'CSV', 'none', 'auto')",
-            f"CREATE TABLE tablefunc33 (`x` int) AS azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '[HIDDEN]')",
-            f"CREATE TABLE tablefunc34 (`x` int) AS azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '[HIDDEN]', 'CSV')",
-            f"CREATE TABLE tablefunc35 (`x` int) AS azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_5.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
-            f"CREATE TABLE tablefunc36 (`x` int) AS azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
-            f"CREATE TABLE tablefunc37 (`x` int) AS azureBlobStorage(named_collection_2, connection_string = '{masked_azure_conn_string}', container = 'cont', blob_path = 'test_simple_7.csv', format = 'CSV')",
-            f"CREATE TABLE tablefunc38 (`x` int) AS azureBlobStorage(named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_8.csv', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
-            "CREATE TABLE tablefunc39 (`x` int) AS iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc40 (`x` int) AS gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc41 (`x` int) AS icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
-            f"CREATE TABLE tablefunc43 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
-            "CREATE TABLE tablefunc44 (`x` int) AS hudi('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc45 (`x` int) AS arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
-            "CREATE TABLE tablefunc46 (`x` int) AS arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
-            "CREATE TABLE tablefunc47 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
-            "CREATE TABLE tablefunc48 (`x` int) AS url('https://username:[HIDDEN]@domain.com/path', 'CSV')",
-            "CREATE TABLE tablefunc49 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
+            f"CREATE TABLE tablefunc29 (`x` int) AS azureBlobStorage('{masked_azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
+            f"CREATE TABLE tablefunc30 (`x` int) AS azureBlobStorage('{masked_azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
+            f"CREATE TABLE tablefunc31 (`x` int) AS azureBlobStorage('{masked_azure_conn_string}', 'cont', 'test_simple_2.csv', 'CSV', 'none', 'auto')",
+            f"CREATE TABLE tablefunc32 (`x` int) AS azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '[HIDDEN]')",
+            f"CREATE TABLE tablefunc33 (`x` int) AS azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '[HIDDEN]', 'CSV')",
+            f"CREATE TABLE tablefunc34 (`x` int) AS azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_5.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
+            f"CREATE TABLE tablefunc35 (`x` int) AS azureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
+            f"CREATE TABLE tablefunc36 (`x` int) AS azureBlobStorage(named_collection_2, connection_string = '{masked_azure_conn_string}', container = 'cont', blob_path = 'test_simple_7.csv', format = 'CSV')",
+            f"CREATE TABLE tablefunc37 (`x` int) AS azureBlobStorage(named_collection_2, storage_account_url = '{azure_storage_account_url}', container = 'cont', blob_path = 'test_simple_8.csv', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
+            "CREATE TABLE tablefunc38 (`x` int) AS iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc39 (`x` int) AS gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc40 (`x` int) AS icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE tablefunc41 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
+            "CREATE TABLE tablefunc42 (`x` int) AS hudi('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc43 (`x` int) AS arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
+            "CREATE TABLE tablefunc44 (`x` int) AS arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
+            "CREATE TABLE tablefunc45 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
+            "CREATE TABLE tablefunc46 (`x` int) AS url('https://username:[HIDDEN]@domain.com/path', 'CSV')",
+            "CREATE TABLE tablefunc47 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
+            "CREATE TABLE tablefunc48 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc49 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
             "CREATE TABLE tablefunc50 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
             "CREATE TABLE tablefunc51 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc52 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc53 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
+            "CREATE TABLE tablefunc52 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
+            "CREATE TABLE tablefunc53 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
             "CREATE TABLE tablefunc54 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
             "CREATE TABLE tablefunc55 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc56 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
-            "CREATE TABLE tablefunc57 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc58 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc59 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
-            "CREATE TABLE tablefunc60 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc61 (`x` int) AS paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc62 (`x` int) AS paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            f"CREATE TABLE tablefunc63 (`x` int) AS paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
+            "CREATE TABLE tablefunc56 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
+            "CREATE TABLE tablefunc57 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
+            "CREATE TABLE tablefunc58 (`x` int) AS paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc59 (`x` int) AS paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE tablefunc60 (`x` int) AS paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
         ],
         must_not_contain=[password],
     )
@@ -693,6 +702,39 @@ def test_table_functions():
                 else:
                     assert not is_secret_present
                     assert "[HIDDEN]" in output
+
+
+def test_delta_lake_table_functions():
+    # The delta lake table functions are not built with MSan (`delta-kernel-rs` is not instrumented), and a table
+    # function the binary does not register has no secret arguments to hide.
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip("The delta lake table functions are not built with MSan")
+
+    password = new_password()
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    table_functions = [
+        f"deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+        f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
+        f"deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
+    ]
+
+    for i, table_function in enumerate(table_functions):
+        node.query(f"CREATE TABLE tablefunc_delta{i} (x int) AS {table_function}")
+
+    check_logs(
+        must_contain=[
+            "CREATE TABLE tablefunc_delta0 (`x` int) AS deltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE tablefunc_delta1 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
+            "CREATE TABLE tablefunc_delta2 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+        ],
+        must_not_contain=[password],
+    )
+
+    for i in range(len(table_functions)):
+        node.query(f"DROP TABLE tablefunc_delta{i}")
 
 
 def test_table_functions_object_storage_cluster():
