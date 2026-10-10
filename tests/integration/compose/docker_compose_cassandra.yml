@@ -4,3 +4,8 @@ services:
         restart: always
         stop_grace_period: 5s
         cpus: 3
+        environment:
+            # By default, the heap size is derived from the memory of the host (up to 8 GB),
+            # and the container is killed when many tests run in parallel.
+            MAX_HEAP_SIZE: 1G
+            HEAP_NEWSIZE: 256M

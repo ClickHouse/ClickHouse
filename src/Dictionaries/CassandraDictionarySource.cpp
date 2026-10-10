@@ -8,6 +8,10 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <IO/WriteHelpers.h>
 
+#include <boost/algorithm/string/trim.hpp>
+
+#include <ranges>
+
 
 namespace DB
 {
@@ -31,10 +35,10 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
                                                     bool /*created_from_ddl*/) -> DictionarySourcePtr
     {
 #if USE_CASSANDRA
-    setupCassandraDriverLibraryLogging(CASS_LOG_INFO);
-
     auto source_config_prefix = config_prefix + ".cassandra";
-    global_context->getRemoteHostFilter().checkHostAndPort(config.getString(source_config_prefix + ".host"), toString(config.getUInt(source_config_prefix + ".port", 0)));
+    const String port = toString(config.getUInt(source_config_prefix + ".port", CassandraDictionarySource::DEFAULT_PORT));
+    for (const auto & host : CassandraDictionarySource::splitHosts(config.getString(source_config_prefix + ".host")))
+        global_context->getRemoteHostFilter().checkHostAndPort(host, port);
 
     return std::make_unique<CassandraDictionarySource>(dict_struct, config, source_config_prefix, sample_block);
 #else
@@ -107,7 +111,7 @@ Setting fields:
 | `partition_key_prefix` | Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is `1` (the first key column is a partition key and other key columns are clustering key). |
 | `consistency` | Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`. |
 | `where` | Optional selection criteria. |
-| `max_threads` | The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries. |
+| `max_threads` | The maximum number of idle connections to keep open for loading data, for example, from multiple partitions in compose key dictionaries. Default value is `8`. |
 | `query` | The custom query. Optional. |
 
 <Note>
@@ -142,7 +146,7 @@ CassandraDictionarySource::Configuration::Configuration(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : host(config.getString(config_prefix + ".host"))
-    , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", 0)))
+    , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", DEFAULT_PORT)))
     , user(config.getString(config_prefix + ".user", ""))
     , password(config.getString(config_prefix + ".password", ""))
     , db(config.getString(config_prefix + ".keyspace"))
@@ -157,31 +161,46 @@ CassandraDictionarySource::Configuration::Configuration(
 
 void CassandraDictionarySource::Configuration::setConsistency(const String & config_str)
 {
+    using Cassandra::Consistency;
     if (config_str == "One")
-        consistency = CASS_CONSISTENCY_ONE;
+        consistency = Consistency::One;
     else if (config_str == "Two")
-        consistency = CASS_CONSISTENCY_TWO;
+        consistency = Consistency::Two;
     else if (config_str == "Three")
-        consistency = CASS_CONSISTENCY_THREE;
+        consistency = Consistency::Three;
     else if (config_str == "All")
-        consistency = CASS_CONSISTENCY_ALL;
+        consistency = Consistency::All;
     else if (config_str == "EachQuorum")
-        consistency = CASS_CONSISTENCY_EACH_QUORUM;
+        consistency = Consistency::EachQuorum;
     else if (config_str == "Quorum")
-        consistency = CASS_CONSISTENCY_QUORUM;
+        consistency = Consistency::Quorum;
     else if (config_str == "LocalQuorum")
-        consistency = CASS_CONSISTENCY_LOCAL_QUORUM;
+        consistency = Consistency::LocalQuorum;
     else if (config_str == "LocalOne")
-        consistency = CASS_CONSISTENCY_LOCAL_ONE;
+        consistency = Consistency::LocalOne;
     else if (config_str == "Serial")
-        consistency = CASS_CONSISTENCY_SERIAL;
+        consistency = Consistency::Serial;
     else if (config_str == "LocalSerial")
-        consistency = CASS_CONSISTENCY_LOCAL_SERIAL;
-    else    /// CASS_CONSISTENCY_ANY is only valid for writes
+        consistency = Consistency::LocalSerial;
+    else    /// `Any` is only valid for writes
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unsupported consistency level: {}", config_str);
 }
 
 static const size_t max_block_size = 8192;
+
+std::vector<String> CassandraDictionarySource::splitHosts(const String & hosts)
+{
+    std::vector<String> res;
+    for (auto host : std::views::split(hosts, ','))
+    {
+        String trimmed(std::string_view(host.begin(), host.end()));
+        boost::algorithm::trim(trimmed);
+        if (trimmed.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Empty host in the list of Cassandra hosts: '{}'", hosts);
+        res.push_back(std::move(trimmed));
+    }
+    return res;
+}
 
 CassandraDictionarySource::CassandraDictionarySource(
     const DictionaryStructure & dict_struct_,
@@ -192,12 +211,13 @@ CassandraDictionarySource::CassandraDictionarySource(
     , configuration(configuration_)
     , sample_block(std::make_shared<const Block>(sample_block_))
     , query_builder(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::DoubleQuotes)
+    , pool(std::make_shared<Cassandra::ConnectionPool>(
+        splitHosts(configuration.host),
+        configuration.port,
+        Cassandra::ConnectionSettings{.user = configuration.user, .password = configuration.password},
+        configuration.consistency,
+        configuration.max_threads))
 {
-    cassandraCheck(cass_cluster_set_contact_points(cluster, configuration.host.c_str()));
-    if (configuration.port)
-        cassandraCheck(cass_cluster_set_port(cluster, configuration.port));
-    cass_cluster_set_credentials(cluster, configuration.user.c_str(), configuration.password.c_str());
-    cassandraCheck(cass_cluster_set_consistency(cluster, configuration.consistency));
 }
 
 CassandraDictionarySource::CassandraDictionarySource(
@@ -226,7 +246,7 @@ BlockIO CassandraDictionarySource::loadAll()
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading all using query: {}", query);
     BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(pool, query, sample_block, max_block_size));
     return io;
 }
 
@@ -242,7 +262,7 @@ BlockIO CassandraDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
     LOG_INFO(log, "Loading ids using query: {}", query);
 
     BlockIO io;
-    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(pool, query, sample_block, max_block_size));
     return io;
 }
 
@@ -267,7 +287,7 @@ BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const V
         String query = query_builder.composeLoadKeysQuery(key_columns, partition.second, ExternalQueryBuilder::CASSANDRA_SEPARATE_PARTITION_KEY, configuration.partition_key_prefix);
         maybeAllowFiltering(query);
         LOG_INFO(log, "Loading keys for partition hash {} using query: {}", partition.first, query);
-        pipes.push_back(Pipe(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size)));
+        pipes.push_back(Pipe(std::make_shared<CassandraSource>(pool, query, sample_block, max_block_size)));
     }
 
     BlockIO io;
@@ -278,21 +298,6 @@ BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const V
 BlockIO CassandraDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
-}
-
-CassSessionShared CassandraDictionarySource::getSession()
-{
-    /// Reuse connection if exists, create new one if not
-    std::lock_guard lock(connect_mutex);
-    auto session = maybe_session.lock();
-    if (session)
-        return session;
-
-    session = std::make_shared<CassSessionPtr>();
-    CassFuturePtr future = cass_session_connect(*session, cluster);
-    cassandraWaitAndCheck(future);
-    maybe_session = session;
-    return session;
 }
 
 }
