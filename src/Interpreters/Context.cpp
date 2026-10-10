@@ -2800,9 +2800,10 @@ void Context::setParentSchedulingGroup(QuerySchedulingGroupPtr group)
     parent_scheduling_group = std::move(group);
 }
 
-void Context::checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes) const
+void Context::checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes, const std::vector<String> & reset_settings) const
 {
-    if (!std::ranges::any_of(changes, [](const SettingChange & change) { return isQuerySchedulingSetting(change.name); }))
+    if (!std::ranges::any_of(changes, [](const SettingChange & change) { return isQuerySchedulingSetting(change.name); })
+        && !std::ranges::any_of(reset_settings, [](const String & name) { return isQuerySchedulingSetting(name); }))
         return;
 
     QuerySchedulingGroupPtr parent;

@@ -15,6 +15,10 @@ DROP TABLE IF EXISTS t_sched_part_2;
 CREATE TABLE t_sched_part_1 (x UInt64) ENGINE = Memory;
 CREATE TABLE t_sched_part_2 (x UInt64) ENGINE = Memory;
 INSERT INTO t_sched_part_1 SELECT 1 PARALLEL WITH INSERT INTO t_sched_part_2 SETTINGS workload = 'other' SELECT 2; -- { serverError BAD_ARGUMENTS }
+-- Resetting a scheduling setting of a part to its default differs from the query's value too.
+SET weight = 2;
+INSERT INTO t_sched_part_1 SELECT 1 PARALLEL WITH INSERT INTO t_sched_part_2 SETTINGS weight = DEFAULT SELECT 2; -- { serverError BAD_ARGUMENTS }
+SET weight = DEFAULT;
 INSERT INTO t_sched_part_1 SELECT 1 PARALLEL WITH INSERT INTO t_sched_part_2 SELECT 2;
 SELECT * FROM t_sched_part_1 UNION ALL SELECT * FROM t_sched_part_2 ORDER BY 1;
 DROP TABLE t_sched_part_1;
