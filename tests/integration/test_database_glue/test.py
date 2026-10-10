@@ -843,6 +843,96 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(
+        DatabaseInput={
+            "Name": root_namespace,
+            "LocationUri": f"s3://warehouse-glue/{root_namespace}",
+        }
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    assert node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{table_name}%'"
+    ) == f"{root_namespace}.{table_name}\n"
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
+
+
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_no_database_location(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_no_location_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(DatabaseInput={"Name": root_namespace})
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    with pytest.raises(Exception) as exc:
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+            settings={"allow_experimental_database_glue_catalog": 1},
+        )
+    assert "cannot tell where table" in str(exc.value), str(exc.value)
+    assert table_name not in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_missing_database(started_cluster, engine_clause):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_without_engine_arguments_missing_database_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    for _ in range(2):
+        with pytest.raises(Exception) as exc:
+            node.query(
+                f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+                settings={"allow_experimental_database_glue_catalog": 1},
+            )
+        assert "cannot tell where table" in str(exc.value), str(exc.value)
+
+    with pytest.raises(glue_client.exceptions.EntityNotFoundException):
+        glue_client.get_database(Name=root_namespace)
+
+
 def test_create_gzip_metadata(started_cluster):
     # Regression for issue #109801: a catalog-backed CREATE TABLE from ClickHouse
     # with gzip metadata compression exercises IcebergMetadata::createInitial and
@@ -1371,9 +1461,102 @@ def test_sts_smoke(started_cluster):
     result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
     assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
 
+    # `aws_role_session_name` can act as a shared secret (the trust policy can pin it, which is what the
+    # STS mock does), so every display surface hides it while `aws_role_arn` stays visible. This database
+    # carries no other secret, so `[HIDDEN]` can only come from the session name.
+    show_create = node.query(f"SHOW CREATE DATABASE {db_name_success}")
+    assert "miniorole" not in show_create
+    assert "arn::role" in show_create
+    assert "[HIDDEN]" in show_create
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name_success}'"
+    )
+    assert "miniorole" not in engine_full
+    assert "[HIDDEN]" in engine_full
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    logged_create = node.query(
+        f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log "
+        f"WHERE query_kind = 'Create' AND type = 'QueryFinish' AND query LIKE '%{db_name_success}%'"
+    )
+    assert "[HIDDEN]" in logged_create
+    assert "miniorole" not in logged_create
+
     # Cleanup
     node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
     node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
+
+
+def test_sts_backup_restore_keeps_role_session_name(started_cluster):
+    """A backup archives the database definition with the real `aws_role_session_name`, although every
+    display surface shows `[HIDDEN]`. The STS mock grants the role only for the session name `miniorole`,
+    so the restored catalog can read its table only if the archived value was the real one."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_backup_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": "row1", "value": 10.0},
+                {"id": "row2", "value": 20.0},
+                {"id": "row3", "value": 30.0},
+            ]
+        )
+    )
+
+    db_name = f"db_backup_{test_ref.replace('-', '_')}"
+    restored_db_name = f"{db_name}_restored"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+    result = node.query(f"SELECT sum(value) FROM {db_name}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # A DataLakeCatalog database owns no tables, so the backup holds just the database definition. The
+    # default server config allows File backups under its `backups` directory.
+    backup = f"File('{db_name}')"
+    node.query(f"BACKUP DATABASE {db_name} TO {backup}")
+    node.query(f"DROP DATABASE IF EXISTS {restored_db_name} SYNC")
+    node.query(
+        f"RESTORE DATABASE {db_name} AS {restored_db_name} FROM {backup}",
+        settings={
+            "allow_database_glue_catalog": 1,
+            "s3_allow_server_credentials_in_user_queries": 1,
+        },
+    )
+
+    # Readable only with the real session name: the STS mock rejects any other value.
+    result = node.query(f"SELECT sum(value) FROM {restored_db_name}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # The archived value came back, and the display of the restored definition is masked like any other.
+    show_create = node.query(f"SHOW CREATE DATABASE {restored_db_name}")
+    assert "miniorole" not in show_create
+    assert "arn::role" in show_create
+    assert "[HIDDEN]" in show_create
+
+    node.query(f"DROP DATABASE IF EXISTS {restored_db_name} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
 def test_sts_smoke_no_opt_in(started_cluster):
