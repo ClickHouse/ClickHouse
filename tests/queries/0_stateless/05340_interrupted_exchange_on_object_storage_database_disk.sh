@@ -18,9 +18,10 @@ base_dir="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "$base_dir"
 trap 'rm -rf "$base_dir"' EXIT
 mkdir -p "$base_dir/plain_rewritable" "$base_dir/local/data" "$base_dir/local/metadata"
-export TEST_DISK_05340_PLAIN_REWRITABLE_PATH="$(realpath "$base_dir/plain_rewritable")/"
-export TEST_DISK_05340_LOCAL_PATH="$(realpath "$base_dir/local/data")/"
-export TEST_DISK_05340_LOCAL_METADATA_PATH="$(realpath "$base_dir/local/metadata")/"
+base_dir=$(realpath "$base_dir")
+export TEST_DISK_05340_PLAIN_REWRITABLE_PATH="$base_dir/plain_rewritable/"
+export TEST_DISK_05340_LOCAL_PATH="$base_dir/local/data/"
+export TEST_DISK_05340_LOCAL_METADATA_PATH="$base_dir/local/metadata/"
 
 # Fixed UUIDs make the metadata paths and contents the same on both disks, so one real record serves both.
 dir="store/053/05340000-0000-0000-0000-000000000001/"
@@ -29,6 +30,8 @@ y="${dir}b.sql"
 t="${x}.tmp_exchange"
 record="${dir}.a.sql.exchange"
 saved_record="$base_dir/record"
+# Undoes an exchange that a load has finished, with the same moves.
+swap_back="move $x $t; move $y $x; move $t $y"
 
 function local_query()
 {
@@ -40,9 +43,19 @@ function disks()
     clickhouse-disks -C "$config" --disk "$disk" --query "$1" 2>&1
 }
 
+# Lists the directories `$1`, then runs the disk commands `$2` in the same call: starting the binary is the slowest part
+# of this test.
 function show_files()
 {
-    echo "$1: [$(disks "ls --all $1" | LC_ALL=C sort | xargs)]"
+    local query="" d
+    for d in $1; do
+        query+="ls --all --recursive $d; "
+    done
+    disks "$query${2:-}" | awk '
+        dir == "" && /:$/ { dir = substr($0, 1, length($0) - 1); files = ""; next }
+        dir != "" && $0 == "" { print dir ": [" files "]"; dir = ""; next }
+        dir != "" { files = files (files == "" ? "" : " ") $0; next }
+        { print }'
 }
 
 function show_tables()
@@ -50,24 +63,13 @@ function show_tables()
     local_query "SELECT _database, _table, sum(x) FROM merge(REGEXP('^db'), '.*') GROUP BY ALL ORDER BY ALL"
 }
 
-# Builds the state left by `ops` with the saved record, loads the database, and exchanges the tables back.
+# Lists the files the previous load left, builds the state the disk commands `$2` leave with the saved record written to
+# `$3` (default: the record), and loads the database.
 function check_state()
 {
+    show_files "$dir" "$2; copy --disk-from local $saved_record ${3:-$record}"
     echo "-- $disk: $1"
-    disks "$2" > /dev/null
-    disks "write $record" < "$saved_record" > /dev/null
     show_tables
-    show_files "$dir"
-    local_query "EXCHANGE TABLES db.a AND db.b"
-}
-
-# Writes the saved record to `$2`, as a crash before the first move leaves it, and loads the database: nothing is exchanged.
-function check_state_before_moves()
-{
-    echo "-- $disk: $1"
-    disks "write $2" < "$saved_record" > /dev/null
-    show_tables
-    show_files "$dir"
 }
 
 for disk in test_db_disk_plain_rewritable_05340 test_db_disk_local_metadata_05340; do
@@ -80,33 +82,31 @@ for disk in test_db_disk_plain_rewritable_05340 test_db_disk_local_metadata_0534
         EXCHANGE TABLES db.a AND db.b;
         EXCHANGE TABLES db.a AND db.b;"
     echo "-- $disk: a finished exchange leaves no record"
-    show_files "$dir"
 
     if [ "$disk" = test_db_disk_plain_rewritable_05340 ]; then
+        show_files "$dir"
         echo "-- $disk: an exchange that fails while writing its record changes nothing, the next load removes what it left"
         local_query "SYSTEM ENABLE FAILPOINT plain_object_storage_fail_after_copy_on_file_move; EXCHANGE TABLES db.a AND db.b;" | grep -o 'FAULT_INJECTED' | head -n1
-        show_files "$dir"
-        disks "read ${record}.tmp" | head -c -1 > "$saved_record"
+        show_files "$dir" "copy --disk-to local ${record}.tmp $saved_record"
         [ "$(sed -n 1p "$saved_record")" = "exchange v1" ] && echo "header"
         [ "$(sed -n 2p "$saved_record")" = "$x" ] && [ "$(sed -n 3p "$saved_record")" = "$y" ] && echo "both paths"
         sed -n 4p "$saved_record" | grep -q "05340000-0000-0000-0000-00000000000b" && echo "new content of the first file"
         sed -n 5p "$saved_record" | grep -q "05340000-0000-0000-0000-00000000000a" && echo "new content of the second file"
         show_tables
-        show_files "$dir"
 
-        check_state_before_moves "no move done" "$record"
+        # A crash before the first move leaves only the record: nothing is exchanged.
+        check_state "no move done" ""
         # A move of `plain_rewritable` copies the file before it removes the source, so a crash can also stop there.
         check_state "first move copied" "copy $x $t"
-        check_state "first move done" "move $x $t"
-        check_state "second move copied" "move $x $t; copy $y $x"
-        check_state "second move done" "move $x $t; move $y $x"
-        check_state "third move copied" "move $x $t; move $y $x; copy $t $y"
+        check_state "first move done" "$swap_back; move $x $t"
+        check_state "second move copied" "$swap_back; move $x $t; copy $y $x"
+        check_state "second move done" "$swap_back; move $x $t; move $y $x"
+        check_state "third move copied" "$swap_back; move $x $t; move $y $x; copy $t $y"
 
+        printf 'hello' | show_files "$dir" "$swap_back; write ${dir}.c.sql.exchange"
         echo "-- $disk: a file that is not a record is left as is"
-        printf 'hello' | disks "write ${dir}.c.sql.exchange" > /dev/null
         show_tables
-        show_files "$dir"
-        disks "remove ${dir}.c.sql.exchange" > /dev/null
+        show_files "$dir" "remove ${dir}.c.sql.exchange"
 
         echo "-- $disk: an exchange between databases records itself in both directories"
         dir_1="store/053/05340000-0000-0000-0000-000000000002/"
@@ -120,38 +120,30 @@ for disk in test_db_disk_plain_rewritable_05340 test_db_disk_local_metadata_0534
             INSERT INTO db_1.b VALUES (10), (20);
             SYSTEM ENABLE FAILPOINT plain_object_storage_fail_after_copy_on_file_move;
             EXCHANGE TABLES db_2.a AND db_1.b;" | grep -o 'FAULT_INJECTED' | head -n1
-        show_files "$dir_1"
-        show_files "$dir_2"
-        disks "read ${dir_2}.a.sql.exchange.tmp" | head -c -1 > "$base_dir/record_2"
-        disks "read ${dir_1}.b.sql.exchange.tmp" | head -c -1 > "$base_dir/record_1"
+        show_files "$dir_1 $dir_2" "copy --disk-to local ${dir_2}.a.sql.exchange.tmp $base_dir/record_2; copy --disk-to local ${dir_1}.b.sql.exchange.tmp $base_dir/record_1"
         cmp -s "$base_dir/record_1" "$base_dir/record_2" && echo "the two records are the same"
         show_tables
-        show_files "$dir_1"
-        show_files "$dir_2"
 
         # `db_1` is loaded before `db_2`, so it finds the copy of the record first.
-        for state in "first move done:move ${dir_2}a.sql ${dir_2}a.sql.tmp_exchange" \
-                     "second move done:move ${dir_2}a.sql ${dir_2}a.sql.tmp_exchange; move ${dir_1}b.sql ${dir_2}a.sql"; do
-            echo "-- $disk: between databases, ${state%%:*}"
-            disks "${state#*:}" > /dev/null
-            disks "write ${dir_2}.a.sql.exchange" < "$base_dir/record_2" > /dev/null
-            disks "write ${dir_1}.b.sql.exchange" < "$base_dir/record_1" > /dev/null
-            show_tables
-            show_files "$dir_1"
-            show_files "$dir_2"
-            local_query "EXCHANGE TABLES db_2.a AND db_1.b"
-        done
+        t_2="${dir_2}a.sql.tmp_exchange"
+        swap_back_2="move ${dir_2}a.sql $t_2; move ${dir_1}b.sql ${dir_2}a.sql; move $t_2 ${dir_1}b.sql"
+        records_2="copy --disk-from local $base_dir/record_2 ${dir_2}.a.sql.exchange; copy --disk-from local $base_dir/record_1 ${dir_1}.b.sql.exchange"
+        show_files "$dir_1 $dir_2" "move ${dir_2}a.sql $t_2; $records_2"
+        echo "-- $disk: between databases, first move done"
+        show_tables
+        show_files "$dir_1 $dir_2" "$swap_back_2; move ${dir_2}a.sql $t_2; move ${dir_1}b.sql ${dir_2}a.sql; $records_2"
+        echo "-- $disk: between databases, second move done"
+        show_tables
 
+        printf 'hello' | show_files "$dir_1 $dir_2" "$swap_back_2; move $x $t; write $y; copy --disk-from local $saved_record $record"
         echo "-- $disk: a file with neither of the recorded contents stops the load, nothing is changed"
-        disks "move $x $t" > /dev/null
-        printf 'hello' | disks "write $y" > /dev/null
-        disks "write $record" < "$saved_record" > /dev/null
         show_tables | grep -o 'CORRUPTED_DATA' | head -n1
         show_files "$dir"
     else
-        check_state_before_moves "no move done" "$record"
-        check_state_before_moves "a temporary record is left" "${record}.tmp"
+        check_state "no move done" ""
+        check_state "a temporary record is left" "" "${record}.tmp"
         check_state "first move done" "move $x $t"
-        check_state "second move done" "move $x $t; move $y $x"
+        check_state "second move done" "$swap_back; move $x $t; move $y $x"
+        show_files "$dir"
     fi
 done
