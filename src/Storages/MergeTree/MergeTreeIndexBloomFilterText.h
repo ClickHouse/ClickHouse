@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/BloomFilter.h>
@@ -72,7 +73,8 @@ public:
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
-            NameSet columns_shadowing_map_subcolumns_);
+            NameSet columns_shadowing_map_subcolumns_,
+            JSONIndexArgumentTypes json_argument_types_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
@@ -137,7 +139,7 @@ private:
 
     bool traverseTreeEquals(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out);
@@ -150,6 +152,8 @@ private:
 
     StorageMetadataPtr metadata_snapshot;
     Names index_columns;
+    /// Argument types of the JSON index functions of this index, by position in `index_columns`.
+    JSONIndexArgumentTypes json_argument_types;
     DataTypes index_data_types;
     BloomFilterParameters params;
 
