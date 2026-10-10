@@ -48,8 +48,8 @@ private:
     WorkerPool & pool;
     const size_t worker_id;
     ProcessorRunner runner;
-    Metrics metrics;
 
+    Metrics metrics;
     LocalQueue local_tasks;
     std::array<ExecutingProcessor *, LocalQueue::capacity> tmp_buffer{};
 

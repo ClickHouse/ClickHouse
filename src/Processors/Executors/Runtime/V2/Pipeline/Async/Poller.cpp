@@ -95,16 +95,22 @@ void Poller::updateTimer()
     timer_signal.setRelative(std::max<int64_t>(1, us_until_deadline));
 }
 
-void Poller::collectExpired(std::vector<ExecutingProcessor *> & fired)
+size_t Poller::collectExpired(std::span<ExecutingProcessor *> out)
 {
-    while (ExecutingProcessor * expired = deadlines->popExpired())
+    size_t fired = 0;
+    while (fired < out.size())
     {
+        ExecutingProcessor * expired = deadlines->popExpired();
+        if (!expired)
+            break;
+
         unregister(expired);
         expired->status.store(ExecutingProcessor::Status::AsyncReady);
-        fired.push_back(expired);
+        out[fired++] = expired;
     }
 
     updateTimer();
+    return fired;
 }
 
 Poller::Poller()
@@ -150,23 +156,21 @@ void Poller::pushMany(std::span<const PollRequest> requests)
         updateTimer();
 }
 
-std::vector<ExecutingProcessor *> Poller::poll(int timeout_ms)
+size_t Poller::poll(std::span<ExecutingProcessor *> out, int timeout_ms)
 {
-    std::vector<ExecutingProcessor *> fired;
-
     {
         std::lock_guard lock(mutex);
-        collectExpired(fired);
-        if (!fired.empty())
-            return fired;
+        if (const size_t expired = collectExpired(out))
+            return expired;
     }
 
     constexpr size_t max_events = 16;
     epoll_event events[max_events]{};
-    size_t num_events = epoll.getManyReady(max_events, events, timeout_ms);
+    const size_t num_events = epoll.getManyReady(static_cast<int>(std::min(max_events, out.size())), events, timeout_ms);
 
     std::lock_guard lock(mutex);
 
+    size_t fired = 0;
     bool timer_fired = false;
     for (size_t i = 0; i < num_events; ++i)
     {
@@ -188,11 +192,11 @@ std::vector<ExecutingProcessor *> Poller::poll(int timeout_ms)
         auto * processor = static_cast<ExecutingProcessor *>(ptr);
         unregister(processor);
         processor->status.store(ExecutingProcessor::Status::AsyncReady);
-        fired.push_back(processor);
+        out[fired++] = processor;
     }
 
     if (timer_fired)
-        collectExpired(fired);
+        fired += collectExpired(out.subspan(fired));
 
     return fired;
 }

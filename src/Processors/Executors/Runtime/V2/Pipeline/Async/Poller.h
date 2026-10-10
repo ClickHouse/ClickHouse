@@ -13,7 +13,6 @@
 #include <mutex>
 #include <span>
 #include <unordered_map>
-#include <vector>
 
 namespace DB
 {
@@ -32,14 +31,14 @@ class Poller
     bool add(const PollRequest & request);
     void unregister(ExecutingProcessor * processor);
     void updateTimer();
-    void collectExpired(std::vector<ExecutingProcessor *> & fired);
+    size_t collectExpired(std::span<ExecutingProcessor *> out);
 
 public:
     Poller();
     ~Poller();
 
     void pushMany(std::span<const PollRequest> requests);
-    std::vector<ExecutingProcessor *> poll(int timeout_ms);
+    size_t poll(std::span<ExecutingProcessor *> out, int timeout_ms);
     size_t pending() const;
     void wakeup();
 
@@ -63,7 +62,7 @@ class Poller
 {
 public:
     void pushMany(std::span<const PollRequest> requests);
-    std::vector<ExecutingProcessor *> poll(int) { return {}; }
+    size_t poll(std::span<ExecutingProcessor *>, int) { return 0; }
     size_t pending() const { return 0; }
     void wakeup() {}
 };

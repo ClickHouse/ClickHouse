@@ -103,14 +103,14 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
                 continue;
             }
 
-            auto fired = pool.poller.poll(-1);
+            const size_t fired = pool.poller.poll(tmp_buffer, -1);
             pool.coordinator.stopPolling();
 
-            if (!fired.empty())
+            if (fired > 0)
             {
                 metrics.poll_picks += 1;
-                auto * picked = pickFromBatch(fired);
-                wakeFor(fired.size() - 1);
+                auto * picked = pickFromBatch(std::span(tmp_buffer).first(fired));
+                wakeFor(fired - 1);
                 return picked;
             }
         }
@@ -147,14 +147,14 @@ ExecutingProcessor * Worker::tryPick()
 
     if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
     {
-        auto fired = pool.poller.poll(0);
+        const size_t fired = pool.poller.poll(tmp_buffer, 0);
         pool.coordinator.stopPolling();
 
-        if (!fired.empty())
+        if (fired > 0)
         {
             metrics.poll_picks += 1;
-            auto * picked = pickFromBatch(fired);
-            wakeFor(fired.size() - 1);
+            auto * picked = pickFromBatch(std::span(tmp_buffer).first(fired));
+            wakeFor(fired - 1);
             return picked;
         }
     }
