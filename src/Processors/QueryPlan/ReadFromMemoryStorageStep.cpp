@@ -537,7 +537,7 @@ private:
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
             {
-                block.insert({std::move(*column_it), name_and_type.type, name_and_type.name});
+                block.insert({*column_it, name_and_type.type, name_and_type.name});
                 ++column_it;
             }
         };
@@ -716,12 +716,10 @@ bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     if (!column)
         return false;
 
-    /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
-    /// after the block was inserted) with the defaults of the type. For a column without a default
-    /// expression these are exactly the values the query sees. For a column with a `DEFAULT` expression
-    /// the values agree only as long as nothing evaluates the expression above the source; do not rely
-    /// on that and exclude such columns and their subcolumns, the same way
-    /// `StorageMemory::supportedPrewhereColumns` does for `PREWHERE`.
+    /// The source evaluates the `DEFAULT` expression of a column that a block does not have (e.g. one added
+    /// by `ALTER TABLE ADD COLUMN` after the block was inserted). The threshold step runs before the row-level
+    /// security filter, so for such a column it would evaluate the expression also over the rows the policy
+    /// hides. Exclude these columns and their subcolumns.
     return !storage_snapshot->metadata->getColumns().hasDefault(column->getNameInStorage());
 }
 

@@ -771,10 +771,8 @@ std::optional<NameSet> StorageMemory::supportedPrewhereColumns() const
 
     /// A column with a `DEFAULT` expression is absent from the blocks that were written before
     /// `ALTER TABLE ... ADD COLUMN`, and its expression is evaluated for those blocks when the column
-    /// is read. The in-source filter reads the columns of all its steps before running the first one,
-    /// so the expression would be evaluated also over the rows the row-level security filter removes.
-    /// Exclude these columns from the `PREWHERE` contract, the same way `StorageFile` does. `ALIAS`
-    /// and `EPHEMERAL` columns are excluded as well, because they are never stored.
+    /// is read. Exclude these columns from the `PREWHERE` contract, the same way `StorageFile` does.
+    /// `ALIAS` and `EPHEMERAL` columns are excluded as well, because they are never stored.
     const NameSet columns_without_default_expressions = metadata_snapshot->getColumnsWithoutDefaultExpressions({});
 
     NameSet supported_columns;
