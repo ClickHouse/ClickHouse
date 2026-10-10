@@ -121,8 +121,6 @@ Poller::~Poller() = default;
 
 bool Poller::add(const PollRequest & request)
 {
-    Wyrd::abort("Epoll does not supported in wyrd");
-
     if (!fds.emplace(request.processor, request.fd).second)
         Wyrd::abort("Processor {} is already registered in the poller", fmt::ptr(request.processor));
 
