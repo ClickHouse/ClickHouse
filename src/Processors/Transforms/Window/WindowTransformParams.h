@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/WindowDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Block.h>
 
@@ -20,16 +21,16 @@ struct WindowTransformParams
 {
     const Block input_header;
     const WindowDescription window_description;
-    const std::vector<size_t> partition_by_indices;
-    const std::vector<size_t> order_by_indices;
-    const std::vector<bool> should_materialize;
+    const VectorWithMemoryTracking<size_t> partition_by_indices;
+    const VectorWithMemoryTracking<size_t> order_by_indices;
+    const VectorWithMemoryTracking<bool> should_materialize;
     const RangeOffsetComparator range_offset_comparator;
 
 public:
     static WindowTransformParams create(
         const Block & input_header,
         const WindowDescription & window_description,
-        const std::vector<WindowFunctionDescription> & functions);
+        const VectorWithMemoryTracking<WindowFunctionDescription> & functions);
 
     bool arePeers(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const;
 };

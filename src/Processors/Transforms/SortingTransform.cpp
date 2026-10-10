@@ -1,4 +1,5 @@
 #include <Processors/Transforms/SortingTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <type_traits>
@@ -210,7 +211,7 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 MutableColumns MergeSorter::createMergedColumns() const
 {
     size_t num_columns = chunks[0].getNumColumns();
-    std::vector<bool> is_replicated(num_columns, false);
+    VectorWithMemoryTracking<bool> is_replicated(num_columns, false);
     for (const auto & chunk : chunks)
     {
         for (size_t i = 0; i != chunk.getNumColumns(); ++i)

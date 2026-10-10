@@ -1,4 +1,6 @@
 #include <bit>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
@@ -566,7 +568,7 @@ private:
         return Status::Ready;
     }
 
-    std::list<Chunk> chunks;
+    ListWithMemoryTracking<Chunk> chunks;
 };
 
 /// Generates chunks with aggregated data.
@@ -980,7 +982,7 @@ private:
     /// It works because we don't actually require any specific order of buckets anywhere, we only need to make sure that
     /// `GroupingAggregatedTransform` will output all buckets (from all the nodes) with the same id together.
     static constexpr UInt32 NUM_OOO_BUCKETS = 4;
-    std::vector<Int32> out_of_order_buckets;
+    VectorWithMemoryTracking<Int32> out_of_order_buckets;
 
     Processors processors;
 

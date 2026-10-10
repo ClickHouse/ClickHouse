@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/AggregatedDataVariants.h>
@@ -73,7 +74,7 @@ private:
     void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
 
     /// Positions of the non-constant grouping key columns in the chunk header.
-    std::vector<size_t> grouping_key_positions;
+    VectorWithMemoryTracking<size_t> grouping_key_positions;
 
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
@@ -85,7 +86,7 @@ private:
 
     /// The total number of input rows already seen for that group. This is useful to
     /// determine if the next row for that group should be outputted or not.
-    std::vector<UInt64> group_counts;
+    VectorWithMemoryTracking<UInt64> group_counts;
 
     /// Slices from the current chunk that will be emitted to output.
     PODArray<ChunkRowRange> output_slices;
@@ -139,7 +140,7 @@ private:
 
     /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
     /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
-    std::vector<size_t> grouping_key_positions;
+    VectorWithMemoryTracking<size_t> grouping_key_positions;
 
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
