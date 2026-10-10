@@ -1544,7 +1544,8 @@ def get_optimal_test_batch(
 
     # Parallel groups and Sequential groups separated to allow distinct packing
     parallel_groups = group_by_prefix(parallel_test_modules)
-    sequential_groups = group_by_prefix(sequential_test_modules)
+    # Sequential modules run one at a time, so each is its own unit and no directory has to fit one batch
+    sequential_groups = {m: [m] for m in sorted(sequential_test_modules)}
 
     durations = TEST_DURATIONS
 
@@ -1588,9 +1589,10 @@ def get_optimal_test_batch(
         sequential_batches[idx].extend(sequential_groups[prefix])
         sequential_weights[idx] += dur
 
-    # Round-robin assign unknown-duration sequential groups
+    # Round-robin assign unknown-duration sequential groups, least loaded batch first
+    by_load = sorted(range(total_batches), key=lambda i: (sequential_weights[i], i))
     for i, prefix in enumerate(s_unknown):
-        idx = i % total_batches
+        idx = by_load[i % total_batches]
         sequential_batches[idx].extend(sequential_groups[prefix])
 
     # Prepare batch containers and weights
