@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <base/unit.h>
+#include <Columns/ColumnConst.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Core/Defines.h>
 #include <Core/Joins.h>
@@ -194,6 +195,31 @@ TEST(ExperimentalSpillCodecPlanSetting, DistinctStepEmitsItOnlyForAnExternalDist
     EXPECT_FALSE(distinctStepCarriesSetting(
         experimental_codec, true, 1_MiB, 0., /*distinct_is_reachable=*/true,
         DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
+}
+
+TEST(ExperimentalSpillCodecPlanSetting, DistinctStepByConstantKeysDoesNotEmitIt)
+{
+    DistinctStep::Settings distinct_settings;
+    distinct_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    distinct_settings.temporary_files_codec = experimental_codec;
+    distinct_settings.spill_codec_authorized = true;
+    distinct_settings.max_bytes_before_external_distinct = 1_MiB;
+
+    auto type = std::make_shared<DataTypeUInt64>();
+    auto serialize = [&](ColumnPtr key_column)
+    {
+        auto header = std::make_shared<const Block>(Block({ColumnWithTypeAndName(key_column, type, "k")}));
+        DistinctStep step(header, distinct_settings, /*limit_hint_=*/0, Names{"k"}, /*pre_distinct_=*/false);
+        QueryPlanSerializationSettings settings;
+        step.serializeSettings(settings, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        return wireCarriesSetting(settings);
+    };
+
+    EXPECT_TRUE(serialize(type->createColumn()));
+
+    /// `transformPipeline` builds the external `DISTINCT` only for a non-constant key column: a `DISTINCT` by
+    /// constant keys produces at most one row, never resolves the codec, and must not carry the opt-in.
+    EXPECT_FALSE(serialize(type->createColumnConst(0, UInt64(1))));
 }
 
 TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)

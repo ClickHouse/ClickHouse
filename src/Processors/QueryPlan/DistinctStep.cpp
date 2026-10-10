@@ -125,8 +125,9 @@ void DistinctStep::Settings::updatePlanSettings(
     plan_settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     plan_settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     /// `spill_codec_authorized` goes on the wire only when the spill behavior of this step actually
-    /// depends on it: a preliminary `DISTINCT` and a `DISTINCT` with both spill thresholds disabled never
-    /// reach the temporary data, so they never resolve the codec and must not carry the opt-in. A peer
+    /// depends on it: a preliminary `DISTINCT`, a `DISTINCT` by constant keys only, and a `DISTINCT` with
+    /// both spill thresholds disabled never reach the temporary data, so they never resolve the codec and
+    /// must not carry the opt-in. A peer
     /// below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC` predates the gate
     /// itself, so withholding the name leaves it with exactly the behavior it has today rather than having
     /// the plan refused. See the matching comments in `SortingStep::Settings::updatePlanSettings` and
@@ -325,7 +326,11 @@ void DistinctStep::updateOutputHeader()
 void DistinctStep::serializeSettings(QueryPlanSerializationSettings & plan_settings, UInt64 version) const
 {
     /// Only the final `DISTINCT` can spill; the preliminary one deduplicates each stream in memory.
-    settings.updatePlanSettings(plan_settings, /*distinct_is_reachable=*/!pre_distinct, version);
+    /// The same condition under which `transformPipeline` builds the external `DISTINCT`: only a final
+    /// `DISTINCT` with at least one non-constant key column can reach the temporary data.
+    const bool distinct_is_reachable = !pre_distinct
+        && !calculateDistinctKeyColumnsPositions(*input_headers.front(), columns).empty();
+    settings.updatePlanSettings(plan_settings, distinct_is_reachable, version);
 }
 
 void DistinctStep::serialize(Serialization & ctx) const
