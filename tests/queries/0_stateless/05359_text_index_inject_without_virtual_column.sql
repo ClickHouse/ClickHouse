@@ -31,6 +31,14 @@ SELECT count() FROM tab_lower PREWHERE hasToken(s, 'world') AND toString(hasAnyT
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM tab_lower WHERE hasToken(s, 'world') AND toString(hasAnyTokens(s, 'hello')) = '1')
 WHERE explain LIKE '%__text_index_idx_hasToken%';
 
+DROP TABLE IF EXISTS tab_pre;
+CREATE TABLE tab_pre (id UInt64, s String, INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(s))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_pre VALUES (1, 'xyz'), (2, 'Hello world'), (3, 'foo');
+
+SELECT count() FROM tab_pre WHERE hasToken(s, 'world') AND toString(hasToken(s, 'HELLO')) = '1';
+SELECT count() FROM tab_pre WHERE hasToken(s, 'world') AND toString(hasAnyTokens(s, 'HELLO')) = '1';
+
 DROP TABLE tab;
 DROP TABLE tab_nullable;
 DROP TABLE tab_lower;
+DROP TABLE tab_pre;
