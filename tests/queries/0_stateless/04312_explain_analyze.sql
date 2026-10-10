@@ -10,7 +10,7 @@ FROM (EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) 
 -- The query summary block is present.
 SELECT
     countIf(explain LIKE '%Query summary:%') = 1,
-    countIf(explain LIKE '%Time:%') = 1,
+    countIf(explain LIKE '  Time: %(planning % · execution %)') = 1,
     countIf(explain LIKE '%Read:%') = 1,
     countIf(explain LIKE '%Peak memory:%') = 1
 FROM (EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);

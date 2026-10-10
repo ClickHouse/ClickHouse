@@ -59,6 +59,11 @@ NOISE_FRAME_PREFIXES = (
 EXCLUDED_STACK_FRAME_PREFIXES = (
     "(anonymous namespace)::dumpProfile",
     "dumpProfile",
+    # Per-thread accounting state lives until the pool thread exits, so it is
+    # not attributable to the scenario that first touched it.
+    "DB::ThreadStatus::attachToGroup",
+    "DB::ThreadStatus::detachFromGroup",
+    "DB::ThreadStatus::ThreadStatus",
 )
 
 
@@ -237,7 +242,7 @@ def format_stack(frames: list) -> str:
 
 
 def contains_excluded_stack_frame(frames: list) -> bool:
-    """Return whether a stack belongs to profiler bookkeeping."""
+    """Return whether a stack belongs to profiler or per-thread bookkeeping."""
     return any(
         part.startswith(prefix)
         for frame in frames

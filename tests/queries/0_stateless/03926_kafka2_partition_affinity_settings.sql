@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Test validation of kafka_partition_shard_num and kafka_shard_count settings
 
-SET allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SET allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Case 1: Only kafka_partition_shard_num without kafka_shard_count should fail
 CREATE TABLE test_kafka_partition_affinity_1 (id UInt64)

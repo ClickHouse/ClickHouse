@@ -146,7 +146,7 @@ DROP TABLE test_tuple_sparse;
 -- on the nested `-Tuple` function with a null map. Whole-tuple NULLs are skipped; only non-null
 -- rows contribute. This exercises the `addBatchSinglePlaceNotNull` override of the `-Tuple` function.
 SELECT 'nullable tuple';
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 -- Single place, no NULLs: numbers 0..3 -> first elements sum to 0+1+2+3 = 6, second to 6.0.
 SELECT sumTuple(t) FROM (SELECT CAST(tuple(toInt64(number), toFloat64(number)), 'Nullable(Tuple(Int64, Float64))') AS t FROM numbers(4));
 -- Single place with NULLs: rows 0 and 3 are NULL and skipped, kept 1,2,4,5 -> sums 1+2+4+5 = 12.
