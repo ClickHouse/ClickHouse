@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/ComparisonParams.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
@@ -1094,9 +1095,7 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
 /// A `Dynamic` or `Variant` value has the type of its row, not of its path.
 static bool holdsValuesOfSeveralTypes(const IDataType & type)
 {
-    bool result = isDynamic(type) || isVariant(type);
-    type.forEachChild([&](const IDataType & child) { result |= isDynamic(child) || isVariant(child); });
-    return result;
+    return anyInTypeTree(type, [](const IDataType & part) { return isDynamic(part) || isVariant(part); });
 }
 
 static bool isCastFunction(const RPNBuilderTreeNode & node)
@@ -1148,9 +1147,7 @@ static bool hasStableText(const IDataType & type)
         return true;
     };
 
-    bool result = is_stable(type);
-    type.forEachChild([&](const IDataType & child) { result &= is_stable(child); });
-    return result;
+    return !anyInTypeTree(type, [&](const IDataType & part) { return !is_stable(part); });
 }
 
 /// `-0` equals `0` and has another text.
