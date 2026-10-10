@@ -2,12 +2,14 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
@@ -26,6 +28,7 @@
 #include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
@@ -510,6 +513,32 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     return !tracker.isValueInsideThreshold(boundary);
 }
 
+void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) const
+{
+    if (column.empty())
+        return;
+
+    /// The same comparison the sorting transforms use, so "best" means "sorts first".
+    const auto & tracker = *format_filter_info->top_k_filter->threshold_tracker;
+    const int direction = tracker.getDirection();
+    const int nulls_direction = tracker.getNullsDirection();
+    const Collator * collator = tracker.getCollator().get();
+    auto compare = [&](const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row)
+    {
+        int res = collator ? lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_direction, *collator)
+                           : lhs.compareAt(lhs_row, rhs_row, rhs, nulls_direction);
+        return direction * res;
+    };
+
+    size_t best_row = 0;
+    for (size_t row = 1; row < column.size(); ++row)
+        if (compare(column, row, column, best_row) < 0)
+            best_row = row;
+
+    if (!row_group.top_k_best_value || compare(column, best_row, *row_group.top_k_best_value, 0) < 0)
+        row_group.top_k_best_value = column.cut(best_row, 1);
+}
+
 bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
 {
     for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices.at(spatial_key_condition_idx))
@@ -887,6 +916,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                     && output_info.is_primitive
                     && primitive_columns[output_info.primitive_start].decoder.allow_stats)
                     top_k_primitive_idx = output_info.primitive_start;
+
+                if (top_k_column_is_read && format_filter_info->top_k_filter->track_row_group_best_values)
+                    top_k_best_value_column_pos = sample_block->findPositionByName(format_filter_info->top_k_filter->column_name);
             }
         }
     }
@@ -1126,6 +1158,8 @@ void Reader::prepareBloomFilterCondition()
     {
         const PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
         if (!column_info.used_by_key_condition)
+            continue;
+        if (!column_info.decoder.allow_hash_filters)
             continue;
 
         /// We hash query constants for any column that has either a bloom filter or a usable
@@ -3679,9 +3713,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
     }
 
-    TypeIndex kind = output_info.nullable_group
-        ? removeNullable(output_info.input_type)->getColumnType()
-        : output_info.input_type->getColumnType();
+    /// Nullable wraps the type of a physically nullable tuple group and of a variant read as `Nullable(JSON)`.
+    TypeIndex kind = removeNullable(output_info.input_type)->getColumnType();
 
     if (output_info.is_primitive)
     {
@@ -3732,6 +3765,16 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             res = ColumnTuple::create(num_rows);
         else
             res = ColumnTuple::create(std::move(columns));
+    }
+    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+    {
+        chassert(output_info.nested_columns.size() == 2);
+        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
+        MutableColumnPtr value = formOutputColumn(row_subgroup, output_info.nested_columns[1], num_rows);
+
+        res = output_info.input_type->createColumn();
+        res->reserve(num_rows);
+        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, options.format);
     }
     else
     {

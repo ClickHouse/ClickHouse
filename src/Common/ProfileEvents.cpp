@@ -60,6 +60,7 @@
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.", ValueType::Number) \
     M(ReadBufferFromFileDescriptorReadFailed, "Number of times the read (read/pread) from a file descriptor have failed.", ValueType::Number) \
     M(ReadBufferFromFileDescriptorReadBytes, "Number of bytes read from file descriptors. If the file is compressed, this will show the compressed data size.", ValueType::Bytes) \
+    M(ReadBufferFromFileDescriptorPageCacheHitBytes, "Number of bytes read from file descriptors with the synchronous `pread` that were detected to be served from the OS page cache (this is done only for the reads with a bandwidth throttler).", ValueType::Bytes) \
     M(WriteBufferFromFileDescriptorWrite, "Number of writes (write/pwrite) to a file descriptor. Does not include sockets.", ValueType::Number) \
     M(WriteBufferFromFileDescriptorWriteFailed, "Number of times the write (write/pwrite) to a file descriptor have failed.", ValueType::Number) \
     M(WriteBufferFromFileDescriptorWriteBytes, "Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.", ValueType::Bytes) \
@@ -468,6 +469,11 @@
     M(ExternalDistinctTailKeptRows, "Number of buffered rows retained in memory for the final external DISTINCT merge.", ValueType::Number) \
     M(ExternalDistinctCompressedBytes, "Number of compressed bytes written for DISTINCT in external memory.", ValueType::Bytes) \
     M(ExternalDistinctUncompressedBytes, "Amount of data (uncompressed, before compression) written for DISTINCT in external memory.", ValueType::Bytes) \
+    M(ExternalSetWritePart, "Number of times a temporary file was written to disk for an `IN` set in external memory.", ValueType::Number) \
+    M(ExternalSetMerge, "Number of times temporary files were merged for an `IN` set in external memory.", ValueType::Number) \
+    M(ExternalSetCompressedBytes, "Number of compressed bytes written for `IN` sets in external memory.", ValueType::Bytes) \
+    M(ExternalSetUncompressedBytes, "Amount of data (uncompressed, before compression) written for `IN` sets in external memory.", ValueType::Bytes) \
+    M(ExternalSetReadBlocks, "Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.", ValueType::Number) \
     \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergPartitionPrunedManifestFiles, "Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list", ValueType::Number) \
@@ -883,6 +889,7 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromS3InitMicroseconds, "Time spent initializing connection to S3.", ValueType::Microseconds) \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.", ValueType::Bytes) \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.", ValueType::Number) \
+    M(ReadBufferFromS3RequestsCut, "Number of requests from S3 disks cut to one buffer fill because the connection group of the disks was at or above `disk_connections_soft_limit`.", ValueType::Number) \
     \
     M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.", ValueType::Microseconds) \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.", ValueType::Bytes) \
@@ -1069,6 +1076,7 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationTopKKeysEvicted, "How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysPruned, "How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.", ValueType::Number) \
     M(AggregationTopKHeapsFrozen, "How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
+    M(TopKGranulesSkippedByPrimaryKey, "Number of granules skipped while reading because the primary index shows that all their rows lie beyond the running top-K threshold, published by the aggregation (see `enable_group_by_top_k_dynamic_filtering`) or by the sorting (see `use_top_k_dynamic_filtering`).", ValueType::Number) \
     M(DistinctTransformsAbandonedDeduplication, "How many deduplication transforms dropped their hash table and stopped deduplicating because the observed input was almost entirely unique and a consumer downstream deduplicates anyway: the preliminary `DISTINCT` (see `allow_preliminary_distinct_abandoning`) and the per-stream pre-deduplication in front of an `IN`-subquery set fill.", ValueType::Number) \
     M(DistinctTransformsSwitchedToPassThrough, "How many preliminary `DISTINCT` transforms freed their hash table and started passing every row through because query memory exceeded the external `DISTINCT` threshold, or projected hashing allocations would exceed the remaining threshold budget (see `max_bytes_before_external_distinct`): the final `DISTINCT`, which spills to disk, resolves the duplicates instead.", ValueType::Number) \
     M(HashJoinPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for hash join.", ValueType::Number) \
@@ -1729,8 +1737,10 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
     M(SetsBuiltFromSubquery, "Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.", ValueType::Number) \
+    M(SetsSpilledToDisk, "Number of `IN` sets that spilled to disk while they were built from their subquery.", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
+    M(LoadedStatistics, "Number of data parts for which column statistics were loaded", ValueType::Number) \
     M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
     M(SelectivityEstimatorInSetEstimatedFromSize, "Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`", ValueType::Number) \
     \
