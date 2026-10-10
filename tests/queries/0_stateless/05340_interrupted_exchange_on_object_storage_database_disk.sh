@@ -42,7 +42,7 @@ function disks()
 
 function show_files()
 {
-    echo "$1: [$(disks "ls --all $1" | sort | xargs)]"
+    echo "$1: [$(disks "ls --all $1" | LC_ALL=C sort | xargs)]"
 }
 
 function show_tables()
