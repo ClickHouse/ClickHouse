@@ -1,9 +1,20 @@
--- Tags: no-fasttest
--- no-fasttest: the Iceberg table needs the Parquet and Avro libraries.
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: the Iceberg table needs the Parquet and Avro libraries.
 
--- A data lake table keeps its row count in its metadata. The relation estimator reports it, so a
--- join with such a table is estimated like one with any other table, and `EXPLAIN estimates` shows
--- the rows of the read. Without this the read had no estimate and the join none either.
+# A data lake table keeps its row count in its metadata. The relation estimator reports it, so a
+# join with such a table is estimated like one with any other table, and `EXPLAIN estimates` shows
+# the rows of the read. Without this the read had no estimate and the join none either.
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+# The path goes into the query as a literal: in a `Replicated` database the `CREATE TABLE` runs
+# in the database's own DDL worker, which cannot read anything computed in this session.
+ICEBERG_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05344_data_lake_rows_estimate"
+
+sed "s|__ICEBERG_PATH__|${ICEBERG_PATH}|" <<'EOF' | $CLICKHOUSE_CLIENT -mn
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET explain_query_plan_default = 'legacy';
@@ -17,18 +28,10 @@ SET use_iceberg_metadata_files_cache = 0;
 SET iceberg_delete_data_on_drop = 1;
 SET async_insert = 0;
 
--- Resolve relative user-files paths against the server's data directory.
-CREATE TEMPORARY TABLE iceberg_path AS
-WITH if(changed, trimBoth(value), 'user_files/') AS user_files_path
-SELECT concat(
-    if(startsWith(user_files_path, '/'), '', (SELECT path FROM system.disks WHERE name = 'default')),
-    user_files_path, '/', currentDatabase(), '/05344_data_lake_rows_estimate/') AS path
-FROM system.server_settings WHERE name = 'user_files_path';
-
 DROP TABLE IF EXISTS t_dl_dim;
 DROP TABLE IF EXISTS t_dl_fact;
 CREATE TABLE t_dl_dim (k UInt64, v UInt64)
-ENGINE = IcebergLocal((SELECT path FROM iceberg_path), 'Parquet')
+ENGINE = IcebergLocal('__ICEBERG_PATH__', 'Parquet')
 SETTINGS iceberg_format_version = 2;
 INSERT INTO t_dl_dim SELECT number, number FROM numbers(5);
 CREATE TABLE t_dl_fact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
@@ -41,3 +44,4 @@ SELECT count() FROM t_dl_fact AS f JOIN t_dl_dim AS d ON f.k = d.k;
 
 DROP TABLE t_dl_dim SYNC;
 DROP TABLE t_dl_fact;
+EOF
