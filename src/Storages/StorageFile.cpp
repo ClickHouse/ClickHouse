@@ -3002,6 +3002,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
+    /// The TopK key holds the versions of the files: a writer of this table must not change them before the sources lock it.
+    RWLockImpl::LockHolder read_lock;
+    if (top_k_filter && !storage->use_table_fd)
+        read_lock = storage->lockRwlock(RWLockImpl::Read, ctx);
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey(*format_filter_info);
     if (top_k_query_condition_cache_key)
     {

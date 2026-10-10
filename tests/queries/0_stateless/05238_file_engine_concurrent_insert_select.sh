@@ -66,3 +66,29 @@ done
 ${CLICKHOUSE_CLIENT} -q "SELECT x FROM many ORDER BY x LIMIT 2 SETTINGS max_threads = 4, max_threads_min_free_memory_per_thread = 0,
     query_plan_optimize_lazy_materialization_for_file = 0, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000"
 wait
+
+# A top-K read that uses the query condition cache does not fail while a truncating INSERT rewrites one of its files.
+# The rewritten file, data.Parquet, holds the largest x, so it is read after the entries of the other files are used.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE qcc (x UInt64) ENGINE = File(Parquet)
+    SETTINGS output_format_parquet_row_group_size = 100, output_format_parquet_parallel_encoding = 0"
+REWRITE="INSERT INTO qcc SETTINGS engine_file_truncate_on_insert = 1, async_insert = 0 SELECT 1000000 + number FROM numbers(2000)"
+${CLICKHOUSE_CURL} -sS "$URL" -d "$REWRITE"
+for i in {1..7}; do
+    ${CLICKHOUSE_CURL} -sS "$URL" -d "INSERT INTO qcc SETTINGS engine_file_allow_create_multiple_files = 1
+        SELECT $i * 10000 + number FROM numbers(2000)"
+done
+# The cache gets entries only for files modified more than 3 seconds ago.
+sleep 3.1
+TOPK="SELECT x FROM qcc ORDER BY x LIMIT 2 SETTINGS max_threads = 4, max_threads_min_free_memory_per_thread = 0,
+    use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+    query_plan_optimize_lazy_materialization_for_file = 0, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1
+    FORMAT Null"
+for _ in {1..40}; do
+    ${CLICKHOUSE_CURL} -sS "$URL" -d "$TOPK"
+    (sleep 0.00$((RANDOM % 5)); ${CLICKHOUSE_CURL} -sS "$URL" -d "$TOPK") &
+    (sleep 0.00$((RANDOM % 5)); ${CLICKHOUSE_CURL} -sS "$URL" -d "$REWRITE") &
+    wait
+done
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "SELECT sum(ProfileEvents['QueryConditionCacheHits']) > 0 FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT x FROM qcc ORDER BY x LIMIT 2%'"
