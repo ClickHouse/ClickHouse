@@ -2234,10 +2234,13 @@ def test_glue_commit_read_back_raising_keeps_files(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
 
 
-def test_glue_commit_definite_rejection_keeps_error(started_cluster):
-    # Glue refused the only attempt, so the update cannot have applied: the original error survives
-    # and the files staged for the commit are cleaned up, like the REST twin
-    # test_catalog_commit_definite_rejection_keeps_error.
+@pytest.mark.parametrize(
+    "failpoint", ["iceberg_catalog_commit_rejected", "iceberg_catalog_commit_auth_rejected"]
+)
+def test_glue_commit_definite_rejection_keeps_error(started_cluster, failpoint):
+    # Glue (access denied) or AWS authentication (unrecognized client) refused the only attempt, so
+    # the update cannot have applied: the original error survives and the files staged for the
+    # commit are cleaned up, like the REST twin test_catalog_commit_definite_rejection_keeps_error.
     node = started_cluster.instances["node1"]
     root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
         started_cluster, node, f"test_glue_commit_rejected_{uuid.uuid4()}"
@@ -2246,13 +2249,13 @@ def test_glue_commit_definite_rejection_keeps_error(started_cluster):
     manifest_lists_before = _glue_manifest_lists(started_cluster, before)
 
     try:
-        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_rejected")
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_rejected")
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
     assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
-    assert "Injected rejection" in error, error
+    assert "Injected glue error" in error, error
 
     # The pointer never advanced, the previous snapshot is untouched and the commit's manifest list is gone.
     after = _glue_metadata_location(started_cluster, root_namespace, table_name)
@@ -2298,7 +2301,7 @@ def test_glue_commit_retried_rejection_keeps_files(started_cluster):
         started_cluster,
         "test_glue_commit_retried_rejection",
         ["iceberg_catalog_commit_retried", "iceberg_catalog_commit_rejected"],
-        "Injected rejection",
+        "Injected glue error",
     )
 
 
@@ -2308,7 +2311,7 @@ def test_glue_commit_timeout_keeps_files(started_cluster):
         started_cluster,
         "test_glue_commit_timeout",
         ["iceberg_catalog_commit_timed_out"],
-        "Injected timeout",
+        "Injected glue error",
     )
 
 

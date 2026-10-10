@@ -71,6 +71,7 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_reconcile_fail[];
     extern const char iceberg_catalog_commit_reconcile_throw[];
     extern const char iceberg_catalog_commit_rejected[];
+    extern const char iceberg_catalog_commit_auth_rejected[];
     extern const char iceberg_catalog_commit_retried[];
     extern const char iceberg_catalog_commit_timed_out[];
     extern const char iceberg_catalog_commit_update_throw[];
@@ -115,12 +116,19 @@ bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
     return Poco::toUpper(table_type) == "ICEBERG";
 }
 
-/// Glue refused the request without applying it. Any other error, such as a timeout or an internal
-/// or federation source failure, may follow an applied update.
+/// Glue, or the AWS authentication in front of it, refused the request without applying it. Any other error,
+/// such as a timeout or an internal or federation source failure, may follow an applied update.
 bool isDefiniteRejection(Aws::Glue::GlueErrors error)
 {
     switch (error)
     {
+        case Aws::Glue::GlueErrors::INCOMPLETE_SIGNATURE:
+        case Aws::Glue::GlueErrors::INVALID_SIGNATURE:
+        case Aws::Glue::GlueErrors::SIGNATURE_DOES_NOT_MATCH:
+        case Aws::Glue::GlueErrors::INVALID_ACCESS_KEY_ID:
+        case Aws::Glue::GlueErrors::INVALID_CLIENT_TOKEN_ID:
+        case Aws::Glue::GlueErrors::UNRECOGNIZED_CLIENT:
+        case Aws::Glue::GlueErrors::MISSING_AUTHENTICATION_TOKEN:
         case Aws::Glue::GlueErrors::ACCESS_DENIED:
         case Aws::Glue::GlueErrors::VALIDATION:
         case Aws::Glue::GlueErrors::INVALID_INPUT:
@@ -810,22 +818,19 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
     request.SetRequestRetryHandler([&retried](const Aws::AmazonWebServiceRequest &) { retried = true; });
     fiu_do_on(DB::FailPoints::iceberg_catalog_commit_retried, { request.GetRequestRetryHandler()(request); });
 
-    bool rejected = false;
-    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected, { rejected = true; });
-    bool timed_out = false;
-    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_timed_out, { timed_out = true; });
+    std::optional<Aws::Glue::GlueErrors> injected_error;
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected, { injected_error = Aws::Glue::GlueErrors::ACCESS_DENIED; });
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_auth_rejected, { injected_error = Aws::Glue::GlueErrors::UNRECOGNIZED_CLIENT; });
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_timed_out, { injected_error = Aws::Glue::GlueErrors::OPERATION_TIMEOUT; });
 
     Aws::Glue::Model::UpdateTableOutcome response;
     std::optional<String> thrown_error_message;
 
-    if (rejected || timed_out)
+    if (injected_error)
     {
-        /// Models glue answering the request with an outright rejection or with a timeout.
-        response = Aws::Glue::Model::UpdateTableOutcome(Aws::Client::AWSError<Aws::Glue::GlueErrors>(
-            rejected ? Aws::Glue::GlueErrors::ACCESS_DENIED : Aws::Glue::GlueErrors::OPERATION_TIMEOUT,
-            rejected ? "InjectedRejection" : "InjectedTimeout",
-            rejected ? "Injected rejection" : "Injected timeout",
-            false));
+        /// Models glue answering the request with this error.
+        response = Aws::Glue::Model::UpdateTableOutcome(
+            Aws::Client::AWSError<Aws::Glue::GlueErrors>(*injected_error, "InjectedError", "Injected glue error", false));
     }
     else
     {
