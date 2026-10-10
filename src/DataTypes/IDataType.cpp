@@ -41,6 +41,40 @@ String IDataType::getName() const
     return doGetName();
 }
 
+const DataTypePtr & IDataType::getChild(size_t index) const
+{
+    /// Reached only for a type without children, which never has a valid index.
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Data type {} has {} children, but child {} was requested", getName(), getNumberOfChildren(), index);
+}
+
+DataTypes IDataType::getChildren() const
+{
+    const size_t num_children = getNumberOfChildren();
+    DataTypes children;
+    children.reserve(num_children);
+    for (size_t i = 0; i < num_children; ++i)
+        children.push_back(getChild(i));
+    return children;
+}
+
+DataTypePtr IDataType::cloneWithChildren(const DataTypes & new_children) const
+{
+    const size_t num_children = getNumberOfChildren();
+    if (new_children.size() != num_children)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Data type {} has {} children, but {} were given to cloneWithChildren",
+            getName(), num_children, new_children.size());
+
+    return doCloneWithChildren(new_children);
+}
+
+DataTypePtr IDataType::doCloneWithChildren(const DataTypes &) const
+{
+    /// Reached only for a type without children, which `cloneWithChildren` has already checked.
+    return shared_from_this();
+}
+
 String IDataType::getPrettyName(size_t indent) const
 {
     if (custom_name)
@@ -150,7 +184,11 @@ namespace
 std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(const ISerialization::SubstreamPath & path, size_t prefix_len, const IDataType::SubcolumnInfo * nested)
 {
     auto result = std::make_unique<IDataType::SubcolumnInfo>();
-    result->data = ISerialization::createFromPath(path, prefix_len);
+    /// The selected leaf is the end of the whole path: when the rest of the name was resolved dynamically
+    /// it lives in `nested`, while `path[prefix_len - 1]` is only the prefix the dynamic type matched.
+    const ISerialization::Substream * selected_terminal
+        = nested && !nested->substreams_path.empty() ? &nested->substreams_path.back() : nullptr;
+    result->data = ISerialization::createFromPath(path, prefix_len, selected_terminal);
     result->substreams_path.assign(path.begin(), path.begin() + prefix_len);
     if (nested)
         result->substreams_path.insert(result->substreams_path.end(), nested->substreams_path.begin(), nested->substreams_path.end());
@@ -180,7 +218,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
             size_t prefix_len = i + 1;
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, false, initial_array_level);
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, initial_array_level);
                 /// Create data from path only if it's requested subcolumn.
                 /// Use the first exact match to be consistent with ColumnsDescription::addSubcolumns
                 /// which also keeps the first subcolumn when there are name collisions
@@ -205,11 +243,22 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
                     {
                         /// Create requested subcolumn using dynamic subcolumn data.
                         auto tmp_subpath = subpath;
-                        if (tmp_subpath[i].creator)
+                        if (auto creator = tmp_subpath[i].creator)
                         {
-                            dynamic_subcolumn_info->data.type = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.type);
-                            dynamic_subcolumn_info->data.column = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.column);
-                            dynamic_subcolumn_info->data.serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
+                            /// Offer the creator the leaf that was really selected, which lives at the end
+                            /// of the dynamically resolved path, not at `prefix_len - 1` of this one.
+                            if (!dynamic_subcolumn_info->substreams_path.empty())
+                            {
+                                if (auto specialized = creator->specializeForSelectedSubcolumn(dynamic_subcolumn_info->substreams_path.back()))
+                                    creator = std::move(specialized);
+                            }
+
+                            /// Build the serialization before the type is wrapped, so that a creator
+                            /// inspecting its prev_type argument sees the type the serialization
+                            /// actually serializes. Same order as in ISerialization::createFromPath.
+                            dynamic_subcolumn_info->data.serialization = creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
+                            dynamic_subcolumn_info->data.type = creator->create(dynamic_subcolumn_info->data.type);
+                            dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column);
                         }
 
                         tmp_subpath[i].data = dynamic_subcolumn_info->data;
@@ -227,6 +276,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
     settings.enumerate_dynamic_streams = false;
     settings.enumerate_virtual_streams = true;
     settings.array_level = initial_array_level;
+    settings.subcolumn_name = subcolumn_name;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && data.type->hasDynamicSubcolumnsData())
@@ -283,7 +333,12 @@ bool IDataType::hasDynamicSubcolumns() const
 
 DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    return tryGetSubcolumnType(subcolumn_name, getDefaultSerialization());
+}
+
+DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+{
+    auto data = SubstreamData(serialization).withType(getPtr());
     auto subcolumn_data = getSubcolumnInfo(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->data.type : nullptr;
 }
@@ -296,7 +351,12 @@ DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 
 std::optional<IDataType::SubcolumnInfo> IDataType::tryGetSubcolumnInfo(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    return tryGetSubcolumnInfo(subcolumn_name, getDefaultSerialization());
+}
+
+std::optional<IDataType::SubcolumnInfo> IDataType::tryGetSubcolumnInfo(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+{
+    auto data = SubstreamData(serialization).withType(getPtr());
     auto info = getSubcolumnInfo(subcolumn_name, data, {}, false);
     if (!info)
         return {};
@@ -324,7 +384,10 @@ ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnP
         return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr()), column_const->size());
 
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
-    return getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
+    auto subcolumn = getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
+    if (!subcolumn)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Subcolumn {} of type {} cannot be extracted from a column in memory", subcolumn_name, getName());
+    return subcolumn;
 }
 
 SerializationPtr IDataType::getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const
@@ -339,7 +402,7 @@ Names IDataType::getSubcolumnNames() const
     forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
         res.push_back(name);
-    }, SubstreamData(getDefaultSerialization()));
+    }, SubstreamData(getDefaultSerialization()).withType(getPtr()));
     return res;
 }
 

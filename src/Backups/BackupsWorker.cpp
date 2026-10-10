@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int UNFINISHED;
     extern const int WRONG_BACKUP_SETTINGS;
 }
 
@@ -464,7 +465,8 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup)
             backup_id += "-internal-" + backup_settings.host_id;
 
-        if (backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
+        /// An internal backup must name data files like the initiator, which sends its generator unless it is the default.
+        if (!is_internal_backup && backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
             backup_settings.data_file_name_generator = SettingFieldBackupDataFileNameGeneratorTypeTraits::fromString(
                 backup_context->getConfigRef().getString("backups.data_file_name_generator", ""));
 
@@ -963,6 +965,14 @@ struct BackupsWorker::RestoreStarter
         if (is_internal_restore && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
+#if CLICKHOUSE_CLOUD
+        /// Internal like the setting above. `doRestore` computes it for every non-internal restore,
+        /// but a privilege decision should be refused here rather than left to that overwrite.
+        if (restore_settings.allow_local_dictionary_source && !query_context->isDDLOrOnClusterInternal())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED, "Setting 'allow_local_dictionary_source' cannot be set explicitly");
+#endif
+
         /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
         /// Note: readonly=2 allows changing settings but still restricts writes - however it's set automatically
         /// by the HTTP interface for GET requests (to protect against accidental writes), so we only block readonly=1
@@ -1151,6 +1161,14 @@ void BackupsWorker::doRestore(
     const ClusterPtr & cluster)
 {
     bool is_internal_restore = restore_settings.internal;
+
+#if CLICKHOUSE_CLOUD
+    /// The only place the restoring user is known: on each host the restore runs in a context with
+    /// no user. The verdict is taken here and travels with the query, and a user-supplied value
+    /// never reaches this point.
+    if (!is_internal_restore)
+        restore_settings.allow_local_dictionary_source = BackupUtils::mayRestoreLocalDictionarySource(context);
+#endif
 
     maybeSleepForTesting();
 
@@ -1373,6 +1391,18 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
             isBackupStatus(current_status) ? "backup" : "restore");
     }
 
+    /// After the deduplication above, so that a replayed internal operation still gets the status of
+    /// the operation this host already knows about instead of being refused.
+    if (refuse_new_operations)
+    {
+        /// UNFINISHED is retriable in DDLWorker, so the task stays queued for a later retry
+        /// instead of being recorded as permanently failed.
+        throw Exception(internal ? ErrorCodes::UNFINISHED : ErrorCodes::QUERY_WAS_CANCELLED,
+            "Cannot start {} {} because the server is shutting down",
+            isBackupStatus(status) ? "backup" : "restore",
+            quoteString(id));
+    }
+
     if (backup_log)
         backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
@@ -1475,11 +1505,12 @@ void BackupsWorker::maybeSleepForTesting() const
 }
 
 
-BackupStatus BackupsWorker::wait(const OperationID & backup_or_restore_id, bool rethrow_exception)
+BackupStatus BackupsWorker::waitImpl(const OperationID & backup_or_restore_id, bool rethrow_exception,
+                                     std::optional<TimePoint> deadline, bool & reached_final_status)
 {
     std::unique_lock lock{infos_mutex};
     BackupStatus current_status = {};
-    status_changed.wait(lock, [&]
+    auto predicate = [&]
     {
         auto it = infos.find(backup_or_restore_id);
         if (it == infos.end())
@@ -1492,8 +1523,75 @@ BackupStatus BackupsWorker::wait(const OperationID & backup_or_restore_id, bool 
             return true;
         LOG_INFO(log, "Waiting {} {} to complete", isBackupStatus(current_status) ? "backup" : "restore", info.name);
         return false;
-    });
+    };
+
+    if (deadline)
+        reached_final_status = status_changed.wait_until(lock, *deadline, predicate);
+    else
+    {
+        status_changed.wait(lock, predicate);
+        reached_final_status = true;
+    }
+
     return current_status;
+}
+
+BackupStatus BackupsWorker::wait(const OperationID & backup_or_restore_id, bool rethrow_exception)
+{
+    bool reached_final_status = false;
+    return waitImpl(backup_or_restore_id, rethrow_exception, /* deadline= */ {}, reached_final_status);
+}
+
+std::vector<BackupOperationID> BackupsWorker::getUnfinishedOperations() const
+{
+    std::vector<OperationID> res;
+    for (const auto & [id, extended_info] : infos)
+        if (!isFinalStatus(extended_info.info.status))
+            res.push_back(id);
+    return res;
+}
+
+bool BackupsWorker::hasUnfinishedOperations() const
+{
+    std::lock_guard lock{infos_mutex};
+    return !getUnfinishedOperations().empty();
+}
+
+void BackupsWorker::stopAcceptingNewOperations()
+{
+    std::lock_guard lock{infos_mutex};
+    refuse_new_operations = true;
+}
+
+bool BackupsWorker::waitForOperations(const std::vector<OperationID> & operations, std::optional<TimePoint> deadline)
+{
+    std::vector<OperationID> unfinished;
+    for (const auto & id : operations)
+    {
+        bool reached_final_status = false;
+        waitImpl(id, /* rethrow_exception= */ false, deadline, reached_final_status);
+        if (!reached_final_status)
+            unfinished.push_back(id);
+    }
+
+    if (unfinished.empty())
+        return true;
+
+    static constexpr size_t max_names_to_log = 20;
+    String names;
+    for (size_t i = 0; i != unfinished.size(); ++i)
+    {
+        if (i)
+            names += ", ";
+        if (i >= max_names_to_log)
+        {
+            names += "...";
+            break;
+        }
+        names += unfinished[i];
+    }
+    LOG_ERROR(log, "{} backups or restores did not finish before the shutdown deadline: {}", unfinished.size(), names);
+    return false;
 }
 
 void BackupsWorker::waitAll()
@@ -1501,9 +1599,7 @@ void BackupsWorker::waitAll()
     std::vector<OperationID> current_operations;
     {
         std::lock_guard lock{infos_mutex};
-        for (const auto & [id, extended_info] : infos)
-            if (!isFinalStatus(extended_info.info.status))
-                current_operations.push_back(id);
+        current_operations = getUnfinishedOperations();
     }
 
     if (current_operations.empty())
@@ -1547,29 +1643,30 @@ BackupStatus BackupsWorker::cancel(const BackupOperationID & backup_or_restore_i
 }
 
 
-void BackupsWorker::cancelAll(bool wait_)
+bool BackupsWorker::cancelAll(bool wait_, std::optional<TimePoint> deadline)
 {
     std::vector<OperationID> current_operations;
     {
         std::lock_guard lock{infos_mutex};
-        for (const auto & [id, extended_info] : infos)
-            if (!isFinalStatus(extended_info.info.status))
-                current_operations.push_back(id);
+        current_operations = getUnfinishedOperations();
     }
 
     if (current_operations.empty())
-        return;
+        return true;
 
     LOG_INFO(log, "Cancelling running backups and restores");
 
     for (const auto & id : current_operations)
         cancel(id, /* wait= */ false);
 
-    if (wait_)
-        for (const auto & id : current_operations)
-            wait(id, /* rethrow_exception= */ false);
+    if (!wait_)
+        return false;
+
+    if (!waitForOperations(current_operations, deadline))
+        return false;
 
     LOG_INFO(log, "Backups and restores finished or stopped");
+    return true;
 }
 
 

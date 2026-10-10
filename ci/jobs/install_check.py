@@ -430,12 +430,12 @@ def main():
 
     # The same tarballs are installed in both images, so the tgz group needs both of them.
     deb_image = (
-        DockerImage.get_docker_image(DEB_IMAGE).pull_image(timeout_s=120, retries=2)
+        DockerImage.get_docker_image(DEB_IMAGE).pull_image(timeout_s=120)
         if args.deb or args.tgz
         else None
     )
     rpm_image = (
-        DockerImage.get_docker_image(RPM_IMAGE).pull_image(timeout_s=120, retries=2)
+        DockerImage.get_docker_image(RPM_IMAGE).pull_image(timeout_s=120)
         if args.rpm or args.tgz
         else None
     )

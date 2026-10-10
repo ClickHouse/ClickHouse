@@ -273,7 +273,7 @@ struct ReadAheadSettings
     uint64_t chunk_size = 16; /// shared fill chunk size for peer and commit readers alike
     /// Maximum bytes of decoded entries buffered ahead of the commit thread. 0 disables commit
     /// read-ahead entirely, independent of `enabled`. Deliberately defaults to inert here (unlike
-    /// the coordination setting's 500 MiB default) so tests building a log store directly opt in.
+    /// the coordination setting's 16 MiB default) so tests building a log store directly opt in.
     uint64_t commit_window_bytes = 0;
 };
 

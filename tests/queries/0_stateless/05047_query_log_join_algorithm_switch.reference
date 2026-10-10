@@ -1,0 +1,4 @@
+hash switching to partial merge
+1	['HASH','PARTIAL_MERGE']	['INNER']	['ALL']	['join']
+hash without the switch
+1	['HASH']	['INNER']	['ALL']	[]

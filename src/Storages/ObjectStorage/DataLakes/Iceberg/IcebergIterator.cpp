@@ -42,6 +42,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ParallelManifestDecode.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -139,8 +140,8 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
         data_object_,
         [](const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
         {
-            return std::tie(*lhs->common_partition_specification, lhs->parsed_entry->partition_key_value)
-                < std::tie(*rhs->common_partition_specification, rhs->parsed_entry->partition_key_value);
+            return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value)
+                < std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value);
         });
     if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
     {
@@ -191,13 +192,11 @@ DataFileEntriesStream::DataFileEntriesStream(
     size_t queue_size_,
     size_t decode_concurrency_,
     IcebergDataSnapshotPtr data_snapshot_,
-    std::function<void()> prepare_,
     CreateManifestIterator create_manifest_iterator_,
     SkipManifest skip_manifest_)
     : chunk_size(queue_size_)
     , decode_concurrency(decode_concurrency_)
     , data_snapshot(std::move(data_snapshot_))
-    , prepare(std::move(prepare_))
     , create_manifest_iterator(std::move(create_manifest_iterator_))
     , skip_manifest(std::move(skip_manifest_))
     , queue(queue_size_)
@@ -258,9 +257,6 @@ void DataFileEntriesStream::run()
 {
     if (!data_snapshot)
         return;
-
-    if (prepare)
-        prepare();
 
     auto stream_runner = threadPoolCallbackRunnerUnsafe<void>(getIcebergManifestDecodeThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
 
@@ -362,25 +358,26 @@ IcebergIterator::IcebergIterator(
         && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning]
         && local_context->getSettingsRef()[Setting::use_iceberg_manifest_list_partition_pruning];
 
+    /// The filter sets are shared with the reader of this table, which prepares them on its own
+    /// thread, so they must be ready before any manifest reading thread exists.
+    if (data_snapshot && manifest_filter_dag)
+        VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
+
+    /// The key conditions of the pruner are built over the filter DAG, so they need its ordered sets
+    /// to be ready.
+    if (manifest_list_pruning_enabled)
+        manifest_list_pruner = std::make_unique<Iceberg::ManifestListPruner>(
+            *persistent_components.schema_processor,
+            table_state_snapshot->schema_id,
+            data_snapshot->schema_id_on_snapshot_commit,
+            data_snapshot->partition_specs,
+            manifest_filter_dag.get(),
+            local_context);
+
     data_files_stream = std::make_unique<Iceberg::DataFileEntriesStream>(
         local_context->getSettingsRef()[Setting::iceberg_file_entries_queue_size],
         local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
         data_snapshot,
-        [this, manifest_list_pruning_enabled]
-        {
-            if (manifest_filter_dag)
-                VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
-            /// The key conditions of the pruner are built over the filter DAG, so they need its
-            /// ordered sets to be ready.
-            if (manifest_list_pruning_enabled)
-                manifest_list_pruner = std::make_unique<Iceberg::ManifestListPruner>(
-                    *persistent_components.schema_processor,
-                    table_state_snapshot->schema_id,
-                    data_snapshot->schema_id_on_snapshot_commit,
-                    data_snapshot->partition_specs,
-                    manifest_filter_dag.get(),
-                    local_context);
-        },
         [this](const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag)
         { return createManifestIterator(manifest_list_entry, stop_flag); },
         [this](const ManifestFileCacheKey & manifest_list_entry)
@@ -469,44 +466,23 @@ void IcebergIterator::decodeDeleteManifests()
     }
 
     /// Cap concurrency: each in-flight manifest holds its decoded contents.
-    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency];
-
-    auto decode_runner
-        = threadPoolCallbackRunnerUnsafe<ManifestEntryBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_DELETE_DECODE);
-
-    std::deque<std::future<ManifestEntryBatch>> in_flight;
-    /// The tasks capture `this`, so none of them may still be running when this function is left.
-    SCOPE_EXIT({
-        for (auto & future : in_flight)
+    Iceberg::decodeManifestsInOrder(
+        delete_manifests,
+        local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
+        getIOThreadPool().get(),
+        DB::ThreadName::ICEBERG_DELETE_DECODE,
+        [this](const ManifestFileCacheKey & manifest_list_entry) { return decodeManifest(manifest_list_entry, /* stop_flag */ nullptr); },
+        [this](ManifestEntryBatch delete_files)
         {
-            if (future.valid())
-                future.wait();
-        }
-    });
-
-    size_t next_to_decode = 0;
-    while (next_to_decode < delete_manifests.size() || !in_flight.empty())
-    {
-        while (in_flight.size() < max_in_flight && next_to_decode < delete_manifests.size())
-        {
-            auto decode = [this, manifest_list_entry = delete_manifests[next_to_decode++]]()
-            { return decodeManifest(manifest_list_entry, /* stop_flag */ nullptr); };
-            in_flight.push_back(decode_runner(std::move(decode), Priority{}));
-        }
-
-        auto pending = std::move(in_flight.front());
-        in_flight.pop_front();
-        /// Collected in manifest list order, so the failure reported is the first one in that order.
-        for (auto & delete_file : pending.get())
-        {
-            if (delete_file->parsed_entry->equality_ids.has_value())
-                equality_deletes_files.emplace_back(std::move(delete_file));
-            else
-                position_deletes_files.emplace_back(std::move(delete_file));
-        }
-    }
-    chassert(in_flight.empty());
-    chassert(next_to_decode == delete_manifests.size());
+            for (auto & delete_file : delete_files)
+            {
+                if (delete_file->parsed_entry->equality_ids.has_value())
+                    equality_deletes_files.emplace_back(std::move(delete_file));
+                else
+                    position_deletes_files.emplace_back(std::move(delete_file));
+            }
+            return true;
+        });
 
     /// Sort objects by common_partition_specification, partition_key_value and added_sequence_number.
     /// This is needed to efficiently match delete and data manifests in defineDeletesSpan().
@@ -562,12 +538,15 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     data_file_path,
                     lower.has_value() ? lower->serialize() : "[no lower bound]",
                     upper.has_value() ? upper->serialize() : "[no upper bound]");
-                object_info->addPositionDeleteObject(
-                    position_delete, persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key));
+                const auto resolved_delete_path = persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key);
+                if (position_delete->parsed_entry->isDeletionVector())
+                    object_info->addDeletionVector(position_delete, resolved_delete_path);
+                else
+                    object_info->addPositionDeleteFile(position_delete, resolved_delete_path);
             }
         }
 
-        if (!object_info->info.position_deletes_objects.empty())
+        if (object_info->info.hasPositionDeletes())
         {
             LOG_DEBUG(
                 logger,
