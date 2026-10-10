@@ -77,6 +77,7 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_, bool is_add_, RelativeF
     , type_name(generateName(this->getValues()))
     , is_add(is_add_)
     , relative_flags(is_add_ ? std::move(relative_flags_) : std::vector<UInt8>{})
+    , serialization_hash(SerializationEnum<Type>::getHash(this->getValues()))
 {
     if (is_add && relative_flags.size() != this->getValues().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -216,6 +217,25 @@ SerializationPtr DataTypeEnum<Type>::doGetSerialization(const SerializationInfoS
 /// Explicit instantiations.
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;
+
+bool isUnknownEnumElement(const IDataType & type, const Field & value)
+{
+    if (value.getType() != Field::Types::String)
+        return false;
+
+    const auto & name = value.safeGet<String>();
+    if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(&type))
+    {
+        Int8 res = 0;
+        return !enum8->tryGetValue(res, name);
+    }
+    if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(&type))
+    {
+        Int16 res = 0;
+        return !enum16->tryGetValue(res, name);
+    }
+    return false;
+}
 
 static void checkASTStructure(const ASTPtr & child)
 {

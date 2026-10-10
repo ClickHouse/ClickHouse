@@ -146,6 +146,7 @@ bool memoryIsZero(const void * data, size_t start, size_t end)
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -158,6 +159,13 @@ void throwIndexesSizeTooSmall(size_t indexes_size, size_t limit)
 void throwUnsupportedIndexesColumnType(const std::string & name)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}", name);
+}
+
+NO_INLINE void throwInsertRangeFromOutOfBound(std::string_view column_name, size_t start, size_t length, size_t size)
+{
+    throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+        "Parameters start = {}, length = {} are out of bound in {}::insertRangeFrom method (size = {})",
+        start, length, column_name, size);
 }
 
 
