@@ -9,8 +9,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <base/range.h>
 #include <boost/container/flat_set.hpp>
@@ -316,14 +314,12 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserCreateRowPolicyQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementRowPolicy(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE ROW POLICY",
+    documentation["CREATE ROW POLICY"] =
     {
         .description = R"DOCS_MD(
 Creates a [row policy](/concepts/features/security/access-rights#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
@@ -531,9 +527,9 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
 )",
         .parent = "CREATE",
         .related = {"ALTER ROW POLICY", "CREATE MASKING POLICY", "CREATE ROLE", "DROP", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER ROW POLICY",
+    documentation["ALTER ROW POLICY"] =
     {
         .description = R"DOCS_MD(
 Changes row policy.
@@ -615,7 +611,9 @@ ALTER [ROW] POLICY [IF EXISTS] name [, ...]
 )",
         .parent = "ALTER",
         .related = {"CREATE ROW POLICY", "ALTER", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

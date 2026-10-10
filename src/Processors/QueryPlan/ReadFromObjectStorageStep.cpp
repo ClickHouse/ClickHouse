@@ -37,6 +37,7 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool azure_validate_etag_on_read;
 }
 
 
@@ -96,6 +97,38 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*filter_actions_dag, getContext());
 }
 
+bool ReadFromObjectStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    if (!boost::iequals(configuration->format, "Parquet"))
+        return false;
+
+    /// With a structure of only Hive partition columns the format reads them from the file, while the
+    /// query takes their values from the path, so the reader would compare other values than the
+    /// ones the threshold is made from.
+    if (info.formatReadsHivePartitionColumns())
+        return false;
+
+    /// The output header is broader than what the format reads: Hive partition columns (from the
+    /// path) and virtual columns (`_path`, `_file`, `_row_id`, ...) are added after the format has
+    /// produced its chunk, so the reader could never compare them against the threshold.
+    const auto * format_column = info.format_header.findByName(sort_column.name);
+    if (!format_column || !format_column->type->equals(*sort_column.type))
+        return false;
+
+#if USE_PARQUET
+    /// The legacy Delta Lake reader (`allow_delta_kernel_rs = 0`) keeps the partition columns in the
+    /// format header and replaces them in the chunks the format returns with the partition values, so
+    /// the reader would compare whatever a data file stores under that name against the threshold.
+    if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
+        return false;
+#endif
+
+    /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
+    /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
+    /// would come from other values than the ones the reader compares against it.
+    return !info.columns_description.hasDefault(sort_column.name);
+}
+
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     info = updateFormatPrewhereInfo(info, prewhere_info_value);
@@ -124,11 +157,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        filter_actions_dag,
+        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag,
         context,
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
         query_info.prewhere_info);
+    format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -220,8 +254,7 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
         return false;
 
     /// Even when the two generations are comparable, on most backends the second pass opens an
-    /// unconditional read: `AzureObjectStorage`, `HDFSObjectStorage` and the local disk ignore
-    /// `StoredObject::etag`, so a concurrent in-place overwrite between the metadata probe and the
+    /// unconditional read: `HDFSObjectStorage` and the local disk ignore `StoredObject::etag`, so a concurrent in-place overwrite between the metadata probe and the
     /// read could still stitch together rows of two versions of the file. The reread is only
     /// generation-safe when either:
     ///   - the data files are immutable by the format's contract — a data lake never overwrites a
@@ -229,7 +262,8 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     ///   - the backend pins the actual read to the captured generation — S3 with
     ///     `s3_validate_etag_on_read` issues the GET with an `If-Match` on the captured ETag and
     ///     rejects a response whose ETag drifted from it (see `ReadBufferFromS3`), which is atomic
-    ///     with respect to an overwrite.
+    ///     with respect to an overwrite; Azure with `azure_validate_etag_on_read` does the same
+    ///     (see `ReadBufferFromAzureBlobStorage`).
     /// The pin only takes effect when the captured metadata actually carries a non-empty `ETag`
     /// (see `createReadBuffer`), and `GCS` accessed through the S3 API is documented to legitimately
     /// return objects without one — so a `GCS`-provider client is not pinned even with the setting
@@ -245,6 +279,9 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
         reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
     }
 #endif
+    if (object_storage->getType() == ObjectStorageType::Azure
+        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read])
+        reread_is_generation_pinned = true;
     if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
         return false;
 

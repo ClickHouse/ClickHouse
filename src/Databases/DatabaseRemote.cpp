@@ -1252,8 +1252,10 @@ void registerDatabaseRemote(DatabaseFactory & factory)
         /// A chain of proxy databases on this server that refers back to itself is rejected eagerly
         /// (see `throwIfLocalChainRefersBack`), but not on internal metadata replay: a server that
         /// persisted such a chain must still start. An explicit `ATTACH DATABASE` is a user query and
-        /// is validated like `CREATE DATABASE`, so the invariant cannot be bypassed by attaching.
-        if (!(args.internal && args.mode >= LoadingStrictnessLevel::ATTACH))
+        /// is validated like `CREATE DATABASE`, so the invariant cannot be bypassed by attaching. The loader
+        /// flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user statements
+        /// as internal ones.
+        if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
             database->throwIfLocalChainRefersBack();
 
         return database;
@@ -1360,6 +1362,7 @@ SELECT * FROM remote_system.one;
     factory.registerDatabase(
         "Remote",
         create_fn,
+        mysqlPostgreSQLSecretArguments(3),
         features,
         Documentation{
             .description = common_description,
@@ -1369,6 +1372,7 @@ SELECT * FROM remote_system.one;
     factory.registerDatabase(
         "RemoteSecure",
         create_fn,
+        mysqlPostgreSQLSecretArguments(3),
         features,
         Documentation{
             .description = common_description,
