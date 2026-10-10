@@ -1582,12 +1582,13 @@ bool lessVersion(const PartVersionWithPartitionIdAndName & f, const PartVersionW
 }
 
 /// Data versions of the parts with the partition they belong to, sorted by version.
+/// A patch part is attributed to the partition of the data it patches.
 std::vector<PartVersionWithPartitionIdAndName> getSortedPartVersions(const MergeTreeData::DataPartsVector & parts)
 {
     std::vector<PartVersionWithPartitionIdAndName> part_versions;
     part_versions.reserve(parts.size());
     for (const auto & part : parts)
-        part_versions.emplace_back(PartVersionWithPartitionIdAndName{part->info.getDataVersion(), part->info.getPartitionId(), part->name});
+        part_versions.emplace_back(PartVersionWithPartitionIdAndName{part->info.getDataVersion(), part->info.getOriginalPartitionId(), part->name});
     std::sort(part_versions.begin(), part_versions.end(), lessVersion);
     return part_versions;
 }
@@ -3188,7 +3189,12 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
     /// For the same reason the finished mutations are not a prefix of `current_mutations_by_version`:
     /// a mutation of one partition can finish while an earlier mutation of another partition is still
     /// pending, so an unfinished mutation does not stop the scan.
-    const auto part_versions = getSortedPartVersions(getDataPartsVectorForInternalUsage());
+    ///
+    /// Patch parts are counted too: the mutation is applied on the fly to a patch part of an affected
+    /// partition with a lower data version (see `MutationsSnapshot::getOnFlyMutationCommandsForPart`),
+    /// so its entry must stay until such patch parts are gone.
+    const auto part_versions = getSortedPartVersions(
+        getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Regular, DataPartKind::Patch}));
 
     const time_t now = time(nullptr);
 
