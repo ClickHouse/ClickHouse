@@ -138,7 +138,14 @@ public:
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
-        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
+        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr,
+        /// Treat `FUNCTION_UNKNOWN` as `(true, false)` instead of `(true, true)`, so an unknown leaf
+        /// under `AND` does not force `can_be_false`. The result then means "true assuming the unknown
+        /// parts are true", which is what `alwaysTrueOnHyperrectangle`-style checks need.
+        /// Requires `!hasFunctionNot()`.
+        bool optimistic_unknowns = false) const;
+
+    bool hasFunctionNot() const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
