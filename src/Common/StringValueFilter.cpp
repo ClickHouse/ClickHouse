@@ -146,15 +146,20 @@ bool StringValueFilter::matchOtherConditions(const char * data, size_t size) con
 
 void StringValueFilter::updateStats(size_t checked, size_t replaced, size_t replaced_bytes) const
 {
-    updateStatsImpl(checked, replaced, replaced_bytes, /* checked_individually = */ true);
+    updateStatsImpl(checked, replaced, replaced_bytes, /* checked_individually = */ checked);
 }
 
 void StringValueFilter::updateStatsWithoutPerValueChecks(size_t checked, size_t replaced, size_t replaced_bytes) const
 {
-    updateStatsImpl(checked, replaced, replaced_bytes, /* checked_individually = */ false);
+    updateStatsImpl(checked, replaced, replaced_bytes, /* checked_individually = */ 0);
 }
 
-void StringValueFilter::updateStatsImpl(size_t checked, size_t replaced, size_t replaced_bytes, bool checked_individually) const
+void StringValueFilter::updateStatsOfBulkScan(size_t checked, size_t replaced, size_t replaced_bytes, size_t checked_individually) const
+{
+    updateStatsImpl(checked, replaced, replaced_bytes, checked_individually);
+}
+
+void StringValueFilter::updateStatsImpl(size_t checked, size_t replaced, size_t replaced_bytes, size_t checked_individually) const
 {
     if (!checked)
         return;
@@ -180,8 +185,10 @@ void StringValueFilter::updateStatsImpl(size_t checked, size_t replaced, size_t 
 
     /// The same is true when the replaced values are short (e.g. `l_returnflag = 'R'`):
     /// skipping the copy of a few bytes does not compensate for the check of every value.
-    /// This does not apply to the values decided by a mask lookup or a bulk scan, see `updateStatsWithoutPerValueChecks`.
-    size_t total_checked_individually = values_checked_individually.fetch_add(checked, std::memory_order_relaxed) + checked;
+    /// This does not apply to the values decided by a mask lookup or a bulk scan, see `updateStatsWithoutPerValueChecks`
+    /// and `updateStatsOfBulkScan`.
+    size_t total_checked_individually
+        = values_checked_individually.fetch_add(checked_individually, std::memory_order_relaxed) + checked_individually;
     size_t total_bytes_skipped = bytes_skipped_individually.fetch_add(replaced_bytes, std::memory_order_relaxed) + replaced_bytes;
     if (total_checked_individually >= MIN_VALUES_TO_EVALUATE_SELECTIVITY
         && total_bytes_skipped < total_checked_individually * MIN_AVG_BYTES_SKIPPED_PER_VALUE)

@@ -88,6 +88,16 @@ public:
     /// so they only participate in the selectivity rule, not in the minimum average size of skipped values.
     void updateStatsWithoutPerValueChecks(size_t checked, size_t replaced, size_t replaced_bytes) const;
 
+    /// Same as `updateStats`, for the values of a bulk scan (see `findBulkScanMatches`), where
+    /// `checked_individually` of the found candidates were additionally checked one by one against
+    /// the other conditions (see `matchOtherConditions`). If there are such values, they participate in
+    /// the minimum average size of skipped values, and all bytes skipped by the scan are attributed to them,
+    /// because these bytes are what the checks of the candidates pay for.
+    void updateStatsOfBulkScan(size_t checked, size_t replaced, size_t replaced_bytes, size_t checked_individually) const;
+
+    /// Returns true if the filter has conditions other than the bulk-scan one, so that `matchOtherConditions` checks something.
+    bool hasOtherConditions() const { return conditions.size() > (hasBulkScanCondition() ? 1 : 0); }
+
     const std::vector<Condition> & getConditions() const { return conditions; }
 
 private:
@@ -99,7 +109,7 @@ private:
     static constexpr size_t MIN_AVG_BYTES_SKIPPED_PER_VALUE = 16;
 
     bool matchImpl(const char * data, size_t size, size_t skip_condition) const;
-    void updateStatsImpl(size_t checked, size_t replaced, size_t replaced_bytes, bool checked_individually) const;
+    void updateStatsImpl(size_t checked, size_t replaced, size_t replaced_bytes, size_t checked_individually) const;
 
     const std::vector<Condition> conditions;
     /// Searchers for Substring conditions (empty entries for other types).
@@ -111,7 +121,7 @@ private:
 
     mutable std::atomic<size_t> values_checked{0};
     mutable std::atomic<size_t> values_replaced{0};
-    /// Values accounted by `updateStats` only (not by `updateStatsWithoutPerValueChecks`), and the size of the replaced ones.
+    /// Values checked one by one (see `updateStats` and `updateStatsOfBulkScan`), and the size of the replaced values attributed to them.
     mutable std::atomic<size_t> values_checked_individually{0};
     mutable std::atomic<size_t> bytes_skipped_individually{0};
     mutable std::atomic<bool> disabled{false};
