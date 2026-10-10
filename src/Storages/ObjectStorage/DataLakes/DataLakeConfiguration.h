@@ -537,7 +537,10 @@ private:
 
             auto user_files_path = local_context->getUserFilesPath();
             const auto & table_path = this->getPathForRead().path;
-            if (!local_context->isUserFilesPath(table_path))
+            /// `isUserFilesPath` alone is lexical when no policy is set; `LocalObjectStorage`
+            /// uses POSIX I/O, so also require containment after resolving symlinks, otherwise
+            /// an in-root symlink such as `<user_files>/escape -> /etc` would pass.
+            if (!local_context->isUserFilesPath(table_path) || !pathStartsWith(table_path, user_files_path))
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", table_path, user_files_path);
         }
