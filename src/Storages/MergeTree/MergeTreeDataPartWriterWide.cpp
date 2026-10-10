@@ -226,9 +226,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
-        ParserCodec codec_parser;
-        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
+        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 
         const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
 
@@ -250,6 +248,14 @@ void MergeTreeDataPartWriterWide::addStreams(
             (settings.min_columns_to_activate_adaptive_write_buffer && *streams_to_open_in_part >= settings.min_columns_to_activate_adaptive_write_buffer)
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
+
+        /// Otherwise bytes of a single value will be split across two blocks and won't compress well.
+        if (const auto & type = substream_path.back().data.type)
+        {
+            max_compress_block_size = roundCompressBlockSizeToWholeValues(max_compress_block_size, *type);
+            query_write_settings.adaptive_write_buffer_initial_size
+                = roundCompressBlockSizeToWholeValues(query_write_settings.adaptive_write_buffer_initial_size, *type);
+        }
 
         fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
         {

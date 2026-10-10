@@ -190,7 +190,8 @@
           "icon": "/images/logo-bigquery.svg",
           "pages": [
             "integrations/clickpipes/bigquery/overview",
-            "integrations/clickpipes/bigquery/get-started"
+            "integrations/clickpipes/bigquery/get-started",
+            "integrations/clickpipes/bigquery/faq"
           ]
         }
       ]

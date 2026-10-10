@@ -1,5 +1,6 @@
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Interpreters/StorageID.h>
+#include <Core/UUID.h>
 
 #if USE_PARQUET
 
@@ -137,11 +138,11 @@ void UnityCatalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from unity catalog");
 }
 
-Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const String & table_id) const
+Poco::JSON::Object::Ptr UnityCatalog::requestCredentials(const String & table_id, const String & operation) const
 {
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
-    request_body.set("operation", "READ");
+    request_body.set("operation", operation);
 
     auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
     auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
@@ -177,7 +178,7 @@ void UnityCatalog::getCredentials(const String & table_id, TableMetadata & metad
     if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
         return;
 
-    auto response = requestReadCredentials(table_id);
+    auto response = requestCredentials(table_id, "READ");
 
     std::shared_ptr<IStorageCredentials> creds;
     switch (storage_type)
@@ -386,6 +387,31 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     }
 }
 
+std::optional<std::string> UnityCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    checkNamespaceExists(namespace_name);
+
+    auto [json, json_str] = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / (warehouse + "." + namespace_name));
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
+    /// and then the table engine arguments have to name the location explicitly.
+    if (!hasValueAndItsNotNone("storage_location", object))
+    {
+        LOG_DEBUG(log, "Schema {}.{} has no storage location", warehouse, namespace_name);
+        return std::nullopt;
+    }
+
+    return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
+}
+
+void UnityCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+{
+    checkNamespaceExists(namespace_name);
+}
+
 void UnityCatalog::checkNamespaceExists(const std::string & schema_name) const
 {
     try
@@ -560,10 +586,28 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCa
             "Cannot build a Unity credentials refresh callback for `{}`: the catalog returned no table_id",
             table_id.getNameForLogs());
 
-    return [this, unity_table_id = *table_uuid] () -> std::shared_ptr<IStorageCredentials>    {
-        LOG_DEBUG(log, "Update credentials in the catalog");
+    return getCredentialsCallbackForOperation(*table_uuid, "READ");
+}
 
-        return parseS3Credentials(requestReadCredentials(unity_table_id));
+/// `StorageID::uuid` of a `DataLakeCatalog` table is the `table_id` returned by Unity.
+ICatalog::CredentialsRefreshCallback UnityCatalog::getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id)
+{
+    if (table_id.uuid == DB::UUIDHelpers::Nil)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: the table has no UUID",
+            table_id.getNameForLogs());
+
+    return getCredentialsCallbackForOperation(DB::toString(table_id.uuid), "READ_WRITE");
+}
+
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation)
+{
+    return [this, unity_table_id, operation] () -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Update {} credentials in the catalog", operation);
+
+        return parseS3Credentials(requestCredentials(unity_table_id, operation));
     };
 }
 

@@ -1,0 +1,174 @@
+---
+title: "Détails de connexion en CLI"
+---
+
+Cette page explique comment retrouver les détails de connexion d&#39;un service ClickHouse Cloud existant — hostname, numéros de port, username et mot de passe — depuis la ligne de commande, à l&#39;aide de la [ClickHouse CLI](/fr/products/cloud/features/cli) (`clickhousectl`). Les commandes sont non interactives ; `clickhousectl` produit du JSON avec `--json`.
+
+## Prérequis {#prerequisites}
+
+Installez le ClickHouse CLI :
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+Vous avez également besoin de `jq`.
+
+Les étapes d&#39;écriture ci-dessous nécessitent une [authentification par API key](/fr/products/cloud/features/admin-features/api/openapi) : `cloud service start` (uniquement si votre service est à l&#39;état `stopped`) et `reset-password`. La connexion OAuth est en read-only et ne couvre que les étapes de lecture (`service list`, `service get`) :
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Vous pouvez également définir les variables d&#39;environnement `CLICKHOUSE_CLOUD_API_KEY` et `CLICKHOUSE_CLOUD_API_SECRET`. Vérifiez avec `clickhousectl cloud auth status` : une entrée avec le scope `read/write` doit apparaître.
+
+Vous devez également disposer d&#39;un service ClickHouse Cloud existant dont vous pourrez récupérer les détails de connexion, par exemple un service créé dans le quickstart [Créez votre premier service Cloud](/fr/get-started/quickstarts/create-your-first-service-on-cloud) ou via le flux CLI [Quick Start Cloud](/fr/getting-started/quick-start/cloud).
+
+## Trouver votre service {#find-your-service}
+
+Listez les services de votre organisation et notez l&#39;ID de celui auquel vous souhaitez vous connecter :
+
+```bash
+clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
+```
+
+```text
+9c2d4e61-7a35-49c8-8f0e-2b5a1d7c3e90	my-first-service	running
+```
+
+Conservez l&#39;ID du service : toutes les autres commandes de ce guide le prennent en argument. Pour le retrouver par son nom :
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json | jq -r '.[] | select(.name == "my-first-service") | .id')
+```
+
+Le service doit être en cours d&#39;exécution pour pouvoir vérifier la connectivité à une étape ultérieure. Si son state est `stopped`, démarrez-le et interrogez-le jusqu&#39;à ce qu&#39;il passe à `running` (un service `idle` du fait de l&#39;idle scaling se réveille automatiquement à la première connection : aucune action n&#39;est donc nécessaire ici) :
+
+```bash
+clickhousectl cloud service start "$CH_ID"
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+## Récupérer vos détails de connexion {#get-your-connection-details}
+
+`clickhousectl cloud service get` renvoie l&#39;ensemble des détails du service, dont un endpoint par protocole exposé. Enregistrez la réponse et extrayez-en les éléments dont vous avez besoin :
+
+```bash
+clickhousectl cloud service get "$CH_ID" --json > service.json
+jq '.endpoints' service.json
+```
+
+```json
+[
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 9440,
+    "protocol": "nativesecure"
+  },
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 8443,
+    "protocol": "https"
+  }
+]
+```
+
+Voici les deux principaux protocoles réseau de ClickHouse Cloud, chacun sur son propre port :
+
+* **Protocole natif (`nativesecure`, port 9440)** — un protocole binaire utilisé par `clickhouse-client`, `clickhouse-local` et la plupart des drivers propres à un langage. C&#39;est l&#39;option la plus rapide et elle prend en charge toutes les fonctionnalités de ClickHouse. TLS est obligatoire sur Cloud.
+* **Protocole HTTPS (`https`, port 8443)** — une interface basée sur HTTP, utile pour les clients REST, `curl`, les outils web et les drivers qui privilégient HTTP. Requiert également TLS sur Cloud.
+
+Les deux protocoles exigent le chiffrement TLS pour se connecter à ClickHouse Cloud : la connexion en plaintext est impossible. La plupart des outils s&#39;en chargent automatiquement dès lors que vous indiquez le bon port, mais il peut être nécessaire de passer un flag `--secure` ou de définir `ssl=true`, selon le client. Pour la plupart des quickstarts et des workflows CLI de cette série, vous utiliserez le **protocole natif sur le port 9440**.
+
+Extrayez le hostname et les ports :
+
+```bash
+CH_HOST=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host' service.json)
+CH_NATIVE_PORT=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .port' service.json)
+CH_HTTPS_PORT=$(jq -r '.endpoints[] | select(.protocol == "https") | .port' service.json)
+```
+
+Le nom d&#39;utilisateur est `default`, sauf si vous avez créé d&#39;autres utilisateurs de base de données.
+
+## Obtenir un mot de passe {#get-a-password}
+
+Le mot de passe de l&#39;utilisateur `default` n&#39;est renvoyé qu&#39;une seule fois, par `clickhousectl cloud service create` — aucun appel d&#39;API ou de CLI ne permet de le récupérer par la suite. Si vous l&#39;avez conservé au moment de la création, affectez-le à la variable utilisée dans les étapes suivantes et passez la réinitialisation :
+
+```bash
+CH_PASSWORD='<your saved password>'
+```
+
+En cas de perte, générez-en un nouveau :
+
+```bash
+CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
+```
+
+<Warning>
+  `reset-password` invalide immédiatement le mot de passe précédent de l&#39;utilisateur `default` : tout client encore configuré avec l&#39;ancien mot de passe ne parvient plus à s&#39;authentifier. Si le service appartient à un [warehouse](/fr/products/cloud/features/infrastructure/warehouses), les utilisateurs de base de données sont partagés entre tous les services de ce warehouse : la réinitialisation change donc aussi le mot de passe de tous les services associés. Comme le mot de passe initial, le nouveau mot de passe n&#39;est affiché qu&#39;une seule fois : conservez-le en lieu sûr.
+</Warning>
+
+## Enregistrez vos détails de connexion pour les réutiliser {#save-your-connection-details-for-reuse}
+
+Vous utiliserez fréquemment ces détails de connexion tout au long des quickstarts. Pour éviter de les ressaisir à chaque fois, vous pouvez les exporter sous forme de variables d&#39;environnement dans votre session de terminal :
+
+```bash
+export CLICKHOUSE_HOST=$CH_HOST
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=$CH_PASSWORD
+```
+
+<Warning>
+  Ces variables d&#39;environnement ne persistent que le temps de votre session de terminal en cours. Ne stockez pas de mots de passe dans les fichiers de profil du shell (`.bashrc`, `.zshrc`) et ne les intégrez pas à un système de contrôle de version.
+</Warning>
+
+## Vérifier la connectivité {#verify-connectivity}
+
+Vérifiez l&#39;interface HTTPS (port 8443) avec `curl` :
+
+```bash
+curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
+  "https://$CLICKHOUSE_HOST:8443/?query=SELECT%201"
+```
+
+```text
+1
+```
+
+Vérifiez le protocole natif (port 9440) avec [**clickhouse client**](/fr/concepts/features/interfaces/client). Le ClickHouse CLI gère le binaire `clickhouse` pour vous : si vous ne l&#39;avez pas encore, `clickhousectl local use latest` l&#39;installe et crée un lien symbolique vers `~/.local/bin/clickhouse`. Ensuite :
+
+```bash
+clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \
+  --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" \
+  --query "SELECT concat('Connected to ClickHouse ', version(), ' as ', currentUser())"
+```
+
+```text
+Connected to ClickHouse 26.2.1.558 as default
+```
+
+## Nettoyage {#cleanup}
+
+Ce guide se contente de lire les metadata du service et (éventuellement) de réinitialiser un mot de passe — il ne crée aucune nouvelle cloud resource, il n&#39;y a donc rien à nettoyer.
+
+Une exception : si votre service était `stopped` et que vous l&#39;avez démarré uniquement pour vérifier la connectivité, il reste désormais actif et le compute est facturé. Arrêtez-le de nouveau si vous n&#39;avez pas encore besoin qu&#39;il soit en cours d&#39;exécution :
+
+```bash
+clickhousectl cloud service stop "$CH_ID"
+```
+
+## Prochaines étapes {#next-steps}
+
+Vous disposez désormais de tous les détails de connexion nécessaires pour vous connecter à votre service ClickHouse Cloud depuis n&#39;importe quel outil externe. Le hostname, le port, le username et le mot de passe que vous avez relevés ici sont utilisés tout au long des autres quickstarts de la série.
+
+Poursuivez avec les quickstarts suivants :
+
+* [Insérer des données avec clickhouse-client](/fr/get-started/quickstarts/insert-data-using-clickhouse-client)
+* [Créer votre première table MergeTree](/fr/get-started/quickstarts/create-your-first-mergetree-table)
+
+Ou approfondissez le sujet avec la documentation de référence :
+
+* [Interface native (TCP)](/fr/concepts/features/interfaces/tcp)
+* [Interface HTTP](/fr/concepts/features/interfaces/http)
