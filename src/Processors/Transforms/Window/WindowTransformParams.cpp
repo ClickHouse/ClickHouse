@@ -136,10 +136,10 @@ Block materializeHeader(Block header)
     return header;
 }
 
-std::vector<size_t> findPositions(const Block & header, const SortDescription & columns)
+std::vector<size_t> findPositions(const Block & header, const SortDescription & description)
 {
-    return columns
-        | std::views::transform([&](const auto & column) { return header.getPositionByName(column.column_name); })
+    return description
+        | std::views::transform([&](const SortColumnDescription & column) { return header.getPositionByName(column.column_name); })
         | std::ranges::to<std::vector<size_t>>();
 }
 

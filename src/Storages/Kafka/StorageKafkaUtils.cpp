@@ -13,6 +13,8 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/SecretArgumentsSpec.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -116,7 +118,13 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -361,6 +369,12 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage(
         "Kafka",
         creator_fn,
+        SecretArgumentsSpec{
+            /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
+            /// secret and makes the collection name optional, so a named argument can be the first one.
+            .secret_settings = Kafka::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,

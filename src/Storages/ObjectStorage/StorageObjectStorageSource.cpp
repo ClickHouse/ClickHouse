@@ -52,6 +52,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/operators.hpp>
 #include <Common/FailPoint.h>
 #include <Poco/String.h>
@@ -204,6 +205,7 @@ namespace
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsString filesystem_cache_name;
@@ -1004,7 +1006,14 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        /// With TopN dynamic filtering the matched buckets depend on the running threshold, which comes
+        /// from the rows of all files the query reads: a row group can end up without a returned row
+        /// only because the threshold had excluded it. The key covers just the predicate, so such an
+        /// entry would make a later plain read, or one with another `LIMIT` or direction, skip rows.
+        /// A file the filter was not applied to (see `createReader`; the reader also declines it for a
+        /// file that does not store the sort column) is read as without TopN.
+        else if (format_filter_info->condition_hash
+            && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
@@ -1143,6 +1152,44 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
+    /// TopN dynamic filtering compares the values the reader returns against a threshold made
+    /// from the values the query sorts by, so it may only be applied to a file where the two are
+    /// the same. They are not where a data lake rewrites the file's columns after the reader:
+    /// schema evolution renames and casts them (and a column of the file may carry the name
+    /// another column has in the current schema), and an identity-partitioned column takes the
+    /// value the manifest defines for it, whatever the file stores. A file with an initial schema
+    /// but no schema transform (an Iceberg file with equality deletes in the current schema) is
+    /// read under the current names, and deletes only remove rows after the reader.
+    auto is_top_k_filter_allowed = [&](const ObjectInfoPtr & object) -> bool
+    {
+        if (!format_filter_info || !format_filter_info->top_k_filter)
+            return false;
+        /// Only the Parquet reader consumes the filter, and a data lake table configured as `Parquet`
+        /// can also contain files of other formats (e.g. ORC in Iceberg). Such a file is read as
+        /// without TopN, so it keeps using the query condition cache.
+        if (!boost::iequals(object->getFileFormat().value_or(configuration->format), "Parquet"))
+            return false;
+        if (object->data_lake_metadata && object->data_lake_metadata->schema_transform)
+            return false;
+        if (configuration->getSchemaTransformer(context_, object))
+            return false;
+#if USE_AVRO
+        if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object.get()))
+        {
+            const auto & sort_column = format_filter_info->top_k_filter->column_name;
+            for (const auto & column : iceberg_info->info.identity_partition_columns)
+                if (column.first == sort_column)
+                    return false;
+        }
+#endif
+        return true;
+    };
+
+    /// Entries are only written by reads of files without TopN dynamic filtering (see `generate`), so
+    /// they apply to a file read with it as well. Such a file consults them only while
+    /// `use_query_condition_cache_for_top_k` is on: that setting makes TopK reads neither consult nor
+    /// populate the cache. A file that does not apply the filter is read as without TopN.
+    const bool use_query_condition_cache_for_top_k = context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k];
     QueryConditionCachePtr query_condition_cache;
     if (format_filter_info && format_filter_info->condition_hash)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
@@ -1178,7 +1225,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             && object_info->getObjectMetadata()->is_size_known)
             continue;
 
-        if (query_condition_cache && !object_info->file_bucket_info)
+        if (query_condition_cache && !object_info->file_bucket_info
+            && (use_query_condition_cache_for_top_k || !is_top_k_filter_allowed(object_info)))
         {
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
@@ -1352,6 +1400,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             identity_partition_columns = iceberg_info->info.identity_partition_columns;
 #endif
 
+        const bool top_k_filter_allowed = is_top_k_filter_allowed(object_info);
+
         /// Save stripped filters if we need to apply them as fallback FilterTransforms
         /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
@@ -1446,6 +1496,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
                     result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    if (top_k_filter_allowed)
+                        result->top_k_filter = format_filter_info->top_k_filter;
                     return result;
                 }
             }
@@ -1457,12 +1509,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
 
-            if (filters_substituted)
-                return std::make_shared<FormatFilterInfo>(
+            if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed))
+            {
+                auto result = std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     row_level_filter, prewhere_info);
+                if (top_k_filter_allowed)
+                    result->top_k_filter = format_filter_info->top_k_filter;
+                return result;
+            }
 
             return format_filter_info;
         }();
@@ -1834,6 +1891,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_page_cache = false;
     }
 
+    if (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    {
+        LOG_DEBUG(log, "Cannot use distributed cache, etag is missing or not a strong content identifier");
+        use_distributed_cache = false;
+    }
+
     const auto & object_size = object_info.metadata->size_bytes;
     const bool is_size_known = object_info.metadata->is_size_known;
 
@@ -1908,6 +1971,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
     if (validate_etag_on_read && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
+    /// The distributed cache keys on the etag whether or not this read validates it.
+    if (use_distributed_cache)
+        stored_object.etag_hash = getETagHash(object_info.metadata->etag);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
@@ -1950,7 +2016,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// Distributed cache
     if (use_distributed_cache)
-        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true);
+        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true, /* include_etag_in_cache_key */ true);
 
     /// Page cache
     if (use_page_cache)
