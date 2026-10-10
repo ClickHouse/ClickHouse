@@ -90,10 +90,16 @@ const char * __tsan_default_suppressions()
     /// `v0` symbol mangling that ClickHouse uses for Rust, the frame of an inherent method demangles
     /// as `<tokio::runtime::io::registration_set::RegistrationSet>::allocate`; the `*` also
     /// matches the legacy `tokio::runtime::io::registration_set::RegistrationSet::allocate`.
+    ///
+    /// A `tokio` blocking-pool thread (e.g. the one resolving DNS for `object_store`) exits after
+    /// its idle timeout, and the pool keeps the `JoinHandle` of the last exiting thread to join it
+    /// on the next spawn or at runtime shutdown. The `Lance` runtime is process-wide and never shut
+    /// down, so at exit TSan reports that finished, not yet joined thread as a `thread leak`.
     return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
            "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
            "race:^DB::getRequestBytesCost\n"
-           "race:tokio::runtime::io::registration_set::RegistrationSet*::allocate\n";
+           "race:tokio::runtime::io::registration_set::RegistrationSet*::allocate\n"
+           "thread:tokio::runtime::blocking::pool::Spawner*::spawn_thread\n";
 }
 #endif
 
