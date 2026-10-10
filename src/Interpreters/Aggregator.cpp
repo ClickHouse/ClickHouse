@@ -13,7 +13,9 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
 #include <bit>
@@ -22,6 +24,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeExponentialTimeDecaying.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
@@ -783,7 +786,39 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             all_aggregates_has_trivial_destructor = false;
     }
 
-    if (params.aggregates_size == 1)
+    for (size_t key_index = 0; key_index < key_types.size(); ++key_index)
+    {
+        DataTypePtr type = key_types[key_index];
+        while (type)
+        {
+            if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+            {
+                type = low_cardinality->getDictionaryType();
+                continue;
+            }
+            if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            {
+                type = nullable->getNestedType();
+                continue;
+            }
+            break;
+        }
+
+        if (tryGetExponentialTimeDecayingMode(type) != ExponentialTimeDecayingMode::Direct)
+            continue;
+
+        constexpr size_t metadata_alignment = alignof(DirectTimeDecayKeyMetadataState);
+        total_size_of_aggregate_states
+            = (total_size_of_aggregate_states + metadata_alignment - 1) / metadata_alignment * metadata_alignment;
+        direct_time_decay_key_metadata.push_back({
+            .key_index = key_index,
+            .state_offset = total_size_of_aggregate_states,
+        });
+        total_size_of_aggregate_states += sizeof(DirectTimeDecayKeyMetadataState);
+        align_aggregate_states = std::max(align_aggregate_states, metadata_alignment);
+    }
+
+    if (params.aggregates_size == 1 && direct_time_decay_key_metadata.empty())
     {
         /// Check if COUNT() or COUNT(non-nullable column) which can be verified by simply casting to `AggregateFunctionCount *`.
         if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[0].function.get()))
@@ -804,7 +839,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     /// and LowCardinality keys are not covered yet.
     /// This is an internal data-structure choice only: results are identical to the regular path, so - like the
     /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
-    if (params.aggregates_size == 0)
+    if (params.aggregates_size == 0 && direct_time_decay_key_metadata.empty())
     {
         using Type = AggregatedDataVariants::Type;
         switch (method_chosen)
@@ -897,6 +932,88 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 }
 
 Aggregator::~Aggregator() = default;
+
+void Aggregator::captureDirectTimeDecayKeyMetadata(
+    AggregateDataPtr aggregate_data,
+    const ColumnRawPtrs & key_columns,
+    size_t row) const
+{
+    if (!aggregate_data)
+        return;
+
+    for (const auto & descriptor : direct_time_decay_key_metadata)
+    {
+        auto * state = reinterpret_cast<DirectTimeDecayKeyMetadataState *>(
+            aggregate_data + descriptor.state_offset);
+
+        Field field;
+        key_columns[descriptor.key_index]->get(row, field);
+        if (field.isNull())
+        {
+            state->value = 0;
+            state->timestamp = 0;
+            continue;
+        }
+
+        const auto & tuple = field.safeGet<Tuple>();
+        chassert(tuple.size() >= 2);
+        state->value = tuple[0].safeGet<Float64>();
+        state->timestamp = tuple[1].safeGet<Float64>();
+    }
+}
+
+void Aggregator::restoreDirectTimeDecayKeyMetadata(
+    ConstAggregateDataPtr aggregate_data,
+    MutableColumns & key_columns) const
+{
+    if (!aggregate_data)
+        return;
+
+    for (const auto & descriptor : direct_time_decay_key_metadata)
+    {
+        auto & column = *key_columns[descriptor.key_index];
+        if (column.empty())
+            continue;
+
+        const size_t row = column.size() - 1;
+        if (column.isNullAt(row))
+            continue;
+
+        Field field;
+        column.get(row, field);
+        if (field.isNull())
+            continue;
+
+        auto tuple = field.safeGet<Tuple>();
+        chassert(tuple.size() >= 2);
+
+        const auto * state = reinterpret_cast<const DirectTimeDecayKeyMetadataState *>(
+            aggregate_data + descriptor.state_offset);
+
+        IColumn * nested_column = &column;
+        if (auto * nullable = typeid_cast<ColumnNullable *>(nested_column))
+            nested_column = &nullable->getNestedColumn();
+
+        if (auto * decaying = typeid_cast<ColumnExponentialTimeDecaying *>(nested_column))
+        {
+            decaying->setDirectMetadataAt(
+                row,
+                ExponentialTimeDecayingCanonicalDirectValue{
+                    .value_at_anchor = state->value,
+                    .anchor_time = state->timestamp,
+                });
+            continue;
+        }
+
+        /// Wrappers that own their physical representation cannot expose the nested row for
+        /// in-place metadata replacement. Reinsert the same semantic value; the representative
+        /// came from a row with this exact authoritative key.
+        tuple[0] = state->value;
+        tuple[1] = state->timestamp;
+        column.popBack(1);
+        column.insert(Field(std::move(tuple)));
+    }
+}
 
 #if USE_EMBEDDED_COMPILER
 
@@ -1577,7 +1694,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     /// Optimization for special case when there are no aggregate functions.
-    if (params.aggregates_size == 0)
+    /// Direct time-decay keys need a mapped state to retain one printable metadata representative.
+    if (params.aggregates_size == 0 && direct_time_decay_key_metadata.empty())
     {
         if (no_more_keys)
             return;
@@ -1906,6 +2024,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
 
                 createAggregateStates(aggregate_data, use_compiled_functions);
+                captureDirectTimeDecayKeyMetadata(aggregate_data, key_columns, i);
                 emplace_result.setMapped(aggregate_data);
             }
             else
@@ -3081,6 +3200,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     for (const auto & candidate : top)
     {
         method.insertKeyIntoColumns(candidate.key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
+        if (!is_simple_count)
+            restoreDirectTimeDecayKeyMetadata(candidate.mapped, out_cols.key_columns);
         if (is_simple_count)
             assert_cast<ColumnUInt64 &>(*out_cols.final_aggregate_columns[0]).getData().push_back(candidate.value);
         else
@@ -4263,6 +4384,7 @@ Chunks Aggregator::convertToBlockImplFinal(
         IColumn::SerializationSettings serialization_settings{
             .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
         method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
+        restoreDirectTimeDecayKeyMetadata(mapped, out_cols->key_columns);
         places.emplace_back(mapped);
 
         /// Mark the cell as destroyed so it will not be destroyed in destructor.
@@ -4353,6 +4475,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
             IColumn::SerializationSettings serialization_settings{
                 .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
             method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
+            restoreDirectTimeDecayKeyMetadata(mapped, out_cols->key_columns);
 
             /// reserved, so push_back does not throw exceptions
             for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -5465,6 +5588,29 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
     };
 
+    auto refresh_direct_metadata = [&](auto & state)
+    {
+        using State = std::decay_t<decltype(state)>;
+        if constexpr (MapAggregationState<State>)
+        {
+            if (direct_time_decay_key_metadata.empty())
+                return;
+
+            Arena & key_arena = *(arena_for_keys ? arena_for_keys : aggregates_pool);
+            state.resetCache();
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                auto find_result = state.findKey(data, row, key_arena);
+                if (!find_result.isFound())
+                    continue;
+
+                AggregateDataPtr mapped = find_result.getMapped();
+                if (mapped && mapped != overflow_row)
+                    captureDirectTimeDecayKeyMetadata(mapped, key_columns, row);
+            }
+        }
+    };
+
     if (use_cache)
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
@@ -5489,8 +5635,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 aggregate_columns_data,
                 is_cancelled,
                 arena_for_keys);
+            refresh_direct_metadata(state);
         }
-
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
@@ -5517,6 +5663,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 aggregate_columns_data,
                 is_cancelled,
                 arena_for_keys);
+            refresh_direct_metadata(state);
         }
     }
 }

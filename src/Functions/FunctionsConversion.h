@@ -96,6 +96,8 @@ namespace Setting
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool allow_experimental_time_decay_aggregate_functions;
+    extern const SettingsString exponential_time_decay_default_mode;
 }
 
 namespace ErrorCodes
@@ -134,6 +136,8 @@ struct FunctionConvertSettings
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const bool cast_keep_nullable;
+    const bool allow_experimental_time_decay_aggregate_functions;
+    const String exponential_time_decay_default_mode;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
     /// `format_settings` has too many members to hash one by one; this hashes the session settings it
@@ -153,6 +157,8 @@ struct FunctionConvertSettings
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
+        , allow_experimental_time_decay_aggregate_functions(!context || context->getSettingsRef()[Setting::allow_experimental_time_decay_aggregate_functions])
+        , exponential_time_decay_default_mode(context ? context->getSettingsRef()[Setting::exponential_time_decay_default_mode].value : "compact")
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
         , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
@@ -445,12 +451,15 @@ struct ToDate32TransformFromSecondsOrDays
                 /// timestamps beyond 2299 would saturate to the LUT end instead of 9999-12-31.
                 if constexpr (is_floating_point<FromType>)
                     return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
-                /// Compare in the source domain: `toDate32` also accepts UInt128 / UInt256, and narrowing a value
-                /// above INT64_MAX to DateLUTImpl::Time first wraps around, which would map it near the epoch
-                /// instead of saturating at the upper boundary of Date32.
-                if (from > MAX_DATE32_TIMESTAMP)
-                    return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(MAX_DATE32_TIMESTAMP));
-                return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(from));
+                else
+                {
+                    /// Compare in the source domain: `toDate32` also accepts UInt128 / UInt256, and narrowing a value
+                    /// above INT64_MAX to DateLUTImpl::Time first wraps around, which would map it near the epoch
+                    /// instead of saturating at the upper boundary of Date32.
+                    if (from > MAX_DATE32_TIMESTAMP)
+                        return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(MAX_DATE32_TIMESTAMP));
+                    return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(from));
+                }
             }
 
         return static_cast<Int32>(from);

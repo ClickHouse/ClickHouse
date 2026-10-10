@@ -713,6 +713,20 @@ private:
     using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
+
+    struct DirectTimeDecayKeyMetadataState
+    {
+        Float64 value;
+        Float64 timestamp;
+    };
+
+    struct DirectTimeDecayKeyMetadataDescriptor
+    {
+        size_t key_index;
+        size_t state_offset;
+    };
+
+    std::vector<DirectTimeDecayKeyMetadataDescriptor> direct_time_decay_key_metadata;
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
 
     // add info to track alignment requirement
@@ -763,6 +777,15 @@ private:
     /// functions' states in one JIT call plus the rest generically when the query's functions
     /// are compiled, everything generically otherwise.
     void createAggregateStates(AggregateDataPtr & aggregate_data, bool use_compiled_functions) const;
+
+    void captureDirectTimeDecayKeyMetadata(
+        AggregateDataPtr aggregate_data,
+        const ColumnRawPtrs & key_columns,
+        size_t row) const;
+
+    void restoreDirectTimeDecayKeyMetadata(
+        ConstAggregateDataPtr aggregate_data,
+        MutableColumns & key_columns) const;
 
     /** Call `destroy` methods for states of aggregate functions.
       * Used in the exception handler for aggregation, since RAII in this case is not applicable.

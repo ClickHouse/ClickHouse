@@ -10324,6 +10324,38 @@ Allows to use the `MaterializedPostgreSQL` table engine.
 Enable functions for funnel analysis.
 )", EXPERIMENTAL, allow_experimental_funnel_functions, \
         {"26.9", false, false, "Added an alias for setting `allow_experimental_funnel_functions`."}) \
+    DECLARE(Bool, allow_experimental_time_decay_aggregate_functions, false, R"(
+Enable the experimental aggregate-function forms of `exponentialTimeDecayedSum`, `exponentialTimeDecayedAvg`,
+and `exponentialTimeDecayedCount`,
+and the scalar functions for `ExponentialTimeDecaying` values.
+The window-function forms are not affected by this setting.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable the experimental mergeable exponential time-decay aggregate functions and value type; disabled by default."}) \
+    DECLARE(String, exponential_time_decay_default_mode, "compact", R"(
+Default storage mode used by `exponentialTimeDecaying` and by parameterless
+`ExponentialTimeDecaying64` / `ExponentialTimeDecaying128` casts.
+
+Allowed values are `compact` and `direct`. Explicit datatype mode parameters override this setting.
+)", EXPERIMENTAL, \
+        {"26.10", "compact", "compact", "New setting selecting the default storage mode for experimental exponential time-decay values."}) \
+    DECLARE(Float, exponential_time_decay_significance_cutoff, 0.0, R"(
+Maximum distance, measured in decay lengths, between ordering keys when adding finalized
+`ExponentialTimeDecaying` values. The full cached `UInt64` or `UInt128` identity is used,
+including the 128-bit residual/boundary component. When the key-defined curves are farther apart
+than this distance, the weaker input row is discarded before evaluating the decay factor.
+
+The default value `0` disables the cutoff. A positive value enables approximate
+query-local aggregation of finalized decaying values. Raw `(value, time)` aggregation
+does not use this cutoff.
+
+The cutoff is never applied while merging aggregate states. `-Merge`,
+`AggregateFunction`, `SimpleAggregateFunction`, and storage-engine state merges therefore
+use the normal merge calculation regardless of this setting.
+
+Results close to the cutoff can depend on input order. Signed sums that nearly cancel can
+have a larger relative error even when every discarded contribution is individually small.
+)", EXPERIMENTAL, \
+        {"26.10", 0.0, 0.0, "New opt-in approximate calculation budget for indexed exponential time-decay values; disabled by default."}) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
 )", EXPERIMENTAL) \

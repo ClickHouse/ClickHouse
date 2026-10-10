@@ -1074,6 +1074,114 @@ Two related types are **not** aliases. They are valid `Native` column types — 
 - `QBit(T, N[, stride])` stores a vector with its bit planes transposed for vector-search workloads; its on-wire stream layout (group-major `FixedString` bit-plane streams, `element_size * (N / stride)` of them with an explicit `stride`) and its binary type encoding (tag `0x36`, or `0x37` `QBitWithStride` when `stride != N`) are documented on the [`QBit` data type page](/reference/data-types/qbit) and in the [binary type encoding](/reference/data-types/data-types-binary-encoding) reference, so a `Native` reader does not have to recover them from the C++ source.
 </Note>
 
+### ExponentialTimeDecaying64 and ExponentialTimeDecaying128 {#exponential-time-decaying}
+
+`ExponentialTimeDecaying64(decay_length[, mode])` and
+`ExponentialTimeDecaying128(decay_length[, mode])` are custom logical types for exponentially
+time-decaying curves. The positive `decay_length` parameter is part of the type and is never
+repeated in the physical row payload.
+
+Both widths use one naturally orderable unsigned integer as the complete logical identity.
+Comparison, equality, hashing, `GROUP BY`, `DISTINCT`, primary-key marks, and minmax indexes use
+that key directly. Two curves with the same key are equal by definition.
+
+For a non-zero curve,
+
+`unit_timestamp = timestamp + decay_length * ln(abs(value))`.
+
+The key reserves the midpoint for the zero curve. Positive curves occupy the upper half and sort by
+increasing unit timestamp. Negative curves occupy the lower half and reverse the unit-timestamp
+ordering. The resulting integer order is therefore:
+
+`+large_unit_timestamp > +small_unit_timestamp > 0 > -small_unit_timestamp > -large_unit_timestamp`.
+
+The 64-bit form quantizes the sortable Float64 unit timestamp into the 63 bits below the curve-sign
+domain. If the Float64 unit-time calculation overflows, it saturates at the nearest finite Float64
+boundary, so the compact key remains representable.
+
+The 128-bit form uses the same sign-domain ordering but spends the remaining 127 bits on a canonical
+pair that is monotonic with unit time: a sortable Float64 anchor followed by 63 bits of the positive
+magnitude at that anchor. Normally the residual magnitude refines the unit time inside one Float64
+anchor slice. The lower adjacent anchor is preferred; for extremely short decay lengths, if its
+residual would overflow, the next Float64 anchor is used and the sub-unit residual there preserves
+the same monotonic order. If the mathematical unit time lies outside the finite Float64 timestamp
+range, the anchor stays at `-DBL_MAX` or `+DBL_MAX` and the same residual field stores the value at
+that boundary. This extends the ordering into the extreme tails without a separate mode bit or an
+exception.
+
+The type has two storage modes:
+
+- `compact` is the datatype default. A row stores only the encoded key: 8 bytes for
+  `ExponentialTimeDecaying64` and 16 bytes for `ExponentialTimeDecaying128`.
+- `direct` stores the same authoritative key plus two interface-only `Float64` values,
+  `value` and `timestamp`. Those values are retained only as printable metadata and do not
+  participate in equality, ordering, hashing, grouping, or index semantics. Hash-table-backed
+  `GROUP BY` and `DISTINCT` keep an arbitrary source row's metadata for each equal-key group
+  (equivalent to `any` semantics); they must not synthesize canonical compact metadata.
+
+The Native row layouts are:
+
+```text
+ExponentialTimeDecaying64(decay_length)              # compact
+[ordering_key × num_rows]                            UInt64 LE
+
+ExponentialTimeDecaying128(decay_length)             # compact
+[ordering_key × num_rows]                            UInt128 LE
+
+ExponentialTimeDecaying64(decay_length, direct)
+[ordering_key × num_rows]                            UInt64 LE
+[value        × num_rows]                            Float64 LE
+[timestamp    × num_rows]                            Float64 LE
+
+ExponentialTimeDecaying128(decay_length, direct)
+[ordering_key × num_rows]                            UInt128 LE
+[value        × num_rows]                            Float64 LE
+[timestamp    × num_rows]                            Float64 LE
+```
+
+`decay_length` is never present in those row streams; it comes from the datatype.
+
+Both modes expose the same three-field printable/public tuple shape:
+
+`(value, timestamp, decay_length)`.
+
+In `direct` mode, `value` and `timestamp` are the retained interface metadata. In `compact`
+mode the tuple is only a readable projection of the authoritative integer key. Normally it prints
+`(-1, unit_timestamp, decay_length)`, `(0, 0, decay_length)`, or
+`(+1, unit_timestamp, decay_length)`. The first field is therefore only the curve sign in ordinary
+compact output.
+
+For an extreme 128-bit boundary slice where the mathematical unit time is outside the finite
+`Float64` timestamp range, `+/-1 @ unit_timestamp` cannot be printed. In that case compact output
+prints `(value_at_edge, edge_timestamp, decay_length)`; the residual value at
+`-DBL_MAX` or `+DBL_MAX` is the part of the key that continues ordering within the tail.
+
+All public tuple input is still interpreted as raw `(value, timestamp[, decay_length])`. Compact
+printing is an interface projection and, away from the boundary exception above, does not expose
+the hidden residual precision of a 128-bit key or promise a text round-trip of every key bit.
+
+Mode is part of datatype identity. Casts, aggregate results, `-State`/`-Merge`, storage
+reconstruction, and implicit type compatibility preserve it unless the query explicitly casts to a
+different mode.
+
+The explicit datatype spelling without a mode remains compact. The query setting
+`exponential_time_decay_default_mode`, whose default is `compact`, selects the mode used by
+`exponentialTimeDecaying(decay_length)(value, timestamp)` and parameterless inferred
+`ExponentialTimeDecaying64` / `ExponentialTimeDecaying128` casts. An explicit datatype mode
+overrides the setting.
+
+The regular exponential-time-decayed aggregate state keeps exact merge mathematics independently of
+the stored representation. Representation precision is applied only when a finalized value is
+encoded. The query-local `exponential_time_decay_significance_cutoff` uses the encoded index while
+adding finalized rows, but never truncates aggregate-state or storage-engine merges.
+
+When binary type encoding is enabled, these types continue to use the existing `Custom type` tag
+(`0x2C`) followed by the complete type name, including the optional `direct` mode.
+
+These types and regular aggregate forms require
+`allow_experimental_time_decay_aggregate_functions`. The existing window-function path keeps its
+previous behavior with the experimental setting disabled.
+
 ### Versioned types {#versioned-types}
 
 Versioned types carry an on-wire serialization-version prefix that declares which variant of the encoding follows. They may also use multiple streams (like the composites). On the `Native` wire the prefix and any dictionary are per block — these types maintain no cross-block state (see [the per-block prefix note](#serialization-version-concept) below); cross-block serialization state exists only in the MergeTree on-disk stream.

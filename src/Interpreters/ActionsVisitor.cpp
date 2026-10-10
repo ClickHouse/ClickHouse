@@ -12,6 +12,7 @@
 
 #include <Functions/grouping.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/exponentialTimeDecaying.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/indexHint.h>
 
@@ -1481,6 +1482,22 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
             is_user_defined_wasm_function = function_builder != nullptr;
         }
+    }
+
+    if (!function_builder && node.name == "exponentialTimeDecaying")
+    {
+        Array parameters;
+        if (node.parameters)
+        {
+            parameters.reserve(node.parameters->children.size());
+            for (const auto & parameter : node.parameters->children)
+            {
+                ASTPtr literal = evaluateConstantExpressionAsLiteral(parameter, current_context);
+                parameters.push_back(literal->as<ASTLiteral>()->value);
+            }
+        }
+
+        function_builder = createExponentialTimeDecayingFunction(parameters, current_context);
     }
 
     if (!function_builder)

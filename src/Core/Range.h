@@ -70,6 +70,9 @@ public:
 
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);
+    static bool equals(const FieldRef & lhs, const FieldRef & rhs);
+    static bool less(const FieldRef & lhs, const FieldRef & rhs);
+    static bool hasColumnComparator(const FieldRef & lhs, const FieldRef & rhs);
 
     /** Optimize the range. If it has an open boundary and the Field type is "loose"
       * - then convert it to closed, narrowing by one.
