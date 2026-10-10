@@ -1102,12 +1102,15 @@ void logExceptionBeforeStart(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
     bool internal,
-    bool log_as_internal)
+    bool log_as_internal,
+    bool ignore_quota)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
     /// Exception before the query execution.
-    if (auto quota = context->getQuota())
+    /// Queries run with `QueryFlags::ignore_quota` (e.g. the internal `DETACH`/`ATTACH` of
+    /// `reattach_tables_before_query_execution`) are not charged to the user's quota.
+    if (auto quota = ignore_quota ? nullptr : context->getQuota())
         quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
@@ -5002,7 +5005,7 @@ static BlockIO executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, flags.ignore_quota);
         throw;
     }
 
@@ -5830,7 +5833,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal, flags.ignore_quota);
 
         throw;
     }
