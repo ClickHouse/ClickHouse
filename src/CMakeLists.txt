@@ -1042,6 +1042,7 @@ if (ENABLE_TESTS)
     # below, each on its own runtime flavour.
     set(wyrd_dir Processors/Executors/Runtime/Wyrd)
     add_headers_and_sources(wyrd_helpers ${wyrd_dir}/Testing)
+    add_headers_and_sources(wyrd_helpers Processors/Executors/Runtime/V2/tests/Toolkit)
     file(GLOB wyrd_tests CONFIGURE_DEPENDS ${wyrd_dir}/tests/gtest*.cpp Processors/Executors/Runtime/V2/tests/gtest*.cpp)
 
     # attach all dbms gtest sources
