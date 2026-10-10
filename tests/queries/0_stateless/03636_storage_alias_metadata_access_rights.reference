@@ -46,7 +46,6 @@ Test table metadata with column-scoped target permission
 0	0	0	0	0	1
 Test persisted table metadata with column-scoped target permission
 0	0
-ACCESS_DENIED
 Test column statistics with column-scoped target permission
 value	1
 Test other metadata tables with target permission

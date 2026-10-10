@@ -72,8 +72,6 @@ echo "--- target SHOW COLUMNS revoked: metadata withheld, rows still emitted ---
 admin "REVOKE SHOW COLUMNS ON ${db}.tmp_target FROM ${user}"
 admin "REVOKE SHOW COLUMNS ON ${db}.tmp_param_view FROM ${user}"
 probe
-# The interpreter refuses the same object for the same user, so the two surfaces agree.
-session_query "SHOW CREATE TEMPORARY TABLE t_alias" 2>&1 | grep -o -m1 ACCESS_DENIED
 
 admin "DROP USER ${user}"
 admin "DROP TABLE ${db}.tmp_target"

@@ -463,8 +463,8 @@ protected:
                             = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
                         const bool can_expose_declared_definition
                             = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {});
-                        /// The CREATE query exposes only the alias's own stored definition, so, as for
-                        /// `SHOW CREATE TABLE`, the declared target is checked rather than the whole chain.
+                        /// As for a persistent alias below, the CREATE query is checked against the declared
+                        /// target rather than the whole chain.
                         const bool can_show_declared_columns_temp
                             = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {});
                         size_t src_index = 0;
@@ -656,8 +656,8 @@ protected:
                     || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
                         && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})));
 
-                /// The CREATE query exposes only the alias's own stored definition and resolves nothing
-                /// through it, so, as for `SHOW CREATE TABLE`, only the declared target is checked.
+                /// The CREATE query is the alias's own stored definition, which may carry its declared
+                /// target's columns inlined, so the declared target is checked rather than the whole chain.
                 const bool can_show_declared_columns = !need_to_check_access_for_columns
                     || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
                         && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {})));
