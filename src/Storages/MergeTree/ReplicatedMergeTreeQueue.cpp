@@ -287,7 +287,7 @@ bool ReplicatedMergeTreeQueue::isIntersectingWithDropReplaceIntent(
     {
         if (!intent.isDisjoint(part_info))
         {
-            constexpr auto fmt_string = "Not executing {} of type {} for part {} (actual part {})"
+            constexpr auto fmt_string = "Not executing {} of type {} for part {} (actual part {}) "
                                         "because there is a drop or replace intent with part name {}.";
             LOG_INFO(
                 LogToStr(out_reason, log),
@@ -1520,7 +1520,7 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
     if (entry_for_same_part_it != future_parts.end())
     {
         const LogEntry & another_entry = *entry_for_same_part_it->second;
-        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} (actual part {})"
+        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} (actual part {}) "
                                     "because another log entry {} of type {} for the same part ({}) is being processed.";
         LOG_INFO(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.type, entry.new_part_name, new_part_name,
                  another_entry.znode_name, another_entry.type, another_entry.new_part_name);
@@ -1838,8 +1838,15 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         if (havePendingPatchPartsForMutation(entry, out_postpone_reason, committing_blocks, state_lock))
             return false;
 
-        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS ? CompactionStatistics::getMaxSourcePartsBytesForMerge(data)
-                                                                           : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
+        /// min_unreserved_disk_space_for_merge is a selection-time limit, but the executing replica's
+        /// disks can be tighter than the assigning replica's were, so the queue re-derives the limit for
+        /// background merges. Entries ordered by OPTIMIZE ... FINAL / OPTIMIZE ... PARTITION were
+        /// selected without the headroom and carry bypass_min_unreserved_space, because honouring it
+        /// here would postpone them forever (see #80006).
+        UInt64 max_source_parts_size = entry.type == LogEntry::MERGE_PARTS
+            ? CompactionStatistics::getMaxSourcePartsBytesForMerge(
+                data, /*respect_min_unreserved_space=*/!entry.bypass_min_unreserved_space)
+            : CompactionStatistics::getMaxSourcePartBytesForMutation(data);
         /** If there are enough free threads in background pool to do large merges (maximal size of merge is allowed),
           * then ignore value returned by getMaxSourcePartsBytesForMerge() and execute merge of any size,
           * because it may be ordered by OPTIMIZE or early with different settings.
@@ -1866,6 +1873,16 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                               (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
                     return false;
+                }
+
+                /// A TTLDrop merge deletes every row only when an unconditional rows TTL is the
+                /// table's only TTL. With a GROUP BY, WHERE or column TTL rows survive and the
+                /// merge rewrites them, so it does need room for what its source parts hold.
+                if (entry.merge_type == MergeType::TTLDrop)
+                {
+                    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+                    if (metadata_snapshot->hasOnlyRowsTTL())
+                        ignore_max_size = true;
                 }
             }
 
@@ -2327,6 +2344,21 @@ ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, M
 {
 }
 
+namespace
+{
+
+/// CLEAR COLUMN keeps the column in the metadata, so it stays pinned like a data mutation.
+MutationCommands getMetadataMutationCommands(const MutationCommands & commands)
+{
+    MutationCommands result;
+    for (const auto & command : commands)
+        if (AlterConversions::isSupportedMetadataMutation(command.type) && !command.clear)
+            result.push_back(command);
+    return result;
+}
+
+}
+
 MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
     auto partition_id = part->info.getOriginalPartitionId();
@@ -2364,7 +2396,14 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
 
             /// We take commands with bigger metadata version
             if (alter_version > part_metadata_version)
-                addSupportedCommands(entry->commands, mutation_version, result);
+            {
+                if (alter_version > params.min_part_metadata_version)
+                    addSupportedCommands(entry->commands, mutation_version, result);
+                /// A patch at metadata version 0 may have been written after the ALTER, so for it the data version decides.
+                else if (part->info.isPatch()
+                    && (part_metadata_version > 0 || static_cast<Int64>(part->getPatchPartIndex().getMaxDataVersion()) < mutation_version))
+                    addSupportedCommands(getMetadataMutationCommands(entry->commands), mutation_version, result);
+            }
             else
                 seen_all_metadata_mutations = true;
         }
@@ -2407,8 +2446,13 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     if (params.need_patch_parts)
         patch_parts = storage.getPatchPartsVectorForInternalUsage();
 
+    /// ALTERs every base part has passed are kept for the patch parts that have not.
+    Int64 min_metadata_version = std::min(params.min_part_metadata_version, params.min_patch_metadata_version);
+    for (const auto & patch : patch_parts)
+        min_metadata_version = std::min<Int64>(min_metadata_version, patch->getMetadataVersion());
+
     std::shared_lock lock(state_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && params.min_part_metadata_version >= params.metadata_version)
+    if (!params.need_data_mutations && !params.need_alter_mutations && min_metadata_version >= params.metadata_version)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 
     for (const auto & [partition_id, mutations] : mutations_by_partition)
@@ -2420,7 +2464,7 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
         const int64_t max_mutation_version_to_include = MergeTreeData::IMutationsSnapshot::getMaxMutationVersionForPartition(params, partition_id);
 
         bool seen_all_data_mutations = !params.need_data_mutations && !params.need_alter_mutations;
-        bool seen_all_metadata_mutations = params.min_part_metadata_version >= params.metadata_version;
+        bool seen_all_metadata_mutations = min_metadata_version >= params.metadata_version;
 
         auto & partition_snapshot = mutations_snapshot[partition_id];
         for (const auto & [mutation_version, status] : mutations | std::views::reverse)
@@ -2446,6 +2490,15 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
                     {
                         partition_snapshot.emplace(mutation_version, status->entry);
                         incrementMutationsCounters(mutations_snapshot_counters, status->entry->commands);
+                    }
+                }
+                else if (alter_version > min_metadata_version)
+                {
+                    auto metadata_commands = getMetadataMutationCommands(status->entry->commands);
+                    if (!metadata_commands.empty())
+                    {
+                        partition_snapshot.emplace(mutation_version, status->entry);
+                        incrementMutationsCounters(mutations_snapshot_counters, metadata_commands);
                     }
                 }
                 else

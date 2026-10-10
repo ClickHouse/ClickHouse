@@ -4,6 +4,7 @@
       "group": "Руководства по ClickHouse",
       "pages": [
         "ru/guides/clickhouse/index",
+        "ru/guides/clickhouse/kusto-query-language",
         {
           "group": "Форматы данных",
           "pages": [
@@ -54,7 +55,16 @@
         {
           "group": "Производительность и мониторинг",
           "pages": [
-            "ru/guides/clickhouse/performance-and-monitoring/query-optimization",
+            {
+              "group": "Оптимизация запросов",
+              "pages": [
+                "ru/guides/clickhouse/performance-and-monitoring/query-optimization",
+                "ru/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
+                "ru/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks",
+                "ru/guides/clickhouse/performance-and-monitoring/optimization-approaches",
+                "ru/guides/clickhouse/performance-and-monitoring/query-optimization-example"
+              ]
+            },
             "ru/guides/clickhouse/performance-and-monitoring/analyzer",
             "ru/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
             "ru/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
@@ -94,7 +104,7 @@
         },
         "ru/guides/oss/update",
         {
-          "group": "Лучшие практики OSS",
+          "group": "Рекомендации по работе с ClickHouse OSS",
           "pages": [
             "ru/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "ru/guides/oss/best-practices/tips"
@@ -169,7 +179,7 @@
             "ru/guides/use-cases/observability/cloud-monitoring",
             "ru/guides/use-cases/observability/self-managed-monitoring",
             {
-              "group": "Соберите собственное решение",
+              "group": "Создайте собственное решение",
               "pages": [
                 "ru/guides/use-cases/observability/build-your-own/index",
                 "ru/guides/use-cases/observability/build-your-own/introduction",
@@ -206,6 +216,7 @@
                 "ru/guides/use-cases/data-warehousing/nessie-catalog",
                 "ru/guides/use-cases/data-warehousing/onelake-catalog",
                 "ru/guides/use-cases/data-warehousing/polaris-catalog",
+                "ru/guides/use-cases/data-warehousing/horizon-catalog",
                 "ru/guides/use-cases/data-warehousing/rest-catalog",
                 "ru/guides/use-cases/data-warehousing/seaweedfs-catalog",
                 "ru/guides/use-cases/data-warehousing/unity-catalog",
@@ -216,11 +227,12 @@
           ]
         },
         {
-          "group": "AI/ML",
+          "group": "ИИ и машинное обучение",
           "pages": [
             "ru/guides/use-cases/ai-ml/index",
             "ru/guides/use-cases/ai-ml/vector-search",
             "ru/guides/use-cases/ai-ml/ai-powered-sql-generation",
+            "ru/guides/use-cases/ai-ml/import-langfuse-trace-data",
             {
               "group": "Исследование данных",
               "pages": [
@@ -239,24 +251,24 @@
                 "ru/guides/use-cases/ai-ml/MCP/ollama",
                 "ru/guides/use-cases/ai-ml/MCP/janai",
                 {
-                  "group": "Библиотеки для AI-агентов",
+                  "group": "Библиотеки для ИИ-агентов",
                   "pages": [
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
                   ]
                 }
               ]

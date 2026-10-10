@@ -16,7 +16,7 @@ No ClickHouse Cloud, há várias maneiras de criar e gerenciar funções definid
 1. Usando SQL
 2. Usando a UI e seu próprio código (beta pública)
 3. Usando a [Cloud API](#manage-udfs-with-the-cloud-api) (beta)
-4. Usando o [Terraform](#manage-udfs-with-terraform) (alpha)
+4. Usando o [Terraform](#manage-udfs-with-terraform) (beta)
 
 <div id="sql-udfs">
   ## Funções Definidas pelo Usuário em SQL
@@ -231,13 +231,15 @@ Consulte a [referência da API de UDF](/pt-BR/products/cloud/api-reference/udf/u
   ## Gerencie UDFs com o Terraform
 </div>
 
+<BetaBadge />
+
 O [provider Terraform oficial do ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) inclui dois recursos para gerenciar UDFs como infraestrutura como código:
 
 * [`clickhouse_udf`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf.md) gerencia a própria função. Ele aceita um arquivo ZIP com o código-fonte da função e publica uma nova versão sempre que o hash do arquivo é alterado, aguardando a conclusão da compilação.
 * [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) anexa uma versão de UDF a um serviço. Um serviço comporta no máximo uma versão de uma função por vez. Você pode fixar um número de versão específico ou fazer referência a `clickhouse_udf.<name>.version` para atualizar automaticamente os serviços para a versão mais recente.
 
 <Note>
-  Esses recursos estão disponíveis na versão 3.24.0 e posteriores do provider. Eles estão em status alpha, e seu comportamento pode mudar em futuras versões do provider.
+  Esses recursos estão disponíveis na versão 3.24.0 e posteriores do provider. Eles estão em beta, e seu comportamento pode mudar em futuras versões do provider.
 </Note>
 
 Por exemplo, para implantar com o Terraform a UDF `isBusinessHours` do exemplo anterior:

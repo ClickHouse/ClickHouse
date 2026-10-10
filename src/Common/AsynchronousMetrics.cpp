@@ -1,3 +1,4 @@
+#include <utility>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -6,9 +7,11 @@
 #include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
+#include <base/EnumReflection.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/ErrnoException.h>
 #include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
@@ -124,7 +127,7 @@ std::unique_ptr<ReadBufferFromFilePRead> AsynchronousMetrics::openFileIfExists(c
 void AsynchronousMetrics::openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out)
 {
     if (auto path = getCgroupsV2PathContainingFile(filename))
-        openFileIfExists((path.value() + filename).c_str(), out);
+        openFileIfExists((path.value() + "/" + filename).c_str(), out);
 };
 
 #endif
@@ -413,6 +416,134 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
     SharedLockGuard lock(values_mutex);
     return values;
+}
+
+namespace
+{
+
+/// The two parts of the pre-26.8 name of a key-value metric family, surrounding the key.
+struct LegacyMetricName
+{
+    String prefix;
+    String suffix;
+};
+
+/// The metric families that were turned into key-value metrics in version 26.8, and how their keys used to be
+/// mangled into the metric name before that. The table is historical and does not grow: a key-value metric
+/// family introduced later never had a legacy name.
+const std::unordered_map<std::string_view, LegacyMetricName> & getLegacyMetricNames()
+{
+    static const std::unordered_map<std::string_view, LegacyMetricName> result = []
+    {
+        std::unordered_map<std::string_view, LegacyMetricName> res;
+
+        /// The CPU core number was appended to the metric name: `OSUserTimeCPU3`.
+        constexpr std::string_view key_appended_metrics[]
+            = {"OSUserTimeCPU", "OSNiceTimeCPU", "OSSystemTimeCPU", "OSIdleTimeCPU", "OSIOWaitTimeCPU",
+               "OSIrqTimeCPU", "OSSoftIrqTimeCPU", "OSStealTimeCPU", "OSGuestTimeCPU", "OSGuestNiceTimeCPU"};
+
+        for (std::string_view metric : key_appended_metrics)
+            res.emplace(metric, LegacyMetricName{String(metric), ""});
+
+        /// The key was appended to the metric name after an underscore: `BlockReadBytes_sda`.
+        constexpr std::string_view underscore_and_key_appended_metrics[]
+            = {"CPUFrequencyMHz",
+               "BlockReadOps", "BlockWriteOps", "BlockDiscardOps",
+               "BlockReadMerges", "BlockWriteMerges", "BlockDiscardMerges",
+               "BlockReadBytes", "BlockWriteBytes", "BlockDiscardBytes",
+               "BlockReadTime", "BlockWriteTime", "BlockDiscardTime",
+               "BlockInFlightOps", "BlockActiveTime", "BlockQueueTime",
+               "BlockActiveTimePerOp", "BlockQueueTimePerOp",
+               "NetworkReceiveBytes", "NetworkReceivePackets", "NetworkReceiveErrors", "NetworkReceiveDrop",
+               "NetworkSendBytes", "NetworkSendPackets", "NetworkSendErrors", "NetworkSendDrop",
+               "DiskTotal", "DiskUsed", "DiskAvailable", "DiskUnreserved",
+               "DiskPutObjectThrottlerRPS", "DiskPutObjectThrottlerAvailable",
+               "DiskGetObjectThrottlerRPS", "DiskGetObjectThrottlerAvailable"};
+
+        for (std::string_view metric : underscore_and_key_appended_metrics)
+            res.emplace(metric, LegacyMetricName{String(metric) + "_", ""});
+
+        /// The memory controller number was in the middle of the name: `EDAC0_Correctable`.
+        res.emplace("EDACCorrectable", LegacyMetricName{"EDAC", "_Correctable"});
+        res.emplace("EDACUncorrectable", LegacyMetricName{"EDAC", "_Uncorrectable"});
+
+        /// The logging channel name was in the middle of the name: `AsyncLoggingTextLogQueueSize`.
+        res.emplace("AsyncLoggingQueueSize", LegacyMetricName{"AsyncLogging", "QueueSize"});
+
+        /// The disk name was a prefix of the name: `s3_diskDeadBlobsQueueEstimate`.
+        res.emplace("DeadBlobsQueueEstimate", LegacyMetricName{"", "DeadBlobsQueueEstimate"});
+        res.emplace("MissingBlobsQueueEstimate", LegacyMetricName{"", "MissingBlobsQueueEstimate"});
+
+        return res;
+    }();
+
+    return result;
+}
+
+}
+
+String getLegacyAsynchronousMetricName(const String & metric, const String & key)
+{
+    /// `Temperature` merged two families named differently: the thermal zones (`/sys/class/thermal`), whose
+    /// numeric keys were appended right after the name (`Temperature3`), and the hardware monitors
+    /// (`/sys/class/hwmon`), whose names were appended after an underscore (`Temperature_coretemp_Core_0`).
+    if (metric == "Temperature")
+    {
+        if (!key.empty() && std::all_of(key.begin(), key.end(), isNumericASCII))
+            return "Temperature" + key;
+        return "Temperature_" + key;
+    }
+
+    const auto & legacy_names = getLegacyMetricNames();
+    auto it = legacy_names.find(std::string_view{metric});
+    if (it == legacy_names.end())
+        return {};
+
+    return it->second.prefix + key + it->second.suffix;
+}
+
+void applyAsynchronousMetricsKeyValuesMode(AsynchronousMetricValues & values, AsynchronousMetricsKeyValuesMode mode)
+{
+    if (mode == AsynchronousMetricsKeyValuesMode::KeyValues)
+        return;
+
+    AsynchronousMetricValues legacy_values;
+    std::vector<String> metrics_to_remove;
+
+    for (const auto & [name, value] : values)
+    {
+        if (!value.isMap())
+            continue;
+
+        bool has_legacy_name = false;
+
+        for (const auto & [key, key_value] : value.key_values)
+        {
+            String legacy_name = getLegacyAsynchronousMetricName(name, key);
+            if (legacy_name.empty())
+                continue;
+
+            has_legacy_name = true;
+
+            AsynchronousMetricValue legacy_value;
+            legacy_value.value = key_value;
+            legacy_value.documentation = value.documentation;
+            legacy_value.source = value.source;
+            legacy_values[std::move(legacy_name)] = legacy_value;
+        }
+
+        /// A family that has no legacy name (it appeared after the change) is published as it is,
+        /// because there is nothing else it could be published as.
+        if (has_legacy_name && mode == AsynchronousMetricsKeyValuesMode::LegacyNames)
+            metrics_to_remove.push_back(name);
+    }
+
+    for (const auto & name : metrics_to_remove)
+        values.erase(name);
+
+    /// A legacy name is the name that the very same measurement had before the change, so it never collides
+    /// with the name of another metric.
+    values.merge(legacy_values);
 }
 
 namespace
@@ -979,7 +1110,7 @@ static void readPressureFile(
 
                 uint64_t delta = counter - prev;
             new_values[metric_key] = AsynchronousMetricValue(delta,
-                "Microseconds of stall time since last measurement."
+                "Microseconds of stall time since last measurement. "
                 "Upstream docs can be found https://docs.kernel.org/accounting/psi.html for the metrics and how to interpret them");
         }
 
@@ -1174,7 +1305,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1326,8 +1457,9 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             const size_t page_size = jemalloc_page_size_mib.getValue();
             new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
                 "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
-                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived MergeTree heap "
-                "state: per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
+                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived table state, for every engine "
+                "and not only MergeTree: the storage object and its metadata as built by `StorageFactory::get`, "
+                "and for MergeTree also per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
                 "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
                 "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
                 "`MergeTreeDataPart{Compact,Wide}` object itself), metadata shared across parts of a table "
@@ -1369,7 +1501,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1395,18 +1527,20 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "When userspace page cache is disabled, this value equals MemoryResident."
         };
 
-#if !defined(OS_FREEBSD)
+#if !defined(OS_FREEBSD) && !defined(OS_SUNOS)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
+#if !defined(OS_SUNOS)
         new_values["MemoryCode"] = { data.code,
             "The amount of virtual memory mapped for the pages of machine code of the server process, in bytes." };
         new_values["MemoryDataAndStack"] = { data.data_and_stack,
             "The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes."
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
+#endif
 
         if (update_rss)
             MemoryTracker::updateRSS(data.resident);
@@ -2676,60 +2810,72 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     {
-        auto threads_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
+        /// Metric name and description per protocol. Keyed by the `ServerType::Type` name rather than
+        /// by the config key, so a protocol declared under `<protocols>` is reported under the same
+        /// metrics as the equivalent built-in port. Keeper listeners are not part of `ServerType`; they
+        /// are keyed by their config key. Each entry pairs one key with one metric name and its
+        /// description, which is the shape `utils/generate-async-metrics-docs` extracts the docs from.
+        using MetricNameDoc = std::pair<const char *, const char *>;
+
+        static const std::unordered_map<String, MetricNameDoc> threads_metric_by_protocol =
         {
-            static std::map<String, std::pair<const char *, const char *>> metric_map =
-            {
-                {"tcp_port", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
-                {"tcp_port_secure", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
-                {"http_port", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
-                {"https_port", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
-                {"interserver_http_port", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
-                {"interserver_https_port", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
-                {"mysql_port", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
-                {"postgresql_port", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
-                {"grpc_port", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
-                {"prometheus.port", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-                {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
-                {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
-            };
-            auto it = metric_map.find(name);
-            if (it == metric_map.end())
-                return { nullptr, nullptr };
-            return it->second;
+            {"TCP", {"TCPThreads", "Number of threads in the server of the TCP protocol (without TLS)."}},
+            {"TCP_SECURE", {"TCPSecureThreads", "Number of threads in the server of the TCP protocol (with TLS)."}},
+            {"TCP_WITH_PROXY", {"TCPWithProxyThreads", "Number of threads in the server of the TCP protocol behind a PROXY protocol handler."}},
+            {"TCP_SSH", {"TCPSSHThreads", "Number of threads in the server of the SSH protocol."}},
+            {"HTTP", {"HTTPThreads", "Number of threads in the server of the HTTP interface (without TLS)."}},
+            {"HTTPS", {"HTTPSecureThreads", "Number of threads in the server of the HTTPS interface."}},
+            {"INTERSERVER_HTTP", {"InterserverThreads", "Number of threads in the server of the replicas communication protocol (without TLS)."}},
+            {"INTERSERVER_HTTPS", {"InterserverSecureThreads", "Number of threads in the server of the replicas communication protocol (with TLS)."}},
+            {"MYSQL", {"MySQLThreads", "Number of threads in the server of the MySQL compatibility protocol."}},
+            {"POSTGRESQL", {"PostgreSQLThreads", "Number of threads in the server of the PostgreSQL compatibility protocol."}},
+            {"GRPC", {"GRPCThreads", "Number of threads in the server of the GRPC protocol."}},
+            {"PROMETHEUS", {"PrometheusThreads", "Number of threads in the server of the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+            {"keeper_server.tcp_port", {"KeeperTCPThreads", "Number of threads in the server of the Keeper TCP protocol (without TLS)."}},
+            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureThreads", "Number of threads in the server of the Keeper TCP protocol (with TLS)."}}
         };
 
-        auto rejected_connections_get_metric_name_doc = [](const String & name) -> std::pair<const char *, const char *>
+        static const std::unordered_map<String, MetricNameDoc> rejected_connections_metric_by_protocol =
         {
-            static std::map<String, std::pair<const char *, const char *>> metric_map =
-                {
-                    {"tcp_port", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
-                    {"tcp_port_secure", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
-                    {"http_port", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
-                    {"https_port", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
-                    {"interserver_http_port", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
-                    {"interserver_https_port", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
-                    {"mysql_port", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
-                    {"postgresql_port", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
-                    {"grpc_port", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
-                    {"prometheus.port", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
-                    {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
-                    {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
-                };
-            auto it = metric_map.find(name);
-            if (it == metric_map.end())
-                return { nullptr, nullptr };
-            return it->second;
+            {"TCP", {"TCPRejectedConnections", "Number of rejected connections for the TCP protocol (without TLS)."}},
+            {"TCP_SECURE", {"TCPSecureRejectedConnections", "Number of rejected connections for the TCP protocol (with TLS)."}},
+            {"TCP_WITH_PROXY", {"TCPWithProxyRejectedConnections", "Number of rejected connections for the TCP protocol behind a PROXY protocol handler."}},
+            {"TCP_SSH", {"TCPSSHRejectedConnections", "Number of rejected connections for the SSH protocol."}},
+            {"HTTP", {"HTTPRejectedConnections", "Number of rejected connections for the HTTP interface (without TLS)."}},
+            {"HTTPS", {"HTTPSecureRejectedConnections", "Number of rejected connections for the HTTPS interface."}},
+            {"INTERSERVER_HTTP", {"InterserverRejectedConnections", "Number of rejected connections for the replicas communication protocol (without TLS)."}},
+            {"INTERSERVER_HTTPS", {"InterserverSecureRejectedConnections", "Number of rejected connections for the replicas communication protocol (with TLS)."}},
+            {"MYSQL", {"MySQLRejectedConnections", "Number of rejected connections for the MySQL compatibility protocol."}},
+            {"POSTGRESQL", {"PostgreSQLRejectedConnections", "Number of rejected connections for the PostgreSQL compatibility protocol."}},
+            {"GRPC", {"GRPCRejectedConnections", "Number of rejected connections for the GRPC protocol."}},
+            {"PROMETHEUS", {"PrometheusRejectedConnections", "Number of rejected connections for the Prometheus endpoint. Note: prometheus endpoints can be also used via the usual HTTP/HTTPs ports."}},
+            {"keeper_server.tcp_port", {"KeeperTCPRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (without TLS)."}},
+            {"keeper_server.tcp_port_secure", {"KeeperTCPSecureRejectedConnections", "Number of rejected connections for the Keeper TCP protocol (with TLS)."}}
         };
 
-        const auto server_metrics = protocol_server_metrics_func();
-        for (const auto & server_metric : server_metrics)
-        {
-            if (auto name_doc = threads_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
-                new_values[name_doc.first] = { server_metric.current_threads, name_doc.second };
+        /// Several servers can share a protocol - one per listen host, or a built-in port and a
+        /// `<protocols>` endpoint of the same type - so the values are summed before being reported.
+        std::unordered_map<String, std::pair<size_t, size_t>> totals;
 
-            if (auto name_doc = rejected_connections_get_metric_name_doc(server_metric.port_name); name_doc.first != nullptr)
-                new_values[name_doc.first] = { server_metric.rejected_connections, name_doc.second };
+        for (const auto & server_metric : protocol_server_metrics_func())
+        {
+            String key{magic_enum::enum_name(server_metric.protocol_type)};
+            if (!threads_metric_by_protocol.contains(key))
+                key = server_metric.port_name;
+            if (!threads_metric_by_protocol.contains(key))
+                continue;
+
+            auto & total = totals[key];
+            total.first += server_metric.current_threads;
+            total.second += server_metric.rejected_connections;
+        }
+
+        for (const auto & [key, total] : totals)
+        {
+            const auto & [threads_name, threads_doc] = threads_metric_by_protocol.at(key);
+            new_values[threads_name] = { total.first, threads_doc };
+            const auto & [rejected_name, rejected_doc] = rejected_connections_metric_by_protocol.at(key);
+            new_values[rejected_name] = { total.second, rejected_doc };
         }
     }
 
@@ -2758,6 +2904,11 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     updateImpl(update_time, current_time, force_update, first_run, new_values);
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics)." };
+
+    /// Publish the key-value metrics in the form the consumers are configured to expect. This is done once,
+    /// here, so that every consumer of the values (`system.asynchronous_metric_log` below,
+    /// `system.asynchronous_metrics`, the Prometheus endpoint and Graphite) sees a consistent picture.
+    applyAsynchronousMetricsKeyValuesMode(new_values, getAsynchronousMetricsKeyValuesMode(context->getConfigRef()));
 
     logImpl(new_values);
 

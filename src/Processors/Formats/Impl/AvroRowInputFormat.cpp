@@ -46,6 +46,8 @@
 #include <Types.hh>
 #include <ValidSchema.hh>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -656,6 +658,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 std::vector<DeserializeFn> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
 
+                std::unordered_set<ColumnVariant::Discriminator> used_discriminators;
+
                 bool union_has_null = false;
                 for (size_t i = 0; i != root_node->leaves(); ++i)
                 {
@@ -679,15 +683,18 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                             variant_type.getName(),
                             variant->getName());
 
+                    used_discriminators.insert(corresponding_discriminator.value());
                     union_index_to_global_discriminator.insert_or_assign(i, std::move(corresponding_discriminator.value()));
                 }
 
-                if (root_node->leaves() != nested_types.size() + (union_has_null ? 1 : 0))
+                /// Named branches (records, enums, fixed) with identical structure map to the same variant,
+                /// so compare distinct types, not branches.
+                if (used_discriminators.size() != nested_types.size())
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The number of (non-null) union types in Avro record ({}) does not match the number of types in destination Variant "
-                        "type ({}).",
-                        root_node->leaves() - (union_has_null ? 1 : 0),
+                        "The number of distinct (non-null) union types in Avro record ({}) does not match the number of types in "
+                        "destination Variant type ({}).",
+                        used_discriminators.size(),
                         nested_types.size());
 
                 return [union_has_null,
@@ -1041,6 +1048,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
             }
             return [&skip_fn = it->second](avro::Decoder & decoder)
             {
+                checkStackSize();
                 skip_fn(decoder);
             };
         }
@@ -1286,6 +1294,12 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     return false;
 }
 
+/// A count taken from the block headers is only sound while the library checks every declared count against the payload.
+bool AvroRowInputFormat::supportsCountRows() const
+{
+    return file_reader_ptr && file_reader_ptr->checksDeclaredObjectCount();
+}
+
 size_t AvroRowInputFormat::countRows(size_t max_block_size)
 {
     size_t num_rows = 0;
@@ -1419,14 +1433,14 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
-    checkStackSize();
-
     std::unordered_set<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
+    checkStackSize();
+
     switch (node->type())
     {
         case avro::Type::AVRO_INT:
@@ -1707,9 +1721,9 @@ Each message uses the Confluent wire format: a magic byte (`0x00`) followed by a
 | `input_format_avro_allow_missing_fields`             | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`                  | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
 | `format_avro_schema_registry_url`                    | The Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
-| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0 and less than 600 (10 minutes). | `1`     |
-| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
-| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
+| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
+| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
 | `output_format_avro_confluent_subject`               | For output: the subject name under which the schema is registered in the Schema Registry. Required when writing. |         |
 | `output_format_avro_string_column_pattern`           | For output: regexp of String columns to serialize as Avro `string` (default is `bytes`). |         |
 

@@ -176,7 +176,16 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 
 * 少なくとも 1 つのユーザーアカウントで、SQL ベースのアクセス制御とアカウント管理を有効にします。
 
-  デフォルトでは、SQL ベースのアクセス制御とアカウント管理はすべてのユーザーで無効になっています。`users.xml` 設定ファイルで少なくとも 1 人のユーザーを設定し、[`access_management`](/ja/concepts/features/configuration/settings/settings-users#access_management-user-setting)、`named_collection_control`、`show_named_collections`、`show_named_collections_secrets` の各設定を 1 に設定する必要があります。
+  ClickHouse に同梱されている `users.xml` 設定ファイルでは、[`access_management`](/ja/concepts/features/configuration/settings/settings-users#access_management-user-setting) と [`named_collection_control`](/ja/concepts/features/configuration/settings/settings-users#named_collection_control-user-setting) が 1 に設定されており、`default` ユーザーに対して SQL ベースのアクセス制御とアカウント管理が有効になっています。それ以外のすべてのユーザーでは、いずれの設定もデフォルトで 0 のため、明示的に設定する必要があります。
+
+  [`show_named_collections_secrets`](/ja/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting) は、`default` ユーザーであってもデフォルトで 0 です。named collections を管理できることと、そこにすでに保存されている認証情報を読み出せることは同義ではないためです。ユーザーは自分が持っている権限しか付与できないため、この設定が 0 である限り、そのユーザーは完全な権限のセットを持たず、`GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION` のようなクエリは拒否されます:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  3 つの設定すべてを 1 に設定すると、そのユーザーは完全な管理者になります。
 
 <div id="defining-sql-users-and-roles">
   ## SQLユーザーとロールの定義
@@ -193,12 +202,16 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 </div>
 
 1. `users.xml` ファイルの `<default>` ユーザー配下で SQL ユーザーモードを有効にします。
+
    ```xml
    <access_management>1</access_management>
    <named_collection_control>1</named_collection_control>
-   <show_named_collections>1</show_named_collections>
+   <!-- ユーザーを完全な管理者にするために必要です。
+        これがないと、以下の `GRANT ALL ... WITH GRANT OPTION` は拒否されます。 -->
    <show_named_collections_secrets>1</show_named_collections_secrets>
    ```
+
+   最初の 2 つの設定は、ClickHouse に同梱されている `users.xml` ファイル内で `default` ユーザーに対してすでに有効になっています。`show_named_collections_secrets` はコメントアウトされているため、コメントを解除する必要があります。
 
 <Note>
   `default` ユーザーは、新規インストール時に作成される唯一のユーザーであり、デフォルトではノード間通信に使用されるアカウントでもあります。
