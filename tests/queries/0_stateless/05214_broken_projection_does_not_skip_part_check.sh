@@ -41,6 +41,8 @@ TABLES="
     wide_missing_second_column_empty_checksums
     compact_torn_empty_checksums
     wide_missing_dynamic_no_substreams_empty_checksums
+    wide_missing_data_empty_checksums
+    compact_missing_data_empty_checksums
 "
 
 table_settings()
@@ -161,6 +163,9 @@ truncate_to_first_block "$(part_path wide_torn_first_column_empty_checksums)/$(c
 rm "$(part_path wide_missing_second_column_empty_checksums)/$(column_file wide_missing_second_column_empty_checksums v).cmrk2"
 truncate_to_first_block "$(part_path compact_torn_empty_checksums)/data.cmrk4"
 rm "$(part_path wide_missing_dynamic_no_substreams_empty_checksums)/$(column_file wide_missing_dynamic_no_substreams_empty_checksums d.UInt64).cmrk2"
+# The data file of a stream is gone altogether while its marks are intact.
+rm "$(part_path wide_missing_data_empty_checksums)/$(column_file wide_missing_data_empty_checksums v).bin"
+rm "$(part_path compact_missing_data_empty_checksums)/data.bin"
 for table in ${TABLES}
 do
     if [[ ${table} == *_no_substreams_* ]]

@@ -308,6 +308,16 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
         }
 
+        /// The marks alone do not prove that the data is there: checksums regenerated from the files on disk
+        /// would not notice that `data.bin` is gone entirely, and missing checksums cannot tell it at all.
+        if (getDataPartStorage().existsFile(mrk_file_name) && !getDataPartStorage().existsFile(DATA_FILE_NAME_WITH_EXTENSION))
+            throw Exception(
+                ErrorCodes::NO_FILE_IN_DATA_PART,
+                "Part {} is broken: no data file {} for marks file {}",
+                getDataPartStorage().getRelativePath(),
+                DATA_FILE_NAME_WITH_EXTENSION,
+                mrk_file_name);
+
         /// Check that marks are nonempty and have the consistent size with columns number.
 
         if (getDataPartStorage().existsFile(mrk_file_name))

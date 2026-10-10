@@ -1,5 +1,6 @@
 both	Compact	5000
 both_no_checksums	Compact	5000
+compact_missing_data_empty_checksums	Compact	5000
 compact_several_blocks_no_checksums	Compact	5000
 compact_torn_empty_checksums	Compact	5000
 compact_torn_no_checksums	Compact	5000
@@ -7,6 +8,7 @@ projection_only	Compact	5000
 projection_only_no_checksums	Compact	5000
 wide_dynamic_no_substreams_no_checksums	Wide	5000
 wide_empty_checksums	Wide	5000
+wide_missing_data_empty_checksums	Wide	5000
 wide_missing_dynamic_no_substreams_empty_checksums	Wide	5000
 wide_missing_dynamic_no_substreams_no_checksums	Wide	5000
 wide_missing_second_column_empty_checksums	Wide	5000
@@ -74,3 +76,9 @@ compact_torn_empty_checksums broken projections	0
 wide_missing_dynamic_no_substreams_empty_checksums rows	0
 wide_missing_dynamic_no_substreams_empty_checksums detached parts	1	broken-on-start
 wide_missing_dynamic_no_substreams_empty_checksums broken projections	0
+wide_missing_data_empty_checksums rows	0
+wide_missing_data_empty_checksums detached parts	1	broken-on-start
+wide_missing_data_empty_checksums broken projections	0
+compact_missing_data_empty_checksums rows	0
+compact_missing_data_empty_checksums detached parts	1	broken-on-start
+compact_missing_data_empty_checksums broken projections	0

@@ -508,6 +508,21 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
     /// in that case too, as when there are no checksums at all.
     if (!hasTrustworthyChecksums())
     {
+        /// The marks alone do not prove that the data is there: a stream whose `.bin` file is gone entirely
+        /// still has intact marks. Checksums regenerated from the files on disk would not notice it either.
+        auto check_data_file_exists = [&](const String & stream_name)
+        {
+            auto data_file_name = stream_name + DATA_FILE_EXTENSION;
+            if (!getDataPartStorage().existsFile(data_file_name))
+                throw Exception(
+                    ErrorCodes::NO_FILE_IN_DATA_PART,
+                    "Part {} is broken: no data file {} for marks file {}{}",
+                    getDataPartStorage().getFullPath(),
+                    data_file_name,
+                    stream_name,
+                    marks_file_extension);
+        };
+
         if (!cols_substreams.empty())
         {
             /// Use columns_substreams.txt as the source of truth.
@@ -531,6 +546,8 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             marks_file_extension,
                             getColumns().getNames()[col_idx]);
                     }
+
+                    check_data_file_exists(*stream_name);
 
                     auto file_path = *stream_name + marks_file_extension;
                     UInt64 file_size = getDataPartStorage().getFileSize(file_path);
@@ -603,6 +620,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                     if (!stream_name)
                         return;
 
+                    check_data_file_exists(*stream_name);
                     check_marks_file(*stream_name + marks_file_extension);
                 }, data);
             }
