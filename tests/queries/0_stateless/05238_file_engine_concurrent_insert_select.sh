@@ -74,18 +74,21 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE qcc (x UInt64) ENGINE = File(Parquet)
 REWRITE="INSERT INTO qcc SETTINGS engine_file_truncate_on_insert = 1, async_insert = 0 SELECT 1000000 + number FROM numbers(2000)"
 ${CLICKHOUSE_CURL} -sS "$URL" -d "$REWRITE"
 for i in {1..7}; do
-    ${CLICKHOUSE_CURL} -sS "$URL" -d "INSERT INTO qcc SETTINGS engine_file_allow_create_multiple_files = 1
-        SELECT $i * 10000 + number FROM numbers(2000)"
+    ${CLICKHOUSE_CURL} -sS "$URL" -d "INSERT INTO qcc SETTINGS engine_file_allow_create_multiple_files = 1, async_insert = 0
+        SELECT $i * 10000 + number FROM numbers(2000)" &
 done
+wait
 # The cache gets entries only for files modified more than 3 seconds ago.
 sleep 3.1
 TOPK="SELECT x FROM qcc ORDER BY x LIMIT 2 SETTINGS max_threads = 4, max_threads_min_free_memory_per_thread = 0,
     use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000,
     query_plan_optimize_lazy_materialization_for_file = 0, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1
     FORMAT Null"
-for _ in {1..40}; do
+for _ in {1..8}; do
     ${CLICKHOUSE_CURL} -sS "$URL" -d "$TOPK"
-    (sleep 0.00$((RANDOM % 5)); ${CLICKHOUSE_CURL} -sS "$URL" -d "$TOPK") &
+    for _ in {1..4}; do
+        (sleep 0.00$((RANDOM % 5)); ${CLICKHOUSE_CURL} -sS "$URL" -d "$TOPK") &
+    done
     (sleep 0.00$((RANDOM % 5)); ${CLICKHOUSE_CURL} -sS "$URL" -d "$REWRITE") &
     wait
 done
