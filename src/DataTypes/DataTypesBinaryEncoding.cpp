@@ -773,6 +773,7 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
             size_t version = 0;
             readVarUInt(version, buf);
             const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
+            DataTypeAggregateFunction::checkSupportedFunctions(function);
             return std::make_shared<DataTypeAggregateFunction>(function, arguments_types, parameters, version);
         }
         case BinaryTypeIndex::SimpleAggregateFunction:

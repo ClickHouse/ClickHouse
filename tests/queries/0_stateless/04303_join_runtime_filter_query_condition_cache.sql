@@ -21,7 +21,7 @@ SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET query_plan_join_swap_table = 0;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET use_query_condition_cache = 1;
 
 DROP TABLE IF EXISTS rf_qcc_probe;

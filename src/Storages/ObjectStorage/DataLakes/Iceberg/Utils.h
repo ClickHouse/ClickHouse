@@ -56,10 +56,29 @@ void writeMessageToFile(
 /// its staged files on it: they may belong to the snapshot the table now points at.
 bool isCommitStateUnknown(const DB::Exception & e);
 
-/// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
-/// Returns false only when the commit is known not to have taken effect; an outcome that cannot be established
-/// throws `UNKNOWN_STATUS_OF_TRANSACTION`.
-/// Will try to write hint multiple times, but will not report failure to write hint.
+/// Writes the metadata file with If-None-Match. Returns false only when the commit is known not to have taken
+/// effect (the path already exists or another writer's content is stored there); an outcome that cannot be
+/// established throws `UNKNOWN_STATUS_OF_TRANSACTION`.
+bool writeMetadataFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context);
+
+/// Advances the hint, creating it when requested; exact mode confirms that it resolves to this metadata file.
+bool tryWriteVersionHintFile(
+    const IcebergPathResolver & resolver,
+    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    bool create,
+    bool assert_version_exactly);
+
+/// Writes the metadata file as `writeMetadataFile` does, then opportunistically advances the version hint,
+/// including an already-existing hint. Will try to write the hint multiple times, but will not report failure
+/// to write it.
 bool writeMetadataFileAndVersionHint(
     const IcebergPathResolver & resolver,
     const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -76,6 +95,9 @@ struct TransformAndArgument
 };
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
+
+/// Maps a `PARTITION BY` alias of an Iceberg date transform (e.g. `toRelativeDayNum`) to its `iceberg*` function.
+String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
@@ -160,6 +182,29 @@ void forEachAvroEntry(
     ContextPtr context,
     const String & logger_name,
     std::function<void(const avro::GenericDatum &)> callback);
+
+/// Iceberg stores some partition values in a form that does not directly correspond to the ClickHouse
+/// type of the partition column: a decimal is an Avro `fixed` holding the two's-complement big-endian
+/// unscaled value, and older ClickHouse versions wrote a `DateTime64` partition value as a plain `long`.
+/// Bring such a value to the column type; any other value is returned unchanged.
+/// The result of a decimal always uses `Decimal256` as its carrier, independently of the width of the
+/// ClickHouse type, because `DB::Field` compares and orders on its variant tag first and Iceberg allows
+/// widening `decimal(P, S)` to `decimal(P', S)` between schemas of the same table.
+DB::Field normalizePartitionValue(const DB::Field & value, const DB::DataTypePtr & type);
+
+/// `normalizePartitionValue`, followed by bringing a decimal back from the canonical carrier to the
+/// carrier of `type`. For a consumer that hands the value over to code typed by the column, such as a
+/// `KeyCondition` built on the partition key.
+DB::Field convertPartitionValueToType(const DB::Field & value, const DB::DataTypePtr & type);
+
+/// Apply `normalizePartitionValue` to every value of a manifest partition tuple whose transform keeps
+/// the type of the source column, so that the rest of the code compares, groups and formats partition
+/// values in one representation, independently of how a particular manifest encoded them.
+DB::Row normalizePartitionKeyValue(
+    const DB::Row & partition_key_value,
+    const PartitionSpecification & partition_specification,
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 schema_id);
 
 using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
 
