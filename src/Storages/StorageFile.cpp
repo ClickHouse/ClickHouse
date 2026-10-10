@@ -2794,6 +2794,8 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     /// threshold may then hold rows of the result. So the key covers the version tokens of all
     /// files. Only the files the query reads matter, which a `_path` / `_file` filter can narrow down.
     Strings paths = files_iterator->tryGetFiles().value_or(paths_snapshot);
+    /// Sorted: the key must not depend on the order in which the files are read.
+    std::sort(paths.begin(), paths.end());
     SipHash files_hash;
     for (const auto & path : paths)
     {
