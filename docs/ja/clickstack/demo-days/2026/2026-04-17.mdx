@@ -46,7 +46,7 @@ HyperDX には、ログ、トレース、パターン全体にまたがって使
 *[@knudtty](https://github.com/knudtty) によるデモ*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 Aaron が、HyperDX の更新されたデフォルトの OpenTelemetry ログスキーマに関するベンチマーク結果を解説します。主な変更点は、従来の `timestamp_time` カラム (秒単位の粒度を持つ 32 ビットの Unix timestamp) を廃止し、ナノ秒精度の `timestamp` のみを使用するようにしたことです。これにより、スキーマから 1 つカラムが削減されました。幅広いクエリベンチマークの結果、更新後のスキーマは、ほぼすべてのケースで旧スキーマと同等以上の性能を示しています。
@@ -78,7 +78,7 @@ HyperDX のオートコンプリートは大幅に刷新され、より高いカ
 *デモ: [@pulpdrew](https://github.com/pulpdrew)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 前週に Raw SQL の折れ線チャートと棒グラフに対するアラートが追加されたのに続き、HyperDX では Raw SQL の数値チャートに対するアラートもサポートされるようになりました。アラート設定時に time filter パラメーターは不要になり、省略した場合は警告が表示されるものの、時間ディメンションをまったく含まないクエリも完全に有効になりました。これにより、時間とともに変化しない設定値やシステムメトリクスに対して、たとえば ClickHouse クラスター数が想定どおりの値と一致しているかを確認するといったアラートを簡単に設定できます。
@@ -94,7 +94,7 @@ HyperDX のオートコンプリートは大幅に刷新され、より高いカ
 *デモ: [@pulpdrew](https://github.com/pulpdrew)*
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
 アラートの実行に失敗した場合、HyperDX ではそのエラーが黙って破棄されるのではなく、UI に直接表示されるようになりました。これまでは、アラート履歴に理由のわからない欠落があっても、エラーメッセージは表示されず、何が起きたのかを調査する手段もありませんでした。現在は、無効なクエリ、webhook 配信の失敗、webhook 設定の欠落や設定ミスなど、失敗の種類ごとに異なるエラーアイコンがインラインで表示されます。

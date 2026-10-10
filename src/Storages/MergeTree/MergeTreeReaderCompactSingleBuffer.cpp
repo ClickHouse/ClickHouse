@@ -13,6 +13,7 @@ namespace DB
 
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
     size_t from_mark,
+    size_t /* current_range_last_mark */,
     bool continue_reading, size_t max_rows_to_read,
     MutableColumns & res_columns)
 try
@@ -136,6 +137,7 @@ try
         all_mark_ranges, settings, uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
+    stream->updateReadRequestMap(read_request_map);
 
     initialized = true;
 }
