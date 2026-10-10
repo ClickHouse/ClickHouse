@@ -1,4 +1,5 @@
 #include <Storages/StorageURL.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageFile.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -40,6 +41,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <Interpreters/ProcessList.h>
 
@@ -52,6 +54,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <Common/maskSensitiveQueryParameters.h>
+#include <Common/maskURIPassword.h>
+#include <Common/quoteString.h>
 
 #include <base/EnumReflection.h>
 
@@ -81,6 +86,7 @@ namespace DB
 {
 namespace FailPoints
 {
+    extern const char url_glob_defer_path_filter[];
     extern const char storage_url_pause_before_empty_file_probe[];
     extern const char storage_url_pause_between_metadata_probes[];
     extern const char storage_url_pause_before_read_buffer_creation[];
@@ -183,9 +189,13 @@ String getSampleURI(String uri, ContextPtr context)
 {
     if (urlWithGlobs(uri))
     {
-        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements]);
-        if (!uris.empty())
-            return uris[0];
+        /// Only the first address is needed, to read the hive partitioning and the virtual columns off
+        /// its path, so the rest of the pattern is never generated and never counted against the limit.
+        RemoteDescriptionGenerator generator(
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+        String first_uri;
+        if (generator.next(first_uri))
+            return first_uri;
     }
     return uri;
 }
@@ -310,81 +320,228 @@ namespace
     }
 }
 
+/// How many addresses are generated at a time. A pattern that fits into one batch behaves exactly as
+/// it did when the whole direct product was materialized up front - in particular `size` is exact -
+/// and the default `glob_expansion_max_elements` is this same value, so only a raised limit is ever
+/// served in more than one batch.
+static constexpr size_t URL_GLOB_BATCH_SIZE = 1000;
+
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns_, const NamesAndTypesList & hive_columns_, const ContextPtr & context_)
+    Impl(const String & uri_, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+        : max_addresses_upper_bound(max_addresses)
+        , filter_virtual_columns(virtual_columns)
+        , filter_hive_columns(hive_columns)
+        , filter_context(context)
     {
+        /// A URI without globs is taken as is: it can hold commas of its own, and splitting it on them
+        /// would break it. It still goes through this iterator, for the `_path` / `_file` filter.
         if (split_uris)
-        {
-            uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
-        }
+            generator.emplace(uri_, 0, uri_.size(), ',', max_addresses, "url");
         else
-        {
-            uris.emplace_back(uri_);
-        }
+            single_uri = uri_;
 
-        std::optional<ActionsDAG> filter_dag;
-        if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns_, context_, hive_columns_);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+        has_filter = filter_dag.has_value();
 
-        if (filter_dag)
-        {
-            std::vector<String> paths;
-            paths.reserve(uris.size());
-            for (const auto & uri : uris)
-                paths.push_back(Poco::URI(uri).getPath());
+        std::lock_guard lock(mutex);
+        fillBatch();
 
-            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
-            {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-                VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns_, hive_columns_, context_);
-            }
-            else
-            {
-                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-                this->virtual_columns = virtual_columns_;
-                this->hive_columns = hive_columns_;
-                this->context = context_;
-            }
-        }
+        /// When the whole pattern fitted into the first batch its addresses are all known, so the
+        /// caller gets the exact number that survived the filter, as it did before.
+        exact_size = exhausted ? std::optional<size_t>(batch.size()) : std::nullopt;
     }
 
     String next()
     {
+        std::lock_guard lock(mutex);
+
         while (true)
         {
-            size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
-            if (current_index >= uris.size())
-                return {};
-
-            auto uri = uris[current_index];
-            if (deferred_filter_actions)
+            while (batch_index == batch.size())
             {
-                std::vector<String> filtered_uris({uri});
-                const std::vector<String> paths({Poco::URI(uri).getPath()});
-                VirtualColumnUtils::filterByPathOrFile(
-                    filtered_uris, paths, deferred_filter_actions, virtual_columns, hive_columns, context);
-                if (filtered_uris.empty())
-                    continue;
+                if (exhausted)
+                    return {};
+                fillBatch();
             }
 
-            return uri;
+            /// The filter could not be applied when these addresses were generated, because its sets are
+            /// only created while the pipeline runs - see `fillBatch`. Now the pipeline runs, so the sets
+            /// are ready: prune the buffered addresses in one go and go back to pruning every batch as it
+            /// is generated, so that the consumers only ever see servable addresses.
+            if (filter_deferred)
+            {
+                batch.erase(batch.begin(), batch.begin() + batch_index);
+                batch_index = 0;
+                applyFilter(batch);
+                filter_deferred = false;
+                continue;
+            }
+
+            return batch[batch_index++];
         }
     }
 
+    /// The exact number of addresses when the pattern fitted into the first batch, an upper bound
+    /// otherwise. It is only used to detect an empty glob.
     size_t size()
     {
-        return uris.size();
+        std::lock_guard lock(mutex);
+        if (exact_size)
+            return *exact_size;
+
+        return upperBound();
+    }
+
+    /// How many streams are worth starting when the caller wants up to `requested` of them. Every
+    /// stream asks for an address as soon as it starts, so starting more of them than there are
+    /// servable addresses forces another batch at once - and generating one past the limit throws,
+    /// failing a query whose surviving addresses were all within it. When a filter pruned some of the
+    /// generated addresses, batches are prefetched until `requested` survivors are buffered, the
+    /// pattern is exhausted, or the limit is reached - so a pattern whose first survivors appear
+    /// after the first batch still gets its parallelism. Rejected addresses count as generated:
+    /// prefetching stops at the limit rather than walking an unbounded pattern.
+    size_t sizeForStreams(size_t requested)
+    {
+        std::lock_guard lock(mutex);
+        if (exact_size)
+            return *exact_size;
+
+        if (!has_filter)
+            return upperBound();
+
+        /// The buffered addresses are not pruned yet, and how many of them survive is unknown until the
+        /// pipeline runs. When the whole pattern fits into the limit, a stream that finds nothing left
+        /// simply finishes, so the streams are sized from the pattern as if there were no filter.
+        /// Otherwise every stream asks for an address as soon as it starts, and a stream started for an
+        /// address the filter then rejects would ask the generator past the limit while another stream
+        /// already reads the one survivor. One stream reads exactly what a ready filter would have
+        /// selected; it prunes the batch on its first `next`.
+        if (filter_deferred)
+        {
+            /// Not exhausted, so there is a generator: a single URI is exhausted at once.
+            const auto total = generator->totalCount();
+            if (total && *total <= max_addresses_upper_bound)
+                return upperBound();
+            return 1;
+        }
+
+        while (batch.size() - batch_index < requested && !exhausted && generated < max_addresses_upper_bound)
+            fillBatch();
+
+        /// Never zero: when everything buffered was pruned and the limit is reached, the one stream
+        /// left is the one that asks past the limit and turns that into the error it always was.
+        return std::max<size_t>(1, batch.size() - batch_index);
     }
 
 private:
-    Strings uris;
-    std::atomic_size_t index = 0;
-    ExpressionActionsPtr deferred_filter_actions;
-    NamesAndTypesList virtual_columns;
-    NamesAndTypesList hive_columns;
-    ContextPtr context;
+    /// Not exhausted, so at least one more address exists beyond the batch; the query can never
+    /// consume more than the limit anyway.
+    size_t upperBound() const TSA_REQUIRES(mutex)
+    {
+        /// A non-exhausted iterator always has a generator: a single URI is exhausted at once.
+        const auto total = generator->totalCount();
+        return total ? std::min<UInt64>(*total, max_addresses_upper_bound) : max_addresses_upper_bound;
+    }
+
+    /// Generates the next portion of addresses, applies the `_path` / `_file` filter to it and
+    /// appends the survivors to `batch`, keeping the buffered unconsumed ones. Appends nothing only
+    /// when the pattern is exhausted or the whole portion was filtered out.
+    void fillBatch() TSA_REQUIRES(mutex)
+    {
+        batch.erase(batch.begin(), batch.begin() + batch_index);
+        batch_index = 0;
+
+        Strings fresh;
+
+        if (!generator)
+        {
+            if (!exhausted)
+            {
+                fresh.push_back(single_uri);
+                ++generated;
+            }
+            exhausted = true;
+        }
+        else
+        {
+            /// Never generate more addresses than the limit allows. Asking for one past it is what makes
+            /// the generator report that the pattern is too large - and only a query that reads that far
+            /// ever asks.
+            size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses_upper_bound - std::min(max_addresses_upper_bound, generated));
+            if (target == 0)
+                target = 1;
+
+            fresh.reserve(target);
+            String uri;
+            while (fresh.size() < target)
+            {
+                if (!generator->next(uri))
+                    break;
+                ++generated;
+                fresh.push_back(std::move(uri));
+            }
+            exhausted = generator->isExhausted();
+        }
+
+        if (has_filter && !fresh.empty())
+        {
+            /// The sets of the filter are built on first use: an empty glob must not run the subqueries
+            /// of a `_path IN (...)` predicate, which it did not do when the addresses were materialized
+            /// up front and the filter was skipped for an empty list. A set can stay unbuilt, because it
+            /// is only created while the pipeline runs; then this batch is buffered unpruned and `next`
+            /// prunes it when the first consumer asks, once the pipeline runs.
+            if (!filter_actions)
+            {
+                filter_deferred = !VirtualColumnUtils::buildSetsForDAG(*filter_dag, filter_context);
+                /// A local read builds its sets in `applyFilters`, before plan optimization moves their
+                /// subquery plans away, so tests need this to reach the deferred path deterministically.
+                fiu_do_on(FailPoints::url_glob_defer_path_filter, { filter_deferred = true; });
+                filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
+
+            if (!filter_deferred)
+                applyFilter(fresh);
+        }
+
+        batch.insert(batch.end(), std::make_move_iterator(fresh.begin()), std::make_move_iterator(fresh.end()));
+    }
+
+    /// Keeps the addresses the `_path` / `_file` filter accepts.
+    void applyFilter(Strings & uris) const TSA_REQUIRES(mutex)
+    {
+        if (uris.empty())
+            return;
+
+        std::vector<String> paths;
+        paths.reserve(uris.size());
+        for (const auto & uri : uris)
+            paths.push_back(Poco::URI(uri).getPath());
+
+        VirtualColumnUtils::filterByPathOrFile(
+            uris, paths, filter_actions, filter_virtual_columns, filter_hive_columns, filter_context);
+    }
+
+    std::mutex mutex;
+
+    std::optional<RemoteDescriptionGenerator> generator TSA_GUARDED_BY(mutex);
+    String single_uri;
+    const size_t max_addresses_upper_bound;
+
+    bool has_filter = false;
+    std::optional<ActionsDAG> filter_dag TSA_GUARDED_BY(mutex);
+    ExpressionActionsPtr filter_actions TSA_GUARDED_BY(mutex);
+    bool filter_deferred TSA_GUARDED_BY(mutex) = false;
+    const NamesAndTypesList filter_virtual_columns;
+    const NamesAndTypesList filter_hive_columns;
+    const ContextPtr filter_context;
+
+    Strings batch TSA_GUARDED_BY(mutex);
+    size_t batch_index TSA_GUARDED_BY(mutex) = 0;
+    size_t generated TSA_GUARDED_BY(mutex) = 0;
+    bool exhausted TSA_GUARDED_BY(mutex) = false;
+    std::optional<size_t> exact_size;
 };
 
 StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, bool split_uris, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
@@ -398,6 +555,11 @@ String StorageURLSource::DisclosedGlobIterator::next()
 size_t StorageURLSource::DisclosedGlobIterator::size()
 {
     return pimpl->size();
+}
+
+size_t StorageURLSource::DisclosedGlobIterator::sizeForStreams(size_t requested)
+{
+    return pimpl->sizeForStreams(requested);
 }
 
 void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
@@ -1244,80 +1406,64 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 
 namespace
 {
+    /// Writes the next address to try into its argument, returns false when there are none left.
+    using URLProducer = std::function<bool(String &)>;
+
     class URLReadBufferIterator : public IReadBufferIterator, WithContext
     {
     public:
+        /// `url_producer_` yields the addresses to try, one at a time. Inference stops at the first
+        /// address it can read from, so a pattern is only expanded as far as that.
         URLReadBufferIterator(
-            const std::vector<String> & urls_to_check_,
+            URLProducer url_producer_,
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
             const HTTPHeaderEntries & headers_,
             const std::optional<FormatSettings> & format_settings_,
             const ContextPtr & context_)
-            : WithContext(context_), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
+            : WithContext(context_), url_producer(std::move(url_producer_)), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
         {
-            url_options_to_check.reserve(urls_to_check_.size());
-            for (const auto & url : urls_to_check_)
-                url_options_to_check.push_back(getFailoverOptions(url, getContext()->getSettingsRef()[Setting::glob_expansion_max_elements]));
+            produceMoreURLs();
         }
 
         Data next() override
         {
             bool is_first = (current_index == 0);
-            if (is_first)
-            {
-                /// If format is unknown we iterate through all url options on first iteration and
-                /// try to determine format by file name.
-                if (!format)
-                {
-                    for (const auto & options : url_options_to_check)
-                    {
-                        for (const auto & url : options)
-                        {
-                            auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
-                            /// Use this format only if we have a schema reader for it.
-                            if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
-                            {
-                                format = format_from_file_name;
-                                break;
-                            }
-                        }
-                    }
-                }
 
-                /// For default mode check cached columns for all urls on first iteration.
-                if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::DEFAULT)
-                {
-                    for (const auto & options : url_options_to_check)
-                    {
-                        if (auto cached_columns = tryGetColumnsFromCache(options))
-                            return {nullptr, cached_columns, format};
-                    }
-                }
-            }
+            /// The addresses of the first batch are examined before anything is read, and the
+            /// batches `produceMoreURLs` appends later must get the same pass, as the materializing
+            /// iterator gave it to every address at once.
+            if (auto cached_columns = scanNewURLOptions())
+                return {nullptr, cached_columns, format};
 
             std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
             do
             {
                 if (current_index == url_options_to_check.size())
                 {
-                    if (is_first)
+                    if (!produceMoreURLs())
                     {
-                        if (format)
+                        if (is_first)
+                        {
+                            if (format)
+                                throw Exception(
+                                    ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                                    "The table structure cannot be extracted from a {} format file, because all files are empty. "
+                                    "You can specify table structure manually",
+                                    *format);
+
                             throw Exception(
                                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                                "The table structure cannot be extracted from a {} format file, because all files are empty. "
-                                "You can specify table structure manually",
-                                *format);
+                                "The data format cannot be detected by the contents of the files, because there are no files with provided path "
+                                "You can specify the format manually");
 
-                        throw Exception(
-                            ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                            "The data format cannot be detected by the contents of the files, because there are no files with provided path "
-                            "You can specify the format manually");
+                        }
 
+                        return {nullptr, std::nullopt, format};
                     }
 
-                    return {nullptr, std::nullopt, format};
+                    if (auto cached_columns = scanNewURLOptions())
+                        return {nullptr, cached_columns, format};
                 }
 
                 if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
@@ -1404,6 +1550,59 @@ namespace
         }
 
     private:
+        /// Appends the next portion of addresses. Returns false once the producer is exhausted, which
+        /// is the only way inference learns that there is nothing left to try.
+        bool produceMoreURLs()
+        {
+            const size_t size_before = url_options_to_check.size();
+            const size_t max_addresses = getContext()->getSettingsRef()[Setting::glob_expansion_max_elements];
+
+            /// As in the glob iterator: stay within the limit, and ask for one past it only when the
+            /// caller has read everything that is allowed, so that it is the reader that hits it.
+            size_t target = std::min<size_t>(URL_GLOB_BATCH_SIZE, max_addresses - std::min(max_addresses, size_before));
+            if (target == 0)
+                target = 1;
+
+            String url;
+            while (url_options_to_check.size() - size_before < target && url_producer(url))
+                url_options_to_check.push_back(getFailoverOptions(url, max_addresses));
+
+            return url_options_to_check.size() != size_before;
+        }
+
+        /// Examines the addresses appended since the previous scan: when the format is unknown it is
+        /// looked for in the file names, and in `DEFAULT` mode the schema cache is consulted, in
+        /// which case the cached columns are returned. Reading only starts once this found neither.
+        std::optional<ColumnsDescription> scanNewURLOptions()
+        {
+            if (!format)
+            {
+                for (size_t i = scanned_options; i < url_options_to_check.size(); ++i)
+                {
+                    for (const auto & url : url_options_to_check[i])
+                    {
+                        auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName(url);
+                        /// Use this format only if we have a schema reader for it.
+                        if (format_from_file_name && FormatFactory::instance().checkIfFormatHasAnySchemaReader(*format_from_file_name))
+                        {
+                            format = format_from_file_name;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            std::optional<ColumnsDescription> cached_columns;
+            if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::DEFAULT)
+            {
+                for (size_t i = scanned_options; i < url_options_to_check.size() && !cached_columns; ++i)
+                    cached_columns = tryGetColumnsFromCache(url_options_to_check[i]);
+            }
+
+            scanned_options = url_options_to_check.size();
+            return cached_columns;
+        }
+
         std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & urls)
         {
             auto context = getContext();
@@ -1450,8 +1649,10 @@ namespace
             return std::nullopt;
         }
 
+        URLProducer url_producer;
         std::vector<std::vector<String>> url_options_to_check;
         size_t current_index = 0;
+        size_t scanned_options = 0;
         String current_url_option;
         std::optional<String> format;
         const CompressionMethod & compression_method;
@@ -1479,13 +1680,26 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
 
     Poco::Net::HTTPBasicCredentials credentials;
 
-    std::vector<String> urls_to_check;
+    URLProducer url_producer;
     if (urlWithGlobs(uri))
-        urls_to_check = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+    {
+        auto generator = std::make_shared<RemoteDescriptionGenerator>(
+            uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+        url_producer = [generator](String & out) { return generator->next(out); };
+    }
     else
-        urls_to_check = {uri};
+    {
+        url_producer = [uri, done = false](String & out) mutable
+        {
+            if (done)
+                return false;
+            done = true;
+            out = uri;
+            return true;
+        };
+    }
 
-    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(url_producer, format, compression_method, headers, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1753,7 +1967,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
             return getFailoverOptions(next_uri, max_addresses);
         });
 
-        num_streams = std::min(num_streams, glob_iterator->size());
+        num_streams = std::min(num_streams, glob_iterator->sizeForStreams(num_streams));
     }
 }
 
@@ -1966,7 +2180,8 @@ StorageURL::StorageURL(
     const HTTPHeaderEntries & headers_,
     const String & http_method_,
     ASTPtr partition_by_,
-    bool distributed_processing_)
+    bool distributed_processing_,
+    bool is_replayed_definition_)
     : IStorageURLBase(
         uri_,
         context_,
@@ -1981,6 +2196,7 @@ StorageURL::StorageURL(
         http_method_,
         partition_by_,
         distributed_processing_)
+    , is_replayed_definition(is_replayed_definition_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context_->getHTTPHeaderFilter().checkHeaders(headers);
@@ -2040,6 +2256,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
     ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments)
 {
     ASTs::iterator headers_it = url_function_args.end();
+    ASTs::iterator first_key_value_it = url_function_args.end();
 
     for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
@@ -2089,7 +2306,11 @@ size_t StorageURL::evalArgsAndCollectHeaders(
         }
 
         if (headers_ast_function && headers_ast_function->name == "equals")
+        {
+            if (first_key_value_it == url_function_args.end())
+                first_key_value_it = arg_it;
             continue;
+        }
 
         if (evaluate_arguments)
             (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
@@ -2098,7 +2319,14 @@ size_t StorageURL::evalArgsAndCollectHeaders(
     if (headers_it == url_function_args.end())
         return url_function_args.size();
 
-    std::rotate(headers_it, std::next(headers_it), url_function_args.end());
+    /// Callers index the positional arguments and require the key-value arguments to stay the tail of the list, so the
+    /// headers node belongs at the end of the positional block. It may sit on either side of the first key-value
+    /// argument, so both rotation directions are needed.
+    if (first_key_value_it < headers_it)
+        std::rotate(first_key_value_it, headers_it, std::next(headers_it));
+    else
+        std::rotate(headers_it, std::next(headers_it), first_key_value_it);
+
     return url_function_args.size() - 1;
 }
 
@@ -2513,17 +2741,19 @@ AzureURLParts parseAzureURL(const String & url)
 
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
-    TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
+    TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
+        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition);
 
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
     /// `uri` is the URL after `url_base` resolution (computed by `getConfiguration`).
     /// `skip_userinfo=true` avoids persisting credentials that may originate from `url_base`
     /// into the CREATE TABLE AST.
-    overrideURLInEngineArgs(args, uri, context, /*skip_userinfo=*/ true);
+    overrideURLInEngineArgs(args, uri, context, /*skip_userinfo=*/ true, is_replayed_definition);
 }
 
-void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo)
+void StorageURL::overrideURLInEngineArgs(
+    ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo, bool is_replayed_definition)
 {
     if (args.empty())
         return;
@@ -2551,7 +2781,8 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
     /// Read the `url` key directly instead of going through `processNamedCollectionResult`:
     /// this function is also called for collections of other engines (e.g. `S3`), whose keys
     /// would not pass the `URL` engine validation.
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args, context, /*throw_unknown_collection=*/false, nullptr, nullptr, /* settings= */ nullptr, is_replayed_definition))
     {
         if (named_collection->getOrDefault<String>("url", "") == resolved_url)
             return;
@@ -2579,14 +2810,21 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
     args.push_back(makeASTOperator("equals", std::move(key_value_args)));
 }
 
-StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id)
+StorageURL::Configuration
+StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id, bool is_replayed_definition)
 {
     StorageURL::Configuration configuration;
+    const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args, local_context, true, nullptr, table_id, /* settings= */ nullptr, is_replayed_definition))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
         evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
+
+        /// Resolving the stored `url` against `url_base` replaces it, which could send the stored credentials to another host.
+        if (resolveURLBase(configuration.url, url_base) != configuration.url)
+            checkNamedCollectionOverride(*named_collection, "url", local_context);
     }
     else
     {
@@ -2606,7 +2844,6 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
     /// For the URL engine, the resolved URL is later materialized into the engine args
     /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
-    const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
     configuration.url = resolveURLBase(configuration.url, url_base);
 
     if (configuration.format == "auto")
@@ -2649,11 +2886,13 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment_,
         String resolved_url_,
-        String resolved_format_)
+        String resolved_format_,
+        bool is_replayed_definition_)
         : StorageProxy(table_id_)
         , nested(std::move(nested_))
         , resolved_url(std::move(resolved_url_))
         , resolved_format(std::move(resolved_format_))
+        , is_replayed_definition(is_replayed_definition_)
     {
         StorageInMemoryMetadata metadata;
         const auto nested_metadata = nested->getInMemoryMetadataPtr(nullptr, false);
@@ -2732,7 +2971,7 @@ public:
         /// matching the order in `StorageURL::addInferredEngineArgsToCreateQuery`.
         materializeResolvedFormatInEngineArgs(args, context);
 
-        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true);
+        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true, is_replayed_definition);
     }
 
     /// Preserve the `URL` engine's metadata-only rename: a plain `URL` table can be renamed without
@@ -2777,7 +3016,7 @@ private:
             return;
 
         TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false);
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition);
     }
 
     StoragePtr nested;
@@ -2785,6 +3024,7 @@ private:
     String resolved_url;
     /// The delegate's inferred data format, materialized into the persisted engine args on creation.
     String resolved_format;
+    const bool is_replayed_definition;
 };
 }
 
@@ -2803,6 +3043,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         return nullptr;
 
     auto context = args.getLocalContext();
+    const bool is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
 
     /// Resolve url/format/compression on a clone so the persisted arguments are not modified.
     /// This also handles positional, key-value and named-collection argument forms uniformly.
@@ -2814,7 +3055,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     StorageURL::Configuration configuration;
     try
     {
-        configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id);
+        configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id, is_replayed_definition);
     }
     catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a URL-engine argument shape we can classify; the plain URL path below reports any errors.
     {
@@ -2886,7 +3127,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     /// and must stay loadable after a revoke; every other statement introduces one to check.
     const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
     if (!from_existing_metadata)
-        context->checkAccess(AccessType::TABLE_ENGINE, String(engine_name));
+        context->checkAccess(AccessType::TABLE_ENGINE, engine_name);
 
     const auto & storages = StorageFactory::instance().getAllStorages();
     auto it = storages.find(engine_name);
@@ -2941,7 +3182,94 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 
     return std::make_shared<StorageURLSchemeDispatch>(
         std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment,
-        configuration.url, std::move(resolved_format));
+        configuration.url, std::move(resolved_format), is_replayed_definition);
+}
+
+/// Masks the credentials a url carries: its userinfo password, the presigned S3/GCS parameters and every query
+/// parameter named like a credential (`access_token`, Azure SAS `sig`, ...). Returns whether anything was masked.
+static bool maskURLCredentials(String & url)
+{
+    bool changed = maskURIPassword(&url);
+    changed |= maskPresignedURLParameters(url);
+    String masked = maskSensitiveQueryParametersInURI(url);
+    if (masked != url)
+    {
+        url = std::move(masked);
+        changed = true;
+    }
+    return changed;
+}
+
+SecretArgumentsSpec urlSecretArguments(size_t url_offset)
+{
+    return {.custom = [url_offset](FunctionSecretArgumentsFinder & finder)
+    {
+        /// `headers(...)` can appear at any position in every url form (function, cluster function, engine,
+        /// and the named-collection variant); mask its values regardless of the url offset or a leading
+        /// collection/cluster argument. `extra_credentials(...)` is not read here, but it is formatted for
+        /// logging before validation rejects it.
+        maskHeadersAndExtraCredentials(finder);
+
+        if (finder.isNamedCollectionName(url_offset))
+        {
+            /// url(named_collection, url = 'https://user:password@host/...', headers(...), ...): mask the
+            /// credentials of a `url` override. The parser evaluates constant-expression keys and
+            /// values, so fail closed on anything we cannot read as a plain literal (a nested `headers(...)`
+            /// map or other expression could carry a secret): an unevaluable key can name `url`, and any
+            /// non-literal value of a visible override can hide a nested secret. The headers are handled
+            /// above; a `key = value` override is the only other shape here.
+            for (size_t i = url_offset + 1; i < finder.function->arguments->size(); ++i)
+            {
+                const auto equals_func = finder.function->arguments->at(i)->getFunction();
+                if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
+                    || equals_func->arguments->size() != 2)
+                {
+                    /// After the collection name every argument must be an override or `headers(...)`; a positional
+                    /// one is invalid but logged before validation rejects it, and can be a url with a password.
+                    if (!equals_func || equals_func->name() != "headers")
+                        finder.markSecretArgument(i);
+                    continue;
+                }
+
+                String key;
+                if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
+                {
+                    finder.markSecretArgument(i, /* argument_is_named= */ true);
+                }
+                else if (key == "url")
+                {
+                    String url;
+                    if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
+                    {
+                        if (maskURLCredentials(url))
+                            finder.result.replaced_arguments[i] = "url = " + quoteString(url);
+                    }
+                    else
+                        finder.markSecretArgument(i, /* argument_is_named= */ true);
+                }
+                else if (!equals_func->arguments->at(1)->tryGetString(nullptr, /* allow_identifier= */ true)
+                         && !equals_func->arguments->at(1)->tryGetLiteralText(nullptr))
+                {
+                    finder.markSecretArgument(i, /* argument_is_named= */ true);
+                }
+            }
+            return;
+        }
+
+        String uri;
+        if (finder.tryGetStringFromArgument(url_offset, &uri, /* allow_identifier= */ false))
+        {
+            /// A readable url literal: mask only its credentials, keeping the host and path visible.
+            if (maskURLCredentials(uri))
+                finder.result.replaced_arguments[url_offset] = quoteString(uri);
+        }
+        else
+        {
+            /// A url built from a constant expression can embed credentials in its pieces, which we cannot
+            /// evaluate here; hide it whole rather than leak (fail closed).
+            finder.markSecretArgument(url_offset);
+        }
+    }};
 }
 
 void registerStorageURL(StorageFactory & factory);
@@ -2960,12 +3288,13 @@ void registerStorageURL(StorageFactory & factory)
             ASTs & engine_args = args.engine_args;
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             auto context = args.getLocalContext();
+            const bool is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
 
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id, is_replayed_definition);
             const bool use_object_storage
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
@@ -2985,7 +3314,8 @@ void registerStorageURL(StorageFactory & factory)
                     config.headers,
                     config.http_method,
                     partition_by,
-                    /* distributed_processing */ false);
+                    /* distributed_processing */ false,
+                    is_replayed_definition);
             }
 
             if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -3003,15 +3333,16 @@ void registerStorageURL(StorageFactory & factory)
             /// and the table metadata. The object storage itself has to be built from the fully
             /// resolved URL including userinfo, so it is initialized from a scratch copy of the
             /// arguments that never reaches the AST.
-            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true);
+            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true, is_replayed_definition);
 
             ASTs object_storage_args;
             object_storage_args.reserve(engine_args.size());
             for (const auto & engine_arg : engine_args)
                 object_storage_args.push_back(engine_arg->clone());
-            StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
+            StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false, is_replayed_definition);
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
+            configuration->is_replayed_definition = is_replayed_definition;
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
@@ -3042,6 +3373,7 @@ void registerStorageURL(StorageFactory & factory)
                 /* is_table_function */ false,
                 /* lazy_init */ false);
         },
+        urlSecretArguments(0),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -3158,6 +3490,7 @@ SELECT * FROM url_engine_table
 ## Details of Implementation {#details-of-implementation}
 
 - Reads and writes can be parallel
+- Patterns in `{ }` in the URL generate a set of addresses, as described for the [url](/reference/functions/table-functions/url#globs-in-url) table function. The addresses are generated one by one as the query reads them, so [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) limits how many of them a single query may read rather than how large the pattern is.
 - Not supported:
   - `ALTER` and `SELECT...SAMPLE` operations.
   - Indexes.

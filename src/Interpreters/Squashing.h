@@ -72,6 +72,8 @@ public:
     Chunk flush();
 
     bool empty() const { return !accumulated; }
+    /// Rows added but not yet generated.
+    size_t getRows() const { return accumulated.getRows() + pending.getRows(); }
     void setHeader(const Block & header_) { header = std::make_shared<const Block>(header_); }
     const SharedHeader & getHeader() const { return header; }
 
