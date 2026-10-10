@@ -4381,8 +4381,8 @@ Two settings control when spilling starts:
 - `max_bytes_before_external_set` sets a threshold in bytes of total query memory. It defaults to `0`
   (disabled).
 - `max_bytes_ratio_before_external_set` sets a fraction of available memory under server or user
-  limits, measured at the start of execution. It defaults to `0` (disabled) and has no effect when
-  neither limit applies.
+  limits, measured at the start of execution. It defaults to `0.5`, half of the available memory, and
+  has no effect when neither limit applies.
 
 When both thresholds apply, the smaller is used. A set is written to disk only once it takes at least
 16 MiB, or the threshold if it is smaller. For example, this query writes the set to disk once the set
