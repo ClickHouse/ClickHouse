@@ -138,6 +138,31 @@ TEST(FillingStepSerialization, RejectsInterpolateColumnRepeatedInHeader)
     }
 }
 
+/// The stream refers to the expression's inputs by name, so two source columns naming one input either leave
+/// another input unbound (a column too many in the expression's result) or, when `ActionsDAG::deserialize`
+/// was given two inputs of one name, leave the second one's type unchecked. Inputs `x, y`, then `x, x`.
+TEST(FillingStepSerialization, RejectsInterpolateInputMappedTwice)
+{
+    auto type = std::make_shared<DataTypeUInt64>();
+    for (const Names & inputs : {Names{"x", "y"}, Names{"x", "x"}})
+    {
+        ActionsDAG actions;
+        for (const auto & name : inputs)
+            actions.addInput(name, type);
+        actions.getOutputs() = {&actions.addAlias(*actions.getInputs().front(), "inter")};
+
+        UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map;
+        required_columns_map["k1"] = NameAndTypePair("x", type);
+        required_columns_map["k2"] = NameAndTypePair("x", type);
+        auto interpolate_description = std::make_shared<InterpolateDescription>(
+            std::move(actions), std::move(required_columns_map), VectorWithMemoryTracking<std::string>{"inter"});
+
+        auto header = makeHeader({"k1", "k2", "inter"});
+        FillingStep step(header, makeSortDescription(), std::move(interpolate_description), false);
+        expectRejected(step, header, "mapped to more than one source column");
+    }
+}
+
 /// The same fixture with one output, so that the rejection above is attributed to the repetition rather
 /// than to anything else this plan carries.
 TEST(FillingStepSerialization, AcceptsSingleInterpolateOutput)

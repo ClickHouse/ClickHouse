@@ -223,6 +223,7 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
         const auto dag_required_columns = actions.getRequiredColumns();
 
         UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map;
+        UnorderedSetWithMemoryTracking<std::string> required_input_names;
         size_t num_required_columns = 0;
         readVarUInt(num_required_columns, ctx.in);
         for (size_t i = 0; i < num_required_columns; ++i)
@@ -241,6 +242,11 @@ QueryPlanStepPtr FillingStep::deserialize(Deserialization & ctx)
             if (!name_and_type)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "FillingStep: INTERPOLATE source column '{}' is not required by the interpolate expression", name);
+
+            /// With the count check below, this maps the entries one-to-one onto the expression's inputs.
+            if (!required_input_names.emplace(name).second)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "FillingStep: INTERPOLATE expression input '{}' is mapped to more than one source column", name);
 
             /// The transform stages the header column in a column of the expression's input type and
             /// `insertFrom`s one into the other, which is only defined when the two types are the same.
