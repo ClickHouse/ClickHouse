@@ -245,7 +245,7 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const DataPartPtr & data_part_,
+    const MergeTreeDataPartInfoForReaderPtr & data_part_,
     const Names & columns,
     const Block & sample_block,
     const StorageMetadataPtr & metadata_snapshot_,
@@ -254,7 +254,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     , metadata_snapshot(metadata_snapshot_)
     , allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
-    number_of_rows_in_part = data_part->rows_count;
+    number_of_rows_in_part = data_part->getRowCount();
     /// Initialize with sample block until update won't called.
     initialize(sample_block, {}, columns);
 }
