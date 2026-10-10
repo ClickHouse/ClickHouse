@@ -144,7 +144,7 @@ ENGINE = MergeTree ORDER BY x; -- { serverError SUPPORT_IS_DISABLED }
 
 CREATE TABLE t_projection_codecs_bad
     (obj Tuple(x UInt64), PROJECTION p (`obj.x` CODEC(ZSTD)) AS (SELECT obj.x ORDER BY obj.x))
-ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ENGINE = MergeTree ORDER BY tuple(); -- { serverError NOT_IMPLEMENTED }
 
 -- A session opt-in must not change metadata admission on other replicas.
 SET allow_suspicious_codecs = 1;

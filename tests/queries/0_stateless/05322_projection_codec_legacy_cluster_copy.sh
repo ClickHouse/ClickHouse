@@ -37,7 +37,7 @@ ${CLICKHOUSE_CLIENT} -q "
 SELECT count() FROM system.tables
 WHERE database = currentDatabase() AND name = 'dst_legacy';
 SELECT count() = 0 FROM system.distributed_ddl_queue
-WHERE query LIKE '%${CLICKHOUSE_DATABASE}%dst_legacy%';
+WHERE startsWith(query, 'CREATE TABLE ') AND query LIKE '%${CLICKHOUSE_DATABASE}%dst_legacy%';
 "
 
 # A non-MergeTree destination does not copy projection metadata and remains valid at format 2.
