@@ -1,28 +1,14 @@
 #include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Columns/ColumnString.h>
-#include <Core/Block.h>
-#include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 
 namespace DB
 {
 
-namespace
-{
-
-/// The pipeline header of the packets: one `String` column.
-const SharedHeader & packetStreamHeader()
-{
-    static const SharedHeader header = std::make_shared<const Block>(
-        Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "__streaming_exchange_packet")});
-    return header;
-}
-
-}
-
-StreamingExchangeSerializingTransform::StreamingExchangeSerializingTransform(SharedHeader input_header)
-    : ISimpleTransform(std::move(input_header), packetStreamHeader(), /*skip_empty_chunks_=*/ false)
+StreamingExchangeSerializingTransform::StreamingExchangeSerializingTransform(SharedHeader input_header, CompressionCodecPtr codec_)
+    : ISimpleTransform(std::move(input_header), StreamingExchangeProtocol::packetStreamHeader(), /*skip_empty_chunks_=*/ false)
+    , codec(std::move(codec_))
 {
 }
 
@@ -34,7 +20,7 @@ void StreamingExchangeSerializingTransform::transform(Chunk & chunk)
     size_t packet_offset = 0;
     {
         WriteBufferFromVector<ColumnString::Chars> out(chars);
-        packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, getInputPort().getSharedHeader(), out);
+        packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, getInputPort().getSharedHeader(), out, codec);
         out.finalize();
     }
     StreamingExchangeProtocol::finishDataPacket(reinterpret_cast<char *>(chars.data()) + packet_offset, chars.size() - packet_offset);

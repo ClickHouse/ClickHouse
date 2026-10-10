@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 # Tag no-parallel: arms the global, server-wide `rmt_merge_task_sleep_in_prepare` failpoint that a concurrent test could consume, causing flaky merges
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -34,6 +34,10 @@ storage_policy=`$CLICKHOUSE_CLIENT -q "SELECT value FROM system.merge_tree_setti
 if [[ "$storage_policy" == "s3_with_keeper" ]]; then
     failpoint_name="smt_merge_task_sleep_in_prepare"
 fi
+
+# The fail point is server-global, so disarm it however the test ends: the OPTIMIZE below runs in
+# the background and `set -e` can take the test out before it is waited for.
+trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name" ||:' EXIT
 
 $CLICKHOUSE_CLIENT --query "
     SET optimize_throw_if_noop = 1;

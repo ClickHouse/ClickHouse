@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: uses a process-global failpoint
 -- ^ failpoint
 

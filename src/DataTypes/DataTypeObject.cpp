@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
@@ -45,6 +46,7 @@
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
@@ -102,6 +104,11 @@ DataTypeObject::DataTypeObject(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regex_to_skip);
         }
     }
+
+    sorted_typed_paths.reserve(typed_paths.size());
+    for (const auto & [path, type] : typed_paths)
+        sorted_typed_paths.emplace_back(path, type);
+    std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 }
 
 DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
@@ -256,19 +263,14 @@ String DataTypeObject::doGetName() const
         out << "max_dynamic_paths=" << max_dynamic_paths;
     }
 
-    std::vector<String> sorted_typed_paths;
-    sorted_typed_paths.reserve(typed_paths.size());
-    for (const auto & [path, _] : typed_paths)
-        sorted_typed_paths.push_back(path);
-    std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end());
-    for (const auto & path : sorted_typed_paths)
+    for (const auto & [path, type] : sorted_typed_paths)
     {
         write_separator();
         /// We must quote path "SKIP" to avoid its confusion with SKIP keyword.
         if (boost::to_upper_copy(path) == "SKIP")
-            out << backQuote(path) << " " << typed_paths.at(path)->getName();
+            out << backQuote(path) << " " << type->getName();
         else
-            out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
+            out << backQuoteIfNeed(path) << " " << type->getName();
     }
 
     std::vector<String> sorted_skip_paths;
@@ -304,13 +306,15 @@ MutableColumnPtr DataTypeObject::createColumn() const
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
 }
 
-void DataTypeObject::forEachChild(const ChildCallback & callback) const
+DataTypePtr DataTypeObject::doCloneWithChildren(const DataTypes & new_children) const
 {
-    for (const auto & [path, type] : typed_paths)
-    {
-        callback(*type);
-        type->forEachChild(callback);
-    }
+    std::unordered_map<String, DataTypePtr> new_typed_paths;
+    new_typed_paths.reserve(sorted_typed_paths.size());
+    for (size_t i = 0; i < sorted_typed_paths.size(); ++i)
+        new_typed_paths.emplace(sorted_typed_paths[i].first, new_children[i]);
+
+    return std::make_shared<DataTypeObject>(
+        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
 }
 
 namespace
@@ -530,6 +534,8 @@ ColumnPtr extractSubObjectColumn(const ColumnObject & object_column, const Strin
 /// Prefers the literal value if present; falls back to the sub-object cast to Dynamic; otherwise NULL.
 /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present,
 /// so a sub-object whose only typed descendants are all NULL is treated as empty.
+/// When literal_type is set (typed path), the typed literal is cast to Dynamic before the merge
+/// so the result type is always Dynamic, including the empty-sub-object early return.
 ColumnPtr extractCombinedColumn(
     const ColumnObject & object_column,
     const String & path,
@@ -537,9 +543,13 @@ ColumnPtr extractCombinedColumn(
     const DataTypePtr & sub_object_type,
     const DataTypePtr & dynamic_result_type,
     size_t max_dynamic_types,
-    bool skip_null_typed_paths = false)
+    bool skip_null_typed_paths = false,
+    DataTypePtr literal_type = {})
 {
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
+    if (literal_type)
+        literal_column = castColumn({literal_column, literal_type, ""}, dynamic_result_type);
+
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
     /// If sub-object contains only empty objects, just use literal.
@@ -940,15 +950,20 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
             typed_sub_paths[p.substr(prefix.size())] = type;
     }
 
+    /// Skip rules are only relevant while parsing input. This synthetic type represents descendants
+    /// that are already stored, and the original rules refer to paths relative to the root object.
     auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip,
-        max_dynamic_paths, max_dynamic_types);
+        schema_format, typed_sub_paths, std::unordered_set<String>{}, std::vector<String>{}, max_dynamic_paths, max_dynamic_types);
     auto dynamic_result_type = getDynamicType();
+
+    DataTypePtr literal_type;
+    if (auto it = typed_paths.find(path); it != typed_paths.end())
+        literal_type = it->second;
 
     return extractCombinedColumn(
         object_column, path, prefix, sub_object_type,
         dynamic_result_type, max_dynamic_types,
-        skip_null_typed_paths);
+        skip_null_typed_paths, literal_type);
 }
 
 UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getTypedPathSerializations() const
@@ -1296,7 +1311,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
 ```
 
 <Note>
-When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading sub-object sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets`, `advanced`, or `advanced_chunked` shared data serialization, reading sub-columns from shared data is highly optimized.
 </Note>
 
 ## Reading JSON combined sub-columns {#reading-json-combined-sub-columns}
@@ -1349,7 +1364,7 @@ FROM test;
 - Row 3: `a` is absent entirely. Both `json.a` and `json.@a` return `NULL`, while `json.^a` returns an empty `{}`.
 
 <Note>
-When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets`, `advanced`, or `advanced_chunked` shared data serialization, reading sub-columns from shared data is highly optimized.
 </Note>
 
 ## Type inference for paths {#type-inference-for-paths}
@@ -1819,8 +1834,8 @@ To extract a path subcolumn from it, we just iterate over all rows in this `Map`
 ### Shared data structure in MergeTree parts {#shared-data-structure-in-merge-tree-parts}
 
 In [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables we store data in data parts that stores everything on disk (local or remote). And data on disk can be stored in a different way compared to memory.
-Currently, there are 3 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`
-and `advanced`.
+Currently, there are 4 different shared data structure serializations in MergeTree data parts: `map`, `map_with_buckets`,
+`advanced`, and `advanced_chunked`.
 
 The serialization version is controlled by MergeTree
 settings [object_shared_data_serialization_version](/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
@@ -1863,6 +1878,16 @@ Note: because of storing some additional information inside the data structure, 
 `map` and `map_with_buckets` serializations.
 
 For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
+
+#### Advanced chunked {#shared-data-advanced-chunked}
+
+`advanced_chunked` serialization is the same as `advanced` but with support for splitting rows into smaller chunks during serialization.
+This reduces peak memory usage during merges of JSON columns with many unique paths, because only one chunk worth of data
+needs to be materialized at a time instead of the entire row range.
+
+The chunk size is controlled by the MergeTree setting [object_shared_data_target_chunk_rows](/reference/settings/merge-tree-settings/object-shared#object_shared_data_target_chunk_rows) (8192 by default).
+This is not a hard limit: if the last chunk would be smaller than half the target, it is merged with the previous chunk,
+so actual chunk sizes range from `target/2` to `1.5 * target`.
 
 ## Controlling the number of dynamic paths inside JSON in MergeTree parts {#controlling-the-number-of-dynamic-paths}
 
@@ -2036,10 +2061,10 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-## Lazy Type Hints (Experimental) {#lazy-type-hints}
+## Lazy Type Hints {#lazy-type-hints}
 
 <Note>
-This feature is experimental and requires the setting `enable_json_lazy_type_hints` to be enabled.
+This feature requires the setting `enable_json_lazy_type_hints` to be enabled.
 </Note>
 
 When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.
@@ -2065,7 +2090,7 @@ SET enable_json_lazy_type_hints = 1;
 CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
 
--- Enable experimental setting
+-- Enable lazy type hints
 SET enable_json_lazy_type_hints = 1;
 
 -- Add type hints - this completes instantly without mutation
@@ -2103,7 +2128,6 @@ To materialize type hints in existing data, you can either:
 
 ### Limitations {#lazy-type-hints-limitations}
 
-- This feature is experimental and may change in future versions
 - Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
 - The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
 - Modifying a type hint (or removing a typed path) is **not** metadata-only, and is rejected, when the affected subcolumn is used in a positionally-persisted structure:

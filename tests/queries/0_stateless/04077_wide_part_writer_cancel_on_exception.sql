@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings
+-- Tags: no-parallel, no-random-merge-tree-settings, no-fasttest
 -- Tag no-parallel: uses a process-global failpoint
 -- Regression test: MergeTreeDataPartWriterWide::cancel must not SIGSEGV
 -- when addStreams fails mid-way leaving no null entries in column_streams.

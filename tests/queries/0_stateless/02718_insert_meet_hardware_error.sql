@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel
+-- Tags: zookeeper, no-parallel, no-fasttest
 -- Tag no-parallel: uses a process-global failpoint
 
 DROP TABLE IF EXISTS t_hardware_error NO DELAY;

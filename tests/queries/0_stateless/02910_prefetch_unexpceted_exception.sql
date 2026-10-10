@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-darwin
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-darwin, no-fasttest
 -- Tag no-parallel: uses a process-global failpoint
 -- no-parallel -- enables failpoint
 -- no-random-settings -- depend on type of part, should always fail

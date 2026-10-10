@@ -30,5 +30,6 @@ system flush logs query_log;
 select replaceAll(query, '\n', '\\n'), lower(type::String), errorCodeToName(exception_code)
     from system.query_log
     where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
-    order by event_time_microseconds
+    -- `script_query_number` is the client's statement counter, the same on a statement's `QueryStart` and `QueryFinish` rows.
+    order by script_query_number, type
     format CSV;

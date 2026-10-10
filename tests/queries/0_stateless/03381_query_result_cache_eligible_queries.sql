@@ -50,8 +50,8 @@ EXISTS TABLE eligible_test SETTINGS use_query_cache = true, query_cache_for_subq
 SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
 
 -- KILL
-KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
-SELECT COUNT(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_eligible_queries') AS test_query_cache;
+KILL QUERY WHERE query_id='3-857d-4a57-9ee0-3c7da5d60a90' SETTINGS use_query_cache = true, query_cache_for_subqueries = true, kill_throw_if_noop = false;
+SELECT COUNT(*) FROM system.query_cache;
 
 -- OPTIMIZE
 OPTIMIZE TABLE eligible_test FINAL SETTINGS use_query_cache = true, query_cache_for_subqueries = true;

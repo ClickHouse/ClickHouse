@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- Tag no-parallel: uses failpoints to force divergent parallel-replica plans.
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/110518

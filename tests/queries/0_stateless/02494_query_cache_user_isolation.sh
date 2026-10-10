@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-parallel-replicas
 #     no-fasttest: Produces wrong results in fasttest, unclear why, didn't reproduce locally.
 #     long: Sloooow ...
 

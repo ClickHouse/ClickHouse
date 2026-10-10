@@ -7,10 +7,12 @@ import hashlib
 import logging
 import os
 import random
+import re
 import socket
 import struct
 import threading
 import time
+import ssl
 import uuid
 from contextlib import closing
 from io import StringIO
@@ -71,6 +73,30 @@ server_port = 5433
 alt_server_port = 5435
 
 
+def _read_exact(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            raise AssertionError("Connection closed before the complete PostgreSQL message was received")
+        data += chunk
+    return data
+
+
+def _read_startup_error(sock):
+    assert _read_exact(sock, 1) == b"E"
+    message_size = struct.unpack("!I", _read_exact(sock, 4))[0]
+    message = _read_exact(sock, message_size - 4)
+    assert b"C08P01\x00" in message
+
+
+def _assert_connection_closed(sock):
+    try:
+        assert sock.recv(1) == b""
+    except ConnectionResetError:
+        pass
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -85,6 +111,33 @@ def started_cluster():
         raise ex
     finally:
         cluster.shutdown()
+
+
+def test_malformed_startup_messages_do_not_consume_following_bytes(started_cluster):
+    node = cluster.instances["node"]
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(struct.pack("!I", 7))
+        _assert_connection_closed(sock)
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(struct.pack("!II", 8, 80877103))
+        assert _read_exact(sock, 1) == b"S"
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with context.wrap_socket(sock, server_hostname=node.ip_address) as tls_sock:
+            tls_sock.sendall(struct.pack("!II", 8, 196608))
+            _read_startup_error(tls_sock)
+
+    with socket.create_connection((node.ip_address, server_port), timeout=5) as sock:
+        sock.sendall(
+            struct.pack("!II", 13, 196608)
+            + b"user\x00default\x00\x00"
+            + b"following message bytes"
+        )
+        _read_startup_error(sock)
 
 
 def test_psql_client(started_cluster):
@@ -1872,6 +1925,371 @@ def test_copy_command(started_cluster):
 
     assert cur.fetchall() == [(1, "a"), (2, "b"), (3, "c")]
     cur.execute("DROP DATABASE copy_x")
+
+
+def test_copy_options(started_cluster):
+    # `COPY` options written the way PostgreSQL clients write them: the parenthesized list every
+    # modern client and `psql` emit, and the legacy `WITH CSV` spelling. Both used to be swallowed
+    # silently, so the data was transferred as TSV: `COPY FROM` stored wrongly parsed rows and
+    # `COPY TO` handed TSV bytes to a client that asked for CSV, with no error either way.
+    node = cluster.instances["node"]
+
+    def connect():
+        # `with connection` manages transactions but does not close the connection.
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_options;")
+    cur.execute("CREATE TABLE copy_options (s String) ENGINE = Memory;")
+
+    # The standard syntax on the way in: the value is parsed as CSV, so the quotes are not stored.
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv)", StringIO('"hello, world"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("hello, world",)]
+
+    # And on the way out: the value is quoted, as CSV.
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options TO STDOUT WITH (FORMAT csv)", out)
+    assert out.getvalue() == '"hello, world"\n'
+
+    # HEADER writes the column names, and reads them back as a header rather than as a row.
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options TO STDOUT WITH (FORMAT csv, HEADER)", out)
+    assert out.getvalue() == '"s"\n"hello, world"\n'
+
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv, HEADER true)", StringIO("s\nvalue\n")
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("value",)]
+
+    # The legacy PostgreSQL spelling.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options (s) FROM STDIN WITH CSV", StringIO('"x, y"\n'))
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("x, y",)]
+
+    # An explicitly requested TSV is transferred as TSV, not through CSV.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT tsv)", StringIO('"a,b"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [('"a,b"',)]
+
+    # The format name is a name, not a keyword: any spelling of it works.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT CSV)", StringIO('"u, v"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("u, v",)]
+
+    # An option that would change the shape of the data is reported rather than ignored.
+    with connect() as c, pytest.raises(Exception, match="DELIMITER"):
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv, DELIMITER ';')", StringIO("a;b\n")
+        )
+
+    # Asking for what the format writes anyway is accepted: this is what the psycopg2 helpers send.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_from(StringIO("hello\n"), "copy_options", columns=("s",))
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("hello",)]
+
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_to(file=out, table="copy_options")
+    assert out.getvalue() == "hello\n"
+
+    # Without HEADER the first line is data, even when it looks like the column names.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options (s) FROM STDIN", StringIO("s\nvalue\n"))
+    cur.execute("SELECT count() FROM copy_options;")
+    assert int(cur.fetchone()[0]) == 2
+
+    cur.execute("DROP TABLE copy_options;")
+    setup.close()
+
+
+def test_copy_option_defaults_are_pinned(started_cluster):
+    # The option list of a `COPY` is accepted only when it asks for the shape this protocol
+    # transfers anyway, which is checked against the defaults of the formats. The session must not
+    # be able to move those defaults underneath the check: `SET format_csv_delimiter = ';'` followed
+    # by a `COPY ... WITH (FORMAT csv, DELIMITER ',')` used to be accepted and then served with `;`,
+    # which is exactly the silent shape mismatch the option list is there to prevent.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_pinned;")
+    cur.execute(
+        "CREATE TABLE copy_pinned (a String, b Nullable(String)) ENGINE = Memory;"
+    )
+
+    # A session delimiter of `;` does not reach a `COPY` that asked for the default one.
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_csv_delimiter = ';'")
+        session.copy_expert(
+            "COPY copy_pinned (a, b) FROM STDIN WITH (FORMAT csv, DELIMITER ',')",
+            StringIO("x,y\n"),
+        )
+    cur.execute("SELECT a, b FROM copy_pinned;")
+    assert cur.fetchall() == [("x", "y")]
+
+    out = StringIO()
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_csv_delimiter = ';'")
+        session.copy_expert(
+            "COPY copy_pinned TO STDOUT WITH (FORMAT csv, DELIMITER ',')", out
+        )
+    assert out.getvalue() == '"x","y"\n'
+
+    # And neither does a session representation of NULL. These go through the psycopg2 helpers,
+    # which spell the PostgreSQL defaults out in the option list on every call.
+    cur.execute("TRUNCATE TABLE copy_pinned;")
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_tsv_null_representation = 'NULL'")
+        session.copy_from(StringIO("x\t\\N\n"), "copy_pinned", columns=("a", "b"))
+    cur.execute("SELECT a, isNull(b) FROM copy_pinned;")
+    assert cur.fetchall() == [("x", 1)]
+
+    out = StringIO()
+    with connect() as c:
+        session = c.cursor()
+        session.execute("SET format_tsv_null_representation = 'NULL'")
+        session.copy_to(file=out, table="copy_pinned")
+    assert out.getvalue() == "x\t\\N\n"
+
+    cur.execute("DROP TABLE copy_pinned;")
+    setup.close()
+
+
+def test_copy_option_errors_reach_the_client(started_cluster):
+    # An option this protocol cannot serve is reported with the message that says why. These used to
+    # be swallowed: `processCopyQuery` caught everything the `COPY` parser raised and handed the
+    # query to the generic SQL parser, so the client got a plain syntax error instead.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_errors;")
+    cur.execute("CREATE TABLE copy_errors (s String) ENGINE = Memory;")
+
+    unsupported = [
+        # A delimiter the format does not write.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, DELIMITER ';')",
+            "only supported with the default delimiter",
+        ),
+        # A representation of NULL the format does not write.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, NULL 'NULL')",
+            "only supported with the value",
+        ),
+        # The binary format has neither a field separator nor a textual NULL.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, DELIMITER '\t')",
+            "DELIMITER of the postgresql copy command is not supported with the binary format",
+        ),
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, NULL 'x')",
+            "NULL of the postgresql copy command is not supported with the binary format",
+        ),
+        # There is no header in the binary format.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT binary, HEADER true)",
+            "HEADER of the postgresql copy command is not supported with the binary format",
+        ),
+        # A quote character the format does not write, and `QUOTE` outside of the csv format.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, QUOTE '|')",
+            "QUOTE of the postgresql copy command is only supported with the value",
+        ),
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT tsv, QUOTE '\"')",
+            "QUOTE of the postgresql copy command applies to the csv format only",
+        ),
+        # An option with no version this protocol can serve.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv, ENCODING 'latin1')",
+            "ENCODING of the postgresql copy command is not supported",
+        ),
+        # A format this protocol does not have.
+        (
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT parquet)",
+            "Unknown format from postgresql copy command",
+        ),
+    ]
+
+    for query, message in unsupported:
+        with connect() as c, pytest.raises(Exception, match=re.escape(message)):
+            c.cursor().copy_expert(query, StringIO("a\n"))
+
+    # The failed commands stored nothing, and the session is still usable afterwards.
+    cur.execute("SELECT count() FROM copy_errors;")
+    assert int(cur.fetchone()[0]) == 0
+
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_errors (s) FROM STDIN WITH (FORMAT csv)", StringIO("a\n")
+        )
+    cur.execute("SELECT s FROM copy_errors;")
+    assert cur.fetchall() == [("a",)]
+
+    cur.execute("DROP TABLE copy_errors;")
+    setup.close()
+
+
+def test_copy_from_header(started_cluster):
+    # The `HEADER` of a PostgreSQL `COPY ... FROM` means that the first line of the data is the
+    # column names, and nothing more: the fields are bound to the columns of the command by
+    # position, and the header stands at the beginning of the whole stream rather than of every
+    # `CopyData` message the client happens to split that stream into.
+    node = cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return c
+
+    setup = connect()
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_header;")
+    cur.execute("CREATE TABLE copy_header (a String, b String) ENGINE = Memory;")
+
+    def copy_from(statement, data, size=8192):
+        # `size` is how many bytes psycopg2 reads at a time, and so how much data it puts in one
+        # `CopyData` message.
+        with closing(connect()) as c:
+            c.cursor().copy_expert(statement, StringIO(data), size=size)
+
+    # The names on the header line are not looked at: the fields go to the columns of the command
+    # in order, even where the header spells those same columns the other way round.
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "b,a\nfirst,second\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # A header naming columns the table does not have at all is a header all the same.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "x,y\nfirst,second\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # Only the first line of the stream is the header, however many messages the client sends the
+    # data in, and a row split across two of them is still one row. 100 rows of 8 bytes sent 100
+    # bytes at a time make 9 messages, and every other boundary between them falls inside a row.
+    rows = [("a%02d" % i, "b%02d" % i) for i in range(100)]
+    body = "".join("%s,%s\n" % row for row in rows)
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv, HEADER)",
+        "a,b\n" + body,
+        size=100,
+    )
+    cur.execute("SELECT a, b FROM copy_header ORDER BY a;")
+    assert cur.fetchall() == rows
+
+    # And without `HEADER`, every line of every message is data.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from("COPY copy_header (a, b) FROM STDIN WITH (FORMAT csv)", body, size=100)
+    cur.execute("SELECT a, b FROM copy_header ORDER BY a;")
+    assert cur.fetchall() == rows
+
+    # The header of the tab separated format, which is the default one, is read the same way.
+    cur.execute("TRUNCATE TABLE copy_header;")
+    copy_from(
+        "COPY copy_header (a, b) FROM STDIN WITH (FORMAT text, HEADER)",
+        "b\ta\nfirst\tsecond\n",
+    )
+    cur.execute("SELECT a, b FROM copy_header;")
+    assert cur.fetchall() == [("first", "second")]
+
+    # A `HEADER` of the binary format has no meaning, and PostgreSQL refuses it there as well.
+    with pytest.raises(Exception, match="HEADER"):
+        copy_from("COPY copy_header (a, b) FROM STDIN WITH (FORMAT binary, HEADER)", "")
+
+    cur.execute("DROP TABLE copy_header;")
+    setup.close()
 
 
 def test_boolean_type(started_cluster):

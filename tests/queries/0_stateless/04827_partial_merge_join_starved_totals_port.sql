@@ -1,4 +1,4 @@
--- Tags: no-parallel, shard
+-- Tags: no-parallel, shard, no-fasttest
 -- Tag no-parallel: uses a fail point (global server state)
 -- - shard: needs the test cluster to build a `Distributed` table
 

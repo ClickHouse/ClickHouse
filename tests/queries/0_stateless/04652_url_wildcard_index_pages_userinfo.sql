@@ -2,7 +2,7 @@
 -- pages. The resolved URL has to be materialized into the engine arguments, but it must never carry
 -- credentials coming from `url_base` into the persisted `CREATE TABLE` query.
 
-SET allow_experimental_url_wildcard_from_index_pages = 1;
+SET allow_url_wildcard_from_index_pages = 1;
 -- Hive partitioning would list the object storage to sample a path, i.e. wait for the connection to
 -- the unreachable host below to time out.
 SET use_hive_partitioning = 0;

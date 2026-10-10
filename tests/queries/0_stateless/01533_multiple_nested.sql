@@ -1,10 +1,11 @@
--- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel
+-- Tags: no-object-storage, no-random-merge-tree-settings, no-random-settings, no-parallel
 -- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-s3 because read FileOpen metric
 DROP TABLE IF EXISTS nested;
 
 SET flatten_nested = 0;
 SET use_uncompressed_cache = 0;
+SET use_columns_cache = 0;
 SET local_filesystem_read_method='pread';
 
 CREATE TABLE nested

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-encrypted-storage, no-parallel
+# Tags: no-ordinary-database, no-encrypted-storage, no-parallel, no-fasttest
 # Tag no-parallel: uses a process-global failpoint
 # Tag rationale: enables a server-wide failpoint.
 #

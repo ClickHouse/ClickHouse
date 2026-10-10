@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-object-storage, no-random-settings, no-parallel
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
+# Tag no-flaky-check: the test reads through the shared `s3_cache`, `local_cache` and `azure_cache` caches
+# and expects exact cache hit/miss sequences. Repeated runs start while background merges of `test.hits_s3`
+# are still writing through `s3_cache` with `cache_on_write_operations`, which fills the whole cache with
+# non-releasable segments, so reads bypass the cache or re-download.
 # Tag no-parallel: issues an unscoped `SYSTEM CLEAR FILESYSTEM CACHE` and asserts entries in the
 # process-wide `system.filesystem_cache_log` table; a concurrent test's cache activity pollutes
 # both, so the `filesystem-cache` group is not enough - it must run fully sequentially.

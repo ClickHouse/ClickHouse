@@ -85,6 +85,9 @@ ATTACH TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;
 echo '-- and reading it is bounded'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM \`${CLICKHOUSE_DATABASE_2}\`.renamed;" 2>&1 | grep -m 1 -o -F 'TOO_DEEP_RECURSION'
 
+echo '-- and describing it is bounded too'
+$CLICKHOUSE_CLIENT -q "DESCRIBE TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;" 2>&1 | grep -m 1 -o -F 'TOO_DEEP_RECURSION'
+
 # Drop it immediately: nothing after this point needs the alias, and every statement it stays
 # alive for is one another session can trip over (see the no-parallel note above).
 $CLICKHOUSE_CLIENT -q "

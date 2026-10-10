@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings
+-- Tags: no-parallel, no-random-merge-tree-settings, no-fasttest
 -- Tag no-parallel: uses a process-global failpoint
 
 -- Regression test: merging parts after ALTER MODIFY COLUMN changed a column

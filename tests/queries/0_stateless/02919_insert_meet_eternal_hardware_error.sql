@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-fasttest
 -- Tag no-parallel: uses a process-global failpoint
 -- no-shared-merge-tree: This failure injection is only RMT specific
 

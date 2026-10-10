@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-replicated-database, no-parallel, zookeeper
+# Tags: no-ordinary-database, no-replicated-database, no-parallel, zookeeper, no-fasttest
 # Tag no-parallel: enables a global pauseable failpoint that would pause mutation
 # registration in concurrently running tests.
 

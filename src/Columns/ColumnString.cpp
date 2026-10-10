@@ -23,7 +23,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
@@ -57,16 +56,22 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
         return;
 
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
-    const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
+    const size_t src_offset = src_concrete.offsets[position - 1];
     const size_t src_buf_size
         = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+
+    const size_t old_rows = offsets.size();
+    const size_t new_rows = old_rows + length;
+    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
+    offsets.reserve(new_rows);
 
     const size_t old_size = chars.size();
     const size_t new_size = old_size + src_buf_size * length;
     chars.resize(new_size);
 
-    const size_t old_rows = offsets.size();
-    offsets.resize(old_rows + length);
+    const UInt8 * src_buf = &src_concrete.chars[src_offset];
+
+    offsets.resize_assume_reserved(new_rows);
 
     for (size_t current_offset = old_size; current_offset < new_size; current_offset += src_buf_size)
         memcpySmallAllowReadWriteOverflow15(&chars[current_offset], src_buf, src_buf_size);
@@ -131,6 +136,27 @@ void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
 }
 
 
+namespace
+{
+
+[[noreturn]] NO_INLINE void throwInconsistentOffsets(size_t nested_offset, size_t nested_end, size_t chars_size)
+{
+    throw Exception(ErrorCodes::INCORRECT_DATA,
+        "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
+        "nested_offset: {}, nested_end: {}, source chars size: {}",
+        nested_offset, nested_end, chars_size);
+}
+
+[[noreturn]] NO_INLINE void throwNonMonotonicOffset(size_t offset, size_t position, size_t previous_offset)
+{
+    throw Exception(ErrorCodes::INCORRECT_DATA,
+        "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
+        "non-monotonic offset {} at position {} (previous offset {})",
+        offset, position, previous_offset);
+}
+
+}
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
@@ -142,8 +168,8 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
 
-    if (start + length > src_concrete.offsets.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnString::insertRangeFrom method.");
+    if (start > src_concrete.offsets.size() || length > src_concrete.offsets.size() - start)
+        throwInsertRangeFromOutOfBound("ColumnString", start, length, src_concrete.offsets.size());
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_end = src_concrete.offsetAt(start + length);
@@ -155,10 +181,7 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     /// underflow for decreasing offsets and wrap nested_offset + nested_length back below chars.size(),
     /// silently bypassing the check.
     if (nested_end < nested_offset || nested_end > src_concrete.chars.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
-            "nested_offset: {}, nested_end: {}, source chars size: {}",
-            nested_offset, nested_end, src_concrete.chars.size());
+        throwInconsistentOffsets(nested_offset, nested_end, src_concrete.chars.size());
 
     size_t nested_length = nested_end - nested_offset;
 
@@ -188,10 +211,7 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
             /// A copied offset that dips below the previous one (in particular below nested_offset) would underflow the subtraction and
             /// store a corrupt destination offset, so reject it here.
             if (src_offset < prev_src_offset)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
-                    "non-monotonic offset {} at position {} (previous offset {})",
-                    src_offset, start + i, prev_src_offset);
+                throwNonMonotonicOffset(src_offset, start + i, prev_src_offset);
 
             offsets[old_size + i] = src_offset - nested_offset + prev_max_offset;
             prev_src_offset = src_offset;
@@ -342,7 +362,7 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
     return memory + string_size;
 }
 
-void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+void ColumnString::batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -583,10 +603,6 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     Chars & res_chars = res->chars;
     size_t res_chars_size = 0;
-    /// This is a dependent prefix-sum where each iteration depends on the
-    /// previous one.  Auto-vectorization adds horizontal-reduction overhead
-    /// without improving throughput for dependent chains.
-#pragma clang loop vectorize(disable)
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
@@ -836,17 +852,20 @@ void ColumnString::validate() const
                         last_offset, chars.size());
 }
 
-void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+void ColumnString::updateHashWithStringValue(std::string_view value, SipHash & hash)
 {
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
     /// For compatibility, which is required in certain aggregate function states.
-    size_t size_used_in_hash = string_size + 1;
+    size_t size_used_in_hash = value.size() + 1;
 
     hash.update(reinterpret_cast<const char *>(&size_used_in_hash), sizeof(size_used_in_hash));
-    hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+    hash.update(value.data(), value.size());
     /// This is for compatibility
     hash.update(UInt8(0));
+}
+
+void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    updateHashWithStringValue({reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, hash);
 }
 
 void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
@@ -938,4 +957,8 @@ void ColumnString::batchSerializeAsComparable(
         [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
+ColumnPlanes ColumnString::getPlanes() const
+{
+    return ColumnPlanes(ColumnPlanes::Shape::String, offsets.data(), chars.data());
+}
 }
