@@ -67,7 +67,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -860,6 +862,42 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
+namespace
+{
+
+/// Passes two-level partially aggregated chunks on as single-level, so the merging step re-buckets their keys itself.
+class ForgetAggregationBucketsTransform final : public ISimpleTransform
+{
+public:
+    explicit ForgetAggregationBucketsTransform(const SharedHeader & header_) : ISimpleTransform(header_, header_, false) {}
+    String getName() const override { return "ForgetAggregationBucketsTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        auto info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+        if (!info || info->bucket_num < 0)
+            return;
+
+        auto single_level_info = std::make_shared<AggregatedChunkInfo>();
+        single_level_info->is_overflows = info->is_overflows;
+        chunk.getChunkInfos().extract<AggregatedChunkInfo>();
+        chunk.getChunkInfos().add(std::move(single_level_info));
+    }
+};
+
+bool haveSameColumnTypes(const Block & lhs, const Block & rhs)
+{
+    if (lhs.columns() != rhs.columns())
+        return false;
+    for (size_t i = 0; i < lhs.columns(); ++i)
+        if (!lhs.getByPosition(i).type->equals(*rhs.getByPosition(i).type))
+            return false;
+    return true;
+}
+
+}
+
 /// Equalizes top-level constness across the sibling pipelines `ReadFromMerge` is about to unite.
 static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines)
 {
@@ -1392,6 +1430,10 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             child.plan.addInterpreterContext(modified_context);
 
+            /// Bucket numbers depend on the aggregation key types, and the merging step merges the children's buckets as they are.
+            if (child.plan.isInitialized() && common_processed_stage == QueryProcessingStage::WithMergeableState && query_info.need_aggregate)
+                child.forget_aggregation_buckets = !haveSameColumnTypes(*child.plan.getCurrentHeader(), *common_header);
+
             if (child.plan.isInitialized())
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
@@ -1406,7 +1448,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     row_policy_data_opt,
                     context,
                     child,
-                    is_smallest_column_requested);
+                    is_smallest_column_requested,
+                    column_names_to_read);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1876,6 +1919,9 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         builder->addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<MaterializingTransform>(stream_header); });
     }
 
+    if (child.forget_aggregation_buckets)
+        builder->addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<ForgetAggregationBucketsTransform>(stream_header); });
+
     return builder;
 }
 
@@ -2269,7 +2315,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     ChildPlan & child,
-    bool is_smallest_column_requested)
+    bool is_smallest_column_requested,
+    const Names & column_names_read)
 {
     auto before_block_header = child.plan.getCurrentHeader();
 
@@ -2424,6 +2471,12 @@ void ReadFromMerge::convertAndFilterSourceStream(
     };
 
     String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
+
+    /// A column the child reads only for itself (its row policy or ALIAS columns) makes this a by-name read.
+    const NameSet column_names_read_set(column_names_read.begin(), column_names_read.end());
+    const bool has_columns_read_only_for_child = std::ranges::any_of(current_step_columns, [&](const auto & column)
+        { return !header.has(column.name) && column_names_read_set.contains(column.name); });
+
     for (size_t i = 0; i < size; ++i)
     {
         const auto & source_elem = current_step_columns[i];
@@ -2436,7 +2489,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
             /// This column is unneeded in the result.
             converted_columns.push_back(source_elem);
         }
-        else if (header.columns() == current_step_columns.size())
+        else if (!has_columns_read_only_for_child && header.columns() == current_step_columns.size())
         {
             /// Virtual columns and columns read from Distributed tables (having different name but matched by position).
             converted_columns.push_back(materializeIfSourceIsNotConst(header.getByPosition(i), source_elem));
