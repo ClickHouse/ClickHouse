@@ -8508,7 +8508,8 @@ struct SourceReplicaParts
     Strings parts;
 };
 
-static std::vector<SourceReplicaParts> getPartsOfAllReplicas(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_path)
+static std::vector<SourceReplicaParts> getPartsOfAllReplicas(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_path, MergeTreeDataFormatVersion format_version)
 {
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
     Strings paths;
@@ -8529,7 +8530,9 @@ static std::vector<SourceReplicaParts> getPartsOfAllReplicas(const zkutil::ZooKe
         if (responses[i].error != Coordination::Error::ZOK)
             throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
 
-        result.push_back({replicas[i], std::move(responses[i].names)});
+        /// `parts` of a replica also lists the parts it has already merged or otherwise replaced, until
+        /// their cleanup removes them: only the active ones are the rows the replica holds now.
+        result.push_back({replicas[i], ActiveDataPartSet(format_version, responses[i].names).getParts()});
     }
     return result;
 }
@@ -8681,7 +8684,7 @@ void StorageReplicatedMergeTree::fetchPartition(
             throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Part {} does not exist on any replica", part_name);
 
         auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-        auto source_replicas_parts = getPartsOfAllReplicas(zookeeper, from);
+        auto source_replicas_parts = getPartsOfAllReplicas(zookeeper, from, format_version);
         String command = "FETCH PART " + part_name + " FROM " + from_;
         assertSourceHasNoPatchesForPartition(
             getPatchParts(source_replicas_parts),
@@ -8804,7 +8807,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         ActiveDataPartSet active_parts_set(format_version, parts);
         Strings parts_to_fetch;
 
-        auto source_replicas_parts = getPartsOfAllReplicas(zookeeper, from);
+        auto source_replicas_parts = getPartsOfAllReplicas(zookeeper, from, format_version);
         String command = "FETCH PARTITION " + partition_id + " FROM " + from_;
         assertSourceHasNoPatchesForPartition(
             getPatchParts(source_replicas_parts),
