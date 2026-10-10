@@ -70,6 +70,10 @@ public:
     bool isRemote() const override { return delegate->isRemote(); }
 
     bool isWriteOnce() const override { return delegate->isWriteOnce(); }
+    /// Forwarded, although a hard link is never created through this wrapper: the callers ask the disk of a table
+    /// whether an operation that needs hard links is possible at all, and a read-only attachment of a disk that
+    /// cannot share blobs must give the same answer as the disk itself.
+    bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override { return delegate->getDirectorySyncGuard(path); }
