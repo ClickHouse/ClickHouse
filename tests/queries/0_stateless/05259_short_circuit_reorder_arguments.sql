@@ -97,3 +97,8 @@ SETTINGS short_circuit_function_evaluation = 'force_enable', short_circuit_funct
 -- on fewer rows than in the original order, and the block would be smaller.
 SELECT sum(isValidUTF8(repeat(toString(number), 10)) AND intDiv(100, blockSize()) = 10 AND number % 2 = 1) FROM numbers(100)
 SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10;
+
+-- Without short-circuit evaluation, the atoms of an AND chain in `WHERE` are not reordered either: the cheap guard is not
+-- moved in front of the throwing atom, and the exception is not suppressed.
+SELECT count() FROM numbers(10) WHERE intDiv(10, number % 10) > 1 AND number % 10 != 0
+SETTINGS short_circuit_function_evaluation = 'disable', short_circuit_function_evaluation_reorder_arguments = 1; -- { serverError ILLEGAL_DIVISION }

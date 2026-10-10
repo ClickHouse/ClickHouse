@@ -34,6 +34,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool short_circuit_function_evaluation_reorder_arguments;
 }
 
@@ -429,9 +430,14 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
+    /// The atoms are reordered only with short-circuit evaluation, like the arguments of `and`.
     if (settings.enable_multiple_filters_transforms_for_and_chain && !actions_dag.hasStatefulFunctions())
-        and_atoms = splitAndChainIntoMultipleFilters(
-            actions_dag, filter_column_name, settings.getActionsSettings().short_circuit_function_evaluation_reorder_arguments);
+    {
+        const auto & actions_settings = settings.getActionsSettings();
+        bool reorder = actions_settings.short_circuit_function_evaluation != ShortCircuitFunctionEvaluation::DISABLE
+            && actions_settings.short_circuit_function_evaluation_reorder_arguments;
+        and_atoms = splitAndChainIntoMultipleFilters(actions_dag, filter_column_name, reorder);
+    }
 
     /// All streams of the pipe have the same header, so compute the transformed header once
     /// instead of in every FilterTransform instance: the computation is linear in the size
@@ -481,14 +487,19 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     }
 }
 
-/// The value of `short_circuit_function_evaluation_reorder_arguments` to show the AND chain split as it is executed.
+/// Whether the AND chain atoms are reordered (`short_circuit_function_evaluation_reorder_arguments` with short-circuit evaluation enabled), to show the AND chain split as it is executed.
 /// The pipeline is not built for `EXPLAIN`, so the setting is taken from the query context. Without a query context
 /// (the plan is described outside of a query), the default value of the setting is used.
 static bool reorderAndChainForDescription()
 {
+    auto reorder = [](const Settings & query_settings)
+    {
+        return query_settings[Setting::short_circuit_function_evaluation] != ShortCircuitFunctionEvaluation::DISABLE
+            && query_settings[Setting::short_circuit_function_evaluation_reorder_arguments];
+    };
     if (auto query_context = CurrentThread::tryGetQueryContext())
-        return query_context->getSettingsRef()[Setting::short_circuit_function_evaluation_reorder_arguments];
-    return Settings()[Setting::short_circuit_function_evaluation_reorder_arguments];
+        return reorder(query_context->getSettingsRef());
+    return reorder(Settings());
 }
 
 void FilterStep::describeActions(FormatSettings & settings) const
