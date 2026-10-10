@@ -1931,8 +1931,7 @@ Projections can be modified or dropped with the [ALTER](/reference/statements/al
 
 ### Projection column codecs {#projection-column-codecs}
 
-A MergeTree projection can choose a lossless compression codec for an output column, including
-on replicated tables and in `ON CLUSTER` DDL:
+A MergeTree projection can choose a lossless compression codec for an output column:
 
 ```sql
 PROJECTION p (ts CODEC(DoubleDelta, ZSTD)) AS (SELECT id, ts ORDER BY ts)
@@ -1942,6 +1941,11 @@ The list may omit columns that use the part default. Each listed column must app
 projection query; its type is inferred from that query. This first release supports `NONE`,
 `LZ4`, `ZSTD`, `Delta`, and `DoubleDelta`. It does not support `CODEC(Default)` or explicit
 types.
+
+For `ReplicatedMergeTree` tables and `ON CLUSTER` DDL, upgrade all consumers before setting
+`allow_projection_column_codecs_in_replicated_or_distributed_ddl = 1`. This setting is disabled
+by default. `ON CLUSTER` also requires `distributed_ddl_entry_format_version >= 2`;
+`CREATE TABLE ... AS` copying a projection with column codecs requires version 3 or newer.
 
 ### Projection indexes {#projection-index}
 

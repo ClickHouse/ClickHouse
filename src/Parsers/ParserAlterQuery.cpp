@@ -2997,7 +2997,12 @@ The list is partial: only columns whose codec is being overridden need to appear
 column must be produced by the projection query. The output type is inferred from that query;
 the list accepts only a name and `CODEC`. The first release accepts `NONE`, `LZ4`, `ZSTD`,
 `Delta`, and `DoubleDelta` without session opt-ins. `CODEC(Default)` and subcolumns are not
-supported. The declaration also works on replicated tables and through `ON CLUSTER` DDL.
+supported.
+
+For `ReplicatedMergeTree` tables and `ON CLUSTER` DDL, upgrade all consumers before setting
+`allow_projection_column_codecs_in_replicated_or_distributed_ddl = 1`. This setting is disabled
+by default. `ON CLUSTER` also requires `distributed_ddl_entry_format_version >= 2`;
+`CREATE TABLE ... AS` copying a projection with column codecs requires version 3 or newer.
 
 ### MODIFY PROJECTION {#modify-projection}
 
