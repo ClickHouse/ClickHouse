@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database
-# Tag no-parallel: keeps the server-wide observables stable while the mixed
-# ALTER is exercised.
+# Tags: no-replicated-database
 # Tag no-replicated-database: a `Replicated` database rejects a mixed
 # replicated + non-replicated ALTER up front (QUERY_IS_PROHIBITED), so the
 # code path under test is only reachable on a plain (Atomic) database.
