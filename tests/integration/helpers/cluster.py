@@ -5390,6 +5390,8 @@ class ClickHouseInstance:
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
+        # The value of `seccomp` stripped from the main config for the old version, see `create_dir`.
+        self.seccomp_config_for_latest_version = None
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
@@ -6363,6 +6365,11 @@ class ClickHouseInstance:
             ],
             user="root",
         )
+        if self.seccomp_config_for_latest_version is not None:
+            # The old version does not know `seccomp`, see `create_dir`.
+            latest_version_seccomp_config_path = self.latest_version_seccomp_config_path()
+            if p.exists(latest_version_seccomp_config_path):
+                os.remove(latest_version_seccomp_config_path)
         self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
@@ -6374,6 +6381,9 @@ class ClickHouseInstance:
             raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
+
+    def latest_version_seccomp_config_path(self):
+        return p.join(self.config_d_dir, "zz_seccomp_latest_version.xml")
 
     def restart_with_latest_version(
         self,
@@ -6408,6 +6418,11 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+        if self.seccomp_config_for_latest_version is not None:
+            with open(self.latest_version_seccomp_config_path(), "w") as f:
+                f.write(
+                    f"<{self.config_root_name}><seccomp>{self.seccomp_config_for_latest_version}</seccomp></{self.config_root_name}>\n"
+                )
         self.exec_in_container(
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
@@ -6707,6 +6722,28 @@ class ClickHouseInstance:
             p.join(self.base_config_dir, self.main_config_name),
             p.join(instance_config_dir, self.main_config_name),
         )
+        if self.with_installed_binary:
+            # The main config.xml comes from the current sources, and an older server version refuses
+            # to start on a top-level element it does not know yet, such as `seccomp`. Only the old
+            # version needs it removed: `restart_with_latest_version` puts it back into `config.d`.
+            main_config_path = p.join(instance_config_dir, self.main_config_name)
+            with open(main_config_path, "r") as f:
+                main_config = f.read()
+            if self.main_config_name.endswith(".xml"):
+                seccomp_pattern = r"\n[ \t]*<seccomp>([^<]*)</seccomp>"
+            elif self.main_config_name.endswith((".yaml", ".yml")):
+                # Only a top-level key, without indentation.
+                seccomp_pattern = r"\nseccomp:[ \t]*([^\s#]*)[^\n]*"
+            else:
+                raise Exception(
+                    f"with_installed_binary does not support the main config {self.main_config_name}"
+                )
+            seccomp_match = re.search(seccomp_pattern, main_config)
+            if seccomp_match:
+                self.seccomp_config_for_latest_version = seccomp_match.group(1).strip()
+            main_config = re.sub(seccomp_pattern, "", main_config)
+            with open(main_config_path, "w") as f:
+                f.write(main_config)
         shutil.copyfile(
             p.join(self.base_config_dir, self.users_config_name),
             p.join(instance_config_dir, self.users_config_name),
