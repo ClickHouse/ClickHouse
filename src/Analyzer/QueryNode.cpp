@@ -105,10 +105,40 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
         auto & interpolate_node = getInterpolate();
         auto & interpolate_list_nodes = interpolate_node->as<ListNode &>().getNodes();
+
+        std::unordered_set<const IQueryTreeNode *> used_interpolate_nodes;
+        QueryTreeNodes nodes_to_visit;
+        for (const auto & interpolate : interpolate_list_nodes)
+        {
+            if (used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()))
+            {
+                used_interpolate_nodes.insert(interpolate.get());
+                nodes_to_visit.push_back(interpolate);
+            }
+        }
+
+        /// An INTERPOLATE expression reads a constant target through a column whose source is the target's node.
+        while (!nodes_to_visit.empty())
+        {
+            auto node = std::move(nodes_to_visit.back());
+            nodes_to_visit.pop_back();
+
+            if (const auto * column_node = node->as<ColumnNode>())
+            {
+                auto column_source = column_node->getColumnSourceOrNull();
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::INTERPOLATE
+                    && used_interpolate_nodes.insert(column_source.get()).second)
+                    nodes_to_visit.push_back(column_source);
+            }
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    nodes_to_visit.push_back(child);
+        }
+
         std::erase_if(
             interpolate_list_nodes,
-            [&used_projection_columns](const QueryTreeNodePtr & interpolate)
-            { return !used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()); });
+            [&used_interpolate_nodes](const QueryTreeNodePtr & interpolate) { return !used_interpolate_nodes.contains(interpolate.get()); });
 
         if (interpolate_list_nodes.empty())
             interpolate_node = nullptr;

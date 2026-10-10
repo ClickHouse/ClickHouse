@@ -64,6 +64,16 @@ remote
 4	33	6
 5	39	12
 6	51	24
+constant target
+0	5	0
+1	6	5
+2	7	11
+3	5	1
+constant target dropped by the outer query
+0	0
+1	5
+2	11
+3	1
 the fill column is not a target
 0	0	0
 1	10	0

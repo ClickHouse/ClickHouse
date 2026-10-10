@@ -1574,6 +1574,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             ActionsDAG rename_dag;
 
+            /// The outputs are named like the inputs they replace, so they are added after every expression is built.
+            std::vector<std::pair<const ActionsDAG::Node *, String>> interpolated_columns;
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
@@ -1602,9 +1604,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                         planner_context->getQueryContext());
                 }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
-                interpolate_actions_dag.getOutputs().push_back(alias_node);
+                interpolated_columns.emplace_back(interpolate_expression, interpolate_node_typed.getExpressionName());
             }
+
+            for (const auto & [interpolate_expression, target_name] : interpolated_columns)
+                interpolate_actions_dag.getOutputs().push_back(&interpolate_actions_dag.addAlias(*interpolate_expression, target_name));
 
             if (!rename_dag.getOutputs().empty())
                 interpolate_actions_dag = ActionsDAG::merge(std::move(rename_dag), std::move(interpolate_actions_dag));

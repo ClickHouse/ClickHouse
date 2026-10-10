@@ -39,6 +39,17 @@ SELECT g, id, v FROM remote('127.0.0.2', currentDatabase(), t_interpolate)
 ORDER BY g WITH FILL FROM 0 TO 7 INTERPOLATE (id AS id + v, v AS v * 2);
 DROP TABLE t_interpolate;
 
+SELECT 'constant target';
+SELECT toUInt16(number * 3) AS g, 5 AS d, toUInt32(number) AS x FROM numbers(2)
+ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, x AS x + d);
+
+SELECT 'constant target dropped by the outer query';
+SELECT g, x FROM
+(
+    SELECT toUInt16(number * 3) AS g, 5 AS d, toUInt32(number) AS x FROM numbers(2)
+    ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, x AS x + d)
+);
+
 SELECT 'the fill column is not a target';
 SELECT g, g AS h, x FROM (SELECT toUInt16(number * 3) AS g, toUInt32(number) AS x FROM numbers(2))
 ORDER BY g WITH FILL INTERPOLATE (h AS h + 10, x AS x + g);
