@@ -13,6 +13,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # well below the 300-second per-test limit so all workers and cleanup still have time to finish.
 MAX_EXECUTION_TIME=60
 LOCK_ACQUIRE_TIMEOUT=30
+# `max_execution_time` does not bound the wait of a DDL query for its own replica to process the queue of a
+# Replicated database: it is `database_replicated_initial_query_timeout_sec`, 300 by default, which alone
+# exhausts the per-test limit. The resulting `UNFINISHED` error is already filtered out.
+INITIAL_QUERY_TIMEOUT=30
 
 function create_db()
 {
@@ -62,7 +66,7 @@ function create_table()
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         database=$($CLICKHOUSE_CLIENT -q "select name from system.databases where name like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$database" ]; then continue; fi
-        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT --distributed_ddl_task_timeout=0 -q \
+        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT --distributed_ddl_task_timeout=0 --database_replicated_initial_query_timeout_sec=$INITIAL_QUERY_TIMEOUT -q \
         "create table $database.rmt_${RANDOM}_${RANDOM}_${RANDOM} (n int) engine=ReplicatedMergeTree order by tuple() -- suppress $CLICKHOUSE_TEST_ZOOKEEPER_PREFIX" \
         2>&1| grep -Fa "Exception: " | grep -Fv "Macro 'uuid' in engine arguments is" | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv TABLE_IS_DROPPED | grep -Fv UNFINISHED | grep -Fv TIMEOUT_EXCEEDED | grep -Fv QUERY_WAS_CANCELLED
         sleep 0.$RANDOM
@@ -75,7 +79,7 @@ function alter_table()
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         table=$($CLICKHOUSE_CLIENT -q "select database || '.' || name from system.tables where database like '${CLICKHOUSE_DATABASE}%' order by rand() limit 1")
         if [ -z "$table" ]; then continue; fi
-        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT --distributed_ddl_task_timeout=0 -q \
+        $CLICKHOUSE_CLIENT --max_execution_time=$MAX_EXECUTION_TIME --lock_acquire_timeout=$LOCK_ACQUIRE_TIMEOUT --distributed_ddl_task_timeout=0 --database_replicated_initial_query_timeout_sec=$INITIAL_QUERY_TIMEOUT -q \
         "alter table $table update n = n + (select max(n) from merge(REGEXP('${CLICKHOUSE_DATABASE}.*'), '.*')) where 1 settings allow_nondeterministic_mutations=1" \
         2>&1| grep -Fa "Exception: " | grep -Fv "Cannot enqueue query" | grep -Fv "ZooKeeper session expired" | grep -Fv UNKNOWN_DATABASE | grep -Fv UNKNOWN_TABLE | grep -Fv TABLE_IS_READ_ONLY | grep -Fv TABLE_IS_DROPPED | grep -Fv ABORTED | grep -Fv "There are no tables satisfied provided regexp" | grep -Fv UNFINISHED | grep -Fv TIMEOUT_EXCEEDED | grep -Fv QUERY_WAS_CANCELLED
         sleep 0.$RANDOM
