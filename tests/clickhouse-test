@@ -7,6 +7,7 @@
 # pylint: disable=anomalous-backslash-in-string
 # pylint: disable=protected-access
 
+import collections
 import copy
 import enum
 import glob
@@ -6683,24 +6684,22 @@ def do_run_tests(
             # of failures will be nearly the same for all tests from the group.
             # TODO: add shuffle for sequential tests
             if jobs > 1:
-                # Shuffle whole serialization keys rather than individual tests: every
-                # member of one `no-parallel:<group>` gets the same key, so a stable sort
-                # keeps the group's members next to each other and in their original
-                # order, while the groups and the ungrouped tests are shuffled as units.
-                serialization_keys = {
-                    test_name: (
-                        f"group:{group}"
-                        if (group := test_suite.get_parallel_group(test_name)) is not None
-                        else f"test:{test_name}"
-                    )
-                    for test_name in test_suite.parallel_tests
-                }
-                random_order = {
-                    key: random.random() for key in set(serialization_keys.values())
-                }
-                test_suite.parallel_tests.sort(
-                    key=lambda test_name: random_order[serialization_keys[test_name]]
-                )
+                # Shuffle within each run slot, keeping the slots in order: with
+                # `--test-runs`, `apply_test_runs` interleaves the copies of the tests
+                # (`[t1, t2, t3, t1, t2, t3, ...]`) so that every selected test starts
+                # early. A plain shuffle, or one that keeps the copies of a test
+                # together, lets a few tests occupy the workers until the time limit
+                # while others never start. The scheduler serializes the members of a
+                # `no-parallel:<group>` wherever they are in the queue.
+                occurrences = collections.Counter()
+                slot_order = {}
+                for index, test_name in enumerate(test_suite.parallel_tests):
+                    slot_order[index] = (occurrences[test_name], random.random())
+                    occurrences[test_name] += 1
+                test_suite.parallel_tests[:] = [
+                    test_suite.parallel_tests[index]
+                    for index in sorted(slot_order, key=slot_order.get)
+                ]
 
             workers_to_shed = multiprocessing.Value('i', 0)
             # Workers that have not yet decided to stop, guarded by the lock of
