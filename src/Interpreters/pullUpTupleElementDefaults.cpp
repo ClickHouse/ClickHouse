@@ -196,6 +196,21 @@ bool isLiteralNull(const ASTPtr & expression)
     return literal && literal->value.isNull();
 }
 
+/// A pure presence test: whether a data type AST contains a DEFAULT expression on any tuple element,
+/// at any depth. Unlike `buildAndStripTupleDefaults` it neither modifies the type nor validates the
+/// defaults it finds, so a wrapper that does not support defaults at all reports `NOT_IMPLEMENTED`
+/// uniformly instead of a validation error (ambiguity, self-reference) of a default inside it.
+bool typeContainsTupleElementDefaults(const IAST & type)
+{
+    if (const auto * pair = type.as<ASTNameTypePair>(); pair && pair->default_expression)
+        return true;
+
+    for (const auto & child : type.children)
+        if (typeContainsTupleElementDefaults(*child))
+            return true;
+    return false;
+}
+
 /// Recursively walk a data type AST, building a column-level default expression from any DEFAULT
 /// expressions reachable through a chain of Tuples and stripping them from the type. Returns the
 /// default-value expression if the type (recursively) contains DEFAULTs, otherwise nullptr.
@@ -306,9 +321,9 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, const NameSet & outer_element_nam
                 if (!pair)
                     continue;
 
-                /// A default anywhere inside is rejected below, so the walk starts from an empty
-                /// scope: `NOT_IMPLEMENTED` is the accurate diagnostic here, not an ambiguity error.
-                if (pair->default_expression || buildAndStripTupleDefaults(*pair->type, {}, column_name))
+                /// A default anywhere inside is rejected, so only its presence is tested: `NOT_IMPLEMENTED`
+                /// is the accurate diagnostic here, not an ambiguity or self-reference error.
+                if (typeContainsTupleElementDefaults(*pair))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "DEFAULT expressions inside Nested are not supported (found for element '{}'). "
                         "Only Tuple supports DEFAULT expressions for its elements.",
@@ -373,8 +388,8 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, const NameSet & outer_element_nam
 
         for (size_t i = 2; i < arguments->children.size(); ++i)
         {
-            /// As for `Nested`: an empty scope, so that an unsupported default is reported as such.
-            if (buildAndStripTupleDefaults(*arguments->children[i], {}, column_name))
+            /// As for `Nested`: only the presence is tested, so that an unsupported default is reported as such.
+            if (typeContainsTupleElementDefaults(*arguments->children[i]))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "DEFAULT expressions are not supported inside an argument type of SimpleAggregateFunction other "
                     "than the first one (the storage type)");
@@ -388,8 +403,8 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, const NameSet & outer_element_nam
     {
         for (const auto & child : arguments->children)
         {
-            /// As for `Nested`: an empty scope, so that an unsupported default is reported as such.
-            if (buildAndStripTupleDefaults(*child, {}, column_name))
+            /// As for `Nested`: only the presence is tested, so that an unsupported default is reported as such.
+            if (typeContainsTupleElementDefaults(*child))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "DEFAULT expressions inside {} are not supported; they are only supported inside Tuple",
                     data_type->name);
