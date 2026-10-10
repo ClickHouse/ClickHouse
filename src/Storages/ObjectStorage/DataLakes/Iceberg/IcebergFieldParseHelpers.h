@@ -33,6 +33,9 @@ std::vector<Int64> fieldToInt64Array(const Field & value, std::string_view conte
 std::optional<Field> deserializeFieldFromBinaryRepr(
     const String & str, const DataTypePtr & expected_type, bool lower_bound, bool compensate_rounding = true);
 
+/// The `uuid` part of the serialization above: 16 big-endian bytes. Returns nothing for any other length.
+std::optional<Field> deserializeUUIDFromBinaryRepr(const String & str);
+
 /// The decimal part of the serialization above: the unscaled value in two's-complement big-endian
 /// form, using the minimum number of bytes. Returns nothing for a non-decimal type and for bytes
 /// that do not fit the type.
