@@ -72,14 +72,14 @@ namespace DB
   * after they are disabled again.
   *
   * Additionally, `/__meta/snapshot.bin` may contain a compact copy of the whole state (see `PlainRewritableSnapshotFile.h`),
-  * which is written by the disk that owns the data and allows loading the state in a single request instead of
-  * listing the metadata directory and reading every `prefix.path`.
+  * which is written by the disk that owns the data and allows read-only disks to load the state in a single request instead
+  * of listing the metadata directory and reading every `prefix.path`.
   */
 
 struct PlainRewritableSnapshotSettings
 {
-    /// Whether to write the snapshot file after modifications (if the object storage is writable)
-    /// and to prefer it over listing the object storage when loading the state.
+    /// Whether to write the snapshot file after modifications (if the object storage is writable),
+    /// or to load the state from it instead of listing the object storage (if the object storage is read-only).
     bool enabled = true;
     /// Zero means the snapshot is rewritten right after every modification (in the committing thread).
     /// A larger value means it is rewritten in the background not more often than the delay, as long as there were modifications.
@@ -98,7 +98,7 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
         Initial,
         /// Periodic `refresh`: pick up the changes made by another server, keeping the unchanged directories.
         Incremental,
-        /// `dropCache`: rebuild the state from the object storage listing, ignoring the snapshot file.
+        /// `dropCache`: rebuild the state from scratch.
         Full,
     };
 
@@ -107,26 +107,30 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
 
     struct SnapshotFileContents
     {
-        /// The file exists (but `layout` is empty if it could not be read).
+        /// The file exists (but `layout` is empty if it could not be read or did not change).
         bool exists = false;
+        /// The file has the same ETag as the one applied last time, so it was not read.
+        bool unchanged = false;
         std::optional<PlainRewritableRemoteLayout> layout;
+        /// The strong ETag of the file that was read, empty if there is none.
+        std::string etag;
     };
 
-    /// Reads the snapshot file if it exists.
+    /// Reads the snapshot file if it exists and differs from the one applied last time. Must be called under `load_mutex`.
     SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log) const;
 
     /// Lists the object storage and publishes the result in `fs`. If `base` is provided, directories whose `prefix.path`
-    /// has the same ETag as in `base` take the local path from it without reading `prefix.path`; their files are taken from
-    /// `base` too if `reuse_files`, otherwise listed. `differs_from_base` tells whether the result is different from `base`,
-    /// `is_empty` whether the disk has nothing but the empty root. The initial load of a writable disk also rolls back or
+    /// has the same ETag as in `base` are taken from it without reading `prefix.path` and listing their files.
+    /// Returns whether the disk has nothing but the empty root. The initial load of a writable disk also rolls back or
     /// reclaims the unfinished operations (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`). Must be called under `load_mutex`.
-    void loadRemoteLayout(
-        const PlainRewritableRemoteLayout * base, bool reuse_files, bool is_initial_load, bool & differs_from_base, bool & is_empty, const LoggerPtr & log);
+    bool loadRemoteLayout(const PlainRewritableRemoteLayout * base, bool is_initial_load, const LoggerPtr & log);
     PlainRewritableRemoteLayout getCurrentLayout() const;
     static PlainRewritableRemoteLayout getLayoutOf(const FsSnapshot & tree);
 
     /// Whether this disk writes the snapshot file: snapshots are enabled and the object storage is writable.
     bool isSnapshotWriter() const;
+    /// Whether this disk loads its state from the snapshot file: snapshots are enabled and the object storage is read-only.
+    bool isSnapshotReader() const;
     /// Called after the in-memory state was changed; writes the snapshot right away or schedules the write.
     void onLayoutChanged();
     /// Writes the current state to the snapshot file (or removes the file if the disk is empty) if there were changes.
@@ -200,6 +204,9 @@ private:
     /// The remote paths of the directories of the targets of the pending replacements seen by the last completed load.
     /// Protected by `load_mutex`.
     std::unordered_set<std::string> remote_directories_of_pending_replaces;
+    /// The ETag of the snapshot file applied by the last load of a reader, empty if the state was not loaded from it.
+    /// Protected by `load_mutex`.
+    std::string applied_snapshot_etag;
     AtomicStopwatch previous_refresh;
 
     /// The version of `fs` after the latest change that has to be written to the snapshot.

@@ -153,6 +153,10 @@ PlainRewritableRemoteLayout readPlainRewritableSnapshot(ReadBuffer & in)
     if (!compressed.eof())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected data after the end of the plain_rewritable snapshot file");
 
+    /// The state of a disk always has the root directory, and the snapshot is applied as is.
+    if (!layout.contains(""))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "There is no root directory in the plain_rewritable snapshot file");
+
     return layout;
 }
 

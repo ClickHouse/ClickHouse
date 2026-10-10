@@ -458,24 +458,27 @@ disk with a single table.
 
 To speed this up, the disk that writes the data also writes a compact
 snapshot of the whole state to `__meta/snapshot.bin` (a versioned binary
-format compressed with `ZSTD`). On startup, the disk reads the snapshot and
-reconciles it with a listing of the metadata directory (a request per thousand
-directories), so `prefix.path` is read only for the directories created or
-renamed after the snapshot. The files of the directories are always listed
-(for a large disk, by a few listings of the whole disk in parallel), because
-they can change without changing `prefix.path`; only the directories that list
-their files in `prefix.path` (see the hard links below) take them from the
-snapshot. A read-only disk pointing to
-the same location (`readonly` set to `true`) uses the snapshot on startup too;
-its periodic refreshes (see the `MergeTree` setting `refresh_parts_interval`)
-reconcile the state in memory with the listing of the metadata directory.
-Since the snapshot is always reconciled with the object storage, a snapshot
-that lags behind (because of the write delay, a failed write, or a crash of the
-writer) never hides the changes from the loaded state.
+format compressed with `ZSTD`) for read-only disks pointing to the same
+location (`readonly` set to `true`).
+
+A read-only disk loads the whole state from the snapshot in a single request,
+and its periodic refreshes (see the `MergeTree` setting `refresh_parts_interval`)
+check the snapshot and read it again only if it was rewritten. It does not list
+the object storage or read `prefix.path` at all. A read-only disk works on a
+delayed state anyway, relying on the lifetime of the old parts of `MergeTree`
+tables, and the snapshot is a delayed state of the same kind: the changes of
+the writer become visible to the readers when the writer rewrites the snapshot.
+Only if there is no snapshot (for example, the writer has it disabled or runs
+an older version) or it cannot be read, the read-only disk lists the object
+storage.
+
+The writer has to have the latest and precise state, so it never reads the
+snapshot: it lists the object storage on startup as usual, and writes the
+snapshot after it.
 
 | Setting                             | Description                                                                                                                                                                                                                  | Default |
 |-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| `metadata_snapshot_enabled`         | Write the snapshot after modifications (if the object storage is writable) and prefer it over listing the object storage when loading the state.                                                                              | `true`  |
+| `metadata_snapshot_enabled`         | Write the snapshot after modifications (if the object storage is writable), or load the state from it instead of listing the object storage (if the object storage is read-only).                                            | `true`  |
 | `metadata_snapshot_write_delay_ms`  | The snapshot is rewritten in the background, not more often than the given number of milliseconds, as long as there were modifications. `0` rewrites it right after every modification, in the committing thread, which makes every commit as expensive as serializing the metadata of the whole disk. The snapshot is also written on server shutdown, and removed right away when the disk becomes empty. | `1000`  |
 
 ```xml

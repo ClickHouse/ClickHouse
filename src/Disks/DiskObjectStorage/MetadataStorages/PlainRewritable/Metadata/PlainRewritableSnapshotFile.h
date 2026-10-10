@@ -21,7 +21,7 @@ using PlainRewritableRemoteLayout = std::unordered_map<std::string, DirectoryRem
   * Building the state from scratch requires listing the `__meta` directory, reading every `prefix.path`
   * object in it and listing every directory, which is tens of thousands of requests even for a disk with
   * a single table. The snapshot is written by the disk that owns the data after its state changes and lets
-  * a starting server (or a read-only replica of the disk) obtain the whole state in a single request.
+  * read-only disks pointing to the same location obtain the whole state in a single request.
   *
   * The format is:
   * - a `VarUInt` format version (`SNAPSHOT_FORMAT_VERSION`), written as is;

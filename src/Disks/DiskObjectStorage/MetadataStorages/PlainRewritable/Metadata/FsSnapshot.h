@@ -26,8 +26,6 @@ struct FileRemoteInfo
     /// Empty when the blob is stored at the default location, `<directory remote path>/<file name>`.
     /// Files that were hard-linked from another directory point to the blob of the original file, which lives elsewhere.
     std::string blob_key;
-
-    bool operator==(const FileRemoteInfo &) const = default;
 };
 
 struct DirectoryRemoteInfo
@@ -40,8 +38,6 @@ struct DirectoryRemoteInfo
     /// In this form the set of files is defined by the list, not by the blobs stored under the directory prefix,
     /// so the blobs may be shared with other directories (hard links) and may have arbitrary names.
     bool has_explicit_file_list = false;
-
-    bool operator==(const DirectoryRemoteInfo &) const = default;
 };
 
 /// Key of the blob of a file, relative to the common key prefix of the object storage.
@@ -67,13 +63,6 @@ namespace FsEdits
     {
         std::string path;
         DirectoryRemoteInfo info;
-    };
-
-    struct UpdateDirectoryObjectMetadata
-    {
-        std::string path;
-        std::string etag;
-        time_t last_modified = 0;
     };
 
     struct MoveDirectory
@@ -116,7 +105,6 @@ namespace FsEdits
 
 using FsEdit = std::variant<
     FsEdits::RecordDirectory,
-    FsEdits::UpdateDirectoryObjectMetadata,
     FsEdits::MoveDirectory,
     FsEdits::RemoveDirectory,
     FsEdits::RecordFile,
@@ -140,8 +128,6 @@ public:
     /// Directory Write Methods
 
     void recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info);
-    /// Records the new ETag and modification time of `prefix.path` after it was rewritten by a move.
-    void updateDirectoryObjectMetadata(const std::string & path, const std::string & etag, time_t last_modified);
     void moveDirectory(const std::string & from, const std::string & to);
     void removeDirectory(const std::string & path);
     /// Switches the directory to the explicit file list form. This is a one-way transition.

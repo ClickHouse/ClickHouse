@@ -207,24 +207,6 @@ void FsSnapshot::recordDirectoryPath(const std::string & path, DirectoryRemoteIn
     record(FsEdits::RecordDirectory{normalized_path.string(), std::move(info)});
 }
 
-void FsSnapshot::updateDirectoryObjectMetadata(const std::string & path, const std::string & etag, time_t last_modified)
-{
-    UniqueLock lock(mutex);
-    const auto normalized_path = normalizePath(path);
-    const auto node = walk(root, normalized_path);
-
-    if (!node)
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", normalized_path.string());
-
-    if (isVirtual(node))
-        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' is virtual", normalized_path.string());
-
-    auto new_info = node->info.value();
-    new_info.etag = etag;
-    new_info.last_modified = last_modified;
-    root = updateInfo(root, normalized_path, new_info);    record(FsEdits::UpdateDirectoryObjectMetadata{normalized_path.string(), etag, last_modified});
-}
-
 void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
 {
     UniqueLock lock(mutex);
@@ -524,8 +506,6 @@ void FsSnapshot::replay(const FsJournal & edits)
 
             if constexpr (std::is_same_v<Edit, FsEdits::RecordDirectory>)
                 recordDirectoryPath(concrete_edit.path, concrete_edit.info);
-            else if constexpr (std::is_same_v<Edit, FsEdits::UpdateDirectoryObjectMetadata>)
-                updateDirectoryObjectMetadata(concrete_edit.path, concrete_edit.etag, concrete_edit.last_modified);
             else if constexpr (std::is_same_v<Edit, FsEdits::MoveDirectory>)
                 moveDirectory(concrete_edit.from, concrete_edit.to);
             else if constexpr (std::is_same_v<Edit, FsEdits::RemoveDirectory>)

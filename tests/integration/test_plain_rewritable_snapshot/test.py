@@ -64,14 +64,6 @@ def event(node, name):
     return int(node.query(f"SELECT value FROM system.events WHERE event = '{name}'").strip() or 0)
 
 
-# The server log is kept across restarts and repeated runs of the tests, so only the new occurrences are counted.
-RECONCILED_LOG_LINE = "had changes after the snapshot"
-
-
-def reconciled_count(node):
-    return int(node.count_in_log(RECONCILED_LOG_LINE).strip())
-
-
 def wait_for(condition, timeout=30):
     deadline = time.monotonic() + timeout
     while True:
@@ -81,7 +73,7 @@ def wait_for(condition, timeout=30):
         time.sleep(0.5)
 
 
-def test_snapshot_is_written_and_loaded_on_restart(start_cluster):
+def test_snapshot_is_written_by_writer(start_cluster):
     writer.query("DROP TABLE IF EXISTS t_snapshot SYNC")
     writer.query("CREATE TABLE t_snapshot (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'snapshot'")
 
@@ -96,15 +88,12 @@ def test_snapshot_is_written_and_loaded_on_restart(start_cluster):
     writer.query("INSERT INTO t_snapshot SELECT number FROM numbers(10, 10)")
     assert snapshot_etag() != etag_after_first_insert
 
-    # On startup the state comes from the snapshot, and the object storage listing
-    # confirms that nothing changed after it was written.
-    reconciled_before = reconciled_count(writer)
+    # The writer has to have the precise state, so it lists the object storage on startup and never reads the snapshot.
     writer.restart_clickhouse()
-    assert event(writer, "DiskPlainRewritableSnapshotRead") >= 1
+    assert event(writer, "DiskPlainRewritableSnapshotRead") == 0
     assert writer.query("SELECT count(), sum(id) FROM t_snapshot") == "20\t190\n"
-    assert reconciled_count(writer) == reconciled_before
 
-    # The snapshot is a copy of the state: the disk works without it and recreates it.
+    # The snapshot is a copy of the state for the readers: the writer recreates it on startup.
     writer.stop_clickhouse()
     cluster.minio_client.remove_object(cluster.minio_bucket, SNAPSHOT_KEY)
     writer.start_clickhouse()
@@ -117,7 +106,7 @@ def test_snapshot_is_written_and_loaded_on_restart(start_cluster):
     assert len(list(cluster.minio_client.list_objects(cluster.minio_bucket, "data/snapshot/", recursive=True))) == 0
 
 
-def test_stale_snapshot_is_reconciled_with_listing(start_cluster):
+def test_writer_ignores_stale_snapshot(start_cluster):
     writer.query("DROP TABLE IF EXISTS t_stale SYNC")
     writer.query("DROP TABLE IF EXISTS t_stale_removed SYNC")
     writer.query("CREATE TABLE t_stale (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'snapshot'")
@@ -138,14 +127,12 @@ def test_stale_snapshot_is_reconciled_with_listing(start_cluster):
     writer.stop_clickhouse()
     put_snapshot(stale_snapshot)
     stale_etag = snapshot_etag()
-    reconciled_before = reconciled_count(writer)
     writer.start_clickhouse()
 
-    assert event(writer, "DiskPlainRewritableSnapshotRead") >= 1
-    assert reconciled_count(writer) > reconciled_before
+    assert event(writer, "DiskPlainRewritableSnapshotRead") == 0
     assert writer.query("SELECT count(), sum(id) FROM t_stale") == "30\t435\n"
     assert writer.query(f"SELECT count() FROM system.remote_data_paths WHERE disk_name = 'disk_snapshot' AND local_path LIKE '%{removed_table_uuid}%'") == "0\n"
-    # The reconciled state is published.
+    # The state loaded on startup is published for the readers.
     assert snapshot_etag() != stale_etag
 
     writer.query("DROP TABLE t_stale SYNC")
@@ -175,7 +162,7 @@ def test_readonly_replica_uses_snapshot(start_cluster):
     writer.query("DROP TABLE t_reader SYNC")
 
 
-def test_readonly_replica_does_not_trust_stale_snapshot(start_cluster):
+def test_readonly_replica_trusts_snapshot(start_cluster):
     key = "data/snapshot_lazy/__meta/snapshot.bin"
 
     writer.query("DROP TABLE IF EXISTS t_lazy SYNC")
@@ -183,7 +170,7 @@ def test_readonly_replica_does_not_trust_stale_snapshot(start_cluster):
     writer.query("INSERT INTO t_lazy SELECT number FROM numbers(10)")
     table_uuid = writer.query("SELECT uuid FROM system.tables WHERE database = 'default' AND table = 't_lazy'").strip()
 
-    # The snapshot is written on shutdown, and not again during the test.
+    # The snapshot is written on shutdown and startup, and not again until the next restart.
     writer.restart_clickhouse()
     etag = snapshot_etag(key)
     assert etag is not None
@@ -194,11 +181,17 @@ def test_readonly_replica_does_not_trust_stale_snapshot(start_cluster):
     reader.query(f"ATTACH TABLE t_lazy UUID '{table_uuid}' (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'snapshot_lazy_readonly', refresh_parts_interval = 1")
     assert reader.query("SELECT count(), sum(id) FROM t_lazy") == "10\t45\n"
 
-    # The snapshot stays the same (as if its write failed or was delayed), but the committed parts
-    # are still visible to the reader, because the snapshot is reconciled with the listing of `__meta`.
+    # The reader works on a delayed state: it trusts the snapshot and does not list the object storage,
+    # so the parts committed after the snapshot are not visible until the snapshot is rewritten.
     writer.query("INSERT INTO t_lazy SELECT number FROM numbers(10, 10)")
-    wait_for(lambda: reader.query("SELECT count(), sum(id) FROM t_lazy") == "20\t190\n")
+    time.sleep(3)
+    assert reader.query("SELECT count(), sum(id) FROM t_lazy") == "10\t45\n"
     assert snapshot_etag(key) == etag
+
+    # The writer publishes the latest state on shutdown, and the reader picks it up by the periodic refresh.
+    writer.restart_clickhouse()
+    assert snapshot_etag(key) != etag
+    wait_for(lambda: reader.query("SELECT count(), sum(id) FROM t_lazy") == "20\t190\n")
 
     reader.query("DROP TABLE t_lazy SYNC")
     # The last `DROP` removes the snapshot right away, regardless of the delay.
@@ -222,7 +215,6 @@ def test_delayed_snapshot_write(start_cluster):
     writer.restart_clickhouse()
     assert snapshot_etag(key) != etag
     assert writer.query("SELECT count(), sum(id) FROM t_delayed") == "20\t190\n"
-    assert event(writer, "DiskPlainRewritableSnapshotRead") >= 1
 
     writer.query("DROP TABLE t_delayed SYNC")
     wait_for(lambda: snapshot_etag(key) is None)
