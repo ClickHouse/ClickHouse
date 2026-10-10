@@ -4,6 +4,7 @@
 -- values instead of a search in every value, so the filter must stay enabled for short values.
 
 -- The string filters are not applied when the read columns may be written to the columns cache.
+-- The profile events of the reading are checked, so the query must read the data locally, not on parallel replicas.
 SET use_columns_cache = 0;
 
 DROP TABLE IF EXISTS t_string_filter_short_bulk;
@@ -19,7 +20,7 @@ SELECT count(), sum(cityHash64(s)) FROM t_string_filter_short_bulk PREWHERE s LI
 SELECT count(), sum(cityHash64(s)) FROM t_string_filter_short_bulk PREWHERE s LIKE '%x%' SETTINGS apply_string_filters_during_scan = 1;
 
 SELECT count() FROM t_string_filter_short_bulk PREWHERE s LIKE '%x%'
-SETTINGS apply_string_filters_during_scan = 1, max_threads = 1, log_comment = '05345_short_values_bulk_scan';
+SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, max_threads = 1, log_comment = '05345_short_values_bulk_scan';
 
 SYSTEM FLUSH LOGS query_log;
 

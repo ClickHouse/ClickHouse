@@ -5,6 +5,7 @@
 -- When there are few candidates, the bytes skipped by the scan pay off for their checks.
 
 -- The string filters are not applied when the read columns may be written to the columns cache.
+-- The profile events of the reading are checked, so the query must read the data locally, not on parallel replicas.
 SET use_columns_cache = 0;
 
 DROP TABLE IF EXISTS t_string_filter_short_bulk_other;
@@ -22,7 +23,7 @@ SELECT count(), sum(cityHash64(s)) FROM t_string_filter_short_bulk_other PREWHER
 SELECT count(), sum(cityHash64(s)) FROM t_string_filter_short_bulk_other PREWHERE s LIKE '%x%a%' SETTINGS apply_string_filters_during_scan = 1;
 
 SELECT count() FROM t_string_filter_short_bulk_other PREWHERE s LIKE '%x%a%'
-SETTINGS apply_string_filters_during_scan = 1, max_threads = 1, max_block_size = 8192, log_comment = '05346_many_candidates';
+SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, max_threads = 1, max_block_size = 8192, log_comment = '05346_many_candidates';
 
 CREATE TABLE t_string_filter_long_bulk_other (id UInt32, s String)
 ENGINE = MergeTree ORDER BY id
@@ -36,7 +37,7 @@ SELECT count(), sum(cityHash64(s)) FROM t_string_filter_long_bulk_other PREWHERE
 SELECT count(), sum(cityHash64(s)) FROM t_string_filter_long_bulk_other PREWHERE s LIKE '%xa%z%' SETTINGS apply_string_filters_during_scan = 1;
 
 SELECT count() FROM t_string_filter_long_bulk_other PREWHERE s LIKE '%xa%z%'
-SETTINGS apply_string_filters_during_scan = 1, max_threads = 1, log_comment = '05346_few_candidates';
+SETTINGS apply_string_filters_during_scan = 1, enable_parallel_replicas = 0, max_threads = 1, log_comment = '05346_few_candidates';
 
 SELECT count(), sum(cityHash64(s)) FROM t_string_filter_short_bulk_other PREWHERE s LIKE '%x%' AND s LIKE '%a%' SETTINGS apply_string_filters_during_scan = 0;
 SELECT count(), sum(cityHash64(s)) FROM t_string_filter_short_bulk_other PREWHERE s LIKE '%x%' AND s LIKE '%a%' SETTINGS apply_string_filters_during_scan = 1;
