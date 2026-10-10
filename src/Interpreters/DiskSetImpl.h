@@ -75,14 +75,17 @@ private:
     /// times slower for such keys, and up to 17% slower for hashes, which `LZ4` makes slightly larger.
     TemporaryDataBufferPtr file;
 
-    /// The first key and the file position of each block, in file order. A block holds the keys up to the
-    /// first key of the next block, so a lookup searches the block with the greatest first key that does not
-    /// exceed the probe.
+    /// The first key and the file position of each block, in file order, and the size of the file. A block
+    /// holds the keys up to the first key of the next block, so a lookup searches the block with the greatest
+    /// first key that does not exceed the probe.
     class Directory
     {
     public:
         /// Appends the next block, whose first key is greater than the keys of the blocks before it.
         void addBlock(const Key & first_key, size_t offset) { entries.push_back({first_key, offset}); }
+
+        /// Records the size of the complete file, where the frame of the last block ends.
+        void setFileSize(size_t file_size_) { file_size = file_size_; }
 
         /// Returns the only block that can hold `key`, which is not below the first key of block `from`.
         /// Lookups of ascending keys pass the block of the previous key, so that a key in the same block
@@ -103,6 +106,10 @@ private:
         /// Returns the position of the frame of `block` in the file.
         size_t getOffset(size_t block) const { return entries[block].offset; }
 
+        /// Returns the position in the file after the frame of `block`: the position of the frame of the next
+        /// block, or the size of the file for the last block.
+        size_t getEndOffset(size_t block) const { return block + 1 < entries.size() ? entries[block + 1].offset : file_size; }
+
         size_t size() const { return entries.size(); }
         size_t allocatedBytes() const { return entries.capacity() * sizeof(Entry); }
 
@@ -115,6 +122,7 @@ private:
         };
 
         VectorWithMemoryTracking<Entry> entries;
+        size_t file_size = 0;
     };
 
     Directory directory;

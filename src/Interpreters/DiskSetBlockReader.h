@@ -2,14 +2,15 @@
 
 #include <Interpreters/DiskSetImpl.h>
 
-#include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/SeekableReadBuffer.h>
+#include <Interpreters/TemporaryFileFrameReader.h>
 #include <Common/ProfileEvents.h>
 
 #include <algorithm>
+#include <functional>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace ProfileEvents
@@ -22,25 +23,27 @@ namespace DB
 {
 
 /// Reads the blocks that one lookup call needs: it takes the blocks that the cache of the set holds from the
-/// cache, and reads the others from the file through its own buffer. Each lookup call creates its own reader,
-/// so concurrent calls share only the immutable file and directory, and the cache, which the reader calls
-/// once to get the blocks of the call and once to add the blocks that it read.
+/// cache, and reads the others from the file. Each lookup call creates its own reader, so concurrent calls
+/// share only the immutable file and directory, and the cache, which the reader calls once to get the blocks
+/// of the call and once to add the blocks that it read.
 ///
-/// The constructor plans the call, since its decisions need all the blocks of the call: it queries the cache
-/// for all of them in one batch, and sizes the reads by how many blocks the cache lacks and how far apart
-/// they are. It reads no blocks. `read` then produces the keys of one block at a time, in ascending order, as
-/// the lookups reach the block. The decoder holds the keys of one block, so at most one decoded block exists
-/// at a time.
+/// The constructor queries the cache for all the blocks of the call in one batch, and gives the frames of the
+/// blocks that the cache lacks to a `TemporaryFileFrameReader`, which reads the frames that are close to each
+/// other together. It reads no blocks. `read` then produces the keys of one block at a time, in ascending
+/// order, as the lookups reach the block. The decoder holds the keys of one block, so at most one decoded
+/// block exists at a time.
 template <typename Key>
 class DiskSetImpl<Key>::BlockReader
 {
 public:
-    /// Prepares to read `blocks_`, which ascend. The reader opens the file only if the cache lacks some of
-    /// the blocks, and sizes its reads for the missing ones.
+    /// Prepares to read `blocks_`, which are distinct and ascend. The reader opens the file only if the cache
+    /// lacks some of the blocks.
     BlockReader(const DiskSetImpl & set_, std::vector<size_t> blocks_)
         : set(set_)
         , blocks(std::move(blocks_))
     {
+        chassert(std::ranges::adjacent_find(blocks, std::greater_equal<>()) == blocks.end());
+
         /// Step 1: Query the cache for all the blocks of the call at once, so that the call locks each shard
         /// once. The cache returns the bytes of the blocks that it holds and tells which of the other blocks
         /// it will take once they are read.
@@ -56,29 +59,18 @@ public:
             admitted_blocks.resize(blocks.size()); /// All false: no cache takes the blocks
         }
 
-        /// Step 2: Find the blocks that the cache lacks, which the reader reads from the file. Their number
-        /// and span decide whether one read takes the frames of neighboring blocks together, as
-        /// `getBufferSize` describes.
-        size_t missing_blocks = 0;
-        std::optional<size_t> first_missing_block;
-        size_t last_missing_block = 0;
-        for (size_t i = 0; i < blocks.size(); ++i)
-        {
-            if (cached_blocks[i])
-                continue;
-            ++missing_blocks;
-            if (!first_missing_block)
-                first_missing_block = blocks[i];
-            last_missing_block = blocks[i];
-        }
+        /// Step 2: Prepare to read the frames of the blocks that the cache lacks. A call whose blocks are all
+        /// cached never opens the file.
+        const size_t missing_blocks = static_cast<size_t>(std::ranges::count(cached_blocks, nullptr));
         cache_hits = blocks.size() - missing_blocks;
-
-        /// Step 3: Open the file only if some blocks are missing, so a call whose blocks are all cached never
-        /// touches the file.
         if (missing_blocks)
         {
-            in = set.file->readRaw(getBufferSize(set, missing_blocks, last_missing_block - *first_missing_block + 1));
-            compressed.emplace(*in, /*allow_different_codecs_=*/true);
+            std::vector<TemporaryFileFrameReader::Frame> missing_frames;
+            missing_frames.reserve(missing_blocks);
+            for (size_t i = 0; i < blocks.size(); ++i)
+                if (!cached_blocks[i])
+                    missing_frames.push_back({set.directory.getOffset(blocks[i]), set.directory.getEndOffset(blocks[i])});
+            frame_reader.emplace(*set.file, std::move(missing_frames));
         }
     }
 
@@ -89,9 +81,9 @@ public:
     }
 
     /// Returns the keys of `block`, which is one of the blocks of the reader. The keys stay valid until the
-    /// next call. Calls come in ascending order of blocks, so that a coalesced read also serves the blocks
-    /// after the one that it starts at. Calling again for the block of the previous call returns its keys
-    /// without another read.
+    /// next call. Calls come in ascending order of blocks, so that one read of the file can serve several
+    /// missing blocks (see `TemporaryFileFrameReader`). Calling again for the block of the previous call
+    /// returns its keys without another read.
     std::span<const Key> read(size_t block)
     {
         /// Consecutive lookups often need the same block, which is decoded only once.
@@ -111,27 +103,24 @@ public:
             return current_keys;
         }
 
-        /// A missing block is read from the file. The decoder has consumed the block that the reader last
-        /// read from the file, so the compressed buffer takes the next frame from the new position, which the
-        /// file buffer may already hold.
-        in->seek(set.directory.getOffset(block), SEEK_SET);
-        compressed->next();
-        const DiskSetBlockHeader header = BlockFormat::Decoder::readHeader(*compressed);
+        /// A missing block is read from the file.
+        const std::string_view block_bytes = frame_reader->read(set.directory.getOffset(block));
+        ReadBufferFromMemory block_in(block_bytes.data(), block_bytes.size());
+        const DiskSetBlockHeader header = BlockFormat::Decoder::readHeader(block_in);
 
-        /// After `readHeader`, the rest of the working buffer of the compressed buffer is the body of
-        /// the block. If the cache admitted the block, the reader keeps the header and a copy of the
-        /// body for `addReadBlocksToCache`.
+        /// After `readHeader`, the rest of the block is its body. If the cache admitted the block, the reader
+        /// keeps the header and a copy of the body for `addReadBlocksToCache`.
         if (admitted_blocks[position])
         {
-            chassert(compressed->available() == header.body_bytes); /// A frame holds one block
+            chassert(block_in.available() == header.body_bytes); /// A frame holds one block
             auto read_block = std::make_shared<DiskSetCachedBlock>();
             read_block->header = header;
-            read_block->body.assign(compressed->position(), compressed->position() + header.body_bytes); /// Allocates the exact size
+            read_block->body.assign(block_in.position(), block_in.position() + header.body_bytes); /// Allocates the exact size
             blocks_to_cache.push_back(block);
             read_blocks_to_cache.push_back(std::move(read_block));
         }
         ++read_blocks;
-        current_keys = decoder.decode(header, *compressed, set.directory.getFirstKey(block));
+        current_keys = decoder.decode(header, block_in, set.directory.getFirstKey(block));
         return current_keys;
     }
 
@@ -144,22 +133,6 @@ public:
     }
 
 private:
-    /// A coalesced read takes the frames of this many neighboring blocks. It saves reads when the needed
-    /// blocks are on average closer than this, and it costs more than it saves when they are farther apart,
-    /// because it copies all the frames between them.
-    static constexpr size_t frames_per_coalesced_read = 16;
-
-    /// Returns the size of the buffer: the largest frame of a block, with the bytes that its codec needs
-    /// after it, or the frames of a coalesced read when the needed blocks are close enough.
-    static size_t getBufferSize(const DiskSetImpl & set, size_t needed_blocks, size_t range_blocks)
-    {
-        const size_t max_frame_bytes = std::max(
-            CompressedReadBufferBase::getInPlaceInputBufferSize(*set.compressible_block_codec, BlockFormat::max_block_bytes_with_header),
-            CompressedReadBufferBase::getInPlaceInputBufferSize(*set.incompressible_block_codec, BlockFormat::max_block_bytes_with_header));
-        const bool coalesce_reads = range_blocks <= needed_blocks * frames_per_coalesced_read;
-        return (coalesce_reads ? frames_per_coalesced_read : 1) * max_frame_bytes;
-    }
-
     /// The set whose file, directory and cache the reader uses. The set outlives the reader, which serves a
     /// single call.
     const DiskSetImpl & set;
@@ -173,13 +146,7 @@ private:
     std::vector<bool> admitted_blocks;
     size_t position = 0;
 
-    /// The buffer holds whole frames, so that the frame of a block is decompressed where it is read instead
-    /// of being copied first, except a frame that the end of a coalesced read cuts.
-    std::unique_ptr<SeekableReadBuffer> in; /// Only when the cache lacks some of the blocks
-
-    /// One compressed buffer serves all the blocks of the call, so that it allocates its memory once. It
-    /// accepts frames of both codecs, because the file compresses only the blocks that a codec can shrink.
-    std::optional<CompressedReadBuffer> compressed; /// Created with `in`
+    std::optional<TemporaryFileFrameReader> frame_reader; /// Only when the cache lacks some of the blocks
 
     typename BlockFormat::Decoder decoder;
 
