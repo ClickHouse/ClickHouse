@@ -1,0 +1,14 @@
+empty	[1,2]
+tuple length	[1]
+array sizes	[1]
+nullable size	[1]
+length in	[1,2]
+shadow	[1]
+file names	1
+bool default	[2,3]
+datetime64	[1]
+decimal	[1]
+whatif dynamic	skip_ratio:   50.0%
+whatif dynamic	empirical_status: ok
+whatif cast	empirical_status: ok
+experimental	bf	jsonbf_v1

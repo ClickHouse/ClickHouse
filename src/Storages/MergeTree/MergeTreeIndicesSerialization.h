@@ -41,6 +41,7 @@ struct MergeTreeIndexSubstream
         TextIndexDictionary,
         TextIndexPostings,
         TextIndexPositions,
+        JSONBloomFilterValues,
     };
 
     Type type;

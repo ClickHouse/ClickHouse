@@ -1,0 +1,16 @@
+exact direct	[2]
+exact nested	[1]
+exact array JSON	[2]
+exact map descendant	[1]
+regexp direct	[2]
+regexp array JSON	[1]
+regexp map descendant	[2]
+Granules: 0/2
+Granules: 0/2
+[1]
+[1]
+[1]
+[1]
+exact prefix sibling	[2]
+nested kept	[1]
+regexp prefix sibling	[2]
