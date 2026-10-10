@@ -1629,7 +1629,7 @@ See also:
     DECLARE(Bool, group_by_use_nulls_with_totals, true, R"(
 When enabled together with [group_by_use_nulls](#group_by_use_nulls), the `GROUP BY` keys of a query with the `WITH TOTALS` modifier are converted to [Nullable](/reference/data-types/nullable) and are reported as `NULL` in the totals row, like for `ROLLUP`, `CUBE`, and `GROUPING SETS`.
 
-When disabled, `group_by_use_nulls` does not affect `WITH TOTALS`: the keys keep their types and the totals row contains their default values.
+When disabled, `group_by_use_nulls` does not affect `WITH TOTALS`: the totals row contains the default values of the keys, and the keys keep their types unless `ROLLUP`, `CUBE`, or `GROUPING SETS` makes them `Nullable`.
 
 Disable this setting (or use `compatibility` with a version before 26.10) during a rolling upgrade of a cluster that runs distributed `GROUP BY ... WITH TOTALS` queries with `group_by_use_nulls = 1`, because older servers expect non-`Nullable` keys in the totals row.
 
