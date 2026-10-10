@@ -1,5 +1,5 @@
 #include <Processors/Executors/Runtime/V2/tests/Toolkit/Scripted.h>
-#include <Processors/Executors/Runtime/Wyrd/Testing/ExclusiveSection.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/ExclusiveScope.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -60,6 +60,7 @@ public:
         : IProcessor(makeInputs(inputs_count), makeOutputs(outputs_count))
         , name(std::move(name_))
         , actions(std::make_move_iterator(actions_.begin()), std::make_move_iterator(actions_.end()))
+        , scope(name)
     {
     }
 
@@ -70,7 +71,7 @@ public:
 
     Status prepare() override
     {
-        Wyrd::ExclusiveSection::Guard guard(section);
+        auto section = scope.enter("prepare");
 
         if (!outputs.empty() && std::ranges::all_of(outputs, [](const OutputPort & output) { return output.isFinished(); }))
             return finishAll();
@@ -128,7 +129,7 @@ public:
 
     void work() override
     {
-        Wyrd::ExclusiveSection::Guard guard(section);
+        auto section = scope.enter("work");
 
         if (!actions.empty() && actions.front().kind == Action::Kind::Work)
         {
@@ -145,19 +146,19 @@ public:
 
     int schedule() override
     {
-        Wyrd::ExclusiveSection::Guard guard(section);
+        auto section = scope.enter("schedule");
         return actions.front().on_async(*this);
     }
 
     void onAsyncJobReady() override
     {
-        Wyrd::ExclusiveSection::Guard guard(section);
+        auto section = scope.enter("onAsyncJobReady");
         actions.pop_front();
     }
 
     PipelineUpdate updatePipeline() override
     {
-        Wyrd::ExclusiveSection::Guard guard(section);
+        auto section = scope.enter("updatePipeline");
         Action action = std::move(actions.front());
         actions.pop_front();
         return action.on_expand(*this);
@@ -169,7 +170,7 @@ private:
     std::optional<Chunk> current;
     std::optional<Chunk> pending;
     std::vector<UInt64> received_values;
-    Wyrd::ExclusiveSection section;
+    Wyrd::ExclusiveScope scope;
 };
 
 }
@@ -256,19 +257,19 @@ Chunk makeChunk(UInt64 value)
     return Chunk(std::move(columns), 1);
 }
 
-ProcessorPtr makeSource(std::vector<Action> actions)
+ProcessorPtr makeSource(String name, std::vector<Action> actions)
 {
-    return std::make_shared<Scripted>("ScriptedSource", 0, 1, std::move(actions));
+    return std::make_shared<Scripted>(std::move(name), 0, 1, std::move(actions));
 }
 
-ProcessorPtr makeTransform(std::vector<Action> actions)
+ProcessorPtr makeTransform(String name, std::vector<Action> actions)
 {
-    return std::make_shared<Scripted>("ScriptedTransform", 1, 1, std::move(actions));
+    return std::make_shared<Scripted>(std::move(name), 1, 1, std::move(actions));
 }
 
-ProcessorPtr makeSink(std::vector<Action> actions)
+ProcessorPtr makeSink(String name, std::vector<Action> actions)
 {
-    return std::make_shared<Scripted>("ScriptedSink", 1, 0, std::move(actions));
+    return std::make_shared<Scripted>(std::move(name), 1, 0, std::move(actions));
 }
 
 std::vector<UInt64> received(const IProcessor & sink)

@@ -24,7 +24,6 @@ void logMessage(std::string message)
 
 void logMessage(std::string message)
 {
-    fmt::print(stderr, "Wyrd thread {}: {}\n", getThreadId(), message);
 }
 
 #else

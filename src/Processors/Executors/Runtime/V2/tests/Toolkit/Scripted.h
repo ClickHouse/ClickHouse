@@ -44,9 +44,9 @@ Action stop();
 SharedHeader makeHeader();
 Chunk makeChunk(UInt64 value);
 
-ProcessorPtr makeSource(std::vector<Action> actions);
-ProcessorPtr makeTransform(std::vector<Action> actions);
-ProcessorPtr makeSink(std::vector<Action> actions);
+ProcessorPtr makeSource(String name, std::vector<Action> actions);
+ProcessorPtr makeTransform(String name, std::vector<Action> actions);
+ProcessorPtr makeSink(String name, std::vector<Action> actions);
 
 std::vector<UInt64> received(const IProcessor & sink);
 
