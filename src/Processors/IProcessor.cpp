@@ -38,10 +38,10 @@ IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::m
     processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
 }
 
-bool IProcessor::isAnyOutputPushable() const
+bool IProcessor::isAnyOutputNeeded() const
 {
     for (const auto & output : outputs)
-        if (!output.isFinished() && output.canPush())
+        if (!output.isFinished() && output.isNeeded())
             return true;
     return false;
 }

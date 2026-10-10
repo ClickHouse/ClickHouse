@@ -57,12 +57,9 @@ NegativeLimitTransform::Status NegativeLimitTransform::prepare()
 
     if (stage == Stage::Pull)
     {
-        if (!isAnyOutputPushable())
-        {
-            for (auto & input : inputs)
-                input.setNotNeeded();
+        if (!was_output_needed && !isAnyOutputNeeded())
             return Status::PortFull;
-        }
+        was_output_needed = true;
 
         bool has_data_need = false;
 
