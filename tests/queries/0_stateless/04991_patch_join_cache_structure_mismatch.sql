@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-shared-merge-tree, no-parallel-replicas
+-- Tags: no-parallel, no-shared-merge-tree, no-parallel-replicas, no-fasttest
 -- no-parallel: enables the server-global failpoint patch_parts_reverse_column_order, which a concurrent
 --   04034_patch_parts_column_order_mismatch would disable before the decisive query.
 -- no-shared-merge-tree: needs SYSTEM SCHEDULE MERGE and the exact two-pair merge layout it asserts.
