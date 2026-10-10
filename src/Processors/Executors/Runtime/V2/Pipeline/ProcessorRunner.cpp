@@ -36,15 +36,21 @@ void ProcessorRunner::runPrepare(ExecutingProcessor & executing)
         prepareRound(executing, std::move(round_lock));
     }
 
-    size_t processed_inputs = 0;
-    size_t processed_outputs = 0;
-    while (processed_outputs < pending_outputs.size() || processed_inputs < pending_inputs.size())
+    while (!pending_outputs.empty() || !pending_inputs.empty())
     {
-        for (; processed_outputs < pending_outputs.size(); ++processed_outputs)
-            visitNeighbour(*pending_outputs[processed_outputs]);
+        while (!pending_outputs.empty())
+        {
+            OutputPort * upstream = pending_outputs.back();
+            pending_outputs.pop_back();
+            visitNeighbour(*upstream);
+        }
 
-        for (; processed_inputs < pending_inputs.size(); ++processed_inputs)
-            visitNeighbour(*pending_inputs[processed_inputs]);
+        while (!pending_inputs.empty())
+        {
+            InputPort * downstream = pending_inputs.back();
+            pending_inputs.pop_back();
+            visitNeighbour(*downstream);
+        }
     }
 }
 
@@ -190,7 +196,7 @@ void ProcessorRunner::prepareRound(ExecutingProcessor & executing, std::unique_l
 {
     IProcessor & processor = *executing.processor;
 
-    executing.incoming_updates.drainLifo(hint_inputs, hint_outputs);
+    executing.incoming_updates.drain(hint_inputs, hint_outputs);
     const auto last_status = executing.last_status;
     const auto new_status = processor.prepare(hint_inputs, hint_outputs);
     executing.last_status = new_status;
@@ -198,12 +204,11 @@ void ProcessorRunner::prepareRound(ExecutingProcessor & executing, std::unique_l
     if (options.profile_processors)
         profileWaits(processor, last_status, new_status);
 
-    /// TODO: Fix lifo here.
-    executing.round_updates.drainLifo(changed_inputs, changed_outputs);
-    for (auto * input : changed_inputs)
-        pending_outputs.push_back(&input->getOutputPort());
+    executing.round_updates.drain(changed_inputs, changed_outputs);
     for (auto * output : changed_outputs)
         pending_inputs.push_back(&output->getInputPort());
+    for (auto * input : changed_inputs)
+        pending_outputs.push_back(&input->getOutputPort());
 
     switch (new_status)
     {

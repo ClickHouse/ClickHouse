@@ -18,7 +18,7 @@ UpdateInbox::UpdateInbox()
 }
 
 template <class PortT>
-void UpdateInbox::drainLifo(UpdateInboxEntry *& head, std::vector<PortT *> & ports_out)
+void UpdateInbox::drain(UpdateInboxEntry *& head, std::vector<PortT *> & ports_out)
 {
     ports_out.clear();
 
@@ -44,10 +44,10 @@ void UpdateInbox::push(OutputPort & port)
     outputs = &port;
 }
 
-void UpdateInbox::drainLifo(IProcessor::UpdatedInputPorts & inputs_out, IProcessor::UpdatedOutputPorts & outputs_out)
+void UpdateInbox::drain(IProcessor::UpdatedInputPorts & inputs_out, IProcessor::UpdatedOutputPorts & outputs_out)
 {
-    drainLifo(inputs, inputs_out);
-    drainLifo(outputs, outputs_out);
+    drain(inputs, inputs_out);
+    drain(outputs, outputs_out);
 }
 
 }
