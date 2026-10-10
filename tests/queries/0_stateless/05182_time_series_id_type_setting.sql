@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: every parallel replica reads all rows of the table behind `timeSeriesTags`, so each row
+-- is returned once per replica, see https://github.com/ClickHouse/ClickHouse/issues/118130.
+
 -- The `id_type` setting keeps the type of the `id` column in the definition of a TimeSeries table when the type
 -- isn't kept there otherwise: if the tags target is an external table, or if the `id_generator` setting is set.
 -- The normalization rules are covered by the unit test gtest_normalize_time_series_definition.cpp; this test checks
