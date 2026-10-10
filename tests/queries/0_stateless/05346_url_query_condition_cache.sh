@@ -103,8 +103,10 @@ touch -d '2020-01-01 00:00:00' "${DIR}"/*.parquet
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05346"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05346 (k Int64, s String) ENGINE = URL('http://127.0.0.1:${HTTP_PORT}/{a,b}.parquet', 'Parquet')"
 
+# The reader learns which row groups have no matching row only from a filter pushed into it as `PREWHERE`;
+# a filter left above the read counts every row group as matched, and no entry is written.
 SETTINGS="use_query_condition_cache = 1, input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 0,
-    use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000"
+    optimize_move_to_prewhere = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000"
 
 function run()
 {
@@ -152,20 +154,28 @@ run rewritten_1 "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%'"
 run rewritten_2 "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%'"
 
 echo "--- a row policy"
-# A row policy is not part of the key: a read under it neither consults nor writes the cache.
+# A row policy is not part of the key: a read under it neither consults nor writes the cache. A fresh
+# predicate, which no read has warmed: the policy rejects all its rows, so had the read under it written
+# entries, the last row group of `b.parquet` would be recorded as having no match, the next unrestricted
+# read would find it in the cache and return nothing.
 POLICY_USER="u_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${POLICY_USER}"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${POLICY_USER}"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_05346, READ ON URL TO ${POLICY_USER}"
 ${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY ${POLICY_USER}_policy ON ${CLICKHOUSE_DATABASE}.t_05346 USING k < 1000950 TO ${POLICY_USER}"
-${CLICKHOUSE_CLIENT} --user ${POLICY_USER} --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_policy" --query "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%' SETTINGS ${SETTINGS}"
+${CLICKHOUSE_CLIENT} --user ${POLICY_USER} --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_policy" --query "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '100096%' SETTINGS ${SETTINGS}"
 ${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${POLICY_USER}_policy ON ${CLICKHOUSE_DATABASE}.t_05346"
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${POLICY_USER}"
+run after_policy "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '100096%'"
 
 echo "--- a recently modified file"
+# Only the just touched file is read, so that the settled entries of `a.parquet` do not show up in
+# the events of the query: a read of it neither consults nor writes the cache.
 touch "${DIR}/b.parquet"
-run recent_1 "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%'"
-run recent_2 "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%'"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05346_b"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05346_b (k Int64, s String) ENGINE = URL('http://127.0.0.1:${HTTP_PORT}/b.parquet', 'Parquet')"
+run recent_1 "SELECT count(), min(k) FROM t_05346_b WHERE s LIKE '10009%'"
+run recent_2 "SELECT count(), min(k) FROM t_05346_b WHERE s LIKE '10009%'"
 
 echo "--- the url table function"
 # A table without a UUID has no cache entries.
@@ -174,6 +184,7 @@ run function_1 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 run function_2 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 
 echo "--- query condition cache lookups"
-events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy recent_1 recent_2 function_1 function_2
+events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy after_policy recent_1 recent_2 function_1 function_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346_b"
