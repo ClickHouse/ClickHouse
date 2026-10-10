@@ -737,11 +737,14 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     }
 
     /// We don't want to allow opening EDITOR in the embedded mode.
+    /// On Windows `openEditor` cannot start the editor (see `executeCommand`), so the shortcuts are not bound at all.
+#if !defined(OS_WINDOWS)
     if (!options.embedded_mode)
     {
         rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(/*format_query=*/ false); return Replxx::ACTION_RESULT::CONTINUE; });
         rx.bind_key(Replxx::KEY::meta('F'), [this](char32_t) { openEditor(/*format_query=*/ true); return Replxx::ACTION_RESULT::CONTINUE; });
     }
+#endif
 
     /// readline insert-comment
     auto insert_comment_action = [this](char32_t code)
