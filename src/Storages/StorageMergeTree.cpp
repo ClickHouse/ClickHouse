@@ -2583,17 +2583,25 @@ void StorageMergeTree::loadMutations(bool reloading)
                 /// reconcile their transaction state: a follower that saw the mutation file before
                 /// the old leader appended `csn:` left the in-memory CSN unresolved (it could not
                 /// write the file). Now that we are the leader, resolve it so `selectPartsToMutate`
-                /// does not hit an `UnknownCSN` logical error for a committed mutation.
+                /// does not hit an `UnknownCSN` logical error for a committed mutation. Prefer the
+                /// `csn:` the old leader has meanwhile persisted in the file (just parsed into
+                /// `entry`): the transaction log entry may already be garbage-collected, so
+                /// `TransactionManager::getCSN` alone cannot be relied upon.
                 if (reloading)
                 {
                     auto existing = current_mutations_by_version.find(block_number);
                     if (existing != current_mutations_by_version.end())
                     {
                         auto & loaded = existing->second;
-                        if (!loaded.tid.isNonTransactional() && !loaded.csn && mayMutateSharedStorage())
+                        if (!loaded.tid.isNonTransactional() && !loaded.csn)
                         {
-                            if (auto csn = TransactionManager::getCSN(loaded.tid))
-                                loaded.writeCSN(csn);
+                            if (entry.csn)
+                                loaded.csn = entry.csn;
+                            else if (mayMutateSharedStorage())
+                            {
+                                if (auto csn = TransactionManager::getCSN(loaded.tid))
+                                    loaded.writeCSN(csn);
+                            }
                         }
                         continue;
                     }
