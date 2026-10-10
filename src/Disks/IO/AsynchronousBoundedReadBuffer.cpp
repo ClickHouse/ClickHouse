@@ -345,8 +345,9 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
     size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
-        chassert(offset >= 0);
-        new_pos = offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {}", offset);
+        new_pos = static_cast<size_t>(offset);
     }
     else if (whence == SEEK_CUR)
     {

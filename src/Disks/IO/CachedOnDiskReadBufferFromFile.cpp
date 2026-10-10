@@ -2035,7 +2035,10 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
             "Current offset {}, seek offset: {}", file_offset_of_buffer_end, offset);
     }
 
-    size_t new_pos = offset;
+    if (whence == SEEK_SET && offset < 0)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {}", offset);
+
+    size_t new_pos = static_cast<size_t>(offset);
 
     if (allow_seeks_after_first_read)
     {
