@@ -33,8 +33,12 @@ public:
 
     void cancel(IProcessor::CancelReason reason);
     bool cancelled() const;
+    IProcessor::CancelReason cancelReason() const;
+
+    void finish();
     bool allProcessorsFinished() const;
     void reportReadProgress(ReadProgressCallback & callback);
+
     String dump() const;
 
 private:

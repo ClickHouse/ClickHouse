@@ -245,6 +245,18 @@ bool ExecutingPipeline::cancelled() const
     return reason != IProcessor::CancelReason::NotCancelled && reason != IProcessor::CancelReason::PartialResult;
 }
 
+IProcessor::CancelReason ExecutingPipeline::cancelReason() const
+{
+    return cancel_reason.load();
+}
+
+void ExecutingPipeline::finish()
+{
+    std::lock_guard lock(mutex);
+    for (const auto & processor : *processors)
+        processor->onPipelineFinished();
+}
+
 bool ExecutingPipeline::allProcessorsFinished() const
 {
     std::lock_guard lock(mutex);

@@ -22,6 +22,17 @@ bool checkTimeLimit(const QueryStatusPtr & process_list_element)
     return !process_list_element || process_list_element->checkTimeLimit();
 }
 
+void syncMemoryReservation(const QueryStatusPtr & process_list_element)
+{
+    if (!process_list_element)
+        return;
+
+    auto * reservation = process_list_element->getMemoryReservation();
+    auto * tracker = process_list_element->getMemoryTracker();
+    if (reservation && tracker)
+        reservation->syncWithMemoryTracker(tracker);
+}
+
 }
 
 PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem)
@@ -70,22 +81,26 @@ void PipelineExecutor::finalize()
     if (!checkTimeLimit(process_list_element))
         cancel(IProcessor::CancelReason::CancelledByTimeout);
 
-    if (pipeline->cancelled())
-        return;
-
-    if (!pipeline->allProcessorsFinished())
-        Wyrd::abort("Pipeline stuck. Current state:\n{}", pipeline->dump());
+    switch (pipeline->cancelReason())
+    {
+        case IProcessor::CancelReason::NotCancelled:
+        case IProcessor::CancelReason::PartialResult:
+            if (!pipeline->allProcessorsFinished())
+                Wyrd::abort("Pipeline stuck. Current state:\n{}", pipeline->dump());
+            break;
+        case IProcessor::CancelReason::CancelledByTimeout:
+            break;
+        case IProcessor::CancelReason::Unknown:
+        case IProcessor::CancelReason::CancelledByUser:
+        case IProcessor::CancelReason::Exception:
+            return;
+    }
 
     if (read_progress_callback)
         pipeline->reportReadProgress(*read_progress_callback);
 
-    if (process_list_element)
-    {
-        auto * reservation = process_list_element->getMemoryReservation();
-        auto * tracker = process_list_element->getMemoryTracker();
-        if (reservation && tracker)
-            reservation->syncWithMemoryTracker(tracker);
-    }
+    syncMemoryReservation(process_list_element);
+    pipeline->finish();
 }
 
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
