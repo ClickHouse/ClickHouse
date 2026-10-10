@@ -50,3 +50,7 @@ ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, x AS x + 5);
 SELECT 'a shared expression is not rebound';
 SELECT g, x AS a, x AS b FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x FROM numbers(2))
 ORDER BY g WITH FILL INTERPOLATE (a AS 0, b AS b + a);
+
+SELECT 'a shared expression is not rebound, reversed';
+SELECT g, x AS a, x AS b FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x FROM numbers(2))
+ORDER BY g WITH FILL INTERPOLATE (b AS b + a, a AS 0);
