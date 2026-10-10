@@ -891,6 +891,7 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferFromS3InitMicroseconds, "Time spent initializing connection to S3.", ValueType::Microseconds) \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.", ValueType::Bytes) \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.", ValueType::Number) \
+    M(ReadBufferFromS3RequestsCut, "Number of requests from S3 disks cut to one buffer fill because the connection group of the disks was at or above `disk_connections_soft_limit`.", ValueType::Number) \
     \
     M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.", ValueType::Microseconds) \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.", ValueType::Bytes) \
