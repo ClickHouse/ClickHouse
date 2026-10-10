@@ -587,7 +587,7 @@ bool IcebergMetadata::optimize(
     return true;
 #else
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    auto snapshots_info = getHistory(context);
+    auto snapshots_info = getHistoryImpl(metadata_object);
     compactIcebergTable(
         snapshots_info,
         persistent_components,
@@ -1163,6 +1163,11 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
+    return getHistoryImpl(metadata_object);
+}
+
+IcebergMetadata::IcebergHistory IcebergMetadata::getHistoryImpl(Poco::JSON::Object::Ptr metadata_object) const
+{
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
