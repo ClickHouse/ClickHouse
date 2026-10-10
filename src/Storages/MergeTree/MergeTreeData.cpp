@@ -14410,7 +14410,9 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                 /// for the part - including after a same-name re-add, so the pre-drop bytes are never
                 /// carried over into the new column (`canSkipMutationCommandForPart`). So it does not
                 /// stand in the way of dropping the column. `RENAME COLUMN` is deliberately not
-                /// exempt: the recompression is carried over to the new name and is executed there.
+                /// exempt: the queued command names the column by its old name, which would no longer
+                /// be a physical column of the table metadata when the mutation runs, so the
+                /// recompression would be skipped and the renamed column would keep its old codec.
                 if (mutation_command.type == MutationCommand::Type::RECOMPRESS_COLUMN
                     && command.type == AlterCommand::DROP_COLUMN)
                     continue;
