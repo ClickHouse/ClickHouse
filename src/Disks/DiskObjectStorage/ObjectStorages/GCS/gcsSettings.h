@@ -155,6 +155,16 @@ struct GCSObjectStorageSettings
     /// `service_account_key_file` on either side always answers "no": the file contents, not the
     /// path, are the credentials, and they can be rotated in place between two client constructions.
     bool describesSameClientAs(const GCSObjectStorageSettings & other) const;
+
+    /// Whether a client built from these settings must be rebuilt to match `other`, which is what
+    /// `GCSObjectStorage::applyNewSettings` asks on every query of a table using a copy of a GCS disk
+    /// storage (see `StorageObjectStorageConfiguration::update`). Unlike `describesSameClientAs`, this
+    /// compares the inputs of `getGCSClient` as stored values: a `service_account_key_file` by its path
+    /// and Application Default Credentials as equal, since rebuilding on every call would discard the
+    /// token cache of the client. The proxy resolvers are excluded as well: a disk section yields fresh
+    /// resolver objects on every parse, so a proxy change is picked up only by a forced rebuild (the
+    /// config reload of a disk), as for `S3ObjectStorage`.
+    bool hasChangesAffectingClient(const GCSObjectStorageSettings & other) const;
 };
 
 /// Whether `host` is the default GCS host (`storage.googleapis.com`) or one of its virtual-hosted

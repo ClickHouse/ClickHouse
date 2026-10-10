@@ -486,6 +486,32 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         && token_proxy_resolver == other.token_proxy_resolver;
 }
 
+bool GCSObjectStorageSettings::hasChangesAffectingClient(const GCSObjectStorageSettings & other) const
+{
+    /// The fields consumed by `getGCSClient` to build the client, except the proxy resolvers.
+    return endpoint_override != other.endpoint_override
+        || no_sign_request != other.no_sign_request
+        || service_account_key != other.service_account_key
+        || service_account_key_file != other.service_account_key_file
+        || access_token != other.access_token
+        || google_adc_client_id != other.google_adc_client_id
+        || google_adc_client_secret != other.google_adc_client_secret
+        || google_adc_refresh_token != other.google_adc_refresh_token
+        || google_adc_token_uri != other.google_adc_token_uri
+        || headers != other.headers
+        || connect_timeout_ms != other.connect_timeout_ms
+        || request_timeout_ms != other.request_timeout_ms
+        || max_connections != other.max_connections
+        || retry_attempts != other.retry_attempts
+        || http_keep_alive_timeout != other.http_keep_alive_timeout
+        || http_keep_alive_max_requests != other.http_keep_alive_max_requests
+        || max_get_rps != other.max_get_rps
+        || max_get_burst != other.max_get_burst
+        || max_put_rps != other.max_put_rps
+        || max_put_burst != other.max_put_burst
+        || for_disk != other.for_disk;
+}
+
 GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & settings)
 {
     if (settings.no_sign_request)

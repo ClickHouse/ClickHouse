@@ -599,6 +599,74 @@ def test_iceberg_on_a_native_gcs_disk(started_cluster):
     node.query("DROP TABLE gcs_iceberg_disk_holder SYNC")
 
 
+def test_iceberg_on_a_native_gcs_disk_keeps_the_access_token(started_cluster):
+    """A table working through a copy of a GCS disk storage must not rebuild its client per query.
+
+    `Iceberg` on a disk from the server configuration applies the disk section to its private copy of
+    the disk's object storage on every query. A rebuilt client starts with an empty token cache, so a
+    `google_adc_*` disk would exchange its refresh token on every query instead of once per lifetime.
+
+    The disk is added to the configuration by a reload rather than at startup: a static `gcs` disk
+    would stop the server from starting on a build without the SDK, which this module means to skip.
+    """
+    node = started_cluster.instances["node"]
+    disk_endpoint = (
+        f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/iceberg_adc_cached/"
+    )
+    disk_config_path = "/etc/clickhouse-server/config.d/gcs_iceberg_adc_disk.xml"
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "cat > {} <<'CONFIG_EOF'\n{}\nCONFIG_EOF".format(
+                disk_config_path,
+                "<clickhouse><storage_configuration><disks><gcs_iceberg_adc_disk>"
+                "<type>object_storage</type>"
+                "<object_storage_type>gcs</object_storage_type>"
+                "<metadata_type>local</metadata_type>"
+                f"<endpoint>{disk_endpoint}</endpoint>"
+                "<google_adc_client_id>ch-client-id</google_adc_client_id>"
+                "<google_adc_client_secret>ch-client-secret</google_adc_client_secret>"
+                "<google_adc_refresh_token>ch-refresh-token</google_adc_refresh_token>"
+                f"<google_adc_token_uri>http://localhost:{LONG_LIVED_TOKEN_PORT}/token</google_adc_token_uri>"
+                "</gcs_iceberg_adc_disk></disks></storage_configuration></clickhouse>",
+            ),
+        ]
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+    assert (
+        node.query(
+            "SELECT count() FROM system.disks WHERE name = 'gcs_iceberg_adc_disk'"
+        ).strip()
+        == "1"
+    )
+
+    node.query("DROP TABLE IF EXISTS gcs_iceberg_adc SYNC")
+    node.query(
+        "CREATE TABLE gcs_iceberg_adc (a UInt64) "
+        "ENGINE = Iceberg(path = 'table1/', format = Parquet) "
+        "SETTINGS disk = 'gcs_iceberg_adc_disk'"
+    )
+    node.query(
+        "INSERT INTO gcs_iceberg_adc SELECT number FROM numbers(100)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    # Warm-up: the first query of the table may still mint a token for its copy of the storage.
+    assert node.query("SELECT count() FROM gcs_iceberg_adc").strip() == "100"
+    warmed_up, _ = token_exchanges(LONG_LIVED_TOKEN_PORT)
+
+    for _ in range(3):
+        assert node.query("SELECT sum(a) FROM gcs_iceberg_adc").strip() == "4950"
+
+    after, _ = token_exchanges(LONG_LIVED_TOKEN_PORT)
+    assert (
+        after == warmed_up
+    ), f"expected no token exchange after the warm-up, got {after - warmed_up}"
+
+    node.query("DROP TABLE gcs_iceberg_adc SYNC")
+    node.exec_in_container(["rm", "-f", disk_config_path])
+
+
 def test_schema_inference_cache(started_cluster):
     """The native `gcs` schema cache must be visible in `system.schema_inference_cache` and
     clearable with `SYSTEM DROP SCHEMA CACHE FOR GCS` (otherwise a stale inferred schema

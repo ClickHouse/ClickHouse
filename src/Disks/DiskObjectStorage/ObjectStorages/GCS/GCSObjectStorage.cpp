@@ -593,13 +593,26 @@ void GCSObjectStorage::applyNewSettings(
             "Cannot change GCS bucket of an existing disk from '{}' to '{}'", bucket, new_settings.bucket);
 
     /// The client and settings are published together as one atomic snapshot (see the field comment).
-    /// When the caller forbids a client change, the current client is carried over into the new
-    /// snapshot, paired with the settings it may no longer match — that is the caller's explicit choice.
+    /// This method runs on every query of a table using a copy of this storage (see
+    /// `StorageObjectStorageConfiguration::update`), so the client is rebuilt only when a setting it is
+    /// built from changes: a rebuild would discard the access token the client caches until expiry.
+    /// A forced rebuild (the config reload of a disk) always builds a new client, which also picks up
+    /// proxy changes. When the caller forbids a client change, the current client is carried over into
+    /// the new snapshot, paired with the settings it may no longer match — that is the caller's choice.
+    auto current = getClientWithSettings();
     std::shared_ptr<gcs::Client> new_client;
-    if (options.allow_client_change)
+    if (options.force_client_rebuild
+        || (options.allow_client_change && current->settings.hasChangesAffectingClient(new_settings)))
+    {
         new_client = getGCSClient(new_settings, context);
+    }
     else
-        new_client = getClient();
+    {
+        new_client = current->client;
+        /// The kept client still resolves proxies through the resolvers it was built with.
+        new_settings.proxy_resolver = current->settings.proxy_resolver;
+        new_settings.token_proxy_resolver = current->settings.token_proxy_resolver;
+    }
 
     client_with_settings.set(std::make_unique<const ClientWithSettings>(
         ClientWithSettings{std::move(new_client), std::move(new_settings), false}));
