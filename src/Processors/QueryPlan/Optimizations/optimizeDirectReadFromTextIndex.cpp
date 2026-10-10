@@ -834,8 +834,8 @@ private:
                 VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
-                /// Skip compaction when a postprocessor is applied: it is unsound afterwards and can drop a token.
-                if (!apply_postprocessor)
+                /// Compaction is valid only for hasAllTokens and is unsound before a postprocessor.
+                if (function_name == "hasAllTokens" && !apply_postprocessor)
                     needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());

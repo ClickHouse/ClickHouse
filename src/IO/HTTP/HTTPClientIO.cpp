@@ -569,6 +569,18 @@ std::unique_ptr<HTTPRequestBodyWriteBuffer> sendHTTPRequest(
     return std::make_unique<HTTPRequestBodyWriteBuffer>(session, body_info, buf_size);
 }
 
+static std::unique_ptr<HTTPResponseReadBuffer> makeHTTPResponseReadBuffer(
+    HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPResponse & response, size_t buf_size)
+{
+    const auto body_info = session.onResponseHeadersReceived(response);
+
+    /// A body shorter than the buffer needs no more memory than its own length.
+    if (body_info.encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength)
+        buf_size = std::min<UInt64>(buf_size, body_info.content_length);
+
+    return std::make_unique<HTTPResponseReadBuffer>(session, std::move(session_holder), body_info, buf_size);
+}
+
 static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
     HTTPSessionPtr session_holder, Poco::Net::HTTPClientSession & session, Poco::Net::HTTPResponse & response, size_t buf_size)
 {
@@ -592,13 +604,7 @@ static std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponseImpl(
         throw;
     }
 
-    const auto body_info = session.onResponseHeadersReceived(response);
-
-    /// A body shorter than the buffer needs no more memory than its own length.
-    if (body_info.encoding == Poco::Net::HTTPClientSession::BodyEncoding::ContentLength)
-        buf_size = std::min<UInt64>(buf_size, body_info.content_length);
-
-    return std::make_unique<HTTPResponseReadBuffer>(session, std::move(session_holder), body_info, buf_size);
+    return makeHTTPResponseReadBuffer(std::move(session_holder), session, response, buf_size);
 }
 
 std::unique_ptr<HTTPResponseReadBuffer>
@@ -612,6 +618,15 @@ receiveHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, 
 {
     auto & session_ref = *session;
     return receiveHTTPResponseImpl(std::move(session), session_ref, response, buf_size);
+}
+
+std::unique_ptr<HTTPResponseReadBuffer>
+receiveEarlyHTTPResponse(HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size)
+{
+    if (!session->receiveEarlyResponse(response))
+        return nullptr;
+    auto & session_ref = *session;
+    return makeHTTPResponseReadBuffer(std::move(session), session_ref, response, buf_size);
 }
 
 }

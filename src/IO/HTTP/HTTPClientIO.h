@@ -139,4 +139,12 @@ std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
 std::unique_ptr<HTTPResponseReadBuffer> receiveHTTPResponse(
     HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
+/// Reads the response that the server has sent before reading the whole request body, after
+/// writing the body failed: a server may answer a request it rejects right after its headers and
+/// close the connection with the body unread. The caller checks that data is pending on the socket.
+/// Returns `nullptr` if no response header can be read. The request stays incomplete, so the
+/// connection is not reused. The returned buffer keeps the session alive.
+std::unique_ptr<HTTPResponseReadBuffer> receiveEarlyHTTPResponse(
+    HTTPSessionPtr session, Poco::Net::HTTPResponse & response, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+
 }
