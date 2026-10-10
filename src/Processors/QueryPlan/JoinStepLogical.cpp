@@ -2479,11 +2479,15 @@ void JoinStepLogical::buildPhysicalJoin(
         }
     }
 
+    if (hash_table_key_hash && !join_step->join_algorithm_params->build_input_mark)
+        join_step->join_algorithm_params->build_input_mark = std::make_shared<JoinBuildInputMark>();
+
     LogicalJoinInfo logical_join_info{
         .readable_relation_name = join_step->getReadableRelationName(),
         .estimation = join_step->getEstimation(),
         .locality = join_step->join_operator.locality,
-        .cluster_id = join_step->getClusterId()
+        .cluster_id = join_step->getClusterId(),
+        .build_input_mark = join_step->join_algorithm_params->build_input_mark,
     };
 
     auto new_node = buildPhysicalJoinImpl(

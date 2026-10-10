@@ -120,8 +120,9 @@ struct RuntimeHashStatisticsContext
         if (auto cache_key = getCachedKey(node))
         {
             auto & hash_table_stats = getHashTablesStatistics<HashJoinEntry>();
+            /// A size recorded under a runtime filter from outside the build side describes that plan only.
             if (auto hint = hash_table_stats.getSizeHint(params.setKey(cache_key)))
-                return hint->source_rows;
+                return hint->unfiltered_source_rows;
         }
         return {};
     }
@@ -626,8 +627,9 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     RelationStats stats = estimateReadRowsCount(*node);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
-        && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
+    const bool use_rows_from_cache = graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
+        && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value());
+    if (use_rows_from_cache)
     {
         /// The row count a past execution built the hash table from beats a larger statistics
         /// estimate, but it describes that execution's input, not this one's, so it stays imprecise,
@@ -644,7 +646,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
-        num_rows_from_cache.has_value() ? " (from cache)" : "",
+        use_rows_from_cache ? " (from cache)" : (num_rows_from_cache ? " (cache not used)" : ""),
         node->step->getName(), dumpStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;

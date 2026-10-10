@@ -1196,7 +1196,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             params.join_output_key_hash,
             params.collect_hash_table_stats_during_joins,
             params.max_entries_for_hash_table_stats,
-            params.max_size_to_preallocate_for_joins}};
+            params.max_size_to_preallocate_for_joins},
+        .build_input_mark = params.build_input_mark};
 
     /// Only enable hash table payload row-major transformation if the join produces more rows than row_store_ratio * build_size.
     /// Prefer the number of hash table matches observed on a previous run over the optimizer's output estimate.
