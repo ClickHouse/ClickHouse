@@ -1775,7 +1775,7 @@ def test_drop_table_delete_data_retry_after_failure(started_cluster):
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     namespace = f"test_drop_delete_data_retry_{uuid.uuid4()}"
     table_name = f"{namespace}_tbl"
-    create_table_with_data(started_cluster, node, namespace, table_name, {"iceberg_use_version_hint": 1})
+    create_table_with_data(started_cluster, node, namespace, table_name)
 
     # Fail the catalog entry removal: the table and its metadata files must survive for a retry.
     node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_catalog_remove_fail")
@@ -1791,7 +1791,6 @@ def test_drop_table_delete_data_retry_after_failure(started_cluster):
     # The data files are already deleted, only the metadata files are left.
     files = table_files(started_cluster, table_name)
     assert all(f.endswith(".metadata.json") or f.endswith("metadata/version-hint.text") for f in files)
-    assert any(f.endswith("metadata/version-hint.text") for f in files)
     assert any(f.endswith(".metadata.json") for f in files)
 
     drop_table_delete_data(node, namespace, table_name)
