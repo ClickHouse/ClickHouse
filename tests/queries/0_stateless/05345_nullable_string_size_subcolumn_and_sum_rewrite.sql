@@ -48,3 +48,10 @@ DROP TABLE t_nullable_string_key;
 
 SELECT 'uniqExact over Nullable';
 SELECT uniqExact(x), count(x) FROM (SELECT if(number % 7 = 0, NULL, number) AS x FROM numbers_mt(1000000)) SETTINGS max_threads = 8;
+
+SELECT 'comparison of a Nullable(FixedString) key with an empty string uses the primary key';
+DROP TABLE IF EXISTS t_nullable_fixed_string_key;
+CREATE TABLE t_nullable_fixed_string_key (s Nullable(FixedString(1))) ENGINE = MergeTree ORDER BY s SETTINGS allow_nullable_key = 1, index_granularity = 1;
+INSERT INTO t_nullable_fixed_string_key VALUES ('a'), ('b'), (NULL);
+SELECT s FROM t_nullable_fixed_string_key WHERE s != '' ORDER BY s SETTINGS force_primary_key = 1;
+DROP TABLE t_nullable_fixed_string_key;

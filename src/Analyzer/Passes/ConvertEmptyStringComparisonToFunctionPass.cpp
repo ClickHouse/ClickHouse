@@ -73,8 +73,12 @@ public:
         const auto & expr_node = args[expr_idx];
 
         /// For Nullable, both the comparison and the function return NULL for NULL.
+        /// Only Nullable(String) is supported, because `empty` and `notEmpty` of Nullable(FixedString)
+        /// are neither read from a subcolumn nor analyzed by the primary key.
         const auto expr_type = expr_node->getResultType();
-        if (!expr_type || !isStringOrFixedString(removeNullable(expr_type)))
+        if (!expr_type)
+            return;
+        if (expr_type->isNullable() ? !isString(removeNullable(expr_type)) : !isStringOrFixedString(expr_type))
             return;
 
         const String replacement_func = (func_name == "equals") ? "empty" : "notEmpty";

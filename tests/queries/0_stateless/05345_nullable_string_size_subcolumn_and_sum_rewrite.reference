@@ -24,3 +24,6 @@ b
 1
 uniqExact over Nullable
 857142	857142
+comparison of a Nullable(FixedString) key with an empty string uses the primary key
+a
+b
