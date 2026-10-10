@@ -167,10 +167,14 @@ void MergePlainMergeTreeTask::prepare()
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     {
         const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_part->parts);
+        Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
+        for (const auto & patch : future_part->patch_parts)
+            min_patch_metadata_version = std::min<Int64>(min_patch_metadata_version, patch->getMetadataVersion());
         const MergeTreeData::IMutationsSnapshot::Params mutations_params
         {
             .metadata_version = metadata_snapshot->getMetadataVersion(),
             .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_patch_metadata_version = min_patch_metadata_version,
             .min_part_data_versions = nullptr,
             .max_mutation_versions = nullptr,
             .need_data_mutations = false,
