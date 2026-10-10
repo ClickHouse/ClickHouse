@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -554,13 +555,18 @@ SortingInputOrder buildInputOrderFromSortDescription(
         if (sort_column_description.collator)
             break;
 
-        /// Since sorting key columns are always sorted with
-        // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
-        /// supported only this direction, other cases are represented as nulls_direction==-1
-        /// Also actual for floating point values NaN.
-        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])|| isFloat(*sorting_key.data_types[next_sort_key]);
-        if (column_is_nullable && sort_column_description.nulls_direction == -1)
-            break;
+        /// Sorting key columns are always sorted as ASC NULLS LAST ("in order") or
+        /// DESC NULLS FIRST ("reverse"); other NULLS directions are nulls_direction == -1.
+        /// Also actual for floating point values NaN. A monotonic function may reverse the
+        /// key, flipping the side NULLs/NaNs land on, so compare against monotonic_direction.
+        /// Only checked when the ORDER BY column is matched to the current key column and is not fixed:
+        /// a fixed column has a single value, so NULLs/NaNs placement does not matter for it.
+        auto has_unsupported_nulls_direction = [&](int monotonic_direction)
+        {
+            const auto & key_type = sorting_key.data_types[next_sort_key];
+            const bool column_has_special_nulls = isNullableOrLowCardinalityNullable(key_type) || isFloat(*removeLowCardinality(key_type));
+            return column_has_special_nulls && sort_column_description.nulls_direction != monotonic_direction;
+        };
 
         /// Direction for current sort key.
         int current_direction = 0;
@@ -580,6 +586,9 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 break;
 
             if (sort_column_description.column_name != sorting_key_column)
+                break;
+
+            if (has_unsupported_nulls_direction(1))
                 break;
 
             current_direction = sort_column_description.direction * reverse_indicator;
@@ -627,6 +636,9 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// Example: 'table (x Int32, y Int32) ORDER BY x + 1, y + 1'
                 ///          'SELECT x, y FROM table WHERE x = 42 ORDER BY x + 1, y + 1'
                 /// Here, 'x + 1' would be a fixed point. But it is reasonable to read-in-order.
+
+                if (has_unsupported_nulls_direction(match.monotonicity ? match.monotonicity->direction : 1))
+                    break;
 
                 current_direction = sort_column_description.direction * reverse_indicator;
                 if (match.monotonicity)
