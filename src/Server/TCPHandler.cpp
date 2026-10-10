@@ -1149,8 +1149,10 @@ void TCPHandler::runImpl()
 
                 /// Flush the tail of the profile events accumulated since the last periodic report,
                 /// so that the initiator of a distributed query charges them to the quotas over
-                /// profile events even when this query fails.
-                if (query_scope)
+                /// profile events even when this query fails. Only do it while streaming the result
+                /// of a `SELECT`, where `ProfileEvents` packets are already sent periodically: in other
+                /// states (e.g. `INSERT`) the clients do not expect them before the `Exception`.
+                if (query_scope && query_state->streaming_select_result)
                     sendSelectProfileEvents(*query_state);
             }
             catch (const Exception & e)
@@ -1643,6 +1645,8 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             out->sync();
         }
     }
+
+    state.streaming_select_result = true;
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
