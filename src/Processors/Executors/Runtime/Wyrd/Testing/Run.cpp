@@ -162,6 +162,7 @@ void runTest(std::function<void()> body, TestParams params)
     size_t completed = 0;
     size_t min_steps = 0;
     size_t max_steps = 0;
+    size_t sum_steps = 0;
     std::set<UInt64> digests;
     for (const auto & outcome : outcomes)
     {
@@ -169,11 +170,12 @@ void runTest(std::function<void()> body, TestParams params)
         {
             min_steps = completed == 0 ? result.total_steps : std::min(min_steps, result.total_steps);
             max_steps = std::max(max_steps, result.total_steps);
+            sum_steps += result.total_steps;
             digests.insert(result.digest);
             ++completed;
         }
     }
-    fmt::print(stderr, "Wyrd simulation: runs={} threads={} steps={}..{} distinct_schedules={}\n", completed, threads, min_steps, max_steps, digests.size());
+    fmt::print(stderr, "Wyrd simulation: runs={} threads={} steps={}({}..{}) distinct_schedules={}\n", completed, threads, sum_steps, min_steps, max_steps, digests.size());
 
     const auto failed = std::ranges::find_if(outcomes, [](const RunnerOutcome & outcome) { return outcome.failure.has_value(); });
     if (failed != outcomes.end())
