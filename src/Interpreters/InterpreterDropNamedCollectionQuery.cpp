@@ -51,6 +51,36 @@ StoragePtr tryGetLiveTableByUUID(const StorageID & dependency)
     return table;
 }
 
+/// Dictionaries defined in the configuration files whose source references the collection by its `name`
+/// key. Such a dictionary registers its dependency only when it is loaded, which may never have happened:
+/// it stays unloaded under `dictionaries_lazy_load` / `dictionary_lazy_load` until its first access, and
+/// after a restart that followed a drop with `check_named_collection_dependencies = 0`, its last load
+/// could not resolve the collection. Its next (re)load resolves the collection again, so it is found
+/// from the definition the loader holds, independently of whether it has ever been loaded. A dictionary
+/// created with DDL is not considered here: it is in `DatabaseCatalog` and registers its dependency when
+/// its metadata is loaded.
+std::vector<String> getConfigDictionariesReferencingCollection(const ContextPtr & context, const String & collection_name)
+{
+    std::vector<String> dictionary_names;
+    for (const auto & load_result : context->getExternalDictionariesLoader().getLoadResults())
+    {
+        if (!load_result.config || !load_result.config->repository_name.empty())
+            continue;
+
+        const auto & config = *load_result.config->config;
+        const auto source_prefix = load_result.config->key_in_config + ".source";
+        Poco::Util::AbstractConfiguration::Keys source_types;
+        config.keys(source_prefix, source_types);
+        const bool references_collection = std::any_of(
+            source_types.begin(),
+            source_types.end(),
+            [&](const auto & source_type) { return config.getString(source_prefix + "." + source_type + ".name", "") == collection_name; });
+        if (references_collection)
+            dictionary_names.push_back(fmt::format("dictionary `{}`", load_result.name));
+    }
+    return dictionary_names;
+}
+
 }
 
 
@@ -253,6 +283,18 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                 "Named collection `{}` may still be used by detached tables: {}",
                 query.collection_name,
                 fmt::join(detached_names, ", "));
+        }
+
+        /// A collection that does not exist is left to `removeFromSQLIfNoDependencies`, which honors `IF EXISTS`.
+        if (NamedCollectionFactory::instance().exists(query.collection_name))
+        {
+            auto config_dictionaries = getConfigDictionariesReferencingCollection(current_context, query.collection_name);
+            if (!config_dictionaries.empty())
+                throw Exception(
+                    ErrorCodes::NAMED_COLLECTION_IS_USED,
+                    "Named collection `{}` is used by dictionaries defined in the configuration files: {}",
+                    query.collection_name,
+                    fmt::join(config_dictionaries, ", "));
         }
 
         if (!NamedCollectionFactory::instance().removeFromSQLIfNoDependencies(query))

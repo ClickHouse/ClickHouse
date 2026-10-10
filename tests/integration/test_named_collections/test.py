@@ -35,6 +35,7 @@ def cluster():
             dictionaries=[
                 "configs/dictionaries/config_dict_using_collection.xml",
                 "configs/dictionaries/config_dict_in_database.xml",
+                "configs/dictionaries/config_dict_lazy_using_collection.xml",
             ],
             stay_alive=True,
         )
@@ -1599,6 +1600,39 @@ def test_drop_while_used_by_config_defined_dictionary(cluster):
     # dependency check removes the collection.
     node.query(
         "DROP NAMED COLLECTION config_dict_collection",
+        settings={"check_named_collection_dependencies": 0},
+    )
+
+
+def test_drop_while_used_by_never_loaded_config_dictionary(cluster):
+    """A dictionary defined in the configuration files registers its dependency only when it is
+    loaded. The dictionary `config_dict_lazy_using_collection` (defined in
+    `configs/dictionaries/config_dict_lazy_using_collection.xml`) is loaded lazily and is never
+    accessed here, so no dependency is registered for it, yet its first load will resolve the
+    collection: `DROP NAMED COLLECTION` must find the reference from the definition the loader
+    holds."""
+    node = cluster.instances["node"]
+
+    node.query("DROP NAMED COLLECTION IF EXISTS config_dict_lazy_collection")
+    node.query(
+        "CREATE NAMED COLLECTION config_dict_lazy_collection AS "
+        "uri = 'mongodb://mongo-is-not-running:27017/db?serverSelectionTimeoutMS=1000&connectTimeoutMS=1000', "
+        "collection = 'c'"
+    )
+
+    assert (
+        node.query(
+            "SELECT status FROM system.dictionaries WHERE name = 'config_dict_lazy_using_collection'"
+        ).strip()
+        == "NOT_LOADED"
+    )
+
+    error = node.query_and_get_error("DROP NAMED COLLECTION config_dict_lazy_collection")
+    assert "NAMED_COLLECTION_IS_USED" in error
+    assert "config_dict_lazy_using_collection" in error
+
+    node.query(
+        "DROP NAMED COLLECTION config_dict_lazy_collection",
         settings={"check_named_collection_dependencies": 0},
     )
 
