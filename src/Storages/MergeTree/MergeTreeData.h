@@ -605,6 +605,8 @@ public:
         {
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
+            /// The lowest metadata version of the patch parts the snapshot is applied with.
+            Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
             PartitionIdToMinBlockPtr min_part_data_versions = nullptr;
             PartitionIdToMaxBlockPtr max_mutation_versions = nullptr;
             bool need_data_mutations = false;
@@ -914,6 +916,17 @@ public:
     /// merge or mutation, so that a table that has crossed a limit can be brought back under it.
     /// 'drop_range' is empty for `ATTACH PARTITION FROM`, which does not remove anything.
     void throwIfTableSizeLimitsExceededForReplacement(
+        const DataPartsLock & parts_lock,
+        const MutableDataPartsVector & added_parts,
+        const std::optional<MergeTreePartInfo> & drop_range) const;
+
+    /// For a table created with `CREATE TEMPORARY TABLE`, throws if adding 'added_parts' and removing the active parts
+    /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
+    /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
+    /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
+    /// `MOVE PARTITION TO TABLE`, `CREATE TEMPORARY TABLE ... CLONE AS` and `RESTORE`.
+    void throwIfTemporaryTableSizeLimitsExceededForReplacement(
+        const ContextPtr & query_context,
         const DataPartsLock & parts_lock,
         const MutableDataPartsVector & added_parts,
         const std::optional<MergeTreePartInfo> & drop_range) const;
@@ -1470,11 +1483,18 @@ public:
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
 
     /// `metadata_snapshot` must come from the source part being covered
-    /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
+    /// (via `getMetadataSnapshotForEmptyPart`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
     /// With `precommit_storage = false` the returned part's storage transaction is still open, so
     /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
+    /// Metadata for an empty part that covers or replaces `source_part`. For a patch part it is the
+    /// synthetic patch-part metadata stamped with the metadata version of `source_part`: the synthetic
+    /// metadata alone carries version 0, and an empty patch at version 0 would drag the version of every
+    /// patch merged with it down to 0, so a pending `RENAME COLUMN` would be applied to the merged patch
+    /// on read again.
+    static StorageMetadataPtr getMetadataSnapshotForEmptyPart(const IMergeTreeDataPart & source_part);
+
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
@@ -1718,7 +1738,10 @@ protected:
 
     void resetColumnSizes()
     {
+        std::lock_guard sizes_lock(columns_and_secondary_indices_sizes_mutex);
         column_sizes.clear();
+        secondary_index_sizes.clear();
+        primary_index_size = {};
         are_columns_and_secondary_indices_sizes_calculated = false;
     }
 
@@ -2092,7 +2115,7 @@ protected:
     MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+    virtual void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
@@ -2225,12 +2248,22 @@ protected:
     /// not done under a single lock).
     std::mutex refresh_parts_mutex;
 
+    /// Protects the `refresh_stats_task` holder itself (it is reassigned by `startStatisticsCache`, which
+    /// can run concurrently with `stopStatisticsCache` when a table startup or an `ALTER` races with a
+    /// shutdown) and `refresh_stats_stopped`. The task callback reads the holder without this mutex: it
+    /// only runs while the task is active, and the holder is reassigned only after deactivating it.
+    std::mutex refresh_stats_task_mutex;
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
+    /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
+    bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
+    /// Deactivates the statistics refresh task and prevents any later `startStatisticsCache` from arming it.
+    /// Idempotent. Called on shutdown.
+    void stopStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
