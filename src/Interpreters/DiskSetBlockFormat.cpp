@@ -105,7 +105,8 @@ void DiskSetBlockFormat<Key>::Encoder::writeBlock(size_t count, BlockSink & sink
     else
         writePackedGaps(block_keys, out);
 
-    /// Readers size their buffers for `max_block_bytes_with_header`, which the block must not exceed.
+    /// The file of a set sizes its buffer for `max_block_bytes_with_header`, so that each block is one frame
+    /// (see `DiskSetImpl::createFileScope`). The block must not exceed it.
     chassert(out.count() - block_start <= max_block_bytes_with_header);
 
     pending_keys.erase(pending_keys.begin(), pending_keys.begin() + count); /// The rest starts the next block

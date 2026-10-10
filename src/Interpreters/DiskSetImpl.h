@@ -64,7 +64,9 @@ private:
     WriteBuffer & startBlock(std::span<const Key> block_keys) override;
 
     /// Returns the scope of the file of the set: a child of `tmp_data` that writes frames without compression
-    /// (see `file`).
+    /// (see `file`) and has a buffer that holds a whole block. The file also ends a frame when its buffer
+    /// fills, so a smaller buffer would split a block into several frames, while a lookup reads each block as
+    /// one frame.
     static TemporaryDataOnDiskScopePtr createFileScope(const TemporaryDataOnDiskScopePtr & tmp_data);
 
     /// The file holds the blocks in ascending order of their keys, one frame per block. The frames are not

@@ -31,7 +31,8 @@ DiskSetImpl<Key>::DiskSetImpl(
 template <typename Key>
 TemporaryDataOnDiskScopePtr DiskSetImpl<Key>::createFileScope(const TemporaryDataOnDiskScopePtr & tmp_data)
 {
-    return tmp_data->childScope(tmp_data->getSettings().metrics, /*buffer_size_=*/0, "NONE");
+    const auto & settings = tmp_data->getSettings();
+    return tmp_data->childScope(settings.metrics, std::max(settings.buffer_size, BlockFormat::max_block_bytes_with_header), "NONE");
 }
 
 template <typename Key>

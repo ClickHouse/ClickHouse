@@ -32,6 +32,12 @@ SELECT 'cached', count() FROM numbers(60)
 WHERE if(number < 20, number * 2, number - 20) * 512 * 12884901888 IN (SELECT number * 12884901888 FROM numbers(20480))
 SETTINGS max_block_size = 20, log_comment = 'cached';
 
+-- A buffer of temporary files smaller than a block still writes each block as one frame. The first chunk of
+-- 40 probes reads every block, and the second chunk takes all of them from the cache.
+SELECT 'small buffer', count() FROM numbers(80)
+WHERE (number % 40) * 512 * 12884901888 IN (SELECT number * 12884901888 FROM numbers(20480))
+SETTINGS max_block_size = 40, temporary_files_buffer_size = 1000, log_comment = 'small buffer';
+
 -- Every set spilled, and the lookups read each probed block once or took it from the cache.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['SetsSpilledToDisk'], ProfileEvents['ExternalSetReadBlocks'], ProfileEvents['ExternalSetCacheHits']
