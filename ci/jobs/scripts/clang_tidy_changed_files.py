@@ -46,6 +46,9 @@ RESULT_NAME = "Clang-tidy"
 #  * C++ sources only, since `CMAKE_C_CLANG_TIDY` is never set,
 #  * headers that `HeaderFilterRegex` in `.clang-tidy` matches, i.e. the ones
 #    ending in `h` or `hpp` (a `.inl` is compiled but never reported).
+#  * minus the targets inside those roots that opt out with
+#    `set_target_properties(... PROPERTIES CXX_CLANG_TIDY "")`, see
+#    `tidy_disabled_dirs`.
 ANALYZED_ROOTS = ("base", "src", "programs", "utils")
 SOURCE_SUFFIXES = (".cpp", ".cc", ".cxx")
 HEADER_SUFFIXES = (".h", ".hpp")
@@ -322,6 +325,44 @@ def is_analyzed_path(path):
     return root in ANALYZED_ROOTS and path.endswith(SOURCE_SUFFIXES + HEADER_SUFFIXES)
 
 
+_TIDY_OPT_OUT_RE = re.compile(r'\bCXX_CLANG_TIDY\s+""')
+
+
+@functools.lru_cache(maxsize=None)
+def tidy_disabled_dirs(repo_dir):
+    """Repo-relative directories whose target the full check does not analyze.
+
+    A target inside the analyzed roots can disable clang-tidy for itself by
+    setting its `CXX_CLANG_TIDY` property to empty: the committed ANTLR output
+    of `src/Parsers/Prometheus/grammar`, the protobuf bindings of
+    `src/Server/grpc_protos` and `src/Client/BuzzHouse/Proto`. The tidy build
+    compiles them without clang-tidy, so analyzing them here would fail the
+    merge queue on findings the full check never reports. Such a target lives
+    with its sources in the directory of its `CMakeLists.txt`, so that whole
+    directory is excluded. Read from the repository rather than listed here, so
+    that a new opt-out cannot be missed.
+    """
+    disabled = []
+    for root in ANALYZED_ROOTS:
+        for dir_path, _, file_names in os.walk(f"{repo_dir}/{root}"):
+            if "CMakeLists.txt" not in file_names:
+                continue
+            with open(
+                f"{dir_path}/CMakeLists.txt", "r", encoding="utf-8"
+            ) as cmake_lists:
+                if _TIDY_OPT_OUT_RE.search(cmake_lists.read()):
+                    disabled.append(os.path.relpath(dir_path, repo_dir))
+    return tuple(sorted(disabled))
+
+
+def is_tidy_disabled_path(path, repo_dir):
+    """True for a repo-relative path inside a target that opts out of clang-tidy."""
+    return any(
+        path == directory or path.startswith(f"{directory}/")
+        for directory in tidy_disabled_dirs(repo_dir)
+    )
+
+
 def is_tidy_config_path(path):
     """True for a file that changes what the clang-tidy checks report."""
     return path in TIDY_CONFIG_PATHS
@@ -362,12 +403,14 @@ def analyzable_changed_files(changed_files, repo_dir):
     A translation unit that no longer exists cannot be analyzed and is dropped.
     A header that no longer exists is kept: the translation units that still
     include it by its old path now fail to compile, and finding them is the
-    point of selecting it.
+    point of selecting it. A file of a target that opts out of clang-tidy is
+    dropped, see `tidy_disabled_dirs`.
     """
     return sorted(
         path
         for path in {normalize_changed_path(f) for f in changed_files}
         if is_analyzed_path(path)
+        and not is_tidy_disabled_path(path, repo_dir)
         and (path.endswith(HEADER_SUFFIXES) or os.path.isfile(f"{repo_dir}/{path}"))
     )
 
@@ -441,17 +484,31 @@ def generated_header_consumers(inputs, repo_dir, limit, is_coverable):
     return sorted(consumers)
 
 
-def load_compile_commands(build_dir):
+def load_compile_commands(build_dir, repo_dir):
     """Translation unit path -> its compilation database entry.
 
     Keyed by the normalized path so that a lookup built from a repo-relative
     path finds the entry. Normalizing rather than resolving is deliberate: the
     database has ~18k entries and `os.path.realpath` on each of them costs
     seconds of syscalls for paths cmake already writes absolute.
+
+    The translation units of targets that opt out of clang-tidy are left out:
+    the full check does not analyze them, so they must not be picked to cover a
+    changed header either.
     """
     with open(f"{build_dir}/compile_commands.json", "r", encoding="utf-8") as db:
         entries = json.load(db)
-    return {os.path.normpath(entry["file"]): entry for entry in entries}
+    disabled = [
+        os.path.normpath(f"{repo_dir}/{directory}")
+        for directory in tidy_disabled_dirs(repo_dir)
+    ]
+    compile_commands = {}
+    for entry in entries:
+        path = os.path.normpath(entry["file"])
+        if any(path.startswith(f"{directory}/") for directory in disabled):
+            continue
+        compile_commands[path] = entry
+    return compile_commands
 
 
 _INCLUDE_SPELLING_RE = re.compile(r'^\s*#\s*include\s*[<"](?P<spelling>[^">]+)[">]')
@@ -999,6 +1056,21 @@ def self_test(repo_dir, build_dir, compile_commands):
         f"{contrib_template} is mapped to the headers generated from {generator_input}",
     )
 
+    # The targets that opt out of clang-tidy are found, and their files are
+    # neither selected nor used to cover a changed header.
+    antlr_dir = "src/Parsers/Prometheus/grammar"
+    antlr_source = f"{antlr_dir}/generated/antlr4_grammars/PromQLParser.cpp"
+    expect(
+        antlr_dir in tidy_disabled_dirs(repo_dir),
+        f"{antlr_dir} is not recognized as opting out of clang-tidy: "
+        f"{tidy_disabled_dirs(repo_dir)}",
+    )
+    expect(
+        not analyzable_changed_files([antlr_source], repo_dir)
+        and lookup_translation_unit(antlr_source, repo_dir, compile_commands) is None,
+        f"{antlr_source} of a target opting out of clang-tidy would be analyzed",
+    )
+
     # LLVM regular expressions are POSIX extended ones; the filter uses only
     # constructs that Python's `re` interprets the same way.
     header_name = os.path.basename(header)
@@ -1097,7 +1169,7 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
             info="The change touches no C or C++ file that clang-tidy analyzes",
         )
 
-    compile_commands = load_compile_commands(build_dir)
+    compile_commands = load_compile_commands(build_dir, repo_dir)
     self_results = []
     if SELF_PATH in config_changed:
         self_results.append(self_test(repo_dir, build_dir, compile_commands))
