@@ -66,6 +66,8 @@ public:
     void setStringSizesColumns(const NameSet & columns) override { read_options.string_sizes_columns = columns; }
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
+    std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
+    bool isTopKFilterApplied() const override;
 
 private:
     Chunk read() override;

@@ -611,7 +611,7 @@ FROM <left_table>
 The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; omitting it is a syntax error.
 
 It is experimental and disabled by default; enable it with the
-[`allow_experimental_lateral_join`](/reference/settings/session-settings/allow#allow_experimental_lateral_join) setting.
+[`allow_experimental_lateral_join`](/reference/settings/session-settings/allow-experimental#allow_experimental_lateral_join) setting.
 
 Only the following subset is supported so far; anything else is rejected with an error:
 

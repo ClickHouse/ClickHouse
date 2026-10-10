@@ -15,21 +15,28 @@ FsMetadata::FsMetadata(CurrentMetrics::Metric metric_directories_name, CurrentMe
 {
 }
 
-void FsMetadata::applySnapshot(std::shared_ptr<FsSnapshot> snapshot)
+std::vector<std::string> FsMetadata::applyJournal(const FsJournal & journal)
 {
-    const auto [directories_delta, files_delta] = snapshot->getRemoteLayoutDeltas();
-    const auto blob_link_deltas = snapshot->getBlobLinkDeltas();
-
     UniqueLock lock(mutex);
-    blob_link_counts->apply(blob_link_deltas);
+
+    /// The nodes of the latest snapshot are never mutated in place, so readers holding it are not affected.
+    auto new_snapshot = std::make_shared<FsSnapshot>(latest_snapshot->getRoot(), blob_link_counts);
+    new_snapshot->setBackupsOfPendingReplaceTargets(latest_snapshot->getBackupsOfPendingReplaceTargets());
+    new_snapshot->replay(journal);
+
+    const auto [directories_delta, files_delta] = new_snapshot->getRemoteLayoutDeltas();
+    auto unlinked_blob_keys = blob_link_counts->apply(new_snapshot->getBlobLinkDeltas());
     /// The deltas are now part of the committed counts; drop them so reads through the committed snapshot do not re-apply them.
-    snapshot->resetDeltas();
-    latest_snapshot = std::move(snapshot);
+    new_snapshot->resetDeltas();
+    latest_snapshot = std::move(new_snapshot);
     remote_layout_directories_count.add(directories_delta);
     remote_layout_files_count.add(files_delta);
+    return unlinked_blob_keys;
 }
 
-void FsMetadata::applyLayout(std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout)
+void FsMetadata::applyLayout(
+    std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout,
+    std::shared_ptr<const BlobObjectKeyRemap> backups_of_pending_replace_targets)
 {
     std::unordered_map<std::string, uint32_t> new_blob_link_counts;
     for (const auto & [path, info] : remote_layout)
@@ -39,6 +46,7 @@ void FsMetadata::applyLayout(std::unordered_map<std::string, DirectoryRemoteInfo
     auto new_tree = std::make_shared<FsSnapshot>(blob_link_counts);
     for (auto & [path, info] : remote_layout)
         new_tree->recordDirectoryPath(path, std::move(info));
+    new_tree->setBackupsOfPendingReplaceTargets(std::move(backups_of_pending_replace_targets));
 
     const auto [directories_count, files_count] = new_tree->getRemoteLayoutDeltas();
 
