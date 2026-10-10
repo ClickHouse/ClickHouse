@@ -11,17 +11,11 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 #if USE_AVRO
 
 /// The schema can gain fields after the `INSERT` was analysed: such a field is absent from the written file,
-/// which is valid Iceberg. A written column that is not in the schema means the column was dropped or renamed
-/// concurrently; the file would then carry a column without a field id, so the write is rejected like
-/// a schema change detected at commit.
+/// which is valid Iceberg. A written field that is not in the schema (a column or a nested field dropped or
+/// renamed concurrently) is rejected for every format, because the file would carry a field without an id.
 static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
 {
     const auto & field_id_by_name = mapper.getStorageColumnEncoding();
@@ -29,13 +23,8 @@ static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, 
     field_ids.reserve(written_block.columns());
     for (const auto & column : written_block)
     {
-        auto it = field_id_by_name.find(column.name);
-        if (it == field_id_by_name.end())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Metadata changed during write operation, try again: column {} is not in the current schema of the table",
-                column.name);
-        field_ids.push_back(it->second);
+        validateIcebergFieldIds(column.type, column.name, field_id_by_name);
+        field_ids.push_back(field_id_by_name.at(column.name));
     }
     return field_ids;
 }

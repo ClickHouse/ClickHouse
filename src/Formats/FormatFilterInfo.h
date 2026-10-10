@@ -43,6 +43,11 @@ struct FormatTopKFilterInfo
     bool track_row_group_best_values = false;
 };
 
+/// Throws if `type` at `path`, or any field nested in it, has no id in `field_ids` (a `ColumnMapper` storage encoding).
+/// The Iceberg writers call it before writing a data file: a missing id means the table schema changed after
+/// the `INSERT` was planned, and the file would carry a field that its manifest does not describe.
+void validateIcebergFieldIds(const DataTypePtr & type, const String & path, const std::unordered_map<String, Int64> & field_ids);
+
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
 class ColumnMapper
 {

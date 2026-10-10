@@ -1,6 +1,18 @@
-DROP COLUMN note
-Metadata changed during write operation, try again
+Parquet DROP COLUMN note
+has no field id in the Iceberg schema being written
 rows	[0,1,2]
-RENAME COLUMN note TO comment
-Metadata changed during write operation, try again
+Parquet RENAME COLUMN note TO comment
+has no field id in the Iceberg schema being written
+rows	[0,1,2]
+ORC DROP COLUMN note
+has no field id in the Iceberg schema being written
+rows	[0,1,2]
+ORC RENAME COLUMN note TO comment
+has no field id in the Iceberg schema being written
+rows	[0,1,2]
+Avro DROP COLUMN note
+has no field id in the Iceberg schema being written
+rows	[0,1,2]
+Avro RENAME COLUMN note TO comment
+has no field id in the Iceberg schema being written
 rows	[0,1,2]
