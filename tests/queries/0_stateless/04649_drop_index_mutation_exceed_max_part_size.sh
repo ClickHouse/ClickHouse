@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-async-insert, long
+# Tags: no-parallel, no-async-insert, long, no-fasttest
 # Tag no-parallel: Fails due to failpoint intersection
 # long: waiting out the mutation with the fail point held lands just over the 180s cap that the
 #   flaky check applies to untagged tests.
