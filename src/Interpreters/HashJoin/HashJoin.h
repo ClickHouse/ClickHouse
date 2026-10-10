@@ -14,7 +14,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -142,6 +142,8 @@ public:
 
     std::string getName() const override { return "HashJoin"; }
 
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::HASH); }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool isCloneSupported() const override
@@ -162,9 +164,7 @@ public:
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
-
-    using IJoin::addBlockToJoin;
+    bool addBlockToJoin(const Block & source_block_, size_t num_rows, JoinBuildContext context) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store = nullptr);
@@ -212,7 +212,7 @@ public:
         size_t bucket_idx, size_t num_buckets) const override;
 
     void onBuildPhaseFinish() override;
-    void onProbePhaseFinish(size_t matched_right_rows) override
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
         probe_phase_finished = true;
@@ -464,6 +464,23 @@ public:
             #undef M
             }
         }
+
+        /// Runs `computeBucketPrefix` on two-level maps. Single-level maps need nothing.
+        void computeBucketPrefix(Type which)
+        {
+            switch (which)
+            {
+            #define M(NAME) \
+                case Type::NAME: \
+                    if (NAME) \
+                        NAME->computeBucketPrefix(); \
+                    break;
+                APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
+            #undef M
+                default:
+                    break;
+            }
+        }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
 
@@ -607,9 +624,6 @@ public:
 
     size_t getAndSetRightTableKeys() const;
 
-    bool hasNonJoinedRows();
-    void updateNonJoinedRowsStatus();
-
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
@@ -634,9 +648,6 @@ private:
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
-
-    bool has_non_joined_rows_checked = false;
-    bool has_non_joined_rows = false;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
@@ -702,7 +713,7 @@ private:
     bool probe_phase_finished = false;
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
-    size_t hash_table_matches = 0;
+    std::optional<size_t> hash_table_matches;
 
     /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
     bool use_set_maps = false;

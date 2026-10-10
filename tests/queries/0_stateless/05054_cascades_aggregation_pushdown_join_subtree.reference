@@ -7,7 +7,7 @@ Expression (Project names)
           JoinLogical (Broadcast HashJoin )
             Aggregating
               JoinLogical (Broadcast HashJoin )
-                Expression
+                Expression ((Apply runtime join filter + Change column names to column identifiers))
                   ReadFromMergeTree (ParallelRead default.t_corr_left)
                 BuildRuntimeFilter (Build runtime join filter on __table2.k)
                   Expression (Change column names to column identifiers)
@@ -26,11 +26,11 @@ Expression (Project names)
           JoinLogical (Local HashJoin  swapped)
             Expression (Apply runtime join filter)
               BuildRuntimeFilter (Build runtime join filter on __table2.k)
-                Filter
+                Filter ((Apply runtime join filter + Change column names to column identifiers))
                   ReadFromMergeTree (default.t_corr_right_multi)
             GatherExchange
               Aggregating
-                Expression
+                Expression (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers))
                   ReadFromMergeTree (ParallelRead default.t_corr_left)
 -- canary 3: repeated variant B through two LEFT SEMI joins (case 3\'s query)
 Expression (Project names)
@@ -43,12 +43,12 @@ Expression (Project names)
         JoinLogical (Local HashJoin  swapped)
           Expression (Apply runtime join filter)
             BuildRuntimeFilter (Build runtime join filter on __table2.k)
-              Filter
+              Filter ((Apply runtime join filter + Change column names to column identifiers))
                 ReadFromMergeTree (default.t_corr_right_uniq)
           MergingAggregated
             GatherExchange
               Aggregating
-                Filter
+                Filter (((Apply runtime join filter + Apply runtime join filter) + Change column names to column identifiers))
                   ReadFromMergeTree (ParallelRead default.t_corr_left)
 -- 1. variant A onto the join subtree (INNER below, LEFT above)
 0	10	450

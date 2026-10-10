@@ -1,7 +1,9 @@
 import argparse
+import hashlib
 import json
 import os
 import shutil
+import subprocess
 
 from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
@@ -101,19 +103,87 @@ def parse_args():
         help="Build `clickhouse-examples` in addition to the regular targets",
         action="store_true",
     )
+    parser.add_argument(
+        "--shard",
+        help="Build only the `i`-th of `N` shards of the object files, given as `i/N` (clang-tidy builds only)",
+        default=None,
+    )
     return parser.parse_args()
 
 
-def run_shell(name, command, **kwargs):
+def parse_shard(shard):
+    index, count = (int(x) for x in shard.split("/"))
+    assert 1 <= index <= count, f"Invalid shard [{shard}]"
+    return index, count
+
+
+def get_tidy_shard_targets(index, count):
+    """Return the object files of the `index`-th of `count` shards.
+
+    Tidy builds use dummy compiler and linker launchers (see `cmake/clang_tidy.cmake`),
+    so each object file is an independent clang-tidy invocation and nothing is linked.
+    The object files are split by a stable hash of their path, so a file stays in the same
+    shard across runs. Third-party code under `contrib/` is not checked, so it is skipped;
+    whatever an object file needs (generated headers, `protoc`) is still built by ninja
+    as its dependency.
+    """
+    output = subprocess.run(
+        ["ninja", "-C", build_dir, "-t", "targets", "all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    # A few targets are listed with absolute paths, so look at every path component.
+    objects = [
+        target
+        for target in (line.split(":", 1)[0] for line in output.splitlines())
+        if target.endswith(".o") and "contrib" not in target.split("/")
+    ]
+    assert objects, "No object file targets found"
+    selected = [
+        o
+        for o in objects
+        if int(hashlib.md5(o.encode()).hexdigest(), 16) % count == index - 1
+    ]
+    print(f"Shard {index}/{count}: {len(selected)} of {len(objects)} object files")
+    return selected
+
+
+def build_tidy_shard(index, count):
+    # The targets are passed as an argument list, not through a shell, so ninja gets
+    # every target name verbatim.
+    targets = get_tidy_shard_targets(index, count)
+    process = subprocess.Popen(
+        ["time", "-v", "ninja", "-k0", *targets],
+        cwd=build_dir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+    )
+    # `Result.from_commands_run` captures only what a Python callable prints, so pass
+    # the output through `print` to keep the clang-tidy diagnostics in the result info.
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    return process.wait() == 0
+
+
+def run_shell_with_output(name, command, **kwargs):
     print(f"\n>>>> {name}\n")
+    kwargs["verbose"] = True
     Shell.check(command, **kwargs)
     print(f"\n<<<< {name}\n")
 
 
 def warn_on_low_sccache_hit_rate(info):
     """Post a non-blocking workflow warning when the sccache hit rate is below 40% (issue #46502)."""
-    stats = Shell.get_output("sccache --show-stats --stats-format json")
-    if not stats:
+    exit_code, stats, stderr = Shell.get_res_stdout_stderr(
+        "sccache --show-stats --stats-format json", verbose=False
+    )
+    if exit_code != 0 or not stats:
+        info.add_workflow_warning(
+            f"sccache stats unavailable ({stderr or 'no output'}) - the compiler cache may be broken or missing"
+        )
         return
     # Best-effort observability: an unexpected stats blob (unparseable, or a
     # future sccache renaming these fields) must never fail an already-green build.
@@ -155,7 +225,7 @@ def setup_build_caches_env(info):
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -201,6 +271,12 @@ def main():
         BuildTypes.ARM_RELEASE,
         BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
     ), "--build-examples is only supported for ARM release builds"
+
+    shard = parse_shard(args.shard) if args.shard else None
+    assert not shard or build_type in (
+        BuildTypes.AMD_TIDY,
+        BuildTypes.ARM_TIDY,
+    ), "--shard is only supported for clang-tidy builds"
 
     cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
     if args.build_examples:
@@ -313,7 +389,8 @@ def main():
         # Validate `.gitmodules` (no recursive submodules, valid URLs, name == path).
         # Run it only in the arm_tidy build to avoid adding overhead to every build
         # and to the style check (which does not have submodules available).
-        if res and build_type == BuildTypes.ARM_TIDY:
+        # A sharded tidy build runs it in the first shard only.
+        if res and build_type == BuildTypes.ARM_TIDY and (not shard or shard[0] == 1):
             results.append(
                 Result.from_commands_run(
                     name="Check Submodules",
@@ -356,13 +433,13 @@ def main():
                 f"ln -sf /build/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
             )
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
         # The sccache server sometimes fails to start because of issues with S3.
         # Start it explicitly with retries before cmake, since cmake can invoke
         # the compiler during configuration. Non-fatal: build can proceed without it.
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell_with_output("sccache stats", "sccache --show-stats")
         cmake_result_index = len(results)
         results.append(
             Result.from_commands_run(
@@ -446,6 +523,8 @@ def main():
                 "ninja -t targets all | cut -d: -f1 | grep -E '[.]o$' "
                 "| xargs --no-run-if-empty ninja"
             )
+        elif shard:
+            build_command = lambda: build_tidy_shard(*shard)
         else:
             build_command = f"command time -v ninja {targets}"
 
@@ -489,21 +568,26 @@ def main():
             else:
                 results.append(retry_cmake)
 
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell_with_output("sccache stats", "sccache --show-stats")
         # wasm64 disables the cache (emcc is uncacheable), so sccache sees zero compilations on a healthy build
         if not cache_warmup and "-DCOMPILER_CACHE=disabled" not in cmake_cmd:
             warn_on_low_sccache_hit_rate(info)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
             Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
             files.append(clang_tidy_cache_log)
-            run_shell(
+            run_shell_with_output(
                 "clang-tidy-cache.log stats",
                 f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
                 f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"',
             )
-        run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
+            # Per-file clang-tidy durations (start and end of every ninja edge). The entries
+            # of this build follow the ones pre-seeded from the toolchain.
+            ninja_log = "./ci/tmp/ninja_log.txt"
+            Shell.check(f"cp {build_dir}/.ninja_log {ninja_log}")
+            files.append(ninja_log)
+        run_shell_with_output("Output programs", f"ls -l {build_dir}/programs/")
         Shell.check("pwd")
         res = results[-1].is_ok()
 

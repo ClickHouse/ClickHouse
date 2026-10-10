@@ -51,6 +51,8 @@ SELECT engine FROM system.tables WHERE name = 'tablefunc01' and database=current
 SYSTEM STOP MERGES {CLICKHOUSE_DATABASE:Identifier}.tablefunc07;
 SYSTEM START MERGES {CLICKHOUSE_DATABASE:Identifier}.tablefunc07;
 SELECT lifetime_rows, lifetime_bytes FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc07';
+SELECT name, data_compressed_bytes, data_uncompressed_bytes, marks_bytes
+    FROM system.columns WHERE database = currentDatabase() AND table = 'tablefunc07';
 
 -- Once the table function is resolved, the nested storage answers again.
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.mem (x UInt64) ENGINE = Memory;
@@ -89,6 +91,24 @@ DROP TABLE IF EMPTY {CLICKHOUSE_DATABASE:Identifier}.tablefunc10 SETTINGS ignore
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc10';
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.mem;
 
--- Not covered: `lifetime_rows`/`lifetime_bytes` (only `Buffer` reports them) and a forwarded lock (only a `timeSeries*` target holds one).
+-- The column sizes of a resolved proxy come from the nested storage. Only a wide part tracks them
+-- per column, so a compact one would report zero either way.
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.sizes_src (x String) ENGINE = MergeTree ORDER BY x
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.sizes_src SELECT toString(number) FROM numbers(10000);
+SELECT data_compressed_bytes > 0 FROM system.columns
+    WHERE database = currentDatabase() AND table = 'sizes_src';
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc11 (x String) AS merge(currentDatabase(), '^sizes_src$');
+SELECT data_compressed_bytes > 0 FROM system.columns
+    WHERE database = currentDatabase() AND table = 'tablefunc11';
+SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.tablefunc11;
+SELECT (data_compressed_bytes, data_uncompressed_bytes, marks_bytes)
+     = (SELECT (data_compressed_bytes, data_uncompressed_bytes, marks_bytes) FROM system.columns
+        WHERE database = currentDatabase() AND table = 'sizes_src' AND name = 'x')
+    FROM system.columns WHERE database = currentDatabase() AND table = 'tablefunc11';
+
+-- Not covered: `lifetime_rows`/`lifetime_bytes` (only `Buffer` reports them), a forwarded lock
+-- (only a `timeSeries*` target holds one), `tryGetColumnSizes` (no proxy overrides it) and the
+-- `StorageTableProxy` stand-in of `lazy_load_tables`.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};

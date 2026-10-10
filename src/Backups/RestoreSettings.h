@@ -1,6 +1,9 @@
 #pragma once
 
+#include "config.h"
+
 #include <Backups/BackupInfo.h>
+#include <Backups/resolveDefaultedSettings.h>
 #include <Common/SettingsChanges.h>
 #include <map>
 #include <optional>
@@ -39,6 +42,8 @@ enum class RestoreAccessCreationMode : uint8_t
 };
 
 using RestoreUDFCreationMode = RestoreAccessCreationMode;
+
+using RestoreWorkloadsAndResourcesCreationMode = RestoreAccessCreationMode;
 
 /// Settings specified in the "SETTINGS" clause of a RESTORE query.
 struct RestoreSettings
@@ -150,6 +155,12 @@ struct RestoreSettings
     /// How the RESTORE command will handle if a user-defined function which it's going to restore already exists.
     RestoreUDFCreationMode create_function = RestoreUDFCreationMode::kCreateIfNotExists;
 
+    /// How the RESTORE command will handle if a workload or resource which it's going to restore already exists.
+    /// WORKLOAD and RESOURCE entities are intertwined (a workload may reference a resource via SETTINGS ... FOR
+    /// <resource> and workloads form a parent/child hierarchy), so they are always restored together and share a
+    /// single creation mode.
+    RestoreWorkloadsAndResourcesCreationMode create_workloads_and_resources = RestoreWorkloadsAndResourcesCreationMode::kCreateIfNotExists;
+
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
@@ -175,6 +186,13 @@ struct RestoreSettings
 
     /// Alternative storage policy that may be specified in the SETTINGS clause of RESTORE queries
     std::optional<String> storage_policy;
+
+#if CLICKHOUSE_CLOUD
+    /// Internal, should not be specified by user.
+    /// The initiator's verdict on `BackupUtils::mayRestoreLocalDictionarySource`: on each host the
+    /// restore runs in a context with no user. Locality is judged per host.
+    bool allow_local_dictionary_source = false;
+#endif
 
     /// Internal, should not be specified by user.
     /// Cluster's hosts' IDs in the format 'escaped_host_name:port' for all shards and replicas in a cluster specified in BACKUP ON CLUSTER.
@@ -205,7 +223,7 @@ struct RestoreSettings
     /// `ReplaceQueryParameterVisitor` has substituted query parameters.
     /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
     /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
+    static CoreSettingsFromQuery extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 };
 
 }
