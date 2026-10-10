@@ -65,7 +65,6 @@ WYRD_TEST(Parking, BurstsAndPausesFinishEveryChunk, .runs = 1000, .simulation = 
     EXPECT_NO_THROW(metrics = runPipeline(std::move(processors), threads));
     EXPECT_EQ(sorted(received(*sink)), expected);
 
-    EXPECT_EQ(metrics.offloads, 0u);
     if (threads == 1)
     {
         EXPECT_EQ(metrics.steal_picks, 0u);
@@ -84,12 +83,10 @@ WYRD_TEST(Parking, WorkReleasedWhileOthersSleepWakesThem, .runs = 1000, .simulat
     chain({held, transform, sink});
 
     Wyrd::Thread opener([&gate] { gate.open(); });
-    Metrics metrics;
-    EXPECT_NO_THROW(metrics = runPipeline({held, transform, sink}, threads));
+    EXPECT_NO_THROW(runPipeline({held, transform, sink}, threads));
     opener.join();
 
     EXPECT_EQ(received(*sink), (std::vector<UInt64>{1, 2, 3}));
-    EXPECT_EQ(metrics.offloads, 0u);
 }
 
 WYRD_TEST(Parking, IdleWorkersAreStoppedAtTheEnd, .runs = 1000)
@@ -102,7 +99,6 @@ WYRD_TEST(Parking, IdleWorkersAreStoppedAtTheEnd, .runs = 1000)
     EXPECT_NO_THROW(metrics = runPipeline({source, sink}, 4));
     EXPECT_EQ(received(*sink), (std::vector<UInt64>{1}));
 
-    EXPECT_EQ(metrics.offloads, 0u);
     EXPECT_EQ(metrics.steal_picks, 0u);
     EXPECT_EQ(metrics.parks, 0u);
 }

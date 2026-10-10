@@ -1,4 +1,3 @@
-#include <Processors/Executors/Runtime/V2/Engine/Queues/LocalQueue.h>
 #include <Processors/Executors/Runtime/V2/tests/Toolkit/RunPipeline.h>
 #include <Processors/Executors/Runtime/V2/tests/Toolkit/Scripted.h>
 #include <Processors/Executors/Runtime/V2/tests/Toolkit/Topology.h>
@@ -57,7 +56,6 @@ WYRD_TEST(Topology, ChainOfTransformsKeepsTheOrder, .runs = 300)
     EXPECT_NO_THROW(metrics = runPipeline(Processors(stages.begin(), stages.end()), threads));
     EXPECT_EQ(received(*sink), values(1, chunks));
 
-    EXPECT_EQ(metrics.offloads, 0u);
     if (threads == 1)
     {
         EXPECT_EQ(metrics.steal_picks, 0u);
@@ -89,7 +87,6 @@ WYRD_TEST(Topology, FanInGathersEverySource, .runs = 300)
     EXPECT_NO_THROW(metrics = runPipeline(std::move(processors), threads));
     EXPECT_EQ(sorted(received(*sink)), expected);
 
-    EXPECT_EQ(metrics.offloads, 0u);
     if (threads == 1)
     {
         EXPECT_EQ(metrics.steal_picks, 0u);
@@ -117,7 +114,6 @@ WYRD_TEST(Topology, FanOutDeliversEachChunkToOneSink, .runs = 300)
     EXPECT_NO_THROW(metrics = runPipeline(std::move(processors), threads));
     EXPECT_EQ(sorted(receivedByAll(sinks)), values(1, chunks));
 
-    EXPECT_EQ(metrics.offloads, 0u);
     if (threads == 1)
     {
         EXPECT_EQ(metrics.steal_picks, 0u);
@@ -153,13 +149,10 @@ WYRD_TEST(Topology, FanInThroughATransformIntoFanOut, .runs = 300)
     processors.append_range(sinks);
 
     const size_t threads = Wyrd::randomNumberBetween(1, 4);
-    const bool fits_in_the_ring = processors.size() <= LocalQueue::capacity;
     Metrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline(std::move(processors), threads));
     EXPECT_EQ(sorted(receivedByAll(sinks)), expected);
 
-    if (fits_in_the_ring)
-        EXPECT_EQ(metrics.offloads, 0u);
     if (threads == 1)
     {
         EXPECT_EQ(metrics.steal_picks, 0u);

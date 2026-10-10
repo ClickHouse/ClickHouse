@@ -1,5 +1,6 @@
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Enabled.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
@@ -17,8 +18,42 @@ namespace DB
 namespace Runtime::V2
 {
 
-static constexpr size_t steal_rounds = 4;
-static constexpr size_t max_take_from_global = LocalQueue::capacity / 2;
+namespace
+{
+
+constexpr size_t steal_rounds = 4;
+constexpr size_t max_take_from_global = LocalQueue::capacity / 2;
+constexpr double shuffle_probability = 0.125;
+constexpr double early_offload_probability = 0.125;
+
+void injectShuffle(std::span<ExecutingProcessor *> batch)
+{
+    if constexpr (Wyrd::enabled())
+    {
+        if (batch.size() < 2 || !Wyrd::randomEvent(shuffle_probability))
+            return;
+
+        for (size_t index = batch.size(); index > 1; --index)
+            std::swap(batch[index - 1], batch[Wyrd::randomNumberBetween(0, index - 1)]);
+    }
+}
+
+size_t injectEarlyOffload(size_t room)
+{
+    if constexpr (Wyrd::enabled())
+    {
+        if (room == 0 || !Wyrd::randomEvent(early_offload_probability))
+            return room;
+
+        return Wyrd::randomNumberBetween(0, room);
+    }
+    else
+    {
+        return room;
+    }
+}
+
+}
 
 Worker::Worker(WorkerPool & pool_, size_t worker_id_)
     : pool(pool_)
@@ -68,7 +103,7 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
                 continue;
             }
 
-            const auto fired = pool.poller.poll(-1);
+            auto fired = pool.poller.poll(-1);
             pool.coordinator.stopPolling();
 
             if (!fired.empty())
@@ -112,7 +147,7 @@ ExecutingProcessor * Worker::tryPick()
 
     if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
     {
-        const auto fired = pool.poller.poll(0);
+        auto fired = pool.poller.poll(0);
         pool.coordinator.stopPolling();
 
         if (!fired.empty())
@@ -159,8 +194,9 @@ ExecutingProcessor * Worker::trySteal(size_t rounds)
     return nullptr;
 }
 
-ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor * const> batch)
+ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor *> batch)
 {
+    injectShuffle(batch);
     pushManyLifo(batch.first(batch.size() - 1));
     return batch.back();
 }
@@ -179,7 +215,8 @@ bool Worker::anyWorkHasAppeared() const
 
 void Worker::pushManyLifo(std::span<ExecutingProcessor * const> many)
 {
-    const size_t kept = std::min<size_t>(many.size(), local_tasks.freeSlots());
+    const size_t room = std::min<size_t>(many.size(), local_tasks.freeSlots());
+    const size_t kept = injectEarlyOffload(room);
     metrics.offloads += many.size() - kept;
     pool.global_tasks.pushManyFifo(many.first(many.size() - kept));
     local_tasks.pushManyLifo(many.last(kept));

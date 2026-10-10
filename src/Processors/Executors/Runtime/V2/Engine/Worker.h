@@ -25,7 +25,7 @@ class Worker
     ExecutingProcessor * pick(WorkerSlot & slot, std::atomic_bool * yield_flag);
     ExecutingProcessor * tryPick();
     ExecutingProcessor * trySteal(size_t rounds);
-    ExecutingProcessor * pickFromBatch(std::span<ExecutingProcessor * const> batch);
+    ExecutingProcessor * pickFromBatch(std::span<ExecutingProcessor *> batch);
     bool anyWorkHasAppeared() const;
 
     /// Population.

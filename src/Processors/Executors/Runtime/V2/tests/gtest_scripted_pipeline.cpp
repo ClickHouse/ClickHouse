@@ -23,7 +23,6 @@ WYRD_TEST(ScriptedPipeline, ChainDeliversEveryChunkInOrder, .runs = 1000, .simul
     EXPECT_NO_THROW(metrics = runPipeline({source, transform, sink}, threads));
     EXPECT_EQ(received(*sink), (std::vector<UInt64>{1, 2, 3}));
 
-    EXPECT_EQ(metrics.offloads, 0u);
     if (threads == 1)
     {
         EXPECT_EQ(metrics.steal_picks, 0u);
@@ -56,7 +55,6 @@ WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation 
     std::ranges::sort(values);
     EXPECT_EQ(values, (std::vector<UInt64>{1, 2}));
 
-    EXPECT_EQ(metrics.offloads, 0u);
     if (threads == 1)
     {
         EXPECT_EQ(metrics.steal_picks, 0u);
@@ -81,7 +79,6 @@ WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulat
     std::ranges::sort(values);
     EXPECT_EQ(values, (std::vector<UInt64>{1, 2, 3}));
 
-    EXPECT_EQ(metrics.offloads, 0u);
     if (threads == 1)
     {
         EXPECT_EQ(metrics.steal_picks, 0u);
