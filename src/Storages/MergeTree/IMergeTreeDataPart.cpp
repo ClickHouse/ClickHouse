@@ -3579,8 +3579,11 @@ bool IMergeTreeDataPart::hasMaterializedSecondaryIndex(const IMergeTreeIndex & s
     /// A name containing '/' can only be serialized under the escaping policy (`getIndexFileName`),
     /// and `ALTER TABLE ... MODIFY SETTING escape_index_filenames = 0` is rejected for such a table
     /// (`MergeTreeData::checkAlterIsPossible`). A table that reached that state before the check
-    /// existed keeps its index unreadable, so report it as absent rather than surfacing the
-    /// filename-encoding exception from a `SELECT` on `system.parts`.
+    /// existed has no usable copy of the index in any part, so report it as absent. This is not
+    /// what the read path does for that legacy state: queries that touch the index still throw
+    /// `BAD_ARGUMENTS` from `getFileName` instead of skipping it, until the policy is restored.
+    /// Here we only refuse to propagate that exception, so that one such table does not break
+    /// every `SELECT` on `system.parts`.
     if (!skip_index.index.escape_filenames && skip_index.index.name.contains('/'))
         return false;
 
