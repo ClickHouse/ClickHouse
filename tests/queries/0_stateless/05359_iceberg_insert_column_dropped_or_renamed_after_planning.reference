@@ -1,0 +1,6 @@
+DROP COLUMN note
+Metadata changed during write operation, try again
+rows	[0,1,2]
+RENAME COLUMN note TO comment
+Metadata changed during write operation, try again
+rows	[0,1,2]

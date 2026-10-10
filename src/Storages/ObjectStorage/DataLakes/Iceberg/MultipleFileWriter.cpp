@@ -11,8 +11,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 #if USE_AVRO
 
+/// The schema can gain fields after the `INSERT` was analysed: such a field is absent from the written file,
+/// which is valid Iceberg. A written column that is not in the schema means the column was dropped or renamed
+/// concurrently; the file would then carry a column without a field id, so the write is rejected like
+/// a schema change detected at commit.
 static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
 {
     const auto & field_id_by_name = mapper.getStorageColumnEncoding();
@@ -22,7 +31,10 @@ static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, 
     {
         auto it = field_id_by_name.find(column.name);
         if (it == field_id_by_name.end())
-            return {};
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Metadata changed during write operation, try again: column {} is not in the current schema of the table",
+                column.name);
         field_ids.push_back(it->second);
     }
     return field_ids;
@@ -43,7 +55,7 @@ MultipleFileWriter::MultipleFileWriter(
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
-    , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
+    , stats(fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -59,7 +71,7 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
+    current_file_stats = std::make_shared<DataFileStatistics>(fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
     current_file_num_rows = 0;
     current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();
