@@ -70,8 +70,7 @@ namespace
 {
 
 /// A file's `numRecords` statistic counts rows that a deletion vector still logically removes,
-/// so it is not a row count for such a file. delta-kernel states this alongside the statistic
-/// itself (`kernel/src/scan/state.rs`) and names `has_vector` as the flag to consult.
+/// so it is not a row count for such a file.
 bool hasDeletionVector(ffi::SharedDvInfo * dv_info_ptr)
 {
     return dv_info_ptr && ffi::dv_info_has_vector(dv_info_ptr);
