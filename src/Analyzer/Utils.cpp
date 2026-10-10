@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
@@ -34,6 +35,7 @@
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 #include <base/unit.h>
@@ -1100,19 +1102,23 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
     return out;
 }
 
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments)
+{
+    auto function_node = std::make_shared<FunctionNode>(name);
+    function_node->getArguments().getNodes() = std::move(arguments);
+    resolveOrdinaryFunctionNodeByName(*function_node, name, context);
+    return function_node;
+}
+
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
+{
+    return createResolvedFunction(context, "tupleElement", {std::move(argument), std::make_shared<ConstantNode>(index)});
+}
+
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
 {
-    auto enum_literal_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
-
-    auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
-    QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };
-
-    auto function_node = std::make_shared<FunctionNode>("_CAST");
-    function_node->getArguments().getNodes() = std::move(arguments);
-
-    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
-
-    return function_node;
+    auto type_name_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
+    return createResolvedFunction(context, "_CAST", {std::move(node), std::move(type_name_node)});
 }
 
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
@@ -1226,6 +1232,55 @@ std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodeP
         return {nullptr, true};
 
     return {nullptr, false};
+}
+
+namespace
+{
+
+class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
+{
+public:
+    const TableExpressionNodePtr & getTableExpression() const
+    {
+        return table_expression;
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || (!column_source->as<TableNode>() && !column_source->as<TableFunctionNode>()))
+            return;
+
+        if (!table_expression)
+            table_expression = std::static_pointer_cast<ITableExpressionNode>(std::move(column_source));
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    {
+        const auto child_type = child_node->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY
+            && child_type != QueryTreeNodeType::UNION
+            && child_type != QueryTreeNodeType::LAMBDA;
+    }
+
+private:
+    TableExpressionNodePtr table_expression;
+};
+
+}
+
+TableExpressionNodePtr getPrewhereTableExpression(const QueryTreeNodePtr & prewhere)
+{
+    if (!prewhere)
+        return {};
+
+    CollectPrewhereTableExpressionVisitor visitor;
+    visitor.visit(prewhere);
+    return visitor.getTableExpression();
 }
 
 /** There are no limits on the maximum size of the result for the subquery.
@@ -1452,6 +1507,9 @@ namespace
 /// literal instead: `Variant`, `Dynamic`, dynamic `JSON` paths, shared data and `JSON` object names.
 Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool datetime64_as_numbers, bool date_time_as_numbers)
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     if (isColumnConst(*column))
         return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
 
@@ -1642,15 +1700,11 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 /// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & nested)
+    return anyInTypeTree(type, [](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
-    };
-    check(type);
-    type.forEachChild(check);
-    return result;
+        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+    });
 }
 
 namespace
@@ -1728,6 +1782,9 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
 
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     /// Subtrees the default literal path already serializes exactly are left unchanged.
     if (!typeNeedsExactLiteralSerialization(*type))
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
@@ -1841,17 +1898,24 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                 return make_intrusive<ASTLiteral>(Null());
 
+            /// A literal alone loses the member type (an `Enum8` is inferred back as its number): name it and the `Dynamic` type.
+            /// A consumer that clears `date_time_as_numbers` has no `Dynamic` and gets the bare member literal.
+            auto name_member = [&](ASTPtr member_ast, const DataTypePtr & member_type)
+            {
+                if (!date_time_as_numbers)
+                    return member_ast;
+                return makeCastToTypeNameAST(makeCastToTypeNameAST(std::move(member_ast), member_type->getName()), type->getName());
+            };
+
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
             {
-                /// Recurse into the active member itself rather than through the `Variant` branch above:
-                /// `Dynamic` accepts a value of any type, so its member type must not be named, and doing so
-                /// would change the stored subtype of values whose literal is inferred back as a wider or
-                /// narrower type than the initiator's.
                 const auto & variant_types
                     = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
-                return columnConstantToExactLiteralASTImpl(
-                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
-                    variant_types[global_discr], /*date_time_as_numbers=*/false);
+                return name_member(
+                    columnConstantToExactLiteralASTImpl(
+                        variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
+                        variant_types[global_discr], date_time_as_numbers),
+                    variant_types[global_discr]);
             }
 
             /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
@@ -1863,7 +1927,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             auto tmp_column = decoded_type->createColumn();
             tmp_column->reserve(1);
             decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
-            return columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, /*date_time_as_numbers=*/false);
+            return name_member(
+                columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, date_time_as_numbers), decoded_type);
         }
         case TypeIndex::Object:
         {

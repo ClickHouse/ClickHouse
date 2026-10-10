@@ -1,3 +1,6 @@
+any not routed	0
+any	1	10
+any	1	20
 asof not routed	0
 asof	10	100
 asof	20	200
