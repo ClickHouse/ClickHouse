@@ -4448,6 +4448,7 @@ bool MutateTask::prepare()
     /// original commands, including one `UPDATE` entry per original command.
     const auto merge_tree_settings = ctx->data->getSettings();
     const bool materialize_ttl_recalculate_only = (*merge_tree_settings)[MergeTreeSetting::materialize_ttl_recalculate_only];
+    const bool ttl_only_drop_parts = (*merge_tree_settings)[MergeTreeSetting::ttl_only_drop_parts];
     const UInt64 max_coalescing_commands = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_commands];
     const UInt64 max_coalescing_ast_bytes = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_ast_bytes];
     const UInt64 max_coalescing_keys = (*merge_tree_settings)[MergeTreeSetting::max_row_mask_update_coalescing_keys];
@@ -4587,7 +4588,7 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
     context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
-    bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
+    const bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && ttl_only_drop_parts;
     ctx->recalculate_ttl_only = materialize_ttl_recalculate_only && MutationHelpers::canRecalculateTTLWithoutRewritingData(
         ctx->source_part, ctx->future_part->part_format, ctx->metadata_snapshot, ctx->commands_for_part, *alter_conversions);
 
@@ -4630,6 +4631,7 @@ bool MutateTask::prepare()
         MutationsInterpreter::Settings settings(true);
         settings.apply_deleted_mask = false;
         settings.materialize_ttl_recalculate_only = materialize_ttl_recalculate_only;
+        settings.ttl_only_drop_parts = ttl_only_drop_parts;
 
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
             *ctx->data, ctx->source_part, alter_conversions,

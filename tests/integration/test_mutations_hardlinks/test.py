@@ -544,3 +544,54 @@ def test_compact_ttl_recalculate_setting_snapshot(
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
         node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+@pytest.mark.parametrize("ttl_only_drop_parts", [0, 1])
+@pytest.mark.parametrize("all_expired", [False, True])
+def test_compact_ttl_drop_parts_setting_snapshot(
+    started_cluster, ttl_only_drop_parts, all_expired
+):
+    table = f"ttl_drop_mode_snapshot_{ttl_only_drop_parts}_{int(all_expired)}"
+    failpoint = "mt_mutate_task_pause_after_ttl_mode_selection"
+    node1.query(f"""
+        CREATE TABLE {table} (k UInt64, ts DateTime('UTC'))
+        ENGINE = MergeTree ORDER BY k TTL ts + INTERVAL 1 YEAR
+        SETTINGS min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000000,
+                 min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
+                 materialize_ttl_recalculate_only = 0,
+                 ttl_only_drop_parts = {ttl_only_drop_parts},
+                 max_number_of_merges_with_ttl_in_pool = 0
+        """)
+    try:
+        expired_condition = "1" if all_expired else "number < 5"
+        node1.query(
+            f"INSERT INTO {table} SELECT number, if({expired_condition}, "
+            "toDateTime('2000-01-01', 'UTC'), toDateTime('2090-01-01', 'UTC')) FROM numbers(10)"
+        )
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        node1.query(
+            f"ALTER TABLE {table} MATERIALIZE TTL", settings={"mutations_sync": 0}
+        )
+        node1.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        node1.query(
+            f"ALTER TABLE {table} MODIFY SETTING ttl_only_drop_parts = {1 - ttl_only_drop_parts}"
+        )
+        node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.mutations WHERE database = 'default' AND table = '{table}' AND NOT is_done",
+            "0",
+        )
+
+        # A fully expired part is removed in either mode. Only row-level TTL removes half a part.
+        expected_rows = 0 if all_expired else (10 if ttl_only_drop_parts else 5)
+        assert node1.query(f"SELECT count() FROM {table}") == f"{expected_rows}\n"
+        assert (
+            node1.query(
+                f"CHECK TABLE {table}", settings={"check_query_single_value_result": 1}
+            )
+            == "1\n"
+        )
+    finally:
+        node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
