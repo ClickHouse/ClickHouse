@@ -36,7 +36,6 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
-    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
 }
 namespace
 {
@@ -52,6 +51,7 @@ namespace
         const std::optional<time_t> & global_valid_until,
         bool reset_authentication_methods,
         bool replace_authentication_methods,
+        time_t current_time,
         bool allow_implicit_no_password,
         bool allow_no_password,
         bool allow_plaintext_password,
@@ -60,7 +60,7 @@ namespace
         if (override_name)
             user.setName(override_name->toString());
         else if (query.new_name)
-            user.setName(*query.new_name);
+            user.setName(query.new_name->toString());
         else if (query.names->size() == 1)
             user.setName(query.names->toStrings().at(0));
 
@@ -90,6 +90,57 @@ namespace
             user.authentication_methods.clear();
             user.authentication_methods.emplace_back(backup_authentication_method);
         }
+
+        /// A user-level `VALID UNTIL`/`VALID FOR` clause applies to every method the user already has, and
+        /// it is applied here, before the expired methods are dropped below: extending the deadline of a
+        /// user whose credentials have already lapsed keeps working, and only the methods that are still
+        /// expired afterwards are removed. The methods added by this statement are not in the list yet;
+        /// they get the deadline in the loop further down, which has to skip those carrying their own
+        /// more specific clause.
+        if (global_valid_until)
+        {
+            for (auto & authentication_method : user.authentication_methods)
+                authentication_method.setValidUntil(*global_valid_until);
+        }
+
+        /// An expired authentication method can never accept a credential again - the deadline is in the
+        /// past and time only moves forward - so holding on to it serves no purpose: it just occupies a
+        /// slot in `max_authentication_methods_per_user` and clutters `SHOW CREATE USER`. Every write to
+        /// the user therefore drops the expired methods, which is what makes rotating short-lived
+        /// credentials work: `ALTER USER ... ADD IDENTIFIED WITH ... VALID UNTIL ...` can be issued
+        /// indefinitely without the dead credentials piling up against the limit, and without arranging a
+        /// window in which only one credential is valid so that `IDENTIFIED WITH` or `RESET AUTHENTICATION
+        /// METHODS TO NEW` would not drop one that is still in use.
+        ///
+        /// Two deliberate restrictions:
+        ///
+        /// - Only the methods the user already had are considered. `CREATE`/`ALTER USER ... VALID UNTIL
+        ///   <past date>` (and `VALID FOR` a negative interval) is a documented way to write a credential
+        ///   that is already expired, so a method this very statement adds is kept.
+        /// - The list is never emptied. An empty `authentication_methods` is formatted as an `ATTACH USER`
+        ///   query with no `IDENTIFIED` clause (see `InterpreterShowCreateAccessEntityQuery`), which this
+        ///   function reads back as the default `no_password` - so pruning a user whose every method is
+        ///   expired would silently turn it into a password-less user on the next reload. Such a user keeps
+        ///   its expired methods and simply cannot authenticate, which is the fail-closed state it is
+        ///   already in.
+        ///
+        /// Loading a stored definition (`ATTACH USER`, from `AccessEntityIO::deserializeAccessEntity` - local
+        /// disk, replicated storage, backups) never prunes: only a real write decides what is dropped, so the
+        /// same stored definition always materializes the same way on every node and after every restart.
+        /// The stored methods arrive there as the statement's own methods, which the first restriction
+        /// already keeps, but the explicit check does not depend on that.
+        auto is_expired = [current_time](const AuthenticationData & authentication_method)
+        {
+            const time_t valid_until = authentication_method.getValidUntil();
+            return (valid_until != 0) && (current_time > valid_until);
+        };
+
+        size_t num_authentication_methods_left = authentication_methods.size();
+        for (const auto & authentication_method : user.authentication_methods)
+            num_authentication_methods_left += !is_expired(authentication_method);
+
+        if (!query.attach && num_authentication_methods_left != 0)
+            std::erase_if(user.authentication_methods, is_expired);
 
         // max_number_of_authentication_methods == 0 means unlimited
         if (!authentication_methods.empty() && max_number_of_authentication_methods != 0)
@@ -310,7 +361,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
 
     if (query.new_name && !query.alter)
-        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
+        access->checkAccess(AccessType::CREATE_USER, query.new_name->toString());
 
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
@@ -448,18 +499,18 @@ BlockIO InterpreterCreateUserQuery::execute()
             updateUserFromQueryImpl(
                 *updated_user, query, authentication_methods, {}, roles_from_query, default_roles_from_query, settings_from_query, grantees_from_query,
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                valid_for_base_time,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             return updated_user;
         };
 
+        auto ids = query.if_exists ? storage->find<User>(names) : storage->getIDs<User>(names);
+        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (query.if_exists)
-        {
-            auto ids = storage->find<User>(names);
-            storage->tryUpdate(ids, update_func);
-        }
+            access_control.tryUpdate(ids, update_func);
         else
-            storage->update(storage->getIDs<User>(names), update_func);
+            access_control.update(ids, update_func);
     }
     else
     {
@@ -471,27 +522,24 @@ BlockIO InterpreterCreateUserQuery::execute()
             updateUserFromQueryImpl(
                 *new_user, query, authentication_methods, name_with_host, roles_from_query, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
+                valid_for_base_time,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
             new_users.emplace_back(std::move(new_user));
         }
 
-        if (!query.storage_name.empty())
-        {
-            for (const auto & name : names)
-            {
-                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::USER, name, storage_ptr))
-                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "User {} already exists in storage {}", name, another_storage_ptr->getStorageName());
-            }
-        }
-
         std::vector<UUID> ids;
-        if (query.if_not_exists)
-            ids = storage->tryInsert(new_users);
+        if (query.or_replace)
+            getContext()->checkSettingsConstraintsForOverwrite(new_users, query.storage_name);
+
+        if (!query.storage_name.empty())
+            ids = access_control.insertInto(query.storage_name, new_users, query.or_replace, !query.if_not_exists);
+        else if (query.if_not_exists)
+            ids = access_control.tryInsert(new_users);
         else if (query.or_replace)
-            ids = storage->insertOrReplace(new_users);
+            ids = access_control.insertOrReplace(new_users);
         else
-            ids = storage->insert(new_users);
+            ids = access_control.insert(new_users);
 
         if (query.grantees)
         {
@@ -541,6 +589,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         global_valid_until,
         query.reset_authentication_methods_to_new,
         query.replace_authentication_methods,
+        getCurrentTime(),
         allow_no_password,
         allow_plaintext_password,
         true,

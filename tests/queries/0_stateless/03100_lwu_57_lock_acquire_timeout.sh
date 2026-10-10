@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-parallel
+# Tags: long, no-replicated-database, no-parallel, no-fasttest
 # long: the lock holds put this at about a minute.
 # no-replicated-database - path in zookeeper differs with replicated database
 # no-parallel: the `completed_pipeline_pause_before_teardown` and `patch_parts_lock_pause_before_cas`
