@@ -129,6 +129,11 @@ struct RowPolicyFilterContents
     bool has_subquery = false;
     /// A call to an executable or WebAssembly UDF, which a deserialized plan cannot rebuild.
     bool has_function_resolved_outside_function_factory = false;
+    /// A call to a non-deterministic function (e.g. `today`, `now`): the filter is planned into the
+    /// cached plan itself, so its value could be frozen at the time the plan was analyzed - a hit
+    /// would keep enforcing the analysis-time cutoff instead of the current one. This mirrors the
+    /// check that `isFunctionUnsafeForPlanCache` applies to the visible query.
+    bool has_non_deterministic_function = false;
 };
 
 /// Walks `ast` and, recursively, the bodies of the SQL UDFs it calls, with `visited_udfs` guarding
@@ -146,6 +151,13 @@ void collectRowPolicyFilterContents(
     {
         if (isFunctionResolvedOutsideFunctionFactory(function->name, context))
             contents.has_function_resolved_outside_function_factory = true;
+        /// `arrayJoin` reports `isDeterministic() = false` because it is multi-valued, but it is pure.
+        /// SQL UDFs are not in `FunctionFactory`; their bodies are walked below instead.
+        else if (getFunctionCanonicalNameIfAny(function->name) != "arrayJoin")
+        {
+            if (const auto func = FunctionFactory::instance().tryGet(function->name, context); func && !func->isDeterministic())
+                contents.has_non_deterministic_function = true;
+        }
 
         if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
             udf_body && visited_udfs.insert(function->name).second)
@@ -342,6 +354,12 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
     {
         LOG_DEBUG(getLogger("QueryPlanCache"),
             "Not caching plan: row policy on {}.{} calls an executable or WebAssembly UDF", dep.database, dep.table);
+        return false;
+    }
+    if (row_policy_info.contents.has_non_deterministic_function)
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: row policy on {}.{} calls a non-deterministic function", dep.database, dep.table);
         return false;
     }
     dep.row_policy_hash = row_policy_info.hash;
@@ -935,12 +953,13 @@ bool validateQueryPlanCacheEntry(
         if (getMetadataVersionOrSchemaHash(metadata) != dep.metadata_version)
             return false;
 
-        /// A policy that changed to contain a subquery or a call to a UDF the plan cannot rebuild
+        /// A policy that changed to contain a subquery, a non-deterministic function or a call to a UDF the plan cannot rebuild
         /// (or that changed in any other way) alters the hash and is rejected here; the explicit
         /// content guards are defense in depth, mirroring the store path in `fillDependency`.
         const auto row_policy_info = getRowPolicyInfo(context, dep.database, dep.table);
         if (row_policy_info.contents.has_subquery
             || row_policy_info.contents.has_function_resolved_outside_function_factory
+            || row_policy_info.contents.has_non_deterministic_function
             || row_policy_info.hash != dep.row_policy_hash)
             return false;
 

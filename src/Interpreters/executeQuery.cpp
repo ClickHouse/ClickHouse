@@ -184,6 +184,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsMap additional_table_filters;
+    extern const SettingsString additional_result_filter;
     extern const SettingsBool allow_experimental_query_plan_cache;
     extern const SettingsBool enable_query_plan_cache;
     extern const SettingsBool query_plan_cache_allow_scalar_subqueries;
@@ -1313,6 +1315,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     QueryPlanCachePtr query_plan_cache)
 {
     const auto & settings = context->getSettingsRef();
+
+    /// `additional_table_filters` and `additional_result_filter` are injected into the query during
+    /// analysis, outside of the query AST that the eligibility checks and the dependency collection
+    /// walk. A filter can call non-deterministic functions or contain a scalar subquery reading
+    /// another table, whose result would be folded into the cached plan without that table ever
+    /// becoming a dependency - a hit would neither revalidate it nor re-check `SELECT` on it. Keep
+    /// such queries off the plan cache.
+    if (!settings[Setting::additional_table_filters].value.empty() || !settings[Setting::additional_result_filter].value.empty())
+        return nullptr;
 
     /// Non-deterministic function results may be captured into the plan as constants during
     /// analysis; refuse early and cheaply. Expanded view bodies are checked later, during
