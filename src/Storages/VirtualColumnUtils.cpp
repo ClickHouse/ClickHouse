@@ -372,7 +372,8 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
 
     for (const auto & column : hive_columns)
     {
-        if (!block.has(column.name))
+        /// In the filter block `_path` and `_file` are the path and the file name, never a Hive column with that name.
+        if (column.name != "_path" && column.name != "_file" && !block.has(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 

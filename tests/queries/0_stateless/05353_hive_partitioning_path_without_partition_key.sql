@@ -19,6 +19,11 @@ SELECT x FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05353/*/d
 SELECT x, a FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05353/*/data.csv', format = CSV, structure = 'x UInt8') ORDER BY x; -- { serverError INCORRECT_DATA }
 SELECT x FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05353/*/data.csv', format = CSV, structure = 'x UInt8') WHERE a = 1; -- { serverError INCORRECT_DATA }
 
+-- A Hive column named `_path` or `_file` is filtered by its value in the path.
+INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05353/c/_path=p/_file=f/data.csv', format = CSV) SETTINGS s3_truncate_on_insert = 1, use_hive_partitioning = 0 SELECT 3 AS x;
+INSERT INTO FUNCTION s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05353/c/_path=p/_file=g/data.csv', format = CSV) SETTINGS s3_truncate_on_insert = 1, use_hive_partitioning = 0 SELECT 4 AS x;
+SELECT x, _path, _file FROM s3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05353/c/_path=p/_file={f,g}/data.csv', format = CSV, structure = 'x UInt8, _path String, _file String') WHERE _path = 'p' AND _file = 'f';
+
 -- A table created with `use_hive_partitioning = 1` still reads its Hive column from the path when the setting is off.
 CREATE TABLE t_05353 (x UInt8) ENGINE = S3(s3_conn, filename = {CLICKHOUSE_DATABASE:String} || '/05353/a=1/data.csv', format = CSV);
 SELECT x, a FROM t_05353 SETTINGS use_hive_partitioning = 0;
