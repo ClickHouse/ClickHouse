@@ -25,9 +25,10 @@ class WriteBuffer;
 /// A minimal client of the Cassandra native protocol, version 4:
 /// https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec
 ///
-/// It implements only what the `cassandra` dictionary source needs: connecting with optional
-/// password authentication (`PasswordAuthenticator`, SASL `PLAIN`) and running a query with paging.
-/// There is no compression, TLS, prepared statements, or cluster topology discovery: every request
+/// It implements only what the `cassandra` dictionary source needs: connecting, optionally with TLS,
+/// optional password authentication (`PasswordAuthenticator`, SASL `PLAIN`), compression of frames,
+/// and running a query with paging.
+/// There are no prepared statements or cluster topology discovery: every request
 /// goes to one of the configured hosts, which acts as the coordinator.
 /// The connection is synchronous: one request at a time.
 namespace Cassandra
@@ -48,6 +49,16 @@ enum class Consistency : UInt16
     LocalSerial = 0x0009,
     LocalOne = 0x000A,
 };
+
+enum class Compression : uint8_t
+{
+    None,
+    LZ4,
+    Snappy,
+};
+
+/// Parses `none`, `lz4`, or `snappy`.
+Compression parseCompression(const String & name);
 
 /// Column types (the `[option]` ids in the result metadata).
 enum class ColumnType : UInt16
@@ -133,6 +144,9 @@ struct ConnectionSettings
 {
     String user;
     String password;
+    /// Use TLS with the client settings from the `openSSL.client` section of the server configuration.
+    bool secure = false;
+    Compression compression = Compression::None;
     Poco::Timespan connect_timeout{5, 0};
     /// The timeout for a single read or write on the socket.
     Poco::Timespan request_timeout{12, 0};
@@ -143,7 +157,8 @@ class Connection
 {
 public:
     /// Connects and performs the handshake (`STARTUP` and authentication).
-    Connection(const Poco::Net::SocketAddress & address, const ConnectionSettings & settings);
+    /// `host` is the name the address was resolved from, used for TLS (SNI and certificate verification).
+    Connection(const String & host, const Poco::Net::SocketAddress & address, const ConnectionSettings & settings);
     ~Connection();
 
     /// Runs a query and returns one page of its result.
@@ -166,11 +181,16 @@ private:
 
     void handshake(const ConnectionSettings & settings);
     void sendFrame(UInt8 opcode, const String & body);
+    String compress(const String & body) const;
+    void decompress(String & body) const;
     Frame receiveFrame();
     [[noreturn]] void throwServerError(const Frame & frame) const;
 
     Poco::Net::SocketAddress address;
-    Poco::Net::StreamSocket socket;
+    std::unique_ptr<Poco::Net::StreamSocket> socket;
+    const Compression compression;
+    /// Compression is used after the `STARTUP` message, which negotiates it.
+    bool compression_started = false;
     std::unique_ptr<ReadBuffer> in;
     std::unique_ptr<WriteBuffer> out;
     LoggerPtr log;

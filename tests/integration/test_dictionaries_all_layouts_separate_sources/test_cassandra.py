@@ -102,11 +102,11 @@ def test_ranged(started_cluster, layout_name):
     ranged_tester.execute(layout_name, node)
 
 
-def test_paging_and_hosts(started_cluster):
-    """
-    Load a table that does not fit into one page of the result,
-    with a list of hosts where the first one does not exist.
-    """
+PAGING_ROWS = 20000
+
+
+@pytest.fixture(scope="module")
+def paging_table(started_cluster):
     client = cassandra.cluster.Cluster(
         [started_cluster.cassandra_ip], port=started_cluster.cassandra_port
     )
@@ -121,16 +121,24 @@ def test_paging_and_hosts(started_cluster):
     insert = session.prepare(
         "INSERT INTO paging.t (id, value, flag, ts) VALUES (?, ?, ?, ?)"
     )
-    rows = 20000
     execute_concurrent_with_args(
         session,
         insert,
-        [(i, f"value_{i}", i % 2 == 0, i * 1000) for i in range(rows)],
+        [(i, f"value_{i}", i % 2 == 0, i * 1000) for i in range(PAGING_ROWS)],
         concurrency=100,
         raise_on_first_error=True,
     )
     client.shutdown()
 
+
+@pytest.mark.parametrize(
+    "secure, compression", [(0, "none"), (0, "snappy"), (1, "none"), (1, "lz4")]
+)
+def test_paging_and_hosts(started_cluster, paging_table, secure, compression):
+    """
+    Load a table that does not fit into one page of the result,
+    with a list of hosts where the first one does not exist.
+    """
     node.query(
         f"""
         CREATE DICTIONARY paging_dict (id UInt64, value String, flag UInt8, ts DateTime('UTC'))
@@ -138,6 +146,8 @@ def test_paging_and_hosts(started_cluster):
         SOURCE(CASSANDRA(
             host 'nonexistent_cassandra_host, {started_cluster.cassandra_host}'
             port {started_cluster.cassandra_port}
+            secure {secure}
+            compression '{compression}'
             keyspace 'paging'
             column_family 't'))
         LAYOUT(HASHED())
@@ -151,7 +161,7 @@ def test_paging_and_hosts(started_cluster):
                 "SELECT count(), sum(id), sum(length(value)), sum(flag), sum(toUnixTimestamp(ts)) FROM paging_dict"
             )
             == node.query(
-                f"SELECT count(), sum(number), sum(length('value_' || toString(number))), sum(number % 2 = 0), sum(number) FROM numbers({rows})"
+                f"SELECT count(), sum(number), sum(length('value_' || toString(number))), sum(number % 2 = 0), sum(number) FROM numbers({PAGING_ROWS})"
             )
         )
         assert node.query("SELECT dictGet('paging_dict', 'value', 12345::UInt64)") == "value_12345\n"
@@ -159,7 +169,7 @@ def test_paging_and_hosts(started_cluster):
         node.query("DROP DICTIONARY paging_dict")
 
 
-def test_errors(started_cluster):
+def test_errors(started_cluster, paging_table):
     node.query(
         f"""
         CREATE DICTIONARY missing_table_dict (id UInt64, value String)

@@ -61,6 +61,8 @@ SOURCE(CASSANDRA(
     port 9042
     user 'username'
     password 'qwerty123'
+    secure 1
+    compression 'lz4'
     keyspace 'database_name'
     column_family 'table_name'
     allow_filtering 1
@@ -82,7 +84,9 @@ SOURCE(CASSANDRA(
         <port>9042</port>
         <user>username</user>
         <password>qwerty123</password>
-        <keyspase>database_name</keyspase>
+        <secure>1</secure>
+        <compression>lz4</compression>
+        <keyspace>database_name</keyspace>
         <column_family>table_name</column_family>
         <allow_filtering>1</allow_filtering>
         <partition_key_prefix>1</partition_key_prefix>
@@ -105,6 +109,8 @@ Setting fields:
 | `port` | The port on the Cassandra servers. If not specified, default port `9042` is used. |
 | `user` | Name of the Cassandra user. |
 | `password` | Password of the Cassandra user. |
+| `secure` | Use TLS for the connection. The TLS client settings, such as the certificate verification mode, are taken from the `openSSL.client` section of the server configuration. Default value is `0`. |
+| `compression` | Compression of the transferred data: `none`, `lz4`, or `snappy`. Default value is `none`. |
 | `keyspace` | Name of the keyspace (database). |
 | `column_family` | Name of the column family (table). |
 | `allow_filtering` | Flag to allow or not potentially expensive conditions on clustering key columns. Default value is `1`. |
@@ -149,6 +155,8 @@ CassandraDictionarySource::Configuration::Configuration(
     , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", DEFAULT_PORT)))
     , user(config.getString(config_prefix + ".user", ""))
     , password(config.getString(config_prefix + ".password", ""))
+    , secure(config.getBool(config_prefix + ".secure", false))
+    , compression(Cassandra::parseCompression(config.getString(config_prefix + ".compression", "none")))
     , db(config.getString(config_prefix + ".keyspace", ""))
     , table(config.getString(config_prefix + ".column_family", ""))
     , query(config.getString(config_prefix + ".query", ""))
@@ -215,7 +223,11 @@ CassandraDictionarySource::CassandraDictionarySource(
     , pool(std::make_shared<Cassandra::ConnectionPool>(
         splitHosts(configuration.host),
         configuration.port,
-        Cassandra::ConnectionSettings{.user = configuration.user, .password = configuration.password},
+        Cassandra::ConnectionSettings{
+            .user = configuration.user,
+            .password = configuration.password,
+            .secure = configuration.secure,
+            .compression = configuration.compression},
         configuration.consistency,
         configuration.max_threads))
 {

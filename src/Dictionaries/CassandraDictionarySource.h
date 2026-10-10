@@ -28,6 +28,8 @@ public:
         UInt16 port;
         String user;
         String password;
+        bool secure;
+        Cassandra::Compression compression;
         String db;
         String table;
         String query;

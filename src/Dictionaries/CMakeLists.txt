@@ -48,6 +48,12 @@ target_link_libraries(clickhouse_dictionaries
 
 target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)
 
+# For the compression in the Cassandra client.
+target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::lz4)
+if (TARGET ch_contrib::snappy)
+    target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::snappy)
+endif()
+
 if (TARGET ch_contrib::yaml_cpp)
     target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::yaml_cpp)
 endif()

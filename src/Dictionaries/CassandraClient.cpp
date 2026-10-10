@@ -12,6 +12,16 @@
 #include <IO/WriteHelpers.h>
 #include <base/unaligned.h>
 
+#include <lz4.h>
+
+#if USE_SNAPPY
+#include <snappy.h>
+#endif
+
+#if USE_SSL
+#include <Poco/Net/SecureStreamSocket.h>
+#endif
+
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -23,7 +33,11 @@ namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int AUTHENTICATION_FAILED;
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
     extern const int CASSANDRA_INTERNAL_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DATA;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -308,6 +322,23 @@ private:
 }
 
 
+Compression parseCompression(const String & name)
+{
+    if (name == "none")
+        return Compression::None;
+    if (name == "lz4")
+        return Compression::LZ4;
+    if (name == "snappy")
+    {
+#if USE_SNAPPY
+        return Compression::Snappy;
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Snappy compression is disabled, because ClickHouse was built without Snappy support");
+#endif
+    }
+    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown compression '{}' for Cassandra, supported: 'none', 'lz4', 'snappy'", name);
+}
+
 String columnTypeToString(ColumnType type)
 {
     switch (type)
@@ -343,17 +374,36 @@ String columnTypeToString(ColumnType type)
 }
 
 
-Connection::Connection(const Poco::Net::SocketAddress & address_, const ConnectionSettings & settings)
+Connection::Connection(const String & host, const Poco::Net::SocketAddress & address_, const ConnectionSettings & settings)
     : address(address_)
+    , compression(settings.compression)
     , log(getLogger("CassandraConnection"))
 {
-    socket.connect(address, settings.connect_timeout);
-    socket.setReceiveTimeout(settings.request_timeout);
-    socket.setSendTimeout(settings.request_timeout);
-    socket.setNoDelay(true);
+    if (settings.secure)
+    {
+#if USE_SSL
+        /// The default client context, configured in the `openSSL.client` section.
+        auto secure_socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+        secure_socket->setPeerHostName(host);
+        /// The handshake is postponed until the first read or write, which are bounded by the request timeout.
+        secure_socket->setLazyHandshake(true);
+        socket = std::move(secure_socket);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "TLS connections to Cassandra are disabled, because ClickHouse was built without SSL support");
+#endif
+    }
+    else
+    {
+        socket = std::make_unique<Poco::Net::StreamSocket>();
+    }
 
-    in = std::make_unique<ReadBufferFromPocoSocket>(socket);
-    out = std::make_unique<WriteBufferFromPocoSocket>(socket);
+    socket->connect(address, settings.connect_timeout);
+    socket->setReceiveTimeout(settings.request_timeout);
+    socket->setSendTimeout(settings.request_timeout);
+    socket->setNoDelay(true);
+
+    in = std::make_unique<ReadBufferFromPocoSocket>(*socket);
+    out = std::make_unique<WriteBufferFromPocoSocket>(*socket);
 
     handshake(settings);
     LOG_TRACE(log, "Connected to {}", address.toString());
@@ -370,16 +420,19 @@ void Connection::sendFrame(UInt8 opcode, const String & body)
     if (body.size() > MAX_FRAME_BODY_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Request of size {} is too large for the Cassandra protocol", body.size());
 
+    const String compressed_body = compression_started ? compress(body) : String{};
+    const String & payload = compression_started ? compressed_body : body;
+
     char header[FRAME_HEADER_SIZE];
     header[0] = static_cast<char>(PROTOCOL_VERSION);
-    header[1] = 0;  /// flags
+    header[1] = static_cast<char>(compression_started ? FrameFlag::COMPRESSION : 0);
     header[2] = 0;  /// stream id, two bytes: every request uses stream 0, because there is one request at a time.
     header[3] = 0;
     header[4] = static_cast<char>(opcode);
-    unalignedStoreBigEndian<UInt32>(header + 5, static_cast<UInt32>(body.size()));
+    unalignedStoreBigEndian<UInt32>(header + 5, static_cast<UInt32>(payload.size()));
 
     out->write(header, FRAME_HEADER_SIZE);
-    out->write(body.data(), body.size());
+    out->write(payload.data(), payload.size());
     out->next();
 }
 
@@ -406,10 +459,6 @@ Connection::Frame Connection::receiveFrame()
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected stream id {} in a frame from Cassandra server {}", stream, address.toString());
 
-    if (flags & FrameFlag::COMPRESSION)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-            "Cassandra server {} sent a compressed frame, but compression was not negotiated", address.toString());
-
     if (length > MAX_FRAME_BODY_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Too large frame of size {} from Cassandra server {}, the maximum is {}", length, address.toString(), MAX_FRAME_BODY_SIZE);
@@ -418,6 +467,15 @@ Connection::Frame Connection::receiveFrame()
     frame.opcode = opcode;
     frame.body.resize(length);
     in->readStrict(frame.body.data(), length);
+
+    /// The server may send uncompressed frames even if compression is used, for example, small ones.
+    if (flags & FrameFlag::COMPRESSION)
+    {
+        if (!compression_started)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                "Cassandra server {} sent a compressed frame, but compression was not negotiated", address.toString());
+        decompress(frame.body);
+    }
 
     /// The optional parts preceding the message, in the order defined by the protocol.
     BodyReader reader(frame.body, 0);
@@ -430,6 +488,80 @@ Connection::Frame Connection::receiveFrame()
     frame.message_offset = reader.position();
 
     return frame;
+}
+
+String Connection::compress(const String & body) const
+{
+    String res;
+    switch (compression)
+    {
+        case Compression::None:
+            return body;
+        case Compression::LZ4:
+        {
+            /// The uncompressed size, then an LZ4 block.
+            const int bound = LZ4_compressBound(static_cast<int>(body.size()));
+            res.resize(4 + bound);
+            unalignedStoreBigEndian<UInt32>(res.data(), static_cast<UInt32>(body.size()));
+            const int compressed_size = LZ4_compress_default(body.data(), res.data() + 4, static_cast<int>(body.size()), bound);
+            if (compressed_size <= 0)
+                throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a request to Cassandra with LZ4");
+            res.resize(4 + compressed_size);
+            return res;
+        }
+        case Compression::Snappy:
+#if USE_SNAPPY
+            snappy::Compress(body.data(), body.size(), &res);
+            return res;
+#else
+            UNREACHABLE();
+#endif
+    }
+    UNREACHABLE();
+}
+
+void Connection::decompress(String & body) const
+{
+    String res;
+    switch (compression)
+    {
+        case Compression::None:
+            UNREACHABLE();
+        case Compression::LZ4:
+        {
+            BodyReader reader(body, 0);
+            const auto size = static_cast<UInt32>(reader.readInt());
+            if (size > MAX_FRAME_BODY_SIZE)
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                    "Too large uncompressed size {} of a frame from Cassandra server {}", size, address.toString());
+            res.resize(size);
+            if (size != 0)
+            {
+                const int decompressed_size = LZ4_decompress_safe(
+                    body.data() + 4, res.data(), static_cast<int>(body.size() - 4), static_cast<int>(size));
+                if (decompressed_size != static_cast<int>(size))
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress a frame from Cassandra server {} with LZ4", address.toString());
+            }
+            break;
+        }
+        case Compression::Snappy:
+        {
+#if USE_SNAPPY
+            size_t size = 0;
+            if (!snappy::GetUncompressedLength(body.data(), body.size(), &size))
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress a frame from Cassandra server {} with Snappy", address.toString());
+            if (size > MAX_FRAME_BODY_SIZE)
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                    "Too large uncompressed size {} of a frame from Cassandra server {}", size, address.toString());
+            if (!snappy::Uncompress(body.data(), body.size(), &res))
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress a frame from Cassandra server {} with Snappy", address.toString());
+            break;
+#else
+            UNREACHABLE();
+#endif
+        }
+    }
+    body = std::move(res);
 }
 
 void Connection::throwServerError(const Frame & frame) const
@@ -451,10 +583,17 @@ void Connection::throwServerError(const Frame & frame) const
 void Connection::handshake(const ConnectionSettings & settings)
 {
     BodyWriter startup;
-    startup.writeShort(1);  /// The number of entries in the [string map].
+    startup.writeShort(compression == Compression::None ? 1 : 2);  /// The number of entries in the [string map].
     startup.writeString("CQL_VERSION");
     startup.writeString("3.0.0");
+    if (compression != Compression::None)
+    {
+        startup.writeString("COMPRESSION");
+        startup.writeString(compression == Compression::LZ4 ? "lz4" : "snappy");
+    }
     sendFrame(Opcode::STARTUP, startup.str());
+    /// Even the response to `STARTUP` may be compressed.
+    compression_started = compression != Compression::None;
 
     Frame frame = receiveFrame();
     if (frame.opcode == Opcode::READY)
@@ -590,7 +729,7 @@ ResultPage Connection::query(const String & query_text, Consistency consistency,
 
 bool Connection::isReusable() const
 {
-    return getSocketState(socket) == SocketState::Idle;
+    return getSocketState(*socket) == SocketState::Idle;
 }
 
 
@@ -669,7 +808,7 @@ ConnectionPtr ConnectionPool::connect()
         {
             try
             {
-                return std::make_unique<Connection>(address, settings);
+                return std::make_unique<Connection>(host, address, settings);
             }
             catch (const Exception & e)
             {
