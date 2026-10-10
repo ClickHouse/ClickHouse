@@ -46,12 +46,12 @@ Prewhere filter column: or(in(__table2.k, __set_Int32_UNIQ_ID), in(__table2.k, _
 4	40	200
 --- Case D: plan (enabled) ---
 Filter column: and(greater(__table1.a, 0_UInt8), greater(__table2.c, 0_UInt8), or(and(greater(__table1.a, 5_UInt8), less(__table2.c, 10_UInt8)), and(greater(__table1.a, 6_UInt8), less(__table2.c, 11_UInt8)))) (removed)
-Filter column: and(greater(__table1.a, 0_UInt8), or(greater(__table1.a, 5_UInt8), greater(__table1.a, 6_UInt8))) (removed)
-Filter column: and(greater(__table2.c, 0_UInt8), or(less(__table2.c, 10_UInt8), less(__table2.c, 11_UInt8))) (removed)
+Prewhere filter column: and(greater(__table1.a, 0_UInt8), or(greater(__table1.a, 5_UInt8), greater(__table1.a, 6_UInt8))) (removed)
+Prewhere filter column: and(greater(__table2.c, 0_UInt8), or(less(__table2.c, 10_UInt8), less(__table2.c, 11_UInt8))) (removed)
 --- Case D: plan (disabled) ---
 Filter column: and(greater(__table1.a, 0_UInt8), greater(__table2.c, 0_UInt8), or(and(greater(__table1.a, 5_UInt8), less(__table2.c, 10_UInt8)), and(greater(__table1.a, 6_UInt8), less(__table2.c, 11_UInt8)))) (removed)
-Filter column: greater(__table1.a, 0_UInt8) (removed)
-Filter column: greater(__table2.c, 0_UInt8) (removed)
+Prewhere filter column: greater(__table1.a, 0_UInt8) (removed)
+Prewhere filter column: greater(__table2.c, 0_UInt8) (removed)
 --- Case D: result (enabled) ---
 6	a6	6	b6
 7	a7	7	b7

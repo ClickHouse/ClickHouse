@@ -127,7 +127,7 @@ The table below shows the behavior of this setting for various date-time functio
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "The text index is now GA"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "0"},{"label": "Text index was moved to Beta."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "The text index is now GA. This also applies to the alias `allow_experimental_full_text_index`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "0"},{"label": "Text index was moved to Beta."}]}, {"id": "row-3","items": [{"label": "24.6"},{"label": "0"},{"label": "Enable experimental text index. At the time the setting was named `allow_experimental_full_text_index`, which is now an alias of it."}]}]}/>
 
 If set to true, allow using the text index.
 
@@ -159,6 +159,23 @@ Enable functions for funnel analysis.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "Propagate WITH statements to UNION queries and all subqueries by default"}]}]}/>
 
 Propagate WITH statements to UNION queries and all subqueries
+
+## enable_group_by_top_k_dynamic_filtering {#enable_group_by_top_k_dynamic_filtering}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting: `GROUP BY key [ORDER BY key] LIMIT n` publishes the top-K heap boundary to the `MergeTree` reading step, which filters rows and skips granules by it. `compatibility` below 26.10 disables it."}]}]}/>
+
+For [enable_group_by_top_k_optimization](/reference/settings/session-settings/enable#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
+
+This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
+
+It is not applied to a read with `FINAL` or with parallel replicas: `FINAL` must see every version of a row, and the boundary is not carried to the reads on remote replicas.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
 
 ## enable_group_by_top_k_optimization {#enable_group_by_top_k_optimization}
 
@@ -251,13 +268,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge/>
-
 **Aliases**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_json_lazy_type_hints`."}]}, {"id": "row-2","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "New experimental setting for lazy JSON type hints. At the time the setting was named `allow_experimental_json_lazy_type_hints`, which is now an alias of it."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "Lazy `JSON` type hints are now GA. This also applies to the alias `allow_experimental_json_lazy_type_hints`."}]}]}/>
 
 Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
 
@@ -272,6 +287,38 @@ materialized during inserts and background merges instead of rewriting the histo
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Enable lazy columns replication in JOIN and ARRAY JOIN by default"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"}]}]}/>
 
 Enables lazy columns replication in `JOIN`, `ARRAY JOIN` and lambda captures of higher-order functions (e.g. `arrayMap`), it allows to avoid unnecessary copy of the same rows multiple times in memory.
+
+## enable_logsql_dialect {#enable_logsql_dialect}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable the LogsQL dialect (the log query language of VictoriaLogs)."}]}]}/>
+
+Enable LogsQL - the log query language of VictoriaLogs. Queries in this dialect are translated into SELECT queries over the table specified by the `logsql_table` setting.
+
+Usage:
+```sql
+SET enable_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+A complete standalone `SET` query is still parsed as plain SQL so that the dialect can
+be switched back; a LogsQL query merely starting with the word `set` keeps its meaning.
+The `logsql_time_column` and `logsql_message_column` settings configure the columns
+referred to by the `_time` field and by the default (message) field.
+
+Unlike VictoriaLogs, which stores every field as a string, the translated queries run
+over the existing table schema. The key contract deviations that follow from this:
+- Text filters (words, phrases, prefixes, regexps) expect `String`-backed columns and do not convert numeric columns to text.
+- Numeric comparison filters compare numeric columns natively (exactly for integer and decimal values, as long as the compared literal fits `Int128` or `Decimal256(38)`; a wider value, e.g. an integer above 1e38 in a `UInt256` field, is compared with `Float64` precision, and so are the integral bucket steps of `stats by (<field>:<step>)`). For `String` columns, only plain numeric text is parsed per row; values in the LogsQL number grammar (e.g. `10KiB`, `1h30m`) are not parsed per row.
+- The numeric stats functions (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`) parse the numeric value of every field, skipping the values that are not numbers, like VictoriaLogs. The values are `Float64`, so a numeric column is aggregated with `Float64` precision and not exactly.
+- The `math` pipe requires numeric operand columns; `String` columns are not coerced.
+- Query results are returned with the types of the underlying columns, not as strings.
 
 ## enable_materialized_cte {#enable_materialized_cte}
 
@@ -323,7 +370,7 @@ Generate named tuples in function tuple() when all names are unique and can be t
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` is now GA"}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` is now GA. This also applies to the alias `allow_experimental_nullable_tuple_type`."}]}, {"id": "row-2","items": [{"label": "26.6"},{"label": "0"},{"label": "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."}]}, {"id": "row-3","items": [{"label": "26.1"},{"label": "0"},{"label": "New experimental setting. At the time the setting was named `allow_experimental_nullable_tuple_type`, which is now an alias of it."}]}]}/>
 
 Allows creation of [Nullable](/reference/data-types/nullable) [Tuple](/reference/data-types/tuple) columns in tables.
 
@@ -405,11 +452,34 @@ The downside is potentially higher memory usage.
 
 Enables the `Quantized` compression codec.
 
+## enable_reads_from_columns_cache {#enable_reads_from_columns_cache}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control reading from columns cache"}]}]}/>
+
+Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+
 ## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 If turned on, results of `SELECT` queries are retrieved from the [query cache](/concepts/features/performance/caches/query-cache).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control whether query results are read from the query cache on disk."}]}]}/>
+
+If turned on (and [query_cache_on_disk_cache_name](/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are retrieved from the [query cache](/concepts/features/performance/caches/query-cache) on disk. If reads are enabled for both the in-memory and the on-disk query cache, the lookup is attempted first from memory and only on a miss from disk.
 
 Possible values:
 
@@ -506,7 +576,7 @@ Enables the `SZ3` compression codec.
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "0"},{"label": "New setting to enable experimental timeSeries* aggregate functions. At the time the setting was named `allow_experimental_time_series_aggregate_functions`, which is now an alias of it."}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud only. At the time the setting was named `allow_experimental_ts_to_grid_aggregate_function`, which is now an alias of it."}]}]}/>
 
 Enables the `timeSeries*` aggregate functions for Prometheus-like time series resampling, rate, and delta calculation.
 
@@ -518,7 +588,7 @@ Enables the `timeSeries*` aggregate functions for Prometheus-like time series re
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."}]}, {"id": "row-2","items": [{"label": "24.8"},{"label": "0"},{"label": "Added new setting to allow the TimeSeries table engine. At the time the setting was named `allow_experimental_time_series_table`, which is now an alias of it."}]}]}/>
 
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
@@ -530,7 +600,7 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New settings. Allows to use a new experimental Time and Time64 data types."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Enable Time and Time64 type by default"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "New settings. Allows to use a new experimental Time and Time64 data types. This also applies to the alias `allow_experimental_time_time64_type`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "1"},{"label": "Enable Time and Time64 type by default. This also applies to the alias `allow_experimental_time_time64_type`."}]}]}/>
 
 Allows creation of [Time](/reference/data-types/time) and [Time64](/reference/data-types/time64) data types.
 
@@ -568,7 +638,7 @@ Allow ARRAY JOIN with multiple arrays that have different sizes. When this setti
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_unique_key`."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Added an alias for setting `allow_experimental_unique_key`."}]}, {"id": "row-2","items": [{"label": "26.5"},{"label": "0"},{"label": "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables. At the time the setting was named `allow_experimental_unique_key`, which is now an alias of it."}]}]}/>
 
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 
@@ -590,6 +660,16 @@ Disabled by default.
 
 If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows
 
+## enable_writes_to_columns_cache {#enable_writes_to_columns_cache}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control writing to columns cache"}]}]}/>
+
+Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
+
 ## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -600,6 +680,29 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control whether query results are written to the query cache on disk."}]}]}/>
+
+If turned on (and [query_cache_on_disk_cache_name](/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are stored in the [query cache](/concepts/features/performance/caches/query-cache) on disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+## enable_xgboost {#enable_xgboost}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to gate the experimental XGBoost integration (the `XGBOOST` dictionary layout and the `predictXGBoost` function)."}]}]}/>
+
+Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

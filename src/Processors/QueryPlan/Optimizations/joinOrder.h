@@ -37,6 +37,7 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
+    /// NDV-based selectivity of the join predicates, see `SelectivityEstimate::reported_value`; reported by `EXPLAIN` as `estimated (NDV)`.
     double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
     /// Sound upper bound on the row count, set where no point estimate could be derived.
@@ -127,6 +128,10 @@ struct QueryGraph
     /// transitive connectivity between relations without synthesizing extra edges.
     /// Stored as alias-resolved JoinActionRef-s pointing to INPUT nodes.
     EquivalenceClasses<JoinActionRef> column_equivalences;
+
+    /// Relations read through a prepared join storage (`Join` engine, key-value storage), which is
+    /// looked up by a fixed key.
+    BitSet prepared_storage_relations;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();

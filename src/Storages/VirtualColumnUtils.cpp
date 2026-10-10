@@ -165,7 +165,7 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    return std::make_shared<ExpressionActions>(std::move(dag));
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
 
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
@@ -686,6 +686,25 @@ bool isDeterministic(const ActionsDAG::Node * node)
     }
 
     /// For a `COLUMN` node this also rejects a constant folded from a non-deterministic expression (`now`).
+    if (!node->isDeterministic())
+        return false;
+
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
+}
+
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministicAllowingTopKFilter(child))
+            return false;
+    }
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "__topKFilter")
+        return true;
+
+    /// Same checks as `isDeterministic`, including the walk into a constant-folded lambda carrier: only a
+    /// top-level `__topKFilter` call is allowed, never a non-deterministic function hidden in a lambda body.
     if (!node->isDeterministic())
         return false;
 

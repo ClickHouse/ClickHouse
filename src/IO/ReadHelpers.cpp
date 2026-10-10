@@ -345,6 +345,12 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
     readStringUntilCharsInto<'\n'>(s, buf);
 }
 
+template <typename Vector>
+void readStringUntilWhitespaceDelimiterInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<' ', '\t', '\n', '\f', '\v', '\r'>(s, buf);
+}
+
 template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
@@ -359,6 +365,12 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
+}
+
+void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilWhitespaceDelimiterInto(s, buf);
 }
 
 void skipStringUntilWhitespace(ReadBuffer & buf)
@@ -783,8 +795,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
-
-        if constexpr (support_crlf)
+        else if constexpr (support_crlf)
         {
             if (*buf.position() == '\r')
             {
@@ -2298,7 +2309,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
         return;
 
     chassert(in.position() + additional_bytes <= in.buffer().end());
-    memory.resize(new_bytes);
+    memory.resizeAmortized(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }
