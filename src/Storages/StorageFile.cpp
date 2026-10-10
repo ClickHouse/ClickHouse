@@ -1591,7 +1591,7 @@ StorageFileSource::FilesIterator::FilesIterator(
     {
         if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
         {
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
             Strings filter_paths = filter_sources;
             if (!archive_member_path.empty())
             {
@@ -1607,7 +1607,7 @@ StorageFileSource::FilesIterator::FilesIterator(
                 archive_member_path.empty() ? nullptr : &archive_member_names);
         }
         else
-            deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
     }
 }
 
