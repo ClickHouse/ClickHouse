@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/WhatIfIndexEstimator.h>
+#include <Storages/MergeTree/WhatIfEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -9,6 +9,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -21,6 +22,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
+#include <Storages/MergeTree/HypotheticalProjection.h>
 #include <Storages/MergeTree/WhatIfProjectionEstimator.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
@@ -59,6 +61,12 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
     if (auto * read_step = dynamic_cast<ReadFromMergeTree *>(node->step.get()))
         steps.push_back(read_step);
 
+    /// before optimization, the plans of the sets are inside `DelayedCreatingSetsStep`
+    if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()); delayed && !skip_sets)
+        for (const auto & set : delayed->getSets())
+            if (const auto * set_plan = set->getQueryPlan())
+                collectReadSteps(set_plan->getRootNode(), steps, skip_sets);
+
     for (const auto & child : node->children)
         collectReadSteps(child, steps, skip_sets);
 }
@@ -71,6 +79,19 @@ std::vector<ReadFromMergeTree *> collectReadSteps(const QueryPlan::Node * root)
     if (steps.empty())
         collectReadSteps(root, steps, /* skip_sets */ false);
     return steps;
+}
+
+/// optimizes `plan` with the `IN` sets that earlier plans of the statement built, then keeps the sets that it builds
+void optimizeSharingSets(QueryPlan & plan, const ContextPtr & context, const BuiltSetsByHashPtr & built_sets)
+{
+    reuseBuiltSets(plan, built_sets);
+    std::vector<std::pair<FutureSet::Hash, SetAndKeyPtr>> sets;
+    forEachSubquerySet(&plan, [&](FutureSetFromSubquery & set) { sets.emplace_back(set.getHash(), set.getSetAndKey()); return true; });
+    plan.optimize(QueryPlanOptimizationSettings(context));
+    for (const auto & [hash, set_and_key] : sets)
+        /// also a set without explicit elements: a new build hits the same limit and gives the same set
+        if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
+            built_sets->sets.emplace(hash, set_and_key);
 }
 
 /// Resolve the source table from the query
@@ -318,7 +339,7 @@ WhatIfCandidateResult evaluateIndex(
 }
 
 
-WhatIfResult estimateHypotheticalIndexes(
+WhatIfResult estimateHypotheticalObjects(
     const ASTPtr & select_query, ContextPtr context, const ASTPtr & explain_settings)
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);
@@ -348,14 +369,19 @@ WhatIfResult estimateHypotheticalIndexes(
     QueryPlan plan;
     ContextPtr plan_context = local_context;
 
+    /// every plan of the statement starts from this analysis, so all see the same constants, `randConstant` too
+    QueryTreeNodePtr analyzed_query;
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_copy, local_context, query_options);
+        analyzed_query = interpreter.getQueryTree()->clone();
         interpreter.applyDistributedPlanFallbackIfNeeded();
         plan_context = interpreter.getContext();
         plan = std::move(interpreter).extractQueryPlan();
     }
 
-    plan.optimize(QueryPlanOptimizationSettings(plan_context));
+    /// each plan of the statement runs an `IN` subquery only if no earlier plan built its set
+    const auto built_sets = std::make_shared<BuiltSetsByHash>();
+    optimizeSharingSets(plan, plan_context, built_sets);
 
     const auto read_steps = collectReadSteps(plan.getRootNode());
 
@@ -561,10 +587,21 @@ WhatIfResult estimateHypotheticalIndexes(
         result.candidates.push_back(std::move(combined));
     }
 
+    auto weigh = [&](const HypotheticalProjectionPtr & hypothetical)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(analyzed_query->clone(), plan_context, query_options);
+        interpreter.applyDistributedPlanFallbackIfNeeded();
+        auto weigh_context = interpreter.getContext();
+        auto weigh_plan = std::move(interpreter).extractQueryPlan();
+        for (auto * weigh_read : collectReadSteps(weigh_plan.getRootNode()))
+            if (weigh_read->getMergeTreeData().getStorageID() == data.getStorageID())
+                weigh_read->setHypotheticalProjection(hypothetical);
+        optimizeSharingSets(weigh_plan, weigh_context, built_sets);
+    };
+
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
-            evaluateProjection(
-                projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
+            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, weigh, plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
