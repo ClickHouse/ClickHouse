@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1222280",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1235169",
       "email": "support@clickhouse.com"
     }
   },
@@ -169,9 +169,28 @@
     "/v1/organizations": {
       "get": {
         "summary": "Get list of available organizations",
-        "description": "Returns a list with a single organization associated with the API key in the request.",
+        "description": "Returns the organizations available to the caller, oldest first. An API key resolves to the single organization it belongs to; a user token returns every organization the user is a member of. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
         "operationId": "organizationGetList",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 250
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -195,6 +214,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Organization"
                       }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
                     }
                   }
                 }
@@ -258,7 +288,7 @@
           "Organization"
         ],
         "x-mint": {
-          "content": "Returns a list with a single organization associated with the API key in the request."
+          "content": "Returns the organizations available to the caller, oldest first. An API key resolves to the single organization it belongs to; a user token returns every organization the user is a member of. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null."
         }
       }
     },
@@ -4890,7 +4920,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/snapshots": {
       "get": {
         "summary": "List of service snapshots",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of all snapshots for the service. The most recent snapshots come first in the list.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns a list of snapshots for the service, most recent first. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
         "operationId": "snapshotGetList",
         "parameters": [
           {
@@ -4911,6 +4941,24 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 250
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "Opaque cursor from a previous response's `nextCursor`, marking where to resume the list.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -4937,6 +4985,24 @@
                       "items": {
                         "$ref": "#/components/schemas/Snapshot"
                       }
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "description": "Maximum number of results returned in this page."
+                    },
+                    "totalCount": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "Total number of results across all pages. It has only informative value, thus is not guaranteed and it is provided on a best-effort basis. Null if the total count is unknown."
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Cursor for the next page, to be sent as the `cursor` query parameter. Null on the last page."
                     }
                   }
                 }
@@ -5610,6 +5676,247 @@
         ]
       }
     },
+    "/v1/organizations/{organizationId}/services/{serviceId}/replicaAwareRouting": {
+      "get": {
+        "summary": "Get replica aware routing",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns whether replica aware routing (sticky routing) is enabled for HTTP and native connections on the service.",
+        "operationId": "replicaAwareRoutingGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ReplicaAwareRouting"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "patch": {
+        "summary": "Update replica aware routing",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates replica aware routing (sticky routing) for the service. Requires the organization feature to be enabled. Provide at least one of httpEnabled, nativeEnabled; omit a field to leave it unchanged.",
+        "operationId": "replicaAwareRoutingUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplicaAwareRoutingPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ReplicaAwareRouting"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Service"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
     "/v1/organizations/{organizationId}/services/{serviceId}/backupBucket": {
       "get": {
         "summary": "Get service backup bucket",
@@ -6090,7 +6397,7 @@
     "/v1/organizations/{organizationId}/keys": {
       "get": {
         "summary": "Get list of keys",
-        "description": "Returns a list of keys in the organization, ordered by creation date, oldest first. Results are capped at `limit` (default and maximum 250) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
+        "description": "Returns a list of keys in the organization, ordered by creation date, oldest first. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.",
         "operationId": "openapiKeyGetList",
         "parameters": [
           {
@@ -6110,7 +6417,6 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 250,
               "default": 250
             }
           },
@@ -6227,7 +6533,7 @@
           "API keys"
         ],
         "x-mint": {
-          "content": "Returns a list of keys in the organization, ordered by creation date, oldest first. Results are capped at `limit` (default and maximum 250) per page. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-api-keys` permission.\n\n</div>\n</div>"
+          "content": "Returns a list of keys in the organization, ordered by creation date, oldest first. Results are capped at `limit` (default 250) per page; the server may return fewer and caps the value at its own maximum. Every response carries `limit`, `totalCount` and `nextCursor`; pass `nextCursor` as the `cursor` query parameter to fetch the next page, repeating until it is null.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-api-keys` permission.\n\n</div>\n</div>"
         }
       },
       "post": {
@@ -28474,7 +28780,7 @@
       "ClickPipePubSubSource": {
         "properties": {
           "format": {
-            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
+            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in private preview — contact support to enable this feature for your organization.",
             "type": "string",
             "enum": [
               "JSONEachRow",
@@ -28557,7 +28863,7 @@
       "ClickPipePostPubSubServiceAccountSource": {
         "properties": {
           "format": {
-            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
+            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in private preview — contact support to enable this feature for your organization.",
             "type": "string",
             "enum": [
               "JSONEachRow",
@@ -28644,7 +28950,7 @@
       "ClickPipePostPubSubWorkloadIdentitySource": {
         "properties": {
           "format": {
-            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in limited preview — contact support to enable this feature for your organization.",
+            "description": "Format of messages in the Pub/Sub topic. GCP Pub/Sub ClickPipes are in private preview — contact support to enable this feature for your organization.",
             "type": "string",
             "enum": [
               "JSONEachRow",
@@ -30204,6 +30510,34 @@
           "timeFrame": {
             "description": "Retention window the snapshots cover, in minutes. Set together with gap; only supported preset pairs are accepted.",
             "type": "number"
+          }
+        }
+      },
+      "ReplicaAwareRouting": {
+        "properties": {
+          "httpEnabled": {
+            "description": "Whether replica aware routing is enabled for HTTP connections. When enabled, clients must send the X-ClickHouse-Replica-Tag header. Enabling this changes HTTP connection behavior for the service.",
+            "type": "boolean"
+          },
+          "nativeEnabled": {
+            "description": "Whether replica aware routing is enabled for native protocol connections.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "httpEnabled",
+          "nativeEnabled"
+        ]
+      },
+      "ReplicaAwareRoutingPatchRequest": {
+        "properties": {
+          "httpEnabled": {
+            "description": "Whether replica aware routing is enabled for HTTP connections. Omit to leave unchanged.",
+            "type": "boolean"
+          },
+          "nativeEnabled": {
+            "description": "Whether replica aware routing is enabled for native protocol connections. Omit to leave unchanged.",
+            "type": "boolean"
           }
         }
       },
@@ -40266,15 +40600,6 @@
                   "netenable"
                 ]
               },
-              "sandboxVersion": {
-                "default": "v2",
-                "type": "string",
-                "enum": [
-                  "v1",
-                  "v2",
-                  "v3"
-                ]
-              },
               "type": {
                 "type": "string",
                 "const": "executable"
@@ -40393,15 +40718,6 @@
                 "enum": [
                   "basic",
                   "netenable"
-                ]
-              },
-              "sandboxVersion": {
-                "default": "v2",
-                "type": "string",
-                "enum": [
-                  "v1",
-                  "v2",
-                  "v3"
                 ]
               },
               "type": {
@@ -40536,15 +40852,6 @@
                   "netenable"
                 ]
               },
-              "sandboxVersion": {
-                "default": "v2",
-                "type": "string",
-                "enum": [
-                  "v1",
-                  "v2",
-                  "v3"
-                ]
-              },
               "type": {
                 "type": "string",
                 "const": "executable"
@@ -40658,15 +40965,6 @@
                 "enum": [
                   "basic",
                   "netenable"
-                ]
-              },
-              "sandboxVersion": {
-                "default": "v2",
-                "type": "string",
-                "enum": [
-                  "v1",
-                  "v2",
-                  "v3"
                 ]
               },
               "type": {
