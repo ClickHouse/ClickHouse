@@ -464,7 +464,9 @@ location (`readonly` set to `true`).
 A read-only disk loads the whole state from the snapshot in a single request,
 and its periodic refreshes (see the `MergeTree` setting `refresh_parts_interval`)
 check the snapshot and read it again only if it was rewritten. It does not list
-the object storage or read `prefix.path` at all. A read-only disk works on a
+the metadata directory or read `prefix.path` at all: the only listing is of the
+markers of unfinished operations, which is a single request, so that a file
+that the writer is replacing right now is read from its backup. A read-only disk works on a
 delayed state anyway, relying on the lifetime of the old parts of `MergeTree`
 tables, and the snapshot is a delayed state of the same kind: the changes of
 the writer become visible to the readers when the writer rewrites the snapshot.
