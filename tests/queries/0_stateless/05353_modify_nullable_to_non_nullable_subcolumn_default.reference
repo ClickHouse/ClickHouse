@@ -60,3 +60,6 @@ default removed
 2	(10,20)	10
 1	0
 2	10
+key subcolumns
+1	\N	\N
+2	(10,'20')	10

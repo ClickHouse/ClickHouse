@@ -124,7 +124,7 @@ bool injectRequiredColumnsRecursively(
             if (!column_in_storage->isSubcolumn()
                 || (column_in_part->type->tryGetSubcolumnType(
                         column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part))
-                    && !conversionReplacesNullsWithDefault(column_in_part->type, column_in_storage->getTypeInStorage())))
+                    && !isSubcolumnReadFromConvertedColumn(storage_snapshot, *column_in_storage, column_in_part->type)))
             {
                 add_column(column_name);
                 return true;
@@ -171,6 +171,17 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+}
+
+bool isSubcolumnReadFromConvertedColumn(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    if (!conversionReplacesNullsWithDefault(column_type_in_part, subcolumn.getTypeInStorage()))
+        return false;
+
+    const auto & metadata = storage_snapshot->metadata;
+    return !std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
+        && !std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name);
 }
 
 /** If some of the requested columns are not in the part,

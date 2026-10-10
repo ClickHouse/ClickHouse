@@ -12,6 +12,8 @@ DROP TABLE IF EXISTS t_lc_wide;
 DROP TABLE IF EXISTS t_on_fly;
 DROP TABLE IF EXISTS t_mutation;
 DROP TABLE IF EXISTS t_remove_default;
+DROP TABLE IF EXISTS t_sorting_key;
+DROP TABLE IF EXISTS t_partition_key;
 
 -- Tuple.
 
@@ -141,6 +143,22 @@ SELECT 'default removed';
 SELECT c0, x, x.a FROM t_remove_default ORDER BY c0;
 SELECT c0, x.a FROM t_remove_default PREWHERE toString(x) != '' ORDER BY c0;
 
+-- Replacing the NULLs changes the values of key subcolumns, which a mutation does not re-sort or repartition.
+
+CREATE TABLE t_sorting_key (c0 UInt64, x Nullable(Tuple(a Nullable(UInt64), b UInt64)))
+ENGINE = MergeTree ORDER BY x.a SETTINGS allow_nullable_key = 1;
+CREATE TABLE t_partition_key (c0 UInt64, x Nullable(Tuple(a Nullable(UInt64), b UInt64)))
+ENGINE = MergeTree PARTITION BY x.a ORDER BY c0 SETTINGS allow_nullable_key = 1;
+INSERT INTO t_sorting_key VALUES (1, NULL), (2, (10, 20));
+INSERT INTO t_partition_key VALUES (1, NULL), (2, (10, 20));
+
+ALTER TABLE t_sorting_key MODIFY COLUMN x Tuple(a Nullable(UInt64), b UInt64) DEFAULT tuple(7, 8); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_partition_key MODIFY COLUMN x Tuple(a Nullable(UInt64), b UInt64) DEFAULT tuple(7, 8); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_sorting_key MODIFY COLUMN x Nullable(Tuple(a Nullable(UInt64), b String)) SETTINGS mutations_sync = 2;
+
+SELECT 'key subcolumns';
+SELECT c0, x, x.a FROM t_sorting_key ORDER BY c0;
+
 DROP TABLE t_tuple_compact;
 DROP TABLE t_tuple_wide;
 DROP TABLE t_string_compact;
@@ -150,3 +168,5 @@ DROP TABLE t_lc_wide;
 DROP TABLE t_on_fly;
 DROP TABLE t_mutation;
 DROP TABLE t_remove_default;
+DROP TABLE t_sorting_key;
+DROP TABLE t_partition_key;

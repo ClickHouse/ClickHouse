@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -94,7 +95,7 @@ IMergeTreeReader::IMergeTreeReader(
         {
             auto parent_in_part = data_part_info_for_read->getColumnsDescription().tryGetPhysical(
                 getStorageAndSubcolumnNameInPart(column).first);
-            replaced_nulls = parent_in_part && conversionReplacesNullsWithDefault(parent_in_part->type, column.getTypeInStorage());
+            replaced_nulls = parent_in_part && isSubcolumnReadFromConvertedColumn(storage_snapshot, column, parent_in_part->type);
         }
         subcolumns_of_columns_with_replaced_nulls.push_back(replaced_nulls);
 

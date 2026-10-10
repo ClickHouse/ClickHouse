@@ -215,8 +215,8 @@ protected:
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
     bool isSystemColumnInvalidated(size_t pos) const;
 
-    /// Returns true if the column at position @pos in columns_to_read is a subcolumn of a column whose conversion replaces
-    /// its NULLs with the DEFAULT. Such a subcolumn is not read from the part.
+    /// Returns true if the column at position @pos in columns_to_read is a subcolumn extracted from its converted column
+    /// (see `isSubcolumnReadFromConvertedColumn`). Such a subcolumn is not read from the part.
     bool isSubcolumnOfColumnWithReplacedNulls(size_t pos) const;
 
     /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without
