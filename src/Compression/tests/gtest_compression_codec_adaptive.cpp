@@ -23,9 +23,9 @@ using namespace DB;
 namespace
 {
 
-constexpr auto LZ4 = static_cast<uint8_t>(CompressionMethodByte::LZ4);
 constexpr auto T64 = static_cast<uint8_t>(CompressionMethodByte::T64);
 constexpr auto NONE = static_cast<uint8_t>(CompressionMethodByte::NONE);
+constexpr auto MULTIPLE = static_cast<uint8_t>(CompressionMethodByte::Multiple);
 
 DataTypePtr type(const String & name)
 {
@@ -51,17 +51,28 @@ std::vector<char> bytesOf(const std::vector<T> & values)
     return bytes;
 }
 
-/// Asserts order of codecs in the pool: [0] NONE, [1] the default, then `extras` in order.
+/// Asserts order of codecs in the pool: [0] NONE, [1] the default, then `extras` in order, each with its chain with the default.
 void expectPool(const char * name, std::initializer_list<std::string_view> extras)
 {
-    Codecs pool;
+    AdaptiveCodec::Candidates pool;
     ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(type(name), defaultCodec())) << "type " << name;
     ASSERT_EQ(pool.size(), 2 + extras.size()) << "type " << name;
-    EXPECT_EQ(pool[0]->getMethodByte(), NONE) << "type " << name; /// NONE is always [0]
-    EXPECT_EQ(pool[1].get(), defaultCodec().get()) << "type " << name; /// default is always [1]
+    EXPECT_EQ(pool[0].codec->getMethodByte(), NONE) << "type " << name; /// NONE is always [0]
+    EXPECT_EQ(pool[0].chain, nullptr) << "type " << name;
+    EXPECT_EQ(pool[1].codec.get(), defaultCodec().get()) << "type " << name; /// default is always [1]
+    EXPECT_EQ(pool[1].chain, nullptr) << "type " << name;
+
     size_t i = 2;
     for (const auto extra : extras)
-        EXPECT_EQ(pool[i++]->getCodecDesc()->formatForLogging(), extra) << "type " << name;
+    {
+        const auto & candidate = pool[i++];
+        EXPECT_EQ(candidate.codec->getCodecDescription()->formatForLogging(), extra) << "type " << name;
+        ASSERT_NE(candidate.chain, nullptr) << "type " << name;
+        const auto stages = candidate.chain->getCodecs();
+        ASSERT_EQ(stages.size(), 2u) << "type " << name;
+        EXPECT_EQ(stages[0], candidate.codec) << "type " << name;
+        EXPECT_EQ(stages[1], defaultCodec()) << "type " << name;
+    }
 }
 
 /// Compress `bytes` with the adaptive codec for `type_name` and return the winner's on-disk method byte.
@@ -112,11 +123,10 @@ TEST(AdaptiveCodecPool, CandidateTypesGetT64)
         expectPool(name, {"T64"});
 }
 
-TEST(AdaptiveCodecPool, FloatTypesGetALPVariants)
+TEST(AdaptiveCodecPool, FloatTypesGetALPAuto)
 {
-    /// STD before RD because STD decompressed faster (we want it in case of tie)
     for (const auto * name : {"Float32", "Float64"})
-        expectPool(name, {"ALP(STD)", "ALP(RD)"});
+        expectPool(name, {"ALP(AUTO)"});
 }
 
 TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
@@ -156,24 +166,27 @@ TEST(CompressionCodecFactory, IsDefaultCodec)
     EXPECT_FALSE(CompressionCodecFactory::isDefaultCodec(codec("Delta, Default")));
 }
 
-TEST(CompressionCodecAdaptive, MonotonicNarrowIntegersPickT64)
+TEST(CompressionCodecAdaptive, MonotonicNarrowIntegersPickT64Chain)
 {
+    /// `T64` keeps only the varying bits, and the default codec then squeezes the regular pattern they form.
     std::vector<UInt32> values(100000);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = static_cast<UInt32>(i);
 
-    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), T64);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), MULTIPLE);
 }
 
 TEST(CompressionCodecAdaptive, RepeatingWideValuesPickDefault)
 {
-    /// A short pattern of full-range values, repeated: LZ4 crushes the repetition, but T64 sees a wide min/max cannot shrink it.
+    /// A short pattern of full-range values, repeated: a general-purpose codec crushes the repetition,
+    /// but T64 sees a wide min/max and cannot shrink it. The winner must be the default anchor, whatever
+    /// the built-in default codec is (`ZSTD(3)` today).
     const std::vector<UInt32> pattern = {0u, 0xFFFFFFFFu, 0x0F0F0F0Fu, 0xF0F0F0F0u, 0x12345678u, 0x9ABCDEF0u, 0xDEADBEEFu, 0xCAFEBABEu};
     std::vector<UInt32> values(100000);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = pattern[i % pattern.size()];
 
-    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), LZ4);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), defaultCodec()->getMethodByte());
 }
 
 TEST(CompressionCodecAdaptive, ConstantColumnPicksT64)
@@ -198,9 +211,11 @@ TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
     /// getHash() identifies the codec when the Compact writer groups column streams. CompressionCodecAdaptive and CompressionCodecMultiple
     /// fold their children's hashes the same way, so the leading "Adaptive" descriptor is what keeps the two distinct.
     CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
-    auto pool = AdaptiveCodec::poolForType(type("UInt32"), defaultCodec());
-    ASSERT_EQ(pool.size(), 3u);
-    CompressionCodecMultiple multiple(pool);
+    Codecs codecs;
+    for (const auto & candidate : AdaptiveCodec::poolForType(type("UInt32"), defaultCodec()))
+        codecs.push_back(candidate.codec);
+    ASSERT_EQ(codecs.size(), 3u);
+    CompressionCodecMultiple multiple(codecs);
     EXPECT_NE(adaptive.getHash(), multiple.getHash());
 
     CompressionCodecAdaptive adaptive_string(type("String"), defaultCodec());
@@ -264,7 +279,7 @@ TEST(TryGetCompressedSize, MatchesCompressForT64)
 
     auto pool = AdaptiveCodec::poolForType(type("UInt32"), defaultCodec());
     ASSERT_EQ(pool.size(), 3u);
-    const auto & t64 = pool[2];
+    const auto & t64 = pool[2].codec;
     ASSERT_EQ(t64->getMethodByte(), T64);
 
     const auto calculated = t64->tryGetCompressedSize(bytes.data(), size);

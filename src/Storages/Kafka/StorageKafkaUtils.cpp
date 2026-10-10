@@ -13,6 +13,8 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/SecretArgumentsSpec.h>
+#include <Storages/Kafka/Kafka_fwd.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -28,6 +30,8 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -36,6 +40,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -55,7 +60,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_kafka_offsets_storage_in_keeper;
+    extern const SettingsBool allow_kafka_offsets_storage_in_keeper;
     extern const SettingsBool kafka_disable_num_consumers_limit;
 }
 
@@ -113,7 +118,13 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -289,10 +300,10 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
+                "Storing the Kafka offsets in Keeper is experimental. Set `allow_kafka_offsets_storage_in_keeper` setting "
                 "to enable it");
 
         if (!has_keeper_path || !has_replica_name)
@@ -358,6 +369,12 @@ void registerStorageKafka(StorageFactory & factory)
     factory.registerStorage(
         "Kafka",
         creator_fn,
+        SecretArgumentsSpec{
+            /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
+            /// secret and makes the collection name optional, so a named argument can be the first one.
+            .secret_settings = Kafka::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
@@ -369,9 +386,9 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Kafka table engine
 
-:::tip
+<Tip>
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes/home) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
-:::
+</Tip>
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
@@ -463,6 +480,19 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
 
+## OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` authentication uses [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, and `sasl.oauthbearer.scope` for the OIDC client credentials flow.
+
+When defining these properties in ClickHouse XML, replace periods with underscores. For example, use `<sasl_oauthbearer_client_id>` for `sasl.oauthbearer.client.id`.
+
+For `ENGINE = Kafka(named_collection)`, use two namespaces in the named collection:
+
+- Top-level `kafka_*` keys are Kafka table-engine settings, such as `kafka_security_protocol` and `kafka_sasl_mechanism`.
+- Keys nested under `<kafka>` are extended `librdkafka` settings, including the OIDC properties above.
+
+The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
+
 Examples:
 
 ```sql
@@ -497,9 +527,9 @@ CREATE TABLE queue3 (
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
@@ -508,9 +538,9 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 </details>
 
-:::info
+<Info>
 The Kafka table engine doesn't support columns with [default value](/reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
-:::
+</Info>
 
 ## Description {#description}
 
@@ -617,9 +647,9 @@ For a list of possible configuration options, see the [librdkafka configuration 
 
 ### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
 
-:::note
+<Note>
 AWS MSK IAM authentication requires ClickHouse to be built with AWS S3 support enabled.
-:::
+</Note>
 
 AWS MSK supports IAM-based authentication, allowing connection to Kafka clusters using AWS credentials instead of managing separate usernames and passwords.
 
@@ -805,7 +835,7 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 <ExperimentalBadge/>
 
-If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
+If `allow_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
 - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
 - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
@@ -834,7 +864,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -844,7 +874,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
 When combined with replicas (multiple `kafka_replica_name` values sharing the same `kafka_keeper_path`), the affinity filter is applied first to determine eligible partitions, then ZooKeeper locks distribute those eligible partitions among replicas.
@@ -857,7 +887,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### Known limitations {#known-limitations}
@@ -933,6 +963,53 @@ Names parseTopics(String topic_list)
 String getDefaultClientId(const StorageID & table_id)
 {
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
+}
+
+String validateBrokerList(const String & broker_list, const ContextPtr & context)
+{
+    /// The remote host filter must see exactly the host and port librdkafka will dial, so the value is
+    /// not passed on as it was written: every entry is parsed here, validated, and the returned list is
+    /// rebuilt from the parsed entries. The rebuilt entries are `[SCHEME://]host:port` with an explicit
+    /// port, a form librdkafka re-parses to the same host and port.
+    ///
+    /// librdkafka reads `metadata.broker.list` as a C string, splits it on `,` and ` `, cuts an entry at
+    /// the first `/` after the `scheme://` prefix, substitutes `localhost` for an empty host, and
+    /// connects to port 9092 when none is given (`rd_kafka_broker_name_parse`). An entry which such a
+    /// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable
+    /// ASCII - is rejected instead of repaired.
+
+    if (broker_list.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka broker list must not contain NUL characters");
+
+    Names brokers;
+    boost::split(brokers, broker_list, [](char c) { return c == ',' || c == ' '; });
+
+    Names canonical_brokers;
+    canonical_brokers.reserve(brokers.size());
+
+    for (String & broker : brokers)
+    {
+        boost::trim(broker);
+        if (broker.empty())
+            continue;
+
+        String scheme;
+        if (const auto scheme_end = broker.find("://"); scheme_end != String::npos)
+        {
+            scheme = broker.substr(0, scheme_end + strlen("://"));
+            broker = broker.substr(scheme_end + strlen("://"));
+
+            /// The underscore appears in the librdkafka protocols `sasl_plaintext` and `sasl_ssl`.
+            for (const char c : scheme.substr(0, scheme_end))
+                if (!isAlphaASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protocol in Kafka broker '{}{}'", scheme, broker);
+        }
+
+        canonical_brokers.push_back(
+            scheme + context->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(broker, 9092, "Kafka broker"));
+    }
+
+    return boost::algorithm::join(canonical_brokers, ",");
 }
 
 void consumerGracefulStop(

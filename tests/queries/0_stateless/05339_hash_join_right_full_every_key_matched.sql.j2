@@ -1,0 +1,102 @@
+-- RIGHT and FULL hash joins skip the pass over unmatched right rows when every right key matched.
+-- Each case also has variants where exactly one right row is unmatched, which must still be returned.
+
+SET join_use_nulls = 0, query_plan_join_swap_table = 0, parallel_hash_join_threshold = 0, parallel_non_joined_rows_processing = 1;
+SET max_threads = 4, grace_hash_join_initial_buckets = 4;
+
+{% set cases = [
+    {'name': 'u8', 'cols': 'k UInt8', 'expr': 'number', 'n': 255, 'on': 'l.k = r.k', 'rk': 'r.k', 'missing': ['k != 0', 'k != 200']},
+    {'name': 'u16', 'cols': 'k UInt16', 'expr': 'number', 'n': 1000, 'on': 'l.k = r.k', 'rk': 'r.k', 'missing': ['k != 0', 'k != 500']},
+    {'name': 'u64', 'cols': 'k UInt64', 'expr': 'number', 'n': 1000, 'on': 'l.k = r.k', 'rk': 'r.k', 'missing': ['k != 0', 'k != 500']},
+    {'name': 'str', 'cols': 'k String', 'expr': "if(number = 0, '', toString(number))", 'n': 1000, 'on': 'l.k = r.k', 'rk': 'r.k', 'missing': ["k != ''", "k != '500'"]},
+    {'name': 'two', 'cols': 'k1 UInt32, k2 UInt32', 'expr': 'number, number * 2', 'n': 1000, 'on': 'l.k1 = r.k1 AND l.k2 = r.k2', 'rk': '(r.k1, r.k2)', 'missing': ['(k1, k2) != (0, 0)', '(k1, k2) != (500, 1000)']},
+] -%}
+
+-- `r_<case>` holds `n` keys. `l_<case>_0` holds them all plus one key that is not in `r_<case>`, `l_<case>_<i>` lacks one key.
+{% for c in cases -%}
+CREATE TABLE r_{{ c.name }} ({{ c.cols }}, rm UInt8) ENGINE = Memory;
+INSERT INTO r_{{ c.name }} SELECT {{ c.expr }}, 1 FROM numbers({{ c.n }});
+CREATE TABLE l_{{ c.name }}_0 ({{ c.cols }}, m UInt8) ENGINE = Memory;
+INSERT INTO l_{{ c.name }}_0 SELECT {{ c.expr }}, 1 FROM numbers({{ c.n + 1 }});
+{% for pred in c.missing -%}
+CREATE TABLE l_{{ c.name }}_{{ loop.index }} AS l_{{ c.name }}_0;
+INSERT INTO l_{{ c.name }}_{{ loop.index }} SELECT * FROM l_{{ c.name }}_0 WHERE {{ pred }};
+{% endfor -%}
+{% endfor %}
+CREATE TABLE r_null (k Nullable(UInt64), rm UInt8) ENGINE = Memory;
+INSERT INTO r_null SELECT number, 1 FROM numbers(1000);
+INSERT INTO r_null VALUES (NULL, 1);
+CREATE TABLE r_cond (k UInt64, v UInt64, rm UInt8) ENGINE = Memory;
+INSERT INTO r_cond SELECT number, number, 1 FROM numbers(1000);
+CREATE TABLE r_or (k UInt64, k2 UInt64, rm UInt8) ENGINE = Memory;
+INSERT INTO r_or SELECT number, number + 10000, 1 FROM numbers(1000);
+CREATE TABLE l_or_0 (k UInt64, k2 UInt64, m UInt8) ENGINE = Memory;
+INSERT INTO l_or_0 SELECT number, number + 10000, 1 FROM numbers(1001);
+CREATE TABLE l_or_1 AS l_or_0;
+INSERT INTO l_or_1 SELECT * FROM l_or_0 WHERE k != 500;
+
+{% for alg in ['hash', 'parallel_hash', 'grace_hash'] -%}
+SELECT '--- {{ alg }} ---';
+-- algorithm, case, kind, fixed hash map conversion, left table, rows, unmatched left rows, unmatched right keys
+{% for c in cases -%}
+{% for kind in ['RIGHT', 'FULL'] -%}
+{% for conv in ([0, 1] if c.name == 'u64' else [0]) -%}
+{% for v in range(c.missing | length + 1) -%}
+SELECT '{{ alg }}', '{{ c.name }}', '{{ kind }}', {{ conv }}, {{ v }}, count(), countIf(r.rm = 0), arraySort(groupArrayIf({{ c.rk }}, l.m = 0))
+FROM l_{{ c.name }}_{{ v }} AS l {{ kind }} JOIN r_{{ c.name }} AS r ON {{ c.on }}
+SETTINGS join_algorithm = '{{ alg }}', enable_join_fixed_hash_table_conversion = {{ conv }}, log_comment = 'oracle_{{ alg }}_{{ c.name }}_{{ kind }}_{{ conv }}_{{ v }}';
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+
+-- The NULL key never matches and must be returned.
+{% for kind in ['RIGHT', 'FULL'] -%}
+SELECT '{{ alg }}', 'nullable', '{{ kind }}', count(), countIf(r.rm = 0), countIf(l.m = 0), countIf(l.m = 0 AND r.k IS NULL)
+FROM l_u64_0 AS l {{ kind }} JOIN r_null AS r ON l.k = r.k
+SETTINGS join_algorithm = '{{ alg }}';
+{% endfor -%}
+
+-- A row rejected by the right side of `ON` must be returned.
+SELECT '{{ alg }}', 'cond rejects', count(), arraySort(groupArrayIf(r.k, l.m = 0))
+FROM l_u64_0 AS l RIGHT JOIN r_cond AS r ON l.k = r.k AND r.v != 7
+SETTINGS join_algorithm = '{{ alg }}';
+SELECT '{{ alg }}', 'cond passes', count(), arraySort(groupArrayIf(r.k, l.m = 0))
+FROM l_u64_0 AS l RIGHT JOIN r_cond AS r ON l.k = r.k AND r.v < 1000000
+SETTINGS join_algorithm = '{{ alg }}';
+
+-- A condition on both sides keeps a flag per right row.
+SELECT '{{ alg }}', 'mixed rejects', count(), arraySort(groupArrayIf(r.k, l.m = 0))
+FROM l_u64_0 AS l RIGHT JOIN r_cond AS r ON l.k = r.k AND r.v + l.m != 8
+SETTINGS join_algorithm = '{{ alg }}';
+SELECT '{{ alg }}', 'mixed passes', count(), arraySort(groupArrayIf(r.k, l.m = 0))
+FROM l_u64_0 AS l RIGHT JOIN r_cond AS r ON l.k = r.k AND r.v + l.m < 1000000
+SETTINGS join_algorithm = '{{ alg }}', log_comment = 'oracle_{{ alg }}_mixed_passes';
+
+{% for v in range(3) -%}
+SELECT '{{ alg }}', 'right any', {{ v }}, count(), arraySort(groupArrayIf(r.k, l.m = 0))
+FROM l_u64_{{ v }} AS l RIGHT ANY JOIN r_u64 AS r ON l.k = r.k
+SETTINGS join_algorithm = '{{ alg }}';
+SELECT '{{ alg }}', 'right anti', {{ v }}, count(), arraySort(groupArray(r.k))
+FROM l_u64_{{ v }} AS l RIGHT ANTI JOIN r_u64 AS r ON l.k = r.k
+SETTINGS join_algorithm = '{{ alg }}';
+{% endfor %}
+{% endfor -%}
+
+-- Several disjuncts keep a flag per right row. Only `hash` supports them.
+{% for v in range(2) -%}
+SELECT 'hash', 'or', {{ v }}, count(), arraySort(groupArrayIf(r.k, l.m = 0))
+FROM l_or_{{ v }} AS l RIGHT JOIN r_or AS r ON l.k = r.k OR l.k2 = r.k2
+SETTINGS join_algorithm = 'hash';
+{% endfor %}
+
+-- How many passes over the hash table were skipped and done: none done when every right key matched, one done (by
+-- the part that holds the unmatched key) otherwise, none of either with per-row flags.
+SYSTEM FLUSH LOGS query_log;
+SELECT substring(log_comment, 8),
+    ProfileEvents['JoinNonJoinedHashTableScansSkipped'] > 0,
+    ProfileEvents['JoinNonJoinedHashTableScans']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, 'oracle_')
+    AND event_date >= yesterday() AND event_time >= now() - INTERVAL 30 MINUTE
+ORDER BY log_comment;

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -109,8 +110,7 @@ NO_INLINE void validateArgMinMaxValueType(const DataTypePtr & type_val, const St
                 function_name,
                 getNumericVariantSupertypeHint(type.getPtr()));
     };
-    check_not_dynamic_or_variant(*type_val);
-    type_val->forEachChild(check_not_dynamic_or_variant);
+    forEachInTypeTree(*type_val, check_not_dynamic_or_variant);
 }
 
 [[noreturn]] NO_INLINE void throwArgMinMaxInvalidDeserializedState(const String & function_name, bool has_value, bool has_result)
@@ -642,9 +642,9 @@ Calculates the `arg` and `val` value for a minimum `val` value.
 If there are multiple rows with equal `val` being the minimum, which of the associated `arg` and `val` is returned is not deterministic.
 Both parts the `arg` and the `min` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
-:::note
+<Note>
 The only difference with `argMin` is that `argAndMin` returns both argument and value.
-:::
+</Note>
 
 **See also**
 
@@ -728,9 +728,9 @@ Calculates the `arg` and `val` value for a maximum `val` value.
 If there are multiple rows with equal `val` being the maximum, which of the associated `arg` and `val` is returned is not deterministic.
 Both parts the `arg` and the `max` behave as [aggregate functions](/reference/functions/aggregate-functions), they both [skip `Null`](/reference/functions/aggregate-functions#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
-:::note
+<Note>
 The only difference with `argMax` is that `argAndMax` returns both argument and value.
-:::
+</Note>
 
 **See also**
 

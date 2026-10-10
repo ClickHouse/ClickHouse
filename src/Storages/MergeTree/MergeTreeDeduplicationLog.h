@@ -150,6 +150,9 @@ public:
     /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
     std::vector<AddPartResult> addPart(const std::vector<std::string> & block_id, const MergeTreePartInfo & part);
 
+    /// Whether at least one of the block ids is already present, so `addPart` would report a duplicate.
+    bool containsAny(const std::vector<std::string> & block_ids);
+
     /// Remove all covered parts from in memory table and add DROP records to the disk
     void dropPart(const MergeTreePartInfo & drop_part_info);
 
@@ -203,6 +206,11 @@ private:
 
     /// The same after writing records, when a failure must not be reported as a failure of the operation
     void rotateAndDropIfNeededAfterWrite();
+
+    /// Make sure `current_writer` can accept records, opening or replacing it if it cannot.
+    /// The writer is opened lazily on the first written record: finalizing an appending writer
+    /// that has written nothing leaves a phantom blob in the log file's metadata on object storages.
+    void prepareToWrite();
 
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);

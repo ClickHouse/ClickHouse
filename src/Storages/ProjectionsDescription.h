@@ -207,6 +207,14 @@ struct ProjectionsDescription : public IHints<>
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
+    /// Declarations that could not be analyzed when the table was loaded at server startup. They are kept
+    /// verbatim so that a rewrite of the CREATE query still contains them, and are deliberately absent from the
+    /// accessors above: a consumer that needs an analyzed `ProjectionDescription` cannot reach one.
+    void addUnavailable(ASTPtr definition_ast);
+    const ASTs & getUnavailableDefinitions() const { return unavailable; }
+    Names getUnavailableNames() const;
+    bool hasUnavailable() const { return !unavailable.empty(); }
+
 private:
     /// Keep the sequence of columns and allow to lookup by name.
     using Container = std::list<ProjectionDescription>;
@@ -214,6 +222,7 @@ private:
 
     Container projections;
     Map map;
+    ASTs unavailable;
 };
 
 }
