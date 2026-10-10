@@ -1158,7 +1158,8 @@ TEST(ObjectSerialization, PrefixReadObjectStructureObservesCancellation)
     });
 
     /// Empty names, which leaves the loop's OWN checkpoint as the only one that can fire: for a
-    /// zero-length name `readStringBinaryCancellable`'s chunk loop runs no iterations at all.
+    /// zero-length name `readStringBinaryCancellable`'s chunk loop runs no iterations at all. The
+    /// repeated names are rejected only after the whole list is read, so the read is still cancellable.
     runInFreshThread([]
     {
         ThreadStatus thread_status;
@@ -1520,15 +1521,13 @@ TEST(ObjectSerialization, PrefixReadNotCancelledCompletesNormally)
         const std::string one_long_name = makeGranulePrefixWithPaths({std::string(1024 * 1024, 'x')});
         ASSERT_EQ(readGranulePrefix(one_long_name, served_bytes), one_long_name.size());
 
-        /// The outer `Object` structure prefix, same two fixtures its cancellation test uses.
+        /// The outer `Object` structure prefix, same fixtures its cancellation test uses except the empty
+        /// names: a list that repeats a path is rejected once it has been read in full.
         const std::string structure_short = makeObjectStructurePrefixWithPaths(makeShortPaths(8000));
         ASSERT_EQ(readObjectStructurePrefix(structure_short, served_bytes), structure_short.size());
 
         const std::string structure_long = makeObjectStructurePrefixWithPaths({std::string(1024 * 1024, 'x')});
         ASSERT_EQ(readObjectStructurePrefix(structure_long, served_bytes), structure_long.size());
-
-        const std::string structure_empty = makeObjectStructurePrefixWithPaths(std::vector<std::string>(100000, ""));
-        ASSERT_EQ(readObjectStructurePrefix(structure_empty, served_bytes), structure_empty.size());
 
         /// The `Dynamic` structure prefix, same two fixtures its cancellation test uses.
         const std::string dynamic_empty = makeDynamicStructurePrefixWithStatistics(std::vector<std::string>(100000, ""));
