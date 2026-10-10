@@ -1309,16 +1309,16 @@ void DatabaseDataLake::validateCreateTableEngine(const ASTStorage & storage) con
             "This DataLakeCatalog stores {}-family tables; got table engine '{}'",
             family_name, engine.name);
 
-    if (catalog->managesTableLocation())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "This DataLakeCatalog assigns table locations itself, so an explicit table `ENGINE` "
-            "is not supported; omit the `ENGINE` clause");
-
     /// Without arguments the location and the credentials come from the catalog: `getEngineArgsForNewTable`
     /// fills them in and checks that the table engine writes to the storage backend the catalog places the table in.
     if (!engine.arguments || engine.arguments->children.empty())
         return;
+
+    if (catalog->managesTableLocation())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "This DataLakeCatalog assigns table locations itself, so an explicit table `ENGINE` with a "
+            "user-provided location is not supported; omit the `ENGINE` clause or the engine arguments");
 
     const auto catalog_storage_type = catalog->getStorageType();
 
@@ -1950,8 +1950,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const auto partition_by = table_metadata.getPartitionBy();
     const auto order_by = table_metadata.getOrderBy();
 
-    /// The catalog rejects an explicit `ENGINE` in `CREATE TABLE` when it assigns table locations itself,
-    /// so the `ENGINE` clause is omitted to keep the query replayable.
+    /// The catalog rejects an explicit `ENGINE` with arguments in `CREATE TABLE` when it assigns table
+    /// locations itself, so the `ENGINE` clause is omitted to keep the query replayable.
     if (catalog->managesTableLocation())
     {
         if (partition_by || order_by)
