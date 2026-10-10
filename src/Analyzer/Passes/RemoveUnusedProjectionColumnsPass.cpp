@@ -74,23 +74,39 @@ void addInterpolateTargetsReadByUsedTargets(const QueryNode & query_node, std::u
             readers.push_back(&interpolate_node);
     }
 
+    /// The targets whose reads `addWithFillStepIfNeeded` redirects, keeping another target would only run its expression.
+    std::vector<const InterpolateNode *> redirected_targets;
+    for (const auto & node : interpolate_nodes)
+    {
+        const auto & target = node->as<const InterpolateNode &>();
+        const auto & expression = *target.getExpression();
+        auto is_expression = [&](const QueryTreeNodePtr & other) { return other->isEqual(expression, {.compare_aliases = false}); };
+
+        if (expression.getNodeType() == QueryTreeNodeType::CONSTANT
+            || (query_node.hasOrderBy() && std::ranges::any_of(query_node.getOrderBy().getNodes(),
+                [&](const QueryTreeNodePtr & sort_node) { return is_expression(sort_node->as<const SortNode &>().getExpression()); }))
+            || std::ranges::count_if(interpolate_nodes,
+                [&](const QueryTreeNodePtr & other) { return is_expression(other->as<const InterpolateNode &>().getExpression()); }) > 1)
+            continue;
+
+        redirected_targets.push_back(&target);
+    }
+
     while (!readers.empty())
     {
         const auto * reader = readers.back();
         readers.pop_back();
 
-        for (const auto & node : interpolate_nodes)
+        for (const auto * target : redirected_targets)
         {
-            const auto & target = node->as<const InterpolateNode &>();
-            auto it = projection_index_by_name.find(target.getExpressionName());
-            if (it == projection_index_by_name.end() || used_names.contains(target.getExpressionName())
-                || target.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT
-                || !containsExpression(reader->getInterpolateExpression(), *target.getExpression()))
+            auto it = projection_index_by_name.find(target->getExpressionName());
+            if (it == projection_index_by_name.end() || used_names.contains(target->getExpressionName())
+                || !containsExpression(reader->getInterpolateExpression(), *target->getExpression()))
                 continue;
 
             used_projection_columns_indexes.insert(it->second);
-            used_names.insert(target.getExpressionName());
-            readers.push_back(&target);
+            used_names.insert(target->getExpressionName());
+            readers.push_back(target);
         }
     }
 }

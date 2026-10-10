@@ -65,3 +65,17 @@ ORDER BY g WITH FILL INTERPOLATE (a AS 0, b AS b + a);
 SELECT 'a shared expression is not rebound, reversed';
 SELECT g, x AS a, x AS b FROM (SELECT toUInt16(number * 4) AS g, toUInt32(number + 1) AS x FROM numbers(2))
 ORDER BY g WITH FILL INTERPOLATE (b AS b + a, a AS 0);
+
+SELECT 'a fill column read keeps no target';
+SELECT g, x FROM
+(
+    SELECT g, g AS h, toUInt32(number) AS x FROM (SELECT toUInt16(number * 3) AS g, number FROM numbers(2))
+    ORDER BY g WITH FILL INTERPOLATE (h AS intDiv(h, h - h), x AS x + g)
+);
+
+SELECT 'a shared expression read keeps no target';
+SELECT g, c FROM
+(
+    SELECT g, x AS a, x AS b, toUInt32(number) AS c FROM (SELECT toUInt16(number * 3) AS g, toUInt32(number + 1) AS x, number FROM numbers(2))
+    ORDER BY g WITH FILL INTERPOLATE (a AS intDiv(a, a - a), b AS b, c AS c + a)
+);
