@@ -29,8 +29,12 @@ public:
     /// Only the difference in size is charged: the elements of `old_node` leave the query with it.
     ASTPtr replace(const ASTPtr & old_node, const ASTPtr & ast);
 
+    /// Charges a single node that the caller creates and adds to the query, such as a new `WITH` list
+    /// holding the copies.
+    void addNode();
+
 private:
-    void charge(const IAST & ast, size_t refunded_elements);
+    void charge(size_t added_elements, size_t refunded_elements);
 
     const size_t max_elements;
     const IAST & root;

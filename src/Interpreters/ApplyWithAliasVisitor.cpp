@@ -46,6 +46,7 @@ void ApplyWithAliasVisitor::visit(ASTPtr & ast, const Data & data)
         }
         else if (!data.exprs.empty())
         {
+            data.budget->addNode();
             auto with_expression_list = make_intrusive<ASTExpressionList>();
             for (const auto & with_alias : data.exprs)
                 with_expression_list->children.push_back(data.budget->clone(with_alias.second));
