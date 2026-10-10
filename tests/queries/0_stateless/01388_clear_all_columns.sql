@@ -33,3 +33,21 @@ ALTER TABLE test CLEAR COLUMN x;
 SELECT * FROM test ORDER BY y;
 
 DROP TABLE IF EXISTS test;
+
+-- A lightweight delete leaves `_row_exists` in the part, so dropping every table column the part
+-- has still leaves the part with a column.
+CREATE TABLE test (x UInt8, y UInt8) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
+INSERT INTO test (x, y) VALUES (1, 1), (2, 2);
+
+DELETE FROM test WHERE x = 1;
+
+ALTER TABLE test ADD COLUMN z String DEFAULT 'Hello';
+ALTER TABLE test DROP COLUMN x, DROP COLUMN y SETTINGS mutations_sync = 2;
+
+SELECT arraySort(groupArray(column)) FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 'test' AND active;
+
+SELECT * FROM test ORDER BY z;
+
+DROP TABLE test;
