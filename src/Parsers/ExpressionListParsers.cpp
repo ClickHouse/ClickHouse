@@ -166,8 +166,11 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /* Rewrite in AST:
      *  = ANY --> IN
      * != ALL --> NOT IN
-     *  = ALL --> IN (SELECT singleValueOrNull(*) FROM subquery)
+     *  = ALL --> tupleElement(SQ, 1) = 0 OR x = tupleElement(SQ, 2)
+     *             where SQ = (SELECT (count(*), singleValueOrNull(*)) FROM subquery)
      * != ANY --> NOT IN (SELECT singleValueOrNull(*) FROM subquery)
+     * <, <=, >, >= ANY / ALL --> comparison with (SELECT min(*) / max(*) FROM subquery);
+     *             for ALL, wrapped into the same emptiness check as `= ALL`
     **/
 
     auto * function = assert_cast<ASTFunction *>(ast.get());
