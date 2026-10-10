@@ -330,6 +330,8 @@ sequenceDiagram
     participant S as Server
 
     C->>S: Query message
+    C->>S: Scalar packets (0 or more, inter-server)
+    C->>S: QueryPlan packet (only after a Query with stage = QueryPlan)
     C->>S: External-table Data packets (0 or more)
     C->>S: Empty Data marker — end-of-client-data (required)
     S->>C: Data — header block (N cols, 0 rows)
@@ -347,7 +349,7 @@ sequenceDiagram
 On error at any point the server sends an `Exception` instead of `EndOfStream`, which terminates the query.
 
 1. The client sends [`Query`](#query) with a unique `query_id` (typically a UUID).
-2. The client sends any external tables, then the empty Data marker. The empty Data packet has `table_name = ""`, `num_columns = 0`, `num_rows = 0`. The server does not begin executing the query until it receives this marker. An external table may be split over several `Data` packets with the same `table_name`; the first of them binds the table's schema, and every later packet for that name must carry the same column names and types, in the same order, or the server rejects the query with `INCORRECT_DATA` (see [Data](#data)).
+2. The client sends any query input, then the empty Data marker. In this order: the `Scalar` (7) packets of an inter-server query, then the [`QueryPlan`](#queryplan) packet if the `Query` had `stage = QueryPlan`, then the external tables. All of them belong to the query's input and must precede the marker: a `Scalar` or `QueryPlan` packet sent after it is a [protocol violation](#protocol-violations). The empty Data packet has `table_name = ""`, `num_columns = 0`, `num_rows = 0`. The server does not begin executing the query until it receives this marker. An external table may be split over several `Data` packets with the same `table_name`; the first of them binds the table's schema, and every later packet for that name must carry the same column names and types, in the same order, or the server rejects the query with `INCORRECT_DATA` (see [Data](#data)).
 3. The client moves to `READING_RESPONSE` and flushes its write buffer.
 4. The client reads response packets in a loop, dispatching by type:
 
@@ -963,7 +965,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 
 ### QueryPlan {#queryplan}
 
-`QueryPlan` is an inter-server-only client packet. It follows a [`Query`](#query) whose `stage` is `QueryPlan` (`7`) and contains one serialized plan stream.
+`QueryPlan` is an inter-server-only client packet. It follows a [`Query`](#query) whose `stage` is `QueryPlan` (`7`) and contains one serialized plan stream. It is part of the query's input: the initiator sends it after the query's `Scalar` packets and before the external tables and the empty `Data` end-of-data marker (see the [Query phase](#query-phase)). Exactly one `QueryPlan` is sent per such query; a `QueryPlan` that arrives after the end-of-data marker terminates the connection.
 
 | # | Field | Type | Gate | Description |
 |---|---|---|---|---|
