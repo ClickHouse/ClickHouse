@@ -152,6 +152,7 @@ private:
     bool processSubtreeArrayOuter(TraversalNode & node);
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
+    bool processSubtreeDynamic(TraversalNode & node);
 
     /// `uuid2_preferred` says the file-level key-value metadata marks this leaf column as written from
     /// the ClickHouse `UUID2` type; it only matters when there's no type hint (schema inference).
