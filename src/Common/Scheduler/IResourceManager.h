@@ -54,32 +54,6 @@ public:
 
 using ClassifierPtr = std::shared_ptr<IClassifier>;
 
-/// Resolved server-limit configuration pushed into the resource manager: the server-wide CPU/memory
-/// limits plus the flags that enable mirroring them and synthesizing the `default` workload. Limit
-/// values are already reduced from the raw server settings (`*_num`/`*_ratio_to_cores`/`*_to_ram_ratio`)
-/// to a single effective number; a limit that is off or unbounded is `WorkloadSettings::unlimited`.
-struct ResourceManagerConfiguration
-{
-    /// When true, the server CPU-concurrency limit is enforced through the workload scheduler: a
-    /// combined `MASTER THREAD, WORKER THREAD` resource is created if the operator declared none,
-    /// and the implicit root's `max_concurrent_threads` is set to `cpu_slots`.
-    bool respect_cpu_limit = false;
-
-    /// When true, the server memory limit is enforced as a reservation-admission budget through the
-    /// workload scheduler: a `MEMORY RESERVATION` resource is created if the operator declared none,
-    /// and the implicit root's `max_memory` is set to `memory_bytes`.
-    bool respect_memory_limit = false;
-
-    /// When true, a `default` workload is synthesized if none is defined explicitly.
-    bool implicit_default_workload = false;
-
-    /// Effective CPU-slot budget (number of concurrent query threads).
-    Int64 cpu_slots = WorkloadSettings::unlimited;
-
-    /// Effective memory-reservation budget in bytes.
-    Int64 memory_bytes = WorkloadSettings::unlimited;
-};
-
 /*
  * Represents control plane of resource scheduling. Derived class is responsible for reading
  * configuration, creating all required `ISchedulerNode` objects and
@@ -105,12 +79,6 @@ public:
     /// For introspection, see `system.scheduler` table
     using VisitorFunc = std::function<void(const String & resource, const String & path, ISchedulerNode * node)>;
     virtual void forEachNode(VisitorFunc visitor) = 0;
-
-    /// Applies the server-limit configuration to the per-resource implicit root workloads (and
-    /// synthesizes the `default` workload when requested). Called on startup and on every
-    /// server-settings reload. The default implementation does nothing for managers that do not
-    /// support server-limit mirroring.
-    virtual void updateConfiguration(const ResourceManagerConfiguration &) {}
 };
 
 using ResourceManagerPtr = std::shared_ptr<IResourceManager>;

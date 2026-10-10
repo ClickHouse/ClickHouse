@@ -184,7 +184,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
     auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::storeEntityImpl");
     LOG_DEBUG(log, "Storing workload entity {}", backQuote(entity_name));
 
-    String new_data = serializeLocalEntities(Event{entity_type, entity_name, create_entity_query});
+    String new_data = serializeOwnEntities(Event{entity_type, entity_name, create_entity_query});
     auto zookeeper = getZooKeeper();
 
     Coordination::Stat stat;
@@ -212,7 +212,7 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
     auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::removeEntityImpl");
     LOG_DEBUG(log, "Removing workload entity {}", backQuote(entity_name));
 
-    String new_data = serializeLocalEntities(Event{entity_type, entity_name, {}});
+    String new_data = serializeOwnEntities(Event{entity_type, entity_name, {}});
     auto zookeeper = getZooKeeper();
 
     Coordination::Stat stat;
@@ -276,7 +276,7 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query in keeper storage: {}", query->getID());
     }
 
-    setLocalEntities(new_entities);
+    setOwnEntities(new_entities, OnOwnConflict::Hide);
     current_version = version;
 
     LOG_DEBUG(log, "Workload entities refreshing is done");

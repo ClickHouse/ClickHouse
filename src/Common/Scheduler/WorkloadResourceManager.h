@@ -7,7 +7,6 @@
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/ResourceAccessMode.h>
 #include <Common/Scheduler/ResourceSchedulingContext.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -17,12 +16,10 @@
 
 #include <boost/core/noncopyable.hpp>
 
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <future>
 #include <unordered_set>
-#include <vector>
 
 namespace DB
 {
@@ -50,6 +47,10 @@ namespace DB
  * that is the scheduler's single child, and every parentless workload is attached as a child of it.
  * This keeps the scheduler single-child while letting the otherwise-root workloads be scheduled with
  * fairness/priorities via the normal workload policy machinery.
+ * The implicit root node exists in every resource regardless of entities. Its settings come from the root
+ * workload entity, the WORKLOAD with the empty name (see IWorkloadEntityStorage.h): the manager never creates
+ * a node for this entity, but applies its settings to the root node of every resource (a `FOR` clause selects
+ * the resource), including resources created later, and resets them to defaults when the entity is dropped.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -60,7 +61,8 @@ namespace DB
  *
  *             root                - TimeSharedScheduler (with a thread and an EventQueue)
  *               |
- *           (implicit)            - anonymous root WorkloadNode with an empty name (the scheduler's single child)
+ *           (implicit)            - anonymous root WorkloadNode with an empty name (the scheduler's single child,
+ *                                   configured by the root workload entity)
  *               |
  *              all                - WorkloadNode (has no explicit parent, so a child of the implicit root)
  *               |
@@ -134,7 +136,6 @@ public:
     bool hasResource(const String & resource_name) const override;
     ClassifierPtr acquire(const String & workload_name, const ClassifierSettings & settings) override;
     void forEachNode(VisitorFunc visitor) override;
-    void updateConfiguration(const ResourceManagerConfiguration & config) override;
 
 private:
     // Forward declarations
@@ -178,11 +179,6 @@ private:
         const String & getName() const { return resource_name; }
         CostUnit getUnit() const { return unit; }
 
-        /// True if this resource's declared access modes cover every mode in `required`. Used to
-        /// decide whether a single operator resource can carry a combined server-limit budget (e.g. a
-        /// CPU resource must cover both MASTER THREAD and WORKER THREAD).
-        bool coversAllModes(const std::vector<ResourceAccessMode> & required) const;
-
         /// Hierarchy management
         void createNode(const NodeInfo & info);
         void deleteNode(const NodeInfo & info);
@@ -191,10 +187,8 @@ private:
         /// Updates resource entity
         void updateResource(const ASTPtr & new_resource_entity);
 
-        /// Sets the implicit root workload's scheduling settings in place on the scheduler thread.
-        /// Used to mirror a resolved server-wide limit (e.g. `max_memory`, `max_concurrent_threads`)
-        /// onto the root of this resource so all its workloads share one budget derived from it.
-        void setImplicitRootLimit(const WorkloadSettings & root_settings);
+        /// Sets the scheduling settings of the root node of this resource in place, on the scheduler thread
+        void updateRootSettings(const WorkloadSettings & root_settings);
 
         /// Updates a classifier to contain a reference for specified workload
         std::future<void> attachClassifier(Classifier & classifier, const String & workload_name);
@@ -354,66 +348,23 @@ private:
     void createOrUpdateResource(const String & resource_name, const ASTPtr & ast);
     void deleteResource(const String & resource_name);
 
-    /// Applies `current_config` to the per-resource implicit roots (see `updateConfiguration`).
+    /// Settings of the root workload entity for the given resource (defaults if there is no root workload entity).
     /// Assumes `mutex` is held.
-    void applyConfigurationLocked();
-
-    /// Synthesizes or removes the implicit `default` workload according to
-    /// `current_config.implicit_default_workload`. Gated independently of the resource-limit settings.
-    /// An operator-declared `default` is never removed. Assumes `mutex` is held.
-    void applyImplicitDefaultWorkloadLocked();
-
-    /// Ensures a resource of the given `unit` exists and its implicit root carries `effective_limit`
-    /// when `enabled`; otherwise resets existing roots of that unit to unlimited and removes the
-    /// auto-created implicit resource. An operator-declared resource is never removed. Assumes `mutex`
-    /// is held. `set_limit_field` writes the effective limit into the correct `WorkloadSettings` field.
-    ///
-    /// Also drives the storage-side name resolution for this role through `set_storage_resolution_enabled`,
-    /// ordered against the resource create/remove so the two never disagree in the dangerous direction:
-    /// on enable the resolution is turned on only AFTER the resource exists; on disable it is turned off
-    /// BEFORE the resource is removed. The callback is invoked while holding only `mutex` (never inside a
-    /// scheduler-thread callback) to keep a single manager->storage lock order.
-    void applyResourceLimitLocked(
-        CostUnit unit,
-        const String & implicit_name,
-        const std::vector<ResourceAccessMode> & implicit_modes,
-        bool enabled,
-        Int64 effective_limit,
-        const std::function<void(WorkloadSettings &, Int64)> & set_limit_field,
-        const std::function<void(bool)> & set_storage_resolution_enabled);
-
-    /// Creates a server-synthesized resource (not persisted through the entity storage) and attaches
-    /// all existing workloads to it, mirroring the create branch of `createOrUpdateResource`. Assumes
-    /// `mutex` is held.
-    ResourcePtr createImplicitResourceLocked(const String & resource_name, const ASTPtr & ast);
+    WorkloadSettings getRootSettings(const Resource & resource) const;
 
     // Topological sorting of workloads
     void topologicallySortedWorkloadsImpl(Workload * workload, std::unordered_set<Workload *> & visited, std::vector<Workload *> & sorted_workloads);
     std::vector<Workload *> topologicallySortedWorkloads();
 
     /// Hold shared ownership of the storage so it cannot be destroyed during lazy initialization,
-    /// which may run concurrently with server shutdown. Accessed in the constructor (to subscribe) and
-    /// in `applyResourceLimitLocked`, which flips the storage-side resource-name resolution in step with
-    /// creating / removing the implicit server-limit resource.
+    /// which may run concurrently with server shutdown. The storage is only accessed in the constructor.
     std::shared_ptr<IWorkloadEntityStorage> storage;
     scope_guard subscription;
 
     mutable std::mutex mutex;
     std::unordered_map<String, WorkloadPtr> workloads; // TSA_GUARDED_BY(mutex);
     std::unordered_map<String, ResourcePtr> resources; // TSA_GUARDED_BY(mutex);
-
-    /// Latest server-wide limits pushed via `updateConfiguration`. Kept so they can be re-applied to
-    /// resources created later (e.g. an operator resource created after the feature was enabled).
-    ResourceManagerConfiguration current_config; // TSA_GUARDED_BY(mutex);
-
-    /// True once any server limit has been applied. Lets the all-features-off default path skip work
-    /// entirely, while still resetting roots the one time the feature transitions from on to off.
-    bool configuration_applied = false; // TSA_GUARDED_BY(mutex);
-
-    /// True while the `default` workload currently in `workloads` was synthesized by this manager (as
-    /// opposed to declared by the operator). Ensures only a synthesized `default` is removed when the
-    /// implicit-default feature is disabled.
-    bool default_workload_synthesized = false; // TSA_GUARDED_BY(mutex);
+    ASTPtr root_workload_entity; // The root workload entity (empty name), if any. TSA_GUARDED_BY(mutex);
 
     LoggerPtr log;
 };
