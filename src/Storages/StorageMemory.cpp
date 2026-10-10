@@ -59,6 +59,7 @@
 #include <IO/copyData.h>
 #include <Common/FailPoint.h>
 #include <Common/FileChecker.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 
 
@@ -66,6 +67,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_temporary_table_memory_usage;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
@@ -89,11 +91,21 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int UNFINISHED;
     extern const int INCONSISTENT_METADATA_FOR_BACKUP;
+    extern const int TOO_MANY_BYTES;
 }
 
 namespace FailPoints
 {
     extern const char backup_add_empty_memory_table[];
+}
+
+/// Enforces `max_temporary_table_memory_usage`, zero means no limit.
+static void checkTemporaryTableMemoryUsage(UInt64 total_bytes, UInt64 max_temporary_table_memory_usage)
+{
+    if (max_temporary_table_memory_usage && total_bytes > max_temporary_table_memory_usage)
+        throw Exception(ErrorCodes::TOO_MANY_BYTES,
+            "The temporary table would use {} of memory, the maximum is {} (the `max_temporary_table_memory_usage` setting)",
+            ReadableSize(total_bytes), ReadableSize(max_temporary_table_memory_usage));
 }
 
 class MemorySink final : public SinkToStorage
@@ -109,6 +121,8 @@ public:
         , metadata_version(metadata_snapshot_->getMetadataVersion())
         , context(std::move(context_))
     {
+        if (storage.is_temporary_table)
+            max_temporary_table_memory_usage = context->getSettingsRef()[Setting::max_temporary_table_memory_usage];
     }
 
     String getName() const override { return "MemorySink"; }
@@ -127,6 +141,16 @@ public:
         else
         {
             new_blocks.push_back(std::move(block));
+        }
+
+        /// Fail early instead of buffering the whole `INSERT` in memory. The eviction by `max_bytes_to_keep`
+        /// and `max_rows_to_keep` may still make room at the end, so leave that case to `onFinish`.
+        if (max_temporary_table_memory_usage)
+        {
+            new_blocks_bytes += new_blocks.back().allocatedBytes();
+            const auto & memory_settings = storage.getMemorySettingsRef();
+            if (!memory_settings[MemorySetting::max_bytes_to_keep] && !memory_settings[MemorySetting::max_rows_to_keep])
+                checkTemporaryTableMemoryUsage(storage.data.get()->bytes + new_blocks_bytes);
         }
     }
 
@@ -176,6 +200,8 @@ public:
             new_data->blocks.erase(new_data->blocks.begin());
         }
 
+        checkTemporaryTableMemoryUsage(new_data->bytes);
+
         // append new data to modified storage table and commit
         new_data->blocks.insert(new_data->blocks.end(), new_blocks.begin(), new_blocks.end());
 
@@ -183,7 +209,14 @@ public:
     }
 
 private:
+    void checkTemporaryTableMemoryUsage(UInt64 total_bytes) const
+    {
+        DB::checkTemporaryTableMemoryUsage(total_bytes, max_temporary_table_memory_usage);
+    }
+
     Blocks new_blocks;
+    UInt64 new_blocks_bytes = 0;
+    UInt64 max_temporary_table_memory_usage = 0;
     StorageMemory & storage;
     StorageSnapshotPtr storage_snapshot;
     const Int32 metadata_version;
@@ -291,12 +324,9 @@ void StorageMemory::drop()
 
 static inline void updateBlockData(Block & old_block, const Block & new_block)
 {
-    for (const auto & it : new_block)
-    {
-        auto col_name = it.name;
-        auto & col_with_type_name = old_block.getByName(col_name);
-        col_with_type_name.column = it.column;
-    }
+    /// A stored block keeps the column types of its INSERT, so the type is replaced together with the data.
+    for (const auto & column : new_block)
+        old_block.getByName(column.name) = column;
 }
 
 void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
@@ -449,6 +479,11 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         new_data->rows += buffer.rows();
         new_data->bytes += buffer.allocatedBytes();
     }
+
+    /// A mutation can make the data larger (e.g. `UPDATE` with longer strings or `MATERIALIZE COLUMN`).
+    if (is_temporary_table)
+        checkTemporaryTableMemoryUsage(new_data->bytes, context->getSettingsRef()[Setting::max_temporary_table_memory_usage]);
+
     setData(std::move(new_data));
 }
 
@@ -1016,6 +1051,10 @@ void StorageMemory::restoreDataImpl(
     old_and_new_data->bytes += new_bytes;
     old_and_new_data->rows += new_rows;
 
+    /// The restored data is checked against the settings of the `RESTORE` query, as for `INSERT` and `ALTER`.
+    if (is_temporary_table)
+        checkTemporaryTableMemoryUsage(old_and_new_data->bytes, context->getSettingsRef()[Setting::max_temporary_table_memory_usage]);
+
     /// Finish restoring.
     setData(std::move(old_and_new_data));
 }
@@ -1110,8 +1149,16 @@ void registerStorageMemory(StorageFactory & factory)
 
         settings.sanityCheck();
 
-        return std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings);
+        auto storage = std::make_shared<StorageMemory>(args.table_id, args.columns, args.constraints, args.comment, settings);
+
+        /// Internal temporary tables (external data, `GLOBAL IN`, CTEs) construct `StorageMemory` directly,
+        /// so a `Memory` table created by a query in the temporary database comes from `CREATE TEMPORARY TABLE`.
+        if (args.table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            storage->markAsTemporaryTable();
+
+        return storage;
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_parallel_insert = true,
