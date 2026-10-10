@@ -5,7 +5,7 @@
 -->
 <test>
     <fill_query>
-        INSERT INTO FUNCTION file('test_parquet_top_k_file_order_{_partition_id}.parquet', Parquet) PARTITION BY intDiv(toUInt64(s), 250000)
+        INSERT INTO FUNCTION file('test_parquet_top_k_file_order_{{_partition_id}}.parquet', Parquet) PARTITION BY intDiv(toUInt64(s), 250000)
         SELECT (number % 250000) + 250000 * ((intDiv(number, 250000) * 37 + 11) % 64) AS k, sipHash64(number) AS v, number % 1000 AS m, toString(number) AS s
         FROM numbers(16000000)
         SETTINGS output_format_parquet_row_group_size = 50000, max_block_size = 50000, max_threads = 1, max_insert_threads = 1,
