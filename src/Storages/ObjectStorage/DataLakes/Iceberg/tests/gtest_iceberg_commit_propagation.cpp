@@ -134,6 +134,14 @@ public:
     {
         if (isVersionHint(object))
         {
+            /// Without the compare-and-swap a writer of a lower version can overwrite a newer hint.
+            if (state.hint)
+            {
+                EXPECT_EQ(write_settings.object_storage_write_if_match, hintEtag());
+                EXPECT_TRUE(write_settings.object_storage_write_if_none_match.empty());
+            }
+
+            ++hint_writes;
             if (state.hint_conflicts > 0)
             {
                 --state.hint_conflicts;
@@ -176,6 +184,18 @@ public:
         ObjectMetadata metadata;
         metadata.size_bytes = state.stored_content ? state.stored_content->size() : 0;
         return metadata;
+    }
+
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint) const override
+    {
+        auto result = IObjectStorage::readSmallObjectAndGetObjectMetadata(object, read_settings, max_size_bytes, read_hint);
+        if (isVersionHint(object))
+            result.metadata.etag = hintEtag();
+        return result;
     }
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -228,8 +248,12 @@ private:
 
     static bool isVersionHint(const StoredObject & object) { return object.remote_path.ends_with("version-hint.text"); }
 
+    /// Changes with every write of the hint, like a real ETag.
+    std::string hintEtag() const { return fmt::format("hint-etag-{}", hint_writes); }
+
     mutable StoreState state;
     mutable size_t writes = 0;
+    size_t hint_writes = 0;
 };
 
 constexpr auto committed_content = "{\"format-version\":2}";
