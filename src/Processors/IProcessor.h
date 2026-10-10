@@ -131,7 +131,7 @@ protected:
     InputPorts inputs;
     OutputPorts outputs;
 
-    /// True if an unfinished output can take a chunk now. A processor must not request input otherwise.
+    /// True if an unfinished output can take a chunk now.
     bool isAnyOutputPushable() const;
 
 public:
