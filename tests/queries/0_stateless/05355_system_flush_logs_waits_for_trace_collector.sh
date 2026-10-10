@@ -8,14 +8,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT trace_collector_pause_before_trace"' EXIT
 
+# Traces are dropped once the paused collector's pipe is full, so only the few allocations of at least 1 MiB are sampled.
+sampled=(--memory_profiler_sample_probability=1 --max_untracked_memory=0 --memory_profiler_sample_min_allocation_size=1048576)
+query="SELECT groupArray(number) FROM numbers(1000000) FORMAT Null"
+
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT trace_collector_pause_before_trace"
 # Any trace makes the collector reach the failpoint; this query guarantees one.
-${CLICKHOUSE_CLIENT} --memory_profiler_sample_probability=1 --max_untracked_memory=0 -q "SELECT 1 FORMAT Null"
+${CLICKHOUSE_CLIENT} "${sampled[@]}" -q "$query"
 timeout 60 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT trace_collector_pause_before_trace PAUSE"
 
 query_id="${CLICKHOUSE_DATABASE}_sampled"
-${CLICKHOUSE_CLIENT} --query_id="$query_id" --memory_profiler_sample_probability=1 --max_untracked_memory=0 \
-    -q "SELECT groupArray(number) FROM numbers(10000) FORMAT Null"
+${CLICKHOUSE_CLIENT} --query_id="$query_id" "${sampled[@]}" -q "$query"
 
 flush_id="${CLICKHOUSE_DATABASE}_flush"
 ${CLICKHOUSE_CLIENT} --query_id="$flush_id" -q "SYSTEM FLUSH LOGS trace_log" &
