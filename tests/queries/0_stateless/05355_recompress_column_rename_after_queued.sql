@@ -1,3 +1,7 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: combines `RENAME COLUMN` and `RECOMPRESS COLUMN` in a single query, which is
+-- prohibited for Replicated databases
+
 -- `ALTER TABLE ... RECOMPRESS COLUMN a` that is still queued, followed by `RENAME COLUMN a TO b`:
 -- the queued command names the column by its old name, which would no longer be a physical column
 -- of the table metadata when the mutation runs, so the recompression would be skipped and the

@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 -- no-fasttest: needs the SZ3 library
+-- no-replicated-database: combines a metadata `ALTER` and `RECOMPRESS COLUMN` in a single query,
+-- which is prohibited for Replicated databases
 
 -- The lossy-codec guard of `ALTER TABLE ... RECOMPRESS COLUMN` rejects the mutation while a projection or
 -- a skip index depends on the column. Dropping the dependent in the same `ALTER` is allowed, as long as the
