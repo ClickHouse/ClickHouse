@@ -30,7 +30,7 @@ TemporarySecretFile::TemporarySecretFile(const std::string & contents)
     catch (...)
     {
         std::error_code error_code;
-        std::filesystem::remove(path, error_code);
+        std::filesystem::remove(pathFromString(path), error_code);
         path.clear();
         throw;
     }
@@ -42,7 +42,7 @@ TemporarySecretFile::~TemporarySecretFile()
         return;
 
     std::error_code error_code;
-    std::filesystem::remove(path, error_code);
+    std::filesystem::remove(pathFromString(path), error_code);
     if (error_code)
         LOG_WARNING(getLogger("TemporarySecretFile"), "Cannot remove the temporary file {}: {}", path, error_code.message());
 }

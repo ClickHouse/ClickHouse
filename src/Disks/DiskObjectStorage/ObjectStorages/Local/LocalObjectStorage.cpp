@@ -686,7 +686,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
     const String resolved_path = pathToString(resolved);
 
     /// For local object storage files are actually removed when "metadata" is removed.
-    if (!fs::exists(resolved_path))
+    if (!fs::exists(resolved))
         return;
 
     auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
@@ -987,10 +987,9 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
 bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     std::shared_lock lock(directories_mutex);
-    const String resolved_path = pathToString(resolvePathRelativelyToKeyPrefix(path));
     /// Unlike real object storage, existence of a prefix path can be checked by
     /// just checking existence of this prefix directly, so simple exists is enough here.
-    return fs::exists(resolved_path);
+    return fs::exists(resolvePathRelativelyToKeyPrefix(path));
 }
 
 void LocalObjectStorage::copyObject( // NOLINT
