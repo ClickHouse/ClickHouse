@@ -4906,15 +4906,18 @@ void Aggregator::mergeDeferredLargeStates(DeferredMerges & deferred, Arena * are
         /// Group the pairs by destination: a destination repeats once per source it absorbs,
         /// and merging a destination with all its sources in one multi-way pass parallelizes
         /// over the whole group instead of source by source.
-        std::vector<size_t> order(num_pairs);
-        for (size_t j = 0; j < num_pairs; ++j)
-            order[j] = j;
-        ::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) { return std::less<AggregateDataPtr>{}(pairs.dst_places[lhs], pairs.dst_places[rhs]); });
+        std::vector<size_t> order;
 
         /// Sources at sorted positions below this index have been destroyed.
         size_t destroyed_prefix = 0;
         try
         {
+            /// Built inside the `try`: if the allocation throws, the sources still have to be destroyed.
+            order.resize(num_pairs);
+            for (size_t j = 0; j < num_pairs; ++j)
+                order[j] = j;
+            ::sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs) { return std::less<AggregateDataPtr>{}(pairs.dst_places[lhs], pairs.dst_places[rhs]); });
+
             AggregateDataPtrs places;
             for (size_t group_begin = 0; group_begin < num_pairs;)
             {
@@ -4951,8 +4954,17 @@ void Aggregator::mergeDeferredLargeStates(DeferredMerges & deferred, Arena * are
             if (destroy_sources)
             {
                 /// The source hash tables have been detached from these states, so nobody else will destroy them.
-                for (size_t j = destroyed_prefix; j < num_pairs; ++j)
-                    aggregate_functions[i]->destroy(pairs.src_places[order[j]]);
+                /// If `order` could not be built, nothing has been merged or destroyed yet.
+                if (order.size() == num_pairs)
+                {
+                    for (size_t j = destroyed_prefix; j < num_pairs; ++j)
+                        aggregate_functions[i]->destroy(pairs.src_places[order[j]]);
+                }
+                else
+                {
+                    for (auto * src : pairs.src_places)
+                        aggregate_functions[i]->destroy(src);
+                }
                 pairs.dst_places.clear();
                 pairs.src_places.clear();
 
