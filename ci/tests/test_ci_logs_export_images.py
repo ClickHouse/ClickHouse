@@ -722,6 +722,37 @@ def test_a_sender_left_without_a_watcher_is_dropped():
     assert instance.queries[-1] == "DROP TABLE IF EXISTS system.text_log_sender SYNC;\n"
 
 
+def test_a_sender_whose_drop_failed_is_not_reused():
+    """When the drop of a `_sender` left without a `_watcher` fails too, the
+    `_sender` survives with the header and the destination table of the
+    structure it was created for. The next attempt must drop it before its
+    `CREATE TABLE IF NOT EXISTS`, which would otherwise reuse it."""
+
+    class Instance:
+        name = "node"
+        fail = True
+        queries = []
+
+        def query(self, sql, timeout=None):
+            self.queries.append(sql)
+            if self.fail and ("CREATE" in sql or "DROP" in sql):
+                raise RuntimeError("the local DDL failed")
+            return "text_log_sender\n" if self.fail else "text_log_watcher\ntext_log_sender\n"
+
+    instance = Instance()
+    tables = [("text_log", "h2", "")]
+    assert HELPER._create_senders_and_watchers(instance, tables, {"text_log"}, "1 AS c") == []
+
+    instance.fail = False
+    instance.queries.clear()
+    active = HELPER._create_senders_and_watchers(instance, tables, {"text_log"}, "1 AS c")
+    assert active == ["text_log"]
+    batch = instance.queries[0]
+    drop = batch.index("DROP TABLE IF EXISTS system.text_log_sender SYNC;")
+    assert drop < batch.index("CREATE TABLE IF NOT EXISTS system.text_log_sender")
+    assert batch.index("DROP VIEW IF EXISTS system.text_log_watcher SYNC;") < drop
+
+
 def test_test_name_of_a_single_file_suite_is_the_suite(tmp_path):
     """A suite with a single test module is labelled with the suite name
     whatever the module is called, a multi-file suite with the module too."""

@@ -778,8 +778,18 @@ def _create_senders_and_watchers(instance, tables, exportable, expression):
     for table, hash_value, _ in tables:
         if table not in exportable:
             continue
+        # The callers pass only the tables without export state, so whatever
+        # exists for them is left over from an earlier attempt that failed
+        # (e.g. a `_sender` whose cleanup below failed too). Dropping it in the
+        # same batch, before `CREATE TABLE IF NOT EXISTS`, is what keeps such a
+        # leftover from being reused with the destination table of an older
+        # structure: if the drop fails, the batch stops before the `CREATE`, and
+        # the table stays unexported until the next attempt drops it again.
         statements.append(
             f"""
+            DROP VIEW IF EXISTS system.{table}_watcher SYNC;
+            DROP TABLE IF EXISTS system.{table}_sender SYNC;
+
             CREATE TABLE IF NOT EXISTS system.{table}_sender
             ENGINE = Distributed({cluster_name}, 'default', '{table}_{hash_value}')
             SETTINGS flush_on_detach = 0
@@ -810,9 +820,10 @@ def _create_senders_and_watchers(instance, tables, exportable, expression):
     active = sorted(name[: -len("_watcher")] for name in names if name.endswith("_watcher"))
     # A batch that failed between the `CREATE TABLE` of a `_sender` and the
     # `CREATE MATERIALIZED VIEW` of its `_watcher` leaves the `_sender` behind.
-    # Nothing records it, so it must not survive: the next attempt would reuse
-    # it through `CREATE TABLE IF NOT EXISTS`, while the destination table of a
-    # changed structure needs a new one, see refresh_after_start.
+    # Nothing records it, so it is dropped right away. This cleanup may fail
+    # without harm: the `_sender` receives nothing without its `_watcher`, and
+    # the next attempt for the table drops it before creating a new one, see
+    # the statements above.
     orphans = sorted(
         name[: -len("_sender")]
         for name in names
