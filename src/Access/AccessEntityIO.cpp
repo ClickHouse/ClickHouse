@@ -16,6 +16,7 @@
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
@@ -37,6 +38,10 @@ namespace ErrorCodes
 
 void checkAccessEntityHasNoQueryParameters(const ASTPtr & query)
 {
+    /// A stored policy expression can hold a query parameter; rejecting the policy would drop it and expose its rows.
+    if (query->as<ASTCreateRowPolicyQuery>() || query->as<ASTCreateMaskingPolicyQuery>())
+        return;
+
     if (const auto parameter_names = analyzeReceiveQueryParams(query); !parameter_names.empty())
         throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION,
             "Query parameters are not allowed in access entity definitions (found {})",
