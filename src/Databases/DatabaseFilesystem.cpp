@@ -360,7 +360,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name, co
     /// reporting a missing table.
     const auto table_path = getTablePath(name);
     const auto user_files_volume = getContext()->getUserFilesVolume();
-    bool exists;
+    bool exists = false;
     if (user_files_volume)
     {
         exists = userFilesPathExists(table_path, user_files_volume->getDisks());
