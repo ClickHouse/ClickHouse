@@ -281,10 +281,12 @@ public:
     /// Fold a filter predicate that reaches a Const through `materialize`/`alias` wrappers.
     /// Limited to value-only predicate functions (equals/and/or/comparisons) so the result
     /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
-    /// representation-observing parents elsewhere in the DAG are never touched
-    void foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
-    /// The same for the filter at `filter_output_position` of the outputs.
-    void foldFilterPredicateThroughMaterialize(size_t filter_output_position);
+    /// representation-observing parents elsewhere in the DAG are never touched.
+    /// A removed filter column is replaced by the constant. A kept one stays an output as it is, for whoever reads
+    /// it, and the constant becomes a new output under a new name that clashes with no output and no column of
+    /// `input_header`: the filter column from now on, which the filter removes. So the filter always reads the
+    /// constant, and a kept predicate is an ordinary output that removing unused columns can drop.
+    void foldFilterPredicateThroughMaterialize(std::string & filter_column_name, bool & remove_filter_column, const Block & input_header);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned

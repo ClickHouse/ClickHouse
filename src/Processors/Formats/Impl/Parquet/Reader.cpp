@@ -2,12 +2,14 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
@@ -26,6 +28,7 @@
 #include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
@@ -3710,9 +3713,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
     }
 
-    TypeIndex kind = output_info.nullable_group
-        ? removeNullable(output_info.input_type)->getColumnType()
-        : output_info.input_type->getColumnType();
+    /// Nullable wraps the type of a physically nullable tuple group and of a variant read as `Nullable(JSON)`.
+    TypeIndex kind = removeNullable(output_info.input_type)->getColumnType();
 
     if (output_info.is_primitive)
     {
@@ -3763,6 +3765,16 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             res = ColumnTuple::create(num_rows);
         else
             res = ColumnTuple::create(std::move(columns));
+    }
+    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+    {
+        chassert(output_info.nested_columns.size() == 2);
+        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
+        MutableColumnPtr value = formOutputColumn(row_subgroup, output_info.nested_columns[1], num_rows);
+
+        res = output_info.input_type->createColumn();
+        res->reserve(num_rows);
+        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, options.format);
     }
     else
     {
