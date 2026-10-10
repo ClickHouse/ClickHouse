@@ -33,6 +33,11 @@ def test_parallel_quorum_actually_parallel(started_cluster):
         "insert_quorum_parallel": "1",
         "function_sleep_max_microseconds_per_block": "0",
     }
+    # Drop the table everywhere before creating any replica, so that a repeated run
+    # (`--count`) starts from an empty table instead of failing on `CREATE TABLE`.
+    for node in [node1, node2, node3]:
+        node.query("DROP TABLE IF EXISTS r SYNC")
+
     for i, node in enumerate([node1, node2, node3]):
         node.query(
             "CREATE TABLE r (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/r', '{num}') ORDER BY tuple()".format(
@@ -76,6 +81,10 @@ def test_parallel_quorum_actually_parallel(started_cluster):
 
 
 def test_parallel_quorum_actually_quorum(started_cluster):
+    # See test_parallel_quorum_actually_parallel.
+    for node in [node1, node2, node3]:
+        node.query("DROP TABLE IF EXISTS q SYNC")
+
     for i, node in enumerate([node1, node2, node3]):
         node.query(
             # node2 stays partitioned off node1/node3 (port 9009) for the whole test, so its
