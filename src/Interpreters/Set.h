@@ -49,6 +49,10 @@ struct SetSpillSettings
 
     /// This is the number of rows in the blocks that the external sort merges and in the moved key columns.
     size_t max_block_size = 0;
+
+    /// The Bloom filters of the blocks of the set on disk take at most this many bytes, as
+    /// `createDiskSetBuilder` describes.
+    size_t max_bytes_for_bloom_filter = 0;
     QueryStatusPtr process_list_element;
 };
 
