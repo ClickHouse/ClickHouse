@@ -19,13 +19,16 @@ common_settings="use_query_condition_cache = true, use_query_condition_cache_for
 
 # A single part mixing 'old' rows (which the condition does not match) with recent rows, so that the
 # old rows fill whole granules of their own and can only be pruned granule-wise - which is what the
-# query condition cache provides.
+# query condition cache provides. The recent rows lie in the hour after the insertion, so they match
+# `toStartOfHour(now())` and `today()` even when the test straddles the start of an hour or a day:
+# a condition matching no row of the part at all can prune the whole part by other means, leaving
+# nothing to record in the query condition cache.
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS tab;
     CREATE TABLE tab (time DateTime, x UInt64) ENGINE = MergeTree ORDER BY x
         SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 8192;
     INSERT INTO tab
-    SELECT if(number < 1_000_000, toDateTime('2000-01-01 00:00:00') + (number % 86400), now() - (number % 3600)), number
+    SELECT if(number < 1_000_000, toDateTime('2000-01-01 00:00:00') + (number % 86400), now() + (number % 3600)), number
     FROM numbers(2_000_000)
     SETTINGS max_insert_threads = 1, max_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000, min_insert_block_size_bytes = 0;
 "
