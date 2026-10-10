@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1218485",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1222280",
       "email": "support@clickhouse.com"
     }
   },
@@ -22,6 +22,9 @@
   "tags": [
     {
       "name": "Organization"
+    },
+    {
+      "name": "Notifications"
     },
     {
       "name": "User management"
@@ -5484,7 +5487,7 @@
       },
       "patch": {
         "summary": "Update service snapshot configuration",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, gap and timeFrame (in minutes) must together be one of the supported (gap, timeFrame) pairs: (30, 1440), (60, 2880). Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted).",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Updates the service snapshot configuration. Requires ADMIN auth key role. Enables or disables scheduled snapshots and sets the cadence; when enabled, gap and timeFrame (in minutes) must together be one of the supported (gap, timeFrame) pairs: (30, 1440), (60, 2880). Provide at least one of enabled, gap, timeFrame; omit a field to leave it unchanged (null is not accepted). Enabling snapshots or changing the cadence requires an eligible organization (see the organization's capabilities.snapshots).",
         "operationId": "snapshotConfigurationUpdate",
         "parameters": [
           {
@@ -7811,6 +7814,116 @@
         "x-mint": {
           "content": "Returns a single organization activity by ID.\n\n<div data-permissions class=\"api-section\">\n<div class=\"api-section-heading flex flex-col gap-y-4 w-full\">\n<div class=\"flex items-baseline border-b pb-2.5 border-gray-100 dark:border-gray-800 w-full\">\n<h4 class=\"api-section-heading-title flex-1 mb-0\">Permission</h4>\n</div>\n</div>\n<div class=\"py-6\">\n\nThe API key must have the `control-plane:organization:view-activities` permission.\n\n</div>\n</div>"
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/notificationTypes": {
+      "get": {
+        "summary": "List notification types",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns every notification type the organization is entitled to, each flagged with whether the caller may use it. Types the organization is not entitled to are omitted; types the caller lacks permission to use are returned with `isAvailable` set to false. Every type supports the `ui`, `email` and `slack` channels, so channels are a property of the API rather than of a type. The effective delivery default is a function of type, role and channel, so no per-type default is reported here.",
+        "operationId": "notificationTypesGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationType"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/usageCost": {
@@ -24529,7 +24642,7 @@
       "OrganizationCapabilities": {
         "properties": {
           "snapshots": {
-            "description": "Whether the organization is eligible to use service snapshots: true only when the organization has the snapshots feature enabled, is on a PPv2 tier, and has the backups entitlement — the same conditions enforced when a snapshotConfiguration is saved. Check this before configuring snapshots on a service. Snapshots apply to primary services only, so a secondary/replica service is rejected regardless of organization eligibility.",
+            "description": "Whether the organization is eligible to enable snapshots on its primary services.",
             "type": "boolean"
           }
         }
@@ -25363,42 +25476,27 @@
           },
           "vpcEndpointServiceName": {
             "description": "VPC endpoint service name.",
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "example": "com.amazonaws.vpce.us-east-1.vpce-svc-12345678901234567"
           },
           "vpcResourceConfigurationId": {
             "description": "VPC resource configuration ID. Required for VPC_RESOURCE type.",
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "example": "rcfg-12345678901234567"
           },
           "vpcResourceShareArn": {
             "description": "VPC resource share ARN. Required for VPC_RESOURCE type.",
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "example": "arn:aws:ram:us-east-1:123456789012:resource-share/share-12345678901234567"
           },
           "mskClusterArn": {
             "description": "MSK cluster ARN. Required for MSK_MULTI_VPC type.",
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "arn:aws:kafka:us-east-1:123456789012:cluster/my-cluster"
+            "type": "string",
+            "example": "arn:aws:kafka:us-east-1:123456789012:cluster/my-cluster/a1b2c3d4-5678-90ab-cdef-1234567890ab-1"
           },
           "mskAuthentication": {
             "description": "MSK cluster authentication type. Required for MSK_MULTI_VPC type.",
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "enum": [
               "SASL_IAM",
               "SASL_SCRAM"
@@ -25407,10 +25505,7 @@
           },
           "gcpServiceAttachment": {
             "description": "Private Preview. GCP PSC service attachment URI. Required for GCP_PSC_SERVICE_ATTACHMENT type. Format: projects/{project}/regions/{region}/serviceAttachments/{name}.",
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "example": "projects/my-project/regions/us-central1/serviceAttachments/my-service"
           },
           "customPrivateDnsMappings": {
@@ -25428,7 +25523,11 @@
               }
             ]
           }
-        }
+        },
+        "required": [
+          "description",
+          "type"
+        ]
       },
       "UpdateReversePrivateEndpoint": {
         "properties": {
@@ -25497,7 +25596,7 @@
               "string",
               "null"
             ],
-            "example": "arn:aws:kafka:us-east-1:123456789012:cluster/my-cluster"
+            "example": "arn:aws:kafka:us-east-1:123456789012:cluster/my-cluster/a1b2c3d4-5678-90ab-cdef-1234567890ab-1"
           },
           "mskAuthentication": {
             "description": "MSK cluster authentication type. Required for MSK_MULTI_VPC type.",
@@ -29120,77 +29219,28 @@
       "ClickPipePostSource": {
         "properties": {
           "kafka": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostKafkaSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePostKafkaSource"
           },
           "objectStorage": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostObjectStorageSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePostObjectStorageSource"
           },
           "kinesis": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostKinesisSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePostKinesisSource"
           },
           "pubsub": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostPubSubSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePostPubSubSource"
           },
           "postgres": {
             "$ref": "#/components/schemas/ClickPipeMutatePostgresSource"
           },
           "mysql": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipeMutateMySQLSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipeMutateMySQLSource"
           },
           "bigquery": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipeMutateBigQuerySource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipeMutateBigQuerySource"
           },
           "mongodb": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipeMutateMongoDBSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipeMutateMongoDBSource"
           },
           "validateSamples": {
             "description": "Validate data samples received from data source. It will validate the connection and data availability and correctness. If not enabled, only connection will be validated. This has no effect on Postgres or MySQL pipes, they always only validate the connection and table definitions. This is experimental and can be removed in the future.",
@@ -29201,67 +29251,25 @@
       "ClickPipePatchSource": {
         "properties": {
           "kafka": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePatchKafkaSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePatchKafkaSource"
           },
           "objectStorage": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePatchObjectStorageSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePatchObjectStorageSource"
           },
           "kinesis": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePatchKinesisSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePatchKinesisSource"
           },
           "pubsub": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePatchPubSubSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePatchPubSubSource"
           },
           "postgres": {
             "$ref": "#/components/schemas/ClickPipePatchPostgresSource"
           },
           "mysql": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePatchMySQLSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePatchMySQLSource"
           },
           "mongodb": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePatchMongoDBSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePatchMongoDBSource"
           },
           "validateSamples": {
             "description": "Validate data samples received from data source. It will validate the connection and data availability and correctness. If not enabled, only connection will be validated. This has no effect on Postgres or MySQL pipes, they always only validate the connection and table definitions. This is experimental and can be removed in the future.",
@@ -29300,7 +29308,10 @@
               "type": "string"
             }
           }
-        }
+        },
+        "required": [
+          "database"
+        ]
       },
       "ClickPipePatchDestination": {
         "properties": {
@@ -29337,100 +29348,70 @@
         "properties": {
           "streaming_max_insert_wait_ms": {
             "description": "Streaming max insert wait time. Configures the max wait period before inserting data into the ClickHouse.",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 500,
             "maximum": 60000,
             "example": 5000
           },
           "object_storage_concurrency": {
             "description": "Object storage concurrency. Number of concurrent file processing threads",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 1,
             "maximum": 35,
             "example": 1
           },
           "object_storage_polling_interval_ms": {
             "description": "Object storage polling interval. Configures the refresh interval for querying continuous ingest for new object storage data",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 100,
             "maximum": 3600000,
             "example": 30000
           },
           "object_storage_max_insert_bytes": {
             "description": "Max insert bytes. Number of bytes to process in a single insert batch",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 524288000,
             "maximum": 10737418240,
             "example": 10737418240
           },
           "object_storage_max_file_count": {
             "description": "Max file count. Maximum number of files to process in a single insert batch",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 1,
             "maximum": 10000,
             "example": 100
           },
           "clickhouse_max_threads": {
             "description": "Max threads. Maximum number of concurrent threads for file processing",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 0,
             "maximum": 64,
             "example": 8
           },
           "clickhouse_max_insert_threads": {
             "description": "Max insert threads. Maximum number of concurrent insert threads",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 0,
             "maximum": 16,
             "example": 1
           },
           "clickhouse_min_insert_block_size_bytes": {
             "description": "Min insert block size bytes. Minimum size of data block for insert (in bytes)",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 0,
             "maximum": 10737418240,
             "example": 1073741824
           },
           "clickhouse_max_download_threads": {
             "description": "Max download threads. Maximum number of concurrent download threads",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 0,
             "maximum": 32,
             "example": 4
           },
           "clickhouse_parallel_distributed_insert_select": {
             "description": "Parallel distributed insert select. Parallel distributed insert select setting",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 0,
             "maximum": 2,
             "example": 2
@@ -29442,18 +29423,12 @@
           },
           "object_storage_use_cluster_function": {
             "description": "use cluster function. Whether to use ClickHouse cluster function for distributed processing",
-            "type": [
-              "boolean",
-              "null"
-            ],
+            "type": "boolean",
             "example": true
           },
           "clickhouse_parallel_view_processing": {
             "description": "parallel view processing. Whether to enable pushing to attached views concurrently instead of sequentially",
-            "type": [
-              "boolean",
-              "null"
-            ],
+            "type": "boolean",
             "example": false
           }
         }
@@ -29461,44 +29436,16 @@
       "ClickPipeSchemaDiscoverySource": {
         "properties": {
           "kafka": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostKafkaSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePostKafkaSource"
           },
           "kinesis": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostKinesisSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePostKinesisSource"
           },
           "pubsub": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostPubSubSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePostPubSubSource"
           },
           "objectStorage": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePostObjectStorageSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePostObjectStorageSource"
           }
         }
       },
@@ -29668,6 +29615,9 @@
               "organization_update_private_endpoints",
               "organization_update_pci_compliance",
               "organization_update_hipaa_status",
+              "organization_security_contact_add",
+              "organization_security_contact_remove",
+              "organization_security_contact_replace",
               "organization_update_public_preview",
               "transfer_credits_in",
               "transfer_credits_out",
@@ -35740,6 +35690,13 @@
               "urn:ietf:params:scim:schemas:core:2.0:User"
             ]
           },
+          "id": {
+            "description": "Server-assigned resource ID echoed back by the IdP. Ignored on write.",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ScimUserMeta"
+          },
           "userName": {
             "description": "Unique identifier for the User, typically used by the user to directly authenticate to the service provider.",
             "type": "string",
@@ -35943,6 +35900,21 @@
             "items": {
               "$ref": "#/components/schemas/ScimPatchOperation"
             }
+          },
+          "id": {
+            "description": "Server-assigned resource ID echoed back by the IdP. Ignored on write.",
+            "type": "string"
+          },
+          "meta": {
+            "description": "Server-assigned metadata echoed back by the IdP. Ignored on write.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ScimUserMeta"
+              },
+              {
+                "$ref": "#/components/schemas/ScimGroupMeta"
+              }
+            ]
           }
         },
         "required": [
@@ -35961,6 +35933,13 @@
             "example": [
               "urn:ietf:params:scim:schemas:core:2.0:User"
             ]
+          },
+          "id": {
+            "description": "Server-assigned resource ID echoed back by the IdP. Ignored on write.",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ScimUserMeta"
           },
           "userName": {
             "description": "Unique identifier for the User, typically used by the user to directly authenticate to the service provider.",
@@ -36080,13 +36059,6 @@
           },
           "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
             "$ref": "#/components/schemas/ScimEnterpriseUser"
-          },
-          "id": {
-            "description": "Server-assigned resource ID echoed back by the IdP. Ignored on write.",
-            "type": "string"
-          },
-          "meta": {
-            "$ref": "#/components/schemas/ScimUserMeta"
           }
         },
         "required": [
@@ -36210,6 +36182,13 @@
             "items": {
               "$ref": "#/components/schemas/ScimGroupMember"
             }
+          },
+          "id": {
+            "description": "Server-assigned resource ID echoed back by the IdP. Ignored on write.",
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ScimGroupMeta"
           }
         },
         "required": [
@@ -36912,6 +36891,61 @@
           {
             "$ref": "#/components/schemas/WhoamiApiKey"
           }
+        ]
+      },
+      "NotificationType": {
+        "properties": {
+          "name": {
+            "description": "Stable identifier of the notification type. Never renamed or reused.",
+            "type": "string",
+            "example": "service_backup_failed"
+          },
+          "title": {
+            "description": "Human-readable name of the notification type.",
+            "type": "string",
+            "example": "Backup failed"
+          },
+          "description": {
+            "description": "Longer explanation of what the notification reports. Omitted for types that have none.",
+            "type": "string"
+          },
+          "category": {
+            "description": "Broad grouping the notification type belongs to. Current values: billing, service, clickpipe, postgres. New values may be added over time.",
+            "type": "string",
+            "example": "service"
+          },
+          "severity": {
+            "description": "Relative importance of notifications of this type.",
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ],
+            "example": "warning"
+          },
+          "resourceType": {
+            "description": "Kind of resource a notification of this type is about. Current values: service, organization, clickpipe, postgres. New values may be added over time.",
+            "type": "string",
+            "example": "service"
+          },
+          "isConfigurable": {
+            "description": "Whether the per-role delivery default can be changed. When false the role default is frozen; this does not mean the notification is always delivered.",
+            "type": "boolean"
+          },
+          "isAvailable": {
+            "description": "False when the caller lacks the permission this type requires. The type is still returned, just flagged.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "category",
+          "severity",
+          "resourceType",
+          "isConfigurable",
+          "isAvailable"
         ]
       },
       "OrganizationQuota": {
@@ -38714,7 +38748,11 @@
             "description": "The allowed origins as comma separated list of domains",
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "roles",
+          "openApiKeys"
+        ]
       },
       "ServicePostResponse": {
         "properties": {
@@ -38775,20 +38813,11 @@
             ]
           },
           "tier": {
-            "description": "DEPRECATED for BASIC, SCALE and ENTERPRISE organization tiers. Use `minReplicaMemoryGb`, `maxReplicaMemoryGb`, and `numReplicas` instead. Tier of the service: 'development', 'production', 'dedicated_high_mem', 'dedicated_high_cpu', 'dedicated_standard', 'dedicated_standard_n2d_standard_4', 'dedicated_standard_n2d_standard_8', 'dedicated_standard_n2d_standard_32', 'dedicated_standard_n2d_standard_128', 'dedicated_standard_n2d_standard_32_16SSD', 'dedicated_standard_n2d_standard_64_24SSD'. Production services scale, Development are fixed size. Azure services don't support Development tier",
+            "description": "DEPRECATED for BASIC, SCALE and ENTERPRISE organization tiers. Use `minReplicaMemoryGb`, `maxReplicaMemoryGb`, and `numReplicas` instead. Tier of the service: 'development', 'production'. Production services scale, Development are fixed size. Azure services don't support Development tier",
             "type": "string",
             "enum": [
               "development",
-              "production",
-              "dedicated_high_mem",
-              "dedicated_high_cpu",
-              "dedicated_standard",
-              "dedicated_standard_n2d_standard_4",
-              "dedicated_standard_n2d_standard_8",
-              "dedicated_standard_n2d_standard_32",
-              "dedicated_standard_n2d_standard_128",
-              "dedicated_standard_n2d_standard_32_16SSD",
-              "dedicated_standard_n2d_standard_64_24SSD"
+              "production"
             ],
             "deprecated": true
           },
@@ -38955,7 +38984,13 @@
             "description": "Enables the underlying infra for collecting core dumps. Default is enabled.",
             "type": "boolean"
           }
-        }
+        },
+        "required": [
+          "name",
+          "provider",
+          "region",
+          "ipAccessList"
+        ]
       },
       "ServicePatchRequest": {
         "properties": {
@@ -39011,7 +39046,10 @@
               "awake"
             ]
           }
-        }
+        },
+        "required": [
+          "command"
+        ]
       },
       "ServiceScalingPatchRequest": {
         "properties": {
@@ -39430,7 +39468,10 @@
             "description": "Description of private endpoint",
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "id"
+        ]
       },
       "ServiceClickhouseSettingsPatchRequest": {
         "properties": {
@@ -39446,15 +39487,24 @@
         "properties": {
           "backupPeriodInHours": {
             "description": "The interval in hours between each backup.",
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "backupRetentionPeriodInHours": {
             "description": "The minimum duration in hours for which the backups are available. Must be a whole number of days between 24 (1 day) and 1080 (45 days) — i.e. a multiple of 24.",
-            "type": "number"
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "backupStartTime": {
             "description": "The time in HH:MM format for the backups to be performed (evaluated in UTC timezone). When defined the backup period resets to every 24 hours.",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -39542,7 +39592,10 @@
               "$ref": "#/components/schemas/IpAccessListEntry"
             }
           }
-        }
+        },
+        "required": [
+          "name"
+        ]
       },
       "ApiKeyPatchRequest": {
         "properties": {
@@ -39639,7 +39692,10 @@
               "type": "string"
             }
           }
-        }
+        },
+        "required": [
+          "email"
+        ]
       },
       "ClickPipePostRequest": {
         "properties": {
@@ -39670,43 +39726,34 @@
             "description": "Create the ClickPipe in the Stopped state instead of starting ingestion immediately. Start it later with the state endpoint. Not supported for database ClickPipes.",
             "type": "boolean"
           }
-        }
+        },
+        "required": [
+          "name",
+          "source",
+          "destination"
+        ]
       },
       "ClickPipeSchemaDiscoveryRequest": {
         "properties": {
           "source": {
             "$ref": "#/components/schemas/ClickPipeSchemaDiscoverySource"
           }
-        }
+        },
+        "required": [
+          "source"
+        ]
       },
       "ClickPipePatchRequest": {
         "properties": {
           "name": {
             "description": "Name of the ClickPipe.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "source": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePatchSource"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePatchSource"
           },
           "destination": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipePatchDestination"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipePatchDestination"
           },
           "fieldMappings": {
             "type": "array",
@@ -39716,14 +39763,7 @@
             }
           },
           "settings": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickPipeSettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/ClickPipeSettings"
           }
         }
       },
@@ -39731,38 +39771,26 @@
         "properties": {
           "replicas": {
             "description": "Number of replicas to scale to. Use to scale Kafka pipes.",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 1,
             "maximum": 40
           },
           "concurrency": {
             "description": "Number of concurrency to scale to. Use to scale S3 pipes.",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 0,
             "maximum": 34,
             "deprecated": true
           },
           "replicaCpuMillicores": {
             "description": "CPU in millicores for each replica. Use to scale streaming pipes.",
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": "integer",
             "minimum": 125,
             "maximum": 2000
           },
           "replicaMemoryGb": {
             "description": "Memory in GB for each replica. Use to scale streaming pipes.",
-            "type": [
-              "number",
-              "null"
-            ],
+            "type": "number",
             "minimum": 0.5,
             "maximum": 8
           }
@@ -39779,7 +39807,10 @@
               "resync"
             ]
           }
-        }
+        },
+        "required": [
+          "command"
+        ]
       },
       "ClickPipesCdcScalingPatchRequest": {
         "properties": {
@@ -41166,6 +41197,7 @@
       "name": "Organization",
       "tags": [
         "Organization",
+        "Notifications",
         "Billing",
         "User management",
         "Role Management",

@@ -58,6 +58,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -2301,8 +2302,7 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
+        if (merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         }
@@ -3893,6 +3893,22 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
+
+    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
+    /// Same condition as `checkOperationIsNotCanceled`.
+    auto mutation_cancelled = [merges_blocker = ctx->merges_blocker,
+        partition_id = ctx->future_part->part_info.getPartitionId(),
+        mutate_entry = ctx->mutate_entry]
+    {
+        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
+    };
+    (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
+        mutation_cancelled,
+        [mutation_cancelled]
+        {
+            if (mutation_cancelled())
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+        });
 }
 
 
@@ -4607,8 +4623,14 @@ bool MutateTask::prepare()
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
-    /// It shouldn't be changed by mutation.
-    ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
+    /// Keep the source granularity properties while the part type survives the mutation (e.g. a
+    /// legacy part with non-adaptive granularity must stay non-adaptive). When the mutation
+    /// changes the part type, the new part must keep the granularity info of its own type, set by
+    /// the part constructor: the mark type encodes the part type in the marks file extension, and
+    /// a `Wide` part written with the source's `Compact` extension (e.g. per-column `.cmrk4`
+    /// files) is detected as `Compact` on the next load from disk and breaks.
+    if (ctx->new_data_part->getType() == ctx->source_part->getType())
+        ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.

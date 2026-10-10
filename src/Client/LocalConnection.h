@@ -51,7 +51,7 @@ struct LocalQueryState
     String logsql_table;
     String logsql_time_column;
     String logsql_message_column;
-    bool allow_experimental_logsql_dialect = false;
+    bool enable_logsql_dialect = false;
     /// AST-size limits used only by the JSON dialect.
     UInt64 json_ast_max_depth = 0;
     UInt64 json_ast_max_elements = 0;

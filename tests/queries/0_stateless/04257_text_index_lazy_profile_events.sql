@@ -49,6 +49,7 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = '10M';
 --   dwide     : rows 0..127, 256..383,
 --               512..639, 768..895           -> 512 docs, 2 multi-block segments
 --   eright    : rows 1700..1999              -> 300 docs, 2 dense multi-segments
+--   fhalf     : even rows 0..1022            -> 512 docs, 2 segments of non-consecutive rows
 INSERT INTO tab_lazy_pe
 SELECT number,
     concat(
@@ -59,7 +60,8 @@ SELECT number,
             OR (number >= 256 AND number <= 383)
             OR (number >= 512 AND number <= 639)
             OR (number >= 768 AND number <= 895), ' dwide', ''),
-        if(number >= 1700, ' eright', '')
+        if(number >= 1700, ' eright', ''),
+        if(number < 1024 AND number % 2 = 0, ' fhalf', '')
     )
 FROM numbers(2000);
 
@@ -70,6 +72,7 @@ SELECT 'cardinality bnarrow', count() FROM tab_lazy_pe WHERE hasToken(s, 'bnarro
 SELECT 'cardinality csubset', count() FROM tab_lazy_pe WHERE hasToken(s, 'csubset');
 SELECT 'cardinality dwide',   count() FROM tab_lazy_pe WHERE hasToken(s, 'dwide');
 SELECT 'cardinality eright',  count() FROM tab_lazy_pe WHERE hasToken(s, 'eright');
+SELECT 'cardinality fhalf',   count() FROM tab_lazy_pe WHERE hasToken(s, 'fhalf');
 
 -- ===========================================================================
 -- Tagged queries. Each query carries a unique log_comment so the subsequent
@@ -93,11 +96,11 @@ SELECT count() FROM tab_lazy_pe WHERE hasToken(s, 'adense')
 SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['adense', 'csubset'])
     SETTINGS log_comment = '04257_pe_or_seg_covered';
 
--- Q4: hasAnyTokens(['bnarrow', 'dwide']) -> bnarrow (embedded, density 1.0) sorts
---     before dwide (density 0.57). bnarrow fills bits 0..127; dwide's segment
---     [0..383] is not fully covered, but its packed block 0 (doc range 0..127) IS.
+-- Q4: hasAnyTokens(['csubset', 'fhalf']) -> csubset (density 1.0) sorts before fhalf
+--     (density 0.5). csubset fills bits 0..299; fhalf's segment [0..510] is not fully
+--     covered, but its packed block 0 (doc range 0..254) IS.
 --     Triggers: BlocksSkippedResolved (OR side).
-SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['bnarrow', 'dwide'])
+SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['csubset', 'fhalf'])
     SETTINGS log_comment = '04257_pe_or_block_covered';
 
 -- Q5: brute-force AND ['adense', 'csubset'], forced by the `bruteforce` algorithm.
@@ -126,7 +129,7 @@ SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['bnarrow', 'dwide'])
              log_comment = '04257_pe_and_block_zero';
 
 -- Q8: leapfrog AND ['adense', 'dwide'], forced by the `leapfrog` algorithm.
---     intersectLeapfrog dispatches to intersectTwo, which calls advance() repeatedly.
+--     intersectLeapfrog advances the denser cursor to the doc ids of the sparser one.
 --     Triggers: LeapfrogIntersections, AdvanceCount.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'dwide'])
     SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
