@@ -101,9 +101,9 @@ public:
         DB::NamesAndTypesList names_and_types;
         DB::NameToNameMap physical_names_map;
         std::unordered_set<String> timestamp_ntz_paths;
-        /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: such a
-        /// path is ambiguous and keeps the default annotation.
-        std::unordered_set<String> non_ntz_writer_paths;
+        /// A Delta field name may contain a dot, so two leaves can flatten to one writer path: a path
+        /// that a Delta `timestamp` leaf also takes is ambiguous and keeps the default annotation.
+        std::unordered_set<String> timestamp_writer_paths;
     };
     SchemaResult getSchemaResult();
     const DB::Names & getPartitionColumns() const { return partition_columns; }
@@ -479,7 +479,7 @@ SchemaVisitorData::SchemaResult SchemaVisitorData::getSchemaResult()
     SchemaResult result;
     result.names_and_types = getNamesAndTypesFromList(0, "", "", "", ParentKind::Struct, result);
     chassert(result.names_and_types.size() == type_lists[0]->size());
-    for (const auto & path : result.non_ntz_writer_paths)
+    for (const auto & path : result.timestamp_writer_paths)
         result.timestamp_ntz_paths.erase(path);
     return result;
 }
@@ -506,7 +506,6 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             = parent_writer_path.empty() ? writer_component : parent_writer_path + "." + writer_component;
 
         DB::DataTypePtr type;
-        bool is_leaf = true;
         if (field.is_bool)
         {
             type = DB::DataTypeFactory::instance().get("Bool");
@@ -533,7 +532,6 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
         }
         else
         {
-            is_leaf = false;
             if (!field.child_list_id)
             {
                 throw DB::Exception(
@@ -593,8 +591,8 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
         chassert(type);
         if (field.is_timestamp_ntz)
             result.timestamp_ntz_paths.insert(field_writer_path);
-        else if (is_leaf)
-            result.non_ntz_writer_paths.insert(field_writer_path);
+        else if (field.type == DB::TypeIndex::DateTime64)
+            result.timestamp_writer_paths.insert(field_writer_path);
 
         if (!field.physical_name.empty())
         {

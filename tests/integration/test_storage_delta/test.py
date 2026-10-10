@@ -6804,6 +6804,7 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     # is `timestamp_ntz` and the other `timestamp`, so neither may be annotated from that path.
     # `sg` is the same dotted name against a GROUP: the struct `sg.a.b` flattens onto the ntz leaf's path,
     # but only a leaf path is ever looked up, so the leaf there does keep its annotation.
+    # `si` collides with a non-timestamp leaf, which never reads the annotation, so the ntz leaf keeps it too.
     schema = pa.schema(
         [
             pa.field("id", pa.int32()),
@@ -6843,6 +6844,15 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
                     ]
                 ),
             ),
+            pa.field(
+                "si",
+                pa.struct(
+                    [
+                        pa.field("a.b", pa.timestamp("us")),
+                        pa.field("a", pa.struct([pa.field("b", pa.int32())])),
+                    ]
+                ),
+            ),
         ]
     )
     write_deltalake(
@@ -6872,6 +6882,10 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     sg_inner = log_fields["sg"]["fields"][1]["type"]["fields"][0]["type"]
     assert sg_inner["type"] == "struct", log_fields
     assert sg_inner["fields"][0]["type"] == "integer", log_fields
+    assert log_fields["si"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+    assert (
+        log_fields["si"]["fields"][1]["type"]["fields"][0]["type"] == "integer"
+    ), log_fields
 
     LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
 
@@ -6880,7 +6894,8 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
         "st Tuple(inner_ts DateTime64(6), inner_tz DateTime64(6)), "
         "arr Array(DateTime64(6)), m Map(String, DateTime64(6)), "
         "sc Tuple(`a.b` DateTime64(6), a Tuple(b DateTime64(6))), "
-        "sg Tuple(`a.b` DateTime64(6), a Tuple(b Tuple(x Int32)))) "
+        "sg Tuple(`a.b` DateTime64(6), a Tuple(b Tuple(x Int32))), "
+        "si Tuple(`a.b` DateTime64(6), a Tuple(b Int32))) "
         f"ENGINE = DeltaLakeLocal('{result_file}') "
         "SETTINGS output_format_parquet_compression_method = 'none'"
     )
@@ -6889,7 +6904,8 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
         "(1, ('2024-06-01 12:00:00', '2024-06-01 12:00:00'), "
         "['2024-06-01 12:00:00'], {'k': '2024-06-01 12:00:00'}, "
         "('2024-06-01 12:00:00', tuple('2024-06-01 12:00:00')), "
-        "('2024-06-01 12:00:00', tuple(tuple(42))))",
+        "('2024-06-01 12:00:00', tuple(tuple(42))), "
+        "('2024-06-01 12:00:00', tuple(7)))",
         settings={"session_timezone": "UTC"},
     )
 
@@ -6919,6 +6935,9 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     assert (
         group_type.field("a").type.field("b").type.field("x").type == pa.int32()
     ), written
+    int_collision_type = written.field("si").type
+    assert int_collision_type.field("a.b").type == pa.timestamp("us"), written
+    assert int_collision_type.field("a").type.field("b").type == pa.int32(), written
 
     spark = started_cluster.spark_session
     rows = (
@@ -6933,6 +6952,9 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     rows_sg = spark.read.format("delta").load(result_file).select("sg").collect()
     assert str(rows_sg[0]["sg"]["a.b"]) == "2024-06-01 12:00:00", rows_sg
     assert rows_sg[0]["sg"]["a"]["b"]["x"] == 42, rows_sg
+    rows_si = spark.read.format("delta").load(result_file).select("si").collect()
+    assert str(rows_si[0]["si"]["a.b"]) == "2024-06-01 12:00:00", rows_si
+    assert rows_si[0]["si"]["a"]["b"] == 7, rows_si
 
     # `sc` is read separately because it is still annotated as on master, so Spark refuses it with the
     # reported error. Reading it is also what proves the ambiguous path was not annotated after all.
