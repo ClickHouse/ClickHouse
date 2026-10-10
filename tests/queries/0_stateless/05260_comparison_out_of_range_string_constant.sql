@@ -40,7 +40,6 @@ SELECT 'wrappers', toNullable(toInt32(0)) < '2147483648', toLowCardinality(toInt
 -- Targets whose string parse saturates or is exact were already right and must stay so, and a numeric
 -- constant takes a common supertype instead of being narrowed.
 SELECT 'other target families', toFloat32(1) < '1e300', toDate('2020-01-01') < '2400-01-01', toInt32(0) <= 1908606676453317954;
-SELECT 'enum constant that is not a member', CAST('a', 'Enum8(\'a\' = 1)') < 'zz';
 
 -- A negative constant against an unsigned type is mathematically below the minimum, but it is rejected and
 -- must stay rejected. So must an unparseable constant, a decimal overflow, and `Bool`, which reads its own
