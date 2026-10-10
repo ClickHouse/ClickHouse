@@ -17,6 +17,9 @@ SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET enable_group_by_top_k_optimization = 1;
+-- The assertions below count the rows the heap itself rejects. With the dynamic filter the reading
+-- step drops the rows beyond the heap boundary before they reach the aggregation, so keep it off here.
+SET enable_group_by_top_k_dynamic_filtering = 0;
 SET group_by_top_k_optimization_observation_rows = 65536;
 SET optimize_trivial_group_by_limit_query = 0;
 -- CI randomizes `max_bytes_before_external_group_by`, and a threshold below the size
@@ -36,7 +39,11 @@ SET log_queries = 1;
 
 DROP TABLE IF EXISTS t_no_order_freeze;
 
-CREATE TABLE t_no_order_freeze (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+-- CI randomizes `index_granularity` down to a few rows, which turns the 700000 rows into
+-- tens of thousands of granules and makes every query here take minutes under the flaky
+-- check. The granularity is irrelevant to the heap mechanics under test, so pin it.
+CREATE TABLE t_no_order_freeze (k UInt64) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- The first 200000 rows hold 5 distinct keys, so the heap fills to its capacity
 -- with nothing to reject and outlives the observation window; the next 500000

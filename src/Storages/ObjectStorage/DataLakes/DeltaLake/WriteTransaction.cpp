@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
@@ -35,6 +36,12 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int NETWORK_ERROR;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_lake_commit_fail_before_log_write[];
 }
 
 namespace DeltaLake
@@ -247,6 +254,11 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
+
+    fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
+        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");
+    });
+
     using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
     KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
         ffi::commit(transaction.release(), engine.get()),

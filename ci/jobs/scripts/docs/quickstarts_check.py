@@ -152,14 +152,14 @@ LOCALIZED_CLOUD_SETUP_SIDEBAR_TITLES = {
     "zh": "Cloud 快速入门",
 }
 LOCALIZED_MCP_LABELS = {
-    "ar": "خادم MCP",
-    "es": "servidor MCP",
-    "fr": "serveur MCP",
-    "ja": "MCPサーバー",
-    "ko": "MCP 서버",
-    "pt-BR": "servidor MCP",
-    "ru": "MCP-сервер",
-    "zh": "MCP 服务器",
+    "ar": "إعداد خادم MCP للوثائق",
+    "es": "Configurar el servidor MCP de documentación",
+    "fr": "Configurer le serveur MCP de la documentation",
+    "ja": "ドキュメントMCPサーバーを設定",
+    "ko": "문서 MCP 서버 설정",
+    "pt-BR": "Configurar o servidor MCP da documentação",
+    "ru": "Настроить MCP-сервер документации",
+    "zh": "设置文档 MCP 服务器",
 }
 
 # The badge block the generator rewrites, same pattern as
