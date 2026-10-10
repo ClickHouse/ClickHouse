@@ -44,6 +44,8 @@ SELECT 'thaws', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'Ad
 SELECT 'frozen table spills', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationFrozenTableSpills';
 SELECT 'spills', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationSpills';
 SELECT 'spilled records', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationSpilledRecords';
+SELECT 'spilled bytes', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationSpilledBytes';
+SELECT 'buckets retired', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationBucketsRetired';
 "
 
 # The lazy FINAL replacement's internal deduplication aggregation passes the adaptive settings

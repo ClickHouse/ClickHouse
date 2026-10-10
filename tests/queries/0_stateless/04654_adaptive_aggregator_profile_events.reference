@@ -8,4 +8,6 @@ thaws	1
 frozen table spills	1
 spills	1
 spilled records	1
+spilled bytes	1
+buckets retired	1
 lazy FINAL replacement freezes	1
