@@ -12,8 +12,8 @@ CREATE TABLE t_drift_probe (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
 CREATE TABLE t_drift_build (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0;
-INSERT INTO t_drift_probe SELECT number, number FROM numbers(2000000);
-INSERT INTO t_drift_build SELECT number, number FROM numbers(2000000);
+INSERT INTO t_drift_probe SELECT number, number FROM numbers(200000);
+INSERT INTO t_drift_build SELECT number, number FROM numbers(200000);
 
 SET enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
@@ -45,8 +45,8 @@ FORMAT Null SETTINGS log_comment = 'drift_2_decides_from_statistics';
 
 -- Both tables triple, so the read the statistics were measured against has drifted well past the factor of
 -- two the check tolerates, whichever side of the join it is.
-INSERT INTO t_drift_probe SELECT number + 2000000, number FROM numbers(4000000);
-INSERT INTO t_drift_build SELECT number + 2000000, number FROM numbers(4000000);
+INSERT INTO t_drift_probe SELECT number + 200000, number FROM numbers(400000);
+INSERT INTO t_drift_build SELECT number + 200000, number FROM numbers(400000);
 
 SELECT p.id, sum(p.v), sum(p.v + 1), sum(p.v + 2), sum(p.v + 3), sum(p.v + 4), sum(p.v + 5)
 FROM t_drift_probe p JOIN t_drift_build b ON p.id = b.id GROUP BY p.id
