@@ -354,20 +354,29 @@ void collectProjectionColumnNames(
   *
   * Aliases are ignored, because the projection metadata is built with `ignoreAlias`: the columns
   * `a AS x` and `a AS y` are both stored as the single column `a`.
+  *
+  * Returns the removed columns: they may be spelled differently from the remaining ones
+  * (`count() IGNORE NULLS` and `count()`), and the projection metadata stores a column for every spelling.
   */
-void removeDuplicateProjectionColumns(QueryTreeNodePtr & query_tree)
+QueryTreeNodes removeDuplicateProjectionColumns(QueryTreeNodePtr & query_tree)
 {
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & projection_nodes = query_node.getProjection().getNodes();
 
     QueryTreeNodePtrWithHashIgnoreAliasesSet unique_projection_nodes;
     std::unordered_set<size_t> unique_projection_column_indexes;
+    QueryTreeNodes removed_projection_nodes;
 
     for (size_t i = 0; i < projection_nodes.size(); ++i)
+    {
         if (unique_projection_nodes.emplace(projection_nodes[i]).second)
             unique_projection_column_indexes.emplace(i);
+        else
+            removed_projection_nodes.push_back(projection_nodes[i]);
+    }
 
     query_node.removeUnusedProjectionColumns(unique_projection_column_indexes);
+    return removed_projection_nodes;
 }
 
 StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, VirtualColumnsDescription virtuals, Block data = {})
@@ -1009,12 +1018,15 @@ Block ProjectionDescription::calculateByQuery(
 
     ProjectionUnresolvedNodeNames unresolved_node_names;
     auto query_tree = buildProjectionQueryTree(query_ast_copy ? query_ast_copy : query_ast, source, mut_context, &unresolved_node_names);
-    removeDuplicateProjectionColumns(query_tree);
+    auto removed_projection_nodes = removeDuplicateProjectionColumns(query_tree);
 
     InterpreterSelectQueryAnalyzer interpreter(query_tree, mut_context, select_query_options);
     auto builder = interpreter.buildQueryPipeline();
     std::unordered_map<String, Names> projection_column_names;
-    collectProjectionColumnNames(query_tree, *interpreter.getPlanner().getPlannerContext(), unresolved_node_names, projection_column_names);
+    const auto & planner_context = *interpreter.getPlanner().getPlannerContext();
+    collectProjectionColumnNames(query_tree, planner_context, unresolved_node_names, projection_column_names);
+    for (const auto & removed_projection_node : removed_projection_nodes)
+        collectProjectionColumnNames(removed_projection_node, planner_context, unresolved_node_names, projection_column_names);
     builder.resize(1);
 
     // Generate aggregated blocks with rows less or equal than the original block.
@@ -1033,26 +1045,39 @@ Block ProjectionDescription::calculateByQuery(
     /// Distinct columns of the pipeline must not be brought to the same name: a block with two
     /// columns of the same name (possibly of different types, like `1_UInt8` and `1_Int32` would be)
     /// is ambiguous, and only one of them would be written into the projection part.
+    /// One column of the pipeline may be stored under several names: the projection metadata keeps
+    /// the expressions which are spelled differently but resolved by the Analyzer to the same one
+    /// (`count()` and `count() IGNORE NULLS`) as separate columns, while the pipeline calculates it once.
     Block projection_block;
     for (const auto & column : pipeline_block)
     {
-        /// Prefer the candidate name the projection metadata describes.
-        String projection_column_name = column.name;
+        /// Prefer the candidate names the projection metadata describes.
+        Names projection_column_names_for_column;
         if (auto it = projection_column_names.find(column.name); it != projection_column_names.end())
         {
             const auto & candidates = it->second;
-            auto candidate_it = std::find_if(
-                candidates.begin(), candidates.end(), [&](const String & candidate) { return sample_block.has(candidate); });
-            projection_column_name = candidate_it == candidates.end() ? candidates.front() : *candidate_it;
+            for (const auto & candidate : candidates)
+                if (sample_block.has(candidate))
+                    projection_column_names_for_column.push_back(candidate);
+            if (projection_column_names_for_column.empty())
+                projection_column_names_for_column.push_back(candidates.front());
         }
-        if (projection_block.has(projection_column_name))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Projection {} calculated more than one column named {}: the columns {}. It's a bug",
-                name,
-                projection_column_name,
-                pipeline_block.dumpNames());
-        projection_block.insert({column.column, column.type, projection_column_name});
+        else
+        {
+            projection_column_names_for_column.push_back(column.name);
+        }
+
+        for (const auto & projection_column_name : projection_column_names_for_column)
+        {
+            if (projection_block.has(projection_column_name))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Projection {} calculated more than one column named {}: the columns {}. It's a bug",
+                    name,
+                    projection_column_name,
+                    pipeline_block.dumpNames());
+            projection_block.insert({column.column, column.type, projection_column_name});
+        }
     }
 
     /// Rename parent _part_offset to _parent_part_offset column
