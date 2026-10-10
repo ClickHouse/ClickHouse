@@ -29,8 +29,9 @@ std::string partName(size_t index)
 
 PartsRange makePartsRange(const std::vector<size_t> & sizes, const std::vector<time_t> & ages)
 {
+    EXPECT_EQ(sizes.size(), ages.size());
     PartsRange parts_range;
-    for (size_t i = 0; i < sizes.size(); ++i)
+    for (size_t i = 0; i < std::min(sizes.size(), ages.size()); ++i)
     {
         std::string part_name = partName(i);
         parts_range.push_back(PartProperties
@@ -60,6 +61,22 @@ std::vector<std::string> partNames(const PartsRange & range)
     for (const auto & part : range)
         names.push_back(part.name);
     return names;
+}
+
+/// Two large parts followed by a small one: the right-tail heuristic trims the small part
+/// unless it is disabled for this range.
+PartsRanges selectRightTailRange(SimpleMergeSelector::Settings settings, const std::vector<time_t> & ages)
+{
+    settings.base = 2.0;
+    settings.enable_heuristic_to_align_parts = false;
+    /// Isolate the right-tail heuristic; this one also needs `partitions_stats`.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
+
+    SimpleMergeSelector selector(settings);
+    auto parts_range = makePartsRange({10 * MiB, 10 * MiB, 1024}, ages);
+    std::vector<MergeConstraint> constraints{{100 * MiB, 1000}};
+
+    return selector.select({parts_range}, constraints, nullptr);
 }
 
 PartitionsStatistics makeStatistics(const PartsRange & parts_range, time_t partition_min_age)
@@ -300,4 +317,68 @@ TEST(MergeTreeDataMergerMutator, PartitionNewerThanCurrentTimeIsNotForceMerged)
 
     ASSERT_EQ(best_partition(/*min_age=*/120), "p");
     ASSERT_EQ(best_partition(/*min_age=*/-1), "");
+}
+
+TEST(SimpleMergeSelector, RemovesSmallPartsAtRightByDefault)
+{
+    auto selected = selectRightTailRange(SimpleMergeSelector::Settings{}, {100, 100, 100});
+
+    ASSERT_EQ(selected.size(), 1);
+    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
+}
+
+TEST(SimpleMergeSelector, DoesNotRemoveSmallPartsAtRightWhenAllPartsAreOldEnough)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
+
+    auto selected = selectRightTailRange(settings, {100, 100, 100});
+
+    ASSERT_EQ(selected.size(), 1);
+    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
+}
+
+TEST(SimpleMergeSelector, RemovesSmallPartsAtRightWhenAllPartsAreTooYoung)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
+
+    auto selected = selectRightTailRange(settings, {10, 10, 10});
+
+    ASSERT_EQ(selected.size(), 1);
+    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
+}
+
+TEST(SimpleMergeSelector, RemovesSmallPartsAtRightWhenSomePartsAreTooYoung)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
+
+    auto selected = selectRightTailRange(settings, {100, 10, 100});
+
+    ASSERT_EQ(selected.size(), 1);
+    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1)}));
+}
+
+TEST(SimpleMergeSelector, DoesNotRemoveSmallPartsAtRightAtAgeThreshold)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
+
+    auto selected = selectRightTailRange(settings, {60, 60, 60});
+
+    ASSERT_EQ(selected.size(), 1);
+    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
+}
+
+TEST(SimpleMergeSelector, DoesNotRemoveSmallPartsAtRightWhenHeuristicDisabled)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.enable_heuristic_to_remove_small_parts_at_right = false;
+    settings.merge_selector_min_age_to_disable_right_tail_heuristic = 60;
+
+    auto selected = selectRightTailRange(settings, {10, 10, 10});
+
+    ASSERT_EQ(selected.size(), 1);
+    EXPECT_EQ(partNames(selected[0]), (std::vector<std::string>{partName(0), partName(1), partName(2)}));
 }
