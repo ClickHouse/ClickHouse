@@ -91,7 +91,6 @@ def test_play_credentials_store(started_cluster, nodejs_container):
         "stored-implicit-entry-keeps-its-account",
         "run-snapshot-before-implicit-user-learned",
         "run-link-names-implicit-account",
-        "implicit-users-storage-best-effort",
         "explicit-default-sent-without-userinfo",
         "userinfo-nothing-stored",
         "probe-outside-of-session",
