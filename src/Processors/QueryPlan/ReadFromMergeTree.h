@@ -411,8 +411,12 @@ public:
     /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
     /// does not depend on the direct order of rows can read in reverse order.
     bool canReadInReverseOrder() const;
-    bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
-    void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
+    bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_, size_t key_prefix_size);
+    void resetVirtualRowConversions()
+    {
+        virtual_row_conversion = nullptr;
+        virtual_row_key_prefix_size = 0;
+    }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -865,6 +869,8 @@ private:
     LazyMaterializingRowsPtr lazy_materializing_rows;
 
     ExpressionActionsPtr virtual_row_conversion;
+    /// The sorting key prefix size the virtual row conversion was built for.
+    size_t virtual_row_key_prefix_size = 0;
 
     std::optional<size_t> number_of_current_replica;
 
