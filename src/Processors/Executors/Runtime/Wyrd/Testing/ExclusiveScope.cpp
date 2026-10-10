@@ -1,9 +1,8 @@
 #include <Processors/Executors/Runtime/Wyrd/Testing/ExclusiveScope.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Log.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Unreachable.h>
 
 #include <fmt/format.h>
-
-#include <stdexcept>
 
 namespace DB::Runtime::Wyrd
 {
@@ -12,11 +11,8 @@ ExclusiveScope::Section::Section(ExclusiveScope & scope_, std::string section_na
     : scope(scope_)
     , section_name(std::move(section_name_))
 {
-    if (scope.inside.fetch_add(1) == 0)
-        return;
-
-    scope.inside.fetch_sub(1);
-    throw std::logic_error(fmt::format("{}::{} was entered while another thread was inside the scope", scope.name, section_name));
+    if (scope.inside.fetch_add(1) != 0)
+        abort("{}::{} was entered while another thread was inside the scope", scope.name, section_name);
 }
 
 ExclusiveScope::Section::~Section()

@@ -22,7 +22,7 @@ void logMessage(std::string message)
 
 #elif defined(WYRD_ADVERSARY)
 
-void logMessage(std::string message)
+void logMessage(std::string)
 {
 }
 

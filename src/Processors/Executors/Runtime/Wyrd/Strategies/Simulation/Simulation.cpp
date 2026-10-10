@@ -6,10 +6,17 @@
 #include <fmt/format.h>
 
 #include <optional>
-#include <stdexcept>
 #include <tuple>
 
-namespace DB::Runtime::Wyrd
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+namespace Runtime::Wyrd
 {
 
 struct TraceRecord
@@ -51,7 +58,7 @@ Simulation::~Simulation() = default;
 SimulationResult Simulation::run(std::function<void()> main)
 {
     if (current_simulation)
-        throw std::logic_error("Nested simulation");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested simulation");
 
     setRandomSeed(params.seed);
     createThread(std::move(main));
@@ -60,7 +67,7 @@ SimulationResult Simulation::run(std::function<void()> main)
 
     return SimulationResult{
         .status = status,
-        .exception_message = exception ? getExceptionMessage(exception, false) : std::string(),
+        .exception_message = exception ? getExceptionMessage(exception, false) : broken_invariant,
         .total_steps = steps,
         .digest = digest.get64(),
         .timeline = formatTimeline(timeline),
@@ -85,6 +92,9 @@ SimulationResult::Status Simulation::runLoop()
         next->resume();
         current_simulation = nullptr;
         running_thread = nullptr;
+
+        if (!broken_invariant.empty())
+            return SimulationResult::Status::BrokenInvariant;
 
         if (next->finished())
         {
@@ -219,6 +229,14 @@ void Simulation::trace(std::string message)
 {
     if (params.collect_timeline)
         timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(message), .location = std::nullopt});
+}
+
+void Simulation::brokenInvariant(std::string message)
+{
+    broken_invariant = std::move(message);
+    running_thread->suspend();
+}
+
 }
 
 }

@@ -1,6 +1,8 @@
 #include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
 #include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
 
+#include <stdexcept>
+
 namespace DB::Runtime::Wyrd
 {
 
@@ -56,6 +58,12 @@ void trace(std::string message)
 {
     if (auto * simulation = Simulation::current())
         simulation->trace(std::move(message));
+}
+
+void brokenInvariant(std::string message)
+{
+    if (auto * simulation = Simulation::current())
+        simulation->brokenInvariant(std::move(message));
 }
 
 }

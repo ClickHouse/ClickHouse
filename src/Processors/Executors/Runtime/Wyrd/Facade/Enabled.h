@@ -1,18 +1,6 @@
 #pragma once
 
-#include <Common/Exception.h>
-
-#include <string>
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-namespace Runtime::Wyrd
+namespace DB::Runtime::Wyrd
 {
 
 constexpr bool enabled()
@@ -22,15 +10,6 @@ constexpr bool enabled()
 #else
     return false;
 #endif
-}
-
-constexpr void unreachable([[maybe_unused]] const std::string & message)
-{
-#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", message);
-#endif
-}
-
 }
 
 }

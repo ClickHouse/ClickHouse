@@ -16,5 +16,6 @@ void enterLockFreeScope(std::source_location location = std::source_location::cu
 void leaveLockFreeScope(std::source_location location = std::source_location::current());
 void progressHint(std::source_location location = std::source_location::current());
 void trace(std::string message);
+void brokenInvariant(std::string message);
 
 }

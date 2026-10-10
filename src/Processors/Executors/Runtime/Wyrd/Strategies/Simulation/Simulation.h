@@ -26,6 +26,7 @@ struct SimulationResult
         Deadlock,
         Exception,
         StepLimit,
+        BrokenInvariant,
     };
 
     Status status;
@@ -61,6 +62,7 @@ public:
     void leaveLockFreeScope(std::source_location location);
     void progressHint(std::source_location location);
     void trace(std::string message);
+    void brokenInvariant(std::string message);
 
 private:
     const SimulationParams params;
@@ -77,6 +79,7 @@ private:
     size_t steps = 0;
     SipHash digest;
     std::exception_ptr exception;
+    std::string broken_invariant;
 };
 
 }
