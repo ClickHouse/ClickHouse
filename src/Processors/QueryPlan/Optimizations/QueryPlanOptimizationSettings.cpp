@@ -181,30 +181,35 @@ namespace
 /// plan ends, while leaving the single-replica plan as it is - so that plan's root hash, under which automatic
 /// parallel replicas remembers the boundary, cannot see them.
 ///
-/// Registration rule: a setting belongs here when the build of the replicas plan reads it (in
-/// `findParallelReplicasQuery`, `buildQueryTreeForShard` or `ClusterProxy::executeQueryWithParallelReplicas`), it
-/// can change which subquery is shipped or how it is rewritten, and it does not change the single-replica plan.
-/// The `parallel_replicas_` family is taken whole, by prefix, so a setting added to it is covered without anyone
-/// remembering this place; the price is a missed cache entry when a session changes one that does not move the
-/// boundary. The names below are the ones outside that family.
+/// A setting counts when its name contains one of the fragments below. The match is deliberately loose: it takes
+/// whole families (parallel replicas, plan optimizations, pushdowns, reordering), so a setting added to one is
+/// covered without anyone remembering this place. Precision does not matter here - a setting that does not move
+/// the boundary only costs a missed cache entry, i.e. one build of the replicas plan, as without the cache.
+/// Registration rule for anything outside these families: add it when the build of the replicas plan reads it (in
+/// `findParallelReplicasQuery`, `buildQueryTreeForShard` or `ClusterProxy::executeQueryWithParallelReplicas`) and
+/// it can change which subquery is shipped or how it is rewritten.
 ///
 /// A setting counts only when its value differs from the declared default, so sessions left at the defaults
 /// share one hash; `changes` returns the settings in declaration order, so the order they were set in does not
 /// matter.
 UInt64 parallelReplicasBoundarySettingsHash(const Settings & settings)
 {
-    static constexpr std::string_view settings_outside_family[] = {
+    static constexpr std::string_view name_fragments[] = {
+        "parallel_replicas",
+        "query_plan",
+        "optimiz",
+        "push",
+        "reorder",
         "prefer_global_in_and_join",
         "distributed_product_mode",
         "enable_add_distinct_to_in_subqueries",
-        "serialize_query_plan",
     };
 
     SipHash hash;
     for (const auto & change : settings.changes())
     {
         const std::string_view name = change.name;
-        if (!name.starts_with("parallel_replicas_") && std::ranges::find(settings_outside_family, name) == std::end(settings_outside_family))
+        if (std::ranges::none_of(name_fragments, [&](std::string_view fragment) { return name.contains(fragment); }))
             continue;
         const auto value = Settings::valueToStringUtil(name, change.value);
         if (value == settings.getDefaultValueString(name))
