@@ -834,6 +834,7 @@ DistributedSink::~DistributedSink()
 
 IColumn::Selector DistributedSink::createSelector(const Block & source_block) const
 {
+    storage.checkShardingKeySetsAreBuilt();
     Block current_block_with_sharding_key_expr = source_block;
     storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
 
