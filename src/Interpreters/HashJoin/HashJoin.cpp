@@ -15,6 +15,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
@@ -66,6 +67,8 @@ namespace ProfileEvents
 extern const Event HashJoinBuildMicroseconds;
 extern const Event HashJoinBuiltWithParallelLayout;
 extern const Event HashJoinBuiltWithSerialLayout;
+extern const Event JoinNonJoinedHashTableScans;
+extern const Event JoinNonJoinedHashTableScansSkipped;
 }
 
 namespace CurrentMetrics
@@ -1204,7 +1207,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             bool has_right_not_joined = false;
-            if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
+            if (!flag_per_row && isRightOrFull(kind) && join_mask_col.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
             {
                 not_joined_map = ColumnUInt8::create(block.rows(), static_cast<UInt8>(0));
                 const auto & sel = stored_columns->selector;
@@ -1244,7 +1247,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
                 nullmap_stored_for_block = true;
             }
 
-            if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
+            if (!flag_per_row && not_joined_map && has_right_not_joined)
             {
                 auto & h = worker.nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->addBytes(data->nullmaps_allocated_size, h.allocatedBytes());
@@ -1719,6 +1722,43 @@ void HashJoin::RightTableData::spliceWorkerLists()
     }
 }
 
+namespace
+{
+
+/// Whether every key in the cells that stream `stream_idx` of `num_streams` walks has its used flag set.
+/// A two-level map numbers the cells of bucket `b` from `bucket_cells_prefix[b] + 1`, and its zero key has offset 0.
+/// A one-bucket map is checked as a whole. So is a `PartitionedFixedHashTable`: its buckets are scattered cache lines
+/// of one flat table that keeps no count per bucket, so a stream cannot tell whether its own lines hold the unused key.
+template <typename Map>
+bool allKeysUsed(const Map & map, const JoinStuff::JoinUsedFlags & used_flags, size_t stream_idx, size_t num_streams)
+{
+    if (used_flags.per_offset_flags.size() < map.getBufferSizeInCells() + 1)
+        return false;
+
+    if constexpr (requires { map.bucket_cells_prefix; })
+    {
+        if constexpr (Map::NUM_BUCKETS > 1)
+        {
+            if (map.bucket_cells_prefix.size() != Map::NUM_BUCKETS)
+                return false;
+            for (size_t bucket = stream_idx; bucket < Map::NUM_BUCKETS; bucket += num_streams)
+            {
+                const auto & impl = map.impls[bucket];
+                const size_t begin = map.bucket_cells_prefix[bucket] + 1;
+                if (countBytesInFilter(used_flags.per_offset_flags.data(), begin, begin + impl.getBufferSizeInCells())
+                    != impl.size() - impl.hasZero())
+                    return false;
+                if (impl.hasZero() && !used_flags.getUsedSafe(0))
+                    return false;
+            }
+            return true;
+        }
+    }
+    return countBytesInFilter(used_flags.per_offset_flags.data(), 0, map.getBufferSizeInCells() + 1) == map.size();
+}
+
+}
+
 /// Appends one hash map cell's not-joined rows as a flat run of encoded ref words. Returns the rows
 /// appended.
 template <typename Mapped>
@@ -1895,7 +1935,12 @@ private:
             using Iterator = typename Map::const_iterator;
 
             if (!position.has_value())
-                position = std::make_any<Iterator>(map.begin());
+            {
+                const bool all_keys_used = allKeysUsed(map, *parent.used_flags, stream_idx, num_streams);
+                ProfileEvents::increment(
+                    all_keys_used ? ProfileEvents::JoinNonJoinedHashTableScansSkipped : ProfileEvents::JoinNonJoinedHashTableScans);
+                position = std::make_any<Iterator>(all_keys_used ? map.end() : map.begin());
+            }
 
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();

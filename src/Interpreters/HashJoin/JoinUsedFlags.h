@@ -41,7 +41,13 @@ public:
 
     /// For single disjunct we store all flags in a dedicated container to avoid calculating hash(nullptr) on each access.
     /// Index is the offset in FindResult
-    UsedFlagsForColumns per_offset_flags;
+    /// While the probe runs, accessed only through `offsetFlag` (`std::atomic_ref`).
+    std::vector<UInt8> per_offset_flags;
+
+    std::atomic_ref<UInt8> offsetFlag(size_t offset) const
+    {
+        return std::atomic_ref<UInt8>(const_cast<UInt8 &>(per_offset_flags[offset]));
+    }
 
     bool need_flags{};
 
@@ -59,7 +65,7 @@ public:
             // and there is no value inserted in this JoinUsedFlags before addBlockToJoin finish.
             // So we reinit only when the hash table is rehashed to a larger size.
             if (per_offset_flags.size() < size) [[unlikely]]
-                per_offset_flags = std::vector<std::atomic_bool>(size);
+                per_offset_flags = std::vector<UInt8>(size);
         }
     }
 
@@ -71,7 +77,7 @@ public:
         if constexpr (MapGetter<KIND, STRICTNESS, maps_kind>::flagged)
         {
             need_flags = true;
-            per_offset_flags = std::vector<std::atomic_bool>(size);
+            per_offset_flags = std::vector<UInt8>(size);
         }
     }
 
@@ -107,7 +113,7 @@ public:
         }
     }
 
-    bool getUsedSafe(size_t i) const { return per_offset_flags[i].load(); }
+    bool getUsedSafe(size_t i) const { return offsetFlag(i).load() != 0; }
 
     bool getUsedSafe(UInt32 block_no, size_t row_idx) const
     {
@@ -143,9 +149,9 @@ public:
             }
             else
             {
-                auto & flag = per_offset_flags[f.getOffset()];
+                auto flag = offsetFlag(f.getOffset());
                 if (!flag.load(std::memory_order_relaxed))
-                    flag.store(true, std::memory_order_relaxed);
+                    flag.store(1, std::memory_order_relaxed);
             }
         }
     }
@@ -165,9 +171,9 @@ public:
         }
         else
         {
-            auto & flag = per_offset_flags[offset];
+            auto flag = offsetFlag(offset);
             if (!flag.load(std::memory_order_relaxed))
-                flag.store(true, std::memory_order_relaxed);
+                flag.store(1, std::memory_order_relaxed);
         }
     }
 
@@ -193,7 +199,7 @@ public:
             if constexpr (flag_per_row)
                 return headRowFlag(f.getMapped()).load();
             else
-                return per_offset_flags[f.getOffset()].load();
+                return offsetFlag(f.getOffset()).load() != 0;
         }
         else
         {
@@ -219,14 +225,14 @@ public:
             }
             else
             {
-                auto off = f.getOffset();
+                auto flag = offsetFlag(f.getOffset());
 
                 /// fast check to prevent heavy CAS with seq_cst order
-                if (per_offset_flags[off].load(std::memory_order_relaxed))
+                if (flag.load(std::memory_order_relaxed))
                     return false;
 
-                bool expected = false;
-                return per_offset_flags[off].compare_exchange_strong(expected, true);
+                UInt8 expected = 0;
+                return flag.compare_exchange_strong(expected, 1);
             }
         }
         else
@@ -254,12 +260,14 @@ public:
         }
         else
         {
+            auto flag = offsetFlag(offset);
+
             /// fast check to prevent heavy CAS with seq_cst order
-            if (per_offset_flags[offset].load(std::memory_order_relaxed))
+            if (flag.load(std::memory_order_relaxed))
                 return false;
 
-            bool expected = false;
-            return per_offset_flags[offset].compare_exchange_strong(expected, true);
+            UInt8 expected = 0;
+            return flag.compare_exchange_strong(expected, 1);
         }
     }
 };
