@@ -65,7 +65,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/FailPoint.h>
-#include <base/sleep.h>
 
 
 using namespace DB;
@@ -361,11 +360,6 @@ void writeMessageToFile(
     }
 }
 
-/// A failed conditional write may still become visible after the error, since nothing cancels it
-/// server-side, so a single read-back cannot conclude that it did not land.
-static constexpr size_t COMMIT_RECONCILIATION_ATTEMPTS = 4;
-static constexpr uint64_t COMMIT_RECONCILIATION_DELAY_MS = 200;
-
 static constexpr size_t VERSION_HINT_CONVERGENCE_ATTEMPTS = 4;
 
 /// Only `LostRace` proves that the commit did not happen, so only it licenses deleting the staged files.
@@ -414,6 +408,7 @@ static std::string readMetadataFileContentUncached(
 }
 
 /// Establishes the outcome of a failed conditional metadata write by comparing the stored bytes with the written ones.
+/// Nothing cancels a failed write server-side, so an absent target does not prove that it will not land.
 static MetadataCommitOutcome reconcileMetadataCommit(
     const std::string & storage_metadata_path,
     const std::string & metadata_file_content,
@@ -421,38 +416,31 @@ static MetadataCommitOutcome reconcileMetadataCommit(
     const ObjectStoragePtr & object_storage,
     const ContextPtr & context)
 {
-    auto log = getLogger("IcebergCommitReconciliation");
-
-    for (size_t attempt = 0; attempt < COMMIT_RECONCILIATION_ATTEMPTS; ++attempt)
+    try
     {
-        if (attempt != 0)
-            sleepForMilliseconds(COMMIT_RECONCILIATION_DELAY_MS);
-
-        try
+        fiu_do_on(FailPoints::iceberg_metadata_commit_reconcile_fail,
         {
-            fiu_do_on(FailPoints::iceberg_metadata_commit_reconcile_fail,
-            {
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Failpoint for reconciliation read failure enabled");
-            });
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failpoint for reconciliation read failure enabled");
+        });
 
-            if (!object_storage->exists(StoredObject(storage_metadata_path)))
-                continue;
+        if (!object_storage->exists(StoredObject(storage_metadata_path)))
+            return MetadataCommitOutcome::Unknown;
 
-            auto stored_content
-                = readMetadataFileContentUncached(storage_metadata_path, compression_method, object_storage, context);
-            if (stored_content == metadata_file_content)
-                return MetadataCommitOutcome::Committed;
+        auto stored_content = readMetadataFileContentUncached(storage_metadata_path, compression_method, object_storage, context);
+        if (stored_content == metadata_file_content)
+            return MetadataCommitOutcome::Committed;
 
-            LOG_DEBUG(log, "Metadata file {} holds another writer's content, the commit was lost", storage_metadata_path);
-            return MetadataCommitOutcome::LostRace;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        LOG_DEBUG(
+            getLogger("IcebergCommitReconciliation"),
+            "Metadata file {} holds another writer's content, the commit was lost",
+            storage_metadata_path);
+        return MetadataCommitOutcome::LostRace;
     }
-
-    return MetadataCommitOutcome::Unknown;
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return MetadataCommitOutcome::Unknown;
+    }
 }
 
 /// Once any writer has created `version-hint.text`, every later writer must keep it in sync, or readers with
@@ -614,8 +602,8 @@ bool writeMetadataFile(
     if (outcome == MetadataCommitOutcome::Unknown)
         throw Exception(
             ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
-            "Cannot determine whether the Iceberg commit of metadata file {} succeeded. The table is left untouched: "
-            "resolve the state manually before retrying, because the commit may have taken effect",
+            "Cannot determine whether the Iceberg commit of metadata file {} succeeded, so no staged files were removed. "
+            "Check the table's current metadata before retrying, because the commit may have taken effect",
             storage_metadata_path);
 
     return true;

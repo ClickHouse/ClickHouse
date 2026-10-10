@@ -103,8 +103,7 @@ private:
 /// What the stub store holds and how it fails. The conditional metadata write fails with
 /// `write_error_code`: before storing anything, or after storing the written bytes when
 /// `accept_write` is set. The store then holds `stored_content` (`std::nullopt` for an absent
-/// target), the first `hidden_probes` probes after the write still report it absent, and the
-/// read-back fails when `read_throws` is set. That is exactly the input the commit has to
+/// target), and the read-back fails when `read_throws` is set. That is exactly the input the commit has to
 /// distinguish: the error alone cannot tell a lost race from a response lost after the store
 /// accepted the object. `version-hint.text` holds `hint`, its first `hint_probe_failures` probes
 /// throw, and its first `hint_conflicts` writes lose to another writer that advances it by one.
@@ -113,7 +112,6 @@ struct StoreState
     int write_error_code = ErrorCodes::NETWORK_ERROR;
     bool accept_write = false;
     std::optional<std::string> stored_content;
-    size_t hidden_probes = 0;
     bool read_throws = false;
     std::optional<std::string> hint;
     size_t hint_probe_failures = 0;
@@ -170,7 +168,7 @@ public:
             }
             return state.hint.has_value();
         }
-        return writes > 0 && state.stored_content.has_value() && ++probes_after_write > state.hidden_probes;
+        return writes > 0 && state.stored_content.has_value();
     }
 
     ObjectMetadata getObjectMetadata(const std::string &, bool) const override
@@ -232,7 +230,6 @@ private:
 
     mutable StoreState state;
     mutable size_t writes = 0;
-    mutable size_t probes_after_write = 0;
 };
 
 constexpr auto committed_content = "{\"format-version\":2}";
@@ -308,15 +305,6 @@ TEST(IcebergCommitPropagation, CompressedDocumentOfThisWriterIsCommitted)
     state.accept_write = true;
     for (auto method : methods)
         EXPECT_TRUE(commitAgainst(state, method)) << toContentEncodingName(method);
-}
-
-TEST(IcebergCommitPropagation, TargetBecomingVisibleAfterTheErrorIsCommitted)
-{
-    /// The first read-back still finds nothing, which a single probe would misreport as unknown.
-    StoreState state;
-    state.stored_content = committed_content;
-    state.hidden_probes = 1;
-    EXPECT_TRUE(commitAgainst(state));
 }
 
 TEST(IcebergCommitPropagation, VersionHintAdvancesPastATransientProbeFailure)
