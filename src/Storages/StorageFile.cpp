@@ -3006,6 +3006,9 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     RWLockImpl::LockHolder read_lock;
     if (top_k_filter && !storage->use_table_fd)
         read_lock = storage->lockRwlock(RWLockImpl::Read, ctx);
+    if (format_filter_info->top_k_filter && !need_only_count)
+        orderFilesByTopKBound(format_filter_info, num_streams);
+    /// As late as possible: a writer that the lock does not serialize can still change the files.
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey(*format_filter_info);
     if (top_k_query_condition_cache_key)
     {
@@ -3015,8 +3018,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         top_k_filter_tracking_best_values->track_row_group_best_values = true;
         format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
     }
-    if (format_filter_info->top_k_filter && !need_only_count)
-        orderFilesByTopKBound(format_filter_info, num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
