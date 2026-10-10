@@ -18,6 +18,7 @@
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <base/types.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
@@ -29,6 +30,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <limits>
 
 namespace CurrentMetrics
 {
@@ -139,6 +141,13 @@ namespace
     /// A query whose bound skipped too few buckets to pay for counting the bins counts them only every this many runs.
     constexpr size_t BUCKET_TOP_K_PROBE_PERIOD = 16;
 
+    /// Saturates, so a bin stays an upper bound of the counts added to it.
+    void addToBucketTopKBin(UInt64 & bin, UInt64 count)
+    {
+        if (common::addOverflow(bin, count, bin))
+            bin = std::numeric_limits<UInt64>::max();
+    }
+
     /// The bound needs the counts of the groups: a lone `count()` is stored inline in the cell.
     bool bucketTopKBoundApplies(const AggregatingTransformParams & params)
     {
@@ -159,7 +168,7 @@ namespace
             UInt64 * bucket_bins = bins + bucket * BUCKET_TOP_K_BINS_PER_BUCKET;
             auto & impl = table.impls[bucket];
             for (auto it = impl.begin(), end = impl.end(); it != end; ++it)
-                bucket_bins[(it.getHash() >> 16) & 0xFF] += getInlineCountState(it->getMapped());
+                addToBucketTopKBin(bucket_bins[(it.getHash() >> 16) & 0xFF], getInlineCountState(it->getMapped()));
         }
         return true;
     }
@@ -280,7 +289,7 @@ namespace
         }
         UInt64 * dst = many_data.bucket_top_k_bins.get();
         for (size_t i = 0; i < BUCKET_TOP_K_BINS; ++i)
-            dst[i] += bins[i];
+            addToBucketTopKBin(dst[i], bins[i]);
     }
 
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
