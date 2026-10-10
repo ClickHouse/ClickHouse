@@ -1,4 +1,5 @@
 #include <Processors/PrefetchingConcatProcessor.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -24,6 +25,23 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
         for (auto & input : inputs)
             input.close();
         return Status::Finished;
+    }
+
+    /// After a virtual row was forwarded, the downstream merge may defer this stream until it
+    /// reaches the key from the virtual row. Until it demands data again, keep every input
+    /// stopped: neither the current input nor the prefetch window may read past the announced
+    /// boundary, otherwise each deferred stream would read speculatively (the same contract as
+    /// in `BufferChunksTransform`).
+    if (wait_for_demand_after_virtual_row)
+    {
+        if (!output.canPush())
+        {
+            stopAllInputs();
+            return Status::PortFull;
+        }
+
+        wait_for_demand_after_virtual_row = false;
+        demanded = true;
     }
 
     if (!output.canPush())
@@ -58,7 +76,8 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
         {
             if (idx != current_input_idx && !input.isFinished())
             {
-                bool should_prefetch = idx > current_input_idx
+                bool should_prefetch = demanded
+                    && idx > current_input_idx
                     && idx <= current_input_idx + max_prefetch_inputs
                     && buffers[idx].hasRoom(max_rows_to_buffer, max_bytes_to_buffer);
 
@@ -91,7 +110,18 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     /// Try to output from the current input's buffer.
     if (!buffers[current_input_idx].chunks.empty())
     {
-        output.push(buffers[current_input_idx].pop());
+        auto chunk = buffers[current_input_idx].pop();
+        const bool virtual_row = isVirtualRow(chunk);
+        output.push(std::move(chunk));
+
+        if (virtual_row)
+        {
+            wait_for_demand_after_virtual_row = true;
+            stopAllInputs();
+        }
+        else
+            demanded = true;
+
         return Status::PortFull;
     }
 
@@ -103,6 +133,13 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     }
 
     return Status::NeedData;
+}
+
+void PrefetchingConcatProcessor::stopAllInputs()
+{
+    for (auto & input : inputs)
+        if (!input.isFinished())
+            input.setNotNeeded();
 }
 
 }

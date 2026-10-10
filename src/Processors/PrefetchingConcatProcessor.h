@@ -29,6 +29,12 @@ namespace DB
   * sequentially, so it only has a request outstanding while it still has room to put the
   * result. As in `BufferChunksTransform`, the two limits are combined with OR.
   *
+  * Virtual rows (see `VirtualRowTransform`) keep their deferral contract: after one is forwarded,
+  * all inputs are stopped until downstream demands data again, so a stream that the merge has
+  * deferred does not read past the announced boundary. Before the first demand for real data
+  * (the stream starts with a virtual row while the merge has not reached it yet) no upcoming
+  * input is prefetched either.
+  *
   * This is useful for read-in-order optimization where a single part is split
   * into non-overlapping range groups read by separate sources: we want parallel
   * IO/filtering across groups while preserving the sorted order via concatenation.
@@ -75,11 +81,20 @@ private:
         }
     };
 
+    void stopAllInputs();
+
     size_t current_input_idx = 0;
     size_t max_rows_to_buffer;
     size_t max_bytes_to_buffer;
     size_t max_prefetch_inputs;
     std::vector<Buffer> buffers;
+
+    /// A virtual row was forwarded and downstream has not demanded data since.
+    bool wait_for_demand_after_virtual_row = false;
+
+    /// Downstream has demanded data past the initial virtual row (or received a real chunk),
+    /// so the upcoming inputs can be prefetched.
+    bool demanded = false;
 };
 
 }
