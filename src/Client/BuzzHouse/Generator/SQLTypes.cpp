@@ -1074,16 +1074,14 @@ String ArrayType::MySQLtypeName(RandomGenerator &, const bool) const
 String ArrayType::PostgreSQLtypeName(RandomGenerator & rg, const bool escape) const
 {
     SQLType * nsubtype = subtype.get();
-    Nullable * nl = nullptr;
-    LowCardinality * lc = nullptr;
 
     while (true)
     {
-        if ((nl = dynamic_cast<Nullable *>(nsubtype)))
+        if (auto * nl = dynamic_cast<Nullable *>(nsubtype))
         {
             nsubtype = nl->subtype.get();
         }
-        else if ((lc = dynamic_cast<LowCardinality *>(nsubtype)))
+        else if (auto * lc = dynamic_cast<LowCardinality *>(nsubtype))
         {
             nsubtype = lc->subtype.get();
         }
@@ -1701,12 +1699,16 @@ std::unique_ptr<SQLType> StatementGenerator::randomDateTimeType(RandomGenerator 
     {
         dt->set_type(use64 ? DateTimes::DateTime64 : DateTimes::DateTime);
     }
-    if (use64 && (has_precision = (!(allowed_types & set_any_datetime_precision) || rg.nextSmallNumber() < 5)))
+    if (use64)
     {
-        precision = std::optional<uint32_t>(!(allowed_types & set_any_datetime_precision) ? 6 : (rg.nextSmallNumber() - 1));
-        if (dt)
+        has_precision = !(allowed_types & set_any_datetime_precision) || rg.nextSmallNumber() < 5;
+        if (has_precision)
         {
-            dt->set_precision(precision.value());
+            precision = std::optional<uint32_t>(!(allowed_types & set_any_datetime_precision) ? 6 : (rg.nextSmallNumber() - 1));
+            if (dt)
+            {
+                dt->set_precision(precision.value());
+            }
         }
     }
     if ((!use64 || has_precision) && !fc.timezones.empty() && rg.nextSmallNumber() < 5)
