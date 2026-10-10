@@ -221,6 +221,10 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+
+    /// AggregatingInOrderTransform assumes every run of the sorted key columns yields at least one group,
+    /// which the GROUP BY top-K heap breaks by skipping rows.
+    params.top_k.reset();
 }
 
 void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
@@ -1374,6 +1378,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             value.nulls_directions[i] = nulls_direction;
         }
     }
+
+    /// AggregatingInOrderTransform cannot run the top-K heap.
+    if (top_k && has_in_order)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Top-K parameters on an in-order aggregation in a serialized query plan");
 
     StatsCollectingParams stats_collecting_params(
         stats_key,
