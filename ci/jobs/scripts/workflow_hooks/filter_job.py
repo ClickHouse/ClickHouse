@@ -787,8 +787,8 @@ def should_skip_job(job_name):
     #
     # Pull requests run the family only with the `ci-coverage` label; by default they run the same
     # test configurations on the `arm_binary` build instead (`COVERAGE_REPLACEMENT_JOBS`), which
-    # finds the same failures several times cheaper. Master itself is unaffected (pr_number gate):
-    # its coverage runs must always publish a complete llvm_coverage.info for later PRs to compare against.
+    # finds the same failures several times cheaper. Outside pull requests (pr_number gate) the family is
+    # never skipped here: master does not run it, it runs in the scheduled coverage workflow.
     if (
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name
