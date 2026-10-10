@@ -117,7 +117,7 @@ private:
     std::optional<String> cli_listen_host;
 
     /// Path of the main config file processed in `initialize`, from any of its sources: the
-    /// `--config-file` flag, `./config.xml`, or `getLocalConfigPath`
+    /// `--config-file` flag, `./config.{xml,yaml,yml}`, or `getLocalConfigPath`
     /// (`./clickhouse-local.{xml,yaml,yml}`, `~/.clickhouse-local/config.{xml,yaml,yml}`,
     /// `/etc/clickhouse-local/config.{xml,yaml,yml}`). When none of them exists, it is `config.xml`
     /// in the current directory, which does not exist either: a config embedded in the binary is

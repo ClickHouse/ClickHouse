@@ -62,6 +62,14 @@ public:
         return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
     }
 
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
+    bool isLazyStandIn() const override { return true; }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
@@ -75,13 +83,6 @@ public:
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
         get_nested = {};
-        return nested;
-    }
-
-    /// The real storage if it is already loaded; does not load it.
-    StoragePtr tryGetNested() const
-    {
-        std::lock_guard lock{nested_mutex};
         return nested;
     }
 
