@@ -21,7 +21,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在 ClickHouse 中，materialized view 会随着数据流入其所基于的表而实时更新，作用更像是持续更新的索引。这与其他数据库不同，在那些数据库中，Materialized Views 通常是查询结果的静态快照，必须刷新 (类似于 ClickHouse 的 [可刷新materialized view](/zh/reference/statements/create/view#refreshable-materialized-view)) 。
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Materialized view diagram" />
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 图示" />
 
 <div id="example">
   ## 示例
@@ -1051,9 +1051,9 @@ GROUP BY UserId
   ## 并行处理与串行处理
 </div>
 
-如前一个示例所示，一个表可以作为多个 Materialized Views 的源表。这些视图的执行顺序取决于设置 [`parallel_view_processing`](/zh/reference/settings/session-settings/parallel#parallel_view_processing)。
+如前一个示例所示，一个表可以作为多个 Materialized Views 的源表。这些视图的执行顺序取决于设置 [`parallel_view_processing`](/zh/reference/settings/session-settings#parallel_view_processing)。
 
-默认情况下，此设置的值为 `0` (`false`) ，这意味着 Materialized Views 会按照 `uuid` 顺序顺序执行。
+默认情况下，此设置的值为 `0` (`false`) ，这意味着 Materialized Views 会按照 `uuid` 顺序依次执行。
 
 例如，假设有如下 `source` 表和 3 个 Materialized Views，它们都会将数据行写入 `target` 表：
 
@@ -1102,7 +1102,7 @@ FROM source;
 
 请注意，每个视图在将各自的行插入 `target` 表之前，都会先暂停 1 秒，同时写入其名称和插入时间。
 
-向 `source` 表插入一行大约需要 3 秒，因为每个视图都会顺序执行：
+向 `source` 表插入一行大约需要 3 秒，因为每个视图都会依次执行：
 
 ```sql
 INSERT INTO source VALUES ('test')
@@ -1151,7 +1151,7 @@ ORDER BY uuid ASC
 │ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
 └──────┴──────────────────────────────────────┘
 
-3 rows in set. Elapsed: 0.004 sec.
+3 行，耗时 0.004 秒。
 ```
 
 相反，我们来看看在启用 `parallel_view_processing=1` 的情况下插入一行时会发生什么。启用后，这些视图会并行执行，因此无法保证各行到达目标表的顺序：
@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-在这种情况下，每次向 posts 插入数据时，users CTE 都会重新求值；而插入新的 users 时，materialized view 不会更新——只有在向 posts 插入数据时才会更新。
+在这种情况下，每次向 posts 插入数据时，users CTE 都会重新求值；而插入新的 users 时，materialized view 并不会更新——只有在 posts 插入时才会更新。
 
-通常，CTE 应用于针对 materialized view 所关联的同一个源表的逻辑，或者应确保所引用的表较小且不太可能造成性能瓶颈。或者，也可以考虑采用[与 materialized view 中 JOIN 相同的优化方式](/zh/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)。
+通常，应将 CTE 用于处理与 materialized view 所附加的同一个源表相关的逻辑，或者确保所引用的表较小，不太可能成为性能瓶颈。或者，也可以考虑采用[与 Materialized Views 中 JOIN 相同的优化方式](/zh/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)。

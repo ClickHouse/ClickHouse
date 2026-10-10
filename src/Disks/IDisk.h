@@ -128,9 +128,6 @@ class ISyncGuard
 public:
     ISyncGuard() = default;
     virtual ~ISyncGuard() = default;
-
-    /// Synchronize explicitly, propagating failures instead of logging them in the destructor.
-    virtual void sync();
 };
 
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
@@ -478,9 +475,6 @@ public:
     virtual bool isWriteOnce() const { return false; }
 
     virtual bool supportsHardLinks() const { return true; }
-
-    /// Whether removing a directory with `removeSharedRecursive` is cheaper than removing its files one by one.
-    virtual bool prefersRecursiveRemoval() const { return false; }
 
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }

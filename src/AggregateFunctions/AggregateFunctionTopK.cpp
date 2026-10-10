@@ -101,9 +101,6 @@ public:
         return is_weighted ? "topKWeighted" : "topK";
     }
 
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool include_counts_)
     {
         if (include_counts_)
@@ -345,9 +342,6 @@ public:
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
         return is_weighted ? "topKWeighted" : "topK";
     }
-
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
 
     void ensureCapacity(AggregateFunctionTopKGenericData::Set & set) const
     {
@@ -644,9 +638,9 @@ This function does not provide a guaranteed result. In certain situations, error
 
 **See Also**
 
-- [topKWeighted](/reference/functions/aggregate-functions/topKWeighted)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
-- [approx_top_sum](/reference/functions/aggregate-functions/approxtopsum)
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topKWeighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approx_top_sum.md)
     )";
     FunctionDocumentation::Syntax syntax_topK = R"(
 topK(N)(column)
@@ -667,7 +661,7 @@ topK(N, load_factor, 'counts')(column)
         "Usage example",
         R"(
 SELECT topK(3)(AirlineID) AS res
-FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
+FROM ontime;
         )",
         R"(
 ┌─res─────────────────┐
@@ -689,9 +683,9 @@ Additionally, the weight of the value is taken into account.
 
 **See Also**
 
-- [topK](/reference/functions/aggregate-functions/topK)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
-- [approx_top_sum](/reference/functions/aggregate-functions/approxtopsum)
+- [topK](../../../sql-reference/aggregate-functions/reference/topK.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approx_top_sum.md)
     )";
     FunctionDocumentation::Syntax syntax_topKWeighted = R"(
 topKWeighted(N)(column, weight)
@@ -716,9 +710,9 @@ SELECT topKWeighted(2)(k, w) FROM
 VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
         )",
         R"(
-┌─topKWeighted(2)(k, w)─┐
-│ ['z','x']             │
-└───────────────────────┘
+┌─topKWeighted(2)(k, w)──┐
+│ ['z','x']              │
+└────────────────────────┘
         )"
     },
     {
@@ -767,7 +761,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
         )",
         R"(
 ┌─approx_top_k(2)(k)────┐
-│ [('y',3,0),('z',1,0)] │
+│ [('y',3,0),('x',1,0)] │
 └───────────────────────┘
         )"
     }
@@ -788,9 +782,9 @@ In certain situations, errors might occur and it might return frequent values th
 
 **See Also**
 
-- [topK](/reference/functions/aggregate-functions/topK)
-- [topKWeighted](/reference/functions/aggregate-functions/topKWeighted)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
+- [topK](../../../sql-reference/aggregate-functions/reference/topK.md)
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topKWeighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
     )";
     FunctionDocumentation::Syntax syntax_approx_top_sum = R"(
 approx_top_sum(N[, reserved])(column, weight)

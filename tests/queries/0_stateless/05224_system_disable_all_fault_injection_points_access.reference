@@ -1,6 +1,0 @@
--- without SYSTEM FAILPOINT
-ACCESS_DENIED
--- with SYSTEM FAILPOINT
-OK
--- with another SYSTEM privilege only
-ACCESS_DENIED

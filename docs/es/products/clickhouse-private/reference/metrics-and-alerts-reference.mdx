@@ -1,0 +1,472 @@
+---
+noindex: true
+title: "Referencia de métricas y alertas"
+sidebarTitle: "Métricas y alertas"
+description: "Métricas clave y reglas de alerta recomendadas para los componentes de ClickHouse Private."
+---
+
+Métricas clave y reglas de alerta recomendadas para los componentes de ClickHouse Private. No es una lista exhaustiva: su entorno puede exponer métricas adicionales según la configuración.
+
+***
+
+<div id="operator-metrics">
+  ## Métricas del operador
+</div>
+
+| Métrica                                     | Tipo    | Descripción                                                                                                                                                                                     |
+| ------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `last_cluster_reconcile`                    | Gauge   | Marca temporal de la última reconciliación de un CR determinado (identificado por `app`, p. ej., `c-default-xx-01`). Úsela para determinar si las reconciliaciones se realizan con regularidad. |
+| `controller_runtime_reconcile_errors_total` | Counter | Número total de errores de reconciliación por controlador. Úselo junto con `controller_runtime_reconcile_total` para calcular la tasa de errores de reconciliación.                             |
+| `controller_runtime_reconcile_total`        | Counter | Número total de intentos de reconciliación por controlador.                                                                                                                                     |
+
+***
+
+<div id="clickhouse-server-metrics">
+  ## Métricas del servidor de ClickHouse
+</div>
+
+Las métricas del servidor se exponen a través del endpoint de Prometheus `:8123/metrics` en cada pod de Kubernetes del servidor. Este endpoint **requiere autenticación** y debe usar un usuario dedicado con privilegios de solo lectura.
+
+**Nota:** Las anotaciones `prometheus.io/*` en los pods de Kubernetes del servidor exponen algunas métricas, pero **no** incluyen las métricas `ClickHouse_CustomMetrics_*` que se enumeran a continuación. Configure un PodMonitor o un destino de scrape equivalente para `:8123/metrics`.
+
+| Métrica                                                 | Tipo    | Descripción                                                                                                                                    |
+| ------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`   | Gauge   | Número de partes detached dañadas.                                                                                                             |
+| `ClickHouse_CustomMetric_LostPartCount`                 | Gauge   | Número de partes perdidas, lo que indica pérdida de datos. **Puede haber falsos positivos.**                                                   |
+| `ClickHouseErrorMetric_CANNOT_WRITE_TO_FILE_DESCRIPTOR` | Counter | Recuento de errores CANNOT&#95;WRITE&#95;TO&#95;FILE&#95;DESCRIPTOR. En la mayoría de los casos, indica un disco de caché lleno.               |
+| `ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH`           | Counter | Recuento de errores de discrepancia de suma de comprobación. Puede indicar un error tras una actualización.                                    |
+| `ClickHouseErrorMetric_CORRUPTED_DATA`                  | Counter | Recuento de errores de datos corruptos. Puede indicar un error tras una actualización.                                                         |
+| `ClickHouseErrorMetric_LOGICAL_ERROR`                   | Counter | Recuento de errores lógicos. A menudo, se trata de un error en la base de código.                                                              |
+| `ClickHouseErrorMetric_NOT_ENOUGH_SPACE`                | Counter | Recuento de errores NOT&#95;ENOUGH&#95;SPACE. Puede indicar un PVC lleno, una configuración incorrecta o una gran reserva de datos temporales. |
+| `ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART`    | Counter | Recuento de errores de partes de datos potencialmente dañadas. Indica pérdida de datos en SELECT.                                              |
+| `ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS`          | Counter | Recuento de errores de réplica ya existente. Suele ser un error en el motor de base de datos Replicated.                                       |
+| `ClickHouseMetrics_IsServerShuttingDown`                | Gauge   | `1` si el servidor de ClickHouse está en proceso de apagado.                                                                                   |
+| `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds`  | Gauge   | Duración en segundos durante la que una tabla ha estado en modo READONLY.                                                                      |
+
+***
+
+<div id="clickhouse-keeper-metrics">
+  ## Métricas de ClickHouse Keeper
+</div>
+
+Las métricas de Keeper se exponen a través de `:8001/metrics`. Debe crearse un PodMonitor para los pods de Kubernetes de Keeper a fin de recopilar estas métricas.
+
+> **Nota:** La documentación de las definiciones específicas de las métricas de Keeper aún está pendiente (TODO en el original). El endpoint de métricas está disponible, pero las descripciones individuales de las métricas todavía no se han catalogado.
+
+***
+
+<div id="alert-rule-definitions">
+  ## Definiciones de las reglas de alerta
+</div>
+
+<div id="operator-alerts">
+  ### Alertas del operador
+</div>
+
+<div id="clickhouseoperatornotreconciling">
+  #### ClickhouseOperatorNotReconciling
+</div>
+
+```yaml
+alert: ClickhouseOperatorNotReconciling
+expr: avg(increase(last_cluster_reconcile[90m])) by (app) == 0
+for: 120m
+```
+
+**Propósito:** Genera una alerta cuando el operador no ha completado la reconciliación en 2 horas.
+
+**Acción recomendada:** 1. Compruebe que el pod de Kubernetes del operador esté en ejecución y en buen estado. 2. Revise los logs del operador para ver qué está impidiendo la reconciliación. 3. Verifique que no haya ninguna anotación `clickhouse.com/skip-reconcile` en el CR.
+
+***
+
+<div id="clickhouseoperatorreconcileerrors">
+  #### ClickhouseOperatorReconcileErrors
+</div>
+
+```yaml
+alert: ClickhouseOperatorReconcileErrors
+expr: |
+  (
+    sum(rate(controller_runtime_reconcile_errors_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+    /
+    sum(rate(controller_runtime_reconcile_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+  ) > 0.05
+for: 15m
+```
+
+**Propósito:** Alerta cuando los errores de reconciliación superan el 5 % del total de intentos de reconciliación.
+
+**Acción recomendada:** Revise los logs del operador para identificar mensajes de error y encontrar la causa subyacente.
+
+***
+
+<div id="clickhouse-server-alerts">
+  ### Alertas del servidor de ClickHouse
+</div>
+
+<div id="clickhousebrokendetachedparts">
+  #### ClickHouseBrokenDetachedParts
+</div>
+
+```yaml
+alert: ClickHouseBrokenDetachedParts
+expr: ClickHouse_CustomMetric_NumberOfBrokenDetachedParts > 100
+for: 60m
+```
+
+**Propósito:** Se activa cuando las partes detached dañadas superan las 100 durante al menos 60 minutos.
+
+**Acción recomendada:** - Espere para ver si `ClickHouseDataLoss` también se activa. - Para tablas SMT/RMT: si la alerta de pérdida de datos también se activa, investigue y mitigue primero la pérdida de datos. - Para tablas con metadatos locales (`s3disk` o `s3diskWithCache`): una pequeña cantidad de partes detached dañadas **puede no indicar un incidente** (puede que se creen archivos, pero no se escriban, durante reinicios forzados). - Póngase en contacto con el soporte de ClickHouse si el problema persiste.
+
+***
+
+<div id="clickhousedataloss">
+  #### ClickHouseDataLoss
+</div>
+
+```yaml
+alert: ClickHouseDataLoss
+expr: ClickHouse_CustomMetric_LostPartCount > 0
+```
+
+**Propósito:** Indica una posible pérdida de datos. Se activa inmediatamente cuando se detectan partes perdidas.
+
+**Acción recomendada:** Póngase en contacto con el soporte de ClickHouse. Pasos iniciales de investigación:
+
+1. Consultar las partes perdidas:
+
+   ```sql
+   SELECT database, table, lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+2. Buscar en los logs las partes perdidas:
+
+   ```sql
+   SELECT hostName(), event_time, logger_name, message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+3. Investigar el historial de una parte perdida específica:
+
+   ```sql
+   SELECT event_time, message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%'
+     AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+4. Comprobar si hay falsos positivos:
+
+5. Comprobar si la tabla tiene TTL y si la parte perdida debería haberse eliminado por TTL.
+
+6. Comprobar en `system.query_log` si hay consultas TRUNCATE o DROP PARTITION.
+
+***
+
+<div id="clickhousecannotwritetofiledescriptor">
+  #### ClickHouseCannotWriteToFileDescriptor
+</div>
+
+```yaml
+alert: ClickHouseCannotWriteToFileDescriptor
+expr: |
+    increase(ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**Nota:** La expresión de alerta comprueba `CANNOT_READ_FROM_FILE_DESCRIPTOR`, no `CANNOT_WRITE`. Esto es intencional en la definición original de la alerta: la métrica de lectura se activa en el mismo escenario de error (disco de caché lleno).
+
+**Propósito:** En la mayoría de los casos, indica que el disco de caché está lleno (&quot;no space left on device&quot;).
+
+**Acción recomendada:** - Si el tamaño o el tipo de nodo cambió recientemente, puede deberse a una configuración incorrecta. - Issue conocido: el seguimiento del uso del disco de caché puede ser incorrecto cuando se usa `join_algorithm = 'partial_merge'`. - Pasos de diagnóstico: 1. Ejecute `kubectl exec` en el pod de Kubernetes y luego `df -h` para comprobar el tamaño del disco de caché. 2. Ejecute `SELECT path, max_size FROM system.filesystem_cache_settings` para comprobar el tamaño de caché requerido. 3. Si el disco real es más pequeño que el configurado, el problema es una configuración incorrecta. - Póngase en contacto con el soporte de ClickHouse.
+
+***
+
+<div id="clickhousechecksumsmismatch">
+  #### ClickHouseChecksumsMismatch
+</div>
+
+```yaml
+alert: ClickHouseChecksumsMismatch
+expr: |
+    increase(ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**Propósito:** Las sumas de comprobación de las partes de datos no coinciden. Esto puede indicar un error tras una actualización.
+
+**Acción recomendada:** Ponte en contacto con el soporte de ClickHouse.
+
+***
+
+<div id="clickhousecorrupteddata">
+  #### ClickHouseCorruptedData
+</div>
+
+```yaml
+alert: ClickHouseCorruptedData
+expr: |
+    increase(ClickHouseErrorMetric_CORRUPTED_DATA[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CORRUPTED_DATA > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**Propósito:** Las partes de datos están corruptas. Puede indicar un error tras una actualización.
+
+**Acción recomendada:** Contacte con el soporte de ClickHouse.
+
+***
+
+<div id="clickhouselogicalerrors">
+  #### ClickHouseLogicalErrors
+</div>
+
+```yaml
+alert: ClickHouseLogicalErrors
+expr: |
+    increase(ClickHouseErrorMetric_LOGICAL_ERROR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_LOGICAL_ERROR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**Propósito:** Se produjeron errores lógicos. A menudo se debe a un error en la base de código.
+
+**Acción recomendada:** Póngase en contacto con el soporte de ClickHouse.
+
+***
+
+<div id="clickhousenotenoughspaceerrors">
+  #### ClickHouseNotEnoughSpaceErrors
+</div>
+
+```yaml
+alert: ClickHouseNotEnoughSpaceErrors
+expr: |
+    increase(ClickHouseErrorMetric_NOT_ENOUGH_SPACE[30s]) > 0
+    or (
+        ClickHouseErrorMetric_NOT_ENOUGH_SPACE > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**Propósito:** Se emitieron errores NOT&#95;ENOUGH&#95;SPACE. Esto podría indicar que el PVC está lleno, una configuración incorrecta o una gran reserva de datos temporales.
+
+**Acción recomendada:** Póngase en contacto con el soporte de ClickHouse.
+
+***
+
+<div id="clickhousebrokenpartdetectedonselect">
+  #### ClickHouseBrokenPartDetectedOnSelect
+</div>
+
+```yaml
+alert: ClickHouseBrokenPartDetectedOnSelect
+expr: |
+    increase(ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART[30s]) > 0
+    or (
+        ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**Propósito:** SELECT falló debido al error POTENTIALLY&#95;BROKEN&#95;DATA&#95;PART, lo que indica una pérdida de datos.
+
+**Acción recomendada:** Consulte la acción ClickHouseDataLoss. Revise los logs en busca de la excepción `POTENTIALLY_BROKEN_DATA_PART`. Compruebe `system.errors` si no aparece en los logs. Póngase en contacto con el soporte de ClickHouse.
+
+***
+
+<div id="clickhousereplicaalreadyexists">
+  #### La réplica de ClickHouse ya existe
+</div>
+
+```yaml
+alert: ClickHouseReplicaAlreadyExists
+expr: |
+    increase(ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS[30s]) > 0
+    or (
+        ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**Purpose:** La creación de la réplica falló porque ya existe una réplica en la ruta. Suele tratarse de un error en el motor de base de datos Replicated o en Shared Catalog.
+
+**Recommended action:** Es poco probable que se trate de un error del usuario. Ponte en contacto con el soporte de ClickHouse.
+
+***
+
+<div id="clickhouseservershutdownstuck">
+  #### ClickHouseServerShutdownStuck
+</div>
+
+```yaml
+alert: ClickHouseServerShutdownStuck
+expr: ClickHouseMetrics_IsServerShuttingDown == 1
+for: 70m
+```
+
+**Propósito:** El servidor de ClickHouse lleva más de una hora apagándose.
+
+**Acción recomendada:** Revise los hilos en `system.stack_trace` o con GDB.
+
+***
+
+<div id="clickhousetablereplicasreadonly">
+  #### ClickHouseTableReplicasReadOnly
+</div>
+
+```yaml
+alert: ClickHouseTableReplicasReadOnly
+expr: ClickHouse_CustomMetric_TableReadOnlyDurationSeconds > 3600
+```
+
+**Propósito:** Una tabla lleva más de una hora en modo READONLY.
+
+**Acción recomendada:** 1. Revise los logs del servidor filtrando por los nombres de las tablas afectadas. 2. Revise los logs de Keeper para detectar posibles problemas. 3. Consulte las tablas que actualmente están en modo de solo lectura:
+
+```sql
+SELECT dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds, database, table, hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+`SYSTEM RESTART REPLICA`
+
+***
+
+<div id="diagnostic-sql-queries">
+  ## Consultas SQL de diagnóstico
+</div>
+
+<div id="replication-queue-size-per-table">
+  ### Tamaño de la cola de replicación por tabla
+</div>
+
+**Activación:** Alerta si el recuento supera 100 en cualquier tabla.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+Alternativa:
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table">
+  ### Entrada más antigua en la cola de replicación por tabla
+</div>
+
+**Activación:** Alerta si la entrada más antigua tiene más de 1 día de antigüedad.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+<div id="read-only-tables">
+  ### Tablas de solo lectura
+</div>
+
+```sql
+SELECT
+    dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+    database,
+    table,
+    hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+<div id="lost-parts-by-table">
+  ### Partes perdidas por tabla
+</div>
+
+```sql
+SELECT database, table, lost_part_count AS value
+FROM system.replicas
+WHERE value > 0
+```
+
+<div id="lost-parts-log-search">
+  ### Búsqueda en el log de partes perdidas
+</div>
+
+```sql
+SELECT hostName(), event_time, logger_name, message
+FROM clusterAllReplicas(default, system.text_log)
+WHERE message_format_string = 'Part {} is lost forever.'
+ORDER BY hostName(), event_time
+```
+
+<div id="part-history-investigation">
+  ### Análisis del historial de partes
+</div>
+
+```sql
+SELECT event_time, message
+FROM system.text_log
+WHERE message LIKE '%<part name>%'
+  AND hostName() = '<host>'
+ORDER BY event_time ASC
+```
+
+<div id="cache-disk-configuration-check">
+  ### Comprobación de la configuración del disco de caché
+</div>
+
+```sql
+SELECT path, max_size
+FROM system.filesystem_cache_settings
+```
+
+***
+
+<div id="general-alerting-recommendations">
+  ## Recomendaciones generales sobre alertas
+</div>
+
+Se deben configurar alertas estándar de infraestructura para:
+
+* Pods de Kubernetes en bucle de reinicio
+* Pods de Kubernetes que no se pueden programar
+* Finalizaciones de pods de Kubernetes por OOM
+* Capacidad de los PVC
+* Estado de los nodos
+
+Estas alertas dependen del entorno específico y no están cubiertas por las alertas específicas de ClickHouse anteriores.
+
+El [mixin de Grafana ClickHouse](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) proporciona un dashboard preconfigurado para muchas métricas de ClickHouse.

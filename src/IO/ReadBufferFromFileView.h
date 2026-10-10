@@ -25,7 +25,6 @@ public:
     void prefetch(Priority priority) override;
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
-    void setRequestMap(ByteRangeSet ranges) override;
 
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
@@ -40,9 +39,6 @@ public:
 
 private:
     size_t getRightBound() const;
-
-    /// Clips the map to the view's slice and moves it into the archive.
-    ByteRangeSet toArchiveRanges(const ByteRangeSet & ranges) const;
 
     /// Resizes working buffer if it exceeds the right bound.
     void resizeWorkingBuffer();
