@@ -74,7 +74,10 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
+    /// `row_fraction` scales the rows the conditions keep: the share of the table an index analysis has
+    /// already selected for conditions left out of `nodes`.
+    RelationProfile estimateRelationProfile(
+        const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes, Float64 row_fraction = 1.0) const;
     RelationProfile estimateRelationProfile() const;
 
     /// Return true if the estimator was built from a different ordered sequence of data parts.
@@ -165,7 +168,7 @@ private:
         UInt64 estimateCardinality() const;
     };
 
-    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
+    RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, Float64 row_fraction = 1.0) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:

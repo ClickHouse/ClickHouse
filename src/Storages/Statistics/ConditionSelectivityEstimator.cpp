@@ -109,10 +109,17 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     const StorageMetadataPtr & metadata,
-    const std::vector<RPNBuilderTreeNode> & nodes) const
+    const std::vector<RPNBuilderTreeNode> & nodes,
+    Float64 row_fraction) const
 {
     if (nodes.empty())
-        return estimateRelationProfile();
+    {
+        if (row_fraction == 1.0)
+            return estimateRelationProfile();
+        std::vector<RPNElement> always_true(1);
+        always_true.front().function = RPNElement::ALWAYS_TRUE;
+        return estimateRelationProfileImpl(always_true, metadata, row_fraction);
+    }
 
     /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
     /// FUNCTION_AND token after every node past the first (standard postfix AND for
@@ -135,7 +142,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
             combined_rpn.push_back(and_elem);
         }
     }
-    return estimateRelationProfileImpl(combined_rpn, metadata);
+    return estimateRelationProfileImpl(combined_rpn, metadata, row_fraction);
 }
 
 static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const ColumnStatisticsPtr & stats, const String & column_name)
@@ -169,7 +176,7 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, UInt64 domain_dis
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, Float64 row_fraction) const
 {
     /// walk through the tree and calculate selectivity for every rpn node.
     std::stack<RPNElement *> rpn_stack;
@@ -251,7 +258,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     auto * final_element = rpn_stack.top();
     final_element->finalize(column_estimators, metadata);
     RelationProfile result;
-    Float64 final_rows = final_element->selectivity.true_sel * static_cast<Float64>(total_rows);
+    Float64 final_rows = final_element->selectivity.true_sel * row_fraction * static_cast<Float64>(total_rows);
     /// Clamp to [0, total_rows] and handle NaN/Inf to avoid undefined behavior
     /// in the float-to-UInt64 cast below (UBSAN float-cast-overflow).
     if (!std::isfinite(final_rows) || final_rows < 0)

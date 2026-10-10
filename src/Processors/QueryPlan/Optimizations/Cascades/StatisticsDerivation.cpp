@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
@@ -391,7 +392,8 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             const ActionsDAG::Node * prewhere_node = prewhere_info
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
-            auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
+            auto relation_profile = QueryPlanOptimizations::estimateReadProfile(
+                read_step, *estimator, /*metadata*/ nullptr, analyzed_result.get(), /*filter*/ nullptr, prewhere_node);
 
             /// Index analysis already bounds the read: it cannot emit more than `selected_rows`.
             /// Without a `PREWHERE` the profile carries no filter, its row count is only the

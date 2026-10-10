@@ -24,6 +24,11 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -37,6 +42,7 @@ extern const SettingsUInt64 max_rows_to_read_leaf;
 extern const SettingsOverflowMode read_overflow_mode;
 extern const SettingsOverflowMode read_overflow_mode_leaf;
 extern const SettingsBool use_statistics;
+extern const SettingsBool use_primary_key;
 }
 
 namespace QueryPlanOptimizations
@@ -55,6 +61,161 @@ String dumpStatsForLogs(const RelationStats & stats)
             stats.column_stats
                 | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
             ", "));
+}
+
+/// The conditions a conjunction is made of; any other condition is one conjunct.
+void collectConjuncts(const ActionsDAG::Node * node, std::vector<const ActionsDAG::Node *> & conjuncts)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and")
+    {
+        for (const auto * child : node->children)
+            collectConjuncts(child, conjuncts);
+        return;
+    }
+    conjuncts.push_back(node);
+}
+
+/// How the key analysis represents a condition of a read.
+enum class KeyCoverage : uint8_t
+{
+    /// The condition is estimated by the statistics.
+    None,
+    /// The partition key represents all of the condition: partition pruning already removed the parts
+    /// it rejects, so the parts the statistics describe reflect it.
+    Partition,
+    /// The primary key represents all of the condition: the ranges the primary key analysis keeps
+    /// for it measure it.
+    PrimaryKey,
+};
+
+/// A condition counts only when the key analysis represents all of it: a part it cannot express
+/// (the `v = 1` of `(k = 1 AND v = 1) OR k = 2`) would be lost otherwise.
+KeyCoverage keyCoverage(const ActionsDAG::Node * conjunct, const ReadFromMergeTree & reading)
+{
+    const auto & metadata = reading.getStorageMetadata();
+    const auto & context = reading.getContext();
+    const ActionsDAGWithInversionPushDown dag(conjunct, context, /*boolean_context*/ true);
+    const auto represents = [&](const KeyDescription & key, bool skip_analysis)
+    {
+        /// Only a set already built takes part: estimating must not run a subquery.
+        const KeyCondition condition(dag, context, key.column_names, key.expression,
+            /*single_point*/ false, skip_analysis, /*require_ready_sets*/ true);
+        return !condition.anyUnknownOrAlwaysTrue();
+    };
+    if (metadata->hasPrimaryKey() && represents(metadata->getPrimaryKey(), !context->getSettingsRef()[Setting::use_primary_key]))
+        return KeyCoverage::PrimaryKey;
+    if (metadata->hasPartitionKey() && represents(metadata->getPartitionKey(), /*skip_analysis*/ false))
+        return KeyCoverage::Partition;
+    return KeyCoverage::None;
+}
+
+/// Share of the rows of `parts` in the ranges the primary key analysis keeps for `conjuncts` alone,
+/// starting from whole parts: skip indexes, the query condition cache and the other conditions take no
+/// part, so the statistics of the other conditions are not counted twice. The parts are the ones the
+/// statistics describe, so the share applies to their rows.
+std::optional<Float64> primaryKeyShare(
+    const ReadFromMergeTree & reading, const RangesInDataParts & parts, const std::vector<const ActionsDAG::Node *> & conjuncts)
+{
+    const auto & metadata = reading.getStorageMetadata();
+    const auto & context = reading.getContext();
+    std::vector<KeyCondition> conditions;
+    conditions.reserve(conjuncts.size());
+    for (const auto * conjunct : conjuncts)
+        conditions.emplace_back(ActionsDAGWithInversionPushDown(conjunct, context, /*boolean_context*/ true), context,
+            metadata->getPrimaryKey().column_names, metadata->getPrimaryKey().expression,
+            /*single_point*/ false, /*skip_analysis*/ false, /*require_ready_sets*/ true);
+
+    UInt64 total_rows = 0;
+    UInt64 kept_rows = 0;
+    const auto log = getLogger("RelationStatisticsEstimator");
+    for (const auto & part : parts)
+    {
+        const auto & data_part = part.data_part;
+        MarkRanges ranges{MarkRange(0, data_part->index_granularity->getMarksCountWithoutFinal())};
+        for (const auto & condition : conditions)
+        {
+            if (ranges.empty())
+                break;
+            ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
+                data_part, ranges, /*part_starting_offset_in_query*/ 0, metadata, condition,
+                /*part_offset_condition*/ nullptr, /*total_offset_condition*/ nullptr, /*exact_ranges*/ nullptr,
+                /*pk_to_minmax_slot*/ nullptr, context->getSettingsRef(), log);
+        }
+        total_rows += data_part->rows_count;
+        kept_rows += data_part->index_granularity->getRowsCountInRanges(ranges);
+    }
+    if (total_rows == 0)
+        return {};
+    return std::min(1.0, static_cast<Float64>(kept_rows) / static_cast<Float64>(total_rows));
+}
+
+/// The statistics estimate of a read whose estimate took a default, with the conditions the key
+/// analysis represents taken from that analysis instead: a default for a function of a sorting key
+/// column (`toStartOfQuarter(date) IN (...)`) is then replaced by the rows of the ranges the primary
+/// key keeps for it, and the statistics estimate the rest. The result stays marked as taken from
+/// defaults: it is a better point estimate, not a measurement of the whole filter. Unset when no
+/// condition is represented.
+std::optional<RelationProfile> estimateWithKeyAnalysis(
+    const ReadFromMergeTree & reading,
+    const ConditionSelectivityEstimator & estimator,
+    const StorageMetadataPtr & metadata,
+    const ReadFromMergeTree::AnalysisResult & analysis,
+    const ActionsDAG::Node * filter,
+    const ActionsDAG::Node * prewhere)
+{
+    std::vector<const ActionsDAG::Node *> prewhere_conjuncts;
+    if (prewhere)
+        collectConjuncts(prewhere, prewhere_conjuncts);
+    std::unordered_set<String> prewhere_names;
+    for (const auto * conjunct : prewhere_conjuncts)
+        prewhere_names.insert(conjunct->result_name);
+
+    std::vector<const ActionsDAG::Node *> conjuncts = prewhere_conjuncts;
+    if (filter)
+    {
+        std::vector<const ActionsDAG::Node *> filter_conjuncts;
+        collectConjuncts(filter, filter_conjuncts);
+        /// A condition moved to `PREWHERE` stays in the filter as an input column; it is counted once.
+        for (const auto * conjunct : filter_conjuncts)
+            if (conjunct->type != ActionsDAG::ActionType::INPUT || !prewhere_names.contains(conjunct->result_name))
+                conjuncts.push_back(conjunct);
+    }
+
+    bool any_represented = false;
+    std::vector<const ActionsDAG::Node *> primary_key_conjuncts;
+    std::vector<RPNBuilderTreeNode> rest;
+    for (const auto * conjunct : conjuncts)
+    {
+        switch (keyCoverage(conjunct, reading))
+        {
+            case KeyCoverage::PrimaryKey:
+                primary_key_conjuncts.push_back(conjunct);
+                any_represented = true;
+                break;
+            case KeyCoverage::Partition:
+                any_represented = true;
+                break;
+            case KeyCoverage::None:
+                rest.emplace_back(conjunct, reading.getContext());
+                break;
+        }
+    }
+    if (!any_represented)
+        return {};
+
+    Float64 share = 1.0;
+    if (!primary_key_conjuncts.empty())
+    {
+        const auto measured = primaryKeyShare(reading, analysis.parts_with_ranges, primary_key_conjuncts);
+        if (!measured)
+            return {};
+        share = *measured;
+    }
+    auto profile = estimator.estimateRelationProfile(metadata, rest, share);
+    profile.estimate_from_defaults = true;
+    return profile;
 }
 
 /// Sum of two row counts, unknown when either is; saturates instead of wrapping.
@@ -87,6 +248,21 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
     }
 }
 
+}
+
+RelationProfile estimateReadProfile(
+    const ReadFromMergeTree & reading,
+    const ConditionSelectivityEstimator & estimator,
+    const StorageMetadataPtr & metadata,
+    const ReadFromMergeTree::AnalysisResult * analysis,
+    const ActionsDAG::Node * filter,
+    const ActionsDAG::Node * prewhere)
+{
+    auto profile = estimator.estimateRelationProfile(metadata, filter, prewhere);
+    if (profile.estimate_from_defaults && analysis)
+        if (auto refined = estimateWithKeyAnalysis(reading, estimator, metadata, *analysis, filter, prewhere))
+            profile = std::move(*refined);
+    return profile;
 }
 
 RelationStats estimateGroupStats(const Names & keys, const RelationStats & input_stats)
@@ -231,7 +407,8 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
                     ? static_cast<const ActionsDAG::Node *>(
                           prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+                auto relation_profile = estimateReadProfile(
+                    *reading, *estimator, reading->getStorageMetadata(), analyzed_result.get(), filter, prewhere_node);
                 /// A selectivity estimate that rounds to zero rows does not prove the relation empty;
                 /// one row keeps the joins above from taking it as empty.
                 RelationStats stats{
