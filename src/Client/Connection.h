@@ -299,6 +299,7 @@ private:
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionCodecPtr compression_codec;
+    size_t compression_min_bytes = 0;
 
     /** If not nullptr, used to limit network traffic.
       * Only traffic for transferring blocks is accounted. Other packets don't.
