@@ -34,6 +34,9 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     # writeback load pushed a 967/967-green test over the margin (9.6 s
     # observed vs 8.5 s allowed).
     "test_distributed_respect_user_timeouts/",
+    # 30 GROUP BY queries (15 concurrent) fill a 4 GB container: ~50 s on
+    # a release build, 500-900 s under coverage, vs. a 900 s test timeout.
+    "test_memory_limit/",
 ]
 
 # Additionally skipped on the per-test coverage build (`WITH_COVERAGE_DEPTH`).
@@ -1541,7 +1544,8 @@ def get_optimal_test_batch(
 
     # Parallel groups and Sequential groups separated to allow distinct packing
     parallel_groups = group_by_prefix(parallel_test_modules)
-    sequential_groups = group_by_prefix(sequential_test_modules)
+    # Sequential modules run one at a time, so each is its own unit and no directory has to fit one batch
+    sequential_groups = {m: [m] for m in sorted(sequential_test_modules)}
 
     durations = TEST_DURATIONS
 
@@ -1585,9 +1589,10 @@ def get_optimal_test_batch(
         sequential_batches[idx].extend(sequential_groups[prefix])
         sequential_weights[idx] += dur
 
-    # Round-robin assign unknown-duration sequential groups
+    # Round-robin assign unknown-duration sequential groups, least loaded batch first
+    by_load = sorted(range(total_batches), key=lambda i: (sequential_weights[i], i))
     for i, prefix in enumerate(s_unknown):
-        idx = i % total_batches
+        idx = by_load[i % total_batches]
         sequential_batches[idx].extend(sequential_groups[prefix])
 
     # Prepare batch containers and weights
