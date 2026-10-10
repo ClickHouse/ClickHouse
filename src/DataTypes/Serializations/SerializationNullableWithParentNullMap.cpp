@@ -84,7 +84,18 @@ void SerializationNullableWithParentNullMap::enumerateStreams(
 
     settings.path.push_back(Substream::NullableElements);
     settings.path.back().data = data;
-    nested_serialization->enumerateStreams(settings, callback, data);
+    if (compact_null_map && data.deserialize_state)
+    {
+        /// The nested serialization expects its own deserialization state.
+        auto nested_data = data;
+        nested_data.deserialize_state
+            = checkAndGetState<DeserializeBinaryBulkStateWithCompactParentNullMap>(data.deserialize_state)->nested_state;
+        nested_serialization->enumerateStreams(settings, callback, nested_data);
+    }
+    else
+    {
+        nested_serialization->enumerateStreams(settings, callback, data);
+    }
     settings.path.pop_back();
 }
 
