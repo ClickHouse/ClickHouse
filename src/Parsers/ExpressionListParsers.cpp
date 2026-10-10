@@ -1683,7 +1683,8 @@ private:
     {
         if (is_try)
             return makeASTFunction("accurateCastOrNull", argument, make_intrusive<ASTLiteral>(std::move(type_text)));
-        return createFunctionCast(exactArgument(argument, type_text, pos), std::move(type_text));
+        auto exact_argument = exactArgument(argument, type_text, pos);
+        return createFunctionCast(exact_argument, std::move(type_text));
     }
 
     const bool is_try;

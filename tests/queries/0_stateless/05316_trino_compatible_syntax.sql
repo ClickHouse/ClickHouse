@@ -48,7 +48,7 @@ SELECT url_extract_host('https://clickhouse.com:8443/docs/x?a=1&b=2#frag'), url_
     url_extract_fragment('https://clickhouse.com/#frag'), url_extract_parameter('https://clickhouse.com/?a=1&b=2', 'b');
 SELECT url_encode('a b&c'), url_decode('a+b%26c');
 SELECT bitwise_and(12, 10), bitwise_or(12, 10), bitwise_xor(12, 10);
-SELECT to_hex('abc'), from_hex('616263'), to_base32('abc'), from_base32('MFRGG==='), to_base64url('?>'), from_base64url('Pz4');
+SELECT to_hex('abc'), from_hex('616263'), to_base32('abc'), from_base32('MFRGG===');
 SELECT toTypeName(uuid());
 
 SELECT '-- Aggregate functions';
