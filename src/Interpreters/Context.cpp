@@ -2755,11 +2755,10 @@ QuerySchedulingGroupPtr Context::getSchedulingGroup() const
     // NOTE: Workload cannot be changed after query start, and getSchedulingGroup() should not be called before proper `workload` is set
     if (!scheduling_group)
     {
-        auto make_classifier = [&] { return getResourceManager()->acquire(workload, settings); };
         if (parent_scheduling_group)
-            scheduling_group = parent_scheduling_group->getGroupFor(workload, settings, make_classifier);
+            scheduling_group = parent_scheduling_group;
         else
-            scheduling_group = std::make_shared<QuerySchedulingGroup>(workload, settings, make_classifier());
+            scheduling_group = std::make_shared<QuerySchedulingGroup>(getResourceManager()->acquire(workload, settings));
     }
     return scheduling_group;
 }

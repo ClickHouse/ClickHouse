@@ -222,11 +222,11 @@ struct DistributedQueryTaskDescription
     /// The initiator's changed settings, applied on the worker so query limits and execution-affecting
     /// settings (e.g. max_memory_usage) are honored remotely.
     SettingsChanges settings_changes;
-    /// Id of the `QuerySchedulingGroup` of the initiator's query (the root group, also for a part of
-    /// the query with its own workload or settings). The tasks of all distributed plans of one query
-    /// carry the same id, so a server schedules all its tasks of the query as one query. Empty in a
-    /// task from an initiator that does not send it.
-    String scheduling_group_id;
+    /// Id of the initiator's `QuerySchedulingGroup`. The tasks of all distributed plans of one query
+    /// carry the same id, so a server schedules all its tasks of the query as one query. Not a part of
+    /// the serialized task: it is sent as the `sched_id` parameter of the start request, which a worker
+    /// that does not know it ignores. Empty in a task from an initiator that does not send it.
+    String sched_id;
     /// Wire-format version of the task. A worker that knows only an older version rejects it.
     UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
 };

@@ -241,7 +241,7 @@ SELECT ... SETTINGS workload = 'all', weight_lowering_cpu_seconds = 10, weight_l
 
 A query can run as several parts on one server: its subqueries, the subqueries of a `PARALLEL WITH` query, and the tasks of its distributed query plans (`make_distributed_plan = 1`) that run on this server, including the tasks a server runs as a stateless worker. A query with several distributed subqueries has several distributed plans, and the tasks of all of them are parts of the same query. All parts of one query are scheduled as one query: they share the query's `weight`, `workload_priority` and attained service, so splitting a query into more parts does not give it a larger share of a resource. The parts of a query are served in the order of their requests, so no part is starved by the other parts.
 
-A subquery of a `PARALLEL WITH` query or a task of a distributed query plan that uses a different `workload` or a different value of a setting from the table above, for example with its own `SETTINGS` clause, is scheduled as a separate query. All such parts of one query that use the same `workload` and settings are scheduled together as one separate query. Other subqueries run in the pipeline of their query and are always scheduled as a part of it: the `SETTINGS` clause of such a subquery does not change its `workload` or scheduling settings.
+A part of a query is always scheduled under the `workload` and the settings from the table above of its query. If a part sets its own values, for example with its own `SETTINGS` clause, they are not used for scheduling.
 
 ## Threads vs. CPUs {#threads_vs_cpus}
 

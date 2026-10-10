@@ -215,8 +215,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TO
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
-/// Version 4 added the id of the initiator's scheduling group to the task.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

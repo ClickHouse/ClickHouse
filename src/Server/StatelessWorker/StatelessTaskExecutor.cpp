@@ -111,10 +111,10 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     /// scheduled as one query, together with the initiator if it runs here too (see
     /// `QuerySchedulingGroup`). A task from an initiator that does not send the group id is
     /// scheduled on its own.
-    if (!task_description.scheduling_group_id.empty())
+    if (!task_description.sched_id.empty())
     {
         DistributedQuerySchedulingGroups::instance().join(
-            task_description.scheduling_group_id,
+            task_description.sched_id,
             [&](const QuerySchedulingGroupPtr & registered)
             {
                 query_context->setParentSchedulingGroup(registered);

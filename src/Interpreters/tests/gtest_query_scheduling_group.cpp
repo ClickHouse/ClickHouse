@@ -11,26 +11,15 @@ using namespace DB;
 namespace
 {
 
-QuerySchedulingGroupPtr makeGroup(const String & workload)
+QuerySchedulingGroupPtr makeGroup()
 {
-    return std::make_shared<QuerySchedulingGroup>(workload, ClassifierSettings{}, /*classifier_=*/ nullptr);
+    return std::make_shared<QuerySchedulingGroup>(/*classifier_=*/ nullptr);
 }
 
-ClassifierPtr noClassifier()
+/// Joins the query whose group is registered under `group_id`, the way a task does on a worker.
+QuerySchedulingGroupPtr join(DistributedQuerySchedulingGroups & groups, const String & group_id)
 {
-    return nullptr;
-}
-
-/// Joins the query whose group is registered under `group_id` as a part with workload `workload`,
-/// the way a task does on a worker.
-QuerySchedulingGroupPtr joinAs(DistributedQuerySchedulingGroups & groups, const String & group_id, const String & workload)
-{
-    return groups.join(group_id, [&](const QuerySchedulingGroupPtr & registered)
-    {
-        if (registered)
-            return registered->getGroupFor(workload, ClassifierSettings{}, noClassifier);
-        return makeGroup(workload);
-    });
+    return groups.join(group_id, [](const QuerySchedulingGroupPtr & registered) { return registered ? registered : makeGroup(); });
 }
 
 }
@@ -48,7 +37,7 @@ TEST(DistributedQuerySchedulingGroups, ConcurrentJoinGetsOneGroup)
         threads.emplace_back([&, i]
         {
             start.arrive_and_wait();
-            joined[i] = joinAs(groups, "query", "w");
+            joined[i] = join(groups, "query");
         });
     for (auto & thread : threads)
         thread.join();
@@ -57,62 +46,24 @@ TEST(DistributedQuerySchedulingGroups, ConcurrentJoinGetsOneGroup)
         EXPECT_EQ(group, joined.front());
 }
 
-/// Parts that do not accept the registered group share a derived group per workload, and the
-/// registered group stays.
-TEST(DistributedQuerySchedulingGroups, MismatchedPartsShareDerivedGroup)
+/// A part joins the group the initiator registered.
+TEST(DistributedQuerySchedulingGroups, PartJoinsRegisteredGroup)
 {
     DistributedQuerySchedulingGroups groups;
-    auto initiator = makeGroup("w");
+    auto initiator = makeGroup();
     groups.add("query", initiator);
 
-    auto other = joinAs(groups, "query", "other");
-    EXPECT_NE(other, initiator);
-    EXPECT_EQ(joinAs(groups, "query", "other"), other);
-    EXPECT_NE(joinAs(groups, "query", "third"), other);
-
-    EXPECT_EQ(joinAs(groups, "query", "w"), initiator);
-}
-
-/// The query's group keeps its derived groups, so parts with the same workload that run one after
-/// another join the same group, and the derived groups go away with the query's group.
-TEST(DistributedQuerySchedulingGroups, QueryGroupKeepsDerivedGroups)
-{
-    DistributedQuerySchedulingGroups groups;
-    auto root = joinAs(groups, "query", "w");
-    std::weak_ptr<QuerySchedulingGroup> weak_other = joinAs(groups, "query", "other");
-
-    ASSERT_FALSE(weak_other.expired());
-    EXPECT_EQ(joinAs(groups, "query", "other"), weak_other.lock());
-
-    root.reset();
-    EXPECT_TRUE(weak_other.expired());
-}
-
-/// Parts of the query find the same groups through the query's group and through a group derived
-/// from it, and every derived group reports the query's group as its root.
-TEST(DistributedQuerySchedulingGroups, DerivedGroupsAreFlat)
-{
-    auto root = makeGroup("w");
-    auto other = root->getGroupFor("other", ClassifierSettings{}, noClassifier);
-    ASSERT_NE(other, root);
-
-    EXPECT_EQ(other->getRoot(), root);
-    EXPECT_EQ(root->getRoot(), root);
-    EXPECT_EQ(other->getGroupFor("w", ClassifierSettings{}, noClassifier), root);
-    EXPECT_EQ(other->getGroupFor("other", ClassifierSettings{}, noClassifier), other);
-
-    auto third = other->getGroupFor("third", ClassifierSettings{}, noClassifier);
-    EXPECT_EQ(third->getRoot(), root);
-    EXPECT_EQ(root->getGroupFor("third", ClassifierSettings{}, noClassifier), third);
+    EXPECT_EQ(join(groups, "query"), initiator);
+    EXPECT_NE(join(groups, "other query"), initiator);
 }
 
 /// A part that finds only an expired entry registers its own group.
 TEST(DistributedQuerySchedulingGroups, ExpiredGroupIsReplaced)
 {
     DistributedQuerySchedulingGroups groups;
-    groups.add("query", makeGroup("w"));
+    groups.add("query", makeGroup());
 
-    auto group = joinAs(groups, "query", "w");
+    auto group = join(groups, "query");
     ASSERT_NE(group, nullptr);
-    EXPECT_EQ(joinAs(groups, "query", "w"), group);
+    EXPECT_EQ(join(groups, "query"), group);
 }

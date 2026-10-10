@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const String & sched_id, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -49,6 +49,9 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     /// Absent when nothing is collected, so an older worker sees the request it has always seen.
     if (collectors.any())
         uri.addQueryParameter("collect", collectors.toString());
+    /// Id of the query's scheduling group; an older worker ignores the parameter.
+    if (!sched_id.empty())
+        uri.addQueryParameter("sched_id", sched_id);
 
     auto write_body_callback = [&task_serializer] (std::ostream & os)
     {
@@ -84,7 +87,7 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
         serializeTask(task_description, buf);
     };
 
-    return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
+    return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, task_description.sched_id, context);
 }
 
 /// Get task status by its id.

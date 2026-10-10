@@ -29,17 +29,6 @@ struct ClassifierSettings
     Float64 weight_lowering_cpu_seconds = 0.0;
     Float64 weight_lowering_io_bytes = 0.0;
     Priority priority;
-
-    bool operator==(const ClassifierSettings & other) const
-    {
-        return throw_on_unknown_workload == other.throw_on_unknown_workload
-            && weight == other.weight
-            && weight_lowering_factor == other.weight_lowering_factor
-            && weight_lowering_age_seconds == other.weight_lowering_age_seconds
-            && weight_lowering_cpu_seconds == other.weight_lowering_cpu_seconds
-            && weight_lowering_io_bytes == other.weight_lowering_io_bytes
-            && priority.value == other.priority.value;
-    }
 };
 
 /*

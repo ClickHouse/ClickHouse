@@ -1025,14 +1025,13 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    /// Scheduling group of the query, see `QuerySchedulingGroup`. Created on the first call from the
-    /// `workload` and scheduling settings. With a parent group, it is the parent group if it accepts
-    /// them, otherwise the group derived from the parent group for them.
+    /// Scheduling group of the query, see `QuerySchedulingGroup`. The parent group if there is one,
+    /// otherwise created on the first call from the `workload` and scheduling settings.
     /// NOTE: Workload cannot be changed after the group is created.
     QuerySchedulingGroupPtr getSchedulingGroup() const;
     /// Makes this query context a part of the query that owns `group`: the query is scheduled together
-    /// with the other parts of `group`. If it changes the workload or a scheduling setting, it is
-    /// scheduled together with the other parts of the query that use the same ones.
+    /// with the other parts of `group`, under the workload and scheduling settings of `group`. Its own
+    /// `workload` and scheduling settings are not used for scheduling.
     /// Call after `makeQueryContext` and before the group is created.
     void setParentSchedulingGroup(QuerySchedulingGroupPtr group);
     /// Release the query slot early so the client can reuse it for its next query.

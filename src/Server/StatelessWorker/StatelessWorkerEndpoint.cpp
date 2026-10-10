@@ -96,9 +96,6 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeStringBinary(change.name, out);
         writeFieldBinary(change.value, out);
     }
-
-    if (task_description.serialization_version >= 4)
-        writeStringBinary(task_description.scheduling_group_id, out);
 }
 
 namespace
@@ -195,9 +192,6 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
             task_description.settings_changes.emplace_back(name, value);
         }
     }
-
-    if (version >= 4)
-        readStringBinary(task_description.scheduling_group_id, in);
 }
 
 }
@@ -218,6 +212,8 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         /// Deserialize task fields from the request body
         DistributedQueryTaskDescription task_description;
         deserializeTask(task_description, *body);
+        if (params.has("sched_id"))
+            task_description.sched_id = params.get("sched_id");
         /// Read the rest of the body, otherwise the keep-alive connection is closed.
         body->ignoreAll();
         body.reset();

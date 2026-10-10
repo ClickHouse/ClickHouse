@@ -20,45 +20,10 @@ namespace ErrorCodes
     extern const int QUERY_SLOT_ACQUISITION_TIMEOUT;
 }
 
-QuerySchedulingGroup::QuerySchedulingGroup(
-    String workload_, const ClassifierSettings & settings_, ClassifierPtr classifier_, std::weak_ptr<QuerySchedulingGroup> parent_)
+QuerySchedulingGroup::QuerySchedulingGroup(ClassifierPtr classifier_)
     : id(UUIDHelpers::generateV4())
-    , workload(std::move(workload_))
-    , settings(settings_)
     , classifier(std::move(classifier_))
-    , parent(std::move(parent_))
 {
-}
-
-bool QuerySchedulingGroup::accepts(const String & workload_, const ClassifierSettings & settings_) const
-{
-    return workload == workload_ && settings == settings_;
-}
-
-std::shared_ptr<QuerySchedulingGroup> QuerySchedulingGroup::getRoot()
-{
-    if (auto root = parent.lock())
-        return root;
-    return shared_from_this();
-}
-
-std::shared_ptr<QuerySchedulingGroup> QuerySchedulingGroup::getGroupFor(
-    const String & workload_, const ClassifierSettings & settings_, const std::function<ClassifierPtr()> & make_classifier)
-{
-    // Derived groups are kept by the query's group only, so a query has one level of them.
-    if (auto root = parent.lock())
-        return root->getGroupFor(workload_, settings_, make_classifier);
-
-    if (accepts(workload_, settings_))
-        return shared_from_this();
-
-    std::lock_guard lock{derived_mutex};
-    for (const auto & group : derived)
-        if (group->accepts(workload_, settings_))
-            return group;
-    auto group = std::make_shared<QuerySchedulingGroup>(workload_, settings_, make_classifier(), weak_from_this());
-    derived.push_back(group);
-    return group;
 }
 
 std::shared_ptr<QuerySlot> QuerySchedulingGroup::acquireQuerySlot(ResourceLink link, std::chrono::steady_clock::time_point admission_deadline)

@@ -1355,7 +1355,7 @@ public:
         /// the local executor instead.
         chassert(task_to_host_map);
         /// Tasks of the query that run on this server are scheduled together with the query.
-        auto scheduling_group = context->getSchedulingGroup()->getRoot();
+        auto scheduling_group = context->getSchedulingGroup();
         DistributedQuerySchedulingGroups::instance().add(toString(scheduling_group->getId()), scheduling_group);
         QueryStatusPtr query_status = context->getProcessListElement();
         Strings worker_hosts;
@@ -1906,7 +1906,7 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
-        task_description.scheduling_group_id = toString(context->getSchedulingGroup()->getRoot()->getId());
+        task_description.sched_id = toString(context->getSchedulingGroup()->getId());
 
         /// Ask for worker logs only when the initiator has a queue to receive them (e.g. not over
         /// HTTP without a framing format); the worker attaches its log collector accordingly.
