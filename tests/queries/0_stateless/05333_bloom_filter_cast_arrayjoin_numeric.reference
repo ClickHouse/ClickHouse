@@ -22,7 +22,27 @@ UInt64 to Int64 array coercion preserves rows	1
 UInt64 to Int64 array coercion declines idx_nums_numeric	1
 UInt64 nullable array wrapper preserves rows	1
 UInt64 nullable array wrapper declines idx_nums_numeric	1
-UInt64 numeric constant append preserves rows	1
-UInt64 numeric constant append declines idx_nums_constant	1
+UInt64 numeric constant append selective needle preserves typed rows	1
+UInt64 numeric constant append selective needle prunes 1/16	1
+UInt64 numeric constant mismatch preserves typed rows	1
+UInt64 numeric constant mismatch declines idx_nums_constant, reads 16/16	1
 signedzero expression returns UInt64 and preserves matching row	1
 signedzero bit-mismatched constant declines idx_signedzero	1
+DateTime64 CAST parquet dictionary flag 0 keeps named index at 1/16	1
+DateTime64 CAST parquet dictionary flag 0 full OFF/ON typed rows	1
+Enum8 CAST parallel-parsing flag 0 keeps named index at 1/16	1
+Enum8 CAST parallel-parsing flag 0 full OFF/ON typed rows	1
+DateTime64(7) CAST-to-String default context preserves typed rows	1
+DateTime64(7) CAST-to-String format-only mismatch declines index, reads 16/16	1
+DateTime64(7) CAST-to-String format-only mismatch full OFF/ON typed rows	1
+DateTime64(7) CAST-to-String four format flags full OFF/ON typed rows	1
+DateTime64(7) trailing-zero mismatch full OFF/ON typed rows	1
+DateTime64(7) trailing-zero mismatch declines idx_dt64_cast_text, reads 16/16	1
+DateTime64 array wrapper selective needle preserves typed rows	1
+DateTime64 array wrapper selective needle prunes 1/16	1
+DateTime64 array wrapper mismatch preserves complete typed rows	1
+DateTime64 array wrapper mismatch declines named index, reads 16/16	1
+UUID array wrapper selective needle preserves typed rows	1
+UUID array wrapper selective needle prunes 1/16	1
+UUID array wrapper mismatch preserves complete typed rows	1
+UUID array wrapper mismatch declines named index, reads 16/16	1

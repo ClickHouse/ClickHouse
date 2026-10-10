@@ -173,3 +173,12 @@ Nullable-LHS IN NULL-bearing Set: declines named index, reads 16/16	1
 Nullable-LHS GLOBAL IN NULL-bearing Set: declines named index, reads 16/16	1
 Nullable-LHS IN NULL-bearing Set full OFF/ON exact multiset	1
 Nullable-LHS GLOBAL IN NULL-bearing Set full OFF/ON exact multiset	1
+UInt8 CAST allow-special serialization flag 0 keeps named index at 2/16	1
+UInt8 CAST parallel-formatting flag 0 keeps named index at 2/16	1
+String-to-DateTime four format flags 0 keep named index at 2/16	1
+UInt8 CAST precise-float context mismatch declines named index, reads 16/16	1
+UInt8 CAST allow-special serialization flag 0 full OFF/ON typed rows	1
+UInt8 CAST parallel-formatting flag 0 full OFF/ON typed rows	1
+UInt8 CAST two format flags 0 full OFF/ON typed rows	1
+String-to-DateTime four format flags 0 full OFF/ON typed rows	1
+UInt8 CAST precise-float context mismatch full OFF/ON typed rows	1

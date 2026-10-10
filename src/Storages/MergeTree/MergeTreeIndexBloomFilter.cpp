@@ -40,6 +40,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
+#include <Functions/FunctionConversionMatching.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Parsers/ASTIdentifier.h>
@@ -517,6 +518,53 @@ bool compareColumnStringStorage(
         && std::equal(left_chars.begin(), left_chars.end(), right_chars.begin(), right_chars.end());
 }
 
+bool compareFixedWidthArrayStorage(
+    const DataTypePtr & left_type,
+    const DataTypePtr & right_type,
+    const IColumn & left_data,
+    const IColumn & right_data,
+    ExpressionMatchBudget & budget)
+{
+    if (!isSupportedBloomFilterArrayType(left_type) || !isSupportedBloomFilterArrayType(right_type))
+        return false;
+
+    const auto * left_array = typeid_cast<const ColumnArray *>(&left_data);
+    const auto * right_array = typeid_cast<const ColumnArray *>(&right_data);
+    if (!left_array || !right_array)
+        return false;
+
+    const auto & left_offsets = left_array->getOffsets();
+    const auto & right_offsets = right_array->getOffsets();
+    if (left_offsets.size() != 1 || right_offsets.size() != 1)
+        return false;
+
+    const size_t left_size = left_offsets[0];
+    const size_t right_size = right_offsets[0];
+    const IColumn & left_nested = left_array->getData();
+    const IColumn & right_nested = right_array->getData();
+    if (left_size > ExpressionMatchBudget::max_array_elements || right_size > ExpressionMatchBudget::max_array_elements
+        || left_size != right_size || left_size != left_nested.size() || right_size != right_nested.size()
+        || !left_nested.isFixedAndContiguous() || !right_nested.isFixedAndContiguous())
+        return false;
+
+    const size_t left_value_size = left_nested.sizeOfValueIfFixed();
+    const size_t right_value_size = right_nested.sizeOfValueIfFixed();
+    if (left_value_size == 0 || left_value_size != right_value_size
+        || left_size > ExpressionMatchBudget::max_constant_bytes / left_value_size)
+        return false;
+
+    const size_t expected_bytes = left_size * left_value_size;
+    const auto left_raw = left_nested.getRawData();
+    const auto right_raw = right_nested.getRawData();
+    if (left_raw.size() != expected_bytes || right_raw.size() != expected_bytes
+        || left_raw.size() > ExpressionMatchBudget::max_constant_bytes
+        || right_raw.size() > ExpressionMatchBudget::max_constant_bytes
+        || !budget.consume(2 + left_size + left_raw.size() + right_raw.size()))
+        return false;
+
+    return std::equal(left_raw.begin(), left_raw.end(), right_raw.begin(), right_raw.end());
+}
+
 template <typename T>
 bool compareSupportedNumericConstant(
     const DataTypePtr & left_type,
@@ -636,6 +684,10 @@ bool compareSupportedConstant(
         return left_strings && right_strings
             && compareColumnStringStorage(*left_strings, *right_strings, left_size, budget);
     }
+
+    if (mode == ExpressionMatchMode::ArrayJoinWrapper
+        && compareFixedWidthArrayStorage(left.result_type, right.result_type, left_data, right_data, budget))
+        return true;
 
     return false;
 }
@@ -769,6 +821,9 @@ bool isSupportedDirectFunctionPair(
     }
 
     /// IFunctionBase::updateHash is the semantic-context hook for captured value-affecting state.
+    if (areCastsEquivalentForBloomFilterExpressionMatching(*left.function_base, *right.function_base))
+        return true;
+
     SipHash left_hash;
     SipHash right_hash;
     left.function_base->updateHash(left_hash);

@@ -5425,6 +5425,8 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
+    bool isEquivalentForBloomFilterExpressionMatching(const FunctionCast & other) const;
+
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override;
 
     String getName() const override { return cast_name; }

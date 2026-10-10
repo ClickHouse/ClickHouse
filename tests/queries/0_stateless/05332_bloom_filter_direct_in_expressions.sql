@@ -457,6 +457,132 @@ SELECT 'Nullable-LHS GLOBAL IN NULL-bearing Set full OFF/ON exact multiset',
        full_scan = indexed AND full_scan = [(toUInt64(1), 'target'), (toUInt64(16), 'target')]
 FORMAT TSVRaw;
 
+-- Format-only context members must not hide the equivalent scalar CAST index.
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_cast_u8_string') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UInt8 CAST allow-special serialization flag 0 keeps named index at 2/16', name_row > 0 AND selected = 2 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_cast_u8_string
+      WHERE CAST(x, 'String') IN ('7')
+      SETTINGS allow_special_serialization_kinds_in_output_formats = 0, use_skip_indexes = 1, max_rows_to_read = 16)
+SETTINGS max_rows_to_read = 128;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_cast_u8_string') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UInt8 CAST parallel-formatting flag 0 keeps named index at 2/16', name_row > 0 AND selected = 2 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_cast_u8_string
+      WHERE CAST(x, 'String') IN ('7')
+      SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 1, max_rows_to_read = 16)
+SETTINGS max_rows_to_read = 128;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_cast_context') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'String-to-DateTime four format flags 0 keep named index at 2/16', name_row > 0 AND selected = 2 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_cast_context
+      WHERE CAST(s AS DateTime('UTC')) IN (toDateTime('2020-02-01 20:00:00', 'UTC'))
+      SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
+               input_format_parquet_dictionary_filter_push_down = 0,
+               output_format_parallel_formatting = 0,
+               input_format_parallel_parsing = 0,
+               cast_string_to_date_time_mode = 'best_effort',
+               use_skip_indexes = 1, max_rows_to_read = 16)
+SETTINGS max_rows_to_read = 128;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_cast_u8_string') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UInt8 CAST precise-float context mismatch declines named index, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_cast_u8_string
+      WHERE CAST(x, 'String') IN ('7')
+      SETTINGS precise_float_parsing = 0, use_skip_indexes = 1, max_rows_to_read = 16)
+SETTINGS max_rows_to_read = 128;
+
+WITH
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(x, 'String'))))
+     FROM t_bf_direct_in_cast_u8_string WHERE CAST(x, 'String') IN ('7')
+     SETTINGS allow_special_serialization_kinds_in_output_formats = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(x, 'String'))))
+     FROM t_bf_direct_in_cast_u8_string WHERE CAST(x, 'String') IN ('7')
+     SETTINGS allow_special_serialization_kinds_in_output_formats = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'UInt8 CAST allow-special serialization flag 0 full OFF/ON typed rows',
+       full_scan = indexed AND full_scan = [(toUInt64(1), '7'), (toUInt64(16), '7')]
+FORMAT TSVRaw;
+
+WITH
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(x, 'String'))))
+     FROM t_bf_direct_in_cast_u8_string WHERE CAST(x, 'String') IN ('7')
+     SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(x, 'String'))))
+     FROM t_bf_direct_in_cast_u8_string WHERE CAST(x, 'String') IN ('7')
+     SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'UInt8 CAST parallel-formatting flag 0 full OFF/ON typed rows',
+       full_scan = indexed AND full_scan = [(toUInt64(1), '7'), (toUInt64(16), '7')]
+FORMAT TSVRaw;
+
+WITH
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(x, 'String'))))
+     FROM t_bf_direct_in_cast_u8_string WHERE CAST(x, 'String') IN ('7')
+     SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
+              output_format_parallel_formatting = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(x, 'String'))))
+     FROM t_bf_direct_in_cast_u8_string WHERE CAST(x, 'String') IN ('7')
+     SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
+              output_format_parallel_formatting = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'UInt8 CAST two format flags 0 full OFF/ON typed rows',
+       full_scan = indexed AND full_scan = [(toUInt64(1), '7'), (toUInt64(16), '7')]
+FORMAT TSVRaw;
+
+SET cast_string_to_date_time_mode = 'best_effort';
+WITH
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(s AS DateTime('UTC')))))
+     FROM t_bf_direct_in_cast_context
+     WHERE CAST(s AS DateTime('UTC')) IN (toDateTime('2020-02-01 20:00:00', 'UTC'))
+     SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
+              input_format_parquet_dictionary_filter_push_down = 0,
+              output_format_parallel_formatting = 0,
+              input_format_parallel_parsing = 0,
+              cast_string_to_date_time_mode = 'best_effort',
+              use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(s AS DateTime('UTC')))))
+     FROM t_bf_direct_in_cast_context
+     WHERE CAST(s AS DateTime('UTC')) IN (toDateTime('2020-02-01 20:00:00', 'UTC'))
+     SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
+              input_format_parquet_dictionary_filter_push_down = 0,
+              output_format_parallel_formatting = 0,
+              input_format_parallel_parsing = 0,
+              cast_string_to_date_time_mode = 'best_effort',
+              use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'String-to-DateTime four format flags 0 full OFF/ON typed rows',
+       full_scan = indexed AND full_scan = [(toUInt64(1), toDateTime('2020-02-01 20:00:00', 'UTC')),
+                                            (toUInt64(16), toDateTime('2020-02-01 20:00:00', 'UTC'))]
+FORMAT TSVRaw;
+
+WITH
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(x, 'String'))))
+     FROM t_bf_direct_in_cast_u8_string WHERE CAST(x, 'String') IN ('7')
+     SETTINGS precise_float_parsing = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), CAST(x, 'String'))))
+     FROM t_bf_direct_in_cast_u8_string WHERE CAST(x, 'String') IN ('7')
+     SETTINGS precise_float_parsing = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'UInt8 CAST precise-float context mismatch full OFF/ON typed rows',
+       full_scan = indexed AND full_scan = [(toUInt64(1), '7'), (toUInt64(16), '7')]
+FORMAT TSVRaw;
+
 SET max_rows_to_read = 16;
 DROP TABLE IF EXISTS t_bf_direct_in_nullable_rhs;
 

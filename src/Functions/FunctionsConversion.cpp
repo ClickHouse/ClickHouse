@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Functions/FunctionConversionMatching.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -3409,6 +3410,116 @@ FunctionBasePtr createFunctionBaseCast(
 
     return std::make_unique<detail::FunctionCast>(
         *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+}
+
+namespace
+{
+
+bool hasNoCustomConversionSerialization(const IDataType & type)
+{
+    return !type.getCustomName() && !type.getCustomSerialization();
+}
+
+bool isAuditedPrimitiveNumericType(const IDataType & type)
+{
+    if (!hasNoCustomConversionSerialization(type))
+        return false;
+
+    return typeid(type) == typeid(DataTypeUInt8) || typeid(type) == typeid(DataTypeUInt16)
+        || typeid(type) == typeid(DataTypeUInt32) || typeid(type) == typeid(DataTypeUInt64)
+        || typeid(type) == typeid(DataTypeUInt128) || typeid(type) == typeid(DataTypeUInt256)
+        || typeid(type) == typeid(DataTypeInt8) || typeid(type) == typeid(DataTypeInt16)
+        || typeid(type) == typeid(DataTypeInt32) || typeid(type) == typeid(DataTypeInt64)
+        || typeid(type) == typeid(DataTypeInt128) || typeid(type) == typeid(DataTypeInt256)
+        || typeid(type) == typeid(DataTypeBFloat16) || typeid(type) == typeid(DataTypeFloat32)
+        || typeid(type) == typeid(DataTypeFloat64);
+}
+
+template <typename Type>
+bool isConcreteDataType(const IDataType & type)
+{
+    return typeid(type) == typeid(Type);
+}
+
+bool isAuditedCastTypePair(const IDataType & from_type, const IDataType & to_type)
+{
+    if (!hasNoCustomConversionSerialization(from_type) || !hasNoCustomConversionSerialization(to_type))
+        return false;
+
+    if (isAuditedPrimitiveNumericType(from_type) && isConcreteDataType<DataTypeString>(to_type))
+        return true;
+
+    if (isConcreteDataType<DataTypeString>(from_type))
+        return isConcreteDataType<DataTypeDateTime>(to_type)
+            || isConcreteDataType<DataTypeDateTime64>(to_type)
+            || isConcreteDataType<DataTypeEnum8>(to_type)
+            || isConcreteDataType<DataTypeEnum16>(to_type);
+
+    return false;
+}
+
+bool haveEqualExplicitConversionSettings(const FunctionConvertSettings & left, const FunctionConvertSettings & right)
+{
+    return left.date_time_overflow_behavior == right.date_time_overflow_behavior
+        && left.precise_float_parsing == right.precise_float_parsing
+        && left.cast_ipv4_ipv6_default_on_conversion_error == right.cast_ipv4_ipv6_default_on_conversion_error
+        && left.cast_string_to_variant_use_inference == right.cast_string_to_variant_use_inference
+        && left.cast_string_to_dynamic_use_inference == right.cast_string_to_dynamic_use_inference
+        && left.input_format_ipv4_default_on_conversion_error == right.input_format_ipv4_default_on_conversion_error
+        && left.input_format_ipv6_default_on_conversion_error == right.input_format_ipv6_default_on_conversion_error
+        && left.check_conversion_from_numbers_to_enum == right.check_conversion_from_numbers_to_enum
+        && left.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+            == right.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+        && left.cast_keep_nullable == right.cast_keep_nullable
+        && left.cast_string_to_date_time_mode == right.cast_string_to_date_time_mode;
+}
+
+}
+
+bool detail::FunctionCast::isEquivalentForBloomFilterExpressionMatching(const detail::FunctionCast & other) const
+{
+    if (argument_types.size() != 2 || other.argument_types.size() != 2
+        || !argument_types[0] || !argument_types[1] || !other.argument_types[0] || !other.argument_types[1]
+        || !return_type || !other.return_type
+        || !argument_types[0]->equals(*other.argument_types[0])
+        || !argument_types[1]->equals(*other.argument_types[1])
+        || !return_type->equals(*other.return_type)
+        || typeid(*argument_types[1]) != typeid(DataTypeString)
+        || typeid(*other.argument_types[1]) != typeid(DataTypeString)
+        || !hasNoCustomConversionSerialization(*argument_types[1])
+        || !hasNoCustomConversionSerialization(*other.argument_types[1])
+        || String(cast_name) != String(other.cast_name)
+        || cast_type != other.cast_type
+        || !haveEqualExplicitConversionSettings(settings, other.settings)
+        || !isAuditedCastTypePair(*argument_types[0], *return_type)
+        || !isAuditedCastTypePair(*other.argument_types[0], *other.return_type))
+        return false;
+
+    if (typeid(*return_type) == typeid(DataTypeDateTime))
+    {
+        const auto & left_datetime = assert_cast<const DataTypeDateTime &>(*return_type);
+        const auto & right_datetime = assert_cast<const DataTypeDateTime &>(*other.return_type);
+        return left_datetime.hasExplicitTimeZone() == right_datetime.hasExplicitTimeZone()
+            && left_datetime.getTimeZone().getTimeZone() == right_datetime.getTimeZone().getTimeZone();
+    }
+
+    if (typeid(*return_type) == typeid(DataTypeDateTime64))
+    {
+        const auto & left_datetime = assert_cast<const DataTypeDateTime64 &>(*return_type);
+        const auto & right_datetime = assert_cast<const DataTypeDateTime64 &>(*other.return_type);
+        return left_datetime.getScale() == right_datetime.getScale()
+            && left_datetime.hasExplicitTimeZone() == right_datetime.hasExplicitTimeZone()
+            && left_datetime.getTimeZone().getTimeZone() == right_datetime.getTimeZone().getTimeZone();
+    }
+
+    return true;
+}
+
+bool areCastsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & left, const IFunctionBase & right)
+{
+    const auto * left_cast = dynamic_cast<const detail::FunctionCast *>(&left);
+    const auto * right_cast = dynamic_cast<const detail::FunctionCast *>(&right);
+    return left_cast && right_cast && left_cast->isEquivalentForBloomFilterExpressionMatching(*right_cast);
 }
 
 

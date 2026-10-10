@@ -3,6 +3,8 @@
 DROP TABLE IF EXISTS t_bf_enum_shared;
 DROP TABLE IF EXISTS t_bf_cast_numeric;
 DROP TABLE IF EXISTS t_bf_signedzero;
+DROP TABLE IF EXISTS t_bf_dt64_cast_text;
+DROP TABLE IF EXISTS t_bf_fixed_array_wrappers;
 
 SET max_threads = 2;
 SET max_execution_time = 10;
@@ -223,12 +225,63 @@ SELECT 'UInt64 nullable array wrapper declines idx_nums_numeric', max(explain LI
 FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_cast_numeric ARRAY JOIN CAST(arrayConcat(arrayDistinct(nums), nums), 'Array(Nullable(UInt64))') AS value WHERE value = CAST(toUInt64(103), 'Nullable(UInt64)') SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1);
 
 WITH
-    (SELECT arraySort(groupArray(toUInt64(id))) FROM (SELECT id, value FROM t_bf_cast_numeric ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(999)]) AS value WHERE value IN (toUInt64(999))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 64) AS full_scan,
-    (SELECT arraySort(groupArray(toUInt64(id))) FROM (SELECT id, value FROM t_bf_cast_numeric ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(999)]) AS value WHERE value IN (toUInt64(999))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 64) AS indexed
-SELECT 'UInt64 numeric constant append preserves rows', indexed = full_scan AND indexed = arrayMap(x -> toUInt64(x), range(1, 17));
+    (SELECT arraySort(groupArray((toUInt64(id), value)))
+     FROM t_bf_cast_numeric ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(999)]) AS value
+     WHERE value IN (toUInt64(103))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 64) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value)))
+     FROM t_bf_cast_numeric ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(999)]) AS value
+     WHERE value IN (toUInt64(103))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 64) AS indexed
+SELECT 'UInt64 numeric constant append selective needle preserves typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(3), toUInt64(103))];
 
-SELECT 'UInt64 numeric constant append declines idx_nums_constant', max(explain LIKE '%Name: idx_nums_constant%') = 0
-FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_cast_numeric ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(999)]) AS value WHERE value IN (toUInt64(999)) SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1, query_plan_fuse_filter_into_array_join = 1);
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_nums_constant') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UInt64 numeric constant append selective needle prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_cast_numeric
+      ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(999)]) AS value
+      WHERE value IN (toUInt64(103))
+      SETTINGS query_plan_lower_array_join_function = 1,
+               query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1,
+               max_rows_to_read = 16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value)))
+     FROM t_bf_cast_numeric ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(1000)]) AS value
+     WHERE value IN (toUInt64(1000))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 64) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value)))
+     FROM t_bf_cast_numeric ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(1000)]) AS value
+     WHERE value IN (toUInt64(1000))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 64) AS indexed
+SELECT 'UInt64 numeric constant mismatch preserves typed rows',
+       indexed = full_scan AND full_scan = arrayMap(x -> (x, toUInt64(1000)), range(1, 17));
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_nums_constant') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UInt64 numeric constant mismatch declines idx_nums_constant, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_cast_numeric
+      ARRAY JOIN arrayConcat(arrayDistinct(nums), [toUInt64(1000)]) AS value
+      WHERE value IN (toUInt64(1000))
+      SETTINGS query_plan_lower_array_join_function = 1,
+               query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1,
+               max_rows_to_read = 16);
 
 CREATE TABLE t_bf_signedzero
 (
@@ -250,6 +303,290 @@ SELECT 'signedzero expression returns UInt64 and preserves matching row', indexe
 SELECT 'signedzero bit-mismatched constant declines idx_signedzero', max(explain LIKE '%Name: idx_signedzero%') = 0
 FROM (EXPLAIN indexes = 1 SELECT id FROM t_bf_signedzero WHERE reinterpretAsUInt64(f + toFloat64(-0.0)) IN (toUInt64(9223372036854775808)));
 
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_dt64_cast') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'DateTime64 CAST parquet dictionary flag 0 keeps named index at 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric
+      WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))
+      SETTINGS input_format_parquet_dictionary_filter_push_down = 0, use_skip_indexes = 1, max_rows_to_read = 16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM
+        (SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric
+         WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')))
+     SETTINGS input_format_parquet_dictionary_filter_push_down = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM
+        (SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric
+         WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')))
+     SETTINGS input_format_parquet_dictionary_filter_push_down = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'DateTime64 CAST parquet dictionary flag 0 full OFF/ON typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(1), toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))];
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_enum8_cast') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Enum8 CAST parallel-parsing flag 0 keeps named index at 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric
+      WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)))
+      SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 1, max_rows_to_read = 16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM
+        (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric
+         WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2))))
+     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM
+        (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric
+         WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2))))
+     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'Enum8 CAST parallel-parsing flag 0 full OFF/ON typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(1), CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)))];
+
+CREATE TABLE t_bf_dt64_cast_text
+(
+    id UInt64,
+    ts DateTime64(7, 'UTC'),
+    INDEX idx_dt64_cast_text CAST(ts AS String) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_bf_dt64_cast_text VALUES
+    (1, toDateTime64('2020-01-01 00:00:01.1234567', 7, 'UTC')),
+    (2, toDateTime64('2020-01-02 00:00:02.0000001', 7, 'UTC')),
+    (3, toDateTime64('2020-01-03 00:00:03.0000002', 7, 'UTC')),
+    (4, toDateTime64('2020-01-04 00:00:04.0000003', 7, 'UTC')),
+    (5, toDateTime64('2020-01-05 00:00:05.0000004', 7, 'UTC')),
+    (6, toDateTime64('2020-01-06 00:00:06.0000005', 7, 'UTC')),
+    (7, toDateTime64('2020-01-07 00:00:07.0000006', 7, 'UTC')),
+    (8, toDateTime64('2020-01-08 00:00:08.0000007', 7, 'UTC')),
+    (9, toDateTime64('2020-01-09 00:00:09.0000008', 7, 'UTC')),
+    (10, toDateTime64('2020-01-10 00:00:10.0000009', 7, 'UTC')),
+    (11, toDateTime64('2020-01-11 00:00:11.0000010', 7, 'UTC')),
+    (12, toDateTime64('2020-01-12 00:00:12.0000011', 7, 'UTC')),
+    (13, toDateTime64('2020-01-13 00:00:13.0000012', 7, 'UTC')),
+    (14, toDateTime64('2020-01-14 00:00:14.0000013', 7, 'UTC')),
+    (15, toDateTime64('2020-01-15 00:00:15.0000014', 7, 'UTC')),
+    (16, toDateTime64('2020-01-16 00:00:16.0000015', 7, 'UTC'));
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
+     WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
+     SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
+     WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
+     SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'DateTime64(7) CAST-to-String default context preserves typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.1234567')];
+
+-- This conversion keeps the full FormatSettings comparison. Unrelated format changes may decline the index but must preserve rows.
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_dt64_cast_text') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'DateTime64(7) CAST-to-String format-only mismatch declines index, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS String) AS value FROM t_bf_dt64_cast_text
+      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
+      SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 1, max_rows_to_read = 16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
+     WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
+     SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
+     WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
+     SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'DateTime64(7) CAST-to-String format-only mismatch full OFF/ON typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.1234567')];
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
+     WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
+     SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
+              input_format_parquet_dictionary_filter_push_down = 0,
+              output_format_parallel_formatting = 0,
+              input_format_parallel_parsing = 0,
+              use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
+     WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
+     SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
+              input_format_parquet_dictionary_filter_push_down = 0,
+              output_format_parallel_formatting = 0,
+              input_format_parallel_parsing = 0,
+              use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'DateTime64(7) CAST-to-String four format flags full OFF/ON typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.1234567')];
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
+     WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.123456700')
+     SETTINGS date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1,
+              use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
+     WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.123456700')
+     SETTINGS date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1,
+              use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'DateTime64(7) trailing-zero mismatch full OFF/ON typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.123456700')];
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_dt64_cast_text') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'DateTime64(7) trailing-zero mismatch declines idx_dt64_cast_text, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS String) AS value FROM t_bf_dt64_cast_text
+      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.123456700')
+      SETTINGS date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1,
+               use_skip_indexes = 1, max_rows_to_read = 16);
+
+CREATE TABLE t_bf_fixed_array_wrappers
+(
+    id UInt64,
+    dt_values Array(DateTime64(3, 'UTC')),
+    uuid_values Array(UUID),
+    INDEX idx_fixed_dt64_values arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.999', 3, 'UTC')]) TYPE bloom_filter(0.000001) GRANULARITY 1,
+    INDEX idx_fixed_uuid_values arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) TYPE bloom_filter(0.000001) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_bf_fixed_array_wrappers
+SELECT toUInt64(number + 1),
+       if(number = 2,
+          [toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'), toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC')],
+          [toDateTime64('2020-01-01 00:00:00.000', 3, 'UTC'), toDateTime64('2020-01-01 00:00:00.000', 3, 'UTC')]),
+       if(number = 2,
+          [toUUID('00000000-0000-0000-0000-000000000103'), toUUID('00000000-0000-0000-0000-000000000103')],
+          [toUUID('00000000-0000-0000-0000-000000000000'), toUUID('00000000-0000-0000-0000-000000000000')])
+FROM numbers(16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.999', 3, 'UTC')]) AS value
+     WHERE value IN (toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.999', 3, 'UTC')]) AS value
+     WHERE value IN (toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'DateTime64 array wrapper selective needle preserves typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(3), toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'))];
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_fixed_dt64_values') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'DateTime64 array wrapper selective needle prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
+      ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.999', 3, 'UTC')]) AS value
+      WHERE value IN (toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'))
+      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1, max_rows_to_read = 16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')]) AS value
+     WHERE value IN (toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC'))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')]) AS value
+     WHERE value IN (toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC'))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'DateTime64 array wrapper mismatch preserves complete typed rows',
+       indexed = full_scan AND full_scan = arrayMap(x -> (x, toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')), range(1, 17));
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_fixed_dt64_values') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'DateTime64 array wrapper mismatch declines named index, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
+      ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC')]) AS value
+      WHERE value IN (toDateTime64('2020-01-01 00:00:00.998', 3, 'UTC'))
+      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1, max_rows_to_read = 16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) AS value
+     WHERE value IN (toUUID('00000000-0000-0000-0000-000000000103'))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) AS value
+     WHERE value IN (toUUID('00000000-0000-0000-0000-000000000103'))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'UUID array wrapper selective needle preserves typed rows',
+       indexed = full_scan AND full_scan = [(toUInt64(3), toUUID('00000000-0000-0000-0000-000000000103'))];
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_fixed_uuid_values') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UUID array wrapper selective needle prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
+      ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) AS value
+      WHERE value IN (toUUID('00000000-0000-0000-0000-000000000103'))
+      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1, max_rows_to_read = 16);
+
+WITH
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000998')]) AS value
+     WHERE value IN (toUUID('00000000-0000-0000-0000-000000000998'))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
+     ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000998')]) AS value
+     WHERE value IN (toUUID('00000000-0000-0000-0000-000000000998'))
+     SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+SELECT 'UUID array wrapper mismatch preserves complete typed rows',
+       indexed = full_scan AND full_scan = arrayMap(x -> (x, toUUID('00000000-0000-0000-0000-000000000998')), range(1, 17));
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_fixed_uuid_values') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'UUID array wrapper mismatch declines named index, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT id, value FROM t_bf_fixed_array_wrappers
+      ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000998')]) AS value
+      WHERE value IN (toUUID('00000000-0000-0000-0000-000000000998'))
+      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
+               query_plan_fuse_filter_into_array_join = 1, max_rows_to_read = 16);
+
 DROP TABLE t_bf_signedzero;
 DROP TABLE t_bf_enum_shared;
 DROP TABLE t_bf_cast_numeric;
+DROP TABLE t_bf_dt64_cast_text;
+DROP TABLE t_bf_fixed_array_wrappers;
