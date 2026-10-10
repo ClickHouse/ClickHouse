@@ -52,6 +52,12 @@ IProcessor::Status CopyTransform::prepareConsume()
         return Status::Finished;
     }
 
+    if (!isAnyOutputPushable())
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
+
     input.setNeeded();
     if (!input.hasData())
         return Status::NeedData;

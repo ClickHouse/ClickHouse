@@ -62,6 +62,13 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::prepare()
     /// Check can we still pull data from input?
     if (num_finished_input_ports != ports_data.size())
     {
+        if (!isAnyOutputPushable())
+        {
+            for (auto & input : inputs)
+                input.setNotNeeded();
+            return Status::PortFull;
+        }
+
         auto process = [&](size_t pos)
         {
             auto status = pullData(ports_data[pos]);

@@ -131,6 +131,9 @@ protected:
     InputPorts inputs;
     OutputPorts outputs;
 
+    /// True if an unfinished output can take a chunk now. A processor must not request input otherwise.
+    bool isAnyOutputPushable() const;
+
 public:
 
     IProcessor();
