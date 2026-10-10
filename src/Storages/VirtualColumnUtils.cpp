@@ -225,7 +225,7 @@ NameSet getVirtualNamesForFileLikeStorage()
 /// Virtual columns that can only be materialized after the read buffer is opened (e.g. HTTP response
 /// headers exposed as `_headers` for web reads). They are not known during object listing, so they must
 /// not participate in the path/file pre-listing predicate split, where the listing-time block can only
-/// materialize `_path`/`_file`/hive columns/`_idx`.
+/// materialize `_path`/`_file`/hive columns.
 static bool isReaderOnlyVirtualColumn(const String & name)
 {
     return name == "_headers";
@@ -308,7 +308,6 @@ static void addPathAndFileToVirtualColumns(
     const Block & block,
     MutableColumns & columns,
     const String & path,
-    size_t idx,
     const FormatSettings & format_settings,
     bool parse_hive_columns,
     const String * file_name = nullptr)
@@ -348,8 +347,6 @@ static void addPathAndFileToVirtualColumns(
             }
         }
     }
-
-    columns[block.getPositionByName("_idx")]->insert(idx);
 }
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(
@@ -376,7 +373,6 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
     return splitFilterDagForAllowedInputs(predicate, &block, context);
 }
 
@@ -407,8 +403,6 @@ ColumnPtr getFilterByPathAndFileIndexes(
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
     const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
     const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
 
@@ -422,16 +416,27 @@ ColumnPtr getFilterByPathAndFileIndexes(
             block,
             columns,
             paths[i],
-            /* idx */i,
             hive_format_settings,
             parse_hive_columns,
             file_names ? &(*file_names)[i] : nullptr);
     }
     block.setColumns(std::move(columns));
 
-    filterBlockWithExpression(actions, block);
+    /// One row per path, so a row that passes the filter is the index of its path.
+    size_t num_rows = paths.size();
+    actions->execute(block, num_rows, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
+    ColumnPtr filter_column
+        = block.getByName(actions->getActionsDAG().getOutputs().at(0)->result_name).column->convertToFullColumnIfConst();
 
-    return block.getByName("_idx").column;
+    auto indexes = ColumnUInt64::create();
+    if (!ConstantFilterDescription(*filter_column).always_false)
+    {
+        FilterDescription filter(*filter_column);
+        for (size_t i = 0; i < num_rows; ++i)
+            if ((*filter.data)[i])
+                indexes->insertValue(i);
+    }
+    return indexes;
 }
 
 /// Builds a `Nullable(UInt64)` row lineage column out of the values materialized in the data file,
