@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -338,6 +339,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             projections_on_disk.insert(file_name);
             continue;
         }
+
+        /// Written next to `txn_version.txt` and renamed over it while the part's version changes.
+        if (file_name == VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME)
+            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
