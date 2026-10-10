@@ -50,8 +50,7 @@ public:
     {
     }
 
-    /// Throws the cancellation cause if the query is cancelled and the period has elapsed. Inert for a
-    /// thread group with no process-list element, which is how background merges and part checks run.
+    /// Throws the thread group's cancellation cause, if it has one, once the period has elapsed.
     /// `processed_bytes` is the work done since the previous call, such as one name's length.
     void check(size_t processed_bytes = clock_read_bytes)
     {
