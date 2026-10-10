@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
@@ -626,15 +627,31 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             }
 
             /// Dynamic streams (`JSON`, `Dynamic`) cannot be enumerated without the deserialization state,
-            /// so check the marks of every stream that has a data file in the part directory. Start from the
-            /// data files: a marks file that is gone entirely leaves its `.bin` peer behind. Only column
-            /// streams have `.bin` files, so marks of skip indices are left out.
+            /// so check every stream found in the part directory, in both directions: a marks file that is
+            /// gone entirely leaves its `.bin` peer behind, and a data file that is gone leaves its marks.
+            /// Skip indices have marks without `.bin` files, so their files are left out.
             NameSet file_names;
             for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
                 file_names.insert(it->name());
 
             for (const auto & file_name : file_names)
             {
+                if (file_name.starts_with(SKIP_INDEX_FILE_PREFIX))
+                    continue;
+
+                if (file_name.ends_with(marks_file_extension))
+                {
+                    String data_file_name = file_name.substr(0, file_name.size() - marks_file_extension.size()) + DATA_FILE_EXTENSION;
+                    if (!file_names.contains(data_file_name))
+                        throw Exception(
+                            ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "Part {} is broken: no data file {} for marks file {}",
+                            getDataPartStorage().getFullPath(),
+                            data_file_name,
+                            file_name);
+                    continue;
+                }
+
                 if (!file_name.ends_with(DATA_FILE_EXTENSION))
                     continue;
 

@@ -43,6 +43,8 @@ TABLES="
     wide_missing_dynamic_no_substreams_empty_checksums
     wide_missing_data_empty_checksums
     compact_missing_data_empty_checksums
+    wide_missing_dynamic_data_no_substreams_no_checksums
+    wide_missing_dynamic_data_no_substreams_empty_checksums
 "
 
 table_settings()
@@ -166,6 +168,11 @@ rm "$(part_path wide_missing_dynamic_no_substreams_empty_checksums)/$(column_fil
 # The data file of a stream is gone altogether while its marks are intact.
 rm "$(part_path wide_missing_data_empty_checksums)/$(column_file wide_missing_data_empty_checksums v).bin"
 rm "$(part_path compact_missing_data_empty_checksums)/data.bin"
+# The data file of a dynamic stream is gone altogether while its marks are intact. Without
+# `columns_substreams.txt` the dynamic streams are not enumerated, so the marks files found in the part
+# directory are checked for their data files.
+rm "$(part_path wide_missing_dynamic_data_no_substreams_no_checksums)/$(column_file wide_missing_dynamic_data_no_substreams_no_checksums d.UInt64).bin"
+rm "$(part_path wide_missing_dynamic_data_no_substreams_empty_checksums)/$(column_file wide_missing_dynamic_data_no_substreams_empty_checksums d.UInt64).bin"
 for table in ${TABLES}
 do
     if [[ ${table} == *_no_substreams_* ]]
