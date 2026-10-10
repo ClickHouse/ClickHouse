@@ -43,11 +43,6 @@ struct RuntimeDataflowStatistics
     size_t duplicated_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
-    /// The rows the tables below the boundary hold. The decision taken before a plan with parallel replicas
-    /// exists cannot tell which read the replicas would coordinate, so it cannot compare
-    /// `total_rows_to_read` against anything; this is a quantity it can recompute without knowing, so it is
-    /// recorded here as its drift reference.
-    size_t table_rows_below_boundary = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -69,6 +64,7 @@ public:
 
     RuntimeDataflowStatisticsCache()
         : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
+        , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), max_boundaries, max_boundaries))
     {
     }
 
@@ -76,8 +72,33 @@ public:
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
+    /// What an earlier execution found by matching the replicas plan into the single-replica plan, so that a later
+    /// one can decide without building a replicas plan to match against: the key of the single-replica plan's
+    /// boundary - the node matched to the top of the replicas plan - and the read below it that the replicas
+    /// coordinate. Only the replicas plan can tell which read that is, so it is remembered by the name the analyzer
+    /// gave its table expression, together with the table, the way the reads of the two plans are paired.
+    struct RememberedBoundary
+    {
+        UInt64 boundary_hash = 0;
+        String coordinated_read_table_expression;
+        String coordinated_read_table;
+    };
+
+    /// `root_key` combines the single-replica plan's root hash with the settings that can move the boundary
+    /// without changing that plan.
+    std::optional<RememberedBoundary> getBoundary(UInt64 root_key) const;
+
+    void setBoundary(UInt64 root_key, RememberedBoundary boundary);
+
 private:
+    using BoundaryCache = DB::CacheBase<UInt64, RememberedBoundary>;
+
+    /// One entry per distinct single-replica plan and settings, each weighing one, so the size and the count
+    /// limits are the same number.
+    static constexpr size_t max_boundaries = 1'000'000;
+
     CachePtr stats_cache;
+    std::shared_ptr<BoundaryCache> boundary_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -136,10 +157,9 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, size_t table_rows_below_boundary_ = 0)
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
-        , table_rows_below_boundary(table_rows_below_boundary_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -152,7 +172,6 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
-    const size_t table_rows_below_boundary = 0;
 
     std::atomic_bool unsupported_case{false};
 

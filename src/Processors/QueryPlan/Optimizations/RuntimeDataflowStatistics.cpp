@@ -36,6 +36,18 @@ std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCa
     return std::nullopt;
 }
 
+std::optional<RuntimeDataflowStatisticsCache::RememberedBoundary> RuntimeDataflowStatisticsCache::getBoundary(UInt64 root_key) const
+{
+    if (const auto boundary = boundary_cache->get(root_key))
+        return *boundary;
+    return std::nullopt;
+}
+
+void RuntimeDataflowStatisticsCache::setBoundary(UInt64 root_key, RememberedBoundary boundary)
+{
+    boundary_cache->set(root_key, std::make_shared<RememberedBoundary>(std::move(boundary)));
+}
+
 void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
 {
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
@@ -64,7 +76,7 @@ RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read, .table_rows_below_boundary = table_rows_below_boundary};
+    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];

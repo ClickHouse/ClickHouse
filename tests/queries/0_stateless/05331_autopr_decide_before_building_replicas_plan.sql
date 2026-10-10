@@ -2,7 +2,7 @@
 -- without building the plan with parallel replicas at all. Building that plan is the expensive half of the
 -- optimization, and on a declined query it used to be built only to be discarded.
 --
--- `ParallelReplicasPlanNotBuilt` fires only on that path, so it separates "declined after building the
+-- `AutomaticParallelReplicasDecidedWithoutBuildingPlan` fires only on that path, so it separates "declined after building the
 -- plan" from "declined without building it" - which is the point of the change and is otherwise invisible
 -- from SQL.
 
@@ -28,9 +28,12 @@ SET automatic_parallel_replicas_min_bytes_per_replica = 1;
 -- A higher thread count widens the margin: declining needs `output >= input * (1/T - 1/(T*N)) * N`, which
 -- is `input / 8` at 16 threads against an output several times the input, so no plausible mis-measurement
 -- of the sampled byte counts can cross it.
+-- An aggregation that spills to disk merges on a path that collects no statistics, so the first execution
+-- would leave nothing for the later ones to decide from; the harness randomizes the spill threshold.
 SET max_threads = 16, max_threads_min_free_memory_per_thread = 0,
     merge_tree_min_bytes_per_task_for_remote_reading = 4096, max_block_size = 65505,
-    serialize_query_plan = 0, max_rows_to_group_by = 0;
+    serialize_query_plan = 0, max_rows_to_group_by = 0,
+    max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
 
 -- Grouping by a high-cardinality key into many aggregates makes the output several times the read, so the
 -- replicas would ship far more than they save and a single node wins. The margin is deliberately wide: the
@@ -47,7 +50,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     log_comment,
-    ProfileEvents['ParallelReplicasPlanNotBuilt'] > 0 AS decided_without_building_the_plan,
+    ProfileEvents['AutomaticParallelReplicasDecidedWithoutBuildingPlan'] > 0 AS decided_without_building_the_plan,
     ProfileEvents['ParallelReplicasUsedCount'] > 0 AS used_parallel_replicas
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - toIntervalMinute(15)

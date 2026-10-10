@@ -1425,7 +1425,6 @@ The server successfully detected this situation and will download merged part fr
     M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces", ValueType::Bytes) \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas", ValueType::Number) \
-    M(ParallelReplicasPlanNotBuilt, "Number of queries where automatic parallel replicas decided against distributing the query from the statistics of a previous execution, so no plan with parallel replicas was built at all. Counts the planning work this saves: building that plan re-derives the query tree and optimizes a second plan, and on a declined query it was discarded unused.", ValueType::Number) \
     M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas", ValueType::Number) \
     M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas", ValueType::Number) \
     \
@@ -1727,6 +1726,7 @@ The server successfully detected this situation and will download merged part fr
     M(AutoParallelReplicasRejectedByThreshold, "Number of times automatic parallel replicas declined although the cost model favoured parallel replicas, because the read was below `automatic_parallel_replicas_min_bytes_per_replica`", ValueType::Number) \
     M(AutoParallelReplicasRejectedByCostModel, "Number of times automatic parallel replicas declined because the cost model estimated the local plan to be at least as fast as the parallel replicas one", ValueType::Number) \
     M(AutoParallelReplicasBytesPerReplica, "How many bytes per replica the read of this query gives, as automatic parallel replicas sized it - recorded whatever was decided, so the distribution covers both the queries `automatic_parallel_replicas_min_bytes_per_replica` turns away and the ones it lets through", ValueType::Bytes) \
+    M(AutomaticParallelReplicasDecidedWithoutBuildingPlan, "Number of times automatic parallel replicas decided against using parallel replicas from the statistics of an earlier execution, without building a candidate plan to cost", ValueType::Number) \
     \
     M(DistributedConnectionReconnectCount, "Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool", ValueType::Number) \
     M(DistributedConnectionConnectCount, "Number of connects to other servers done during distributed query execution. Happens when new connection is established instead of using existing from pool.", ValueType::Number) \
