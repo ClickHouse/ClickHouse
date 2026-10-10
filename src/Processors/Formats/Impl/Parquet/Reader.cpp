@@ -1879,7 +1879,8 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     /// Once the shared filter has disabled itself (it turned out to be non-selective), the mask
     /// would never be consulted, so do not pay for the dictionary scan and the mask allocation.
     if (column_info.string_value_filter && column_info.string_value_filter->isEnabled())
-        column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter);
+        column.dictionary.buildStringValueFilterMask(
+            *column_info.string_value_filter, size_t(std::max<Int64>(0, column.meta->meta_data.num_values)));
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
