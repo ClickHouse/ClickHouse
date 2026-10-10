@@ -5112,7 +5112,9 @@ DiskPtr Changelog::getS3LogDisk() const
 
 void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 {
-    auto disk = getDisk();
+    /// In S3 mode detach changelogs within `s3_log_disk`: copying them to the local log disk would make recovery
+    /// depend on local space, and startup reads only `s3_log_disk` (it skips the `detached` directory there).
+    auto disk = keeper_context->isS3ExperimentalChangelog() ? getS3LogDisk() : getDisk();
 
     const auto timestamp_folder = (fs::path(changelogs_detached_dir) / getCurrentTimestampFolder()).generic_string();
 
@@ -5139,8 +5141,10 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
-                    moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
+                /// Do not forget a changelog that is still on the disk: it would come back on the next startup.
+                if (e.code() != DB::ErrorCodes::NOT_IMPLEMENTED)
+                    throw;
+                moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
             }
         }
         else
