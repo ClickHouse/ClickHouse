@@ -118,7 +118,7 @@ private:
     CompressionCodecPtr compressible_block_codec;
     CompressionCodecPtr incompressible_block_codec;
 
-    /// Reads the blocks of the file for one lookup call.
+    /// Reads the blocks of the file for one lookup call. `DiskSetBlockReader.h` defines it.
     class BlockReader;
 
     /// The set counts the keys of its pending block too, so that the limit on rows sees every key.
