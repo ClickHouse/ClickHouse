@@ -1,12 +1,6 @@
--- Exercises intersectLeapfrogHeap, the >8-cursor variant of the leapfrog AND
--- algorithm. Dispatch in MergeTreeIndexTextPostingListCursor.cpp:
---   n == 2 -> intersectTwo
---   n == 3 -> intersectThree
---   n == 4 -> intersectFour
---   n <= 8 -> intersectLeapfrogLinear
---   n  > 8 -> intersectLeapfrogHeap        <- this file
--- Unit tests cover the heap variant up to 10 cursors, but no SQL test exercises
--- it through the production reader path. This file fills that gap.
+-- Exercises the leapfrog AND (`intersectLeapfrog` in MergeTreeIndexTextPostingListCursor.cpp)
+-- with more than 8 cursors through the production reader path. It used to be served by a separate
+-- min-heap variant; a single loop led by the sparsest cursor now handles every cursor count.
 
 SET enable_full_text_index = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
@@ -78,17 +72,17 @@ SELECT 'cardinality tkk', count() FROM tab_heap WHERE hasToken(s, 'tkk');
 
 -- 9-way AND just past the dispatch boundary (n == 9 -> heap).
 -- LCM(2..10) = 2520 -> floor(50000 / 2520) + 1 = 20 matches in [0, 50000).
--- Force leapfrog with text_index_lazy_intersection_density_threshold = 1.0 (min_density = 0.1 < 1.0).
+-- Force leapfrog with `text_index_postings_intersection_algorithm = 'leapfrog'`.
 SELECT 'and 9-way:', count() FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki'])
-SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
+SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
          log_comment = '04258_heap_9way';
 
 -- Verify the exact matching row IDs (catches off-by-one regressions in the heap
 -- loop). Rows divisible by 2520 in [0, 50000): 0, 2520, 5040, ..., 47880.
 SELECT 'and 9-way rows:', arraySort(groupArray(k)) FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki'])
-SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
+SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
          log_comment = '04258_heap_9way_rows';
 
 -- 11-way AND stresses the heap deeper.
@@ -96,12 +90,12 @@ SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
 -- floor(50000 / 360360) + 1 = 1 -> only row 0.
 SELECT 'and 11-way:', count() FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki', 'tkj', 'tkk'])
-SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
+SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
          log_comment = '04258_heap_11way';
 
 SELECT 'and 11-way rows:', arraySort(groupArray(k)) FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki', 'tkj', 'tkk'])
-SETTINGS text_index_lazy_intersection_density_threshold = 1.0;
+SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
 
 -- Equivalence: the materialize path must produce the same count for both shapes.
 -- Without this, a heap-only bug producing the same wrong answer on both lazy
@@ -114,10 +108,9 @@ SELECT 'materialize 11-way:', count() FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki', 'tkj', 'tkk'])
 SETTINGS text_index_posting_list_apply_mode = 'materialize';
 
--- Telemetry assertions: the heap variant must have run (LeapfrogIntersections > 0),
--- the brute-force variant must NOT have (the threshold forces leapfrog), and
--- advance() must have been called many times (every match in the heap calls
--- advance ~n times across iterations).
+-- Telemetry assertions: the leapfrog must have run (LeapfrogIntersections > 0),
+-- the brute-force variant must NOT have (the setting forces leapfrog), and
+-- advance() must have been called many times (the cursors behind the lead advance to its doc ids).
 SYSTEM FLUSH LOGS query_log;
 
 -- The counters are incremented on whichever replica reads the granule, so under

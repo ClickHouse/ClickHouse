@@ -129,8 +129,9 @@ Returns the origin and destination hexagon indexes from the given unidirectional
             "SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199) AS indexes",
             R"(
 ┌─indexes─────────────────────────────────┐
-│ (599686042433355775,599686043507097599) │
-└─────────────────────────────────────────┘
+├─────────────origin─┬────────destination─┤
+│ 599686042433355775 │ 599686043507097599 │
+└────────────────────┴────────────────────┘
             )"
         }
     };

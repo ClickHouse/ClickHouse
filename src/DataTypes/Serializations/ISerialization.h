@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -55,6 +56,8 @@ struct FormatSettings;
 struct NameAndTypePair;
 
 struct MergeTreeSettings;
+
+class StringValueFilter;
 
 /** Returns the separator byte that the HiveText output format uses at the given nesting level,
   * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
@@ -94,6 +97,30 @@ public:
     ///  - etc
     using KindStack = std::vector<Kind>;
 
+    /// The kind of a column in the Native format is chosen by the peer that sends the data, so a
+    /// reader declares with such a set which kinds the peer is allowed to select.
+    class KindSet
+    {
+    public:
+        constexpr KindSet(std::initializer_list<Kind> kinds) /// NOLINT(google-explicit-constructor)
+        {
+            for (auto kind : kinds)
+                bits |= maskOf(kind);
+        }
+
+        static constexpr KindSet all() { return KindSet(~UInt32(0)); }
+
+        constexpr bool contains(Kind kind) const { return (bits & maskOf(kind)) != 0; }
+        constexpr KindSet without(Kind kind) const { return KindSet(bits & ~maskOf(kind)); }
+
+    private:
+        explicit constexpr KindSet(UInt32 bits_) : bits(bits_) { }
+
+        static constexpr UInt32 maskOf(Kind kind) { return UInt32(1) << static_cast<UInt8>(kind); }
+
+        UInt32 bits = 0;
+    };
+
     virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
@@ -104,6 +131,7 @@ public:
     virtual MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const { return column; }
 
     static KindStack getKindStack(const IColumn & column);
+    static String kindToString(Kind kind);
     static String kindStackToString(const KindStack & kind);
     static KindStack stringToKindStack(const String & str);
     /// Check if provided kind stack contains specific kind.
@@ -353,6 +381,8 @@ public:
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
+        /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
+        std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
         /// If set to false, don't enumerate dynamic subcolumns
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
@@ -502,7 +532,8 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;
@@ -567,6 +598,12 @@ public:
         /// Used by `SerializationLowCardinality` as a cheap prefilter before
         /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
         std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
+
+        /// If set, string values that do not match the filter may be replaced with empty strings
+        /// during deserialization. It is extracted from a substring search condition in PREWHERE
+        /// which is guaranteed to filter out the rows with non-matching values, so the replacement
+        /// cannot change the query result. Used only by `SerializationString`.
+        std::shared_ptr<const StringValueFilter> string_value_filter;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
