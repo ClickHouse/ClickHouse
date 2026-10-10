@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -36,6 +37,7 @@ namespace Setting
     extern const SettingsBool input_format_orc_filter_push_down;
     extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
     extern const SettingsBool input_format_orc_case_insensitive_column_matching;
+    extern const SettingsBool input_format_arrow_case_insensitive_column_matching;
     extern const SettingsBool input_format_parquet_allow_missing_columns;
     extern const SettingsBool input_format_orc_allow_missing_columns;
     extern const SettingsBool input_format_arrow_allow_missing_columns;
@@ -59,9 +61,29 @@ UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::input_format_orc_filter_push_down].value);
     hash.update(settings[Setting::input_format_parquet_case_insensitive_column_matching].value);
     hash.update(settings[Setting::input_format_orc_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_arrow_case_insensitive_column_matching].value);
     hash.update(settings[Setting::input_format_parquet_allow_missing_columns].value);
     hash.update(settings[Setting::input_format_orc_allow_missing_columns].value);
     hash.update(settings[Setting::input_format_arrow_allow_missing_columns].value);
+    return hash.get64();
+}
+
+/// The same settings as above, taken from the format settings a reader actually uses. Keep them in sync.
+UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
+{
+    SipHash hash;
+    hash.update(format_settings.parquet.filter_push_down);
+    hash.update(format_settings.parquet.bloom_filter_push_down);
+    hash.update(static_cast<UInt64>(format_settings.parquet.dictionary_filter_push_down));
+    hash.update(format_settings.parquet.page_filter_push_down);
+    hash.update(format_settings.parquet.spatial_filter_push_down);
+    hash.update(format_settings.orc.filter_push_down);
+    hash.update(format_settings.parquet.case_insensitive_column_matching);
+    hash.update(format_settings.orc.case_insensitive_column_matching);
+    hash.update(format_settings.arrow.case_insensitive_column_matching);
+    hash.update(format_settings.parquet.allow_missing_columns);
+    hash.update(format_settings.orc.allow_missing_columns);
+    hash.update(format_settings.arrow.allow_missing_columns);
     return hash.get64();
 }
 

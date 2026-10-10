@@ -246,7 +246,8 @@ UUID QueryConditionCache::getTableIdForFileEntries(
     std::string_view format,
     std::string_view compression_method,
     const ColumnsDescription & columns,
-    const ColumnMapper * column_mapper)
+    const ColumnMapper * column_mapper,
+    const FormatSettings * format_settings)
 {
     if (table_uuid != UUIDHelpers::Nil)
         return table_uuid;
@@ -273,6 +274,9 @@ UUID QueryConditionCache::getTableIdForFileEntries(
             hash.update(field_id);
         }
     }
+    hash.update(format_settings != nullptr);
+    if (format_settings)
+        hash.update(fileFormatPruningSettingsSalt(*format_settings));
     UInt128 table_id = hash.get128();
     /// A `Nil` id would disable the cache.
     if (table_id == 0)

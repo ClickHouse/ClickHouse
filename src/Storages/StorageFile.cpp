@@ -1708,7 +1708,8 @@ StorageFileSource::StorageFileSource(
             storage->format_name,
             storage->compression_method,
             metadata_snapshot->getColumns(),
-            format_filter_info->column_mapper.get());
+            format_filter_info->column_mapper.get(),
+            storage->format_settings ? &*storage->format_settings : nullptr);
     }
 
     if (!storage->use_table_fd)

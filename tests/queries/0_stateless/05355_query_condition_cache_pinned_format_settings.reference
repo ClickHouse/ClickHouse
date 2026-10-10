@@ -1,0 +1,3 @@
+allow	0
+allow	0
+disallow: exception

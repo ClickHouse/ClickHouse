@@ -365,7 +365,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
             configuration->format,
             configuration->compression_method,
             storage_snapshot->metadata->getColumns(),
-            format_filter_info->column_mapper.get());
+            format_filter_info->column_mapper.get(),
+            format_settings ? &*format_settings : nullptr);
 }
 
 StorageObjectStorageSource::~StorageObjectStorageSource()
