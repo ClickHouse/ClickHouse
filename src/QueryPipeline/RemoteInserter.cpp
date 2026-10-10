@@ -18,6 +18,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsBool send_profile_traces;
 }
 
 namespace ErrorCodes
@@ -68,6 +69,8 @@ void RemoteInserter::initialize()
     ///
     /// So that is why send_logs_level had been disabled here.
     settings[Setting::send_logs_level] = "none";
+    /// Trace packets have the same full-duplex deadlock risk while uploading data.
+    settings[Setting::send_profile_traces] = false;
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
@@ -100,9 +103,9 @@ void RemoteInserter::initialize()
             /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
             /// client's already got this information for remote table. Ignore.
         }
-        else if (Protocol::Server::Progress == packet.type)
+        else if (Protocol::Server::Progress == packet.type || Protocol::Server::ProfileTraces == packet.type)
         {
-            /// Progress packets are ignored
+            /// Progress and trace packets are ignored.
         }
         else
             throw NetException(
@@ -159,6 +162,7 @@ void RemoteInserter::onFinish()
         else if (Protocol::Server::Log == packet.type ||
             Protocol::Server::Progress == packet.type ||
             Protocol::Server::ProfileEvents == packet.type ||
+            Protocol::Server::ProfileTraces == packet.type ||
             Protocol::Server::TimezoneUpdate == packet.type)
         {
             // Do nothing

@@ -19,6 +19,7 @@ namespace FiberLocalSlot
 enum : size_t
 {
     TRACE_CONTEXT,
+    PROFILE_TRACES_BLOCKED,
     CURRENT_THREAD,
     INSIDE_SILK_FIBER,
     LOCK_MEMORY_EXCEPTION_COUNTER,
@@ -140,20 +141,55 @@ public:
 
     static void swap(FiberLocalStorage & saved) noexcept
     {
-        thread_storage.slots.swap(saved.slots);
+        swapSlots<FiberLocalSlot::COUNT>(saved);
     }
 
     static void swapCoroutineLocal(FiberLocalStorage & saved) noexcept
     {
-        std::swap_ranges(
-            thread_storage.slots.begin(),
-            thread_storage.slots.begin() + FiberLocalSlot::COROUTINE_LOCAL_COUNT,
-            saved.slots.begin());
+        swapSlots<FiberLocalSlot::COROUTINE_LOCAL_COUNT>(saved);
+    }
+
+    /// Signal handlers can inspect these slots without allocating or taking a lock. Context switches
+    /// must also access such a slot atomically; see `swapSlots`.
+    template <size_t slot>
+    static uintptr_t loadAtomic() noexcept
+    {
+        static_assert(slot == FiberLocalSlot::PROFILE_TRACES_BLOCKED);
+        return std::atomic_ref<uintptr_t>(currentSlots()[slot]).load(std::memory_order_relaxed);
+    }
+
+    template <size_t slot>
+    static uintptr_t exchangeAtomic(uintptr_t value) noexcept
+    {
+        static_assert(slot == FiberLocalSlot::PROFILE_TRACES_BLOCKED);
+        return std::atomic_ref<uintptr_t>(currentSlots()[slot]).exchange(value, std::memory_order_relaxed);
     }
 
     void destroySlots() noexcept;
 
 private:
+
+    static_assert(std::atomic_ref<uintptr_t>::is_always_lock_free);
+    static_assert(alignof(uintptr_t) >= std::atomic_ref<uintptr_t>::required_alignment);
+
+    template <size_t count>
+    static void swapSlots(FiberLocalStorage & saved) noexcept
+    {
+        constexpr size_t atomic_slot = FiberLocalSlot::PROFILE_TRACES_BLOCKED;
+        static_assert(atomic_slot < count);
+        std::swap_ranges(thread_storage.slots.begin(), thread_storage.slots.begin() + atomic_slot, saved.slots.begin());
+
+        /// A profiler signal can interrupt a context switch and read the active suppression flag.
+        /// Keep it out of the ordinary array swap, including when restoring a suspended coroutine.
+        std::atomic_ref<uintptr_t> active(thread_storage.slots[atomic_slot]);
+        std::atomic_ref<uintptr_t> stored(saved.slots[atomic_slot]);
+        stored.store(active.exchange(stored.load(std::memory_order_relaxed), std::memory_order_relaxed), std::memory_order_relaxed);
+
+        std::swap_ranges(
+            thread_storage.slots.begin() + atomic_slot + 1,
+            thread_storage.slots.begin() + count,
+            saved.slots.begin() + atomic_slot + 1);
+    }
 
     /// A fiber may resume on another OS thread, but the compiler may hoist &slots[slot].
 

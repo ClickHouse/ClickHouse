@@ -8,7 +8,7 @@ namespace DB
 /** Frames packets as HTTP server-sent events (`text/event-stream`).
   *
   * Every packet is represented as an event with the name corresponding to the packet kind
-  * (`data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`).
+  * (`data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `profile_traces`, `exception`).
   * A block of data produced by the output format is base64-encoded into a single `data` field of the
   * event, and decodes to the fully formatted payload with all of its newlines.
   * Auxiliary packets are represented as JSON, e.g.:
@@ -25,7 +25,7 @@ namespace DB
   * value. Base64 has no line breaks, so one packet is always exactly one `data` field and arbitrary
   * bytes - including the output of binary formats such as `Native` or `RowBinary` - survive the text
   * transport byte-exactly. The `Content-Type` carries a `payload=base64` parameter to say so; the
-  * auxiliary JSON packets (progress, logs, profile events, exceptions) are never encoded.
+  * auxiliary JSON packets (`progress`, `log`, `profile_events`, `profile_traces`, `exception`) are never encoded.
   */
 class FramingFormatEventStream final : public IFramingFormat
 {
@@ -45,6 +45,7 @@ protected:
     void writeProgressPacket(const Progress & progress) override;
     void writeLogsPacket(const Block & block) override;
     void writeProfileEventsPacket(const Block & block) override;
+    void writeProfileTracesPacket(const Block & block) override;
     void writeExceptionPacket(const String & message) override;
 };
 

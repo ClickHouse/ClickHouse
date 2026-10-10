@@ -1,0 +1,4 @@
+native local: supported types streamed; ProfileEvent excluded from stream
+native remote: supported types streamed; ProfileEvent excluded from stream
+HTTP local: supported types streamed; ProfileEvent excluded from stream
+HTTP remote: supported types streamed; ProfileEvent excluded from stream
