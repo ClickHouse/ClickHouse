@@ -3512,6 +3512,37 @@ def test_catalog_commit_unknown_keeps_files_on_optimize(started_cluster):
     assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
 
 
+def test_catalog_commit_unknown_keeps_files_on_drop_partition(started_cluster):
+    # Same invariant on the DROP PARTITION commit path.
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    root_namespace = f"test_commit_unknown_drop_partition_{uuid.uuid4()}"
+    table_name = "drop_partition"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+
+    create_drop_partition_catalog_table(catalog, root_namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(f"INSERT INTO {table_ref} VALUES (1, 'x');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES (2, 'y');", settings=write_settings)
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+        error = node.query_and_get_error(f"ALTER TABLE {table_ref} DROP PARTITION 2", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+
+    snapshot = _current_snapshot(catalog, root_namespace, table_name)
+    assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
+        f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
+    )
+    assert node.query(f"SELECT a FROM {table_ref} ORDER BY a").strip() == "1"
+
+
 DROP_PARTITION_SETTINGS = {"allow_insert_into_iceberg": 1}
 
 
