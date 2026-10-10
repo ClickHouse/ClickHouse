@@ -2,11 +2,19 @@
 #include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulatedThread.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Common/Exception.h>
+#include <base/defines.h>
+
+#if defined(ADDRESS_SANITIZER)
+#    include <sanitizer/lsan_interface.h>
+#endif
 
 #include <fmt/format.h>
 
+#include <atomic>
 #include <optional>
 #include <tuple>
+
+static std::atomic<bool> leaked_unfinished_threads = false;
 
 namespace DB
 {
@@ -140,8 +148,13 @@ void Simulation::createThread(std::function<void()> user_body)
 void Simulation::leakUnfinishedThreads()
 {
     for (auto & thread : threads)
-        if (!thread->finished())
-            std::ignore = thread.release();
+    {
+        if (thread->finished())
+            continue;
+
+        std::ignore = thread.release();
+        leaked_unfinished_threads.store(true);
+    }
 }
 
 Simulation * Simulation::current()
@@ -239,3 +252,10 @@ void Simulation::brokenInvariant(std::string message)
 }
 
 }
+
+#if defined(ADDRESS_SANITIZER)
+extern "C" int __lsan_is_turned_off()
+{
+    return leaked_unfinished_threads.load() ? 1 : 0;
+}
+#endif
