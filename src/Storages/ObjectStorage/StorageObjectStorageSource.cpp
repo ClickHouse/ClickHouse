@@ -464,7 +464,8 @@ ObjectInfoPtr ObjectIteratorListingAllForTopKQueryConditionCache::next(size_t pr
 
 void ObjectIteratorListingAllForTopKQueryConditionCache::listObjects(size_t processor)
 {
-    while (objects.size() < MAX_OBJECTS)
+    /// One object more than the limit is listed to tell exactly `MAX_OBJECTS` objects from more.
+    while (objects.size() <= MAX_OBJECTS)
     {
         auto object = iterator->next(processor);
         if (!object || object->getPath().empty())
@@ -501,7 +502,8 @@ void ObjectIteratorListingAllForTopKQueryConditionCache::listObjects(size_t proc
         files_hash.update(file_key);
     }
 
-    UInt64 condition_hash = key->condition_hash_without_files;
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where they differ (e.g. Apple).
+    size_t condition_hash = key->condition_hash_without_files;
     boost::hash_combine(condition_hash, files_hash.get64());
     key->condition_hash = condition_hash;
 }
@@ -546,6 +548,28 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(con
     if (!metadata || !metadata->isEtagUsableAsCacheKey())
         return std::nullopt;
     return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
+}
+
+StorageMetadataPtr StorageObjectStorageSource::ensureDataLakeTableState(
+    const StorageObjectStorageConfiguration & configuration, StorageMetadataPtr storage_metadata, const ContextPtr & local_context)
+{
+    /// The state is normally set by `updateExternalDynamicMetadataIfExists` during query analysis,
+    /// but it can be missing due to race conditions between concurrent queries (TOCTOU between
+    /// `setInMemoryMetadata` and `getInMemoryMetadataPtr`), or when called from code paths that bypass
+    /// the analyzer/interpreter (e.g. schema inference, cluster functions with nullptr metadata).
+    if (!configuration.isDataLakeConfiguration()
+        || (storage_metadata && storage_metadata->datalake_table_state.has_value()))
+        return storage_metadata;
+
+    auto state = configuration.getTableStateSnapshot(local_context);
+    if (!state)
+        return storage_metadata;
+
+    auto fixed_metadata = storage_metadata
+        ? std::make_shared<StorageInMemoryMetadata>(*storage_metadata)
+        : std::make_shared<StorageInMemoryMetadata>();
+    fixed_metadata->setDataLakeTableState(*state);
+    return fixed_metadata;
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -743,24 +767,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
-        /// For datalake configurations, ensure datalake_table_state is present in the metadata
-        /// before calling iterate(). The state is normally set by
-        /// updateExternalDynamicMetadataIfExists() during query analysis, but it can be missing
-        /// due to race conditions between concurrent queries (TOCTOU between setInMemoryMetadata
-        /// and getInMemoryMetadataPtr), or when called from code paths that bypass the
-        /// analyzer/interpreter (e.g. schema inference, cluster functions with nullptr metadata).
-        if (configuration->isDataLakeConfiguration()
-            && (!storage_metadata || !storage_metadata->datalake_table_state.has_value()))
-        {
-            if (auto state = configuration->getTableStateSnapshot(local_context))
-            {
-                auto fixed_metadata = storage_metadata
-                    ? std::make_shared<StorageInMemoryMetadata>(*storage_metadata)
-                    : std::make_shared<StorageInMemoryMetadata>();
-                fixed_metadata->setDataLakeTableState(*state);
-                storage_metadata = std::move(fixed_metadata);
-            }
-        }
+        storage_metadata = ensureDataLakeTableState(*configuration, std::move(storage_metadata), local_context);
 
         auto iter = configuration->iterate(
             filter_actions_dag,

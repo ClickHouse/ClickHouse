@@ -131,6 +131,11 @@ public:
         bool skip_object_metadata = false,
         bool with_tags = false);
 
+    /// For a data lake configuration, returns the metadata with `datalake_table_state` set: the given
+    /// one if it already has the state, otherwise a copy with the current snapshot of the table.
+    static StorageMetadataPtr ensureDataLakeTableState(
+        const StorageObjectStorageConfiguration & configuration, StorageMetadataPtr storage_metadata, const ContextPtr & local_context);
+
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 

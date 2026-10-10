@@ -83,6 +83,9 @@ private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
+    /// The metadata `iterator_wrapper` was created with: for a data lake, it always has the table state
+    /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
+    StorageMetadataPtr iterator_metadata;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry;

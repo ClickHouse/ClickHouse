@@ -234,8 +234,11 @@ void ReadFromObjectStorageStep::createIterator()
 
     auto context = getContext();
 
+    /// The TopK query condition cache key is made from the same table state the files are read from.
+    iterator_metadata = StorageObjectStorageSource::ensureDataLakeTableState(*configuration, storage_snapshot->metadata, context);
+
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
+        configuration, configuration->getQuerySettings(context), object_storage, iterator_metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
@@ -264,7 +267,7 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     /// listed, so the read of every object must be pinned to the listed ETag: otherwise an entry of
     /// one file could be used while another file is read in a version the key does not describe.
     const bool is_data_lake = configuration->isDataLakeConfiguration();
-    const auto & datalake_table_state = storage_snapshot->metadata->datalake_table_state;
+    const auto & datalake_table_state = iterator_metadata->datalake_table_state;
     if (is_data_lake ? !datalake_table_state : !isReadPinnedToListedGeneration())
         return {};
 
@@ -275,7 +278,8 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
         return {};
 
     auto key = std::make_shared<ObjectStorageTopKQueryConditionCacheKey>();
-    UInt64 condition_hash = 0;
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where they differ (e.g. Apple).
+    size_t condition_hash = 0;
     if (format_filter_info.condition_hash)
     {
         condition_hash = *format_filter_info.condition_hash;
