@@ -2115,8 +2115,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
 void ClientBase::onProgress(const Progress & value)
 {
-    /// An update carrying only totals is not a keep-alive: `updateProgress` reports whether read or
-    /// written rows moved, so it returns false here although the totals still have to be forwarded.
+    /// `updateProgress` returns false when no rows moved, but an update carrying only totals is not a keep-alive.
     const bool has_totals = value.total_rows_to_read || value.total_bytes_to_read;
     if (!progress_indication.updateProgress(value) && !has_totals)
     {

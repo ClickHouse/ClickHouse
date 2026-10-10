@@ -21,8 +21,7 @@ namespace ErrorCodes
 
 void ReadProgressCallback::publishTotals()
 {
-    /// Without a progress callback the totals cannot be delivered, and must not be consumed either:
-    /// they still have to ride out with the first onProgress().
+    /// Undeliverable yet: keep the totals for the first onProgress().
     if (!progress_callback)
         return;
 

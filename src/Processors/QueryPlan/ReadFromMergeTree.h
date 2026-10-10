@@ -754,9 +754,7 @@ private:
         size_t min_marks_for_concurrent_read,
         bool use_uncompressed_cache);
 
-    /// Rows of this read's estimate not yet reported, while the query has a limit to spread over the
-    /// sources; nullopt when it has none. Sources report disjoint shares and the executor adds them up,
-    /// so the limit is drawn down over the whole read instead of clamping every share to it.
+    /// Rows of the query's limit not yet reported as a source's total; nullopt without a limit.
     std::optional<size_t> total_rows_approx_budget;
 
     size_t takeTotalRowsApprox(size_t rows_in_this_read);

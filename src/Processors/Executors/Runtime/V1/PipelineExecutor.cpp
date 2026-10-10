@@ -623,16 +623,12 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     Queue async_queue;
     graph->initializeExecution(queue, async_queue);
 
-    /// Sources hold the totals they already know (set while building the plan) before any chunk
-    /// exists. This must run before the first task is dispatched: getReadProgress() also drains a
-    /// source's read counters, which are only zero while nothing has been read.
+    /// Before the first task: getReadProgress() also drains the read counters, zero only until then.
+    /// Not only sources: a seal-gated read has an input.
     if (read_progress_callback)
     {
         for (const auto & processor : graph->getProcessors())
         {
-            if (!processor->getInputs().empty())
-                continue;
-
             if (auto read_progress = processor->getReadProgress())
             {
                 if (read_progress->counters.total_rows_approx)

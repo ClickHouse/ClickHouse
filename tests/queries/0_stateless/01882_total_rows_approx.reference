@@ -4,3 +4,6 @@ first report has no read progress
 first in-order report has the total
 in-order limit is counted once
 trivial limit is counted once
+the probe side is read gated
+first gated report has the total
+gated reads are reported while they run
