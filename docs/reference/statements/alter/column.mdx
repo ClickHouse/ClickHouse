@@ -18,6 +18,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 In the query, specify a list of one or more comma-separated actions.
 Each action is an operation on a column.
 
+For example, one statement can drop one column and add another:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+Whether such a query returns before its work on existing data has finished follows [`alter_sync`](/reference/settings/session-settings/alter#alter_sync), which also covers the mutation that `DROP COLUMN` or a `MODIFY COLUMN` type change creates; [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) applies to [MATERIALIZE COLUMN](#materialize-column), which runs on the mutation path. Both are described in [Synchronicity of ALTER Queries](/reference/statements/alter/index#synchronicity-of-alter-queries).
+
 The following actions are supported:
 
 - [ADD COLUMN](#add-column) — Adds a new column to the table.

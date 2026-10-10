@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Regression test: parallel replicas coordination mode mismatch with aggregation in order.
 -- The initiator (with 0 parts) used stale result.read_type to compute coordination mode,
 -- causing a mismatch with remote replicas that correctly derived it from input_order_info->direction.
