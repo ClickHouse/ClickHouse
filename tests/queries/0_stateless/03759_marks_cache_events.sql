@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas, no-random-settings
--- Test depends on mark cache, don't run with others in parallel
+-- The process-wide `MarkCache` can be evicted by concurrent tests, so each mode is read
+-- repeatedly and the log assertion checks that both events occurred at least once.
 
 drop table if exists data;
 create table data (key Int) engine=MergeTree() order by () settings prewarm_mark_cache=0;

@@ -213,12 +213,13 @@ find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py'
 # The `query cache` branch must come after `query condition`, otherwise the shorter
 # alternative would never let the more specific cache name be recognised.
 # Occurrences inside `formatQuery`/`parseQuery`-style calls are query *text*, never executed,
-# so they are skipped along with `EXPLAIN SYNTAX` and `clickhouse-local` invocations.
+# so they are skipped along with `EXPLAIN SYNTAX` (also as a quoted string literal) and
+# `clickhouse-local` invocations (`$CLICKHOUSE_LOCAL` or `${CLICKHOUSE_LOCAL}`).
 # `04836_system_cache_on_cluster_access_types` checks unscoped commands with a user
 # lacking cache privileges, so they fail before execution; permitted clears use a per-run `TAG`.
 tests_with_global_cache_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep -liP '^(?!\s*(?:--|#|EXPLAIN\s+SYNTAX|SELECT\s+(?:format|parse|normalize)Query|\$CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+(?:(?:mark|primary\s+index|uncompressed|index\s+mark|index\s+uncompressed|vector\s+similarity\s+index|text\s+index(?:\s+(?:tokens|header|postings))?|query\s+condition|query|compiled\s+expression|parquet\s+metadata|iceberg\s+metadata|page)\s+cache|text\s+index\s+caches)(?![^;\n]*(?:for\s+table|for\s+source|\btag\b))' |
+        xargs grep -liP '^(?!\s*(?:--|#|['\''\"]?EXPLAIN\s+SYNTAX|SELECT\s+(?:format|parse|normalize)Query|\$\{?CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+(?:(?:mark|primary\s+index|uncompressed|index\s+mark|index\s+uncompressed|vector\s+similarity\s+index|text\s+index(?:\s+(?:tokens|header|postings))?|query\s+condition|query|compiled\s+expression|parquet\s+metadata|iceberg\s+metadata|page)\s+cache|text\s+index\s+caches)(?![^;\n]*(?:for\s+table|for\s+source|\btag\b))' |
         grep -v '/04836_system_cache_on_cluster_access_types\.sh$' |
         sort -u
 ) )
