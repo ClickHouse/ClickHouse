@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 # Tag no-parallel: mt_background_executor_pretend_busy and replicated_queue_fail_next_entry are
 #   server-global failpoints (the first one refuses every background task while it is enabled), and
 #   the test asserts a server-wide ProfileEvent delta.
