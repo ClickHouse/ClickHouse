@@ -299,6 +299,8 @@ static struct InitFiu
     REGULAR(iceberg_catalog_commit_transport_fail) \
     REGULAR(iceberg_catalog_commit_transport_net_fail) \
     REGULAR(iceberg_catalog_commit_rejected) \
+    REGULAR(iceberg_catalog_commit_retried) \
+    REGULAR(iceberg_catalog_commit_timed_out) \
     REGULAR(iceberg_catalog_commit_rejected_dispatched) \
     REGULAR(iceberg_catalog_commit_net_fail_before_body) \
     REGULAR(iceberg_catalog_commit_std_throw_before_body) \

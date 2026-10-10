@@ -71,6 +71,8 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_reconcile_fail[];
     extern const char iceberg_catalog_commit_reconcile_throw[];
     extern const char iceberg_catalog_commit_rejected[];
+    extern const char iceberg_catalog_commit_retried[];
+    extern const char iceberg_catalog_commit_timed_out[];
     extern const char iceberg_catalog_commit_update_throw[];
     extern const char iceberg_catalog_commit_update_throw_post_dispatch[];
 }
@@ -111,6 +113,24 @@ bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
     auto it = parameters.find("table_type");
     const std::string table_type = it != parameters.end() ? it->second : "";
     return Poco::toUpper(table_type) == "ICEBERG";
+}
+
+/// Glue refused the request without applying it. Any other error, such as a timeout or an internal
+/// or federation source failure, may follow an applied update.
+bool isDefiniteRejection(Aws::Glue::GlueErrors error)
+{
+    switch (error)
+    {
+        case Aws::Glue::GlueErrors::ACCESS_DENIED:
+        case Aws::Glue::GlueErrors::VALIDATION:
+        case Aws::Glue::GlueErrors::INVALID_INPUT:
+        case Aws::Glue::GlueErrors::ENTITY_NOT_FOUND:
+        case Aws::Glue::GlueErrors::CONCURRENT_MODIFICATION:
+        case Aws::Glue::GlueErrors::RESOURCE_NUMBER_LIMIT_EXCEEDED:
+            return true;
+        default:
+            return false;
+    }
 }
 
 }
@@ -785,22 +805,32 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 
     request.SetTableInput(table_input);
 
+    /// Called by the SDK before each retry; the outcome describes only the last attempt.
+    bool retried = false;
+    request.SetRequestRetryHandler([&retried](const Aws::AmazonWebServiceRequest &) { retried = true; });
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_retried, { request.GetRequestRetryHandler()(request); });
+
     bool rejected = false;
     fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected, { rejected = true; });
+    bool timed_out = false;
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_timed_out, { timed_out = true; });
 
     Aws::Glue::Model::UpdateTableOutcome response;
     std::optional<String> thrown_error_message;
 
-    if (rejected)
+    if (rejected || timed_out)
     {
-        /// Models a request glue rejects outright, so the pointer never advances.
+        /// Models glue answering the request with an outright rejection or with a timeout.
         response = Aws::Glue::Model::UpdateTableOutcome(Aws::Client::AWSError<Aws::Glue::GlueErrors>(
-            Aws::Glue::GlueErrors::ACCESS_DENIED, "InjectedRejection", "Injected rejection", false));
+            rejected ? Aws::Glue::GlueErrors::ACCESS_DENIED : Aws::Glue::GlueErrors::OPERATION_TIMEOUT,
+            rejected ? "InjectedRejection" : "InjectedTimeout",
+            rejected ? "Injected rejection" : "Injected timeout",
+            false));
     }
     else
     {
-        /// An exception raised by the call says no more about whether the update applied than an
-        /// unsuccessful outcome does, so it is one more unknown outcome rather than a rejection.
+        /// An exception raised by the call carries no status, so it says nothing about whether the
+        /// update applied.
         try
         {
             fiu_do_on(DB::FailPoints::iceberg_catalog_commit_update_throw,
@@ -831,8 +861,12 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     else if (failed)
     {
-        error_message = String(response.GetError().GetMessage());
-        error_name = String(response.GetError().GetExceptionName());
+        const auto & error = response.GetError();
+        error_message = String(error.GetMessage());
+        error_name = String(error.GetExceptionName());
+
+        if (!retried && isDefiniteRejection(error.GetErrorType()))
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", error_message);
     }
 
     fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
@@ -844,8 +878,7 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 
     if (failed)
     {
-        /// Every failed outcome is reconciled: the SDK retries UpdateTable, so the error describes
-        /// the last attempt and an earlier one may have applied the update.
+        /// Any other failure may have applied the update, on this attempt or an earlier one.
         const auto committed_metadata_location = readRawMetadataLocation(namespace_name, table_name);
 
         if (committed_metadata_location == new_metadata_path)

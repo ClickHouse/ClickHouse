@@ -2134,6 +2134,14 @@ def _s3_uri_exists(minio_client, s3_uri):
         return False
 
 
+def _glue_manifest_lists(started_cluster, metadata_location):
+    # Manifest lists next to the table's metadata file. Cleaning up a commit removes its own.
+    bucket, key = metadata_location[len("s3://") :].split("/", 1)
+    prefix = key.rsplit("/", 1)[0] + "/"
+    objects = started_cluster.minio_client.list_objects(bucket, prefix=prefix, recursive=True)
+    return sorted(o.object_name for o in objects if o.object_name.rsplit("/", 1)[-1].startswith("snap-"))
+
+
 def _setup_glue_commit_table(started_cluster, node, test_ref):
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
@@ -2226,23 +2234,16 @@ def test_glue_commit_read_back_raising_keeps_files(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
 
 
-def test_glue_commit_rejected_is_not_reported_as_committed(started_cluster):
-    # UpdateTable carries no precondition and the SDK retries it, so a failure whose pointer is not
-    # ours is indistinguishable from "committed, then superseded": the outcome is unknown and the
-    # staged files are kept. The retryability glue reports on the final error cannot narrow this,
-    # because it describes the last attempt only.
-    #
-    # This is the opposite contract to the REST twin test_catalog_commit_definite_rejection_keeps_error,
-    # which asserts the original error survives. REST pins http_settings.max_tries = 1 for the commit,
-    # so a received REST status describes the only attempt; glue has no equivalent per-request pin.
-    #
-    # Reconciling through a helper that derives the location from object storage would find the
-    # metadata file staged before the commit and wrongly report success, so this must fail.
+def test_glue_commit_definite_rejection_keeps_error(started_cluster):
+    # Glue refused the only attempt, so the update cannot have applied: the original error survives
+    # and the files staged for the commit are cleaned up, like the REST twin
+    # test_catalog_commit_definite_rejection_keeps_error.
     node = started_cluster.instances["node1"]
     root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
         started_cluster, node, f"test_glue_commit_rejected_{uuid.uuid4()}"
     )
     before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    manifest_lists_before = _glue_manifest_lists(started_cluster, before)
 
     try:
         node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_rejected")
@@ -2250,15 +2251,65 @@ def test_glue_commit_rejected_is_not_reported_as_committed(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_rejected")
 
-    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
-    # The original glue error must still be readable, so the user keeps the actionable detail.
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
     assert "Injected rejection" in error, error
 
-    # The pointer never advanced, and the previous snapshot is untouched.
+    # The pointer never advanced, the previous snapshot is untouched and the commit's manifest list is gone.
     after = _glue_metadata_location(started_cluster, root_namespace, table_name)
     assert after == before, (before, after)
     assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert _glue_manifest_lists(started_cluster, after) == manifest_lists_before
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+
+def _check_glue_commit_unknown_keeps_files(started_cluster, test_ref, failpoints, injected_message):
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"{test_ref}_{uuid.uuid4()}"
+    )
+    before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    manifest_lists_before = _glue_manifest_lists(started_cluster, before)
+
+    try:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    assert injected_message in error, error
+
+    # The pointer is not ours, which is also what "committed, then superseded" looks like, so the
+    # staged manifest list must still be there. Reconciling from object storage instead would find
+    # the staged metadata file and wrongly report success.
+    after = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert after == before, (before, after)
+    assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert len(_glue_manifest_lists(started_cluster, after)) == len(manifest_lists_before) + 1
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+
+def test_glue_commit_retried_rejection_keeps_files(started_cluster):
+    # The SDK retried, so the rejection describes a later attempt and an earlier one may have
+    # applied the update: the outcome is unknown.
+    _check_glue_commit_unknown_keeps_files(
+        started_cluster,
+        "test_glue_commit_retried_rejection",
+        ["iceberg_catalog_commit_retried", "iceberg_catalog_commit_rejected"],
+        "Injected rejection",
+    )
+
+
+def test_glue_commit_timeout_keeps_files(started_cluster):
+    # A timed out operation is no answer, although the SDK reports it as non-retryable.
+    _check_glue_commit_unknown_keeps_files(
+        started_cluster,
+        "test_glue_commit_timeout",
+        ["iceberg_catalog_commit_timed_out"],
+        "Injected timeout",
+    )
 
 
 def test_glue_commit_update_throw_keeps_files(started_cluster):
