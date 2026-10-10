@@ -4,9 +4,9 @@
 namespace DB
 {
 
-MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, bool object_storage_is_read_only_)
+MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_)
     : underlying(std::move(underlying_))
-    , object_storage_is_read_only(object_storage_is_read_only_)
+    , object_storage(std::move(object_storage_))
 {
 }
 
@@ -261,7 +261,9 @@ bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
     /// A storage that removes its blobs synchronously has to write to the object storage for that, so over
     /// a read-only one it never removes anything either. A storage with a deferred removal queue of its own
     /// (`local`) may still commit a removal, so the queue is kept for it.
-    if (object_storage_is_read_only && !underlying->hasDeadBlobsQueue())
+    /// The object storage is asked every time: its `readonly` setting can change on config reload, and
+    /// `BlobKillerThread::applyNewSettings` re-evaluates this after the object storage got the new settings.
+    if (object_storage->isReadOnly() && !underlying->hasDeadBlobsQueue())
         return false;
 
     return true;

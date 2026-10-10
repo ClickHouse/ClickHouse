@@ -13,8 +13,9 @@ class MetadataStorageFromCacheObjectStorage : public IMetadataStorage
     friend class MetadataStorageFromCacheObjectStorageTransaction;
 
 public:
-    /// `object_storage_is_read_only_` tells whether the object storage of the wrapped disk is read-only.
-    MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, bool object_storage_is_read_only_);
+    /// `object_storage_` is the object storage of the wrapped disk. It is asked whether it is read-only on every
+    /// call of `hasDeadBlobsQueue`, because its `readonly` setting may change on config reload.
+    MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, ObjectStoragePtr object_storage_);
     ~MetadataStorageFromCacheObjectStorage() override = default;
 
     MetadataStoragePtr getUnderlying() const;
@@ -94,7 +95,7 @@ public:
 
 private:
     const MetadataStoragePtr underlying;
-    const bool object_storage_is_read_only;
+    const ObjectStoragePtr object_storage;
 
     mutable std::mutex removed_objects_mutex;
     InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
