@@ -7,6 +7,8 @@ SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_merge_expression_into_join = 1;
 SET enable_join_runtime_filters = 0;
+-- The build-side swap applies to hash joins only.
+SET join_algorithm = 'hash';
 -- The hash-table cache is process-global and carries counts from earlier runs, so leaving this
 -- randomized would let a previous run of this test supply the estimate the arms below withhold.
 SET use_hash_table_stats_for_join_reordering = 0;
