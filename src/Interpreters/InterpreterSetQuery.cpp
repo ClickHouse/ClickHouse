@@ -5,6 +5,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -186,6 +187,9 @@ std::optional<String> getTableStorageName(const ASTCreateQuery & create, Context
 
     if (auto inherited_engine = getInheritedEngineName(create, context))
         return inherited_engine;
+
+    if (auto engine_name = InterpreterCreateQuery::getDatabaseDefaultTableEngineName(create, context); !engine_name.empty())
+        return engine_name;
 
     auto default_engine = context->getSettingsRef()[Setting::default_table_engine];
     if (default_engine == DefaultTableEngine::None)

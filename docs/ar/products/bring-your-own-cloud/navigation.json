@@ -53,6 +53,7 @@
         "ar/products/bring-your-own-cloud/reference/faq",
         {
           "group": "وضع الموصل",
+          "hidden": true,
           "pages": [
             "ar/products/bring-your-own-cloud/connector/overview",
             "ar/products/bring-your-own-cloud/connector/onboarding",
