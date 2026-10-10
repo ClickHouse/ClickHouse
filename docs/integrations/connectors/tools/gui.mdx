@@ -32,6 +32,25 @@ Features:
 
 </Accordion>
 
+<Accordion title="CHewie">
+
+[CHewie](https://github.com/kolsys/chewie) is a fast, lightweight, feature-rich browser-only client for ClickHouse. It needs no backend: the app talks to ClickHouse directly over the HTTP interface, and everything it stores — connections, tabs, query history — lives in your browser.
+
+Features:
+
+- Multiple saved connections with `DEV` / `STAGING` / `PROD` labels and a color-coded environment indicator, plus per-connection ClickHouse settings (`max_execution_time=300`, ...) applied to every query.
+- SQL editor with ClickHouse syntax highlighting, autocomplete, multi-tab execution, and query history.
+- Built-in data visualization: flexibly turn any query result into a line, area, or bar chart in a couple of clicks directly from the results grid.
+- Quick table querying: instantly open a pre-filled `SELECT` tab directly from the table overview page.
+- Export results in any native ClickHouse output format — CSV, TabSeparated, JSON family, Parquet, Avro, SQLInsert, Markdown, and more — streamed from the server.
+- Copy a range of rows from the results grid and paste it into Google Sheets, Excel, or Docs as proper columns.
+- Log viewer for every `system.*_log` table on the server, with curated views for the common ones.
+- Metrics dashboard: query performance, table statistics, resource utilization, settings overview.
+- Local-only data: nothing is sent anywhere except to your ClickHouse server.
+- Deploys as a Docker image, as static files on S3 or any static host, or straight from ClickHouse itself via `http_server_default_response` — no app server required.
+
+</Accordion>
+
 <Accordion title="ChartDB">
 
 [ChartDB](https://chartdb.io) is a free and open-source tool for visualizing and designing database schemas, including ClickHouse, with a single query. Built with React, it provides a seamless and user-friendly experience, requiring no database credentials or signup to get started.
@@ -722,5 +741,21 @@ Features:
 - Query filters by text, table, user, host, duration, status, and exception-code presets.
 - Query graphs by duration, user, and kind; per-host load graphs with anomaly detection.
 - Threshold alerts on host resources that explain the problem and recommend a fix.
+
+</Accordion>
+
+<Accordion title="VisuaLeaf">
+
+[VisuaLeaf](https://visualeaf.com/database/clickhouse/) is a cross-platform desktop database GUI with ClickHouse support, alongside MongoDB, PostgreSQL, MySQL, and other databases.
+
+Features:
+
+- Browse ClickHouse databases and columnar tables.
+- Run analytical SQL queries.
+- Turn query results into charts and dashboards.
+- Recognizes ClickHouse Cloud connections.
+- Available for Windows, macOS, and Linux.
+
+A free Community Edition is available, with paid editions for additional features.
 
 </Accordion>

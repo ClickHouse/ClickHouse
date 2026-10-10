@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -153,10 +154,10 @@ static NameSet getAllPossibleStreamNames(
 
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
@@ -207,7 +208,7 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool is_insert_query) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     auto columns = getActualTableStructure(context, is_insert_query);
 
     StorageID storage_id(getDatabaseName(), table_name);
@@ -303,7 +304,7 @@ DESCRIBE mergeTreeIndex(currentDatabase(), test_table, with_marks = true) SETTIN
 │ arr.mark        │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
 └─────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
     );
 }
