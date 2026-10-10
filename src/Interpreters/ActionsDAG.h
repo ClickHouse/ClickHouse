@@ -281,10 +281,12 @@ public:
     /// Fold a filter predicate that reaches a Const through `materialize`/`alias` wrappers.
     /// Limited to value-only predicate functions (equals/and/or/comparisons) so the result
     /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
-    /// representation-observing parents elsewhere in the DAG are never touched
-    void foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
-    /// The same for the filter at `filter_output_position` of the outputs.
-    void foldFilterPredicateThroughMaterialize(size_t filter_output_position);
+    /// representation-observing parents elsewhere in the DAG are never touched.
+    /// A removed filter column is replaced by the constant. A kept one stays an output as it is, for whoever reads
+    /// it, and the constant becomes a new output under a new name that clashes with no output and no column of
+    /// `input_header`: the filter column from now on, which the filter removes. So the filter always reads the
+    /// constant, and a kept predicate is an ordinary output that removing unused columns can drop.
+    void foldFilterPredicateThroughMaterialize(std::string & filter_column_name, bool & remove_filter_column, const Block & input_header);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
@@ -350,7 +352,9 @@ public:
     void substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
-    /// Special handling for logical AND: non-computable children are replaced with constant true.
+    /// The result only ever widens the filter: a non-computable child of a logical AND is replaced with
+    /// constant true where that AND is read with positive polarity, and a filter that cannot be expressed
+    /// at all becomes constant true.
     /// Useful for evaluating boolean filters in projection indices when some input columns are missing.
     ActionsDAG restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const;
 
@@ -507,12 +511,15 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
+    ///
+    /// @param allow_index_hints - false for key steps like window: a hint prunes whole granules, which can leave a key with part of its rows
     std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs,
-        bool allow_non_deterministic_functions);
+        bool allow_non_deterministic_functions,
+        bool allow_index_hints = true);
 
     struct ActionsForJOINFilterPushDown;
 

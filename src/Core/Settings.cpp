@@ -1021,6 +1021,8 @@ The maximum speed of data exchange over the network in bytes per second for writ
 )", 0) \
     DECLARE(UInt64, max_local_read_bandwidth, 0, R"(
 The maximum speed of local reads in bytes per second.
+
+The limit applies to the data read from the block devices: reads that are served from the OS page cache are not accounted for, as long as the read method can detect them (which is the case for the default `local_filesystem_read_method = 'pread_threadpool'`, for `pread`, and for the reads of the filesystem cache files).
 )", 0) \
     DECLARE(UInt64, max_local_write_bandwidth, 0, R"(
 The maximum speed of local writes in bytes per second.
@@ -1163,6 +1165,33 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0, \
         {"24.10", true, true, "New setting"}) \
+    DECLARE(Bool, apply_string_filters_during_scan, false, R"(
+Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
+
+When a `PREWHERE` condition contains a conjunct that searches for a non-empty substring in a `String` (or `Nullable(String)`) column
+(`LIKE`, `position`, `startsWith`, `endsWith`, or equality with a non-empty string), the reader checks every value against this condition
+during deserialization and reads non-matching values as empty strings. This makes reading faster and lowers memory usage when the condition
+is selective, because the data of non-matching values is not copied into the column. The result of the query does not change,
+because the rows with non-matching values are guaranteed to be filtered out by `PREWHERE`, and such conditions never match an empty string.
+
+The filter is disabled adaptively at runtime if it turns out to be non-selective.
+
+Also allows the `WHERE` to `PREWHERE` optimization to move substring search conditions (`LIKE`, `position`, `startsWith`, `endsWith`)
+even when they use all queried columns (normally that is pointless, but with this setting the scan itself becomes cheaper).
+Equality with a constant string is not moved for this reason: it is still applied during the scan when it is already in `PREWHERE`.
+
+Supported for reading from `MergeTree` tables and from the `Parquet` format.
+
+Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
+(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
+the amount of data read from disk when the values are replaced by empty strings.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, false, "New setting to push down substring search conditions on String columns from PREWHERE into the column scan."}) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
 Allows you to specify how [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize), or [`TRUNCATE`](/reference/statements/truncate) queries wait for their operations to complete.
@@ -2294,6 +2323,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.5", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."}) \
+    DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
+For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
+
+This applies to `GROUP BY key ORDER BY key LIMIT n` and to `GROUP BY key LIMIT n` without `ORDER BY`, where any `n` groups are a valid answer.
+
+It is not applied to a read with `FINAL` or with parallel replicas: `FINAL` must see every version of a row, and the boundary is not carried to the reads on remote replicas.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, true, "New setting: `GROUP BY key [ORDER BY key] LIMIT n` publishes the top-K heap boundary to the `MergeTree` reading step, which filters rows and skips granules by it. `compatibility` below 26.10 disables it."}) \
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 
 This setting also controls the behavior of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization).
@@ -3797,6 +3839,29 @@ use `max_bytes_before_external_distinct`, leaving room for additional memory usa
 )", 0, \
         {"26.9", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."}) \
     \
+    DECLARE(UInt64, max_bytes_before_external_set, 0, R"(
+Query memory threshold, in bytes, for spilling the set of `IN` with a subquery to disk, while the set is
+being built or while the query uses it. Actual memory usage can exceed this threshold. A set that takes
+less memory than this threshold or 16 MiB, whichever is smaller, stays in memory.
+
+`0` disables this threshold. If `max_bytes_ratio_before_external_set` also provides a threshold, the
+smaller is used. Set both settings to `0` to disable spilling.
+
+See [IN in external memory](/reference/statements/in#in-in-external-memory).
+)", 0, \
+        {"26.10", 0, 0, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_set` applies."}) \
+    DECLARE(Double, max_bytes_ratio_before_external_set, 0., R"(
+Fraction of available server or user memory used to calculate the threshold for spilling the set of `IN`
+with a subquery to disk, at the start of execution. For example, `0.5` uses half of the available memory.
+
+Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
+server or user memory limit, the ratio has no effect.
+
+`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
+use `max_bytes_before_external_set`, leaving room for additional memory usage.
+)", 0, \
+        {"26.10", 0., 0., "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
+    \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.
@@ -4599,6 +4664,82 @@ Possible values:
 - Positive integer.
 - `0` — unlimited (default)
 )", 0)\
+    DECLARE(UInt64, max_temporary_tables, 0, R"(
+The maximum number of temporary tables that can exist in one session at the same time.
+Only tables created with `CREATE TEMPORARY TABLE` are counted: tables with external data sent with a query and the
+temporary tables built internally for `GLOBAL IN` / `GLOBAL JOIN` or materialized CTEs are not.
+
+The limit is checked when a new temporary table is created, and an exception with the `TOO_MANY_TABLES` error code is
+thrown if the session already has this number of temporary tables. Replacing an existing temporary table with
+`CREATE OR REPLACE TEMPORARY TABLE` does not increase the number of tables and is always allowed.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the number of temporary tables in a session."}) \
+    DECLARE(UInt64, max_temporary_table_memory_usage, 0, R"(
+The maximum number of bytes of memory that one temporary table with the `Memory` engine can hold.
+It applies to tables created with `CREATE TEMPORARY TABLE`, including the default temporary table engine
+(see `default_temporary_table_engine`), and is counted in the same way as `total_bytes` in `system.tables`.
+
+The limit is checked on every `INSERT` into the table (including `CREATE TEMPORARY TABLE ... AS SELECT`), while the data
+is being received and again before it is added: if the table would exceed it, the `INSERT` throws an exception with the
+`TOO_MANY_BYTES` error code and the data is not added. An `INSERT` that writes with several threads (see
+`max_insert_threads`) adds the data of every thread separately, so the data of some threads may already be added when
+another one throws, but the table never exceeds the limit. The value is taken from the settings of the `INSERT` query.
+The limit is also checked after a mutation (`ALTER TABLE ... UPDATE`, `MATERIALIZE COLUMN`, etc.), with the value from
+the settings of the `ALTER` query: if the mutated data would exceed it, the mutation throws an exception with the
+`TOO_MANY_BYTES` error code and the data is left unchanged.
+
+Note that the `max_bytes_to_keep` setting of the `Memory` engine is different: it evicts the oldest data instead of
+rejecting the new one. If both are set, the eviction is applied first.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the memory usage of a temporary table with the `Memory` engine."}) \
+    DECLARE(UInt64, max_temporary_table_size_bytes_compressed, 0, R"(
+The maximum size in bytes of the data on disk (compressed) of one temporary table with an engine of the `MergeTree` family.
+It applies to tables created with `CREATE TEMPORARY TABLE` and is counted in the same way as `total_bytes` in `system.tables`,
+that is, as the sum of the sizes of the active data parts.
+
+The limit is checked on every `INSERT` into the table (including `CREATE TEMPORARY TABLE ... AS SELECT`) before each new
+data part is committed: if the table would exceed it, the `INSERT` throws an exception with the `TOO_MANY_BYTES` error
+code and the part is not added. Parts committed earlier by the same `INSERT` stay in the table, as with any other
+error during an `INSERT` of multiple blocks. The value is taken from the settings of the `INSERT` query.
+
+The operations that add existing parts to the table are limited in the same way, with the value from the settings of
+their query: `ATTACH PART`, `ATTACH PARTITION`, `ATTACH PARTITION ... FROM`, `REPLACE PARTITION ... FROM`
+and `CREATE TEMPORARY TABLE ... CLONE AS`. They are rejected as a whole, unless they do
+not increase the size of the table. For `ATTACH PARTITION`, the check is done once for all its parts before they are
+attached, so writes running concurrently with it may make the table exceed the limit slightly.
+
+The parts written by background merges and mutations (`ALTER TABLE ... UPDATE`,
+`MATERIALIZE COLUMN`, etc.) are not checked, so a mutation that makes the data larger can make the table exceed the limit.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the compressed size of a temporary table with an engine of the `MergeTree` family."}) \
+    DECLARE(UInt64, max_temporary_table_size_bytes_uncompressed, 0, R"(
+The maximum size in bytes of the uncompressed data of one temporary table with an engine of the `MergeTree` family.
+It applies to tables created with `CREATE TEMPORARY TABLE` and is counted in the same way as `total_bytes_uncompressed`
+in `system.tables`.
+
+The limit is checked in the same way as `max_temporary_table_size_bytes_compressed`.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the uncompressed size of a temporary table with an engine of the `MergeTree` family."}) \
     \
     DECLARE(UInt64, backup_restore_keeper_max_retries, 1000, R"(
 Max retries for [Zoo]Keeper operations in the middle of a BACKUP or RESTORE operation.
@@ -5046,6 +5187,14 @@ Reject patterns which will likely be expensive to evaluate with hyperscan (due t
     DECLARE(Bool, allow_simdjson, true, R"(
 Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.
 )", 0) \
+    DECLARE(Bool, json_extract_named_tuples_as_objects, false, R"(
+Fill named tuples from JSON objects only, in the `JSONExtract` family of functions. When disabled, a JSON array fills a named tuple positionally (the historical behavior), so which array element lands in which named field depends on the tuple's declaration order. Unnamed tuples always fill positionally from arrays regardless of this setting.
+
+This setting applies to JSON passed as a string. Extraction from a column of the `JSON` data type is not affected, for typed and untyped paths alike: it reads the column's subcolumns instead of parsing a JSON document, so it never reaches the code this setting governs. Named tuple *columns* in JSON input formats are governed by the separate [input_format_json_named_tuples_as_objects](/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) setting; this setting covers the extraction functions only.
+
+Disabled by default.
+)", 0, \
+        {"26.10", false, false, "New setting to make the `JSONExtract` family fill named tuples from JSON objects only, instead of the historical positional fill from arrays. Unnamed tuples always fill positionally, and extraction from a column of the `JSON` data type is unaffected."}) \
     DECLARE(Bool, allow_introspection_functions, false, R"(
 Enables or disables [introspection functions](/reference/functions/regular-functions/introspection) for query profiling.
 
@@ -6541,6 +6690,12 @@ If the number of rows to read from the projection index is less than or equal to
 If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
 )", 0, \
         {"25.11", 1'000'000, 1'000'000, "New setting"}) \
+    DECLARE(Bool, enable_join_seal_gated_reading, false, R"(
+Gate the probe-side reading of a hash JOIN on the completion of the build-side runtime filter (see `enable_join_runtime_filters`): nothing is read on the probe side until the filter is complete, and the filter is then used to prune whole mark ranges by the primary key before read tasks are created, in addition to the ordinary row-level filtering. The gating is expressed as an edge of the query pipeline. On a gated read, the read-time index analysis of the same runtime filter (see `enable_join_runtime_filters_index_analysis`) is skipped as redundant.
+
+Experimental. Local reads are gated, including single-threaded and in-order reading; reads under FINAL, parallel replicas, or a join sharded by primary key ranges fall back to ungated reading with row-level filtering.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting to gate the probe-side reading of a hash JOIN on the build-side runtime filter completion and prune read ranges by it."}) \
     DECLARE(Bool, use_indexes_refiner_in_read_pools, false, R"(
 Apply indexes evaluated at data-read time already inside MergeTree read pools: mark ranges fully filtered out by skip indexes (see `use_skip_indexes_on_data_read`) or by the projection index (see `optimize_use_projection_filtering`) are dropped before a read task is created for them, instead of being skipped granule by granule during reading.
 
@@ -6932,7 +7087,7 @@ Possible values:
     DECLARE(Bool, use_query_condition_cache_for_top_k, true, R"(
 Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
 
-Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read. This setting has no effect unless `use_query_condition_cache` is also enabled.
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read (for a `File` table, by the set of files read and their versions). This setting has no effect unless `use_query_condition_cache` is also enabled.
 
 Possible values:
 
@@ -8654,7 +8809,7 @@ Only has an effect in ClickHouse Cloud. The maximum size of the buffer which is 
 )", 0, \
         {"25.7", 0, 0, "New cloud setting"}) \
     DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc). The cache is keyed on the object's ETag, so that an object overwritten in place is not served stale. An object whose ETag is missing or is not a strong content identifier is read from the object storage directly.
 )", 0, \
         {"25.7", false, false, "New setting"}) \
     DECLARE(UInt64, distributed_cache_connect_backoff_min_ms, default_distributed_cache_connect_backoff_min_ms, R"(
@@ -10175,6 +10330,10 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_xgboost, false, R"(
+Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to gate the experimental XGBoost integration (the `XGBOOST` dictionary layout and the `predictXGBoost` function)."}) \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
