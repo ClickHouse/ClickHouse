@@ -43,6 +43,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_UNLINK;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
@@ -215,7 +216,10 @@ static Plan getPlan(
         context,
         log.get(),
         persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method);
+        persistent_table_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_metadata_pointer_overrides */ true);
+    plan.generator.setVersion(metadata_version + 1);
 
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
@@ -1094,7 +1098,7 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 
 }
 
-static void writeMetadataFiles(
+static bool writeMetadataFiles(
     Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ExternalStorageCache & external_storages, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
@@ -1397,15 +1401,23 @@ static void writeMetadataFiles(
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(path_resolver.resolve(generated_metadata_info.path)),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
+        auto hint_path = plan.generator.generateVersionHint();
+        if (!writeMetadataFile(
+                path_resolver,
+                generated_metadata_info,
+                json_representation,
+                object_storage,
+                context))
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Metadata file {} already exists", generated_metadata_info.path.serialize());
 
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
+        return tryWriteVersionHintFile(
+            path_resolver,
+            generated_metadata_info,
+            hint_path,
+            object_storage,
+            context,
+            /* create */ true,
+            /* assert_version_exactly */ true);
     }
 }
 
@@ -1421,6 +1433,10 @@ static OldFiles getOldFiles(ObjectStoragePtr object_storage, const String & tabl
     constexpr std::string_view metadata_suffix = ".metadata.json";
 
     auto metadata_prefix_files = listFiles(*object_storage, table_path, "metadata", "");
+    std::erase_if(metadata_prefix_files, [](const String & file)
+    {
+        return file.ends_with("metadata/version-hint.text");
+    });
 
     /// A configured metadata path may differ from the listing key; compare filenames.
     const String head_file_name = std::filesystem::path(head_metadata_path).filename();
@@ -1644,8 +1660,10 @@ void compactIcebergTable(
             write_format,
             persistent_table_components.metadata_compression_method,
             external_storages_);
-        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, *external_storages_, context_, sample_block_, write_format, persistent_table_components.table_path);
-        clearOldFiles(object_storage_, old_files);
+        if (writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, *external_storages_, context_, sample_block_, write_format, persistent_table_components.table_path))
+            clearOldFiles(object_storage_, old_files);
+        else
+            LOG_WARNING(getLogger("IcebergCompaction"), "Compacted metadata was written but its version hint was not confirmed; old files were retained");
     }
 }
 

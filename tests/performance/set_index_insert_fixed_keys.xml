@@ -1,0 +1,24 @@
+<test>
+    <!-- A `set` index over more than one fixed-width column packs its grouping key through the batched
+         path, which covers the whole insert block. The index aggregator is called once per index
+         granule, so an insert used to pay that pack `block_rows / index_granularity` times over. Both
+         sides stay well inside the harness's 15-second per-query limit, which applies to the reference
+         server too: measured 1.71 s against 0.30 s. -->
+
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>CREATE TABLE set_index_insert_two_keys (a UInt64, b UInt64, ord UInt64, INDEX idx (a, b) TYPE set(1000) GRANULARITY 1) ENGINE = MergeTree ORDER BY ord</create_query>
+    <create_query>CREATE TABLE set_index_insert_one_key (a UInt64, b UInt64, ord UInt64, INDEX idx a TYPE set(1000) GRANULARITY 1) ENGINE = MergeTree ORDER BY ord</create_query>
+    <create_query>SYSTEM STOP MERGES</create_query>
+
+    <query>INSERT INTO set_index_insert_two_keys SELECT number % 20, number % 23, number FROM numbers(5000000)</query>
+
+    <!-- Control: a single index column hashes through a method that never batched, so this must not move. -->
+    <query>INSERT INTO set_index_insert_one_key SELECT number % 20, number % 23, number FROM numbers(5000000)</query>
+
+    <drop_query>SYSTEM START MERGES</drop_query>
+    <drop_query>DROP TABLE IF EXISTS set_index_insert_two_keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS set_index_insert_one_key</drop_query>
+</test>

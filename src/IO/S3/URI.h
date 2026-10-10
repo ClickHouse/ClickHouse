@@ -10,6 +10,11 @@
 
 #include <Core/SettingsEnums.h>
 
+namespace DB
+{
+class RemoteHostFilter;
+}
+
 namespace DB::S3
 {
 
@@ -44,6 +49,8 @@ struct URI
         S3UriStyle uri_style = S3UriStyle::AUTO,
         bool enable_url_encoding = true);
     void addRegionToURI(const std::string & region);
+
+    void checkRemoteHostFilter(const RemoteHostFilter & filter) const;
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
