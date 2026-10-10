@@ -136,7 +136,8 @@ public:
         assert_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
 
-    /// The merged count is exactly the sum of the partial counts.
+    /// The merged count is the modular `UInt64` sum of the partial counts, which never exceeds
+    /// their saturating sum - see `MergedValueBound::Subadditive`.
     MergedValueBound getMergedValueBound() const override { return MergedValueBound::Subadditive; }
 
     /// Reset the state to specified value. This function is not the part of common interface.
