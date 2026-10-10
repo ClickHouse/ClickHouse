@@ -46,7 +46,9 @@ stored_after=$(hash_of v_stored_05340)
 [ -n "${stored_before}" ] && [ "${stored_before}" != "${stored_after}" ] && echo 'a table read by a filter of the stored query changes its hash: yes' || echo 'a table read by a filter of the stored query changes its hash: no'
 
 # The same through the query cache: a new row in the table read by the stored filter must not be hidden.
-query="SELECT count() FROM v_stored_05340 SETTINGS use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1"
+# In the `ParallelReplicas` CI configuration the filter from the `SETTINGS` of the stored query was observed not to apply
+# (https://github.com/ClickHouse/ClickHouse/issues/124015), so pin parallel replicas off.
+query="SELECT count() FROM v_stored_05340 SETTINGS enable_parallel_replicas = 0, use_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1"
 $CLICKHOUSE_CLIENT -q "${query}"
 $CLICKHOUSE_CLIENT -q "INSERT INTO aux_05340 VALUES (3)"
 $CLICKHOUSE_CLIENT -q "${query}"

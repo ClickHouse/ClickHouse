@@ -31,10 +31,11 @@ commented=$(hash_of_v)
 [ "$before" = "$commented" ] && echo "a comment keeps the hash: yes" || echo "a comment keeps the hash: no"
 
 # The hash of a view folds its UUID, so recreate one view under the same UUID with another query.
+# A `Replicated` database rejects an explicit UUID unless `database_replicated_allow_explicit_uuid` allows it.
 uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 hash_of_query()
 {
-    $CLICKHOUSE_CLIENT -q "
+    $CLICKHOUSE_CLIENT --database_replicated_allow_explicit_uuid 1 -q "
         CREATE VIEW v1 UUID '${uuid}' AS $1;
         SELECT modification_hash FROM system.tables WHERE database = currentDatabase() AND name = 'v1';
         DROP VIEW v1 SYNC;

@@ -23,7 +23,9 @@ definer="definer_04841_${CLICKHOUSE_DATABASE}"
 open_definer="open_definer_04841_${CLICKHOUSE_DATABASE}"
 
 # Pin every query-cache setting so the flaky check's settings randomizer cannot change the outcome.
-qc="use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1"
+# In the `ParallelReplicas` CI configuration the definer's row policy was observed not to apply
+# (https://github.com/ClickHouse/ClickHouse/issues/124015), which changes what the view returns.
+qc="enable_parallel_replicas = 0, use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1"
 
 # A table that has any row policy is not readable at all by a user none of its policies mention, so the
 # tables read by a definer with a row policy get a second, literally always true policy for the invoker.
