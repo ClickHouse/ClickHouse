@@ -170,6 +170,7 @@ WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, const ExecutionOptions & o
     , options(options_)
     , max_threads(max_threads_)
     , coordinator(*this, max_threads)
+    , global_tasks(pipeline.size())
     , requested_threads(concurrency_control && ConcurrencyControl::instance().getLazyAllocation() ? 1 : max_threads)
     , cpu_slots(allocateCPU(concurrency_control, requested_threads))
     , threads(max_threads)

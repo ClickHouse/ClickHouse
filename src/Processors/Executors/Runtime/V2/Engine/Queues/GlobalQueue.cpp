@@ -9,8 +9,9 @@ namespace DB
 namespace Runtime::V2
 {
 
-GlobalQueue::GlobalQueue()
+GlobalQueue::GlobalQueue(size_t capacity)
 {
+    entries.reserve(capacity);
     Wyrd::setName(mutex, "global_tasks.mutex");
     Wyrd::setName(count, "global_tasks.count");
 }

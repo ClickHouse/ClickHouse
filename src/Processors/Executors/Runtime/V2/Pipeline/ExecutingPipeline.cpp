@@ -283,6 +283,12 @@ void ExecutingPipeline::reportReadProgress(ReadProgressCallback & callback)
     }
 }
 
+size_t ExecutingPipeline::size() const
+{
+    std::lock_guard lock(mutex);
+    return processors->size();
+}
+
 String ExecutingPipeline::dump() const
 {
     std::lock_guard lock(mutex);

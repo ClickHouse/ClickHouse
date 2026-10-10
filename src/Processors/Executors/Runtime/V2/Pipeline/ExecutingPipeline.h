@@ -39,6 +39,7 @@ public:
     bool allProcessorsFinished() const;
     void reportReadProgress(ReadProgressCallback & callback);
 
+    size_t size() const;
     String dump() const;
 
 private:
