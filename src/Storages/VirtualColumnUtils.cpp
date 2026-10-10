@@ -165,7 +165,7 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    return std::make_shared<ExpressionActions>(std::move(dag));
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
 
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
