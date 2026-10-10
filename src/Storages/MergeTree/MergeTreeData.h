@@ -605,6 +605,8 @@ public:
         {
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
+            /// The lowest metadata version of the patch parts the snapshot is applied with.
+            Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
             PartitionIdToMinBlockPtr min_part_data_versions = nullptr;
             PartitionIdToMaxBlockPtr max_mutation_versions = nullptr;
             bool need_data_mutations = false;
