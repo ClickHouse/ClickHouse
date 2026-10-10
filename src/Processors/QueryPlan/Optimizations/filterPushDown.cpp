@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -861,6 +862,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (is_filter_column_const_before)
         original_filter_const_column = filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column;
 
+    /// With no input given only the conjuncts that read no column are evaluated, so FALSE means no row passes.
+    const bool filter_is_always_false
+        = (left_stream_filter_push_down_input_columns_available || right_stream_filter_push_down_input_columns_available)
+        && !isSensitiveToEvaluationCount(filter->getExpression())
+        && filterResultForNotMatchedRows(filter->getExpression(), filter->getFilterColumnName(), Block{}) == FilterResult::FALSE;
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -871,7 +878,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column,
-        cross_type_equivalent_columns);
+        cross_type_equivalent_columns,
+        filter_is_always_false);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
     {
@@ -1232,6 +1240,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
     {
+        if (!settings.filter_push_down_below_limit_by)
+            return 0;
+
         /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
         /// per-group rows (and therefore the result) are identical whether it runs above or
         /// below the LIMIT BY. But it is only safe to push when every non-empty input group

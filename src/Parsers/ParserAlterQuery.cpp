@@ -1367,7 +1367,7 @@ For other `ALTER` queries which only modify the metadata, you can use the [alter
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
 <Note>
-For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown. With `alter_sync = 3` the inactive replicas are not waited for, so no exception is thrown.
+For all `ALTER` queries, if `alter_sync = 2`, or `alter_sync = 3` on `ReplicatedMergeTree`, and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 </Note>
 
 ### Concurrent `ALTER` assignment on one table {#concurrent-alter-assignment-on-one-table}
@@ -3475,6 +3475,23 @@ SELECT * FROM mv;
 │ 1 │
 │ 2 │
 └───┘
+```
+
+## Required privileges {#required-privileges}
+
+`ALTER TABLE ... MODIFY QUERY` requires the `ALTER VIEW MODIFY QUERY` privilege on the view. The new query runs with the [SQL security](/reference/statements/create/view#sql_security) of the view, so the statement also requires the grants that are necessary to create a view with that SQL security:
+
+- `SQL SECURITY DEFINER` with a definer that is not the current user: `SET DEFINER` on that definer.
+- `SQL SECURITY NONE`: `ALLOW SQL SECURITY NONE`.
+
+When the same statement changes the SQL security with `MODIFY SQL SECURITY`, these grants are required for the new SQL security instead of the old one.
+
+With `ON CLUSTER`, the statement is authorized on the host where it runs, so that host must have the view. Otherwise the statement fails with `UNKNOWN_TABLE`.
+
+```sql
+GRANT ALTER VIEW MODIFY QUERY ON db.mv TO alice;
+-- Only if `db.mv` runs as another user, for example `bob`:
+GRANT SET DEFINER ON bob TO alice;
 ```
 
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}

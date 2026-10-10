@@ -846,16 +846,6 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
     return re2->Match({subject, subject_size}, 0, subject_size, re2::RE2::UNANCHORED, nullptr, 0);
 }
 
-const UInt8 * OptimizedRegularExpression::searchRequiredSubstring(const UInt8 * haystack, size_t haystack_size) const
-{
-    chassert(!required_substring.empty());
-
-    if (is_case_insensitive)
-        return case_insensitive_substring_searcher->search(haystack, haystack_size);
-
-    return case_sensitive_substring_searcher->search(haystack, haystack_size);
-}
-
 
 bool OptimizedRegularExpression::match(const char * subject, size_t subject_size, Match & match) const
 {

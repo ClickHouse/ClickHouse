@@ -467,7 +467,8 @@ public:
 
     struct SplitArrayJoinResult;
 
-    /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
+    /// Extract one `arrayJoin` function so it can become an ArrayJoinStep between `before` and `after`.
+    /// Picks an ARRAY_JOIN node whose argument does not itself contain an array join; returns nullopt if none.
     std::optional<SplitArrayJoinResult> extractFirstArrayJoin() const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of
@@ -532,6 +533,7 @@ public:
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
       * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
       * key rather than a rename of an equal-typed column.
+      * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -543,7 +545,8 @@ public:
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-        const NameSet & cross_type_equivalent_columns);
+        const NameSet & cross_type_equivalent_columns,
+        bool filter_is_always_false);
 
     /** Build filter dag from multiple filter dags.
       *

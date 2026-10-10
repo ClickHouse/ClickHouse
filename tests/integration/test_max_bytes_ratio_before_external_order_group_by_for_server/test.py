@@ -13,17 +13,10 @@ node_user = cluster.add_instance(
 )
 
 
-sanitizer_build = {}
-
-
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
         cluster.start()
-        # A server whose RSS is over max_server_memory_usage rejects even the connection
-        # handshake, and the tests below drive the nodes to that limit on purpose.
-        sanitizer_build["thread"] = node_server.is_built_with_thread_sanitizer()
-        sanitizer_build["memory"] = node_server.is_built_with_memory_sanitizer()
         yield cluster
     finally:
         cluster.shutdown()
@@ -37,9 +30,9 @@ def start_cluster():
     ],
 )
 def test_max_bytes_ratio_before_external_group_by(node):
-    if sanitizer_build["thread"]:
+    if node.is_built_with_thread_sanitizer():
         pytest.skip("TSan build is skipped due to memory overhead")
-    if sanitizer_build["memory"]:
+    if node.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
 
     # Peak memory usage: 15-16GiB
@@ -70,7 +63,7 @@ def test_max_bytes_ratio_before_external_group_by(node):
     ],
 )
 def test_max_bytes_ratio_before_external_sort(node):
-    if sanitizer_build["thread"]:
+    if node.is_built_with_thread_sanitizer():
         pytest.skip("TSan build is skipped due to memory overhead")
 
     # Peak memory usage: 12GiB (each column in ORDER BY eats ~2GiB)
@@ -105,9 +98,9 @@ def test_max_bytes_ratio_before_external_sort(node):
     ],
 )
 def test_max_bytes_ratio_before_external_distinct(node):
-    if sanitizer_build["thread"]:
+    if node.is_built_with_thread_sanitizer():
         pytest.skip("TSan build is skipped due to memory overhead")
-    if sanitizer_build["memory"]:
+    if node.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
 
     # Peak memory usage: ~14GiB (the `DISTINCT` hash set of 100M unique ~85-byte strings)

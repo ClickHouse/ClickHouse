@@ -94,7 +94,7 @@ public:
     ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & path, bool with_tags) const override;
     std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & path, bool with_tags) const override;
 
-    void copyObject( /// NOLINT
+    String copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,

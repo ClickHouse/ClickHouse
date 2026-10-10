@@ -173,9 +173,6 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
                         materialized_cte->cte_name);
 
                 auto cte_options = select_query_options.subquery();
-                /// Gates for a materialized CTE belong to the plan that collected it, where a deeper
-                /// level yields a higher and therefore dominating gate; this CTE's plan is not that plan.
-                cte_options.forceMaterializeCTE(false);
                 Planner cte_planner(
                     cte_subquery,
                     cte_options,

@@ -331,7 +331,20 @@ void BackupImpl::openArchive()
         if (!reader->fileExists(archive_name))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
         size_t archive_size = reader->getFileSize(archive_name);
-        archive_reader = createArchiveReader(archive_name, [my_reader = reader, archive_name]{ return my_reader->readFile(archive_name); }, archive_size);
+        /// The archive is reopened through this factory as many times as it is read - the `tar` and
+        /// `7z` readers reopen it for every `fileExists` and every `readFile`, and the `zip` reader
+        /// whenever it needs another handle - so the size alone does not keep the session on one
+        /// archive: a blob replaced in place by another archive of the same size would be read as
+        /// the first archive for one file and as the second for the next. The generation of the
+        /// archive is therefore named once here, and every reopen is pinned to it: an archive
+        /// replaced under the open backup is refused (`FILE_CHANGED_DURING_READ` on Azure,
+        /// `S3_OBJECT_CHANGED_DURING_READ` on S3) instead of being read as two archives.
+        String archive_generation = reader->getFileGeneration(archive_name);
+        archive_reader = createArchiveReader(
+            archive_name,
+            [my_reader = reader, archive_name, archive_size, archive_generation]
+            { return my_reader->readFilePinnedToGeneration(archive_name, archive_size, archive_generation); },
+            archive_size);
         archive_reader->setPassword(archive_params.password);
     }
     else
@@ -669,7 +682,7 @@ void BackupImpl::readBackupMetadata()
     {
         if (!reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
-        in = reader->readFile(".backup");
+        in = reader->readFile(".backup", /*expected_file_size=*/ std::nullopt);
     }
 
     String str;
@@ -1209,7 +1222,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileByObjectKey(const Ba
     if (info.object_key.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Object key of {} is empty string", info.data_file_name);
 
-    return lightweight_snapshot_reader->readFile(info.object_key);
+    return lightweight_snapshot_reader->readFile(info.object_key, /*expected_file_size=*/ std::nullopt);
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -1262,7 +1275,7 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
         if (use_archive)
             read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
         else
-            read_buffer = reader->readFile(info.data_file_name);
+            read_buffer = reader->readFile(info.data_file_name, /*expected_file_size=*/ info.size - info.base_size);
     }
 
     if (info.base_size)

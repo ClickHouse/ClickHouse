@@ -119,9 +119,7 @@
         "group": "Snapshot",
         "pages": [
           "products/cloud/api-reference/snapshot/snapshot-get-list",
-          "products/cloud/api-reference/snapshot/snapshot-get",
-          "products/cloud/api-reference/snapshot/snapshot-configuration-get",
-          "products/cloud/api-reference/snapshot/snapshot-configuration-update"
+          "products/cloud/api-reference/snapshot/snapshot-get"
         ]
       },
       {

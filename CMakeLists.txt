@@ -190,7 +190,8 @@ if (OS_LINUX)
 
     if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
         # Fold identical code and data sections to reduce binary size.
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
+        # `safe` keeps address-taken functions distinct, as C and C++ require.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=safe")
     endif ()
 
     # In Release builds, strip residual debug sections that may come from contrib
@@ -362,7 +363,7 @@ if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
-    # Only useful on Linux where we use lld with --icf=all; Darwin's ld64
+    # Only useful on Linux where we use lld with --icf=safe; Darwin's ld64
     # does not consume these sections.
     if (OS_LINUX)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -faddrsig")
@@ -788,24 +789,6 @@ add_subdirectory (programs)
 add_subdirectory (utils)
 
 if (FUZZER)
-    # The .options files reference all.dict. OSS-Fuzz builds fuzzer targets
-    # individually and copies tests/fuzz/*.dict, so the `fuzzers` POST_BUILD
-    # step below never runs for it: generate the source-derived fallback here,
-    # before any target is built. The nightly libFuzzer job overwrites it with
-    # the authoritative binary-derived one (tests/fuzz/update_dict.sh).
-    execute_process(
-        COMMAND "${CMAKE_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh" "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/tests/fuzz/all.dict"
-        RESULT_VARIABLE FUZZER_SOURCE_DICT_RESULT
-        OUTPUT_VARIABLE FUZZER_SOURCE_DICT_OUTPUT
-        ERROR_VARIABLE FUZZER_SOURCE_DICT_OUTPUT)
-    string (STRIP "${FUZZER_SOURCE_DICT_OUTPUT}" FUZZER_SOURCE_DICT_OUTPUT)
-    # Fail loudly: a missing dictionary makes a consumer's `cp tests/fuzz/*.dict`
-    # abort on an unmatched glob far from here.
-    if (NOT FUZZER_SOURCE_DICT_RESULT EQUAL 0)
-        message (FATAL_ERROR "Failed to generate tests/fuzz/all.dict: ${FUZZER_SOURCE_DICT_OUTPUT}")
-    endif()
-    message (STATUS "${FUZZER_SOURCE_DICT_OUTPUT}")
-
     # Bundle fuzzers target
     add_custom_target(fuzzers)
     # Instrument all targets fuzzer and link with libfuzzer

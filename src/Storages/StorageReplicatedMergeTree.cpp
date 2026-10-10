@@ -75,6 +75,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
@@ -744,7 +745,7 @@ bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeepe
 
 
 void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
-    const Strings & replicas, const String & mutation_id, bool only_active) const
+    const Strings & replicas, const String & mutation_id) const
 {
     if (replicas.empty())
         return;
@@ -887,12 +888,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
         /// This replica inactive, don't check anything
         if (!inactive_replicas.empty() && inactive_replicas.contains(replica))
-        {
-            /// The other replicas still have to be waited for when only the active ones are required.
-            if (only_active)
-                continue;
             break;
-        }
 
         /// It maybe already removed from zk, but local in-memory mutations
         /// state was not updated.
@@ -920,13 +916,6 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
     if (!inactive_replicas.empty())
     {
-        if (only_active)
-        {
-            LOG_INFO(log, "Mutation {} is finished on all active replicas, will not wait for the inactive ones: {}. "
-                     "They will apply it when they become active", mutation_id, boost::algorithm::join(inactive_replicas, ", "));
-            return;
-        }
-
         throw Exception(ErrorCodes::UNFINISHED,
                         "Mutation is not finished because some replicas are inactive right now: {}. Mutation will be done asynchronously",
                         boost::algorithm::join(inactive_replicas, ", "));
@@ -3226,7 +3215,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
     {
-        source_table = DatabaseCatalog::instance().tryGetTable(source_table_id, getContext());
+        /// Leaving this proxied would make the checks below read the source as not replicated.
+        source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(source_table_id, getContext()));
         if (!source_table)
         {
             LOG_DEBUG(log, "Can't use {} as source table for REPLACE PARTITION command. It does not exist.", source_table_id.getNameForLogs());
@@ -3358,7 +3348,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         /// However, it's quite dangerous, because part may appear in source table.
         /// So we enqueue it for check only if no replicas of source table have part either.
         bool need_check = true;
-        if (auto * replicated_src_table = typeid_cast<StorageReplicatedMergeTree *>(source_table.get()))
+        if (auto * replicated_src_table = castStorage<StorageReplicatedMergeTree>(source_table, DeferredTable::Load).get())
         {
             String src_replica = replicated_src_table->findReplicaHavingPart(part_desc->src_part_name, false);
             if (!src_replica.empty())
@@ -3422,7 +3412,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 throw Exception(ErrorCodes::UNFINISHED, "Checksums of {} is suddenly changed", part_desc->src_table_part->name);
 
             /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
-            bool source_zero_copy_enabled = (*dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+            bool source_zero_copy_enabled = (*castStorage<MergeTreeData>(source_table, DeferredTable::Load)->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
             bool our_zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
             IDataPartStorage::ClonePartParams clone_params
@@ -7007,7 +6997,9 @@ void StorageReplicatedMergeTree::alter(
 
     removeImplicitStatistics(future_metadata.columns);
     auto old_settings = getSettings();
-    commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+    auto settings_defaults = getDefaultSettings();
+    commands.apply(
+        future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
@@ -7015,9 +7007,15 @@ void StorageReplicatedMergeTree::alter(
     /// Reject `table_readonly` in any incoming `ALTER`, not only pure settings alters: a mixed
     /// `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
     /// bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+    /// A reset (`RESET SETTING table_readonly`, or its `MODIFY SETTING table_readonly = DEFAULT` spelling)
+    /// is rejected too: the setting does not exist for this engine in either direction.
     for (const auto & command : commands)
     {
-        if (command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("table_readonly"))
+        const bool touches_table_readonly
+            = (command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("table_readonly"))
+            || (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("table_readonly"));
+
+        if (touches_table_readonly)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
     }
 
@@ -7880,38 +7878,21 @@ EphemeralLockInZooKeeper StorageReplicatedMergeTree::allocateBlockNumber(
 
 Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
     const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-    Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events, bool only_active)
+    Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events)
 {
-    LOG_DEBUG(log, "Waiting for {} replicas to process {}", only_active ? "active" : "all", entry.znode_name);
-
-    /// Waiting only for the active replicas means never waiting for an inactive one, and waiting for
-    /// an active one until it processes the entry or stops being active.
-    if (only_active)
-        wait_for_inactive_timeout = 0;
+    LOG_DEBUG(log, "Waiting for all replicas to process {}", entry.znode_name);
 
     auto zookeeper = getZooKeeper();
     Strings replicas = zookeeper->getChildren(fs::path(table_zookeeper_path) / "replicas");
     Strings unwaited;
-    Strings not_active;
     bool wait_for_inactive = wait_for_inactive_timeout != 0;
     for (const String & replica : replicas)
     {
-        const String is_active_path = fs::path(table_zookeeper_path) / "replicas" / replica / "is_active";
-        if (wait_for_inactive || zookeeper->exists(is_active_path))
+        if (wait_for_inactive || zookeeper->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active"))
         {
             auto & watch_event = watch_events.emplace(replica, std::make_shared<Poco::Event>()).first->second;
             if (!tryWaitForReplicaToProcessLogEntry(table_zookeeper_path, replica, entry, wait_for_inactive_timeout, watch_event))
-            {
-                /// The replica could have stopped being active while we were waiting for it.
-                if (only_active && !getZooKeeper()->exists(is_active_path))
-                    not_active.push_back(replica);
-                else
-                    unwaited.push_back(replica);
-            }
-        }
-        else if (only_active)
-        {
-            not_active.push_back(replica);
+                unwaited.push_back(replica);
         }
         else
         {
@@ -7919,20 +7900,16 @@ Strings StorageReplicatedMergeTree::tryWaitForAllReplicasToProcessLogEntry(
         }
     }
 
-    if (!not_active.empty())
-        LOG_INFO(log, "Will not wait for replicas {} to process {} because they are not active. "
-                 "They will process it when they become active", fmt::join(not_active, ", "), entry.znode_name);
-
-    LOG_DEBUG(log, "Finished waiting for {} replicas to process {}", only_active ? "active" : "all", entry.znode_name);
+    LOG_DEBUG(log, "Finished waiting for all replicas to process {}", entry.znode_name);
     return unwaited;
 }
 
 void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
     const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
     Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
-    const String & error_context, bool only_active)
+    const String & error_context)
 {
-    Strings unfinished_replicas = tryWaitForAllReplicasToProcessLogEntry(table_zookeeper_path, entry, wait_for_inactive_timeout, watch_events, only_active);
+    Strings unfinished_replicas = tryWaitForAllReplicasToProcessLogEntry(table_zookeeper_path, entry, wait_for_inactive_timeout, watch_events);
     if (unfinished_replicas.empty())
         return;
 
@@ -7942,10 +7919,9 @@ void StorageReplicatedMergeTree::waitForAllReplicasToProcessLogEntry(
 
 void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, WatchEventByPath & watch_events, const String & error_context)
 {
-    /// If necessary, wait until the operation is performed on itself, on all replicas or on the active ones.
+    /// If necessary, wait until the operation is performed on itself or on all replicas.
     Int64 wait_for_inactive_timeout = query_context->getSettingsRef()[Setting::replication_wait_for_inactive_replica_timeout];
-    const UInt64 alter_sync = query_context->getSettingsRef()[Setting::alter_sync];
-    if (alter_sync == 1)
+    if (query_context->getSettingsRef()[Setting::alter_sync] == 1)
     {
         auto & watch_event = watch_events.emplace(replica_name, std::make_shared<Poco::Event>()).first->second;
         bool finished = tryWaitForReplicaToProcessLogEntry(zookeeper_path, replica_name, entry, wait_for_inactive_timeout, watch_event);
@@ -7955,10 +7931,11 @@ void StorageReplicatedMergeTree::waitForLogEntryToBeProcessedIfNecessary(const R
                             "most likely because the replica was shut down.", error_context, entry.znode_name);
         }
     }
-    else if (alter_sync == 2 || alter_sync == 3)
+    /// Value 3 (wait only for active replicas) is a `SharedMergeTree` mode that `ReplicatedMergeTree`
+    /// does not have; here it waits for all replicas, like value 2.
+    else if (query_context->getSettingsRef()[Setting::alter_sync] == 2 || query_context->getSettingsRef()[Setting::alter_sync] == 3)
     {
-        waitForAllReplicasToProcessLogEntry(
-            zookeeper_path, entry, wait_for_inactive_timeout, watch_events, error_context, /*only_active=*/ alter_sync == 3);
+        waitForAllReplicasToProcessLogEntry(zookeeper_path, entry, wait_for_inactive_timeout, watch_events, error_context);
     }
 }
 
@@ -8815,7 +8792,9 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     /// we have to wait
     auto zookeeper = getZooKeeper();
     Strings replicas;
-    if (mutations_sync == 2 || mutations_sync == 3) /// wait for all replicas or only for the active ones
+    /// Value 3 (wait only for active replicas) is a `SharedMergeTree` mode that `ReplicatedMergeTree`
+    /// does not have; here it waits for all replicas, like value 2.
+    if (mutations_sync == 2 || mutations_sync == 3) /// wait for all replicas
     {
         replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
         /// This replica should be first, to ensure that the mutation will be loaded into memory
@@ -8831,7 +8810,7 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     else if (mutations_sync == 1) /// just wait for ourself
         replicas.push_back(replica_name);
 
-    waitMutationToFinishOnReplicas(replicas, znode_name, /*only_active=*/ mutations_sync == 3);
+    waitMutationToFinishOnReplicas(replicas, znode_name);
 }
 
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
@@ -9411,7 +9390,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
 
+        /// Patch parts cannot be copied to another table. Partitions with unapplied patches are rejected by `replacePartitionFromImpl`.
         partitions = src_data.getAllPartitionIds();
+        std::erase_if(partitions, isPatchPartitionId);
     }
     else
     {
@@ -9428,7 +9409,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto zookeeper = getZooKeeper();
 
     const bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
-                || (*dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+                || (*src_data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
     using Entry = std::unique_ptr<ReplicatedMergeTreeLogEntryData>;
     std::vector<Entry> entries(partitions.size());
@@ -9765,7 +9746,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
 void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::movePartitionToTable");
-    auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
+    auto dest_table_storage = castStorage<StorageReplicatedMergeTree>(dest_table, DeferredTable::Load);
     if (!dest_table_storage)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Table {} supports movePartitionToTable only for ReplicatedMergeTree family of table engines. "
@@ -9890,7 +9871,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
             /// Don't do hardlinks in case of zero-copy at any side (defensive programming)
             bool zero_copy_enabled = (*storage_settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
-                || (*dynamic_cast<const MergeTreeData *>(dest_table.get())->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
+                || (*dest_table_storage->getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 
             IDataPartStorage::ClonePartParams clone_params
             {

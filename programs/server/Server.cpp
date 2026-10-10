@@ -377,7 +377,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
-    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
@@ -901,7 +900,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 auto condition_read_buffer = ReadBufferFromString(condition);
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
-                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
+                LOG_DEBUG(log, "Checking startup query condition `{}`", formatQueryForLogging(condition, startup_context->getSettingsRef()));
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
                 startup_context->setCurrentQueryId("");
 
@@ -935,7 +934,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             auto read_buffer = ReadBufferFromString(query);
             auto write_buffer = WriteBufferFromOwnString();
 
-            LOG_DEBUG(log, "Executing query `{}`", query);
+            LOG_DEBUG(log, "Executing query `{}`", formatQueryForLogging(query, startup_context->getSettingsRef()));
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
@@ -1388,10 +1387,6 @@ try
     if (has_trace_collector)
     {
         global_context->createTraceCollector();
-
-        /// The config reloader applies this too; the seed here covers startup, which runs before its first callback.
-        MemoryTracker::setMinAllocationSizeToLogStackTrace(
-            server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
         /// Set up server-wide memory profiler (for total memory tracker).
         if (server_settings[ServerSetting::total_memory_profiler_step])
@@ -2581,9 +2576,6 @@ try
 
             CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
                 new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
-
-            MemoryTracker::setMinAllocationSizeToLogStackTrace(
-                new_server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
             per_cpu_memory.setBudgetCapacity(new_server_settings[ServerSetting::max_per_cpu_untracked_memory]);
             per_cpu_memory.setThreadBuffer(new_server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);

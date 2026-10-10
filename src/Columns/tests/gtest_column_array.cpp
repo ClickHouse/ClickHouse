@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -32,6 +33,14 @@ ColumnArray::MutablePtr createArray(std::vector<UInt64> data_values, std::vector
         offsets->getData().push_back(offset);
 
     return ColumnArray::create(std::move(data), std::move(offsets));
+}
+
+/// One array of two rows of a constant: the offsets match the nested column, so only the constant is wrong.
+ColumnArray::MutablePtr createArrayOverConst()
+{
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->getData().push_back(2);
+    return ColumnArray::create(ColumnConst::create(ColumnUInt64::create(1, 42), 2), std::move(offsets));
 }
 
 /// The part of the column that appending empty values must leave alone.
@@ -273,6 +282,12 @@ TEST(ColumnArray, InconsistentOffsetsAreRejected)
     EXPECT_THROW(createArray({10}, {}), Exception);
 }
 
+TEST(ColumnArray, ConstNestedColumnIsRejected)
+{
+    EXPECT_THROW(createArrayOverConst(), Exception);
+    EXPECT_THROW(ColumnArray::create(ColumnConst::create(ColumnUInt64::create(1, 42), 0)), Exception);
+}
+
 #endif
 
 /// A decreasing offset makes `sizeAt` underflow to a huge value even when the last offset matches
@@ -293,6 +308,16 @@ TEST(ColumnArrayDeathTest, NonMonotonicOffsetsAreRejected)
     /// The last offset matches the nested column, but the offsets dip in the middle.
     EXPECT_DEATH((createArray({10, 20, 30}, {2, 1, 3})), "not monotonically increasing");
     EXPECT_DEATH((createArray({10, 20, 30}, {3, 0, 3})), "not monotonically increasing");
+}
+
+TEST(ColumnArrayDeathTest, ConstNestedColumnIsRejected)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    EXPECT_DEATH(createArrayOverConst(), "ColumnArray cannot have ColumnConst as its nested column");
+    EXPECT_DEATH(
+        ColumnArray::create(ColumnConst::create(ColumnUInt64::create(1, 42), 0)),
+        "ColumnArray cannot have ColumnConst as its nested column");
 }
 
 #endif

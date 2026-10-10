@@ -61,37 +61,6 @@ ASTPtr JSONObjectReader::readSpecialFunctionChild(const char * key, const char *
     return child;
 }
 
-namespace
-{
-
-void rejectArgumentlessFunctions(const IAST & ast, const char * key)
-{
-    checkStackSize();
-
-    const auto * function = ast.as<ASTFunction>();
-    if (function && !function->arguments)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Function '{}' for key '{}' has no 'arguments' list during AST JSON deserialization, "
-            "which the SQL parser produces only outside an expression", function->name, key);
-
-    /// A nested query is walked too: `ParserSubquery` accepts only a SELECT, which has no such slot.
-    for (const auto & child : ast.children)
-    {
-        if (child)
-            rejectArgumentlessFunctions(*child, key);
-    }
-}
-
-}
-
-ASTPtr JSONObjectReader::readExpressionChild(const char * key) const
-{
-    ASTPtr child = readChild(key);
-    if (child)
-        rejectArgumentlessFunctions(*child, key);
-    return child;
-}
-
 ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const
 {
     ASTPtr child = readChild(key);
@@ -184,6 +153,9 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Structured Field value exceeds maximum AST depth limit ({}) during JSON AST deserialization",
             max_depth);
+
+    /// The limit above counts `Field` levels, which is not a stack budget at any value.
+    checkStackSize();
 
     /// Count every `Field` value (scalar or structured) against the element-count budget too, so a
     /// wide literal payload (e.g. one huge `Array`) cannot bypass `max_ast_elements` while adding no

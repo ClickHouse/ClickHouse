@@ -458,6 +458,11 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
 
+    /// `clusterAllReplicas` already reads every replica as a shard of its own, so there is nothing left
+    /// for parallel replicas to split
+    if (context->canUseTaskBasedParallelReplicas() && cluster.replicasAsShards())
+        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
         /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'

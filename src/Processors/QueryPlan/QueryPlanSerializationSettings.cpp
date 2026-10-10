@@ -18,7 +18,7 @@ namespace DB
 // clang-format off
 
 #define PLAN_SERIALIZATION_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size in rows for reading", 0) \
+    DECLARE(UInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size in rows for reading", 0) \
     \
     DECLARE(UInt64, max_rows_in_distinct, 0, "Maximum number of elements during execution of DISTINCT.", 0) \
     DECLARE(UInt64, max_bytes_in_distinct, 0, "Maximum total size of state (in uncompressed bytes) in memory for the execution of DISTINCT.", 0) \

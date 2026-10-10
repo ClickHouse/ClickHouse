@@ -27,7 +27,6 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
@@ -629,20 +628,14 @@ namespace
                 {
                     if (!is_timestamp_type(*type))
                         return false;
-                    if (!codec || is_version_0)
-                        return true;
-                    auto codec_name = codec->formatWithSecretsOneLine();
-                    return (codec_name == "CODEC(DoubleDelta, ZSTD(1))") || (codec_name == "CODEC(Delta, T64, ZSTD(3))");
+                    return !codec || is_version_0 || (codec->formatWithSecretsOneLine() == "CODEC(DoubleDelta, ZSTD(1))");
                 }
 
                 if (name == TimeSeriesColumnNames::Value)
                 {
                     if (!is_scalar_type(*type))
                         return false;
-                    if (!codec || is_version_0)
-                        return true;
-                    auto codec_name = codec->formatWithSecretsOneLine();
-                    return (codec_name == "CODEC(ZSTD(3))") || (codec_name == "CODEC(ALP, ZSTD(3))");
+                    return !codec || is_version_0 || (codec->formatWithSecretsOneLine() == "CODEC(ZSTD(3))");
                 }
 
                 return false;
@@ -728,33 +721,6 @@ namespace
             default:
                 UNREACHABLE();
         }
-    }
-
-    ASTPtr makeDefaultTagsIndex()
-    {
-        auto index = make_intrusive<ASTIndexDeclaration>(
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
-            makeASTFunction("text", makeASTOperator("equals",
-                make_intrusive<ASTIdentifier>("tokenizer"), make_intrusive<ASTLiteral>("keyValuePairs"))),
-            "tags_idx");
-        /// A text index covers the whole part; its posting lists identify individual rows.
-        index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
-        return index;
-    }
-
-    /// Removes the default `tags` index copied by `CREATE AS`, so it is generated for the new engine.
-    void removeGeneratedInnerIndices(ASTColumns & inner_columns, ViewTarget::Kind kind)
-    {
-        if (kind != ViewTarget::Tags || !inner_columns.indices)
-            return;
-
-        const auto default_index = makeDefaultTagsIndex()->formatWithSecretsOneLine();
-        auto & indices = inner_columns.indices->children;
-        auto is_generated = [&](const ASTPtr & index)
-        {
-            return index->formatWithSecretsOneLine() == default_index;
-        };
-        indices.erase(std::remove_if(indices.begin(), indices.end(), is_generated), indices.end());
     }
 
     /// Removes the generated columns (see `isGeneratedInnerColumn`) from an inner table's column list,
@@ -968,18 +934,17 @@ namespace
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
 
-                /// Generated `timestamp` columns use `Delta`, `T64`, and `ZSTD(3)`.
-                /// Generated `value` columns use `ALP` and `ZSTD(3)`.
-                /// Explicitly declared columns keep the user's codecs.
+                /// Auto-created "timestamp" and "value" columns get compression codecs: under generic LZ4
+                /// near-monotonic millisecond timestamps barely compress and dominate the table size
+                /// (>90% of on-disk bytes on a scrape-like corpus). All types accepted by the validation
+                /// above are compatible with DoubleDelta (DateTime64/DateTime/UInt32). The "value" column
+                /// gets plain ZSTD(3): specialized floating-point codecs such as Gorilla proved unreliable
+                /// in practice. Explicitly declared columns keep whatever the user wrote.
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
                     timestamp_decl->setCodec(makeASTFunction(
-                        "CODEC",
-                        make_intrusive<ASTIdentifier>("Delta"),
-                        make_intrusive<ASTIdentifier>("T64"),
-                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
+                        "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                    value_decl->setCodec(makeASTFunction(
-                        "CODEC", make_intrusive<ASTIdentifier>("ALP"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
+                    value_decl->setCodec(makeASTFunction("CODEC", makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
 
                 break;
             }
@@ -1566,20 +1531,6 @@ namespace
         return changed;
     }
 
-    /// Adds the default text index for exact label lookups in the `tags` map.
-    /// Explicit index declarations are kept, and engines outside the `MergeTree` family have no indexes.
-    bool normalizeInnerIndices(ASTColumns & inner_columns, const ASTStorage & inner_engine, ViewTarget::Kind kind)
-    {
-        if (kind != ViewTarget::Tags || !inner_engine.engine->name.ends_with("MergeTree")
-            || (inner_columns.indices && !inner_columns.indices->children.empty()))
-            return false;
-
-        auto indices = make_intrusive<ASTExpressionList>();
-        indices->children.push_back(makeDefaultTagsIndex());
-        inner_columns.setOrReplace(inner_columns.indices, indices);
-        return true;
-    }
-
     /// Checks that a target table or an inner-columns list has all the columns required by the
     /// TimeSeries table engine, and that those columns match the resolved types.
     void checkTargetTable(
@@ -1870,7 +1821,6 @@ namespace
                     auto new_inner_columns = boost::static_pointer_cast<ASTColumns>(old_inner_columns->clone());
                     removeInnerColumnsDisabledByNewSettings(*new_inner_columns, kind, old_settings, new_settings);
                     removeGeneratedInnerColumns(*new_inner_columns, kind, old_settings);
-                    removeGeneratedInnerIndices(*new_inner_columns, kind);
                     create_query.setTargetInnerColumns(kind, new_inner_columns);
                 }
             }
@@ -2094,10 +2044,6 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                     : make_intrusive<ASTStorage>();
                 if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, *params.query_settings))
                     create_query.setTargetInnerEngine(kind, inner_engine);
-
-                if (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_TAGS_TEXT_INDEX
-                    && normalizeInnerIndices(*inner_columns, *inner_engine, kind))
-                    create_query.setTargetInnerColumns(kind, inner_columns);
             }
         }
 

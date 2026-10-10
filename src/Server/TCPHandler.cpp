@@ -30,6 +30,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
@@ -1793,7 +1794,8 @@ void TCPHandler::processTablesStatusRequest()
             continue;
 
         TableStatus status;
-        if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        /// The initiator asks about this table by name, so a lazily loaded replica is loaded to report its delay.
+        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get())
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
@@ -1989,7 +1991,10 @@ bool TCPHandler::receiveProxyHeader()
     /// Only PROXYv1 is supported.
     /// Validation of protocol is not fully performed.
 
-    LimitReadBuffer limit_in(*in, {.read_no_more=107, .expect_eof=true}); /// Maximum length from the specs.
+    /// No `expect_eof`: except for the `UNKNOWN` health check below, the client sends its handshake
+    /// right after the header, so the connection does not end at the limit. An over-long header is
+    /// rejected anyway, by carrying no `\r\n` within these 107 bytes.
+    LimitReadBuffer limit_in(*in, {.read_no_more=107}); /// Maximum length from the specs.
 
     assertString("PROXY ", limit_in);
 
