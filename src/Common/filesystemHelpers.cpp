@@ -109,7 +109,7 @@ struct statvfs getStatVFS(String path)
 
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 {
-    fs::path filepath(path);
+    fs::path filepath = pathFromString(path);
     /// `path` may point to nonexisting file, then we can't check it directly, move to parent directory
     while (filepath.has_parent_path() && !fs::exists(filepath))
         filepath = filepath.parent_path();
@@ -120,7 +120,7 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
 std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & folder_path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-    fs::create_directories(folder_path);
+    fs::create_directories(pathFromString(folder_path));
     return std::make_unique<Poco::TemporaryFile>(folder_path);
 }
 
