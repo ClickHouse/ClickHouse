@@ -3285,6 +3285,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     return fillTableIfNeeded(create);
 }
 
+namespace
+{
+/// The population's own `SETTINGS` are reapplied on top of its context under the names they were written with.
+constexpr std::array<std::string_view, 3> settings_sending_population_to_other_servers
+{
+    "allow_experimental_parallel_reading_from_replicas",
+    "enable_parallel_replicas",
+    "parallel_distributed_insert_select",
+};
+}
+
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, const String & published_table_name)
 {
     /// A non-empty `published_table_name` means `create.getTable()` is the internal temporary name of
@@ -3300,10 +3311,22 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         insert->select = create.select->clone();
 
+        ContextMutablePtr insert_context = getContext();
+        /// Every replica of a `Replicated` database executes this entry and fills its own copy of the table, so the population
+        /// must neither read through parallel replicas nor be sent to other servers as a distributed `INSERT`.
+        if (getContext()->getZooKeeperMetadataTransaction())
+        {
+            auto local_context = Context::createCopy(getContext());
+            local_context->setSetting("parallel_distributed_insert_select", Field{0});
+            local_context->setSetting("enable_parallel_replicas", Field{0});
+            removeSettingsFromQuery(insert->select, settings_sending_population_to_other_servers);
+            insert_context = local_context;
+        }
+
         InterpreterInsertQuery interpreter(
             insert,
-            getContext(),
-            getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            insert_context,
+            insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_isnert */ false);
@@ -3397,6 +3420,20 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
             backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
         return false;
     }
+
+#if CLICKHOUSE_CLOUD
+    /// In a Shared database the view is committed to the catalog only after the population, so no replica can
+    /// subscribe to it in time and the local cut cannot deliver rows exactly once.
+    if (SharedDatabaseCatalog::isInitialQuery(getContext()))
+    {
+        LOG_INFO(getLogger("InterpreterCreateQuery"),
+            "Populating materialized view {}.{} non-atomically because it is created in a Shared database, "
+            "where the population cannot be cut consistently across replicas. "
+            "Rows inserted into the source during the population may be missed.",
+            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        return false;
+    }
+#endif
 
     return true;
 }

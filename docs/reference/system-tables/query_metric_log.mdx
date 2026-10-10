@@ -463,6 +463,11 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExternalDistinctTailKeptRows` ([UInt64](/reference/data-types/int-uint)) — Number of buffered rows retained in memory for the final external DISTINCT merge.
 - `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for DISTINCT in external memory.
 - `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for DISTINCT in external memory.
+- `ProfileEvent_ExternalSetWritePart` ([UInt64](/reference/data-types/int-uint)) — Number of times a temporary file was written to disk for an `IN` set in external memory.
+- `ProfileEvent_ExternalSetMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for an `IN` set in external memory.
+- `ProfileEvent_ExternalSetCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for `IN` sets in external memory.
+- `ProfileEvent_ExternalSetUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for `IN` sets in external memory.
+- `ProfileEvent_ExternalSetReadBlocks` ([UInt64](/reference/data-types/int-uint)) — Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.
 - `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of skipped files during Iceberg partition pruning
 - `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/reference/data-types/int-uint)) — Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list
 - `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/reference/data-types/int-uint)) — Trivial count optimization applied while reading from Iceberg
@@ -473,6 +478,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_JoinResultRowCount` ([UInt64](/reference/data-types/int-uint)) — Total number of rows in the result of a JOIN operation.
 - `ProfileEvent_JoinNonJoinedTransformBlockCount` ([UInt64](/reference/data-types/int-uint)) — Number of blocks emitted by NonJoinedBlocksTransform.
 - `ProfileEvent_JoinNonJoinedTransformRowCount` ([UInt64](/reference/data-types/int-uint)) — Number of non-joined rows emitted by NonJoinedBlocksTransform.
+- `ProfileEvent_JoinNonJoinedHashTableScans` ([UInt64](/reference/data-types/int-uint)) — Number of times a RIGHT or FULL hash join scanned its hash table for non-joined rows.
+- `ProfileEvent_JoinNonJoinedHashTableScansSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.
 - `ProfileEvent_JoinDelayedJoinedTransformBlockCount` ([UInt64](/reference/data-types/int-uint)) — Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.
 - `ProfileEvent_JoinDelayedJoinedTransformRowCount` ([UInt64](/reference/data-types/int-uint)) — Number of rows emitted by DelayedJoinedBlocksWorkerTransform.
 - `ProfileEvent_JoinSpillingHashJoinSwitchedToGraceJoin` ([UInt64](/reference/data-types/int-uint)) — Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
@@ -828,6 +835,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ReadBufferFromS3InitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent initializing connection to S3.
 - `ProfileEvent_ReadBufferFromS3Bytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from S3.
 - `ProfileEvent_ReadBufferFromS3RequestsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions while reading from S3.
+- `ProfileEvent_ReadBufferFromS3RequestsCut` ([UInt64](/reference/data-types/int-uint)) — Number of requests from S3 disks cut to one buffer fill because the connection group of the disks was at or above `disk_connections_soft_limit`.
 - `ProfileEvent_WriteBufferFromS3Microseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent on writing to S3.
 - `ProfileEvent_WriteBufferFromS3Bytes` ([UInt64](/reference/data-types/int-uint)) — Bytes written to S3.
 - `ProfileEvent_WriteBufferFromS3RequestsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions while writing to S3.
@@ -1601,6 +1609,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc allocation sample failed
 - `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc deallocation sample failed
 - `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/reference/data-types/int-uint)) — Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.
+- `ProfileEvent_SetsSpilledToDisk` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` sets that spilled to disk while they were built from their subquery.
 - `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of loading statistics from parts
 - `ProfileEvent_LoadedStatistics` ([UInt64](/reference/data-types/int-uint)) — Number of data parts for which column statistics were loaded
 - `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it
