@@ -18,6 +18,11 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
+/// Whether the subcolumn is extracted from its converted column because the conversion replaces NULLs with the DEFAULT.
+/// A key subcolumn (possible only for an ALTER accepted by an older version) is read from the part, which is sorted and indexed by it.
+bool isSubcolumnReadFromConvertedColumn(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part);
+
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
 void addPatchPartsColumns(

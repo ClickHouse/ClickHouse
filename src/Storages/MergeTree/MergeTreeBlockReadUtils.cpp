@@ -19,6 +19,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/inplaceBlockConversions.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -121,16 +122,17 @@ bool injectRequiredColumnsRecursively(
             /// Resolved against the serialization the part holds for the column - which it always does, the column
             /// comes from its own list - instead of a newly built one.
             if (!column_in_storage->isSubcolumn()
-                || column_in_part->type->tryGetSubcolumnType(
-                       column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part)))
+                || (column_in_part->type->tryGetSubcolumnType(
+                        column_in_storage->getSubcolumnName(), data_part_info_for_reader.getSerialization(*column_in_part))
+                    && !isSubcolumnReadFromConvertedColumn(storage_snapshot, *column_in_storage, column_in_part->type)))
             {
                 add_column(column_name);
                 return true;
             }
 
-            /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
-            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
-            /// subcolumn extracted from it, instead of being filled from the storage-type default.
+            /// Parent is present, but the part's (older) type lacks the requested subcolumn (metadata-only
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`), or converting the parent replaces its NULLs with the DEFAULT.
+            /// Read the parent so it can be converted and the subcolumn extracted from it.
             add_column(column_in_storage->getNameInStorage());
             return true;
         }
@@ -169,6 +171,17 @@ bool injectRequiredColumnsRecursively(
     return result;
 }
 
+}
+
+bool isSubcolumnReadFromConvertedColumn(
+    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & subcolumn, const DataTypePtr & column_type_in_part)
+{
+    if (!conversionReplacesNullsWithDefault(column_type_in_part, subcolumn.getTypeInStorage()))
+        return false;
+
+    const auto & metadata = storage_snapshot->metadata;
+    return !std::ranges::contains(metadata->getColumnsRequiredForSortingKey(), subcolumn.name)
+        && !std::ranges::contains(metadata->getColumnsRequiredForPartitionKey(), subcolumn.name);
 }
 
 /** If some of the requested columns are not in the part,
