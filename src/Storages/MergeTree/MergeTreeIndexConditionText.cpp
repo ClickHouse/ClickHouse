@@ -265,6 +265,20 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             global_search_mode = TextSearchMode::Any;
     }
 
+    std::vector<UInt128> pattern_hashes;
+    for (const auto & [query_hash, query] : all_search_queries)
+    {
+        if (!query->getPatterns().empty())
+            pattern_hashes.emplace_back(query_hash);
+    }
+    std::ranges::sort(pattern_hashes);
+
+    SipHash pattern_hash_state;
+    pattern_hash_state.update(pattern_hashes.size());
+    for (const auto & pattern_hash : pattern_hashes)
+        pattern_hash_state.update(pattern_hash);
+    search_patterns_hash = pattern_hash_state.get128();
+
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
     cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
@@ -991,9 +1005,9 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     {
         std::vector<OptimizedRegularExpression> patterns;
         if (case_insensitive)
-            patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+            patterns.emplace_back(Regexps::createRegexp<true, false, true, true>(pattern));
         else
-            patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+            patterns.emplace_back(Regexps::createRegexp<true, false, true, false>(pattern));
         return patterns;
     };
 
@@ -1716,7 +1730,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     {
         /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
         const auto & pattern = value_field.safeGet<String>();
-        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
+        Regexps::createRegexp</*like=*/ false, /*similar_to=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
 
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
         auto tokens_for_queries = regexpToTokensForQueries(pattern);
@@ -1887,6 +1901,28 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
     return true;
 }
 
+/// Whether the predicate of the sub-DAG may be true on the default value of its single input column,
+/// i.e. for a row with a missing map key or JSON path. Unknown if the predicate throws on the default value,
+/// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
+static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
+{
+    const auto * input = subdag.getInputs().front();
+    ActionsDAG::IntermediateExecutionResult default_input;
+    default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
+
+    ColumnsWithTypeAndName result;
+    try
+    {
+        result = ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    return !result.front().column || result.front().column->getBool(0);
+}
+
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
@@ -1911,7 +1947,6 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         return false;
 
     auto required_column = required_columns.front();
-    auto output_column_name = outputs.front()->result_name;
 
     std::optional<String> key_const_value;
 
@@ -1977,13 +2012,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         return false;
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
-    Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
-    ExpressionActions actions(std::move(subdag));
-    actions.execute(block);
-    const auto & result_column = block.getByName(output_column_name).column;
-
     /// If the function returns true for the empty map, we cannot use index.
-    if (result_column->getBool(0))
+    if (mayBeTrueOnDefaultValue(subdag))
         return false;
 
     auto tokens = stringToTokens(std::string_view(*key_const_value));
@@ -2159,8 +2189,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     if (required_columns.size() != 1 || outputs.size() != 1)
         return false;
 
-    auto required_column = required_columns.front();
-    auto output_column_name = outputs.front()->result_name;
+    const auto & required_column = required_columns.front();
 
     /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
     auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths", json_argument_types);
@@ -2173,13 +2202,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     /// Evaluate the function on a default column value.
     /// If the function returns true for the default value (what we'd get when the path is missing),
     /// we cannot safely skip the granule.
-    Block block{{required_column.type->createColumnConstWithDefaultValue(1),
-                 required_column.type, required_column.name}};
-    ExpressionActions actions(std::move(subdag));
-    actions.execute(block);
-    const auto & result_column = block.getByName(output_column_name).column;
-
-    if (result_column->getBool(0))
+    if (mayBeTrueOnDefaultValue(subdag))
         return false;
 
     auto tokens = stringToTokens(Field(json_info->path));

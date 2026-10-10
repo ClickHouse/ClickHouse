@@ -259,6 +259,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
+            extras.columns_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
             extras.reader_settings,
@@ -306,6 +307,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
+            extras.columns_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
             extras.reader_settings,
@@ -573,11 +575,14 @@ void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
-bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
+bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const
 {
     /// Only `prepared_index` (a `MergeTreeReaderIndex`) sits ahead of the PREWHERE readers in the
     /// reader chain and is able to skip whole marks via `canSkipMark`.
-    return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
+    if (!readers.prepared_index)
+        return false;
+    return prewhere_filters_by_top_k_threshold ? readers.prepared_index->canSkipAnyMarkBesidesTopKPrimaryKey()
+                                               : readers.prepared_index->canSkipAnyMark();
 }
 
 bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
