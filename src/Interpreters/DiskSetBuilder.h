@@ -51,8 +51,9 @@ public:
 /// `max_bytes_before_external_set` is the spill threshold of the set: the builder writes a run of buffered
 /// keys only while tracked query memory exceeds it. The finished set keeps Bloom filters of its blocks in at
 /// most `max_bytes_for_bloom_filter` bytes, sized for the number of distinct keys that the builder counts as
-/// they arrive. The filters have a budget of their own and do not count towards the size limits, so that they
-/// do not change which keys the set keeps in the `break` mode.
+/// they arrive, and a cache of its blocks in at most `max_bytes_for_cache` bytes. The filters and the cache
+/// have budgets of their own and do not count towards the size limits, so that they do not change which keys
+/// the set keeps in the `break` mode.
 template <typename Key>
 std::unique_ptr<DiskSetBuilder> createDiskSetBuilder(
     TemporaryDataOnDiskScopePtr tmp_data,
@@ -61,6 +62,7 @@ std::unique_ptr<DiskSetBuilder> createDiskSetBuilder(
     size_t max_block_size,
     size_t min_free_disk_space,
     size_t max_bytes_for_bloom_filter,
+    size_t max_bytes_for_cache,
     QueryStatusPtr process_list_element);
 
 }

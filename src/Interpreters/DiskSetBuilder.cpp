@@ -74,6 +74,7 @@ public:
         size_t max_block_size,
         size_t min_free_disk_space_,
         size_t max_bytes_for_bloom_filter_,
+        size_t max_bytes_for_cache_,
         QueryStatusPtr process_list_element);
     ~DiskSetBuilderImpl() override;
 
@@ -97,6 +98,7 @@ private:
     SizeLimits limits;
     size_t min_free_disk_space;
     size_t max_bytes_for_bloom_filter;
+    size_t max_bytes_for_cache;
     SharedHeader header;
     SortDescription description;
 
@@ -151,11 +153,13 @@ DiskSetBuilderImpl<Key>::DiskSetBuilderImpl(
     size_t max_block_size,
     size_t min_free_disk_space_,
     size_t max_bytes_for_bloom_filter_,
+    size_t max_bytes_for_cache_,
     QueryStatusPtr process_list_element)
     : tmp_data(std::move(tmp_data_))
     , limits(limits_)
     , min_free_disk_space(min_free_disk_space_)
     , max_bytes_for_bloom_filter(max_bytes_for_bloom_filter_)
+    , max_bytes_for_cache(max_bytes_for_cache_)
     , header(std::make_shared<const Block>(Block{{ColumnVector<Key>::create(), std::make_shared<DataTypeNumber<Key>>(), "key"}}))
 {
     chassert(max_bytes_before_external_set);
@@ -237,7 +241,11 @@ void DiskSetBuilderImpl<Key>::appendSortedDistinctKeys(const IColumn & keys)
 
     if (!set)
         set = std::make_unique<DiskSetImpl<Key>>(
-            tmp_data, min_free_disk_space, distinct_key_counter ? distinct_key_counter->getCount() : 0, max_bytes_for_bloom_filter);
+            tmp_data,
+            min_free_disk_space,
+            distinct_key_counter ? distinct_key_counter->getCount() : 0,
+            max_bytes_for_bloom_filter,
+            max_bytes_for_cache);
 
     set->add({values.data(), values.size()});
     checkLimits();
@@ -290,6 +298,7 @@ std::unique_ptr<DiskSetBuilder> createDiskSetBuilder(
     size_t max_block_size,
     size_t min_free_disk_space,
     size_t max_bytes_for_bloom_filter,
+    size_t max_bytes_for_cache,
     QueryStatusPtr process_list_element)
 {
     return std::make_unique<DiskSetBuilderImpl<Key>>(
@@ -299,20 +308,21 @@ std::unique_ptr<DiskSetBuilder> createDiskSetBuilder(
         max_block_size,
         min_free_disk_space,
         max_bytes_for_bloom_filter,
+        max_bytes_for_cache,
         std::move(process_list_element));
 }
 
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt8>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt8>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt16>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt16>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt32>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt32>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt64>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt64>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt128>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt128>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt256>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt256>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, size_t, QueryStatusPtr);
 
 }

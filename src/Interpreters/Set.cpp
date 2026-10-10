@@ -233,6 +233,7 @@ std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(const Method &
         spill_settings.max_block_size,
         spill_settings.min_free_disk_space,
         spill_settings.max_bytes_for_bloom_filter,
+        spill_settings.max_bytes_for_cache,
         spill_settings.process_list_element);
 
     computeDiskSetKeysOfTable(method, data_types, key_sizes, spill_settings.max_block_size, [&](ColumnPtr keys)

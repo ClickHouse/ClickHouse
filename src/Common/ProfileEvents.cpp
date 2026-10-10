@@ -474,6 +474,7 @@
     M(ExternalSetCompressedBytes, "Number of compressed bytes written for `IN` sets in external memory.", ValueType::Bytes) \
     M(ExternalSetUncompressedBytes, "Amount of data (uncompressed, before compression) written for `IN` sets in external memory.", ValueType::Bytes) \
     M(ExternalSetReadBlocks, "Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.", ValueType::Number) \
+    M(ExternalSetCacheHits, "Number of blocks that lookups in `IN` sets in external memory took from the cache of the set instead of reading them from the temporary file.", ValueType::Number) \
     \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergPartitionPrunedManifestFiles, "Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list", ValueType::Number) \

@@ -2,6 +2,7 @@
 
 #include <Compression/ICompressionCodec.h>
 #include <Interpreters/DiskSet.h>
+#include <Interpreters/DiskSetBlockCache.h>
 #include <Interpreters/DiskSetBlockFilters.h>
 #include <Interpreters/DiskSetBlockFormat.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -30,8 +31,14 @@ public:
     /// Creates the file of the set in `tmp_data`. The size of the file is unknown until the merge ends, so
     /// creating it checks only that `min_free_disk_space` is free. The set keeps Bloom filters of its blocks
     /// in at most `max_bytes_for_bloom_filter` bytes, sized for about `expected_keys` keys, as
-    /// `DiskSetBlockFilters::create` decides.
-    DiskSetImpl(TemporaryDataOnDiskScopePtr tmp_data, size_t min_free_disk_space, size_t expected_keys, size_t max_bytes_for_bloom_filter);
+    /// `DiskSetBlockFilters::create` decides, and a cache of the blocks that its lookups read in at most
+    /// `max_bytes_for_cache` bytes.
+    DiskSetImpl(
+        TemporaryDataOnDiskScopePtr tmp_data,
+        size_t min_free_disk_space,
+        size_t expected_keys,
+        size_t max_bytes_for_bloom_filter,
+        size_t max_bytes_for_cache);
 
     /// Adds `keys`, which ascend and are greater than the keys added before.
     void add(std::span<const Key> keys);
@@ -44,8 +51,8 @@ public:
 
     size_t getTotalRowCount() const override { return rows; }
 
-    /// Returns the memory of the directory, which grows with each block that the set writes. The filters do
-    /// not count, because they have a budget of their own.
+    /// Returns the memory of the directory, which grows with each block that the set writes. The filters and
+    /// the cache do not count, because they have budgets of their own.
     size_t getTotalByteCount() const override { return directory.allocatedBytes(); }
 
 private:
@@ -110,6 +117,12 @@ private:
     /// `max_bytes_for_bloom_filter` is 0, or too small to give the filters at least 1 bit per key, as
     /// `DiskSetBlockFilters::create` decides.
     std::optional<DiskSetBlockFilters<Key>> filters;
+
+    /// The cache of the set keeps in memory blocks that lookups read from the file. A lookup call takes the
+    /// blocks that the cache holds from the cache instead of reading them from the file, and adds the blocks
+    /// that it reads to the cache if the cache admits them. The lookup calls of all threads share the cache,
+    /// which synchronizes them. The set has no cache when `max_bytes_for_cache` is 0.
+    std::unique_ptr<DiskSetBlockCache> block_cache;
 
     std::optional<typename BlockFormat::Encoder> encoder;
 

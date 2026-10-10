@@ -37,20 +37,21 @@ SETTINGS log_comment = 'UInt256';
 
 -- The set of 100000 hashes takes about 200 blocks. Each chunk of 100 lookups of keys that the set does not
 -- have needs a block for each key without filters, and only the blocks of the keys that the filters let pass
--- with them. The filters take 1 byte per key, and each key sets 3 bits. A smaller
+-- with them. Without the cache, each chunk reads its blocks again, so the reads count the keys that
+-- the filters let pass. The filters take 1 byte per key, and each key sets 3 bits. A smaller
 -- `max_bytes_for_external_set_bloom_filter` leaves fewer bits per key, and each key sets fewer of them: 2
 -- with 3 bits per key, and 1 with 2 bits per key. A budget below 1 bit per key leaves the set without
 -- filters, as does a budget of 0.
 SELECT 'misses', count() FROM numbers(10000) WHERE cityHash64(number * 2 + 1) IN (SELECT cityHash64(number * 2) FROM numbers(100000))
-SETTINGS max_block_size = 100, log_comment = 'filter';
+SETTINGS max_block_size = 100, max_bytes_for_external_set_cache = 0, log_comment = 'filter';
 SELECT 'misses', count() FROM numbers(10000) WHERE cityHash64(number * 2 + 1) IN (SELECT cityHash64(number * 2) FROM numbers(100000))
-SETTINGS max_block_size = 100, max_bytes_for_external_set_bloom_filter = 40000, log_comment = '3 bits';
+SETTINGS max_block_size = 100, max_bytes_for_external_set_cache = 0, max_bytes_for_external_set_bloom_filter = 40000, log_comment = '3 bits';
 SELECT 'misses', count() FROM numbers(10000) WHERE cityHash64(number * 2 + 1) IN (SELECT cityHash64(number * 2) FROM numbers(100000))
-SETTINGS max_block_size = 100, max_bytes_for_external_set_bloom_filter = 27000, log_comment = '2 bits';
+SETTINGS max_block_size = 100, max_bytes_for_external_set_cache = 0, max_bytes_for_external_set_bloom_filter = 27000, log_comment = '2 bits';
 SELECT 'misses', count() FROM numbers(10000) WHERE cityHash64(number * 2 + 1) IN (SELECT cityHash64(number * 2) FROM numbers(100000))
-SETTINGS max_block_size = 100, max_bytes_for_external_set_bloom_filter = 12000, log_comment = 'budget too small';
+SETTINGS max_block_size = 100, max_bytes_for_external_set_cache = 0, max_bytes_for_external_set_bloom_filter = 12000, log_comment = 'budget too small';
 SELECT 'misses', count() FROM numbers(10000) WHERE cityHash64(number * 2 + 1) IN (SELECT cityHash64(number * 2) FROM numbers(100000))
-SETTINGS max_block_size = 100, max_bytes_for_external_set_bloom_filter = 0, log_comment = 'no filter';
+SETTINGS max_block_size = 100, max_bytes_for_external_set_cache = 0, max_bytes_for_external_set_bloom_filter = 0, log_comment = 'no filter';
 
 -- Every set spilled.
 SYSTEM FLUSH LOGS query_log;

@@ -53,6 +53,10 @@ struct SetSpillSettings
     /// The Bloom filters of the blocks of the set on disk take at most this many bytes, as
     /// `createDiskSetBuilder` describes.
     size_t max_bytes_for_bloom_filter = 0;
+
+    /// The cache of the blocks of the set on disk takes at most this many bytes, as
+    /// `createDiskSetBuilder` describes.
+    size_t max_bytes_for_cache = 0;
     QueryStatusPtr process_list_element;
 };
 

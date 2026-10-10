@@ -15,7 +15,11 @@ namespace DB
 
 template <typename Key>
 DiskSetImpl<Key>::DiskSetImpl(
-    TemporaryDataOnDiskScopePtr tmp_data, size_t min_free_disk_space, size_t expected_keys, size_t max_bytes_for_bloom_filter)
+    TemporaryDataOnDiskScopePtr tmp_data,
+    size_t min_free_disk_space,
+    size_t expected_keys,
+    size_t max_bytes_for_bloom_filter,
+    size_t max_bytes_for_cache)
     : file(std::make_unique<TemporaryDataBuffer>(std::move(tmp_data), min_free_disk_space))
     , encoder(std::in_place)
     , compressible_block_codec(file->getCompressedWriteBuffer().getCodec())
@@ -23,6 +27,8 @@ DiskSetImpl<Key>::DiskSetImpl(
 {
     if (max_bytes_for_bloom_filter)
         filters = DiskSetBlockFilters<Key>::create(expected_keys, BlockFormat::keys_per_unpacked_block, max_bytes_for_bloom_filter);
+    if (max_bytes_for_cache)
+        block_cache = std::make_unique<DiskSetBlockCache>(max_bytes_for_cache);
 }
 
 template <typename Key>
@@ -87,9 +93,9 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
     if (!rows)
         return;
 
-    /// The rows with keys in the range of the set are probed, except a row with the key of the previous row,
-    /// which takes the answer of that row at the end. So a run of equal keys, as in a sorted column, takes
-    /// one probe.
+    /// Step 1: Collect the probes: the rows whose keys are in the range of the set, except a row that repeats
+    /// the key of the previous row, which takes that row's answer in step 5. So a run of equal keys, as in a
+    /// sorted column, takes one probe.
     struct Probe
     {
         Key key;
@@ -106,16 +112,17 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
             probes.push_back({key, row});
     }
 
-    if (probes.empty())
+    if (probes.empty()) /// No key is in the range of the set
         return;
 
-    /// Sorted by key, the probes of equal keys come together, so that each distinct key is looked up once,
-    /// and the probes of each block come together in the order of the blocks, so that they share a read.
-    /// Results are scattered back to their original rows, so evaluating `IN` does not reorder the input.
+    /// Step 2: Sort the probes by key. Probes of equal keys then come together, so each distinct key is
+    /// looked up once, and the probes of each block come together in block order, so they share a read.
+    /// Results go back to the original rows, so evaluating `IN` does not reorder the input.
     ::sort(probes.begin(), probes.end(), [](const Probe & lhs, const Probe & rhs) { return lhs.key < rhs.key; });
 
-    /// Each distinct key gets its block, and a lookup in that block unless the filter of the block rules the
-    /// key out. The keys ascend, so the search for each block starts at the block of the previous key.
+    /// Step 3: Find the block of each distinct key, and add a lookup in that block unless the bloom filter of the
+    /// block rules the key out. The keys ascend, so the search for each block starts at the block of the
+    /// previous key. The reader gets the needed blocks, each once and in ascending order.
     struct Lookup
     {
         size_t block;
@@ -126,7 +133,7 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
     };
 
     VectorWithMemoryTracking<Lookup> lookups;
-    size_t needed_blocks = 0;
+    std::vector<size_t> needed_blocks;
     size_t block = 0;
     for (size_t begin = 0; begin < probes.size();)
     {
@@ -137,17 +144,20 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
         block = directory.findBlock(probes[begin].key, block);
         if (!filters || filters->mayContain(block, probes[begin].key))
         {
-            needed_blocks += lookups.empty() || block != lookups.back().block;
+            if (lookups.empty() || block != lookups.back().block)
+                needed_blocks.push_back(block); /// Each block once, in ascending order
             lookups.push_back({block, begin, end});
         }
         begin = end;
     }
 
-    if (lookups.empty())
+    if (lookups.empty()) /// The filters ruled out every key
         return;
 
-    /// The reader sizes its reads from how many blocks the probes need and how far apart they are.
-    BlockReader blocks(*this, needed_blocks, /*range_blocks=*/lookups.back().block - lookups.front().block + 1);
+    /// Step 4: Search each key in its block. The reader produces the keys of the needed blocks in ascending
+    /// order, from the cache or the file, and a key found in its block marks all its probes as found. Then
+    /// the reader adds the blocks that it read to the cache.
+    BlockReader blocks(*this, std::move(needed_blocks));
     for (const Lookup & lookup : lookups)
     {
         const auto block_keys = blocks.read(lookup.block);
@@ -155,8 +165,9 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
             for (size_t i = lookup.probes_begin; i < lookup.probes_end; ++i)
                 found[probes[i].row] = 1;
     }
+    blocks.addReadBlocksToCache(); /// One batch per call, so each shard is locked once for it
 
-    /// The rows that repeat the key of the previous row take its answer.
+    /// Step 5: Rows that repeat the key of the previous row take its answer.
     for (size_t row = 1; row < keys.size(); ++row)
         if (keys[row] == keys[row - 1])
             found[row] = found[row - 1];

@@ -3875,6 +3875,19 @@ The filter counts towards the memory usage of the query, such as `max_memory_usa
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
         {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
+    DECLARE(UInt64, max_bytes_for_external_set_cache, 128_MiB, R"(
+Memory budget, in bytes, for the cache of blocks that each set of `IN` written to disk keeps in memory. A
+lookup that needs a block already read by an earlier lookup gets it from the cache instead of reading it
+from disk again. The cache helps when lookups repeatedly need the same blocks, such as lookups of a few
+frequent values or many lookups into a set that fits in the cache. It helps little when lookups spread
+evenly over a set much larger than the cache. `0` disables the cache.
+
+The budget applies per set. The cache counts towards the memory usage of the query, such as
+`max_memory_usage`, but not towards `max_bytes_in_set`.
+
+See [IN in external memory](/reference/statements/in#in-in-external-memory).
+)", 0, \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
