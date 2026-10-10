@@ -19,7 +19,7 @@ public:
     static constexpr UInt16 DEFAULT_PORT = 9042;
 
     /// Splits a comma-separated list of hosts.
-    static std::vector<String> splitHosts(const String & hosts);
+    static VectorWithMemoryTracking<String> splitHosts(const String & hosts);
 
     struct Configuration
     {

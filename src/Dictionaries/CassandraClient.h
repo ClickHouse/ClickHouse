@@ -6,6 +6,7 @@
 
 #include <base/types.h>
 #include <Common/Logger.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
 
@@ -13,7 +14,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <vector>
 
 
 namespace DB
@@ -95,7 +95,7 @@ class ResultPage
 public:
     size_t columns() const { return column_specs.size(); }
     size_t rows() const { return rows_count; }
-    const std::vector<ColumnSpec> & columnSpecs() const { return column_specs; }
+    const VectorWithMemoryTracking<ColumnSpec> & columnSpecs() const { return column_specs; }
 
     /// The serialized value of a column in a row, or `std::nullopt` for NULL.
     std::optional<std::string_view> value(size_t row, size_t column) const
@@ -122,9 +122,9 @@ private:
 
     /// The body of the response frame. The values reference it by offsets.
     String body;
-    std::vector<ColumnSpec> column_specs;
+    VectorWithMemoryTracking<ColumnSpec> column_specs;
     size_t rows_count = 0;
-    std::vector<Value> values;
+    VectorWithMemoryTracking<Value> values;
     bool has_more_pages = false;
     String paging_state;
 };
@@ -184,7 +184,7 @@ using ConnectionPtr = std::unique_ptr<Connection>;
 class ConnectionPool
 {
 public:
-    ConnectionPool(std::vector<String> hosts_, UInt16 port_, ConnectionSettings settings_, Consistency consistency_, size_t max_idle_connections_);
+    ConnectionPool(VectorWithMemoryTracking<String> hosts_, UInt16 port_, ConnectionSettings settings_, Consistency consistency_, size_t max_idle_connections_);
 
     ResultPage query(const String & query_text, Int32 page_size, const String & paging_state);
 
@@ -193,7 +193,7 @@ private:
     ConnectionPtr connect();
     void release(ConnectionPtr connection);
 
-    const std::vector<String> hosts;
+    const VectorWithMemoryTracking<String> hosts;
     const UInt16 port;
     const ConnectionSettings settings;
     const Consistency consistency;
@@ -203,7 +203,7 @@ private:
     std::atomic<size_t> next_host = 0;
 
     std::mutex mutex;
-    std::vector<ConnectionPtr> idle_connections;
+    VectorWithMemoryTracking<ConnectionPtr> idle_connections;
 
     LoggerPtr log;
 };

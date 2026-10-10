@@ -42,7 +42,7 @@ namespace
 {
 
 /// Cassandra has no unsigned integers, so the unsigned types are read from the signed ones of the same size.
-std::vector<ColumnType> compatibleTypes(ExternalResultDescription::ValueType type)
+VectorWithMemoryTracking<ColumnType> compatibleTypes(ExternalResultDescription::ValueType type)
 {
     using ValueType = ExternalResultDescription::ValueType;
     switch (type)

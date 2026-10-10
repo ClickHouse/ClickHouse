@@ -595,7 +595,7 @@ bool Connection::isReusable() const
 
 
 ConnectionPool::ConnectionPool(
-    std::vector<String> hosts_, UInt16 port_, ConnectionSettings settings_, Consistency consistency_, size_t max_idle_connections_)
+    VectorWithMemoryTracking<String> hosts_, UInt16 port_, ConnectionSettings settings_, Consistency consistency_, size_t max_idle_connections_)
     : hosts(std::move(hosts_))
     , port(port_)
     , settings(std::move(settings_))
@@ -647,13 +647,13 @@ void ConnectionPool::release(ConnectionPtr connection)
 ConnectionPtr ConnectionPool::connect()
 {
     /// The configured hosts are equivalent contact points: try them all, starting from a different one each time.
-    std::vector<String> errors;
+    VectorWithMemoryTracking<String> errors;
     const size_t start = next_host.fetch_add(1, std::memory_order_relaxed);
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const String & host = hosts[(start + i) % hosts.size()];
 
-        std::vector<Poco::Net::SocketAddress> addresses;
+        std::vector<Poco::Net::SocketAddress> addresses; /// STYLE_CHECK_ALLOW_STD_CONTAINERS: the type returned by `DNSResolver`
         try
         {
             addresses = DNSResolver::instance().resolveAddressList(host, port);

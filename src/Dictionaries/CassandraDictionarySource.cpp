@@ -189,9 +189,9 @@ void CassandraDictionarySource::Configuration::setConsistency(const String & con
 
 static const size_t max_block_size = 8192;
 
-std::vector<String> CassandraDictionarySource::splitHosts(const String & hosts)
+VectorWithMemoryTracking<String> CassandraDictionarySource::splitHosts(const String & hosts)
 {
-    std::vector<String> res;
+    VectorWithMemoryTracking<String> res;
     for (auto host : std::views::split(hosts, ','))
     {
         String trimmed(std::string_view(host.begin(), host.end()));
