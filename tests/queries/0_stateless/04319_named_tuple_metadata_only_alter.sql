@@ -649,7 +649,7 @@ DROP TABLE t_named_tuple_alter;
 -- subcolumn reads of missing Nullable subfields produce all-NULL
 -- via fillMissingColumns, inconsistent with whole-column CAST defaults.
 -- ============================================================
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 CREATE TABLE t_named_tuple_alter (id UInt64, t Nullable(Tuple(a UInt64)))
 ENGINE = MergeTree ORDER BY id;

@@ -23,6 +23,7 @@
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -48,6 +49,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/grouping.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
@@ -79,6 +81,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
 }
 
 namespace Setting
@@ -1345,7 +1348,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && !function_node_ptr->isWindowFunction()
         /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
         /// the regular path so a preserved scalar-subquery source is never sent to the planner.
-        && !scope.resolving_join_on_expression
+        && !(scope.resolving_join_on_expression && scope.resolving_join_on_expression->getNodeType() == QueryTreeNodeType::JOIN)
         && !lambda_expression_untyped
         && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
         && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)
@@ -1427,6 +1430,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     bool is_special_function_in = false;
     bool is_special_function_dict_get = false;
+    bool is_special_function_assign_centroid = false;
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
@@ -1436,6 +1440,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         is_special_function_in = isNameOfInFunction(function_name);
         is_special_function_dict_get = functionIsDictGet(function_name);
+        is_special_function_assign_centroid = function_name == "assignCentroid";
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
@@ -1534,7 +1539,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         scope.scope_node->formatASTForErrorMessage());
 
                 auto & table_node_typed = table_node->as<TableNode &>();
-                if (!std::dynamic_pointer_cast<StorageJoin>(table_node_typed.getStorage()))
+                if (!castStorage<StorageJoin>(table_node_typed.getStorage(), DeferredTable::Load))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} table '{}' should have engine StorageJoin. In scope {}",
                         function_name,
@@ -1585,8 +1590,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/,
                     allow_niladic_functions);
             }
-            catch (const Exception &)
+            catch (const Exception & e)
             {
+                /// SEMI/ANTI JOIN column access violations must not be masked by dead-branch
+                /// folding: they are compile-time access-control errors, not "unknown column"
+                /// lookups. Rethrow so the query is rejected even when the offending reference
+                /// sits in a statically unreachable branch of `if`.
+                if (e.code() == ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED)
+                    throw;
                 apply_constant_if_optimization = true;
             }
 
@@ -1718,8 +1729,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             false /*allow_table_expression*/,
                             allow_niladic_functions);
                     }
-                    catch (const Exception &)
+                    catch (const Exception & e)
                     {
+                        /// See the `if` special case above: SEMI/ANTI JOIN access violations
+                        /// must not be swallowed by dead-branch folding.
+                        if (e.code() == ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED)
+                            throw;
                         apply_constant_multi_if_optimization = true;
                     }
                 }
@@ -1864,6 +1879,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 const auto subquery_hash = subquery_node->getTreeHash(/*compare_options=*/ {.compare_aliases = false});
                 String unique_column_name
                     = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
+
+                /// The set of a regular IN ignores the totals of the whole subquery plan (including the
+                /// totals of the queries in its join tree), so drop `WITH TOTALS` here as well, recursively:
+                /// otherwise the `TotalsHaving` step ends up on the right side of the join built by the
+                /// decorrelation, leaks the totals row into the outer query, and fails with `LOGICAL_ERROR`
+                /// when the outer query has `WITH TOTALS` itself.
+                for (const auto & table_expression : extractTableExpressions(
+                         std::static_pointer_cast<ITableExpressionNode>(subquery_node), /*add_array_join=*/ false, /*recursive=*/ true))
+                {
+                    if (auto * table_expression_query_node = table_expression->as<QueryNode>())
+                        table_expression_query_node->setIsGroupByWithTotals(false);
+                }
 
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
@@ -2247,7 +2274,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Mask arguments if needed
     if (!canDisplaySecrets(scope.context))
     {
-        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
+        if (SecretArgumentsResult secret_arguments = findSecretArguments(*function_node_ptr); secret_arguments.hasSecrets())
         {
             auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
 
@@ -2288,15 +2315,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (auto * constant = secret_node->as<ConstantNode>())
                         arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(assign_mask(*constant)) + "]";
                     else if (mask_secret_constants(secret_node))
-                        arguments_projection_names[n] = "[HIDDEN]";
+                        arguments_projection_names[n] = HIDDEN_SECRET;
                 });
         }
     }
 
     /** Bind an unqualified dictionary name to the current database.
       *
-      * The dictionary name of `dictGet` and its variations is resolved against the current database of
-      * the server that evaluates the function. A shard of a `Distributed` table evaluates it in a session
+      * The dictionary name of `dictGet` and its variations, and of `assignCentroid`, is resolved against
+      * the current database of the server that evaluates the function. A shard of a `Distributed` table evaluates it in a session
       * whose current database comes from the cluster configuration - `default` unless `<default_database>`
       * is set - and not from the initiator, so an unqualified name shipped to a shard either fails to
       * resolve or, worse, silently resolves to a different dictionary that happens to have the same name.
@@ -2310,20 +2337,25 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       * belongs to an XML dictionary, and when no such dictionary exists in the current database - in the
       * last case the name may still be meant for a dictionary that only exists on the shards.
       */
-    if (is_special_function_dict_get)
+    if (is_special_function_dict_get || is_special_function_assign_centroid)
     {
-        auto & dict_get_arguments = function_node_ptr->getArguments().getNodes();
-        if (!dict_get_arguments.empty())
+        const size_t dictionary_name_position = is_special_function_dict_get ? 0 : 1;
+        auto & arguments = function_node_ptr->getArguments().getNodes();
+        if (dictionary_name_position < arguments.size())
         {
-            const auto * dictionary_name_node = dict_get_arguments[0]->as<ConstantNode>();
+            auto & dictionary_name_argument = arguments[dictionary_name_position];
+            const auto * dictionary_name_node = dictionary_name_argument->as<ConstantNode>();
             if (dictionary_name_node && dictionary_name_node->getValue().getType() == Field::Types::String)
             {
                 const auto & dictionary_name = dictionary_name_node->getValue().safeGet<String>();
                 auto qualified_dictionary_name = scope.context->getExternalDictionariesLoader()
                     .qualifyDictionaryNameWithDatabase(dictionary_name, scope.context).getFullName();
 
+                /// `assignCentroid` also takes a Nullable or LowCardinality name and its result type follows it.
                 if (qualified_dictionary_name != dictionary_name)
-                    dict_get_arguments[0] = std::make_shared<ConstantNode>(qualified_dictionary_name);
+                    dictionary_name_argument = is_special_function_dict_get
+                        ? std::make_shared<ConstantNode>(qualified_dictionary_name)
+                        : std::make_shared<ConstantNode>(qualified_dictionary_name, dictionary_name_node->getResultType());
             }
         }
     }
@@ -2431,8 +2463,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
-            /// Replace storage with values storage of insertion block
-            if (StoragePtr storage = scope.context->getViewSource())
+            /// Replace storage with values storage of insertion block.
+            /// The inner query of an ordinary view referenced by the view query reads the table itself.
+            if (StoragePtr storage = scope.context->getViewSource(); storage && !scope.context->isViewInnerQuery())
             {
                 QueryTreeNodePtr table_expression = in_second_argument;
 
@@ -2819,9 +2852,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (query_context->hasScalar(scalar_string))
                 {
                     auto scalar = query_context->getScalar(scalar_string);
-                    argument_column.column = ColumnConst::create(scalar.getByPosition(0).column, 1);
-                    argument_column.type = get_scalar_function_node->getResultType();
-                    argument_is_constant = true;
+                    const auto & scalar_column = scalar.getByPosition(0).column;
+                    const auto & get_scalar_result_type = get_scalar_function_node->getResultType();
+                    /// The column comes from the scalars map while the type comes from the resolved node, and the
+                    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+                    if (scalar_column->size() == 1 && columnMatchesType(*scalar_column, *get_scalar_result_type))
+                    {
+                        argument_column.column = ColumnConst::create(scalar_column, 1);
+                        argument_column.type = get_scalar_result_type;
+                        argument_is_constant = true;
+                    }
                 }
             }
         }
@@ -2990,6 +3030,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+
+        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
+        for (size_t i = 0; i < argument_types.size(); ++i)
+            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
         AggregateFunctionProperties properties;
         auto aggregate_function

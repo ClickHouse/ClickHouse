@@ -195,7 +195,13 @@ private:
                 continue;
             }
 
-            ::sort(sorted_keys_values.begin(), sorted_keys_values.end());
+            ::stableSort(
+                sorted_keys_values.begin(),
+                sorted_keys_values.end(),
+                [](const auto & lhs, const auto & rhs)
+                {
+                    return lhs.first < rhs.first;
+                });
 
             KeyType min_key = sorted_keys_values.front().first;
             KeyType max_key = sorted_keys_values.back().first;
