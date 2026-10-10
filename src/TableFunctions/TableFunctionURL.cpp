@@ -135,6 +135,10 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         format = configuration.format;
 
         StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+
+        /// Resolving the stored `url` against `url_base` replaces it, which could send the stored credentials to another host.
+        if (StorageURL::resolveURLBase(filename, context->getSettingsRef()[Setting::url_base].value) != filename)
+            checkNamedCollectionOverride(*named_collection, "url", context);
     }
     else
     {
@@ -663,6 +667,6 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ## Related {#related}
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, urlSecretArguments(0));
 }
 }

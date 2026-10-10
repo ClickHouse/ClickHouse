@@ -5,6 +5,7 @@
 #if USE_DELTA_KERNEL_RS
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Formats/FormatFactory.h>
 
 #include <delta_kernel_ffi.hpp>
 
@@ -35,6 +36,7 @@ public:
         , schema(schema_)
         , exception(exception_)
         , context(context_)
+        , format_settings(context_ ? DB::getFormatSettings(context_) : DB::FormatSettings{})
     {
         predicate = this;
         visitor = &visitPredicate;
@@ -52,6 +54,7 @@ public:
     const DB::ActionsDAG & getFilterDAG() const { return filter; }
     const DB::NamesAndTypesList & getSchema() const { return schema; }
     DB::ContextPtr getContext() const { return context; }
+    const DB::FormatSettings & getFormatSettings() const { return format_settings; }
 
 private:
     const LoggerPtr log = getLogger("EnginePredicate");
@@ -66,6 +69,7 @@ private:
     std::exception_ptr & exception;
     /// Context for accessing settings
     DB::ContextPtr context;
+    const DB::FormatSettings format_settings;
 
     static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
 };
