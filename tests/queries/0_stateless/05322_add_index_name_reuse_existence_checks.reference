@@ -1,0 +1,10 @@
+-- adding an index that already exists is still a no-op
+a
+-- a name whose drop is still pending cannot be taken by a new index
+-- a no-op DROP INDEX in the same statement does not excuse the name
+-- the name is free again once no part holds its files
+b
+-- re-adding a column while its drop is pending keeps working
+a
+c
+0

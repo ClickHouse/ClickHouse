@@ -53,6 +53,12 @@ public:
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
 
+    /// Names of skip indices dropped by a pending mutation (data in part is stale).
+    /// If an index with the same name is re-added by the current metadata (e.g. `DROP INDEX ix, ADD
+    /// INDEX ix ...`), the file on disk still holds granules for the previous index definition until
+    /// the mutation rewrites the part, so it must not be used for pruning until then.
+    const NameSet & getStaleIndices() const { return stale_indices; }
+
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
     bool hasLightweightDelete() const;
@@ -111,6 +117,9 @@ private:
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
     NameSet dropped_columns;
+
+    /// Names of skip indices dropped by pending `DROP INDEX` mutations. See getStaleIndices().
+    NameSet stale_indices;
 
     /// All mutations commands that should be applied.
     MutationCommands mutation_commands;
