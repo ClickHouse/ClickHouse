@@ -240,7 +240,8 @@ public:
       * instead of a table of the catalog - the source of a projection calculation, for example.
       * Such a storage is not a table the user can query, and it may borrow the name of an existing
       * table, so reading from it must not be affected by the row policies and the
-      * `additional_table_filters` of that name.
+      * `additional_table_filters` of that name, nor split between the replicas by
+      * `parallel_replicas_custom_key`.
       */
     virtual bool isSyntheticDataSource() const { return false; }
 

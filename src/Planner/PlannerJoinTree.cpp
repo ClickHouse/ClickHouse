@@ -2272,7 +2272,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     }
                 }
 
-                if (query_context->canUseParallelReplicasCustomKey())
+                /// A synthetic data source is not split between the replicas: a replica which
+                /// calculates a projection must see all the rows of the block it is given.
+                if (query_context->canUseParallelReplicasCustomKey() && !storage->isSyntheticDataSource())
                 {
                     if (settings[Setting::parallel_replicas_count] > 1)
                     {
