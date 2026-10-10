@@ -297,9 +297,12 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     serializeDataLakeTableStateSnapshot(*datalake_table_state, table_state);
     table_state.finalize();
 
-    boost::hash_combine(condition_hash, top_k_filter->plan_hash);
-    boost::hash_combine(condition_hash, sipHash64(table_state.str()));
-    key->condition_hash = condition_hash;
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(top_k_filter->plan_hash);
+    hash.update(table_state.str().size());
+    hash.update(table_state.str());
+    key->condition_hash = hash.get64();
     return key;
 }
 
