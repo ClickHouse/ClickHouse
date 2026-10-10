@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <limits>
+#include <optional>
 #include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -305,7 +306,9 @@ private:
     /// known entries are then skipped instead of triggering the "already exists" bug check.
     void loadMutations(bool reloading = false);
     /// Reads a `mutation_*.txt` entry, reporting an entry that the owner of a shared directory removed meanwhile.
-    MergeTreeMutationEntry loadMutationEntry(const DiskPtr & disk, const String & file_name) const;
+    /// Returns `std::nullopt` when this node is a `leader_election` follower that does not hold the lease and the
+    /// leader removed the entry between the listing and the read.
+    std::optional<MergeTreeMutationEntry> loadMutationEntry(const DiskPtr & disk, const String & file_name) const;
     /// Removes the mutation entries and the deduplication log, which `dropAllData` leaves alone when the table
     /// occupies the whole disk (`table_disk`).
     void removeOwnFilesInDiskRootOnDrop(const DiskPtr & disk) override;

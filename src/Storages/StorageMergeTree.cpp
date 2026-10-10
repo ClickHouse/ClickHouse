@@ -2463,11 +2463,11 @@ void StorageMergeTree::dropDeduplicationLogParts(const DataPartsVector & parts)
     }
 }
 
-MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_name) const
+std::optional<MergeTreeMutationEntry> StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_name) const
 {
     try
     {
-        return MergeTreeMutationEntry(disk, relative_data_path, file_name);
+        return std::make_optional<MergeTreeMutationEntry>(disk, relative_data_path, file_name);
     }
     catch (const Exception & e)
     {
@@ -2478,7 +2478,11 @@ MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk,
         /// is transient, and the caller can retry once the metadata of the disk, which still lists the entry, is reloaded.
         /// Convert the error only when the probe proves that the metadata still lists the entry, but its object is
         /// gone. If the probe itself fails, the original read failure is the more useful one.
-        if (!disk->isReadOnly())
+        /// The same holds for a `leader_election` table that does not hold the lease (a follower, or a node that
+        /// has not acquired it yet): its disk is writable, but the leader owns the entries and removes them at any
+        /// moment. Only a writer that owns the directory treats a vanished entry as an error outright.
+        const bool owns_entries = !disk->isReadOnly() && mayMutateSharedStorage();
+        if (owns_entries)
             throw;
 
         bool object_exists = true;
@@ -2493,6 +2497,15 @@ MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk,
 
         if (object_exists)
             throw;
+
+        if (!disk->isReadOnly())
+        {
+            /// A follower does not apply the mutation itself, and the leader removed the entry because the mutation
+            /// was killed or finished. The takeover reload (`loadMutations(true)`) rescans the entries under the
+            /// lease, so skipping the entry here does not lose a mutation the new leader has to run.
+            LOG_INFO(log, "The mutation entry {} was removed by the leader while this follower was loading it, skipping it", file_name);
+            return std::nullopt;
+        }
 
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST,
@@ -2555,7 +2568,10 @@ void StorageMergeTree::loadMutations(bool reloading)
             {
                 FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_load_mutations_pause_before_read);
 
-                MergeTreeMutationEntry entry = loadMutationEntry(disk, it->name());
+                auto loaded_entry = loadMutationEntry(disk, it->name());
+                if (!loaded_entry)
+                    continue;
+                MergeTreeMutationEntry entry = std::move(*loaded_entry);
                 UInt64 block_number = entry.block_number;
 
                 if (reloading)
