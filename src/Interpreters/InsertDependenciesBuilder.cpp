@@ -840,7 +840,7 @@ static bool storageCertainlyDeduplicatesBlocksOnInsert(const StoragePtr & storag
     if (depth > max_insert_forwarding_depth)
         return false;
 
-    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+    if (const auto * merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
     {
         const auto merge_tree_settings = merge_tree->getSettings();
         if (storage->supportsReplication())
