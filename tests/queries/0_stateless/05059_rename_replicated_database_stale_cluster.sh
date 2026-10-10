@@ -45,8 +45,8 @@ probe() {
     fi
 }
 
-# Reuse a leftover collection instead of recreating it: dropping it would strand a leftover database using it.
-$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION IF NOT EXISTS $COLL AS cluster_username = 'default', cluster_secret = 'secret_${CLICKHOUSE_TEST_UNIQUE_NAME}'"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS $COLL"
+$CLICKHOUSE_CLIENT -q "CREATE NAMED COLLECTION $COLL AS cluster_username = 'default', cluster_secret = 'secret_${CLICKHOUSE_TEST_UNIQUE_NAME}'"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE $DB ENGINE = Replicated('$ZK_PATH', 's1', 'r1') SETTINGS collection_name = '$COLL'"
 
 # This also warms the cache: the cluster object is built on first use and kept in `DatabaseReplicated::cluster`.
@@ -61,7 +61,6 @@ $CLICKHOUSE_CLIENT -q "SELECT 'clusters old=' || toString(countIf(cluster = '$DB
 
 probe after-rename "$DB_RENAMED"
 
-# Chained so the collection outlives the databases: metadata must never reference a missing collection.
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB_RENAMED SYNC" \
-    && $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB SYNC" \
-    && $CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS $COLL"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB_RENAMED SYNC"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $DB SYNC"
+$CLICKHOUSE_CLIENT -q "DROP NAMED COLLECTION IF EXISTS $COLL"
