@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree, no-fasttest
 # Tag no-parallel: SYSTEM ENABLE FAILPOINT toggles server-global state.
 # Tags no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree: mirror
 #   03362_merge_tree_with_background_refresh, the plain_rewritable read-only refresh test this is based on.
@@ -22,7 +22,7 @@ SETTINGS table_disk = true,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = 'disks/04421/${CLICKHOUSE_DATABASE}/')
+      path = '${CLICKHOUSE_DISKS_FILES}/04421/${CLICKHOUSE_DATABASE}/')
 "
 
 ${CLICKHOUSE_CLIENT} --query "
@@ -34,7 +34,7 @@ SETTINGS table_disk = true, refresh_parts_interval = 1,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = 'disks/04421/${CLICKHOUSE_DATABASE}/')
+      path = '${CLICKHOUSE_DISKS_FILES}/04421/${CLICKHOUSE_DATABASE}/')
 "
 
 # Sanity check: the background refresh picks up the first part.

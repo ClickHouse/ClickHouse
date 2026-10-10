@@ -281,7 +281,7 @@ The executor for [managed mode](/products/bring-your-own-cloud/connector/managed
 | `executor.cluster.name` | `""` (`init` fills it) | Name of the one EKS cluster this executor manages. Required when the executor is enabled. |
 | `executor.cluster.region` | `""` (`init` fills it) | The cluster's AWS region. Required. |
 | `executor.cluster.accountId` | `""` (`init` fills it) | The cluster's AWS account. Required; the snake_case `account_id` spelling is also accepted. |
-| `executor.cluster.inCluster` | `false` (`init` writes `true`) | Authenticate as the pod's ServiceAccount. This is the point of the Kubernetes shape: no access bundle exists in the pod. |
+| `executor.cluster.inCluster` | `false` (`init` writes `true`) | Authenticate as the pod's ServiceAccount, the Kubernetes install's shape; no access bundle exists in the pod. |
 | `executor.cluster.delete_instance_data.enabled` | `false` | Whether `clicklink clctl executor teardown` deletes a retired service's data without `--delete-data`. `init` leaves it unset. Other per-cluster keys pass through verbatim in the binary's snake_case spelling. |
 | `executor.targetCluster` | `""` (derived from `cluster.name`) | Cluster inbound commands dispatch to. Leave unset; a value that does not match `cluster.name` fails at render. |
 | `executor.config` | `{}` | Passthrough for any `executor` config key not modeled above, such as the retry horizons in the VM [executor](#vm-executor) block. |

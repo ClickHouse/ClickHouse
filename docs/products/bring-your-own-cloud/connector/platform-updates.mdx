@@ -12,15 +12,15 @@ import { Image } from "/snippets/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-A managed cluster runs a small platform layer that the ClickHouse services depend on. ClickHouse Cloud proposes updates to that layer; the executor applies nothing until you approve each one with your own cluster credentials. This page explains what a platform update is, how to approve one on a VM or a Kubernetes install, how long an approval lasts, and what it grants.
+A managed cluster runs a small platform layer that the ClickHouse services depend on. ClickHouse Cloud proposes updates to that layer; the executor applies nothing until you approve each one with your own cluster credentials.
 
 ## What a platform update is {#what-a-platform-update-is}
 
-The platform layer is three components: the snapshot controller, the ClickHouse operator, and the monitoring collectors. They install in this order because each needs the previous one's custom resource definitions. Alongside them sits a StorageClass named `gp3-encrypted` (encrypted gp3 volumes) that the services use.
+The platform layer is three components: the snapshot controller, the ClickHouse operator, and the monitoring collectors. They install in that order because each needs the previous one's custom resource definitions. The services use a StorageClass named `gp3-encrypted` (encrypted gp3 volumes) that ships with them.
 
-A platform bundle is the rendered manifest ClickHouse Cloud produces for your environment. It pins the chart and image versions of those components and names the registry they are pulled from. Every bundle is identified by the sha256 of that manifest. ClickHouse Cloud sends the bundle to the executor over its command channel, and the executor stages it for your approval.
+A platform bundle is the manifest ClickHouse Cloud renders for your environment. It pins the chart and image versions of those components and names the registry they are pulled from. Every bundle is identified by the sha256 of that manifest. ClickHouse Cloud sends it to the executor over the command channel, and the executor stages it for your approval.
 
-Applying a bundle is split in two halves:
+A bundle is applied in two halves:
 
 - The **permission half** is everything that grants or shapes access: Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and ClusterRoleBindings, Roles and RoleBindings, webhook and admission configurations, PriorityClasses, and the StorageClass. Only you apply it, with your credentials, by running `clicklink clctl platform approve`.
 - The **workload half** is what runs: Deployments, Services, ConfigMaps, Secrets, Jobs, and PodDisruptionBudgets. The executor applies it as a dedicated `pcm-platform` identity that can write those kinds and nothing else, and only while the short-lived token your approval minted is valid.
@@ -31,15 +31,24 @@ The executor never applies a bundle you have not approved. It refuses a platform
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse Connector platform approval flow" />
 
+### Registry credentials {#registry-credentials}
+
+Registry authentication depends on the image distribution mode registered for your environment:
+
+- **Direct access to ClickHouse's registry.** Run approval on the connector's EC2 VM. Both `approve` and the executor's platform sync assume your environment's read-only ECR puller role with credentials from the EC2 instance metadata service. That role logs in to the chart registry; the executor also uses it to check that the platform images exist. AWS profiles, environment credentials, or SSO credentials on a workstation do not replace the instance profile. Your kubeconfig still supplies the separate cluster-admin credentials that apply the permission half.
+- **Charts in another ECR registry, including your own mirror.** Chart login uses the ambient AWS credentials of the process running `approve` or the executor. Those credentials must be allowed to read that registry.
+
+Use the Kubernetes workstation procedure below only for mirrored-registry deployments with Kubernetes platform approval enabled. For direct access, ask your account team to confirm a supported execution environment with the required EC2 instance profile first.
+
 <Steps>
 <Step title="Find the staged bundle" id="find-the-staged-bundle">
-ClickHouse Cloud sends each proposed bundle to the executor before anything else happens. The executor stages it as the pending bundle and reports its sha256 on the heartbeat. Exactly one staged bundle exists at a time; a newer proposal replaces it. The executor then refuses the sync and records it as a failed command whose result ends with the command to run.
+ClickHouse Cloud sends each proposed bundle to the executor first. The executor stages it as the pending bundle and reports its sha256 on the heartbeat. One staged bundle exists at a time; a newer proposal replaces it. The executor then refuses the sync and records a failed command whose result ends with the command to run.
 
 ```bash
 clicklink clctl commands list --status failed --action sync_platform
 ```
 
-The `result` field ends with `run: clctl platform approve (pending bundle sha <sha256>)`. On Kubernetes the hint reads `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`. A create that hit a missing custom resource definition carries the same `clctl platform approve` line in its own failed command and in the error `clicklink clctl instances create --wait` prints. Your ClickHouse account team tells you as well when a platform update is proposed.
+The `result` field ends with `run: clctl platform approve (pending bundle sha <sha256>)`. On Kubernetes the hint reads `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`. A create that hit a missing custom resource definition carries the same `clctl platform approve` line. It appears in its own failed command and in the error `clicklink clctl instances create --wait` prints. Your account team also tells you when a platform update is proposed.
 
 Read the staged bundle before you approve it. It holds the manifest and its sha256.
 
@@ -66,9 +75,9 @@ The API answers `404` with `no platform bundle is staged` until the first propos
 </Step>
 
 <Step title="Run approve" id="run-approve">
-`approve` with no flags reads the staged bundle and hashes it, so what you approve is exactly what the executor received. It renders every chart in the bundle exactly as the executor will and applies the permission half with the kube context you choose. It creates the `pcm-platform` identity if needed and mints its token. It makes no request to your connector endpoint.
+`approve` with no flags reads the staged bundle and hashes it, so you approve exactly what the executor received. It renders every chart as the executor will and applies the permission half with the kube context you choose. It creates the `pcm-platform` identity if needed and mints its token. It makes no request to your connector endpoint.
 
-`approve` needs a kube context with cluster-admin rights on the managed cluster (`--context <name>` when your kubeconfig holds several). When a chart lives in Amazon ECR it also needs AWS credentials that can read it. `--dry-run` renders and lists the permission half without applying or minting anything.
+`approve` needs a kube context with cluster-admin rights on the managed cluster (`--context <name>` when your kubeconfig holds several) and the [registry credentials](#registry-credentials) for your environment's image distribution mode. `--dry-run` renders and lists the permission half without applying or minting anything; it still needs registry access to render the charts.
 
 <Tabs>
 <Tab title="Linux VM" id="approve-vm">
@@ -81,7 +90,7 @@ sudo clicklink clctl platform approve --config /etc/clicklink/config.yaml
 `approve` writes the token to `/etc/clicklink/access/executor/_platform`, next to the executor's other credentials. It builds the new bundle beside the live one and swaps it in only once its token exists, so a failed approve leaves a still-valid token alone.
 </Tab>
 <Tab title="Kubernetes" id="approve-kubernetes">
-`approve` reads the staged bundle over the port-forward from the previous step. It delivers the token bundle as a Secret in the connector namespace, which the chart mounts into the pod. Run it from a workstation whose kubeconfig reaches the cluster, with a copy of the connector configuration. The chart renders one into the executor's ConfigMap; `approve` needs it for the namespace prefix and reads no credentials from it.
+For a mirrored-registry deployment with Kubernetes platform approval enabled, `approve` reads the staged bundle over the port-forward from the previous step. It delivers the token bundle as a Secret in the connector namespace, which the chart mounts into the pod. Run it from a workstation whose kubeconfig reaches the cluster, with a copy of the connector configuration and [registry access](#registry-credentials). The chart renders the configuration into the executor's ConfigMap; `approve` needs it only for the namespace prefix and reads no credentials from it.
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -118,7 +127,7 @@ The most recent `sync_platform` command turns `completed`. The executor also rep
 
 ## The approval window {#the-approval-window}
 
-An approval mints a token for the `pcm-platform` identity that is valid for 2 hours by default (`--ttl` changes it). The executor never renews that token. When it expires, the executor can no longer touch the platform layer, and it refuses the next platform sync with the approval message again. That is the intended shape, not a failure, and it does not depend on connectivity: an approval given while the connector is offline still expires on its own clock.
+An approval mints a token for the `pcm-platform` identity, valid for 2 hours by default (`--ttl` changes it). The executor never renews it. Once it expires the executor can no longer touch the platform layer and refuses the next platform sync with the approval message again. This is by design and independent of connectivity: an approval given while the connector is offline still expires on its own clock.
 
 Run `approve` again whenever:
 
@@ -130,7 +139,7 @@ Approving the same bundle again is safe and replaces the token. The staged bundl
 
 ## What the approval grants {#what-the-approval-grants}
 
-You apply the permission half, so it carries your authority. `approve` stamps it with the bundle's sha256, and the executor verifies before touching anything that every permission object of the bundle it was sent is present and approved. The executor applies nothing in it.
+You apply the permission half, so it carries your authority; the executor applies nothing in it. `approve` stamps it with the bundle's sha256, and before touching anything the executor verifies that every permission object of the bundle it was sent is present and approved.
 
 The executor applies the workload half as `pcm-platform`. That identity can create and update Secrets, ConfigMaps, Services, Deployments, Jobs, and PodDisruptionBudgets, only inside the platform namespaces, which an admission policy enforces. It can read the objects it needs for its preflight (pods, events, namespaces, ServiceAccounts, the permission kinds above). It cannot:
 
@@ -138,7 +147,7 @@ The executor applies the workload half as `pcm-platform`. That identity can crea
 - `escalate`, `bind`, or `impersonate`;
 - mint or renew its own token.
 
-The executor's service-lifecycle identity, `pcm-executor`, is separate and confined to the service namespaces. It cannot write to the platform namespaces; its reads are not confined by the prefix guard. For the complete listing of both identities, see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
+The executor's service-lifecycle identity, `pcm-executor`, is separate and confined to the service namespaces. It cannot write to the platform namespaces; its reads are not confined by the prefix guard. For the full listing of both identities, see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
 
 ## Resetting a test cluster {#resetting-a-test-cluster}
 
