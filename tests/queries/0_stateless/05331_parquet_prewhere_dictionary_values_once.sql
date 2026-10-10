@@ -98,6 +98,8 @@ SELECT 'B', count(), sum(cityHash64(k, s)) = (
     SELECT sum(cityHash64(number, if(number < 10000, 'v' || toString(number % 20), 'u' || leftPad(toString(number), 19, '0'))))
     FROM numbers(30000) WHERE if(number < 10000, 'v' || toString(number % 20), 'u' || leftPad(toString(number), 19, '0')) != 'v1')
 FROM file(currentDatabase() || '_05331_b.parquet') PREWHERE s != 'v1' SETTINGS log_comment = '05331:b';
+SELECT 'BL', count() FROM file(currentDatabase() || '_05331_b.parquet') PREWHERE s LIKE '%v1%'
+SETTINGS apply_string_filters_during_scan = 1, log_comment = '05331:bl';
 
 -- Page index and small pages: the column is read range by range.
 INSERT INTO FUNCTION file(currentDatabase() || '_05331_c.parquet') SELECT * FROM ref ORDER BY k
@@ -115,5 +117,9 @@ SELECT log_comment, ProfileEvents['ParquetRowsDecodedAsDictionaryIndexes']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05331:%' AND event_date >= yesterday()
 ORDER BY log_comment;
+-- Only the 20000 values of the PLAIN row groups are checked against the string filter.
+SELECT 'BL checked', ProfileEvents['StringValueFilterValuesChecked']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05331:bl' AND event_date >= yesterday();
 
 DROP TABLE ref;

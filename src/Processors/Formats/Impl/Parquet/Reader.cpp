@@ -3641,7 +3641,9 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     /// Dictionary indexes can't continue past a page that is not dictionary-encoded.
     if (subchunk.dictionary_values && !page.is_dictionary_encoded)
     {
-        subchunk.column = IColumn::mutate(subchunk.dictionary_values->index(*subchunk.column, 0));
+        auto values = column_info.decoded_type->createColumn();
+        column.dictionary.index(assert_cast<const ColumnUInt32 &>(*subchunk.column), *values);
+        subchunk.column = std::move(values);
         subchunk.dictionary_values = nullptr;
     }
 
@@ -3716,7 +3718,7 @@ const ColumnPtr & Reader::getDictionaryValues(ColumnChunk & column, const Primit
         std::iota(indexes->getData().begin(), indexes->getData().end(), UInt32(0));
         auto values = column_info.decoded_type->createColumn();
         values->reserve(column.dictionary.count);
-        column.dictionary.index(*indexes, *values);
+        column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
         column.dictionary_values = std::move(values);
     }
     return column.dictionary_values;
