@@ -115,6 +115,11 @@ namespace QueryPlanOptimizations
 /// The query condition cache consults a read that still waits for the filter under this PREWHERE, because
 /// the executed read writes its entries under it.
 PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info);
+
+/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
+/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`), also inside the
+/// body of a lambda (`arrayMap(x -> rowNumberInBlock(), arr)`).
+bool dependsOnItsBlock(const ActionsDAG & actions);
 }
 
 struct LazyMaterializingRows;
@@ -380,15 +385,12 @@ public:
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
     /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
     /// or memoizing the result. The executed read analyzes again after its final mode is known.
-    AnalysisResultPtr selectRangesToReadForEstimation() const;
+    /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
+    /// before `tryOptimizeTopK`, so the `use_query_condition_cache_for_top_k` gate is not yet known.
+    AnalysisResultPtr selectRangesToReadForEstimation(bool allow_query_condition_cache_) const;
 
-    /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
-    /// the query condition cache and without caching the analysis on the step. Used for the automatic
-    /// parallel-replicas sizing of a query which may still become a TopK read: that estimate runs before
-    /// `tryOptimizeTopK`, so it cannot know whether the `use_query_condition_cache_for_top_k` gate
-    /// applies, and the read that actually executes analyzes again with the gate that matches its final
-    /// shape.
-    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
+    /// Range analysis charges whole granules, so an estimate must not enforce a throwing read row limit.
+    bool hasThrowingReadRowLimit() const;
 
     /// How many compressed bytes this step reads off disk, based on index analysis (which is run here
     /// if it has not run yet, and memoized as usual). Where a per-column estimate cannot be made
@@ -626,11 +628,13 @@ public:
     }
 
     /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
-    /// step that this step replaces (the projection read built by `optimizeUseNormalProjections`).
-    /// `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so the descriptors
-    /// are attached to the base-table read and would be lost otherwise. Every descriptor is registered
-    /// anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the key column
-    /// is prunable through this step's own metadata (the projection's primary key or skip indexes).
+    /// step that this step replaces: the projection read built by `optimizeUseNormalProjections`, and the
+    /// steps `clone` and `createLocalParallelReplicasReadingStep` rebuild, which are not always optimized
+    /// again afterwards. `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so
+    /// the descriptors are attached to the base-table read and would be lost otherwise. Every descriptor
+    /// is registered anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the
+    /// key column is prunable through this step's own metadata (the projection's primary key or skip
+    /// indexes).
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
@@ -713,12 +717,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Carried over to a projection read by copyJoinRuntimeFilterIndexAnalysisDescriptors,
-    /// but not by clone()/serialize()/deserialize(), so the pruning is intentionally skipped when the step
-    /// is rebuilt for distributed or parallel-replicas reads (results stay correct, only the optimization
-    /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
-    /// (see its description in `Settings.cpp`) and is pinned by
-    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
+    /// optimization, and carried over by copyJoinRuntimeFilterIndexAnalysisDescriptors whenever the step
+    /// is rebuilt - a projection read, a clone, a parallel-replicas read - because a rebuilt step is not
+    /// always optimized again afterwards. Not serialized: a replica that receives a plan packet attaches
+    /// its own while optimizing it. A read that ends up without them reads its share unpruned, which is
+    /// what still happens with `make_distributed_plan`, and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_modes`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
