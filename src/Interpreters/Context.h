@@ -2173,6 +2173,8 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    DDLScheduling getDDLScheduling() const;
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);

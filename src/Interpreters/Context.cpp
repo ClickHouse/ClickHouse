@@ -138,6 +138,7 @@
 #include <Common/Scheduler/createResourceManager.h>
 #include <Common/Scheduler/Workload/createWorkloadEntityStorage.h>
 #include <Common/StackTrace.h>
+#include <Common/CurrentThread.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
 #include <Poco/Glob.h>
@@ -2808,10 +2809,22 @@ ClassifierPtr Context::getWorkloadClassifier() const
 
 void Context::setDDLQuery()
 {
-    /// Read before `mutex` to avoid locking the shared mutex under it.
-    const bool use_ddl_workload = getUseDDLWorkload();
+    /// A DDL executed as part of another DDL query on the same thread group (e.g. the initiator of a
+    /// `Replicated` database running the DDL from its queue entry) keeps the mode of that query, which
+    /// its CPU and IO are scheduled under. Both are read before `mutex` to avoid nested locking.
+    DDLScheduling mode = DDLScheduling::NotDDL;
+    if (auto thread_query_context = CurrentThread::tryGetQueryContext(); thread_query_context && thread_query_context.get() != this)
+        mode = thread_query_context->getDDLScheduling();
+    if (mode == DDLScheduling::NotDDL)
+        mode = getUseDDLWorkload() ? DDLScheduling::DDLWorkload : DDLScheduling::Exempt;
     std::lock_guard lock(mutex);
-    ddl_scheduling = use_ddl_workload ? DDLScheduling::DDLWorkload : DDLScheduling::Exempt;
+    ddl_scheduling = mode;
+}
+
+Context::DDLScheduling Context::getDDLScheduling() const
+{
+    std::lock_guard lock(mutex);
+    return ddl_scheduling;
 }
 
 void Context::releaseQuerySlot() const
