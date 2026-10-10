@@ -319,8 +319,7 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
 
     /// Create the 'need_rebuild_lists.mark' file.
     /// This file will be used later to find out if writing lists is successful or not.
-    /// It's created on every call because `reloadAllAndRebuildLists` can remove it while the lists-writing thread is waiting,
-    /// and the lists are never written again after a failed write.
+    /// Created on every call, because `reloadAllAndRebuildLists` can remove it while the lists-writing thread is waiting.
     WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
     out.close();
 
