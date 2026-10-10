@@ -18,9 +18,9 @@ SELECT CAST(CAST('neg', $$Enum8('neg' = -1, 'zero' = 0)$$) AS DateTime),
        toDateTime(toNullable(CAST('neg', $$Enum8('neg' = -1, 'zero' = 0)$$))),
        toDateTime(materialize(CAST('neg', $$Enum8('neg' = -1, 'zero' = 0)$$)));
 
--- The behaviour agrees with the `Int8` source in every overflow mode, including `throw`, which these
--- numeric conversions do not consult (a separate, pre-existing gap).
-SELECT toDateTime(CAST('neg', $$Enum8('neg' = -1, 'zero' = 0)$$)), toDateTime(toInt8(-1)) SETTINGS date_time_overflow_behavior = 'throw';
+-- The behaviour agrees with the `Int8` source in every overflow mode, including `throw`.
+SELECT toDateTime(CAST('neg', $$Enum8('neg' = -1, 'zero' = 0)$$)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime(toInt8(-1)) SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toDate(CAST('neg', $$Enum8('neg' = -1, 'zero' = 0)$$)), toDate(toInt8(-1)) SETTINGS date_time_overflow_behavior = 'saturate';
 
 -- The conversion is used for primary-key analysis, and a wrapped key boundary inverted the range: the
