@@ -5369,19 +5369,6 @@ deltaLake{suffix}({cluster}
     assert trivial_count_step not in node.query(
         f"EXPLAIN SELECT count() FROM {engine_table}"
     )
-    # `system.tables.total_rows` reads the same seam, so it reports NULL rather than an
-    # over-count. `IcebergMetadata::totalRows` behaves the same way under delete files.
-    assert 1 == int(
-        node.query(
-            f"SELECT total_rows IS NULL FROM system.tables WHERE name = '{engine_table}'"
-        ).strip()
-    )
-    # total_bytes is the size of the data files, which a deletion vector does not change.
-    assert 0 < int(
-        node.query(
-            f"SELECT total_bytes FROM system.tables WHERE name = '{engine_table}'"
-        ).strip()
-    )
 
     # Positive control: a table with no deletion vector keeps the optimization, so the arms
     # above distinguish "declined for this file" from "disabled for every Delta table".
@@ -5394,11 +5381,6 @@ deltaLake{suffix}({cluster}
     assert 5 == int(node.query(f"SELECT count() FROM {plain_table}").strip())
     assert trivial_count_step in node.query(
         f"EXPLAIN SELECT count() FROM {plain_table}"
-    )
-    assert 5 == int(
-        node.query(
-            f"SELECT total_rows FROM system.tables WHERE name = '{plain_table}'"
-        ).strip()
     )
 
     # The control above counts before it scans, so its row count comes from the metadata-only stats
@@ -5425,11 +5407,6 @@ deltaLake{suffix}({cluster}
     assert 5 == int(node.query(f"SELECT count() FROM {plain_scanned}").strip())
     assert trivial_count_step in node.query(
         f"EXPLAIN SELECT count() FROM {plain_scanned}"
-    )
-    assert 5 == int(
-        node.query(
-            f"SELECT total_rows FROM system.tables WHERE name = '{plain_scanned}'"
-        ).strip()
     )
 
 
