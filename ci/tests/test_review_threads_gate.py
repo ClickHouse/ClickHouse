@@ -547,7 +547,7 @@ REPORT_URL = (
 PR_URL = "https://github.com/ClickHouse/ClickHouse/pull/114729"
 
 
-def _retry_marker_state(statuses, started_at, completed_at):
+def _retry_marker_state(statuses, started_at, completed_at, pr="114729"):
     """Run the retry-suppression predicate of `retry_infra_failures.yml`."""
     workflow = (
         Path(__file__).resolve().parents[2]
@@ -566,6 +566,9 @@ def _retry_marker_state(statuses, started_at, completed_at):
             "--arg",
             "to",
             completed_at,
+            "--arg",
+            "pr",
+            pr,
             jq_filter,
         ],
         input=json.dumps(statuses),
@@ -584,7 +587,7 @@ def test_retry_suppression_only_matches_the_failed_attempt():
         "state": "failure",
         "description": "Failed: review threads only",
         "created_at": "2026-08-20T10:00:30Z",
-        "target_url": None,
+        "target_url": REPORT_URL,
     }
     later = {**own, "created_at": "2026-08-20T11:30:00Z"}
     earlier = {**own, "created_at": "2026-08-20T09:00:00Z"}
@@ -621,6 +624,14 @@ def test_retry_suppression_only_matches_the_failed_attempt():
     # marker: a genuine infrastructure failure must still be retried.
     assert _retry_marker_state([refresh], started, completed) == ""
     assert _retry_marker_state([refresh, own], started, completed) == "failure"
+    # Another open PR can share the commit: its marker, or one without the
+    # report URL, says nothing about why this PR's run failed.
+    other_pr = {**own, "target_url": REPORT_URL.replace("PR=114729&", "PR=114730&")}
+    assert _retry_marker_state([other_pr], started, completed) == ""
+    assert _retry_marker_state([{**own, "target_url": None}], started, completed) == ""
+    assert _retry_marker_state([other_pr, own], started, completed) == "failure"
+    # Without a PR number of the run nothing can be attributed to it.
+    assert _retry_marker_state([own], started, completed, pr="") == ""
 
 
 @pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
@@ -650,7 +661,7 @@ def test_retry_suppression_ignores_a_mixed_post_hook_failure():
     other_job = {**mixed, "description": "Failed: Style check,Workflow Post Hook"}
     assert _retry_marker_state([gate_status, other_job], started, completed) == ""
     # The pure policy failure of the same trace is still suppressed.
-    pure = {**mixed, "description": "Failed: review threads only"}
+    pure = {**mixed, "description": "Failed: review threads only", "target_url": REPORT_URL}
     assert _retry_marker_state([gate_status, pure], started, completed) == "failure"
 
 
@@ -821,6 +832,63 @@ def test_the_policy_marker_is_printed_only_when_the_gate_blocks(monkeypatch, cap
     assert can_be_merged.POLICY_FAILURE_MARKER not in capsys.readouterr().out
 
 
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_recorded_verdict_is_read_from_the_statuses_of_this_pr():
+    """Another open PR can share the head commit, and commit statuses carry no
+    PR. The reconciliation workflow must read only the `Review Threads` marker
+    written for its own PR: otherwise a green marker of another PR would hide
+    the limited pipeline this PR must replay once its threads are resolved."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/rerun_on_review_threads.yml"
+    ).read_text()
+    anchor = '| jq --arg context "$STATUS_NAME"'
+    assert anchor in workflow, "the recorded verdict lookup moved - update this test"
+    jq_filter = workflow[workflow.index(anchor) :].split("'")[1]
+
+    def recorded(statuses):
+        result = subprocess.run(
+            [
+                "jq",
+                "-c",
+                "--arg",
+                "context",
+                "Review Threads",
+                "--arg",
+                "report",
+                "?PR=114729&",
+                "--arg",
+                "pr_url",
+                PR_URL,
+                jq_filter,
+            ],
+            input=json.dumps(statuses),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(result.stdout).get("state")
+
+    own = {
+        "context": "Review Threads",
+        "state": "failure",
+        "description": "running the limited CI suite",
+        "target_url": REPORT_URL,
+    }
+    other_pr = {
+        "context": "Review Threads",
+        "state": "success",
+        "description": "all review threads resolved",
+        "target_url": REPORT_URL.replace("PR=114729&", "PR=114730&"),
+    }
+    refreshed = {**other_pr, "target_url": PR_URL}
+
+    # The API lists the newest status first.
+    assert recorded([other_pr, own]) == "failure"
+    assert recorded([other_pr]) is None
+    assert recorded([refreshed, other_pr, own]) == "success"
+
+
 def _mergeable_claim_snippet():
     """The `Mergeable Check` ownership block of `rerun_on_review_threads.yml`,
     sliced out of the workflow so the test runs the shipped code rather than a
@@ -845,6 +913,12 @@ def _run_mergeable_claim(desired_blocked, mergeable, last_pr_conclusion="failure
 set -euo pipefail
 GH_REPO=ClickHouse/ClickHouse
 head_sha={RUN_SHA}
+pr=114729
+own_report_url_part="?PR=$pr&"
+own_pr_url="https://github.com/$GH_REPO/pull/$pr"
+is_own_status_url() {{
+  [[ "$1" == *"$own_report_url_part"* ]] || [ "$1" = "$own_pr_url" ]
+}}
 STATUS_NAME='Review Threads'
 MERGEABLE_CHECK_STATUS_NAME='Mergeable Check'
 unresolved=2
@@ -886,11 +960,19 @@ def test_mergeable_check_is_claimed_only_when_the_gate_owns_it():
         "context": "Mergeable Check",
         "state": "failure",
         "description": "review threads: 1 unresolved review thread(s)",
+        "target_url": PR_URL,
     }
     own_post_hook = {
         "context": "Mergeable Check",
         "state": "failure",
         "description": "Failed: review threads only",
+        "target_url": REPORT_URL,
+    }
+    # The same markers, written for another open PR that shares the commit.
+    other_pr = {**own, "target_url": PR_URL.replace("114729", "114730")}
+    other_pr_post_hook = {
+        **own_post_hook,
+        "target_url": REPORT_URL.replace("PR=114729&", "PR=114730&"),
     }
 
     # An unrelated failure stays intact.
@@ -902,6 +984,9 @@ def test_mergeable_check_is_claimed_only_when_the_gate_owns_it():
     assert _run_mergeable_claim(True, None) == [expected]
     assert _run_mergeable_claim(True, own) == [expected]
     assert _run_mergeable_claim(True, own_post_hook) == [expected]
+    # Another PR's markers are not this PR's to claim.
+    assert _run_mergeable_claim(True, other_pr) == []
+    assert _run_mergeable_claim(True, other_pr_post_hook) == []
 
     # The resolving direction is unchanged: only the gate's own markers are
     # cleared, and the injected one only when the last PR run was green.
@@ -910,6 +995,9 @@ def test_mergeable_check_is_claimed_only_when_the_gate_owns_it():
     assert _run_mergeable_claim(False, own, last_pr_conclusion="failure") == []
     assert _run_mergeable_claim(False, own, last_pr_conclusion="success") == [cleared]
     assert _run_mergeable_claim(False, own_post_hook) == [cleared]
+    # ... nor to clear.
+    assert _run_mergeable_claim(False, other_pr, last_pr_conclusion="success") == []
+    assert _run_mergeable_claim(False, other_pr_post_hook) == []
 
 
 def test_review_thread_gate_never_widens_the_coverage_family(monkeypatch, fake_info):

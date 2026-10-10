@@ -1512,7 +1512,15 @@ def _finish_workflow(workflow, job_name):
             or f"Ready For Merge [{workflow.name}]",
             status=ready_for_merge_status,
             description=ready_for_merge_description,
-            url="",
+            # The review-thread marker carries the report URL of the run, which
+            # names the PR: another PR can share the commit, and the
+            # reconciliation and retry workflows must only act on their own.
+            url=(
+                Info().get_report_url()
+                if ready_for_merge_description
+                == _REVIEW_THREADS_ONLY_POST_HOOK_FAILURE
+                else ""
+            ),
         ):
             print("ERROR: failed to set ReadyForMerge status")
             env.add_workflow_error(ResultInfo.GH_STATUS_ERROR)

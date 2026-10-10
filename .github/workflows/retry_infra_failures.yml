@@ -286,6 +286,10 @@ jobs:
               # "Finish Workflow" job's own time window belongs to it. A status
               # created later (e.g. by rerun_on_review_threads.yml handling a
               # label event) says nothing about why this run failed.
+              # And it must come from this PR: another open PR can share the
+              # commit, so the marker is posted with the Praktika report URL of
+              # its PR (`?PR=<n>&`). Without a PR number nothing matches, and
+              # the run is retried as before.
               finish_window=$(echo "$jobs_raw" | jq -r '
                 [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
                 first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
@@ -297,9 +301,11 @@ jobs:
                 statuses=$(gh api "repos/$GH_REPO/commits/$run_sha/statuses" --paginate \
                   | jq -s 'add // []') || statuses="[]"
                 marker_state=$(echo "$statuses" | jq -r \
-                  --arg from "$finish_started_at" --arg to "$finish_completed_at" '
+                  --arg from "$finish_started_at" --arg to "$finish_completed_at" \
+                  --arg pr "$pr_number" '
                   [.[] | select(.context == "Mergeable Check") |
                    select(.description == "Failed: review threads only") |
+                   select($pr != "" and ((.target_url // "") | contains("?PR=" + $pr + "&"))) |
                    select(.created_at >= $from and .created_at <= $to)] |
                   first // {} | .state // empty
                 ')
