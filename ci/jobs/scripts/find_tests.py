@@ -240,6 +240,21 @@ class Targeting:
         fpath = fpath.removeprefix("./")
         return fpath.startswith("ci/jobs/") and Path(fpath).is_file()
 
+    @staticmethod
+    def is_documentation_file(fpath: str) -> bool:
+        """A changed documentation path, the same set as `only_docs` in `filter_job.py`.
+
+        Tolerated alongside test-file changes by the batch-skip check in
+        `functional_tests.py` / `integration_test_job.py`: documentation
+        affects neither the binary nor the selection of tests.
+        """
+        fpath = fpath.removeprefix("./")
+        return (
+            fpath.startswith("docs/")
+            or fpath.startswith("docker/docs")
+            or fpath.endswith(".md")
+        )
+
     @classmethod
     def functional_test_hash_batch_file(cls, fpath: str):
         """Return the on-disk stateless test filename (with extension) that

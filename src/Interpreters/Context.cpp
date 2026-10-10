@@ -83,6 +83,7 @@
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
@@ -137,7 +138,6 @@
 #include <Common/Scheduler/createResourceManager.h>
 #include <Common/Scheduler/Workload/createWorkloadEntityStorage.h>
 #include <Common/StackTrace.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
 #include <Poco/Glob.h>
@@ -397,6 +397,12 @@ namespace Setting
     extern const SettingsBool use_page_cache_with_distributed_cache;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
+    extern const SettingsDouble weight;
+    extern const SettingsDouble weight_lowering_factor;
+    extern const SettingsDouble weight_lowering_age_seconds;
+    extern const SettingsDouble weight_lowering_cpu_seconds;
+    extern const SettingsDouble weight_lowering_io_bytes;
+    extern const SettingsInt64 workload_priority;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_hdfs_pread;
@@ -750,6 +756,12 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
     mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
+
+    /// The remote throttler passed as the parent of the distributed cache throttler above.
+    /// Recorded because a Throttler exposes no way to read its parent back, and `setParent` is not
+    /// thread safe, so a published throttler concurrent queries may be using cannot be re-parented.
+    mutable ThrottlerPtr distributed_cache_read_throttler_parent;
+    mutable ThrottlerPtr distributed_cache_write_throttler_parent;
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
@@ -1408,7 +1420,11 @@ struct ContextSharedPart : boost::noncopyable
             remote_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
-            local_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+        {
+            auto throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+            throttler->setLimitsBlockDeviceBandwidth();
+            local_read_throttler = std::move(throttler);
+        }
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
             local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
@@ -1425,12 +1441,18 @@ struct ContextSharedPart : boost::noncopyable
         // Distributed cache client throttling.
         // Note that distributed cache throttlers are inherited from remote throttlers because they are socket-level throttlers and use server bandwidth
         if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_read_bandwidth_for_server])
+        {
             distributed_cache_read_throttler = std::make_shared<Throttler>(bandwidth, remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+            distributed_cache_read_throttler_parent = remote_read_throttler;
+        }
         else
             distributed_cache_read_throttler = remote_read_throttler;
 
         if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_write_bandwidth_for_server])
+        {
             distributed_cache_write_throttler = std::make_shared<Throttler>(bandwidth, remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+            distributed_cache_write_throttler_parent = remote_write_throttler;
+        }
         else
             distributed_cache_write_throttler = remote_write_throttler;
     }
@@ -1516,6 +1538,7 @@ ContextData::ContextData(const ContextData &o) :
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
+    skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
@@ -2725,11 +2748,23 @@ ResourceManagerPtr Context::getResourceManager() const
 
 ClassifierPtr Context::getWorkloadClassifier() const
 {
-    ClassifierSettings settings{.throw_on_unknown_workload = getThrowOnUnknownWorkload()}; // to avoid locking shared mutex under `mutex`
+    const auto & query_settings = getSettingsRef();
+    // Pass the query's scheduling settings so the classifier can build this query's scheduling
+    // context. `throw_on_unknown_workload` is read here (not under `mutex`) to avoid locking the
+    // shared mutex under `mutex`.
+    ClassifierSettings settings{
+        .throw_on_unknown_workload = getThrowOnUnknownWorkload(),
+        .weight = query_settings[Setting::weight],
+        .weight_lowering_factor = query_settings[Setting::weight_lowering_factor],
+        .weight_lowering_age_seconds = query_settings[Setting::weight_lowering_age_seconds],
+        .weight_lowering_cpu_seconds = query_settings[Setting::weight_lowering_cpu_seconds],
+        .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
+        .priority = Priority{query_settings[Setting::workload_priority]},
+    };
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload], settings);
+        classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
     return classifier;
 }
 
@@ -3916,8 +3951,14 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
 
 void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
 {
+    if (names.empty())
+        return;
+    /// Under `compatibility` a reset lands on the value of that version, so perform it on a copy to learn the value.
+    auto after_reset = Context::createCopy(shared_from_this());
+    after_reset->resetSettingsToDefaultValue(names);
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(
+        *settings, after_reset->getSettingsRef(), names, source);
 }
 
 void Context::checkSettingsConstraintsForSettingsReset(
@@ -3972,6 +4013,8 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
 
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
+    if (names.empty())
+        return;
     std::lock_guard lock(mutex);
     for (const String & name : names)
     {
@@ -3981,6 +4024,16 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
         for (const auto & equivalent_name : settingEquivalentNames(name))
             settings->setDefaultValue(equivalent_name);
     }
+    /// A setting nothing assigned holds what the active `compatibility` gives it.
+    if ((*settings)[Setting::compatibility].value.empty())
+        settings->resetSettingsChangedByCompatibility();
+    else
+    {
+        settings->set(COMPATIBILITY_SETTING_NAME, (*settings)[Setting::compatibility].value);
+        restrictSettingsChangedByCompatibilityWithLock(lock);
+    }
+    applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -4268,6 +4321,14 @@ void Context::makeQueryContext()
     query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
+    /// A new query must classify under its own workload and scheduling settings. The ContextData
+    /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
+    /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
+    /// another query context (e.g. parallel sub-queries) would otherwise reuse the parent's scheduler
+    /// state. Drop it so `getWorkloadClassifier()` lazily rebuilds one from this context's settings.
+    /// (Assumes no active query is already running on this context's classifier, which holds at query
+    /// start — the classifier is built lazily on first use, after this point.)
+    classifier.reset();
 
     /// A context that becomes a query context without going through a client-facing handshake -
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
@@ -4281,15 +4342,13 @@ void Context::makeQueryContext()
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
 {
-    makeQueryContext();
-    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the merge workload set below
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
-    makeQueryContext();
-    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the mutation workload set below
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 
@@ -5841,6 +5900,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear(tag);
+
+    /// The entries of the query result cache on disk live in the filesystem cache selected by setting
+    /// `query_cache_on_disk_cache_name` of this query (or of the user's settings profile).
+    QueryResultCacheOnDisk::clear(getSettingsRef(), tag);
 }
 
 void Context::clearCaches() const
@@ -6171,13 +6234,33 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
+ThrottlerPtr Context::getServerWideRemoteReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->remote_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideRemoteWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->remote_write_throttler;
+}
+
+ThrottlerPtr Context::getServerWideLocalReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->local_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideLocalWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->local_write_throttler;
+}
+
 ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_read_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideRemoteReadThrottler();
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
     if (auto process_list_element = getProcessListElementSafe())
@@ -6202,11 +6285,7 @@ ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) co
 
 ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_write_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideRemoteWriteThrottler();
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
     if (auto process_list_element = getProcessListElementSafe())
@@ -6231,11 +6310,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) c
 
 ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_read_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideLocalReadThrottler();
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
     if (!bandwidth)
@@ -6248,7 +6323,11 @@ ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) con
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+        {
+            auto query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            query_throttler->setLimitsBlockDeviceBandwidth();
+            local_read_query_throttler = std::move(query_throttler);
+        }
         throttler = local_read_query_throttler;
     }
     return throttler;
@@ -6256,11 +6335,7 @@ ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) con
 
 ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_write_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideLocalWriteThrottler();
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
     if (!bandwidth)
@@ -6300,6 +6375,18 @@ ThrottlerPtr Context::getMutationsThrottler() const
 ThrottlerPtr Context::getMergesThrottler() const
 {
     return shared->merges_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_write_throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
@@ -6356,7 +6443,11 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->local_read_throttler)
-            shared->local_read_throttler = std::make_shared<Throttler>(read_bandwidth);
+        {
+            auto throttler = std::make_shared<Throttler>(read_bandwidth);
+            throttler->setLimitsBlockDeviceBandwidth();
+            shared->local_read_throttler = std::move(throttler);
+        }
     }
 
     if (shared->local_read_throttler)
@@ -6381,8 +6472,16 @@ void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_
     /// (see configureServerWideThrottling), so a non-null pointer does not mean it is ours to mutate.
     if (read_bandwidth)
     {
-        if (!shared->distributed_cache_read_throttler || shared->distributed_cache_read_throttler == shared->remote_read_throttler) // Create throttler
+        /// A Throttler captures its parent at construction, so a child built over a different (or absent)
+        /// remote throttler must be rebuilt rather than updated in place, or the server-wide remote limit
+        /// silently stops applying to distributed cache traffic.
+        if (!shared->distributed_cache_read_throttler
+            || shared->distributed_cache_read_throttler == shared->remote_read_throttler
+            || shared->distributed_cache_read_throttler_parent != shared->remote_read_throttler) // Create throttler
+        {
             shared->distributed_cache_read_throttler = std::make_shared<Throttler>(read_bandwidth, shared->remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+            shared->distributed_cache_read_throttler_parent = shared->remote_read_throttler;
+        }
         else // Update throttler
             std::static_pointer_cast<Throttler>(shared->distributed_cache_read_throttler)->setMaxSpeed(read_bandwidth);
     }
@@ -6391,8 +6490,13 @@ void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_
 
     if (write_bandwidth)
     {
-        if (!shared->distributed_cache_write_throttler || shared->distributed_cache_write_throttler == shared->remote_write_throttler) // Create throttler
+        if (!shared->distributed_cache_write_throttler
+            || shared->distributed_cache_write_throttler == shared->remote_write_throttler
+            || shared->distributed_cache_write_throttler_parent != shared->remote_write_throttler) // Create throttler
+        {
             shared->distributed_cache_write_throttler = std::make_shared<Throttler>(write_bandwidth, shared->remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+            shared->distributed_cache_write_throttler_parent = shared->remote_write_throttler;
+        }
         else // Update throttler
             std::static_pointer_cast<Throttler>(shared->distributed_cache_write_throttler)->setMaxSpeed(write_bandwidth);
     }
@@ -6472,19 +6576,29 @@ void recordZooKeeperConnectionLoss()
 std::unique_lock<std::timed_mutex> acquireZooKeeperLock(
     const Context & context, std::timed_mutex & mutex, const char * lock_name)
 {
+    const bool has_query_context = context.hasQueryContext();
     auto lock_acquire_timeout = context.getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-    if (context.hasQueryContext())
+    if (has_query_context)
         lock_acquire_timeout = context.getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
 
     std::unique_lock lock(mutex, std::defer_lock);
     if (lock_acquire_timeout.totalMilliseconds() == 0)
         lock.lock();
     else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+    {
+        /// Without a query context, report a Keeper error, handled like a lost connection; a query fails fast instead.
+        if (!has_query_context)
+            throw Coordination::Exception(
+                Coordination::Error::ZOPERATIONTIMEOUT,
+                "Timeout exceeded while acquiring {} ({} ms)",
+                lock_name,
+                lock_acquire_timeout.totalMilliseconds());
         throw Exception(
             ErrorCodes::TIMEOUT_EXCEEDED,
             "Timeout exceeded while acquiring {} ({} ms)",
             lock_name,
             lock_acquire_timeout.totalMilliseconds());
+    }
 
     return lock;
 }
@@ -7331,7 +7445,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
 {
     {
         std::lock_guard lock(shared->clusters_mutex);
-        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
+        if (enable_discovery && !shared->cluster_discovery)
         {
             shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
         }

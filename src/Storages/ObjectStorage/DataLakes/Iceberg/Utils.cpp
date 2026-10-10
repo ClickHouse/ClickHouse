@@ -351,17 +351,14 @@ void writeMessageToFile(
     }
 }
 
-bool writeMetadataFileAndVersionHint(
+bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
-    const IcebergPathFromMetadata & version_hint_path,
     DB::ObjectStoragePtr object_storage,
-    DB::ContextPtr context,
-    bool try_write_version_hint)
+    DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
-    auto storage_version_hint_path = resolver.resolve(version_hint_path);
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
@@ -392,16 +389,33 @@ bool writeMetadataFileAndVersionHint(
         return false;
     }
 
+    return true;
+}
+
+bool tryWriteVersionHintFile(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const IcebergPathFromMetadata & version_hint_path,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    bool create,
+    bool assert_version_exactly)
+{
+    auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    auto storage_version_hint_path = resolver.resolve(version_hint_path);
+
     /// Once any writer has created `version-hint.text`, every subsequent writer must keep it in
     /// sync, otherwise readers with `iceberg_use_version_hint = 1` observe stale data when a
     /// writer that does not have the setting enabled advances the table.
-    size_t i = 0;
-    while (i < MAX_TRANSACTION_RETRIES)
+    for (size_t attempt = 0; attempt < MAX_TRANSACTION_RETRIES; ++attempt)
     {
         StoredObject object_info(storage_version_hint_path);
         std::string version_hint_value;
         std::string etag;
         std::string write_if_none_match = "*";
+        Int32 old_version = 0;
+
+        /// first, let's resolve an existing hint and the version it points to
         if (object_storage->exists(object_info))
         {
             auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
@@ -410,50 +424,78 @@ bool writeMetadataFileAndVersionHint(
             etag = object_metadata.etag;
             write_if_none_match.clear();
         }
-        else if (!try_write_version_hint)
-        {
-            /// The file does not exist and this writer was not asked to create it.
-            break;
-        }
+        else if (!create)
+            return true;
 
-        Int32 old_version = 0;
         if (!version_hint_value.empty())
         {
             if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
-            {
                 old_version = parseMetadataVersion(version_hint_value, version_hint_value);
-            }
             else
-            {
                 old_version = getMetadataFileAndVersion(version_hint_value).version;
-            }
         }
-        if (old_version < metadata_file_info.version)
+
+        /// second, let's check exit conditions on the hint's state
+        if (assert_version_exactly)
         {
-            try
+            if (old_version > metadata_file_info.version)
+                return false;
+            else if (old_version == metadata_file_info.version)
             {
-                /// Write just the version number for Spark/spec compatibility.
-                Iceberg::writeMessageToFile(
-                    std::to_string(metadata_file_info.version),
-                    storage_version_hint_path,
-                    object_storage,
-                    context,
-                    write_if_none_match,
-                    /* write-if-match */ etag);
-                break;
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                auto resolved = resolveMetadataFilenameFromVersionHint(
+                    version_hint_value, resolver.getTableRoot(), object_storage, metadata_file_info.compression_method, context);
+                return resolved && std::filesystem::path(*resolved).filename() == std::filesystem::path(storage_metadata_path).filename();
             }
         }
         else
         {
-            break;
+            if (old_version >= metadata_file_info.version)
+                return true;
         }
-        ++i;
-    }
 
+        /// lastly, let's update it
+        try
+        {
+            /// Write just the version number for Spark/spec compatibility.
+            Iceberg::writeMessageToFile(
+                std::to_string(metadata_file_info.version),
+                storage_version_hint_path,
+                object_storage,
+                context,
+                write_if_none_match,
+                /* write-if-match */ etag);
+
+            if (!assert_version_exactly)
+                return true;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+    return false;
+}
+
+bool writeMetadataFileAndVersionHint(
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_content,
+    const IcebergPathFromMetadata & version_hint_path,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    bool try_write_version_hint)
+{
+    if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
+        return false;
+
+    (void)tryWriteVersionHintFile(
+        resolver,
+        metadata_file_info,
+        version_hint_path,
+        object_storage,
+        context,
+        /* create */ try_write_version_hint,
+        /* assert_version_exactly */ false);
     return true;
 }
 
@@ -1743,7 +1785,22 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             auto column_name = source_id_to_column_name[source_id];
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
-            auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            std::optional<TransformAndArgument> clickhouse_transform_name;
+            try
+            {
+                clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                    throw;
+            }
+            if (!clickhouse_transform_name.has_value())
+            {
+                /// An unknown or malformed transform is not a reason to reject the table: an Iceberg
+                /// sort order is only an optimization hint, so drop it and read/write the table as unsorted.
+                return KeyDescription{};
+            }
             /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
             /// produce a parseable ORDER BY clause.
             auto quoted_column_name = backQuoteIfNeed(column_name);
