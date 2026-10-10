@@ -26,7 +26,7 @@ WITH
     10 AS step_sec,
     50 as window_sec,
     range(toUnixTimestamp(start_ts), toUnixTimestamp(end_ts) + 1, step_sec) as grid
-SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, irate_values_scale_3, idelta_values, rate_values, rate_values_scale_5, delta_values))
+SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, irate_values_scale_3, idelta_values, rate_values, rate_values_scale_5, delta_values)) AS point
 FROM (
     SELECT
         metric_id,
@@ -39,7 +39,7 @@ FROM (
     FROM clusterAllReplicas('test_shard_localhost', currentDatabase(), t_resampled_timeseries)
     GROUP BY metric_id
 )
-ORDER BY metric_id
+ORDER BY metric_id, point
 SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1;
 
 -- Test with DateTime64
@@ -66,7 +66,7 @@ WITH
     10 AS step_sec,
     50 as window_sec,
     range(toUnixTimestamp(start_ts), toUnixTimestamp(end_ts) + 1, step_sec) as grid
-SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, idelta_values, rate_values, delta_values))
+SELECT metric_id, arrayJoin(arrayZip(grid, irate_values, idelta_values, rate_values, delta_values)) AS point
 FROM (
     SELECT
         metric_id,
@@ -77,7 +77,7 @@ FROM (
     FROM clusterAllReplicas('test_shard_localhost', currentDatabase(), t_resampled_timeseries_64)
     GROUP BY metric_id
 )
-ORDER BY metric_id
+ORDER BY metric_id, point
 SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1;
 
 -- Another test with a reset

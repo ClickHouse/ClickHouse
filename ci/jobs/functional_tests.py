@@ -8,7 +8,11 @@ import zlib
 from collections.abc import Mapping
 from pathlib import Path
 
-from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
+from ci.jobs.scripts.bugfix_validation import (
+    bugfix_build_types,
+    download_master_builds,
+    find_master_builds,
+)
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.test_selection_manifest import (
@@ -197,7 +201,7 @@ def run_tests(
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
-                --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} -- {Targeting.selection_args(tests)} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -542,6 +546,8 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
+    is_no_stateful = "--no-stateful" in runner_options
+
     # The xfail inversion (and therefore the "a crash on master HEAD is a
     # reproduction" reading of a server death) only applies when the PR is
     # labelled as a bugfix; an unlabelled run of this job executes the sanity
@@ -570,11 +576,28 @@ def main():
         and not args.test
     ):
         changed_files = info.get_changed_files()
-        if changed_files and all(
-            Targeting.is_functional_test_file(f)
-            or Targeting.is_integration_test_file(f)
-            or Targeting.is_ci_job_script(f)
-            for f in changed_files
+        # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
+        # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        is_coverage_replacement_with_ci_script_changes = False
+        if info.pr_number > 0 and any(
+            Targeting.is_ci_job_script(f) for f in changed_files or []
+        ):
+            # Not at module scope: `ci.defs.job_configs` needs a bare `praktika` on `sys.path`.
+            from ci.defs.job_configs import JobConfigs
+
+            is_coverage_replacement_with_ci_script_changes = info.job_name in [
+                j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+            ]
+        if (
+            changed_files
+            and not is_coverage_replacement_with_ci_script_changes
+            and all(
+                Targeting.is_functional_test_file(f)
+                or Targeting.is_integration_test_file(f)
+                or Targeting.is_ci_job_script(f)
+                or Targeting.is_documentation_file(f)
+                for f in changed_files
+            )
         ):
             changed_functional_files = [
                 f for f in changed_files if Targeting.is_functional_test_file(f)
@@ -763,13 +786,7 @@ def main():
             build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
-            for bt, url in build_urls.items():
-                bt_path = bt_paths[bt]
-                if not info.is_local_run or not Path(bt_path).is_file():
-                    Shell.run(
-                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
-                    )
-                    Shell.run(f"chmod +x {bt_path}", verbose=True)
+            download_master_builds(build_urls, bt_paths, info.is_local_run)
         Shell.run(
             f"cp {temp_dir}/clickhouse_{build_types[0]} {temp_dir}/clickhouse",
             verbose=True,
@@ -931,6 +948,11 @@ def main():
                 info="No selected tests to run",
                 results=results,
             ).complete_job()
+
+    # A selection made by `Targeting` names whole tests, so it becomes an exact
+    # selector. A hand-written `--test` stays the free-form regex it was typed as.
+    if tests and not args.test:
+        tests = [Targeting.selection_pattern(test) for test in tests]
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:
@@ -1105,6 +1127,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    no_stateful=is_no_stateful,
                     # `args.options` (e.g. "amd_asan_ubsan, distributed plan, parallel")
                     # already carries the sanitizer name in the same format
                     # `prepare_stateful_data`'s `is_sanitizer` check expects, so the
@@ -1365,6 +1388,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            no_stateful=is_no_stateful,
                             build_type=bugfix_bt,
                             step_timeout=stateful_prep_step_timeout(info),
                         ):

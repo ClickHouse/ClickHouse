@@ -2,6 +2,7 @@
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
+#include <unordered_set>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -33,6 +34,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Common/typeid_cast.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
 
@@ -226,6 +228,13 @@ void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k
     params.top_k = std::move(top_k);
 }
 
+void AggregatingStep::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker)
+{
+    if (!params.top_k)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set a top-K threshold tracker on an aggregation without the top-K optimization");
+    params.top_k->threshold_tracker = std::move(threshold_tracker);
+}
+
 std::vector<size_t> AggregatingStep::getStepGroups() const
 {
     return {
@@ -244,6 +253,41 @@ String AggregatingStep::getStepGroupName(size_t group) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingStep group {}", group);
 }
 
+static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processors)
+{
+    /// The transforms of one aggregation share an aggregator; grouping sets have one per set.
+    std::unordered_set<const Aggregator *> aggregators;
+    UInt64 peak_memory = 0;
+    bool tracked = false;
+    for (const auto * processor : step_processors)
+    {
+        const auto * aggregating_transform = typeid_cast<const AggregatingTransform *>(processor);
+        if (!aggregating_transform)
+            continue;
+
+        const auto & aggregator = aggregating_transform->getAggregator();
+        if (!aggregators.insert(&aggregator).second)
+            continue;
+
+        if (auto peak = aggregator.getPeakMemoryUsage())
+        {
+            peak_memory += *peak;
+            tracked = true;
+        }
+    }
+
+    if (!tracked)
+        return {};
+
+    MetricList memory_metrics;
+    memory_metrics.emplace_back(MetricKey::Bytes, peak_memory);
+    return {{MetricGroupKey::Memory, std::move(memory_metrics)}};
+}
+
+StepAnalysisReport AggregatingStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    return aggregationAnalysisReport(step_processors);
+}
 
 const SortDescription & AggregatingStep::getSortDescription() const
 {
@@ -446,6 +490,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
+    /// The kept-keys cutoff and external aggregation are mutually exclusive at runtime,
+    /// arbitrated through this control shared by every stream and every branch below
+    /// (see `Aggregator::Params::SharedKeptKeysControl`).
+    if (params.shared_kept_keys_for_overflow_any)
+        params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
+
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
@@ -607,8 +657,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     counter++,
                     limit_hint,
                     limit_hint_prefix_columns,
-                    nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
-                );
+                    /// With `skip_merging` the `MergingAggregatedBucketTransform` below is never created,
+                    /// so these transforms are the last producers of this step's output and have to record
+                    /// it themselves. Otherwise the merging transform records it, and recording here too
+                    /// would count the same rows twice.
+                    skip_merging ? dataflow_cache_updater : nullptr);
             });
 
             if (skip_merging)
@@ -690,6 +743,18 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         if (use_adaptive_aggregator)
             many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
 
+        /// The shared kept-keys cutoff is needed only when the streams are merged into one result.
+        /// With `skip_merging` the streams hold disjoint key sets (data is partitioned by the
+        /// grouping key), so the per-stream cutoff is already exact: all rows of a key are in one
+        /// stream. The same holds for the sharded and single-stream branches below.
+        if (transform_params->params.shared_kept_keys_for_overflow_any && !skip_merging)
+        {
+            chassert(transform_params->params.max_rows_to_group_by
+                && transform_params->params.group_by_overflow_mode == OverflowMode::ANY
+                && !transform_params->params.overflow_row);
+            many_data->enableSharedKeptKeys();
+        }
+
         size_t counter = 0;
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header)
@@ -722,6 +787,25 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
 }
 
+namespace
+{
+
+const char * havingPrefilterOpToString(Aggregator::Params::HavingPrefilterOp op)
+{
+    switch (op)
+    {
+        case Aggregator::Params::HavingPrefilterOp::Greater: return ">";
+        case Aggregator::Params::HavingPrefilterOp::GreaterOrEqual: return ">=";
+        case Aggregator::Params::HavingPrefilterOp::Less: return "<";
+        case Aggregator::Params::HavingPrefilterOp::LessOrEqual: return "<=";
+        case Aggregator::Params::HavingPrefilterOp::Equal: return "=";
+        case Aggregator::Params::HavingPrefilterOp::Disabled: return "disabled";
+    }
+    return "disabled";
+}
+
+}
+
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
@@ -739,6 +823,10 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
     if (params.bucket_top_k)
         settings.out << prefix << "Bucket top-K: " << params.bucket_top_k << (params.bucket_top_k_ascending ? " ascending" : " descending")
                      << '\n';
+
+    if (params.having_prefilter_op != Aggregator::Params::HavingPrefilterOp::Disabled)
+        settings.out << prefix << "HAVING pre-filter: count() " << havingPrefilterOpToString(params.having_prefilter_op) << ' '
+                     << params.having_prefilter_threshold << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -752,6 +840,13 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
         bucket_top_k_map->add("Limit", params.bucket_top_k);
         bucket_top_k_map->add("Ascending", params.bucket_top_k_ascending);
         map.add("Bucket Top-K", std::move(bucket_top_k_map));
+    }
+    if (params.having_prefilter_op != Aggregator::Params::HavingPrefilterOp::Disabled)
+    {
+        auto having_prefilter_map = std::make_unique<JSONBuilder::JSONMap>();
+        having_prefilter_map->add("Operator", havingPrefilterOpToString(params.having_prefilter_op));
+        having_prefilter_map->add("Threshold", params.having_prefilter_threshold);
+        map.add("HAVING Pre-filter", std::move(having_prefilter_map));
     }
     map.add("Skip merging", skip_merging);
 }
@@ -876,6 +971,11 @@ String AggregatingProjectionStep::getStepGroupName(size_t group) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AggregatingProjectionStep group {}", group);
 }
 
+StepAnalysisReport AggregatingProjectionStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    return aggregationAnalysisReport(step_processors);
+}
+
 void AggregatingProjectionStep::updateOutputHeader()
 {
     if (input_headers.size() != 2)
@@ -917,6 +1017,16 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
     /// ...
     auto many_data = std::make_shared<ManyAggregatedData>(normal_parts_pipeline->getNumStreams() + projection_parts_pipeline->getNumStreams());
     size_t counter = 0;
+
+    /// See the comment in `AggregatingStep::transformPipeline`: all the streams here are merged
+    /// into one result, so the kept-keys cutoff must be shared between them (both the streams
+    /// aggregating the raw parts and the streams merging the pre-aggregated projection parts),
+    /// and both aggregators must arbitrate spilling through one shared control.
+    if (params.shared_kept_keys_for_overflow_any)
+    {
+        params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
+        many_data->enableSharedKeptKeys();
+    }
 
     AggregatorListPtr aggregator_list_ptr = std::make_shared<AggregatorList>();
 
@@ -961,7 +1071,12 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number] = should_produce_results_in_order_of_bucket_number;
     settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging] = memory_bound_merging_of_aggregation_results_enabled;
 
-    settings[QueryPlanSerializationSetting::max_rows_to_group_by] = params.max_rows_to_group_by;
+    /// The kept-keys cutoff (`shared_kept_keys_for_overflow_any`) is not serialized. Serialize
+    /// the plan without the derived `max_rows_to_group_by` so that a deserialized plan falls back
+    /// to the exact, unoptimized aggregation instead of the per-stream cutoff, which would be
+    /// unsound with aggregate functions in the projection.
+    settings[QueryPlanSerializationSetting::max_rows_to_group_by]
+        = params.shared_kept_keys_for_overflow_any ? 0 : params.max_rows_to_group_by;
     settings[QueryPlanSerializationSetting::group_by_overflow_mode] = params.group_by_overflow_mode;
 
     settings[QueryPlanSerializationSetting::group_by_two_level_threshold] = params.group_by_two_level_threshold;
@@ -1120,6 +1235,27 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+
+    /// Step version 1 appends the `GROUP BY` top-K parameters. Towards a peer that reads version 0
+    /// they are omitted, not rejected: the peer aggregates without the heap and returns partial states
+    /// for all its groups, which the initiator's merge, sort and limit handle correctly - the safe direction.
+    if (ctx.step_version < 1)
+        return;
+
+    writeBinary(params.top_k.has_value(), ctx.out);
+    if (params.top_k)
+    {
+        const auto & top_k = *params.top_k;
+        writeVarUInt(top_k.k, ctx.out);
+        writeVarUInt(top_k.key_columns, ctx.out);
+        writeVarUInt(top_k.observation_rows, ctx.out);
+        writeVarUInt(top_k.directions.size(), ctx.out);
+        for (size_t i = 0; i < top_k.directions.size(); ++i)
+        {
+            writeIntBinary(static_cast<Int8>(top_k.directions[i]), ctx.out);
+            writeIntBinary(static_cast<Int8>(top_k.nulls_directions[i]), ctx.out);
+        }
+    }
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
@@ -1199,6 +1335,46 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     if (has_stats_key)
         readIntBinary(stats_key, ctx.in);
 
+    bool has_top_k = false;
+    if (ctx.step_version >= 1)
+        readBinary(has_top_k, ctx.in);
+
+    std::optional<Aggregator::Params::TopKParams> top_k;
+    if (has_top_k)
+    {
+        auto & value = top_k.emplace();
+        readVarUInt(value.k, ctx.in);
+        readVarUInt(value.key_columns, ctx.in);
+        readVarUInt(value.observation_rows, ctx.in);
+
+        UInt64 num_directions = 0;
+        readVarUInt(num_directions, ctx.in);
+
+        if (value.k == 0 || value.k > Aggregator::Params::TopKParams::max_k
+            || value.key_columns == 0 || value.key_columns > num_keys
+            || num_directions != value.key_columns)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Invalid top-K parameters in a serialized query plan: k = {}, key_columns = {}, "
+                "directions = {}, keys = {}",
+                value.k, value.key_columns, num_directions, num_keys);
+
+        value.directions.resize(num_directions);
+        value.nulls_directions.resize(num_directions);
+        for (size_t i = 0; i < num_directions; ++i)
+        {
+            Int8 direction = 0;
+            Int8 nulls_direction = 0;
+            readIntBinary(direction, ctx.in);
+            readIntBinary(nulls_direction, ctx.in);
+            if ((direction != 1 && direction != -1) || (nulls_direction != 1 && nulls_direction != -1))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid top-K sort direction in a serialized query plan: {} (nulls: {})",
+                    direction, nulls_direction);
+            value.directions[i] = direction;
+            value.nulls_directions[i] = nulls_direction;
+        }
+    }
+
     StatsCollectingParams stats_collecting_params(
         stats_key,
         ctx.settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_aggregation],
@@ -1233,6 +1409,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
+
+    params.top_k = std::move(top_k);
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
@@ -1300,7 +1478,11 @@ void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Nam
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Aggregating", AggregatingStep::deserialize);
+    /// Version 1 carries the `GROUP BY` top-K parameters.
+    registry.registerStep(
+        "Aggregating",
+        AggregatingStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K}});
 }
 
 

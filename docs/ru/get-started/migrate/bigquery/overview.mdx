@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-<div id="resource-organization">
-  ## Организация ресурсов
-</div>
+## Организация ресурсов {#resource-organization}
 
 Организация ресурсов в ClickHouse Cloud похожа на [иерархию ресурсов BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). Ниже описаны основные различия на основе следующей диаграммы, на которой показана иерархия ресурсов ClickHouse Cloud:
 
@@ -62,7 +60,7 @@ ClickHouse отслеживает объемы выделения памяти �
   ### Разрешения
 </div>
 
-В ClickHouse Cloud доступ пользователей контролируется в двух местах: через [консоль Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) и через [базу данных](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users). Доступ к консоли управляется через интерфейс [clickhouse.cloud](https://console.clickhouse.cloud). Доступ к базе данных управляется с помощью учетных записей пользователей базы данных и ролей. Кроме того, пользователям консоли можно назначать роли в базе данных, которые позволяют им взаимодействовать с базой данных через нашу [SQL-консоль](/ru/integrations/connectors/sql-clients/sql-console).
+В ClickHouse Cloud доступ пользователей контролируется в двух местах: через [консоль Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users) и через [базу данных](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users). Доступ к консоли управляется через интерфейс [clickhouse.cloud](https://console.clickhouse.cloud). Доступ к базе данных управляется с помощью учетных записей пользователей базы данных и ролей. Кроме того, пользователям консоли можно назначать роли в базе данных, которые позволяют им взаимодействовать с базой данных через нашу [SQL-консоль](/ru/integrations/connectors/sql-clients/sql-console).
 
 <div id="data-types">
   ## Типы данных
