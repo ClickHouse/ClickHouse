@@ -4385,13 +4385,15 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
             /* need_trigger */ true);
     };
 
-    if (schedule())
-        return true;
+    if (!schedule())
+    {
+        /// Roll back before publishing the event, so an observed increment implies the release is visible.
+        queue.rollbackAttemptForRejectedEntry(selected_entry);
+        ProfileEvents::increment(ProfileEvents::ReplicatedQueueScheduleRejections);
+    }
 
-    /// Roll back before publishing the event, so an observed increment implies the release is visible.
-    queue.rollbackAttemptForRejectedEntry(selected_entry);
-    ProfileEvents::increment(ProfileEvents::ReplicatedQueueScheduleRejections);
-    return false;
+    /// A refused task has already postponed the assignee, so `false` would postpone it a second time.
+    return true;
 }
 
 
