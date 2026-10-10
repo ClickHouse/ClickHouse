@@ -10,9 +10,11 @@
          The lookups of both read blocks without decompressing them. The next two queries look up random
          hashes, which do not pack. A chunk of lookups that needs most of the blocks in its range reads
          neighboring blocks together, and a chunk that needs few of them reads one block at a time. In the
-         next two queries, the keys repeat, and each chunk looks up each of its distinct keys once. In the last
+         next two queries, the keys repeat, and each chunk looks up each of its distinct keys once. In the next
          query, the set does not have the keys of the lookups, and its Bloom filters rule them out without
-         reading blocks. -->
+         reading blocks. In the last query, the lookups of `String` keys come in random order. The set caches
+         the blocks that lookups read, so in the queries whose chunks need the same blocks, the chunks after
+         the first get most of them from the cache instead of reading them again. -->
     <settings>
         <max_bytes_before_external_set>16777216</max_bytes_before_external_set>
         <max_bytes_ratio_before_external_set>0</max_bytes_ratio_before_external_set>
@@ -48,4 +50,7 @@
     <query>SELECT count() FROM numbers_mt(10000000) WHERE intDiv(number, 10) IN (SELECT number * 2 FROM numbers(5000000))</query>
     <!-- The set holds hashes, and the lookups are of keys that it does not have. -->
     <query>SELECT count() FROM numbers_mt(30000000) WHERE cityHash64(number * 2 + 1) IN (SELECT cityHash64(number * 2) FROM numbers(5000000))</query>
+    <!-- The set holds `String` keys and the lookups come in random order, so each chunk needs most of the
+         blocks, which the chunks after the first get from the cache. -->
+    <query>SELECT count() FROM numbers_mt(10000000) WHERE toString(cityHash64(number) % 10000000) IN (SELECT toString(number) FROM numbers(5000000))</query>
 </test>
