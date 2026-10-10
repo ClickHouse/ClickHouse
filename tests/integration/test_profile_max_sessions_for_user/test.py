@@ -123,7 +123,8 @@ def reclaim_sessions(thread_list):
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         instance.query(
-            f"KILL QUERY WHERE user='{TEST_USER}' SYNC",
+            f"KILL QUERY WHERE user='{TEST_USER}' SYNC "
+            "SETTINGS kill_throw_if_noop = false",
             timeout=CONTROL_QUERY_TIMEOUT,
         )
         for thread in thread_list:
