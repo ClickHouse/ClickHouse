@@ -14,9 +14,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ClickPipes 支持与 Schema Registry 集成，以解码采用 Avro 和 Protobuf 编码的记录值以及[结构化 Kafka key](/zh/integrations/clickpipes/kafka/reference#structured-message-keys)。
 
-<div id="supported-schema-registries">
-  ## Kafka ClickPipes 支持的 Schema Registry
-</div>
+对于 Protobuf 记录值，你也可以在不配置 Schema Registry 的情况下[直接上传 schema](/zh/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)。
+
+## Kafka ClickPipes 支持的 Schema Registry {#supported-schema-registries}
 
 Kafka ClickPipes 支持两类 schema registry：
 
@@ -25,13 +25,9 @@ Kafka ClickPipes 支持两类 schema registry：
 
 ClickPipes 目前尚不支持 Azure Schema Registry。如需支持，请[联系我们的团队](https://clickhouse.com/company/contact?loc=clickpipes)。
 
-<div id="confluent-compatible-registries">
-  ## 兼容 Confluent 的 Schema Registry
-</div>
+## 兼容 Confluent 的 Schema Registry {#confluent-compatible-registries}
 
-<div id="schema-registry-configuration">
-  ### 配置
-</div>
+### 配置 {#schema-registry-configuration}
 
 要在配置 ClickPipes 时集成 Schema Registry，必须使用以下方法之一：
 
@@ -40,9 +36,7 @@ ClickPipes 目前尚不支持 Azure Schema Registry。如需支持，请[联系�
 2. 提供 schema ID 的完整路径 (例如 `https://registry.example.com/schemas/ids/1000`)
 3. 提供 Schema Registry 的根 URL (例如 `https://registry.example.com`)
 
-<div id="network-connectivity">
-  ### 网络连通性
-</div>
+### 网络连通性 {#network-connectivity}
 
 ClickPipes 会通过您提供的 URL 使用 HTTPS 连接到 Schema Registry。Schema Registry 无需可通过公网访问。
 
@@ -53,9 +47,7 @@ ClickPipes 会通过您提供的 URL 使用 HTTPS 连接到 Schema Registry。Sc
 * Schema Registry URL 必须使用 `https://`。
 * 如果 registry 主机名解析为私有地址，则它必须能通过为 ClickPipe 选择的反向专用终结点访问；否则，设置期间的连通性检查将失败。
 
-<div id="how-schema-registries-work">
-  ### 工作原理
-</div>
+### 工作原理 {#how-schema-registries-work}
 
 ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 
@@ -67,9 +59,7 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 
 配置了 `_key.id` 等字段的映射时，ClickPipes 会独立于记录值解析嵌入在 Kafka 键中的 schema ID。键可以使用不同的 schema ID，但必须与值使用相同的 registry 家族和序列化格式。已解析的键 schema 会被缓存，并会自动检测 schema 变更。
 
-<div id="aws-glue-schema-registry">
-  ## AWS Glue Schema Registry
-</div>
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
 如果您的 producer 使用 AWS Glue SerDe 序列化 Avro (例如，对亚马逊 MSK topic 使用 `AWSKafkaAvroSerializer`) ，ClickPipes 可以直接从 AWS Glue Schema Registry 解析这些 schema。Glue 使用的传输格式和 API 与兼容 Confluent 的 registry 不同，因此需要单独配置。
 
@@ -79,9 +69,7 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
   **仅支持 Avro。** AWS Glue registry 仅支持 Avro 格式。Glue SerDe 也可以封装 JSON 和 Protobuf，但 ClickPipes 不支持这些格式，创建管道时会被拒绝。
 </Note>
 
-<div id="schema-registry-configuration">
-  ### 配置
-</div>
+### 配置 {#glue-configuration}
 
 在 ClickPipe 创建向导的 Kafka 连接步骤中，启用**Schema Registry**，并将**Registry type**设为**AWS Glue**：
 
@@ -96,15 +84,11 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 
 无需配置 registry URL。Glue SerDe 生成的每条记录都携带自身 schema version 的 ID。ClickPipes 使用 `glue:GetSchemaVersion` 解析并缓存这些 schema；每个不同的 schema version 仅需一次 API 调用。schema evolution 会自动处理：当记录在 stream 中途切换到新的 schema version 时，会在首次遇到该版本时进行解析。
 
-<div id="glue-iam-setup">
-  ### IAM 设置
-</div>
+### IAM 设置 {#glue-iam-setup}
 
 请选择以下两种适合您环境的方案之一。对于亚马逊 MSK，通常使用选项 A。
 
-<div id="glue-iam-option-a">
-  #### 选项 A：复用 broker 的 IAM 身份
-</div>
+#### 选项 A：复用 broker 的 IAM 身份 {#glue-iam-option-a}
 
 如果您的 Kafka ClickPipe 已通过 IAM 向 MSK 进行身份验证，ClickPipes 会使用同一 IAM 身份读取 registry。请将 **IAM 角色 ARN** 字段留空，并将以下语句添加到该身份的权限中：
 
@@ -127,9 +111,7 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 
 对于基于角色的身份验证，无需更改信任策略；为 MSK 配置的信任关系已涵盖此访问权限。IAM 凭证不使用角色信任策略。
 
-<div id="glue-iam-option-b">
-  #### 选项 B：使用专用 registry 角色
-</div>
+#### 选项 B：使用专用 registry 角色 {#glue-iam-option-b}
 
 如果您的 broker 不使用 IAM 身份验证 (SASL/SCRAM、SASL/PLAIN、mTLS) ，或者 registry 与 broker 位于不同的 AWS 账户中，请使用此选项。
 
@@ -192,9 +174,7 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
   **IAM 资源范围。** 这些示例遵循 [AWS 文档中针对反序列化器的策略](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html)及其 [`AWSGlueSchemaRegistryReadonlyAccess` 托管策略](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html)。两者均授予对 `"*"` 执行 `glue:GetSchemaVersion` 的权限。ClickPipes 会根据您配置的 **registry 名称** 独立检查每个解析出的 schema，并拒绝来自其他 registry 的版本。
 </Note>
 
-<div id="glue-troubleshooting">
-  ### 故障排查
-</div>
+### 故障排查 {#glue-troubleshooting}
 
 | 错误                                                                                           | 原因和解决方法                                                                                                |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -204,16 +184,12 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 | `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | 您的 producer 在与管道配置不同的 registry 中注册了 schema。请更正 **Registry 名称**，或将 producer 指向正确的 registry。             |
 | `the AWS Glue schema registry only supports the Avro format`                                 | Glue 管道仅支持 Avro 格式。不支持通过 Glue SerDe 使用 JSON 和 Protobuf。                                                |
 
-<div id="glue-limitations">
-  ### 限制
-</div>
+### 限制 {#glue-limitations}
 
 * 仅支持 Avro。不支持通过 Glue SerDe 使用 JSON Schema 或 Protobuf。
 * 仅支持 Kafka 源。Kinesis ClickPipes 无法使用 Glue registry。
 
-<div id="schema-mapping">
-  ## Schema 映射
-</div>
+## Schema 映射 {#schema-mapping}
 
 以下规则同时适用于与 Confluent 兼容的 registry 和 AWS Glue Schema Registry。它们规定了已获取的值 schema 与 ClickHouse 目标端表之间的映射，也适用于从带有 `_key.` 前缀的结构化键映射而来的记录或消息字段：
 

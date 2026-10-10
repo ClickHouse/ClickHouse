@@ -52,6 +52,8 @@ This feature isn't currently available in PCI/ HIPAA services
 Customers can [configure backups](/products/cloud/guides/backups/configurable-backups) to happen at a higher frequency, up to every 6 hours, to improve the RPO.
 Customers can also configure longer retention.
 
+The backup frequency determines the worst-case age of the newest restore point and therefore the RPO. Retention controls how long backup data is kept; it does not make the newest restore point more recent. For example, a service configured with a 1-day retention and a 48-hour frequency can have a newest restore point that is almost 48 hours old.
+
 The backups currently available for the service are listed on the “backups” page on the ClickHouse Cloud console.
 This section also provides the success / failure status for each backup.
 

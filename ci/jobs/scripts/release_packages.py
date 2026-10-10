@@ -214,7 +214,12 @@ def expected_s3_objects(version: str, with_signed_macos: bool):
 
 
 def release_build_artifacts_ready(
-    s3, release: str, commit_sha: str, version: str, with_signed_macos: bool
+    s3,
+    bucket: str,
+    release: str,
+    commit_sha: str,
+    version: str,
+    with_signed_macos: bool,
 ) -> bool:
     """Whether every object `CreateRelease` will download for this commit is
     already present in S3.
@@ -231,13 +236,16 @@ def release_build_artifacts_ready(
     version mismatch, leaves the dir non-empty yet the exact file absent. Fail
     closed — a single missing object rejects the commit.
 
-    `s3` must expose `list_prefix(prefix) -> iterable of keys` (e.g. the
-    `ci/tools` `S3Helper`); it is passed in so this module stays dependency-free.
+    `s3` must expose `list_prefix(s3_path) -> iterable of keys`, taking one
+    `bucket/key` string (e.g. `ci/praktika`'s `S3`); it and `bucket` are passed
+    in so this module stays dependency-free.
     """
     prefix = s3_commit_prefix(release, commit_sha)
     for job, expected_files in expected_s3_objects(version, with_signed_macos).items():
         job_prefix = f"{prefix}/{job}/"
-        present = {key.rsplit("/", 1)[-1] for key in s3.list_prefix(job_prefix)}
+        present = {
+            key.rsplit("/", 1)[-1] for key in s3.list_prefix(f"{bucket}/{job_prefix}")
+        }
         missing = expected_files - present
         if missing:
             print(
