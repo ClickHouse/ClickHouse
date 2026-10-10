@@ -5475,10 +5475,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && runtime_filter_lookup
         && !runtime_filters_for_data_read.empty()
         && !pending_mutations
-        /// Parallel replicas prune too, each replica over its own assigned granules with its own filter.
-        /// That is safe because the filter is built from the whole build side - that side is broadcast and
-        /// read in full on every replica - so a granule a replica drops cannot hold a row that should have
-        /// matched, exactly as in a single-node read. A granule skipped this way is reported to the
+        /// Parallel replicas prune too, each replica over the granules it reads with the filter it built.
+        /// That filter is not always complete: exactly one side of the join is split among the replicas
+        /// and the other is read in full on every replica, so for a `RIGHT` join the build side is the
+        /// split one and each replica's filter covers only its own share of it. It is still safe, because
+        /// every matching pair of rows meets on exactly one replica - the one that reads the split side's
+        /// row - and each replica emits a disjoint share of the result. A probe granule a replica drops has
+        /// no match among the build rows of that replica, and its matches with any other build rows are
+        /// produced by the replica that reads them. A granule skipped this way is reported to the
         /// coordinator as read, so the work is not handed to another replica instead.
         ///
         /// Descriptors are attached by a plan optimization, so a replica has them whether it planned the
@@ -5487,12 +5491,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// which costs coverage, not correctness; `make_distributed_plan` still reads that way.
         && indexes.has_value())
     {
-        /// A read that gets here kept its descriptors through every rebuild of the step, which is the
-        /// invariant the parallel-replicas paths kept breaking; the granule counters below only move once a
-        /// granule is actually examined, which depends on the coordinator's assignment and on the filter
-        /// being ready, so they cannot stand in for it.
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterIndexAnalysisReads);
-
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
         /// part is gated by use_skip_indexes (buildIndexes builds key_condition_rpn_template regardless).
         const bool collect_skip_indexes = context->getSettingsRef()[Setting::use_skip_indexes];
@@ -5528,6 +5526,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     runtime_skip_indexes.push_back(MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings));
             }
         }
+
+        /// A read that gets here with something to prune kept its descriptors through every rebuild of the
+        /// step, which is the invariant the parallel-replicas paths kept breaking; the granule counters only
+        /// move once a granule is actually examined, which depends on the coordinator's assignment and on
+        /// the filter being ready, so they cannot stand in for it.
+        if (runtime_prune_primary_key || !runtime_skip_indexes.empty())
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterIndexAnalysisReads);
     }
 
     /// A top-K read whose threshold column is a primary key column skips granules by the primary index as the

@@ -628,11 +628,13 @@ public:
     }
 
     /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
-    /// step that this step replaces (the projection read built by `optimizeUseNormalProjections`).
-    /// `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so the descriptors
-    /// are attached to the base-table read and would be lost otherwise. Every descriptor is registered
-    /// anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the key column
-    /// is prunable through this step's own metadata (the projection's primary key or skip indexes).
+    /// step that this step replaces: the projection read built by `optimizeUseNormalProjections`, and the
+    /// steps `clone` and `createLocalParallelReplicasReadingStep` rebuild, which are not always optimized
+    /// again afterwards. `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so
+    /// the descriptors are attached to the base-table read and would be lost otherwise. Every descriptor
+    /// is registered anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the
+    /// key column is prunable through this step's own metadata (the projection's primary key or skip
+    /// indexes).
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);

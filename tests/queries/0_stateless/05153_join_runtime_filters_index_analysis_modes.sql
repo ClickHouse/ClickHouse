@@ -1,13 +1,16 @@
 -- `enable_join_runtime_filters_index_analysis` asks for a granule pruning that happens on data read,
 -- driven by descriptors attached to the read step while a query plan is optimized.
 --
--- This test pins which execution modes prune. Parallel replicas do: each replica prunes its own assigned
--- granules with its own filter, which is built from the whole build side (that side is broadcast, read in
--- full on every replica), so a granule it drops cannot hold a row that should have matched. That holds
--- however the replica got its plan - planning the query itself or optimizing one it deserialized - because
--- the descriptors are attached by an optimization that runs in both cases. A distributed query plan
--- (`make_distributed_plan = 1`) does not prune, which is the one no-op the setting's description still
--- claims.
+-- This test pins which execution modes prune. Parallel replicas do: each replica prunes the granules it
+-- reads with the filter it built. Exactly one side of the join is split among the replicas and the other is
+-- read in full on every replica, so every matching pair of rows meets on exactly one replica, and a probe
+-- granule a replica drops has no match there. For an `INNER` join the split side is the probe side and each
+-- filter is built from the whole build side; for a `RIGHT` join the build side is the split one, so each
+-- replica's filter covers only its own share of it, and the probe rows it drops are matched by the replicas
+-- that read the rest. That holds however the replica got its plan - planning the query itself or optimizing
+-- one it deserialized - because the descriptors are attached by an optimization that runs in both cases.
+-- A distributed query plan (`make_distributed_plan = 1`) does not prune, which is the one no-op the
+-- setting's description still claims.
 --
 -- Every mode must return exactly the result of a local read, which is what makes the pruning safe rather
 -- than merely faster.
@@ -102,8 +105,8 @@ SETTINGS log_comment = '05153_parallel_replicas_plan_based', enable_parallel_rep
 
 -- Plan-based with a local plan: the initiator reads its own share through a cloned fragment. That fragment
 -- is optimized with the runtime filters already in it, so the optimization that attaches the descriptors
--- does not run and cannot re-attach them - they have to survive the clone and the read-step rebuild. The
--- On this shape the coordinator gives the initiator the whole read, so the totals below do cover it. There
+-- does not run and cannot re-attach them - they have to survive the clone and the read-step rebuild. On
+-- this shape the coordinator gives the initiator the whole read, so the totals below do cover it. There
 -- is deliberately no per-replica assertion: whether a given replica prunes depends on its coordinated read
 -- reaching a granule after the runtime filter is ready, and the pruning is fail-open, so an assertion that
 -- a particular replica pruned is a scheduling property rather than an invariant - it failed under TSan.
@@ -111,6 +114,16 @@ SELECT 'parallel_replicas_plan_based_local_plan', count(), sum(f.v)
 FROM rf_idx_fact AS f INNER JOIN rf_idx_dim AS d ON f.id = d.id
 WHERE d.tag = 'hot'
 SETTINGS log_comment = '05153_parallel_replicas_plan_based_local_plan', enable_parallel_replicas = 1,
+    parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
+
+-- The same mode with a `RIGHT` join, where the coordinated side is the build side and the probe side is read
+-- in full on every replica. That probe read is not a coordinated one, so in every other mode it is planned and
+-- optimized in place and prunes regardless of the rebuild paths; here the initiator reads it through a cloned
+-- fragment, so this row covers the clone for the side of the join that is not split among the replicas.
+SELECT 'parallel_replicas_plan_based_local_plan_right', count(), sum(f.v)
+FROM rf_idx_fact AS f RIGHT JOIN rf_idx_dim AS d ON f.id = d.id
+WHERE d.tag = 'hot'
+SETTINGS log_comment = '05153_parallel_replicas_plan_based_local_plan_right', enable_parallel_replicas = 1,
     parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
 
 SYSTEM FLUSH LOGS query_log;
@@ -141,7 +154,8 @@ INNER JOIN
         AND log_comment IN ('05153_local', '05153_distributed_plan', '05153_parallel_replicas',
             '05153_parallel_replicas_followers', '05153_parallel_replicas_followers_analysing_themselves',
             '05153_parallel_replicas_serialized_plan',
-            '05153_parallel_replicas_plan_based', '05153_parallel_replicas_plan_based_local_plan')
+            '05153_parallel_replicas_plan_based', '05153_parallel_replicas_plan_based_local_plan',
+            '05153_parallel_replicas_plan_based_local_plan_right')
         AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
 ) AS initiator ON part.initial_query_id = initiator.query_id
 WHERE part.type = 'QueryFinish' AND part.event_date >= yesterday() AND part.event_time > now() - INTERVAL 1 HOUR
