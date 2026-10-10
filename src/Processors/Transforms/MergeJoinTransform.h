@@ -12,7 +12,6 @@
 
 #include <boost/core/noncopyable.hpp>
 
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>
@@ -20,7 +19,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }
@@ -221,7 +220,6 @@ public:
 
     absl::InlinedVector<ColumnPtr, 4> sort_columns;
     absl::InlinedVector<ColumnPtr, 4> null_maps;
-    SortedKeyRuns key_runs;
     ColumnPtr asof_column = nullptr;
     size_t pos = 0;
     size_t rows = 0;

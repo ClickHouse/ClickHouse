@@ -80,7 +80,7 @@ namespace
             qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
 
         /// Do not need db because it is already in a connection string.
-        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotesPostgreSQL};
+        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotes};
     }
 }
 
@@ -389,7 +389,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("postgresql", create_table_source, SecretArgumentsSpec{.secret_keys = {"password", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"}}, Documentation{
+    factory.registerSource("postgresql", create_table_source, Documentation{
         .description = R"DOCS_MD(
 # PostgreSQL dictionary source
 
@@ -420,7 +420,7 @@ SOURCE(POSTGRESQL(
 ```xml
 <source>
   <postgresql>
-      <host>postgresql-hostname</host>
+      <host>postgresql-hostname</hoat>
       <port>5432</port>
       <user>clickhouse</user>
       <password>qwerty</password>
