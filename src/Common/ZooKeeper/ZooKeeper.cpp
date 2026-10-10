@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int REPLICA_ALREADY_EXISTS;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
@@ -1451,6 +1452,13 @@ void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, st
     if (condition(content))
     {
         auto code = tryRemove(path, stat.version);
+        /// The node was rewritten after it was read, so the condition no longer describes it.
+        if (code == Coordination::Error::ZBADVERSION)
+            throw DB::Exception(
+                DB::ErrorCodes::REPLICA_ALREADY_EXISTS,
+                "Ephemeral node {} was rewritten while it was being removed. Node data when it was read: '{}'",
+                path,
+                content);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw Coordination::Exception::fromPath(code, path);
     }
@@ -1460,10 +1468,10 @@ void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, st
         int32_t timeout_ms = 3 * args.session_timeout_ms;
         if (!eph_node_disappeared->tryWait(timeout_ms))
             throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Ephemeral node {} still exists after {}s, probably it's owned by someone else. "
-                "Either session_timeout_ms in client's config is different from server's config or it's a bug. "
-                "Node data: '{}'",
+                DB::ErrorCodes::REPLICA_ALREADY_EXISTS,
+                "Ephemeral node {} still exists after {}s and is not owned by us: most likely another session "
+                "still holds it, or a previous session's node has not expired yet. It can also mean that "
+                "session_timeout_ms in the client's config differs from the server's. Node data: '{}'",
                 path,
                 timeout_ms / 1000,
                 content);
@@ -1764,6 +1772,38 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(
     };
 
     impl->list(path, list_request_type, std::move(callback), watch_callback, with_stat, with_data);
+    return future;
+}
+
+std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncListWithOptions(
+    const std::string & path,
+    const Coordination::ListOptions & options)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListWithOptionsResponse>>();
+    auto future = promise->get_future();
+    auto callback = [promise, path](const Coordination::ListWithOptionsResponse & response) mutable
+    {
+        if (response.error != Coordination::Error::ZOK)
+            promise->set_exception(std::make_exception_ptr(KeeperException::fromPath(response.error, path)));
+        else
+            promise->set_value(response);
+    };
+    impl->listWithOptions(path, options, std::move(callback), {});
+    return future;
+}
+
+std::future<Coordination::ListWithOptionsResponse> ZooKeeper::asyncTryListWithOptionsNoThrow(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch_callback)
+{
+    auto promise = std::make_shared<std::promise<Coordination::ListWithOptionsResponse>>();
+    auto future = promise->get_future();
+    auto callback = [promise](const Coordination::ListWithOptionsResponse & response) mutable
+    {
+        promise->set_value(response);
+    };
+    impl->listWithOptions(path, options, std::move(callback), std::move(watch_callback));
     return future;
 }
 
@@ -2098,6 +2138,26 @@ Coordination::RequestPtr makeListRecursiveRequest(const std::string & path, uint
     auto request = std::make_shared<Coordination::ZooKeeperListRecursiveRequest>();
     request->path = path;
     request->children_nodes_limit = children_nodes_limit;
+    return request;
+}
+
+Coordination::RequestPtr makeListWithOptionsRequest(
+    const std::string & path,
+    const Coordination::ListOptions & options,
+    Coordination::WatchCallbackPtrOrEventPtr watch)
+{
+    options.validate();
+    if (path.empty() || path[0] != '/')
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "Path must begin with /");
+    if (options.recursive && watch)
+        throw Coordination::Exception::fromMessage(Coordination::Error::ZBADARGUMENTS, "ListWithOptions does not support recursive watches");
+
+    auto request = std::make_shared<Coordination::ZooKeeperListWithOptionsRequest>();
+    request->path = path;
+    request->options_version = Coordination::requiredListOptionsVersion(options);
+    request->options = options;
+    request->watch_callback = watch;
+    request->has_watch = static_cast<bool>(watch);
     return request;
 }
 

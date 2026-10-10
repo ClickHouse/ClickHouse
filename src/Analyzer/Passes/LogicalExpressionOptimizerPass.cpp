@@ -10,6 +10,7 @@
 #include <Common/NaNUtils.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -417,6 +418,8 @@ struct ExpressionFilters
     /// Excluded from the analysis: non-lossless conversions (they also veto the fold-to-false
     /// collapse), NaN constants, and everything when pruning is disabled.
     std::vector<ComparisonFilterInfo> opaque_filters;
+    /// Index in `opaque_filters` of the first `equals` on this expression; set only when pruning is disabled.
+    std::optional<size_t> first_equals_position;
 };
 
 using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<ExpressionFilters>;
@@ -447,43 +450,24 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     if (from_type->equals(*expr_type))
         return constant_node->getValue();
 
-    const Field & original_value = constant_node->getValue();
-    auto converted = tryConvertFieldToType(original_value, *expr_type, from_type.get(), {}, /*strict=*/true);
+    /// The constant becomes a bound the fold compares exactly, so a lossy conversion forgoes the fold.
+    auto converted = tryConvertFieldToTypeExact(constant_node->getValue(), *expr_type, from_type.get());
     if (converted.isNull())
         return std::nullopt;
 
-    /// `strict` conversion is supposed to reject any lossy conversion by returning a null `Field`, but
-    /// `convertFieldToType` does not honour that contract for some value-narrowing conversions of a
-    /// typed constant, so `converted.isNull()` alone is not enough:
-    ///   - `DateTime64`/`Time64` scale reduction silently truncates a higher-scale value to a lower one
-    ///     (e.g. `1.23` of scale 2 becomes `1.2` of scale 1). For a `DateTime64(1)` column,
-    ///     `dt = toDateTime64('1970-01-01 00:00:01.20', 1) AND dt != toDateTime64('1970-01-01 00:00:01.23', 2)`
-    ///     must keep the row `1.20` (because `1.20 != 1.23`), but both constants would collapse to `1.2`.
-    ///   - `DateTime`/`DateTime64` -> `Date`/`Date32` truncation drops the intra-day part, even though the
-    ///     comparison is evaluated in the wider (`DateTime`) domain (a `Date` value promotes to midnight).
-    ///     For a `Date` column,
-    ///     `d = toDate('2024-01-01') AND d != toDateTime('2024-01-01 12:34:56')` must keep the row
-    ///     `2024-01-01` (which differs from `2024-01-01 12:34:56`), but the `DateTime` constant would
-    ///     truncate to the day and the whole `AND` would fold to `false`.
-    ///
-    /// Guard against these by requiring the conversion to be exactly reversible: convert the value back to
-    /// the constant's original type and demand it round-trips to the original value; otherwise skip the
-    /// optimization (which only forgoes a fold and never changes results).
-    ///
-    /// The guard is skipped where the strict contract is known to hold or where it would misfire:
-    ///   - conversions between native numeric types are already exact (`accurate::convertNumeric`
-    ///     performs its own bounds and round-trip checks);
-    ///   - a string constant is parsed directly at the column's resolution, so it never carries the
-    ///     finer resolution that triggers the truncation, and round-tripping through the string
-    ///     rendering would spuriously fail even for exact folds (e.g. `Float64` `3.0` renders as `"3"`).
-    if (!isStringOrFixedString(from_type) && !(isNativeNumber(from_type) && isNativeNumber(expr_type)))
-    {
-        auto round_trip = tryConvertFieldToType(converted, *from_type, expr_type.get(), {}, /*strict=*/true);
-        if (round_trip.isNull() || !accurateEquals(round_trip, original_value))
-            return std::nullopt;
-    }
-
     return converted;
+}
+
+/// A comparison of `DateTime` or a lower-scale `DateTime64` with a `DateTime64` widens the former to the latter's scale.
+static bool isLowerScaleTimePoint(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const auto * to_date_time64 = typeid_cast<const DataTypeDateTime64 *>(to.get());
+    if (!to_date_time64)
+        return false;
+    if (isDateTime(from))
+        return true;
+    const auto * from_date_time64 = typeid_cast<const DataTypeDateTime64 *>(from.get());
+    return from_date_time64 && from_date_time64->getScale() < to_date_time64->getScale();
 }
 
 enum class BoundaryCheckResult : uint8_t
@@ -881,8 +865,8 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
 }
 
 /// Insert a new comparison filter for `expression` into `filter_map`.
-/// When `enable_pruning` is true, performs type conversion, boundary folding, and
-/// comparison against existing filters for the same expression.
+/// Performs type conversion; with `enable_pruning` also boundary folding and comparison against
+/// every existing filter for the expression, otherwise only against the first `equals` seen.
 /// Returns ALWAYS_FALSE if a contradiction is found, ALWAYS_TRUE if the condition holds
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 static AddComparisonFilterResult addComparisonFilter(
@@ -892,13 +876,6 @@ static AddComparisonFilterResult addComparisonFilter(
     bool enable_pruning,
     const ContextPtr & context)
 {
-    /// Pruning disabled — just store the filter without analysis.
-    if (!enable_pruning)
-    {
-        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
-        return AddComparisonFilterResult::ADDED;
-    }
-
     /// A comparison with a nullable result is ambiguous under NULL and must not be pruned or folded;
     /// keep it as-is. Test the comparison node's result type, not the raw operand type, so nested and
     /// carrier-hidden nullability (e.g. `LowCardinality(Nullable)`, `Dynamic`, `Variant`) is caught.
@@ -915,8 +892,11 @@ static AddComparisonFilterResult addComparisonFilter(
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
-    if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
-        return *result;
+    if (enable_pruning)
+    {
+        if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
+            return *result;
+    }
 
     auto & filters = filter_map[expression];
 
@@ -929,6 +909,24 @@ static AddComparisonFilterResult addComparisonFilter(
     {
         filters.opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
+    }
+
+    if (!enable_pruning)
+    {
+        auto result = AddComparisonFilterResult::ADDED;
+        if (new_filter.function == ComparisonFunction::EQUALS)
+        {
+            if (filters.first_equals_position)
+            {
+                if (compareComparisonFilters(filters.opaque_filters[*filters.first_equals_position], new_filter)
+                    == ValueComparisonResult::ALWAYS_FALSE)
+                    result = AddComparisonFilterResult::ALWAYS_FALSE;
+            }
+            else
+                filters.first_equals_position = filters.opaque_filters.size();
+        }
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return result;
     }
 
     /// Step 3: compare against the existing equals/range filters.
@@ -1867,7 +1865,7 @@ private:
     /** Optimize AND chains by analyzing comparison conditions on the same expression.
       * This method performs two things in a single pass:
       *
-      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled):
+      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled, except an always-false `equals` pair):
       *     Given an AND expression where the same column appears in multiple comparisons
       *     against constants (e.g. `a = 3 AND a < 5 AND a > 1`), we collect all conditions
       *     on the same non-constant expression into a per-expression `ComparisonFilterMap`.
@@ -1996,6 +1994,10 @@ private:
                 for (const auto & filter : entry.second.opaque_filters)
                     if (!filter.converted_value)
                         return;
+
+            /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
+            if (isNothing(function_node.getResultType()))
+                return;
 
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
             return;
@@ -2138,9 +2140,10 @@ private:
         function_node.resolveAsFunction(and_function_resolver);
     }
 
-    /// If one side is a constant `String`/`FixedString` compared with a non-string type, convert
-    /// the literal to that type as `executeWithConstString` does and return the edge's domain.
-    ComparisonOrderDomain tryNormalizeConstStringEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
+    /// If one side is a constant the comparison converts once to the other side's type (a `String`/`FixedString`
+    /// vs a non-string, as `executeWithConstString` does, or a `DateTime`/lower-scale `DateTime64` vs a `DateTime64`,
+    /// widened exactly), convert the literal to that type and return the edge's domain.
+    ComparisonOrderDomain tryNormalizeConstEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
     {
         const auto * lhs_constant = lhs->as<ConstantNode>();
         const auto * rhs_constant = rhs->as<ConstantNode>();
@@ -2151,12 +2154,16 @@ private:
         const auto & other_side = lhs_constant ? rhs : lhs;
         const auto constant_type = removeLowCardinality(constant_side->getResultType());
         const auto other_type = removeLowCardinality(other_side->getResultType());
-        if (!isStringOrFixedString(constant_type) || isStringOrFixedString(other_type) || other_type->isNullable())
+        if (other_type->isNullable())
             return {};
 
         const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
-        auto converted = tryConvertFieldToType(
-            constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        Field converted;
+        if (isStringOrFixedString(constant_type) && !isStringOrFixedString(other_type))
+            converted = tryConvertFieldToType(
+                constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        else if (isLowerScaleTimePoint(constant_type, other_type))
+            converted = tryConvertFieldToTypeExact(constant_node->getValue(), *other_type, constant_type.get());
         if (converted.isNull())
             return {};
 
@@ -2292,10 +2299,10 @@ private:
             /// Only comparisons within one order domain join transitive chains; the seeding above
             /// is domain-agnostic (it converts constants to the expression's own type).
             auto comparison_domain = argument_function->getFunctionOrThrow()->getComparisonOrderDomain();
-            /// A const string compares after a one-time conversion to the other side's type (see
-            /// `executeWithConstString`); mirror it so the edge carries a typed constant instead.
+            /// A constant of another type may compare after a one-time conversion to the other side's
+            /// type; mirror it so the edge carries a typed constant instead.
             if (!comparison_domain.isValid())
-                comparison_domain = tryNormalizeConstStringEdge(function_name, lhs, rhs);
+                comparison_domain = tryNormalizeConstEdge(function_name, lhs, rhs);
             if (!comparison_domain.isValid())
                 continue;
 

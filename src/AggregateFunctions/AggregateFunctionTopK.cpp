@@ -101,6 +101,9 @@ public:
         return is_weighted ? "topKWeighted" : "topK";
     }
 
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool include_counts_)
     {
         if (include_counts_)
@@ -342,6 +345,9 @@ public:
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
         return is_weighted ? "topKWeighted" : "topK";
     }
+
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
 
     void ensureCapacity(AggregateFunctionTopKGenericData::Set & set) const
     {

@@ -72,10 +72,11 @@ public:
     ~SpillingHashJoin() override;
 
     std::string getName() const override;
+    std::string getAlgorithm() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     void initialize(const Block & sample_block) override;
     JoinResultPtr joinBlock(Block block) override;
@@ -111,7 +112,7 @@ public:
 
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;
-    void requestSpill() override;
+    void requestSpill(JoinBuildContext context) override;
 
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
@@ -136,8 +137,8 @@ private:
 
     /// `spill_immediately` is for the memory-pressure path: the new GraceHashJoin repartitions as it
     /// takes the data over, instead of holding all of it in bucket 0 until the next spill request.
-    void switchToGraceHashJoin(bool spill_immediately = false);
-    void tryConvertSlots();
+    void switchToGraceHashJoin(JoinBuildContext context, bool spill_immediately = false);
+    void tryConvertSlots(JoinBuildContext context);
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;

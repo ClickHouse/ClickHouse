@@ -11,6 +11,7 @@
 #include <mutex>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/FutureSetSettings.h>
 #include <Interpreters/SetKeys.h>
 #include <Interpreters/StorageID.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -192,17 +193,13 @@ public:
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
-        bool transform_null_in,
-        SizeLimits size_limits,
-        size_t max_size_for_index);
+        FutureSetSettings set_settings_);
 
     FutureSetFromSubquery(
         Hash hash_,
         ASTPtr ast_,
         QueryTreeNodePtr query_tree_,
-        bool transform_null_in,
-        SizeLimits size_limits,
-        size_t max_size_for_index);
+        FutureSetSettings set_settings_);
 
     ~FutureSetFromSubquery() override;
 
@@ -237,6 +234,7 @@ public:
 
     void buildSetInplace(const ContextPtr & context);
 
+    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
@@ -254,6 +252,8 @@ public:
 private:
     Hash hash;
     ASTPtr ast;
+    /// The set and the step that fills it are made with these settings.
+    FutureSetSettings set_settings;
     SetAndKeyPtr set_and_key;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
@@ -332,7 +332,6 @@ public:
     // const SetsFromSubqueries & getSetsFromSubquery() const { return sets_from_subqueries; }
 
     static String toString(const Hash & key, const DataTypes & types);
-    static SizeLimits getSizeLimitsForSet(const Settings & settings);
 
 private:
     SetsFromTuple sets_from_tuple;
