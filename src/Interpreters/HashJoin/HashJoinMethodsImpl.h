@@ -825,12 +825,13 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
     size_t rows = ScatteredBlock::Selector::size(range);
 
+    const size_t num_clauses = added_columns.join_on_keys.size();
+
     /// Per-clause skip bytes, prepared once per call (see `JoinOnKeyColumns::buildRowSkipData`).
     std::vector<const UInt8 *> skip_datas;
     std::vector<IColumn::Filter> skip_buffers;
     if constexpr (!fast_path)
     {
-        const size_t num_clauses = added_columns.join_on_keys.size();
         skip_datas.resize(num_clauses);
         skip_buffers.resize(num_clauses);
         for (size_t d = 0; d < num_clauses; ++d)
@@ -853,6 +854,19 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.offsets_to_replicate.reserve(rows);
     }
 
+    /// The row loop reads the maps, key getters and skip bytes through raw pointers. A hardened `operator[]` computes
+    /// the size of its vector on every lookup, and that work takes registers this memory-bound loop needs.
+    if (mapv.size() != num_clauses || key_getter_vector.size() != num_clauses)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Hash join has {} maps and {} key getters for {} disjuncts",
+            mapv.size(),
+            key_getter_vector.size(),
+            num_clauses);
+    const Map * const * maps = mapv.data();
+    KeyGetter * key_getters = key_getter_vector.data();
+    const UInt8 * const * skip_data = skip_datas.data();
+
     /// Software prefetch for multi-map variant. A one-bucket map prefetches only the first map. A two-level map also
     /// prefetches the later maps that `numPrefetchableMaps` and `MultiMapLookupSampler` allow, because a lookup there
     /// loads the bucket header before the cell. A sampled limit starts at one map: `PrefetchingHelper` sets the look-ahead
@@ -872,7 +886,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     }
     const bool samples_lookups = stops_at_first_match && max_prefetched_maps > 1;
     size_t num_prefetched_maps = samples_lookups ? 1 : max_prefetched_maps;
-    MultiMapLookupSampler sampler(samples_lookups ? mapv.size() : 0);
+    MultiMapLookupSampler sampler(samples_lookups ? num_clauses : 0);
     size_t next_sampled_row = samples_lookups ? 0 : rows;
 
     auto prefetcher = makeJoinPrefetcher(use_prefetch, rows,
@@ -880,10 +894,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         {
             if constexpr (can_prefetch)
             {
-                mapv[0]->prefetch(key_getter_vector[0].getKeyHolder(range.first + k, pool));
+                maps[0]->prefetch(key_getters[0].getKeyHolder(range.first + k, pool));
                 if constexpr (Map::NUM_BUCKETS > 1)
                     for (size_t map_idx = 1; map_idx < num_prefetched_maps; ++map_idx)
-                        mapv[map_idx]->prefetch(key_getter_vector[map_idx].getKeyHolder(range.first + k, pool));
+                        maps[map_idx]->prefetch(key_getters[map_idx].getKeyHolder(range.first + k, pool));
             }
         });
 
@@ -901,20 +915,20 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         bool right_row_found = false;
         KnownRowsHolder<flag_per_row> known_rows;
         size_t onexpr_idx = 0;
-        for (; onexpr_idx < added_columns.join_on_keys.size(); ++onexpr_idx)
+        for (; onexpr_idx < num_clauses; ++onexpr_idx)
         {
             bool skip_row = false;
             if constexpr (!fast_path)
-                skip_row = skip_datas[onexpr_idx] && skip_datas[onexpr_idx][ind];
+                skip_row = skip_data[onexpr_idx] && skip_data[onexpr_idx][ind];
 
             if (!skip_row)
             {
-                auto find_result = key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), ind, pool);
+                auto find_result = key_getters[onexpr_idx].findKey(*maps[onexpr_idx], ind, pool);
 
                 if (find_result.isFound())
                 {
                     right_row_found = true;
-                    const bool is_last_disjunct = onexpr_idx + 1 == added_columns.join_on_keys.size();
+                    const bool is_last_disjunct = onexpr_idx + 1 == num_clauses;
                     processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
                         find_result, added_columns, used_flags, i, ind, current_offset, known_rows, is_last_disjunct);
 
@@ -929,11 +943,11 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             if (i == next_sampled_row) [[unlikely]]
             {
                 /// The row looked up every map up to the one it stopped at, except where its key is skipped.
-                const size_t reached_maps = std::min(onexpr_idx + 1, mapv.size());
+                const size_t reached_maps = std::min(onexpr_idx + 1, num_clauses);
                 for (size_t map_idx = 0; map_idx < reached_maps; ++map_idx)
                 {
                     if constexpr (!fast_path)
-                        if (skip_datas[map_idx] && skip_datas[map_idx][ind])
+                        if (skip_data[map_idx] && skip_data[map_idx][ind])
                             continue;
                     sampler.countLookup(map_idx);
                 }
