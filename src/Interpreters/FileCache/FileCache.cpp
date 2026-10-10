@@ -2207,8 +2207,16 @@ void FileCache::loadMetadataImpl()
                     return std::nullopt;
                 }
 
-                if (user_it->path().filename() == "status")
+                if (!user_it->is_directory())
+                {
+                    /// Only client directories are loaded from here. Ignore files: a server of
+                    /// another version may keep files of its own next to them, and opening one
+                    /// as a directory would fail the whole load.
+                    const auto entry = user_it->path().filename().string();
+                    if (entry != "status")
+                        LOG_WARNING(log, "Ignoring file {} in {}", entry, metadata.getBaseDirectory());
                     continue;
+                }
 
                 key_prefix_it = fs::directory_iterator{user_it->path()};
                 if (key_prefix_it == fs::directory_iterator())

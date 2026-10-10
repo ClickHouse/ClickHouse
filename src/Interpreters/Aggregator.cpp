@@ -1181,7 +1181,8 @@ void Aggregator::executeImpl(
             params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
             params.top_k->observation_rows,
-            params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr);
+            params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr,
+            params.top_k->threshold_tracker);
 
         /// Before the freeze check, which must judge the heap against the latest shared boundary.
         method.top_k_heap.exchangeSharedBoundary();
@@ -3240,7 +3241,8 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
         mergeDeferredLargeStates(deferred, arena, is_cancelled, /*destroy_sources=*/ true);
 }
 
-Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
+    AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys) const
 {
     const auto method = variants.type;
     AggregatedChunk agg_chunk;
@@ -3248,7 +3250,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVa
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, /*untruncated_keys=*/nullptr, /*full_group_count=*/nullptr); \
+        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, untruncated_keys, /*full_group_count=*/nullptr); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
