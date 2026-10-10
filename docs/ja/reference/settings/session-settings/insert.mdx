@@ -26,16 +26,18 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-`INSERT` のブロックの重複排除 (Replicated* テーブル向け) を有効または無効にします。
+`INSERT` の block の重複排除 (Replicated* テーブル向け) を有効または無効にします。
+
+この設定は、[`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) が `backward_compatible_choice` に設定されている場合にのみ有効です。
 
 設定可能な値:
 
 * 0 — 無効。
 * 1 — 有効。
 
-デフォルトでは、`INSERT` ステートメントによってレプリケートテーブルに挿入されたブロックは重複排除されます ([Data Replication](/ja/reference/engines/table-engines/mergetree-family/replication) を参照) 。
-レプリケートテーブルでは、デフォルトで各パーティションにつき直近 100 個のブロックのみが重複排除されます ([replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) を参照) 。
-非レプリケートテーブルについては、[non&#95;replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings#non_replicated_deduplication_window) を参照してください。
+デフォルトでは、`INSERT` ステートメントによってレプリケートテーブルに挿入された block は重複排除されます ([Data Replication](/ja/reference/engines/table-engines/mergetree-family/replication) を参照) 。
+レプリケートテーブルでは、デフォルトで各パーティションにつき直近 100 個の block のみが重複排除されます ([replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) を参照) 。
+非レプリケートテーブルについては、[non&#95;replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) を参照してください。
 
 <div id="insert_deduplication_token">
   ## insert_deduplication_token
@@ -51,8 +53,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 `insert_deduplication_token` は、空でない場合に*のみ*重複排除に使用されます。
 
-レプリケートテーブルでは、デフォルトで各パーティションごとに直近 100 件の insert のみが重複排除されます ([replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) を参照) 。
-レプリケーションされていないテーブルについては、[non&#95;replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings#non_replicated_deduplication_window) を参照してください。
+レプリケートテーブルでは、デフォルトで各パーティションごとに直近 100 件の insert のみが重複排除されます ([replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) を参照) 。
+非レプリケートテーブルについては、[non&#95;replicated&#95;deduplication&#95;window](/ja/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) を参照してください。
 
 <Note>
   `insert_deduplication_token` はパーティション単位で追跡されるため、1 回の insert で書き込まれる複数のパーティションで同じトークンを使用できます。トークンがない場合、デフォルトの内容チェックサムは挿入された block 全体に対して計算されるため、insert が重複排除されるのは、そのデータ全体が以前の insert (再試行) と一致する場合のみです。単一パーティションの行が、たまたま別の insert と一致しただけでは重複排除されません。

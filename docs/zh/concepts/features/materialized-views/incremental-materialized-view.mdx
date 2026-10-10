@@ -1051,9 +1051,9 @@ GROUP BY UserId
   ## 并行处理与串行处理
 </div>
 
-如前一个示例所示，一个表可以作为多个 Materialized Views 的源表。这些视图的执行顺序取决于设置 [`parallel_view_processing`](/zh/reference/settings/session-settings#parallel_view_processing)。
+如前一个示例所示，一个表可以作为多个 Materialized Views 的源表。这些视图的执行顺序取决于设置 [`parallel_view_processing`](/zh/reference/settings/session-settings/parallel#parallel_view_processing)。
 
-默认情况下，此设置的值为 `0` (`false`) ，这意味着 Materialized Views 会按照 `uuid` 顺序依次执行。
+默认情况下，此设置的值为 `0` (`false`) ，这意味着 Materialized Views 会按照 `uuid` 顺序顺序执行。
 
 例如，假设有如下 `source` 表和 3 个 Materialized Views，它们都会将数据行写入 `target` 表：
 
@@ -1102,7 +1102,7 @@ FROM source;
 
 请注意，每个视图在将各自的行插入 `target` 表之前，都会先暂停 1 秒，同时写入其名称和插入时间。
 
-向 `source` 表插入一行大约需要 3 秒，因为每个视图都会依次执行：
+向 `source` 表插入一行大约需要 3 秒，因为每个视图都会顺序执行：
 
 ```sql
 INSERT INTO source VALUES ('test')
@@ -1151,7 +1151,7 @@ ORDER BY uuid ASC
 │ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
 └──────┴──────────────────────────────────────┘
 
-3 行，耗时 0.004 秒。
+3 rows in set. Elapsed: 0.004 sec.
 ```
 
 相反，我们来看看在启用 `parallel_view_processing=1` 的情况下插入一行时会发生什么。启用后，这些视图会并行执行，因此无法保证各行到达目标表的顺序：

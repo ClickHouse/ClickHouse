@@ -146,7 +146,7 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 </div>
 
 يجب أن يكون كل طلب سحب يضيف ميزة جديدة مصحوبًا بوثائق مناسبة.
-إذا كنت ترغب في معاينة التغييرات التي أجريتها على الوثائق، فستجد في ملف README.md [هنا](https://github.com/ClickHouse/clickhouse-docs) إرشادات حول كيفية بناء صفحة الوثائق محليًا.
+إذا كنت ترغب في معاينة التغييرات التي أجريتها على الوثائق، فاتبع الإرشادات في [README الخاص بالوثائق](https://github.com/ClickHouse/ClickHouse/tree/master/docs#readme) (شغّل `mint dev` من `docs/`).
 عند إضافة دالة جديدة إلى ClickHouse، يمكنك استخدام القالب أدناه كمرجع:
 
 ````markdown
@@ -162,9 +162,9 @@ newFunctionName(arg1, arg2[, arg3])
 
 **Arguments**
 
-- `arg1` — Description of the argument. [DataType](../data-types/float.md)
-- `arg2` — Description of the argument. [DataType](../data-types/float.md)
-- `arg3` — Description of optional argument (optional). [DataType](../data-types/float.md)
+- `arg1` — Description of the argument. [DataType](/reference/data-types/float)
+- `arg2` — Description of the argument. [DataType](/reference/data-types/float)
+- `arg3` — Description of optional argument (optional). [DataType](/reference/data-types/float)
 
 **Implementation Details**
 
@@ -172,7 +172,7 @@ A description of implementation details if relevant.
 
 **Returned value**
 
-- Returns {insert what the function returns here}. [DataType](../data-types/float.md)
+- Returns {insert what the function returns here}. [DataType](/reference/data-types/float)
 
 **Example**
 

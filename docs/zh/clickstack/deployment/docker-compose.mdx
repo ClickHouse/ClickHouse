@@ -87,12 +87,12 @@ import JSONSupport from '/snippets/zh/_json_support.mdx';
   ## 修改 Compose 设置
 </div>
 
-你可以通过环境变量文件修改整个栈的设置，例如使用的版本：
+你可以通过环境变量文件修改整个技术栈的设置，例如使用的版本：
 
 ```shell
 user@example-host clickstack % cat .env
 
-# 由 docker-compose.yml 使用
+# Used by docker-compose.yml
 IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
 LOCAL_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-local
 ALL_IN_ONE_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
@@ -103,14 +103,14 @@ IMAGE_VERSION=2
 IMAGE_NIGHTLY_TAG=2-nightly
 IMAGE_LATEST_TAG=latest
 
-# 设置域名 URL
-HYPERDX_API_PORT=8000 #可选（不应被其他服务占用）
+# Set up domain URLs
+HYPERDX_API_PORT=8000 #optional (should not be taken by other services)
 HYPERDX_APP_PORT=8080
 HYPERDX_APP_URL=http://localhost
 HYPERDX_LOG_LEVEL=debug
 HYPERDX_OPAMP_PORT=4320
 
-# OTel/ClickHouse 配置
+# Otel/ClickHouse config
 HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
 ```
 

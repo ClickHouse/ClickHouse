@@ -74,6 +74,12 @@ protected:
     {
         auto resolve_func = [&] (const String &)
         {
+            if (slow_refreshes > 0)
+            {
+                --slow_refreshes;
+                sleep_for(refresh_delay);
+            }
+
             std::vector<Poco::Net::IPAddress> result;
             result.reserve(addresses.size());
             for (const auto & item : addresses)
@@ -87,8 +93,19 @@ protected:
         return std::make_shared<ResolvePoolMock>("some_host", Poco::Timespan(history_ms * 1000), std::move(resolve_func));
     }
 
+    /// Makes the next `count` DNS refreshes take `delay`. A refresh is the only work that can
+    /// separate the ban's timestamp from a test's own clock reading, so this is what turns the
+    /// timing defects below into deterministic tests. Per-fixture, so it is parallel-safe.
+    void slow_down_refreshes(size_t count, std::chrono::milliseconds delay)
+    {
+        slow_refreshes = count;
+        refresh_delay = delay;
+    }
+
     DB::HostResolverMetrics metrics = DB::HostResolver::getMetrics();
     std::multiset<String> addresses;
+    size_t slow_refreshes = 0;
+    std::chrono::milliseconds refresh_delay{0};
 };
 
 TEST_F(ResolvePoolTest, CanResolve)
@@ -560,16 +577,31 @@ TEST_F(ResolvePoolTest, DuplicatesInAddresses)
     ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.discovered]);
 }
 
-void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses, auto & failed_addr, auto & metrics, auto deadline)
+void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses, auto & failed_addr, auto & metrics, auto deadline,
+                             std::optional<std::chrono::milliseconds> deadline_from_entry = std::nullopt)
 {
     ASSERT_EQ(iteration, DB::CurrentThread::getProfileEvents()[metrics.failed]);
+
+    /// Tests pinning the entry path derive the deadline here, so it is alive by construction and
+    /// re-reading the clock below could only turn a preemption into a spurious skip.
+    if (deadline_from_entry)
+        deadline = now() + *deadline_from_entry;
+    /// Otherwise the window can already be over: the caller's anchor is a lower bound on the ban's
+    /// own timestamp, so it may sit a whole DNS refresh earlier. Nothing can be asserted about a
+    /// ban that is provably expired, so skip instead of reporting a defect.
+    else if (now() > deadline)
+        return;
+
     for (size_t i = 0; i < 100; ++i)
     {
         auto next_addr = resolver->resolve();
 
         if (now() > deadline)
         {
-            ASSERT_NE(i, 0);
+            /// Crossing before the first sample measured nothing at all, so there is no
+            /// observation to report; only a crossing after a successful check is one.
+            if (i == 0)
+                return;
             break;
         }
 
@@ -580,71 +612,175 @@ void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses
 
 TEST_F(ResolvePoolTest, BannedForConsiquenceFail)
 {
-    auto history = 10ms;
+    auto history = 100ms;
     auto resolver = make_resolver(toMilliseconds(history));
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
 
+    // `setFail` stamps the ban's anchor before refreshing DNS, so the anchor lies in
+    // [before, after]. Deadlines gating "still banned" must use `before`, waits for expiry
+    // `after`; one anchor taken after `setFail` can outlive the ban it waits on.
+
+    /// The refresh is slow on purpose: a window narrower than one refresh cannot survive it,
+    /// and the assertion below then reads 0.
+    slow_down_refreshes(1, 20ms);
+    auto before = now();
     failed_addr.setFail();
-    auto start_at = now();
+    auto after = now();
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
-    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, before + history - epsilon);
 
-    sleep_until(start_at + history + epsilon);
+    sleep_until(after + history + epsilon);
 
     resolver->update();
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 
+    before = now();
     failed_addr.setFail();
-    start_at = now();
+    after = now();
 
-    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, before + history - epsilon);
 
-    sleep_until(start_at + history + epsilon);
+    sleep_until(after + history + epsilon);
 
     resolver->update();
 
     // too much time has passed
-    if (now() > start_at + 2*history - epsilon)
+    if (now() > before + 2*history - epsilon)
         return;
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
 
     // ip still banned adter history_ms + update, because it was his second consiquent fail
-    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + 2*history - epsilon);
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, before + 2*history - epsilon);
 }
 
 TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
 {
-    auto history = 10ms;
+    auto history = 100ms;
     auto resolver = make_resolver(toMilliseconds(history));
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
-    failed_addr.setFail();
+    // Anchors bracket the ban's own timestamp; see BannedForConsiquenceFail. `setFail` restamps
+    // it on every call, so the window belongs to the last one: bracketing all three would be
+    // sound but needlessly loose by two whole DNS refreshes.
     failed_addr.setFail();
     failed_addr.setFail();
 
-    auto start_at = now();
+    /// Arm only the refresh the window is anchored on, as in BannedForConsiquenceFail.
+    slow_down_refreshes(1, 20ms);
+    auto before = now();
+    failed_addr.setFail();
+    auto after = now();
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
-    check_no_failed_address(3, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(3, resolver, addresses, failed_addr, metrics, before + history - epsilon);
 
-    sleep_until(start_at + history + epsilon);
+    sleep_until(after + history + epsilon);
 
     resolver->update();
 
     // ip is cleared after just 1 history_ms interval.
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
+}
+
+TEST_F(ResolvePoolTest, BanSurvivesSlowFailRefresh)
+{
+    auto history = 100ms;
+    auto resolver = make_resolver(toMilliseconds(history));
+
+    auto failed_addr = resolver->resolve();
+    ASSERT_TRUE(addresses.contains(*failed_addr));
+
+    /// `setFail` stamps the ban and only then refreshes DNS, and expiry is measured against the
+    /// refresh's own timestamp. A refresh slower than `history` therefore un-bans the address
+    /// immediately, so the window has to be wide enough to cover one.
+    slow_down_refreshes(1, 20ms);
+    failed_addr.setFail();
+
+    ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+}
+
+TEST_F(ResolvePoolTest, NoSampleBeforeDeadlineIsNotAFailure)
+{
+    auto history = 100ms;
+    auto resolver = make_resolver(toMilliseconds(history));
+
+    auto failed_addr = resolver->resolve();
+    ASSERT_TRUE(addresses.contains(*failed_addr));
+
+    failed_addr.setFail();
+
+    /// Age the resolver past `resolve_interval` (history / 3) so the helper's own first
+    /// `resolve()` has to refresh DNS, and make that refresh slower than the deadline below.
+    sleep_for(history / 3 + epsilon);
+    slow_down_refreshes(1, 30ms);
+
+    /// The deadline is alive on entry and expires during that first refresh, so the helper
+    /// crosses it having sampled nothing. There is no observation to judge, so it must return
+    /// rather than report the absence of samples as a defect.
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, now() + 5ms, 5ms);
+
+    /// The armed refresh must have been spent, otherwise the deadline expired before the first
+    /// `resolve()` and the crossing this test pins was never reached.
+    ASSERT_EQ(0u, slow_refreshes);
+}
+
+TEST_F(ResolvePoolTest, BanWindowAnchoredOnFailTimestamp)
+{
+    auto history = 100ms;
+    auto resolver = make_resolver(toMilliseconds(history));
+
+    auto failed_addr = resolver->resolve();
+    ASSERT_TRUE(addresses.contains(*failed_addr));
+
+    /// Fail once and let the ban lapse, so the next fail is consecutive and bans for 2 * history.
+    failed_addr.setFail();
+    auto first_fail_at = now();
+    sleep_until(first_fail_at + history + epsilon);
+    resolver->update();
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
+
+    /// Only `setFail`'s own refresh separates the ban's timestamp from a reading taken after it,
+    /// so it is long; the second merely delays the final reading and would eat the margin of the
+    /// `ASSERT_LE` below, so it is short.
+    slow_down_refreshes(1, 150ms);
+
+    auto before = now();
+    failed_addr.setFail();
+    auto after = now();
+
+    sleep_until(after + history + epsilon);
+    slow_down_refreshes(1, 5ms);
+    resolver->update();
+
+    /// Measured from `before` the window is provably over, so declining to assert is the only
+    /// sound outcome; anchored on `after` this guard would instead proceed into the assertion
+    /// and read a ban that is already gone. The skip is asserted so this cannot pass vacuously.
+    bool window_over = now() > before + 2*history - epsilon;
+    if (!window_over)
+        ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+
+    ASSERT_TRUE(window_over);
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
+
+    /// An `after`-anchored deadline must still be open here, otherwise both anchors agree and this
+    /// test no longer discriminates the mechanism it exists to pin.
+    ASSERT_LE(now(), after + 2*history - epsilon);
+
+    /// An expired deadline has to be declined by the helper rather than reported as a defect.
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, before + 2*history - epsilon);
 }
 
 TEST_F(ResolvePoolTest, UnbannedAfterConcurrentSuccess)

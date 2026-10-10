@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "开始使用",
+      "group": "入门",
       "pages": [
         "zh/products/agentic-data-stack/overview",
         "zh/products/agentic-data-stack/docker-setup"

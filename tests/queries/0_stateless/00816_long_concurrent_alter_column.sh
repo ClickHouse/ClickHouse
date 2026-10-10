@@ -16,7 +16,11 @@ function thread1()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        for i in {1..500}; do echo "ALTER TABLE concurrent_alter_column ADD COLUMN c$i DOUBLE;"; done | ${CLICKHOUSE_CLIENT} -n --query_id=alter_00816_1
+        # Bound the client, not the generator: the batch fits the pipe buffer, so all the time is
+        # spent after the generator exits. A zero argument would mean no bound at all.
+        local left=$((TIMELIMIT-SECONDS))
+        [ "$left" -gt 0 ] || break
+        for i in {1..500}; do echo "ALTER TABLE concurrent_alter_column ADD COLUMN c$i DOUBLE;"; done | timeout -k 2 "$left" ${CLICKHOUSE_CLIENT} -n --query_id=alter_00816_1 || break
     done
 }
 

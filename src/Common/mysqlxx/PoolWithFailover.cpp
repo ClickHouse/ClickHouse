@@ -137,9 +137,7 @@ PoolWithFailover::PoolWithFailover(
         const RemoteDescription & addresses,
         const std::string & user,
         const std::string & password,
-        const std::string & ssl_ca,
-        const std::string & ssl_cert,
-        const std::string & ssl_key,
+        const SSLParams & ssl_params,
         unsigned default_connections_,
         unsigned max_connections_,
         size_t max_tries_,
@@ -157,7 +155,7 @@ PoolWithFailover::PoolWithFailover(
     for (const auto & [host, port] : addresses)
     {
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database,
-            host, user, password, port, ssl_ca, ssl_cert, ssl_key,
+            host, user, password, port, ssl_params,
             /* socket_ = */ "",
             connect_timeout_,
             rw_timeout_,
@@ -262,10 +260,11 @@ PoolWithFailover::Entry PoolWithFailover::get()
             }
         }
 
+        /// The failure is propagated to the caller, who decides how severe it is.
         if (replicas_by_priority.size() > 1)
-            app.logger().error("Connection to all mysql replicas failed " + std::to_string(try_no + 1) + " times");
+            app.logger().warning("Connection to all mysql replicas failed " + std::to_string(try_no + 1) + " times");
         else
-            app.logger().error("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
+            app.logger().warning("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
     }
 
     if (full_pool)

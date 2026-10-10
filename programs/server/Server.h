@@ -91,7 +91,8 @@ private:
         const std::string & protocol,
         Poco::Net::HTTPServerParams::Ptr http_params,
         AsynchronousMetrics & async_metrics,
-        bool & is_secure);
+        bool & is_secure,
+        ServerType::Type & protocol_type);
 
     using CreateServerFunc = std::function<ProtocolServerAdapter(UInt16)>;
     void createServer(
@@ -112,7 +113,8 @@ private:
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers,
         bool start_servers = false,
-        const ServerType & server_type = ServerType(ServerType::Type::QUERIES_ALL));
+        const ServerType & server_type = ServerType(ServerType::Type::QUERIES_ALL),
+        bool only_introspection_protocols = false);
 
     void createInterserverServers(
         Poco::Util::AbstractConfiguration & config,

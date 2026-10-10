@@ -1,0 +1,14 @@
+a dictGet comparison inside a correlated EXISTS
+100
+100
+one that no row satisfies
+0
+a correlated NOT EXISTS
+0
+the same set inside a correlated scalar subquery
+19
+0	6
+1	6
+2	6
+an IN subquery inside a correlated EXISTS builds a set the same way
+100

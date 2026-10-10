@@ -1,0 +1,13 @@
+parts and sparse encoding of s
+3	3
+the plain optimization must be applied inside the transaction, the sparsity one when it is available
+tx3	1
+tx3	1
+tx3 counts its own snapshot: the part tx1 drops still counts, the parts tx2 adds do not
+tx3	3
+tx3	3
+a non-transactional read observes the uncommitted work of both tx1 and tx2
+4
+4
+both transactions rolled back, the table is back to its initial three rows
+3

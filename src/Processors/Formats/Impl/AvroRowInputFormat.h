@@ -179,7 +179,7 @@ private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
 
-    bool supportsCountRows() const override { return true; }
+    bool supportsCountRows() const override;
     size_t countRows(size_t max_block_size) override;
 
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;

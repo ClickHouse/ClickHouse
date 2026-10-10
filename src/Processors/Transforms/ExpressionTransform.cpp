@@ -24,6 +24,18 @@ ExpressionTransform::ExpressionTransform(
 {
 }
 
+ExpressionTransform::ExpressionTransform(
+    SharedHeader input_header_,
+    SharedHeader transformed_header_,
+    ExpressionActionsPtr expression_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    : ISimpleTransform(input_header_, std::move(transformed_header_), false)
+    , expression(std::move(expression_))
+    , input_positions(expression->getInputPositions(*input_header_))
+    , updater(std::move(updater_))
+{
+}
+
 void ExpressionTransform::transform(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();

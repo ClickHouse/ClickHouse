@@ -1,4 +1,8 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-flaky-check
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-llvm-coverage, no-flaky-check
+-- Tag no-llvm-coverage: `SYSTEM FLUSH LOGS` on `metric_log`, `trace_log`, `query_log`, and
+-- `query_thread_log` becomes unreliable under LLVM source-based coverage instrumentation;
+-- flushing `trace_log` alone can exceed the 180s server-side timeout. Same pattern as
+-- other query-profiler-dependent tests (`00974_query_profiler`, `01569_query_profiler_big_query_id`).
 
 -- This file contains tests for the event_time_microseconds field for various tables.
 -- Note: Only event_time_microseconds for asynchronous_metric_log table is tested via

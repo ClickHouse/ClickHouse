@@ -43,8 +43,10 @@ The table below compares supported ORC data types and their corresponding ClickH
 | `Binary`                              | [IPv6](/reference/data-types/ipv6)                                                                 | `Binary`                 |
 | `Binary`                              | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                                    | `Binary`                 |
 | `Binary`                              | [Decimal256](/reference/data-types/decimal)                                                        | `Binary`                 |
+| `Union`                               | [Variant](/reference/data-types/variant)                                                           | `Union`                  |
 
 - Other types are not supported.
+- An ORC `Union` column is read as a [Variant](/reference/data-types/variant) over the union's branch types, and a `Variant` column is written as an ORC `Union` over its branch types. Note that `Variant` sorts its branch types, so the branch order may differ from the ORC file. Unions with duplicate branch types (e.g. `uniontype<int,int>`) are not supported.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 - The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the data type set for the ClickHouse table column.
 

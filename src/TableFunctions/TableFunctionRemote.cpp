@@ -80,6 +80,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             String{},
             distributed_settings,
             LoadingStrictnessLevel::CREATE,
+            /* is_fresh_definition = */ true,
             cluster,
             remote_table_function_ptr,
             !is_cluster_function);
@@ -136,7 +137,7 @@ remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...
 | `user`         | User name. If not specified, `default` is used. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                         |
 | `password`     | User password. If not specified, an empty password is used. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                             |
 | `sharding_key` | Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](/reference/data-types/int-uint).                                                                                                                                                 |
-| `SETTINGS name = value, ...` | Settings of the Distributed table created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. |
+| `SETTINGS name = value, ...` | Settings of the Distributed table created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. This clause is accepted only inside the table function; the `Remote` and `RemoteSecure` table engines take the same settings after the engine definition, see [Remote and RemoteSecure engines](/reference/engines/table-engines/special/distributed#distributed-remote-engines). |
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections).
 
@@ -156,7 +157,7 @@ The `remote` table function can be useful in the following cases:
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
 
-The same parameters can be used with the `Remote` and `RemoteSecure` table engines to create a persistent table instead of an ad-hoc one, see [Remote and RemoteSecure engines](/reference/engines/table-engines/special/distributed#distributed-remote-engines).
+The same parameters can be used with the `Remote` and `RemoteSecure` table engines to create a persistent table instead of an ad-hoc one, see [Remote and RemoteSecure engines](/reference/engines/table-engines/special/distributed#distributed-remote-engines). The only difference is the `SETTINGS` clause: the engines take it after the engine definition, `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`, not among the arguments.
 
 ### Addresses {#addresses}
 
@@ -279,8 +280,8 @@ The following pattern types are supported.
 
 The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing) setting.
 The number of generated addresses is limited by [table_function_remote_max_addresses](/reference/settings/session-settings/table#table_function_remote_max_addresses) setting.
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}});
-    factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {.description = R"DOC(Like the remote table function, but establishes a TLS-encrypted (secure) connection to the remote server.)DOC", .category = FunctionDocumentation::Category::TableFunction}});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, remoteSecretArguments()});
+    factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {.description = R"DOC(Like the remote table function, but establishes a TLS-encrypted (secure) connection to the remote server.)DOC", .category = FunctionDocumentation::Category::TableFunction}, remoteSecretArguments()});
     factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {.description = R"DOCS_MD(
 Allows accessing all shards (configured in the `remote_servers` section) of a cluster without creating a [Distributed](/reference/engines/table-engines/special/distributed) table. Only one replica of each shard is queried.
 
@@ -307,11 +308,11 @@ clusterAllReplicas(['cluster_name', db, table, sharding_key][, SETTINGS name = v
 | `sharding_key`              | A sharding key. Optional. Needs to be specified if the cluster has more than one shard.                                                           |
 | `SETTINGS name = value, ...` | Settings of the Distributed table created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The dataset from clusters.
 
-## Using macros {#using_macros}
+## Using macros {#using-macros}
 
 `cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](/reference/settings/server-settings/settings/other#macros) section of the server configuration file.
 
@@ -337,8 +338,8 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 - [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 - [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
-    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}});
+    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true}});
 }
 
 }

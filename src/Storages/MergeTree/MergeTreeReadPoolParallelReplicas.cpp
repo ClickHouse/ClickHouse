@@ -157,8 +157,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         size_t part_idx = 0;
         size_t need_marks = 0;
         MarkRanges cut_ranges;
+        MarkRangesPtr read_request_map;
 
-        if (!cutRangesToRead(part_idx, need_marks, cut_ranges))
+        if (!cutRangesToRead(part_idx, need_marks, cut_ranges, read_request_map))
             return nullptr;
 
         MarkRanges task_ranges;
@@ -201,11 +202,12 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
         /// Count only the marks that reach a reader: the ones dropped by the refiner are not read.
         ProfileEvents::increment(ProfileEvents::ParallelReplicasReadMarks, task_ranges.getNumberOfMarks());
-        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task);
+        return createTask(per_part_infos[part_idx], std::move(task_ranges), previous_task, /*updater=*/ nullptr, read_request_map);
     }
 }
 
-bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(size_t & part_idx, size_t & need_marks, MarkRanges & ranges_to_read)
+bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(
+    size_t & part_idx, size_t & need_marks, MarkRanges & ranges_to_read, MarkRangesPtr & read_request_map)
 {
     std::lock_guard lock(mutex);
 
@@ -241,6 +243,7 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(size_t & part_idx, size_
         if (response)
         {
             LOG_DEBUG(log, "Got response: {}", response->describe());
+            LOG_TEST(log, "Response ranges: {}", response->description.describe());
             if (response->description.empty() || response->finish)
                 no_more_tasks_available = true;
         }
@@ -265,11 +268,11 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(size_t & part_idx, size_
             per_part_infos,
             [&current_task](const auto & part)
             {
-                if (!part->data_part->isProjectionPart())
-                    return part->data_part->info == current_task.info;
+                if (!part->data_part_info->isProjectionPart())
+                    return part->data_part_info->getPartInfo() == current_task.info;
 
                 chassert(part->parent_part && !current_task.projection_name.empty());
-                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name;
+                return part->parent_part->info == current_task.info && current_task.projection_name == part->data_part_info->getPartName();
             });
     if (part_it == per_part_infos.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
@@ -279,6 +282,10 @@ bool MergeTreeReadPoolParallelReplicas::cutRangesToRead(size_t & part_idx, size_
     /// `min_marks_per_task` computed by the initiator after primary key analysis.
     /// Fall back to locally computed value for old initiators.
     need_marks = current_task.min_marks_per_task > 0 ? current_task.min_marks_per_task : (*part_it)->min_marks_per_task;
+
+    if (!front_read_request_map && (*part_it)->read_request_map)
+        front_read_request_map = std::make_shared<const MarkRanges>(current_task.ranges);
+    read_request_map = front_read_request_map;
 
     cutFromCurrentTask(need_marks, ranges_to_read);
     return true;
@@ -296,9 +303,9 @@ bool MergeTreeReadPoolParallelReplicas::cutMoreRangesToRead(size_t part_idx, siz
     const auto & current_task = buffered_ranges.front();
     const auto & part = per_part_infos[part_idx];
 
-    bool same_part = !part->data_part->isProjectionPart()
-        ? part->data_part->info == current_task.info
-        : (part->parent_part->info == current_task.info && current_task.projection_name == part->data_part->name);
+    bool same_part = !part->data_part_info->isProjectionPart()
+        ? part->data_part_info->getPartInfo() == current_task.info
+        : (part->parent_part->info == current_task.info && current_task.projection_name == part->data_part_info->getPartName());
 
     if (!same_part)
         return false;
@@ -334,7 +341,10 @@ void MergeTreeReadPoolParallelReplicas::cutFromCurrentTask(size_t need_marks, Ma
     }
 
     if (current_task.ranges.empty())
+    {
         buffered_ranges.pop_front();
+        front_read_request_map = nullptr;
+    }
 }
 
 }

@@ -94,8 +94,7 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
 
     void loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest) override;
 
-    std::unique_ptr<KeeperNodeStreamForSnapshot> beginWritingSnapshot() override;
-    void finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream) override;
+    std::unique_ptr<KeeperNodesReadView> issueReadView() override;
 
     void getNodeStorageStats(KeeperStorageStats & out) override;
 
@@ -196,15 +195,21 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
         }
     };
 
-    struct NodeStreamForSnapshot final : public KeeperNodeStreamForSnapshot
-    {
-        size_t next_node_idx = 0;
-        Container::const_iterator it;
-
-        bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override;
-    };
-
     UncommittedNodesMap uncommitted_nodes;
+
+    /// Uncommitted nodes grouped by parent path. Lets RemoveRecursive find the uncommitted
+    /// children of a node without scanning all uncommitted nodes. Kept in sync with
+    /// `uncommitted_nodes` by addUncommittedNode() and eraseUncommittedNode(), which are the
+    /// only functions that insert into or erase from `uncommitted_nodes`.
+    using UncommittedChildrenByParent = std::unordered_map<
+        std::string,
+        std::unordered_set<UncommittedNodesIterator, UncommittedNodesIteratorHash>,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>;
+    UncommittedChildrenByParent uncommitted_children_by_parent;
+
+    std::pair<UncommittedNodesIterator, bool> addUncommittedNode(std::string path, UncommittedNode node);
+    void eraseUncommittedNode(UncommittedNodesIterator it);
 
     /// Mapping of uncommitted transaction to all it's modified nodes for a faster cleanup.
     /// zxid_to_nodes[0] contains nodes that were duplicated from committed container to
@@ -233,6 +238,12 @@ struct KeeperMemNodesStorage final : public KeeperNodesStorage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, uint64_t * digest)TSA_NO_THREAD_SAFETY_ANALYSIS;
+
+private:
+    class NodesReadView;
+
+    /// Retire a view. When it is the last outstanding view, drains the accumulated stale nodes.
+    void retireReadView(std::unique_ptr<Container::ReadView> view) noexcept;
 };
 
 }

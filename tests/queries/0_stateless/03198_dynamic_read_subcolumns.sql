@@ -4,6 +4,7 @@
 
 SET allow_experimental_dynamic_type = 1;
 SET allow_calculating_subcolumns_sizes_for_merge_tree_reading = 0;
+SET use_columns_cache = 0;
 DROP TABLE IF EXISTS test_dynamic;
 CREATE TABLE test_dynamic (id UInt64, d Dynamic) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO test_dynamic VALUES (1, 'foo'), (2, 1111), (3, [1, 2, 3]);
@@ -11,7 +12,6 @@ EXPLAIN QUERY TREE SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 
 SYSTEM CLEAR MARK CACHE;
 SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 1;
 SYSTEM CLEAR MARK CACHE;
-SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 0;
 SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['FileOpen']

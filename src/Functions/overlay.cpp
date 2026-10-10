@@ -716,18 +716,18 @@ Replaces part of the string `input` with another string `replace`, starting at t
         "Basic replacement",
         "SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;",
         R"(
-┌─res──────────────────────┐
-│ My mother is from Mexico.│
-└──────────────────────────┘
+┌─res───────────────────────┐
+│ My mother is from Mexico. │
+└───────────────────────────┘
         )"
     },
     {
         "Replacement with length",
         "SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;",
         R"(
-┌─res───────────────────┐
-│ My dad is from Mexico.│
-└───────────────────────┘
+┌─res────────────────────┐
+│ My dad is from Mexico. │
+└────────────────────────┘
         )"
     }
     };
@@ -757,9 +757,9 @@ If this assumption is violated, no exception is thrown and the result is undefin
         "UTF-8 replacement",
         "SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;",
         R"(
-┌─res───────────────────────────┐
-│ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘
+┌─res────────────────────────────┐
+│ Mein Vater ist aus der Türkei. │
+└────────────────────────────────┘
         )"
     }
     };

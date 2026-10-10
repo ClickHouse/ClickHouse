@@ -1,4 +1,5 @@
 #include <Common/Arena.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
@@ -9,6 +10,16 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
+
+void Arena::throwTooLargeAllocation(size_t size)
+{
+    throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Too large allocation of {} bytes in Arena", size);
+}
 
 Arena::MemoryChunk::MemoryChunk(size_t size_)
 {

@@ -23,7 +23,7 @@ Dos funciones auxiliares, `MVTBoundingBox` y `MVTBoundingBoxMercator`, devuelven
 restringirse a ella en la cláusula `WHERE` usando un índice.
 
 Se admiten geometrías de puntos, líneas y polígonos, incluido el tipo `Geometry` y los tipos geo concretos (`Point`,
-`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
+`MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
 
 Los bytes resultantes forman una tesela completa que puede devolverse directamente a través de la interfaz HTTP con `FORMAT RawBLOB`.
 
@@ -51,7 +51,7 @@ Las coordenadas del polígono se limitan a una ventana de `2^30` antes de la val
 `zoom` 18 y `extent` 4096, por lo que en teselas realistas la geometría se valida pero nunca se recorta, y este límite solo
 afecta a la geometría situada en valores extremos de `zoom` o `extent`.
 
-El tipo de geometría de salida depende de la entrada: un `Point` devuelve un `Point`; un `LineString` o `MultiLineString` devuelve un
+El tipo de geometría de salida depende de la entrada: un `Point` devuelve un `Point`; un `MultiPoint` devuelve un `MultiPoint`; un `LineString` o `MultiLineString` devuelve un
 `MultiLineString`; un `Ring`, `Polygon` o `MultiPolygon` devuelve un `MultiPolygon` (el recorte puede dividir una geometría en
 varias partes).
 
@@ -63,7 +63,7 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 
 **Argumentos**
 
-* `geometry` — Geometría en grados de longitud/latitud. La longitud se limita a `[-180, 180]` y la latitud al rango de Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/es/reference/data-types/geo) / [`LineString`](/es/reference/data-types/geo) / [`MultiLineString`](/es/reference/data-types/geo) / [`Ring`](/es/reference/data-types/geo) / [`Polygon`](/es/reference/data-types/geo) / [`MultiPolygon`](/es/reference/data-types/geo) / [`Geometry`](/es/reference/data-types/geo).
+* `geometry` — Geometría en grados de longitud/latitud. La longitud se limita a `[-180, 180]` y la latitud al rango de Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/es/reference/data-types/geo) / [`MultiPoint`](/es/reference/data-types/geo) / [`LineString`](/es/reference/data-types/geo) / [`MultiLineString`](/es/reference/data-types/geo) / [`Ring`](/es/reference/data-types/geo) / [`Polygon`](/es/reference/data-types/geo) / [`MultiPolygon`](/es/reference/data-types/geo) / [`Geometry`](/es/reference/data-types/geo).
 * `zoom` — Nivel de zoom de mapa Slippy, en el rango `[0, 32]`. [`UInt8`](/es/reference/data-types/int-uint).
 * `tile_x` — Índice de la columna de la tesela, en el rango `[0, 2^zoom - 1]`. [`UInt32`](/es/reference/data-types/int-uint).
 * `tile_y` — Índice de la fila de la tesela, en el rango `[0, 2^zoom - 1]`. [`UInt32`](/es/reference/data-types/int-uint).

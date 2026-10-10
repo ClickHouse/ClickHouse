@@ -1,0 +1,414 @@
+---
+slug: /optimize/query-optimization-example
+sidebarTitle: 'مثال تطبيقي على التحسين'
+title: 'مثال تطبيقي على تحسين الاستعلامات'
+description: 'تعرّف على مثال تطبيقي لتحسين أداء استعلامات ClickHouse عبر تعديل المخطط ومفتاح الترتيب'
+doc_type: 'guide'
+keywords: ['تحسين الاستعلامات', 'الأداء', 'NYC Taxi', 'أنواع البيانات', 'مفتاح الترتيب']
+---
+
+import NYCTaxiExampleDataset from '/snippets/ar/_nyc_taxi_example_dataset.mdx';
+
+يطبّق هذا الدليل نهجين للتحسين على مجموعة بيانات سيارات الأجرة في نيويورك. أولًا، يقلّل كمية البيانات المخزنة والمُعالجة باختيار أنواع أعمدة أدق. ثم يقدّم مفتاح ترتيب يتيح لـ ClickHouse تجاوز البيانات في الاستعلامات الانتقائية. يُقاس كل تغيير مقارنةً بخط الأساس نفسه. راجع [نظرة عامة على تحسين الاستعلامات](/ar/guides/clickhouse/performance-and-monitoring/query-optimization) للاطلاع على سير العمل الأوسع الذي يتبعه هذا المثال.
+
+<div id="before-you-begin">
+  ## قبل أن تبدأ
+</div>
+
+تستخدم الأمثلة الجدول `nyc_taxi.trips_small_inferred`. أنشئه وحمّله إذا لم تكن قد فعلت ذلك بالفعل:
+
+<Accordion title="إعداد مجموعة البيانات النموذجية">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+يحتوي ملف Parquet المصدر على نحو 329 مليون صف. سُجّلت أزمنة التنفيذ الواردة في هذا الدليل على عملية نشر واحدة، وقد تختلف حسب موارد الحوسبة المتاحة. قارن التغيّر النسبي بين المراحل بدلًا من توقّع مدد متطابقة.
+
+عند تطبيق هذه الطريقة على عبء العمل لديك، استخدم [تشخيص الاستعلامات البطيئة](/ar/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) لتحديد نمط استعلام متكرر واختيار تشغيل ممثل قبل تعديل الاستعلام أو المخطط.
+
+<div id="process-overview">
+  ## نظرة عامة على العملية
+</div>
+
+يستخدم المثال المراحل الثلاث التالية:
+
+1. شغّل ثلاثة استعلامات لأحمال عمل مستقلة على المخطط المستنتج لتحديد خط أساس.
+2. أنشئ جدولًا بأنواع أعمدة أدق، وحمّل البيانات نفسها، ثم أعد تشغيل الاستعلامات.
+3. أنشئ جدولًا آخر بالمخطط المُحسَّن نفسه ومفتاح ترتيب، ثم أعد تشغيل الاستعلامات مجددًا.
+
+يسهّل تغيير المخطط ومفتاح الترتيب في مراحل منفصلة تمييز تأثير كلٍّ منهما. يوضّح [أساليب التحسين](/ar/guides/clickhouse/performance-and-monitoring/optimization-approaches) متى ينبغي النظر في هذه التغييرات وكيفية التحقق منها. ولمزيد من الإرشادات حول جمع قياسات قابلة للمقارنة، راجع [عزل اختناقات الاستعلامات](/ar/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
+
+<div id="define-the-baseline-workload">
+  ## تحديد حمل العمل الأساسي
+</div>
+
+في جلسة العميل نفسها المستخدمة لتشغيل حمل العمل، عطّل ذاكرة التخزين المؤقت لنظام الملفات للبيانات البعيدة، وذاكرة التخزين المؤقت للاستعلامات، وذاكرة التخزين المؤقت لشروط الاستعلام:
+
+```sql
+SET enable_filesystem_cache = 0;
+SET use_query_cache = 0;
+SET use_query_condition_cache = 0;
+```
+
+<Note>
+  تساعد هذه الإعدادات على جعل عمليات التشغيل المتكررة قابلة للمقارنة أثناء الاختبار. أعد القيم السابقة لها بعد إتمام القياسات.
+</Note>
+
+تشكّل الاستعلامات الثلاثة المستقلة التالية حمل العمل المرجعي. شغّل الاستعلامات الثلاثة جميعها على كل جدول يُنشأ في المراحل التالية. نفّذ كل استعلام عدة مرات في ظروف متقاربة، وسجّل مدةً ممثلة، مثل القيمة الوسيطة، إلى جانب عدد الصفوف المقروءة وذروة استخدام الذاكرة. راجع [إنشاء خط أساس قابل للتكرار](/ar/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks#establish-a-repeatable-baseline) للاطلاع على سير عمل القياس الكامل، بما في ذلك كيفية استرداد هذه القيم من `system.query_log`.
+
+<div id="calculated-speed-filter">
+  ### التصفية حسب سرعة الرحلة المحسوبة
+</div>
+
+يحسب هذا الاستعلام مدة الرحلة وسرعتها، ثم يعرض توزيع مسافات الرحلات التي تتجاوز سرعتها 30 ميلاً في الساعة:
+
+```sql
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+FORMAT JSON;
+```
+
+<div id="date-range-aggregation">
+  ### تجميع الرحلات ضمن نطاق زمني
+</div>
+
+يحسب هذا الاستعلام عدد الرحلات والمسافة ومتوسط مبالغ الدفع للربع الأول من عام 2009:
+
+```sql
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC;
+```
+
+<div id="passenger-count-filter">
+  ### التصفية حسب عدد الركاب
+</div>
+
+يحسب هذا الاستعلام متوسط مدة الرحلات التي تضم راكبًا واحدًا أو راكبين:
+
+```sql
+SELECT avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 OR passenger_count = 2
+FORMAT JSON;
+```
+
+كانت القياسات الأصلية كما يلي:
+
+| عبء العمل                  |       المدة | الصفوف المقروءة | ذروة الذاكرة |
+| -------------------------- | ----------: | --------------: | -----------: |
+| عامل تصفية السرعة المحسوبة | 1.699 ثانية |    329.04 مليون |   440.24 MiB |
+| تجميع نطاق التاريخ         | 1.419 ثانية |    329.04 مليون |   546.75 MiB |
+| عامل تصفية عدد الركاب      | 1.414 ثانية |    329.04 مليون |   451.53 MiB |
+
+تقرأ الاستعلامات الثلاثة نحو 329 مليون صف لكل منها، وهو عدد قريب من إجمالي الصفوف في الجدول. ويوضح ذلك إمكانية تحسين جانبين مختلفين من عبء العمل: تقليل تكلفة معالجة الأعمدة المحددة، ثم تقليل عدد الصفوف المحددة عندما تسمح عوامل التصفية بذلك.
+
+<div id="optimize-the-schema">
+  ## تحسين المخطط
+</div>
+
+يُعد استنتاج المخطط طريقة عملية لبدء استكشاف مجموعة بيانات، لكن الأنواع المستنتجة قد تكون أوسع نطاقًا أو أكثر تساهلًا مما يتطلبه عبء العمل. افحص البيانات قبل تغيير المخطط، ولا تفترض أن النوع المستنتج غير ضروري.
+
+<div id="nullable">
+  ### تجنّب أعمدة Nullable غير الضرورية
+</div>
+
+يخزّن العمود [`Nullable`](/ar/reference/data-types/nullable) قناعًا للقيم NULL بالإضافة إلى قيمه. استخدم `Nullable` عندما يكون التمييز بين قيمة NULL والقيمة الافتراضية للنوع مهمًا، ولكن تجنّبه للأعمدة التي يُضمن أن تحتوي على قيمة.
+
+احسب قيم NULL في الأعمدة المستخدمة في المخطط النموذجي:
+
+```sql
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(ratecode_id IS NULL) AS ratecode_id_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(extra IS NULL) AS extra_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+ratecode_id_nulls:          167200929
+fare_amount_nulls:         0
+extra_nulls:               0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+لا تحتوي سوى الأعمدة `ratecode_id` و`mta_tax` و`payment_type` على قيم فارغة في مجموعة البيانات هذه. ويُبقي المخطط المُحسَّن النوع `Nullable` لهذه الأعمدة ويزيله من الأعمدة الأخرى.
+
+<div id="low-cardinality">
+  ### استخدم LowCardinality للقيم المتكررة
+</div>
+
+يستخدم [`LowCardinality`](/ar/reference/data-types/lowcardinality) ترميز القاموس، ويمكنه تقليل مساحة التخزين ووقت المعالجة للأعمدة التي تحتوي على قيم متكررة بكثرة. تحقّق من عدد القيم الفريدة قبل استخدامه:
+
+```sql
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM nyc_taxi.trips_small_inferred
+FORMAT VERTICAL;
+```
+
+```response
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+تحتوي هذه الأعمدة الأربعة على عدد من القيم المميزة أقل بكثير من عدد الصفوف. وهي مرشحات مناسبة لاستخدام `LowCardinality`، رغم أنه ينبغي قياس تأثير ذلك على حمل العمل. ويُعد نحو 10,000 قيمة مميزة نقطة بداية مفيدة لتحديد المرشحات، وليس حدًا ثابتًا.
+
+<div id="optimize-data-type">
+  ### اختر أنواع بيانات أكثر دقة
+</div>
+
+استخدم أضيق نوع يحافظ بأمان على النطاق والدقة المطلوبين. على سبيل المثال، افحص القيم الدنيا والقصوى للأعمدة الرقمية قبل استبدال نوع `Int64` أو `Float64` المستنتج:
+
+```sql
+SELECT
+    min(payment_type),
+    max(payment_type),
+    min(passenger_count),
+    max(passenger_count)
+FROM nyc_taxi.trips_small_inferred;
+```
+
+```response
+   ┌─min(payment_type)─┬─max(payment_type)─┬─min(passenger_count)─┬─max(passenger_count)─┐
+1. │                 1 │                 4 │                    0 │                  255 │
+   └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
+```
+
+يتسع كلا العمودين الصحيحين ضمن [`UInt8`](/ar/reference/data-types/int-uint)، رغم أن `passenger_count` يصل إلى قيمته القصوى البالغة 255. يستخدم المثال أيضًا [`Float32`](/ar/reference/data-types/float) لـ `trip_distance` و[`Decimal32`](/ar/reference/data-types/decimal) للقيم النقدية. تقع جميع القيم في مجموعة البيانات هذه ضمن النطاقات المستهدفة، ويقبل المثال الدقة الأقل للأرقام ذات الفاصلة العائمة والدقة النقدية على مستوى السنت، لأن عبء العمل فيه يقارن النتائج التجميعية. احتفظ بأنواع المصدر الأوسع عندما تكون قيم المصدر الدقيقة مطلوبة. يستبدل المثال أعمدة [`DateTime64`](/ar/reference/data-types/datetime64) المستنتجة بـ [`DateTime`](/ar/reference/data-types/datetime) ضمن المنطقة الزمنية `UTC` نفسها، لأن استعلامات المثال لا تتطلب دقة أجزاء الثانية.
+
+هذه الخيارات خاصة بمجموعة البيانات هذه. تأكد من متطلبات النطاق والدقة وقابلية القيم لأن تكون فارغة في بيانات الإنتاج قبل تطبيق التغييرات نفسها.
+
+<div id="apply-the-optimizations">
+  ### تطبيق تغييرات المخطط
+</div>
+
+أنشئ جدولًا من دون مفتاح ترتيب لكي تقيس هذه المرحلة تغييرات المخطط بصورة مستقلة:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_no_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO nyc_taxi.trips_small_no_pk
+SELECT *
+FROM nyc_taxi.trips_small_inferred;
+```
+
+في كل استعلام ضمن عبء العمل، استبدل `nyc_taxi.trips_small_inferred` بـ `nyc_taxi.trips_small_no_pk`، ثم أعد تشغيل الاستعلامات الثلاثة. سجّل المثال الأصلي النتائج التمثيلية التالية:
+
+| عبء العمل                 | المخطط المستنتج | المخطط المُحسَّن | الصفوف المقروءة | ذروة الذاكرة للمخطط المُحسَّن |
+| ------------------------- | --------------: | ---------------: | --------------: | ----------------------------: |
+| عامل تصفية السرعة المحسوبة |       1.699 sec |        1.353 sec |    329.04 مليون |                    337.12 MiB |
+| تجميع نطاق التاريخ    |       1.419 sec |        1.171 sec |    329.04 مليون |                    531.09 MiB |
+| عامل تصفية عدد الركاب      |       1.414 sec |        1.188 sec |    329.04 مليون |                    265.05 MiB |
+
+لا تزال الاستعلامات تقرأ العدد نفسه من الصفوف، لكن المخطط المُحسَّن يقلل كمية البيانات التي تمثلها هذه الصفوف. لذلك تتحسن مدة الاستعلام وذروة استهلاك الذاكرة دون تغيير البيانات المحددة.
+
+قارن الحجم على القرص للجدولين:
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE active = 1
+  AND database = 'nyc_taxi'
+  AND table IN ('trips_small_inferred', 'trips_small_no_pk')
+GROUP BY database, table
+ORDER BY sum(data_compressed_bytes) DESC;
+```
+
+```response
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+بالنسبة إلى مجموعة البيانات هذه، يقلّل المخطط المُحسَّن حجم التخزين المضغوط بنحو 34%، من 7.38 GiB إلى 4.89 GiB.
+
+<div id="optimize-the-ordering-key">
+  ## تحسين مفتاح الترتيب
+</div>
+
+في عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree)، يحدد مفتاح الترتيب كيفية ترتيب الصفوف على القرص. ينشئ ClickHouse فهرسًا أساسيًا متناثرًا وفقًا لهذا الترتيب، بحيث يتمكن من تجاوز الحبيبات التي لا يمكنها تلبية عوامل تصفية الاستعلام. وعلى خلاف المفتاح الأساسي في كثير من قواعد البيانات المعاملاتية، لا يفرض هذا المفتاح تفرّد القيم.
+
+ينبغي أن يعكس مفتاح الترتيب عوامل التصفية المستخدمة في الاستعلامات المهمة والمتكررة. ترتيب الأعمدة مهم: يكون المفتاح أكثر فعالية عندما يطبّق الاستعلام عامل تصفية على بادئة مفيدة منه. قد تكون الأعمدة منخفضة التعددية خيارات فعالة في بداية المفتاح إذا كانت تُصفّى كثيرًا، وغالبًا ما يكون مكوّن الوقت مفيدًا لأحمال العمل المستندة إلى الوقت. للحصول على إرشادات مفصلة حول الاختيار، راجع [اختيار مفتاح أساسي](/ar/best-practices/choosing-a-primary-key).
+
+في هذا المثال، استخدم `(passenger_count, pickup_datetime, dropoff_datetime)`. يحتوي `passenger_count` على عدد قليل من القيم المميزة ويظهر في عامل تصفية عدد الركاب، بينما يظهر `pickup_datetime` في تجميع نطاق التاريخ. وعلى الرغم من أن `pickup_datetime` ليس العمود الأول، يظل بإمكان ClickHouse استخدام قيم من أعمدة المفتاح اللاحقة لاستبعاد البيانات عندما لا يكون العمود الأول مقيّدًا. تؤدي التصفية على بادئة مفيدة من مفتاح الترتيب عمومًا إلى تقليم أكثر فعالية.
+
+<div id="apply-the-ordering-key-change">
+  ### طبّق تغيير مفتاح الترتيب
+</div>
+
+أنشئ جدولًا بالمخطط المُحسَّن نفسه المستخدم في المرحلة السابقة. غيّر مفتاح الترتيب فقط:
+
+```sql
+CREATE TABLE nyc_taxi.trips_small_pk
+(
+    vendor_id LowCardinality(String),
+    pickup_datetime DateTime('UTC'),
+    dropoff_datetime DateTime('UTC'),
+    passenger_count UInt8,
+    trip_distance Float32,
+    ratecode_id LowCardinality(Nullable(String)),
+    pickup_location_id LowCardinality(String),
+    dropoff_location_id LowCardinality(String),
+    payment_type Nullable(UInt8),
+    fare_amount Decimal32(2),
+    extra Decimal32(2),
+    mta_tax Nullable(Decimal32(2)),
+    tip_amount Decimal32(2),
+    tolls_amount Decimal32(2),
+    total_amount Decimal32(2)
+)
+ENGINE = MergeTree
+ORDER BY (passenger_count, pickup_datetime, dropoff_datetime);
+
+INSERT INTO nyc_taxi.trips_small_pk
+SELECT *
+FROM nyc_taxi.trips_small_no_pk;
+```
+
+في كل استعلام من استعلامات عبء العمل، استبدل اسم الجدول بـ `nyc_taxi.trips_small_pk`، ثم أعد تنفيذ الاستعلامات الثلاثة.
+
+<div id="compare-the-results">
+  ## مقارنة النتائج
+</div>
+
+سجّل الدليل الأصلي القياسات التالية عبر المراحل الثلاث:
+
+| عبء العمل                  | القياس          | المخطط المستنتج | المخطط المُحسَّن | المخطط المُحسَّن ومفتاح الترتيب |
+| -------------------------- | --------------- | --------------: | ---------------: | ------------------------------: |
+| عامل تصفية السرعة المحسوبة | المدة           |       1.699 sec |        1.353 sec |                       0.765 sec |
+|                            | الصفوف المقروءة |    329.04 مليون |     329.04 مليون |                    329.04 مليون |
+|                            | ذروة الذاكرة    |      440.24 MiB |       337.12 MiB |                      444.19 MiB |
+| تجميع نطاق التاريخ         | المدة           |       1.419 sec |        1.171 sec |                       0.248 sec |
+|                            | الصفوف المقروءة |    329.04 مليون |     329.04 مليون |                     41.46 مليون |
+|                            | ذروة الذاكرة    |      546.75 MiB |       531.09 MiB |                      173.50 MiB |
+| عامل تصفية عدد الركاب      | المدة           |       1.414 sec |        1.188 sec |                       0.431 sec |
+|                            | الصفوف المقروءة |    329.04 مليون |     329.04 مليون |                    276.99 مليون |
+|                            | ذروة الذاكرة    |      451.53 MiB |       265.05 MiB |                      197.38 MiB |
+
+يقلل تحسين المخطط مساحة التخزين ويجعل معالجة القيم المحددة أقل تكلفة. ويوفر مفتاح الترتيب أكبر تحسن إضافي لتجميع نطاق التاريخ، إذ يمكن لـ ClickHouse تجاوز الحبيبات الواقعة خارج نطاق التاريخ. كما يقرأ عامل تصفية عدد الركاب صفوفًا أقل لأنه يطبّق التصفية على أول عمود في المفتاح. أما عامل تصفية السرعة المحسوبة، فلا يزال يقرأ الجدول بأكمله لأن شرط التصفية فيه مشتق من `pickup_datetime` و`dropoff_datetime` و`trip_distance`، وليس من بادئة مفيدة لمفتاح الترتيب.
+
+افحص تجميع نطاق التاريخ باستخدام `EXPLAIN indexes = 1`:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count() AS trip_count,
+    formatReadableQuantity(sum(trip_distance)) AS total_distance,
+    avg(total_amount) AS total_amount_avg,
+    avg(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+ORDER BY trip_count DESC
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  في ClickHouse 25.9 والإصدارات الأحدث، تضمن هذه الإعدادات أن يعرض `EXPLAIN` الفهارس المستخدمة والأجزاء والحبيبات التي تُسقِطها.
+</Note>
+
+```response
+ReadFromMergeTree (nyc_taxi.trips_small_pk)
+Indexes:
+  PrimaryKey
+    Keys:
+      pickup_datetime
+    Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf)))
+    Parts: 9/9
+    Granules: 5061/40167
+```
+
+يختار الفهرس الأساسي 5,061 من أصل 40,167 حبيبة. ويعني هذا الانخفاض أن تجميع نطاق التاريخ يعالج 41.46 مليون صف بدلًا من إجمالي 329.04 مليون صف.
+
+<div id="apply-the-method-to-your-workload">
+  ## طبّق المنهج على حمل العمل لديك
+</div>
+
+استخدم التسلسل نفسه مع حمل العمل لديك:
+
+1. سجّل المدة الأساسية، والصفوف والبايتات المقروءة، وذروة الذاكرة.
+2. تحقّق مما إذا كانت الأعمدة المحددة تستخدم أنواعًا واسعة أو متساهلة أكثر من اللازم.
+3. طبّق تغييرات المخطط وقِس أثرها دون تغيير تخطيط البيانات.
+4. اختبر مفتاح ترتيب يستند إلى عوامل التصفية المستخدمة في الاستعلامات المتكررة المهمة.
+5. قارن البيانات المحددة باستخدام `EXPLAIN indexes = 1`، ثم أعد تشغيل الاستعلامات الأساسية في ظروف مماثلة.
+
+لا تفترض أن الأنواع أو مفتاح الترتيب في هذا المثال ستناسب مجموعة بيانات أخرى. استخدم القيم المرصودة وعوامل تصفية الاستعلامات لاتخاذ هذه القرارات.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+ارجع إلى [أساليب التحسين](/ar/guides/clickhouse/performance-and-monitoring/optimization-approaches) لتقييم الإسقاطات والعروض المُجسَّدة وفهارس تخطي البيانات أو الحساب المسبق، إذا لم تُعالج تغييرات المخطط ومفتاح الترتيب عنق الزجاجة المحدد.

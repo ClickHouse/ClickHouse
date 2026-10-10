@@ -130,6 +130,13 @@ Test ILIKE optimization is disabled for non-case-folding preprocessor (reverse(c
 -- with optimization (must produce same results)
 [1]
 [2]
+Text index analysis for ILIKE with an ALIAS index column and lower preprocessor
+-- ILIKE %world% prunes to 1024/4096 granules via the text index
+Description: text GRANULARITY 100000000
+Granules: 1024/4096
+-- ILIKE %HELLO% (case-insensitive) prunes to 2048/4096 granules via the text index
+Description: text GRANULARITY 100000000
+Granules: 2048/4096
 Test ILIKE optimization is applied for lcase/ucase preprocessor aliases
 -- lcase: results match a full scan (case-insensitive)
 1

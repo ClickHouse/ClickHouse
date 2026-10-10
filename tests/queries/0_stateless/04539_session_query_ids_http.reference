@@ -1,0 +1,13 @@
+-- named session: ids persist across requests
+3	1
+-- TRUNCATE resets the contents
+1
+-- the sequence counter is not reset by TRUNCATE
+1
+-- a query that fails to parse is recorded too
+4
+-- session_query_ids_history_size = 0 disables recording
+0
+1	1
+-- a plain HTTP request without session_id sees only its own query
+1	1

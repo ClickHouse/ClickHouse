@@ -1,0 +1,12 @@
+1
+local exchanges	reader stopped early	stage_0_0	1
+local exchanges	reader stopped early	stage_0_1	1
+local exchanges	reader stopped early	stage_0_2	1
+1
+remote exchanges	StreamingExchangeEarlyCloses >= 3	stage_2_0	1
+remote exchanges	StreamingExchangeEarlyCloses >= 3	stage_2_1	1
+remote exchanges	StreamingExchangeEarlyCloses >= 3	stage_2_2	1
+remote exchanges	StreamingExchangeEarlyCloses >= 3	stage_3_0	1
+remote exchanges	reader stopped early	stage_0_0	1
+remote exchanges	reader stopped early	stage_0_1	1
+remote exchanges	reader stopped early	stage_0_2	1

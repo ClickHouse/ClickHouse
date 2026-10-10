@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ConnectionPool_fwd.h>
+#include <Core/Block_fwd.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -9,6 +10,7 @@
 
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace DB
@@ -58,6 +60,42 @@ namespace ClusterProxy
 
 class SelectStreamFactory;
 
+/// `database` is an initiator-only setting: it selects the default database for the user's query
+/// (the equivalent of `USE`), and a remote server applies it the same way. But a query sent to a
+/// remote server as part of a distributed query (a `Distributed` fan-out, a cluster table function,
+/// parallel replicas) must resolve an unqualified table against the server's own default database —
+/// set from the cluster config (`default_database` per replica) or from the connection. Forwarding
+/// `database` would make the remote server `USE` the initiator's database first, reading the wrong
+/// same-named table or failing with `UNKNOWN_TABLE` (and would also attribute the secondary queries
+/// to the initiator's database in `system.query_log`). Strip it from every set of settings that is
+/// sent along with such a query.
+void stripDatabaseSetting(Settings & settings);
+
+/// Reset every "initiator-only" setting — the query-shaping settings (`select`, `order`, `sort`,
+/// `filter`, `limit`, `offset`, `page`, `additional_result_filter`), the result-serialisation
+/// settings (`format`, `output_format`, `default_format`, `compression`), and the HTTP/path-only
+/// settings (`http_allow_database_as_path`, `http_allow_table_as_file`, `http_allow_filters_as_path`,
+/// `http_allow_filters_as_unrecognized_url_parameters`, `implicit_table_at_top_level`), plus
+/// `database` (via `stripDatabaseSetting`). These are materialized on the initiator and must not be
+/// forwarded to remote servers, where they would re-shape the per-shard subquery a second time, break
+/// it (see the `format = 'Null'` case in the implementation), or — for the settings new to this
+/// feature — be rejected as `UNKNOWN_SETTING` by an older shard during a rolling upgrade. Shared by
+/// the `Distributed` fan-out, the `*Cluster` table functions (`IStorageCluster`), and the optimized
+/// `parallel_distributed_insert_select` paths in `StorageDistributed`.
+void stripInitiatorOnlySettings(Settings & settings);
+
+/// True for exactly the settings reset by `stripInitiatorOnlySettings`. Used to also strip those
+/// settings from a query's own `SETTINGS` clause before the query *text* is forwarded to a shard (the
+/// optimized `parallel_distributed_insert_select` paths in `StorageDistributed` send a formatted query
+/// string, not just a settings packet).
+bool isInitiatorOnlySettingName(std::string_view name);
+
+/// Strip the initiator-only settings (the `isInitiatorOnlySettingName` names, in both the `name = value`
+/// and `name = DEFAULT` forms) from a query's own query-level `SETTINGS` clauses, so they are not carried
+/// in the forwarded query *text*. Used by `IStorageCluster::read`, whose `ReadFromCluster` sends the query
+/// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
+void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
+
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)
@@ -75,6 +113,43 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
+
+/// Whether 'max_execution_time_leaf' requires all leaf reading of a parallel-replicas query to happen on
+/// remote replicas. The local replica executes inside the initiator's pipeline and shares the initiator's
+/// 'QueryStatus', so it cannot be bounded by the leaf timeout separately - the leaf timeout is substituted
+/// into 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
+/// settings. Remote-only reading is therefore needed exactly when the leaf timeout is stricter than the
+/// initiator's own 'max_execution_time': when the initiator's timeout is at most the leaf timeout, it already
+/// bounds the local reading at least as tightly (a profile that caps both settings to the same value, like the
+/// one used by the Fast test job, must not disable the local plan for every query).
+bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings);
+
+/// Builds the `_shard_num` scalar shipped to a shard, recording which shard numbering the number belongs
+/// to: `Cluster::getShardScopeIdentity`, not the name, since a derived cluster keeps the name and may
+/// renumber the shards. Both live in one block so that overwriting `_shard_num` replaces number and
+/// provenance atomically; a separate scalar would survive a hop that replaced only the number.
+Block makeShardNumScalar(UInt32 shard_num, const String & shard_scope_identity);
+
+enum class ShardScopeKind : uint8_t
+{
+    None, /// no `_shard_num` scalar: the query is not running inside a distributed sub-query
+    Scoped, /// the scalar indexes this cluster's shards, so parallel replicas are scoped to that shard
+    Foreign, /// the scalar indexes another numbering and says nothing about this cluster's shards
+};
+
+struct ShardScope
+{
+    ShardScopeKind kind = ShardScopeKind::None;
+    UInt64 shard_num = 0; /// 1-based; meaningful only for Scoped and Foreign
+};
+
+/// Decides whether the `_shard_num` scalar in `context` may be used to scope parallel replicas to a shard
+/// of `cluster`. Exposed for testing the wire-compatibility cases, which SQL cannot construct.
+ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & cluster);
+
+/// True when the shipped `_shard_num` indexes a numbering other than `cluster_for_parallel_replicas`'s, so
+/// it cannot scope this read. Returns false rather than throwing when that cluster cannot be resolved.
+bool hasForeignShardScope(const ContextPtr & context);
 
 /// Parallel-replicas state captured from the `ReadFromParallelRemoteReplicasStep` removed from the local
 /// INSERT SELECT plan. Carrying it into the remote-pool pass lets that pass reuse the exact coordinator,
@@ -137,14 +212,6 @@ void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
     QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits);
-
-void executeQueryWithParallelReplicas(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    QueryProcessingStage::Enum processed_stage,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
@@ -173,15 +240,6 @@ void executeQueryWithParallelReplicasCustomKey(
     const QueryTreeNodePtr & query_tree,
     ContextPtr context);
 
-void executeQueryWithParallelReplicasCustomKey(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    SelectQueryInfo query_info,
-    const ColumnsDescription & columns,
-    const StorageSnapshotPtr & snapshot,
-    QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context);
 }
 
 }

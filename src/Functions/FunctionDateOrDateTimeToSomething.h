@@ -35,7 +35,7 @@ public:
         /// to `Int64` avoids silent overflow/wrap.
         if (isInterval(arguments[0].type))
         {
-            IntervalKind::Kind required = IntervalKind::Kind::Second;
+            IntervalKind required;
             if (!IntervalKind::tryParseFromNameOfFunctionExtractTimePart(this->getName(), required))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -47,7 +47,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Cannot extract {} from {}: the interval's unit does not match the requested unit",
-                    IntervalKind(required).toLowercasedKeyword(),
+                    required.toLowercasedKeyword(),
                     interval_type.getName());
 
             return std::make_shared<DataTypeInt64>();

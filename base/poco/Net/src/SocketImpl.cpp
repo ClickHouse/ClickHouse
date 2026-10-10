@@ -502,6 +502,12 @@ bool SocketImpl::supportsExternalPolling() const
 }
 
 
+bool SocketImpl::supportsNonBlocking() const
+{
+	return true;
+}
+
+
 bool SocketImpl::connectionOpen()
 {
 	if (_sockfd == POCO_INVALID_SOCKET)

@@ -1,0 +1,24 @@
+-- local shard plan, several grouping sets: with and without marshalling
+1007	10083376534861865471
+1007	10083376534861865471
+-- parallel replicas local plan, several grouping sets: with and without marshalling
+1007	16998005863169288206
+1007	16998005863169288206
+-- single grouping set
+7	13874850128157539051
+-- initial query (control)
+1007	10083376534861865471
+-- Merge table over a local and a distributed table
+2000	11251509125014382908
+2000	11251509125014382908
+-- Buffer table whose destination is distributed
+1007	10083376534861865471
+1007	10083376534861865471
+-- BlocksMarshalling steps for remote(): total, above ReadFromRemote, ReadFromRemote steps
+1	0	1
+-- BlocksMarshalling steps for parallel replicas: total, above the remote step, remote steps
+2	0	1
+-- BlocksMarshalling steps for a Buffer table: total, buffer-reading steps
+2	2
+-- BlocksMarshalling steps for a serialized plan: total, above ReadFromRemote, ReadFromRemote steps
+1	0	1

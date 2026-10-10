@@ -1,0 +1,12 @@
+Pushdown of an IN set with newline, tab and backslash strings finds the rows:
+1
+2
+3
+Pushdown of a row IN set (tuple of tuples) with a control-char string finds its row:
+1
+A plain string element in the same IN set still matches:
+1
+4
+The same IN pushdown through a query-backed table function:
+1
+2

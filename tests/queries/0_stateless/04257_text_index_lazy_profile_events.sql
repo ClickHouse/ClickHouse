@@ -13,7 +13,10 @@ SET enable_full_text_index = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET use_query_condition_cache = 0;
+-- The lazy-cursor counters below are only incremented when a posting segment is decoded, so keep them independent of what earlier queries have already put into the server-wide postings cache.
+SET use_text_index_postings_cache = 0;
 SET query_plan_direct_read_from_text_index = 1;
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab_lazy_pe;
 
@@ -37,10 +40,8 @@ CREATE TABLE tab_lazy_pe(
 ENGINE = MergeTree() ORDER BY k
 SETTINGS index_granularity = 8192, index_granularity_bytes = '10M';
 
--- Tokens are named so their alphabetical order ('a' < 'b' < 'c' < 'd' < 'e') matches
--- the desired position in `TextSearchQuery::tokens` after the constructor's sort —
--- the lazy cursor map iterates in sorted order, so `cursors[0]` becomes c0 (linearOr
--- in brute-force) and `cursors[1]` becomes c1 (linearAnd).
+-- The brute-force intersection sorts the cursors by ascending cardinality, so the token
+-- with fewer postings becomes c0 (linearOr) and the denser one c1 (linearAnd).
 --
 --   adense    : every row 0..1999            -> 2000 docs, 8 dense multi-segments
 --   bnarrow   : rows 0..127                  -> 128 docs, SingleBlock => embedded path
@@ -48,6 +49,7 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = '10M';
 --   dwide     : rows 0..127, 256..383,
 --               512..639, 768..895           -> 512 docs, 2 multi-block segments
 --   eright    : rows 1700..1999              -> 300 docs, 2 dense multi-segments
+--   fhalf     : even rows 0..1022            -> 512 docs, 2 segments of non-consecutive rows
 INSERT INTO tab_lazy_pe
 SELECT number,
     concat(
@@ -58,7 +60,8 @@ SELECT number,
             OR (number >= 256 AND number <= 383)
             OR (number >= 512 AND number <= 639)
             OR (number >= 768 AND number <= 895), ' dwide', ''),
-        if(number >= 1700, ' eright', '')
+        if(number >= 1700, ' eright', ''),
+        if(number < 1024 AND number % 2 = 0, ' fhalf', '')
     )
 FROM numbers(2000);
 
@@ -69,6 +72,7 @@ SELECT 'cardinality bnarrow', count() FROM tab_lazy_pe WHERE hasToken(s, 'bnarro
 SELECT 'cardinality csubset', count() FROM tab_lazy_pe WHERE hasToken(s, 'csubset');
 SELECT 'cardinality dwide',   count() FROM tab_lazy_pe WHERE hasToken(s, 'dwide');
 SELECT 'cardinality eright',  count() FROM tab_lazy_pe WHERE hasToken(s, 'eright');
+SELECT 'cardinality fhalf',   count() FROM tab_lazy_pe WHERE hasToken(s, 'fhalf');
 
 -- ===========================================================================
 -- Tagged queries. Each query carries a unique log_comment so the subsequent
@@ -92,25 +96,26 @@ SELECT count() FROM tab_lazy_pe WHERE hasToken(s, 'adense')
 SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['adense', 'csubset'])
     SETTINGS log_comment = '04257_pe_or_seg_covered';
 
--- Q4: hasAnyTokens(['bnarrow', 'dwide']) -> bnarrow (embedded, density 1.0) sorts
---     before dwide (density 0.57). bnarrow fills bits 0..127; dwide's segment
---     [0..383] is not fully covered, but its packed block 0 (doc range 0..127) IS.
+-- Q4: hasAnyTokens(['csubset', 'fhalf']) -> csubset (density 1.0) sorts before fhalf
+--     (density 0.5). csubset fills bits 0..299; fhalf's segment [0..510] is not fully
+--     covered, but its packed block 0 (doc range 0..254) IS.
 --     Triggers: BlocksSkippedResolved (OR side).
-SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['bnarrow', 'dwide'])
+SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['csubset', 'fhalf'])
     SETTINGS log_comment = '04257_pe_or_block_covered';
 
--- Q5: brute-force AND ['adense', 'csubset'] (min_density = 1.0 >= threshold 0.0).
---     c0='adense'->linearOr fills via Level-1 dense; c1='csubset'->linearAnd hits
---     its two dense segments. Triggers: SegmentsSkippedDense (AND side), BruteForceIntersections.
+-- Q5: brute-force AND ['adense', 'csubset'], forced by the `bruteforce` algorithm.
+--     c0='csubset' (300 docs)->linearOr fills 0..299 via Level-1 dense; c1='adense'->linearAnd
+--     pads its dense segments [0..255] and [256..511] and skips the all-zero ones from 512 on.
+--     Triggers: SegmentsSkippedDense (AND side), BruteForceIntersections.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'csubset'])
-    SETTINGS text_index_lazy_intersection_density_threshold = 0.0,
+    SETTINGS text_index_postings_intersection_algorithm = 'bruteforce',
              log_comment = '04257_pe_and_seg_dense';
 
--- Q6: brute-force AND ['csubset', 'eright'] - disjoint ranges.
---     c0='csubset' fills 0..299; c1='eright''s segments [1700..1955] and [1956..1999]
---     are all-zero in the output. Triggers: SegmentsSkippedResolved (AND side).
+-- Q6: brute-force AND ['csubset', 'eright'] - disjoint ranges of equal cardinality, so the
+--     cursor order is arbitrary: whichever goes first fills its range; the segments of the
+--     other are all-zero in the output. Triggers: SegmentsSkippedResolved (AND side).
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['csubset', 'eright'])
-    SETTINGS text_index_lazy_intersection_density_threshold = 0.0,
+    SETTINGS text_index_postings_intersection_algorithm = 'bruteforce',
              log_comment = '04257_pe_and_seg_zero';
 
 -- Q7: brute-force AND ['bnarrow', 'dwide'] - narrow c0 leaves block-level zeros in c1.
@@ -120,14 +125,14 @@ SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['csubset', 'eright'])
 --       - block 0 [0..127] not zero -> decode normally,
 --       - block 1 [128..383] all-zero in output -> BlocksSkippedResolved (AND side) fires.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['bnarrow', 'dwide'])
-    SETTINGS text_index_lazy_intersection_density_threshold = 0.0,
+    SETTINGS text_index_postings_intersection_algorithm = 'bruteforce',
              log_comment = '04257_pe_and_block_zero';
 
--- Q8: leapfrog AND ['adense', 'dwide'] forced by threshold 1.0 against min_density=0.57.
---     intersectLeapfrog dispatches to intersectTwo, which calls advance() repeatedly.
+-- Q8: leapfrog AND ['adense', 'dwide'], forced by the `leapfrog` algorithm.
+--     intersectLeapfrog advances the denser cursor to the doc ids of the sparser one.
 --     Triggers: LeapfrogIntersections, AdvanceCount.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'dwide'])
-    SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
+    SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
              log_comment = '04257_pe_alg_leapfrog';
 
 -- ===========================================================================

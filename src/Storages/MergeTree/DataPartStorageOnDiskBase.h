@@ -288,4 +288,12 @@ private:
     String getPartDirForPrefix(const String & prefix, bool detached, int try_no) const;
 };
 
+/// Make a freeze/clone hardlink directory tree durable: fsync `clone_dir_path` and every
+/// subdirectory below it (children first), then fsync every ancestor directory from its
+/// immediate parent up to and including the disk root. fsync(dir) persists the entries inside
+/// dir, not dir's own entry in its parent, so the parent chain must be synced too. Shared by
+/// both freeze overrides (Full and Packed). A no-op on remote/object disks
+/// (getDirectorySyncGuard returns nullptr there).
+void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path);
+
 }

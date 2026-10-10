@@ -45,10 +45,8 @@ PY
 # the raw out-of-range day, proving the recursive numeric type hint).
 run_pair() {
     local file="$1" fmt="$2" structure="$3" col="$4"
-    local native library
-    native=$(${CLICKHOUSE_LOCAL}  --query "SELECT ${col} FROM file('${file}', '${fmt}', '${structure}') SETTINGS input_format_arrow_use_native_reader = 1")
-    library=$(${CLICKHOUSE_LOCAL} --query "SELECT ${col} FROM file('${file}', '${fmt}', '${structure}') SETTINGS input_format_arrow_use_native_reader = 0")
-    if [ "$native" = "$library" ]; then echo "OK native==library | ${col}"; echo "$native"; else echo "MISMATCH | ${col}"; fi
+    echo "| ${col}"
+    ${CLICKHOUSE_LOCAL} --query "SELECT ${col} FROM file('${file}', '${fmt}', '${structure}')"
 }
 
 for FMT in Arrow ArrowStream; do
@@ -58,18 +56,15 @@ for FMT in Arrow ArrowStream; do
     run_pair "${DATA_FILE}.struct.${FMT}" "${FMT}" "t Tuple(d Int32, n Int64)" "t.d"
     run_pair "${DATA_FILE}.map.${FMT}"    "${FMT}" "m Map(String, Int32)"      "m"
 
-    echo "--- case-insensitive: Arrow struct field 'D' -> requested 'd Int32' reads raw, native == library ---"
+    echo "--- case-insensitive: Arrow struct field 'D' -> requested 'd Int32' reads raw ---"
     for COL in t t.d; do
-        native=$(${CLICKHOUSE_LOCAL}  --query "SELECT ${COL} FROM file('${DATA_FILE}.ci_struct.${FMT}', '${FMT}', 't Tuple(d Int32, n Int64)') SETTINGS input_format_arrow_use_native_reader = 1, input_format_arrow_case_insensitive_column_matching = 1")
-        library=$(${CLICKHOUSE_LOCAL} --query "SELECT ${COL} FROM file('${DATA_FILE}.ci_struct.${FMT}', '${FMT}', 't Tuple(d Int32, n Int64)') SETTINGS input_format_arrow_use_native_reader = 0, input_format_arrow_case_insensitive_column_matching = 1")
-        if [ "$native" = "$library" ]; then echo "OK native==library | ${COL}"; echo "$native"; else echo "MISMATCH | ${COL}"; fi
+        echo "| ${COL}"
+        ${CLICKHOUSE_LOCAL} --query "SELECT ${COL} FROM file('${DATA_FILE}.ci_struct.${FMT}', '${FMT}', 't Tuple(d Int32, n Int64)') SETTINGS input_format_arrow_case_insensitive_column_matching = 1"
     done
 
     echo "--- nested Date32 target still range-checks the out-of-range day (native) ---"
     ${CLICKHOUSE_LOCAL} --query "
-        SELECT arr FROM file('${DATA_FILE}.list.${FMT}', '${FMT}', 'arr Array(Date32)')
-        SETTINGS input_format_arrow_use_native_reader = 1
-    " 2>&1 | grep -o "VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE" | head -1
+        SELECT arr FROM file('${DATA_FILE}.list.${FMT}', '${FMT}', 'arr Array(Date32)')" 2>&1 | grep -o "VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE" | head -1
 done
 
 rm -f "${DATA_FILE}".*

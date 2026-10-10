@@ -26,7 +26,7 @@ As well as reducing infrastructure management, this deployment pattern ensures a
 
 - Automatic scaling of compute independent of storage
 - Low-cost and effectively unlimited retention based on object storage
-- The ability to independently isolate read and write workloads with Warehouses.
+- The ability to [independently isolate read and write workloads](/clickstack/managing/isolating-read-write) with Warehouses.
 - Integrated authentication
 - Automated backups
 - Security and compliance features
@@ -331,6 +331,10 @@ To run ClickStack on read-only compute:
 3. Launch ClickStack from the left navigation menu.
 
 Once launched, ClickStack UI will automatically bind to this read-only service.
+
+Note that dashboards, saved searches, alerts and sources are scoped to the service ClickStack was launched from, so anything saved on another service in the warehouse isn't available here and has to be recreated. Sources using the standard OpenTelemetry schema are auto-detected, so search over that data works immediately - custom or manually configured sources aren't, and must be set up again.
+
+For the full topology - including where to point ingestion, which service to run DDL against, and how alerts behave - see ["Isolating read and write workloads"](/clickstack/managing/isolating-read-write).
 
 ### Adding more data sources {#adding-data-sources}
 

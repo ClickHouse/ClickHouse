@@ -1,0 +1,8 @@
+-- the literal and the subquery forms have the same type
+LowCardinality(UInt8)
+LowCardinality(UInt8)
+-- results agree
+50
+50
+-- the distributed plan round-trip accepts the type
+50
