@@ -1,0 +1,8 @@
+-- Tuple-nested String is found without the index
+0
+-- the index is not used for a Tuple-nested String
+0
+-- explicit .:String under a Tuple is also refused
+-- nested JSON typed path is still Exact
+idx	0
+scan	0

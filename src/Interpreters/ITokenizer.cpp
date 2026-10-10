@@ -624,6 +624,27 @@ void KeyValuePairsTokenizer::substringToTokens(const char *, size_t, VectorWithM
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::substringToTokens is not implemented");
 }
 
+bool JSONStringValuesTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "The `jsonStringValues` tokenizer does not tokenize strings: its tokens are path-scoped String leaves of a JSON column");
+}
+
+bool JSONStringValuesTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONStringValuesTokenizer::nextInStringLike is not implemented");
+}
+
+void JSONStringValuesTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONStringValuesTokenizer::substringToBloomFilter is not implemented");
+}
+
+void JSONStringValuesTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSONStringValuesTokenizer::substringToTokens is not implemented");
+}
+
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
     : ITokenizerHelper(Type::SparseGrams)
     , min_gram_length(min_length)

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -246,6 +247,119 @@ bool isJSONPathFilterSafe(
         return false;
 
     return true;
+}
+
+/// True when `JSONStringValuesIndexer::processValue` will walk `path` given only the declared
+/// schema. Typed `String` leaves are indexed. Nested `JSON` / `Dynamic` prefixes are recursed
+/// into. `Tuple` / `Array` / `Map` / numeric typed prefixes are dropped, so a `String` haystack
+/// under them must not be treated as Exact.
+static bool isJSONStringValuesIndexablePath(const DataTypePtr & json_type, std::string_view path)
+{
+    const auto unwrapped_json = removeLowCardinalityAndNullable(json_type);
+    const auto * object_type = typeid_cast<const DataTypeObject *>(unwrapped_json.get());
+    if (!object_type)
+        return false;
+
+    const auto & typed_paths = object_type->getTypedPaths();
+
+    const String * best = nullptr;
+    for (const auto & [typed_path, _] : typed_paths)
+    {
+        if (path == typed_path
+            || (path.size() > typed_path.size() && path.starts_with(typed_path) && path[typed_path.size()] == '.'))
+        {
+            if (!best || typed_path.size() > best->size())
+                best = &typed_path;
+        }
+    }
+
+    if (!best)
+        return true;
+
+    const DataTypePtr unwrapped = removeLowCardinalityAndNullable(typed_paths.at(*best));
+    if (path == *best)
+        return isString(unwrapped);
+
+    const WhichDataType which(unwrapped);
+    if (which.isObject())
+        return isJSONStringValuesIndexablePath(unwrapped, path.substr(best->size() + 1));
+    if (which.isDynamic())
+        return true;
+    return false;
+}
+
+std::optional<JSONStringValuesHaystack> tryMatchJSONStringValuesHaystack(
+    std::string_view column_name,
+    const DataTypePtr & result_type,
+    std::string_view root_column_name,
+    const DataTypePtr & root_type)
+{
+    if (root_column_name.empty() || column_name.empty() || !result_type || !root_type)
+        return std::nullopt;
+
+    /// Root JSON column itself is not a String haystack.
+    if (column_name == root_column_name)
+        return std::nullopt;
+
+    const String prefix = String(root_column_name) + ".";
+    if (!column_name.starts_with(prefix))
+        return std::nullopt;
+
+    std::string_view suffix = column_name.substr(prefix.size());
+    if (suffix.empty())
+        return std::nullopt;
+
+    if (isPrefixedSubcolumn(suffix, DataTypeObject::SUB_OBJECT_SUBCOLUMN_PREFIX)
+        || isPrefixedSubcolumn(suffix, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX))
+        return std::nullopt;
+
+    static constexpr std::string_view explicit_string_suffix = ".:`String`";
+    bool explicit_dynamic_string = false;
+    if (suffix.ends_with(explicit_string_suffix))
+    {
+        suffix.remove_suffix(explicit_string_suffix.size());
+        if (suffix.empty() || suffix.contains(".:`"))
+            return std::nullopt;
+        explicit_dynamic_string = true;
+    }
+    else if (suffix.contains(".:`"))
+    {
+        /// Any other runtime-type suffix is not Exact.
+        return std::nullopt;
+    }
+
+    if (!isJSONStringValuesIndexablePath(root_type, suffix))
+        return std::nullopt;
+
+    if (explicit_dynamic_string)
+    {
+        return JSONStringValuesHaystack{
+            .path = String(suffix),
+            .kind = JSONStringValuesHaystackKind::ExplicitDynamicString,
+        };
+    }
+
+    DataTypePtr unwrapped = removeLowCardinality(result_type);
+    if (isDynamic(unwrapped))
+        return std::nullopt;
+
+    if (isString(unwrapped))
+    {
+        return JSONStringValuesHaystack{
+            .path = String(suffix),
+            .kind = JSONStringValuesHaystackKind::TypedString,
+        };
+    }
+
+    if (unwrapped->isNullable() && isString(removeNullable(unwrapped)))
+    {
+        return JSONStringValuesHaystack{
+            .path = String(suffix),
+            .kind = JSONStringValuesHaystackKind::NullableTypedString,
+        };
+    }
+
+    return std::nullopt;
 }
 
 }
