@@ -19,8 +19,16 @@ WYRD_TEST(ScriptedPipeline, ChainDeliversEveryChunkInOrder, .runs = 1000, .simul
     chain({source, transform, sink});
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    EXPECT_NO_THROW(runPipeline({source, transform, sink}, threads));
+    Metrics metrics;
+    EXPECT_NO_THROW(metrics = runPipeline({source, transform, sink}, threads));
     EXPECT_EQ(received(*sink), (std::vector<UInt64>{1, 2, 3}));
+
+    EXPECT_EQ(metrics.offloads, 0u);
+    if (threads == 1)
+    {
+        EXPECT_EQ(metrics.steal_picks, 0u);
+        EXPECT_EQ(metrics.parks, 0u);
+    }
 }
 
 WYRD_TEST(ScriptedPipeline, ThrowInWorkIsRethrownByExecute, .runs = 1000, .simulation = { .preempt_probability = 0.5 })
@@ -41,11 +49,19 @@ WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation 
     auto resize = fanIn({first, second}, sink);
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    EXPECT_NO_THROW(runPipeline({first, second, resize, sink}, threads));
+    Metrics metrics;
+    EXPECT_NO_THROW(metrics = runPipeline({first, second, resize, sink}, threads));
 
     auto values = received(*sink);
     std::ranges::sort(values);
     EXPECT_EQ(values, (std::vector<UInt64>{1, 2}));
+
+    EXPECT_EQ(metrics.offloads, 0u);
+    if (threads == 1)
+    {
+        EXPECT_EQ(metrics.steal_picks, 0u);
+        EXPECT_EQ(metrics.parks, 0u);
+    }
 }
 
 WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulation = { .preempt_probability = 0.5 })
@@ -56,11 +72,19 @@ WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulat
     auto resize = fanOut(source, {first, second});
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    EXPECT_NO_THROW(runPipeline({source, resize, first, second}, threads));
+    Metrics metrics;
+    EXPECT_NO_THROW(metrics = runPipeline({source, resize, first, second}, threads));
 
     auto values = received(*first);
     auto rest = received(*second);
     values.insert(values.end(), rest.begin(), rest.end());
     std::ranges::sort(values);
     EXPECT_EQ(values, (std::vector<UInt64>{1, 2, 3}));
+
+    EXPECT_EQ(metrics.offloads, 0u);
+    if (threads == 1)
+    {
+        EXPECT_EQ(metrics.steal_picks, 0u);
+        EXPECT_EQ(metrics.parks, 0u);
+    }
 }

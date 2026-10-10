@@ -269,6 +269,15 @@ void WorkerPool::rethrowIfFailed()
         std::rethrow_exception(exception);
 }
 
+Metrics WorkerPool::getMetrics() const
+{
+    Metrics merged;
+    for (const Worker & worker : workers)
+        merged = combine(merged, worker.getMetrics());
+
+    return merged;
+}
+
 }
 
 }

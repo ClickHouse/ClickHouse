@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunner.h>
+#include <Processors/Executors/Runtime/V2/Engine/Metrics.h>
 #include <Processors/Executors/Runtime/V2/Engine/Queues/LocalQueue.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerSlot.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
@@ -37,6 +38,7 @@ public:
     Worker(WorkerPool & pool_, size_t worker_id_);
 
     void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
+    const Metrics & getMetrics() const;
 
     UInt32 stealFifo(std::span<ExecutingProcessor *> out);
     void handOver();
@@ -46,6 +48,7 @@ private:
     WorkerPool & pool;
     const size_t worker_id;
     ProcessorRunner runner;
+    Metrics metrics;
 
     LocalQueue local_tasks;
     std::array<ExecutingProcessor *, LocalQueue::capacity> tmp_buffer{};

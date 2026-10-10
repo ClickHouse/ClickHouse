@@ -4,10 +4,11 @@
 namespace DB::Runtime::V2
 {
 
-void runPipeline(Processors processors, size_t threads)
+Metrics runPipeline(Processors processors, size_t threads)
 {
     PipelineExecutor executor(std::make_shared<Processors>(std::move(processors)), nullptr);
     executor.execute(threads, false);
+    return executor.getMetrics();
 }
 
 }

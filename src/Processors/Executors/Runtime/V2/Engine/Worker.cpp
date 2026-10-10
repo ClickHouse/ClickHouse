@@ -73,6 +73,7 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
 
             if (!fired.empty())
             {
+                metrics.poll_picks += 1;
                 auto * picked = pickFromBatch(fired);
                 wakeFor(fired.size() - 1);
                 return picked;
@@ -85,7 +86,10 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
                 continue;
 
             if (!anyWorkHasAppeared())
+            {
+                metrics.parks += 1;
                 futexWaitFetch(wakeups, wakeups_before);
+            }
 
             pool.coordinator.becomeNormal(worker_id);
         }
@@ -95,10 +99,16 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
 ExecutingProcessor * Worker::tryPick()
 {
     if (auto * picked = local_tasks.popLifo())
+    {
+        metrics.local_picks += 1;
         return picked;
+    }
 
     if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
+    {
+        metrics.global_picks += 1;
         return pickFromBatch(std::span(tmp_buffer).first(count));
+    }
 
     if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
     {
@@ -107,6 +117,7 @@ ExecutingProcessor * Worker::tryPick()
 
         if (!fired.empty())
         {
+            metrics.poll_picks += 1;
             auto * picked = pickFromBatch(fired);
             wakeFor(fired.size() - 1);
             return picked;
@@ -117,6 +128,7 @@ ExecutingProcessor * Worker::tryPick()
     {
         auto * picked = trySteal(steal_rounds);
         pool.coordinator.stopStealing();
+        metrics.steal_picks += picked != nullptr;
         wakeFor(picked != nullptr);
         return picked;
     }
@@ -168,6 +180,7 @@ bool Worker::anyWorkHasAppeared() const
 void Worker::pushManyLifo(std::span<ExecutingProcessor * const> many)
 {
     const size_t kept = std::min<size_t>(many.size(), local_tasks.freeSlots());
+    metrics.offloads += many.size() - kept;
     pool.global_tasks.pushManyFifo(many.first(many.size() - kept));
     local_tasks.pushManyLifo(many.last(kept));
 }
@@ -240,6 +253,11 @@ void Worker::wake()
 {
     wakeups.fetch_add(1);
     futexWakeOne(wakeups);
+}
+
+const Metrics & Worker::getMetrics() const
+{
+    return metrics;
 }
 
 }

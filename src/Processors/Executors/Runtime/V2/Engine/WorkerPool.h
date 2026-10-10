@@ -2,6 +2,7 @@
 
 #include <Processors/Executors/Runtime/V2/Pipeline/Async/Poller.h>
 #include <Processors/Executors/Runtime/V2/ExecutionOptions.h>
+#include <Processors/Executors/Runtime/V2/Engine/Metrics.h>
 #include <Processors/Executors/Runtime/V2/Engine/Queues/GlobalQueue.h>
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
@@ -49,6 +50,7 @@ public:
 
     void join();
     void rethrowIfFailed();
+    Metrics getMetrics() const;
 
 private:
     ExecutingPipeline & pipeline;
