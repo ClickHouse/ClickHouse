@@ -1732,16 +1732,32 @@ void TCPHandler::processTablesStatusRequest()
     if (is_interserver_mode)
     {
 #if USE_SSL
+        std::string received_hash;
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
         {
-            std::string received_hash;
             readStringBinary(received_hash, *in, 32);
+        }
+        else if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth]
+                 && !is_interserver_authenticated)
+        {
+            /// Older client that sends no hash: rejected by default
+            /// (`interserver_tables_status_require_auth` defaults to true). Operators can turn the
+            /// setting off as a temporary opt-out for a mixed-version rolling upgrade.
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "TablesStatusRequest requires interserver authentication");
+        }
+#else
+        if (!is_interserver_authenticated)
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                "TablesStatusRequest requires interserver authentication");
+#endif
 
-            /// Deserialize the body so its digest can bind the hash (same as `processQuery` reading
-            /// the query before validating the per-query secret hash). Tables are resolved only after
-            /// the hash validates below.
-            request.read(*in, client_tcp_protocol_version);
+        /// The only `read` for all interserver paths, so they all get the same bound.
+        request.read(*in, client_tcp_protocol_version, TablesStatusRequestSource::InterserverPeer);
 
+#if USE_SSL
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
+        {
             String cluster_secret;
             try
             {
@@ -1771,27 +1787,6 @@ void TCPHandler::processTablesStatusRequest()
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                     "Interserver authentication failed for TablesStatusRequest");
         }
-        else if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth]
-                 && !is_interserver_authenticated)
-        {
-            /// Older client that sends no hash: rejected by default
-            /// (`interserver_tables_status_require_auth` defaults to true), *before* reading the
-            /// body so an unauthenticated peer cannot make us deserialize its request. Operators can
-            /// turn the setting off as a temporary opt-out for a mixed-version rolling upgrade.
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "TablesStatusRequest requires interserver authentication");
-        }
-        else
-        {
-            /// Old client authenticated by an earlier query on this connection, or auth not required:
-            /// no hash to bind the body to, so just read it.
-            request.read(*in, client_tcp_protocol_version);
-        }
-#else
-        if (!is_interserver_authenticated)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "TablesStatusRequest requires interserver authentication");
-        request.read(*in, client_tcp_protocol_version);
 #endif
 
         /// In the interserver mode session context does not exist, because authentication is done for each query.
@@ -1806,7 +1801,7 @@ void TCPHandler::processTablesStatusRequest()
     {
         chassert(session);
         context_to_resolve_table_names = session->sessionContext();
-        request.read(*in, client_tcp_protocol_version);
+        request.read(*in, client_tcp_protocol_version, TablesStatusRequestSource::Client);
     }
 
     TablesStatusResponse response;
@@ -1861,7 +1856,8 @@ void TCPHandler::processUnexpectedTablesStatusRequest()
 #endif
 
     TablesStatusRequest skip_request;
-    skip_request.read(*in, client_tcp_protocol_version);
+    skip_request.read(*in, client_tcp_protocol_version,
+        is_interserver_mode ? TablesStatusRequestSource::InterserverPeer : TablesStatusRequestSource::Client);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet TablesStatusRequest received from client");
 }

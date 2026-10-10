@@ -1,4 +1,5 @@
 #include <Interpreters/TablesStatus.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -59,47 +60,73 @@ std::string TablesStatusRequest::getAuthDigest() const
     /// unordered, so sort the per-table encodings before concatenating. Each `database`/`table`
     /// component is length-prefixed (names may contain arbitrary bytes, including NUL, so a plain
     /// separator would not be injective).
-    auto append_sized = [](std::string & buf, const std::string & s)
+    /// The digest duplicates the whole requested set, twice, and on the signed path it is built
+    /// before the peer has been authenticated - so these go through the throwing memory tracker too,
+    /// for the same reason as `accounted_for_memory_tracker` in `read` below.
+    auto append_sized = [](StringWithMemoryTracking & buf, std::string_view s)
     {
         buf += std::to_string(s.size());
         buf += ':';
         buf += s;
     };
 
-    std::vector<std::string> entries;
+    std::vector<StringWithMemoryTracking> entries;
     entries.reserve(tables.size());
     for (const auto & table_name : tables)
     {
-        std::string entry;
+        StringWithMemoryTracking entry;
         append_sized(entry, table_name.database);
         append_sized(entry, table_name.table);
         entries.push_back(std::move(entry));
     }
     std::sort(entries.begin(), entries.end());
 
-    std::string data;
+    StringWithMemoryTracking data;
     append_sized(data, std::to_string(entries.size()));
     for (const auto & entry : entries)
         append_sized(data, entry);
-    return data;
+    /// The digest is returned untracked, which is one copy of something the tracker has already
+    /// admitted - keeping the signature means the two callers and the unit test are untouched.
+    return std::string(data.data(), data.size());
 }
 
-void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
+void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision, TablesStatusRequestSource source)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "method TablesStatusRequest::read is called for unsupported client revision");
 
+    const size_t max_tables = source == TablesStatusRequestSource::InterserverPeer
+        ? MAX_TABLES_IN_INTERSERVER_STATUS_REQUEST
+        : DEFAULT_MAX_STRING_SIZE;
+
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > max_tables)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size (maximum: {}).", max_tables);
+
+    /// Every name byte is appended here as well, and this string - unlike `QualifiedTableName`'s
+    /// plain `std::string` fields - allocates through the throwing memory tracker, so the request is
+    /// bounded by `max_server_memory_usage` instead of growing the server's RSS silently.
+    ///
+    /// The accumulation is what has to be accounted for, not each name on its own: a peer can send
+    /// `max_tables` names that are each far below the limit and together far above it, and reading
+    /// them one at a time into a tracked buffer would never notice. Hence one buffer for the whole
+    /// request, kept alive until it has been read.
+    ///
+    /// The cost is a second copy of the names while `read` runs, so the peak is a small multiple of
+    /// what the tracker sees rather than exactly it - the same shape as `TCPHandler`'s query text,
+    /// which is tracked for this reason and then parsed into an untracked AST.
+    StringWithMemoryTracking accounted_for_memory_tracker;
 
     for (size_t i = 0; i < size; ++i)
     {
         QualifiedTableName table_name;
-        readBinary(table_name.database, in);
-        readBinary(table_name.table, in);
+        /// Read before the peer is authenticated: do not allocate the declared size up front.
+        readStringBinaryGrowing(table_name.database, in);
+        readStringBinaryGrowing(table_name.table, in);
+        accounted_for_memory_tracker += table_name.database;
+        accounted_for_memory_tracker += table_name.table;
         tables.emplace(std::move(table_name));
     }
 }
