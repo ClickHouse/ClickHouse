@@ -1,6 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <base/sort.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -24,6 +26,7 @@
 #include <base/range.h>
 
 #include <bitset>
+#include <numeric>
 
 
 namespace DB
@@ -43,6 +46,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -71,7 +75,7 @@ struct NodeBase
 {
     UInt64 size; /// size of payload
 
-    DataTypeDateTime::FieldType event_time;
+    UInt64 event_time;
     std::bitset<MaxEventsSize> events_bitset;
     bool can_be_base;
 
@@ -85,18 +89,21 @@ struct NodeBase
             const_cast<char *>(arena->alignedInsert(reinterpret_cast<const char *>(this), sizeof(Node) + size, alignof(Node))));
     }
 
-    void write(WriteBuffer & buf) const
+    void write(WriteBuffer & buf, bool full_timestamp) const
     {
         writeVarUInt(size, buf);
         buf.write(data(), size);
 
-        writeBinary(event_time, buf);
+        if (full_timestamp)
+            writeBinary(event_time, buf);
+        else
+            writeBinary(static_cast<UInt32>(event_time), buf);
         UInt64 ulong_bitset = events_bitset.to_ulong();
         writeBinary(ulong_bitset, buf);
         writeBinary(can_be_base, buf);
     }
 
-    static Node * read(ReadBuffer & buf, Arena * arena)
+    static Node * read(ReadBuffer & buf, Arena * arena, bool full_timestamp)
     {
         UInt64 size = 0;
         readVarUInt(size, buf);
@@ -107,7 +114,16 @@ struct NodeBase
         node->size = size;
         buf.readStrict(node->data(), size);
 
-        readBinary(node->event_time, buf);
+        if (full_timestamp)
+        {
+            readBinary(node->event_time, buf);
+        }
+        else
+        {
+            UInt32 event_time = 0;
+            readBinary(event_time, buf);
+            node->event_time = event_time;
+        }
         UInt64 ulong_bitset = 0;
         readBinary(ulong_bitset, buf);
         node->events_bitset = ulong_bitset;
@@ -155,12 +171,30 @@ struct SequenceNextNodeGeneralData
 
     Array value;
     bool sorted = false;
+    /// The event times hold only their low 32 bits, as in a version 0 state.
+    bool truncated_timestamps = false;
 
+    /// `low_32_bits` orders by the low 32 bits of the event time, as a version 0 state is ordered,
+    /// and breaks the ties of that order by the full event time.
+    template <bool low_32_bits = false>
     struct Comparator final
     {
         bool operator()(const Node * lhs, const Node * rhs) const
         {
-            return lhs->event_time == rhs->event_time ? lhs->compare(rhs) : lhs->event_time < rhs->event_time;
+            if constexpr (low_32_bits)
+            {
+                const auto lhs_time = static_cast<UInt32>(lhs->event_time);
+                const auto rhs_time = static_cast<UInt32>(rhs->event_time);
+                if (lhs_time != rhs_time)
+                    return lhs_time < rhs_time;
+                if (lhs->compare(rhs))
+                    return true;
+                if (rhs->compare(lhs))
+                    return false;
+                return lhs->event_time < rhs->event_time;
+            }
+            else
+                return lhs->event_time == rhs->event_time ? lhs->compare(rhs) : lhs->event_time < rhs->event_time;
         }
     };
 
@@ -168,7 +202,7 @@ struct SequenceNextNodeGeneralData
     {
         if (!sorted)
         {
-            ::stableSort(std::begin(value), std::end(value), Comparator{});
+            ::stableSort(std::begin(value), std::end(value), Comparator<>{});
             sorted = true;
         }
     }
@@ -187,6 +221,9 @@ class SequenceNextNodeImpl final
 
     static constexpr size_t base_cond_column_idx = 2;
     static constexpr size_t event_column_idx = 1;
+
+    /// Version 1 of the state stores 8-byte event times; only a `UInt64` timestamp needs them.
+    static constexpr bool versioned = std::is_same_v<T, UInt64>;
 
     SequenceBase seq_base_kind;
     SequenceDirection seq_direction;
@@ -215,6 +252,26 @@ public:
     }
 
     String getName() const override { return "sequenceNextNode"; }
+
+    bool isVersioned() const override { return versioned; }
+
+    /// An unversioned type keeps the version 0 layout of persisted states.
+    size_t getDefaultVersion() const override { return 0; }
+
+    DataTypePtr getStateType() const override
+    {
+        if constexpr (versioned)
+            return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, 1);
+        else
+            return IAggregateFunction::getStateType();
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (versioned && revision >= DBMS_MIN_REVISION_WITH_SEQUENCE_NEXT_NODE_FULL_TIMESTAMPS)
+            return 1;
+        return 0;
+    }
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
@@ -248,7 +305,10 @@ public:
         for (UInt8 i = 0; i < events_size; ++i)
             if (assert_cast<const ColumnVector<UInt8> *>(columns[min_required_args + i])->getData()[row_num])
                 node->events_bitset.set(i);
-        node->event_time = static_cast<DataTypeDateTime::FieldType>(timestamp);
+        node->event_time = timestamp;
+        if constexpr (versioned)
+            if (data(place).truncated_timestamps)
+                node->event_time = static_cast<UInt32>(timestamp);
 
         node->can_be_base = assert_cast<const ColumnVector<UInt8> *>(columns[base_cond_column_idx])->getData()[row_num];
 
@@ -271,21 +331,43 @@ public:
         for (UInt64 i = 0; i < new_elems; ++i)
             a.push_back(b[i]->clone(arena), arena);
 
-        /// Either sort whole container or do so partially merging ranges afterwards
-        using Comparator = typename SequenceNextNodeGeneralData<Node>::Comparator;
+        const auto begin = std::begin(a);
+        const auto middle = std::next(begin, a_size);
+        const auto end = std::end(a);
 
-        if (!data(place).sorted && !data(rhs).sorted)
-            ::stableSort(std::begin(a), std::end(a), Comparator{});
+        bool place_sorted = data(place).sorted;
+        bool rhs_sorted = data(rhs).sorted;
+
+        /// The high 32 bits lost by one side cannot be restored, so the other side drops them too.
+        if constexpr (versioned)
+        {
+            if (data(place).truncated_timestamps != data(rhs).truncated_timestamps)
+            {
+                if (data(rhs).truncated_timestamps)
+                {
+                    truncateTimestamps(begin, middle);
+                    data(place).truncated_timestamps = true;
+                    place_sorted = true;
+                }
+                else
+                {
+                    truncateTimestamps(middle, end);
+                    rhs_sorted = true;
+                }
+            }
+        }
+
+        /// Either sort whole container or do so partially merging ranges afterwards
+        using Comparator = typename Data::template Comparator<>;
+
+        if (!place_sorted && !rhs_sorted)
+            ::stableSort(begin, end, Comparator{});
         else
         {
-            const auto begin = std::begin(a);
-            const auto middle = std::next(begin, a_size);
-            const auto end = std::end(a);
-
-            if (!data(place).sorted)
+            if (!place_sorted)
                 ::stableSort(begin, middle, Comparator{});
 
-            if (!data(rhs).sorted)
+            if (!rhs_sorted)
                 ::stableSort(middle, end, Comparator{});
 
             std::inplace_merge(begin, middle, end, Comparator{});
@@ -294,7 +376,15 @@ public:
         data(place).sorted = true;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    /// Leaves the range sorted by its truncated event times.
+    static void truncateTimestamps(Node ** begin, Node ** end)
+    {
+        ::stableSort(begin, end, typename Data::template Comparator<true>{});
+        for (auto * it = begin; it != end; ++it)
+            (*it)->event_time = static_cast<UInt32>((*it)->event_time);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         /// serialize() must not mutate the state: it takes a ConstAggregateDataPtr and the same
         /// state can be shared between rows (a replicated/const aggregate-state column used as a
@@ -302,38 +392,86 @@ public:
         /// the value buffer in place, so sorting the shared buffer directly is a data race. Sort a
         /// local copy of the node pointers; the values are always written in sorted order.
         const auto & data_ref = data(place);
+        const bool full_timestamps = versioned && version.value_or(getDefaultVersion()) >= 1;
+        const bool has_full_timestamps = versioned && !data_ref.truncated_timestamps;
+
         VectorWithMemoryTracking<Node *> sorted_value(data_ref.value.begin(), data_ref.value.end());
-        if (!data_ref.sorted)
-            ::stableSort(sorted_value.begin(), sorted_value.end(), typename Data::Comparator{});
+        /// Version 0 is ordered and pruned by the truncated event times, which a version 0 reader sorts by.
+        if (has_full_timestamps && !full_timestamps)
+            ::stableSort(sorted_value.begin(), sorted_value.end(), typename Data::template Comparator<true>{});
+        else if (!data_ref.sorted)
+            ::stableSort(sorted_value.begin(), sorted_value.end(), typename Data::template Comparator<>{});
+
+        if (full_timestamps)
+            writeBinary(static_cast<UInt8>(data_ref.truncated_timestamps), buf);
 
         writeBinary(true, buf);
 
-        size_t size = std::min(static_cast<size_t>(events_size + 1), sorted_value.size());
+        const size_t n = sorted_value.size();
+        const size_t size = std::min(static_cast<size_t>(events_size + 1), n);
+
+        /// Version 1 also keeps the extreme nodes of the low 32-bit order, which a merge with a version 0 state sorts by.
+        if (full_timestamps && has_full_timestamps && n > size
+            && (seq_base_kind == SequenceBase::Head || seq_base_kind == SequenceBase::Tail)
+            && (sorted_value.front()->event_time >> 32) != (sorted_value.back()->event_time >> 32))
+        {
+            VectorWithMemoryTracking<size_t> low_32_bit_order(n);
+            std::iota(low_32_bit_order.begin(), low_32_bit_order.end(), 0);
+            ::stableSort(low_32_bit_order.begin(), low_32_bit_order.end(), [&](size_t lhs, size_t rhs)
+            {
+                return typename Data::template Comparator<true>{}(sorted_value[lhs], sorted_value[rhs]);
+            });
+
+            VectorWithMemoryTracking<UInt8> keep(n);
+            const size_t first = seq_base_kind == SequenceBase::Head ? 0 : n - size;
+            for (size_t i = first; i < first + size; ++i)
+            {
+                keep[i] = 1;
+                keep[low_32_bit_order[i]] = 1;
+            }
+
+            writeVarUInt(static_cast<UInt64>(std::count(keep.begin(), keep.end(), 1)), buf);
+            for (size_t i = 0; i < n; ++i)
+                if (keep[i])
+                    sorted_value[i]->write(buf, true);
+            return;
+        }
+
         switch (seq_base_kind)
         {
             case SequenceBase::Head:
                 writeVarUInt(size, buf);
                 for (size_t i = 0; i < size; ++i)
-                    sorted_value[i]->write(buf);
+                    sorted_value[i]->write(buf, full_timestamps);
                 break;
 
             case SequenceBase::Tail:
                 writeVarUInt(size, buf);
                 for (size_t i = 0; i < size; ++i)
-                    sorted_value[sorted_value.size() - size + i]->write(buf);
+                    sorted_value[n - size + i]->write(buf, full_timestamps);
                 break;
 
             case SequenceBase::FirstMatch:
             case SequenceBase::LastMatch:
-                writeVarUInt(sorted_value.size(), buf);
+                writeVarUInt(n, buf);
                 for (auto & node : sorted_value)
-                    node->write(buf);
+                    node->write(buf, full_timestamps);
                 break;
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
+        const bool full_timestamps = versioned && version.value_or(getDefaultVersion()) >= 1;
+        if (full_timestamps)
+        {
+            UInt8 flags = 0;
+            readBinary(flags, buf);
+            if (flags & ~1)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read sequenceNextNode state: invalid flags {}", static_cast<size_t>(flags));
+            data(place).truncated_timestamps = flags & 1;
+        }
+
         readBinary(data(place).sorted, buf);
 
         UInt64 size = 0;
@@ -346,11 +484,15 @@ public:
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "Too large array size (maximum: {})", max_node_size_deserialize);
 
+        if constexpr (versioned)
+            if (!full_timestamps)
+                data(place).truncated_timestamps = true;
+
         auto & value = data(place).value;
 
         value.resize(size, arena);
         for (UInt64 i = 0; i < size; ++i)
-            value[i] = Node::read(buf, arena);
+            value[i] = Node::read(buf, arena, full_timestamps);
     }
 
     std::optional<size_t> getBaseIndex(Data & data) const
