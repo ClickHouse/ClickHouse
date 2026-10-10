@@ -18,10 +18,12 @@
 #include <Common/StringUtils.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/castColumn.h>
@@ -29,11 +31,14 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <Poco/String.h>
+#include <Common/BinStringDecodeHelper.h>
+#include <Columns/ColumnArray.h>
 
 #include <algorithm>
 #include <cctype>
@@ -60,6 +65,8 @@ constexpr std::string_view COSINEDISTANCE_FUNCTION_NAME = "cosinedistance";
 constexpr std::string_view L2DISTANCE_FUNCTION_NAME = "l2distance";
 constexpr std::string_view HASTOKEN_FUNCTION_NAME = "hastoken";
 constexpr std::string_view CAST_FUNCTION_NAME = "cast";
+constexpr std::string_view REINTERPRET_FUNCTION_NAME = "reinterpret";
+constexpr std::string_view UNHEX_FUNCTION_NAME = "unhex";
 
 /// Convert a DataTypePtr to its string representation for logging/debugging.
 String dataTypePtrToString(const DataTypePtr & type)
@@ -143,7 +150,6 @@ bool functionCanCache(const String & function_name)
         fun_name == "frombase64" ||
         fun_name == "tobase64" ||
         fun_name == "hex" ||
-        fun_name == "unhex" ||
         fun_name == "bitmasktoarray" ||
         fun_name == "polygon" ||
         fun_name == "polygonconvexhull" ||
@@ -305,13 +311,6 @@ ASTPtr getASTNodeByPath(ASTPtr root, const std::vector<UInt32> & path)
     return current;
 }
 
-// std::string_view stripOuterQuotes(std::string_view value)
-// {
-//     if (value.size() >= 2 && ((value.front() == '\'' && value.back() == '\'') || (value.front() == '"' && value.back() == '"')))
-//         return value.substr(1, value.size() - 2);
-//     return value;
-// }
-
 
 /// Parse a SQL single-quoted string literal (e.g. 'hello world') into a Field.
 /// Uses ClickHouse's SQL-style quoting rules (backslash escapes, doubled quotes).
@@ -415,18 +414,15 @@ bool parseNumberLiteralFast(std::string_view literal, Field & result)
     }
 }
 
-/// Parse a string representation of a numeric array (e.g. "[1.0, 2.0, 3.0]") into a typed Array Field.
-/// Uses the target DataTypeArray's serialization to deserialize the text directly.
-/// Returns false on parse failure or if the target type is not an array type.
-bool stringToNumericArrayField(std::string_view literal, const DataTypePtr & target_type, Field & result)
+/// Parse the text form of an array literal (e.g. "[1.0, 2.0, 3.0]", as written inside
+/// cast('[...]', 'Array(Float32)')) into a column of the target Array type.
+/// Uses the target DataTypeArray's own serialization, i.e. the same code path CAST uses,
+/// instead of a hand-written element parser.
+/// Returns nullptr on parse failure or if the target type is not an array type.
+ColumnPtr numericTextToArrayColumn(std::string_view literal, const DataTypePtr & target_type)
 {
-    if (!target_type)
-        return false;
-
-    // Check if target type is Array type
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(target_type.get());
-    if (!array_type)
-        return false;
+    if (!target_type || !typeid_cast<const DataTypeArray *>(target_type.get()))
+        return nullptr;
 
     try
     {
@@ -450,21 +446,220 @@ bool stringToNumericArrayField(std::string_view literal, const DataTypePtr & tar
         if (!read_buffer.eof())
         {
             // There's unexpected data after parsing, treat as failure
-            return false;
+            return nullptr;
         }
 
-        // Extract the Field from the column
-        result_column->get(0, result);
-        return true;
+        return result_column;
     }
     catch (...)
     {
-        LOG_TRACE(logger, "stringToNumericArrayField error: {}", getCurrentExceptionMessage(false));
-        // Any exception during parsing should be caught and return false
-        return false;
+        LOG_TRACE(logger, "numericTextToArrayColumn error: {}", getCurrentExceptionMessage(false));
+        // Any exception during parsing should be caught and return nullptr
+        return nullptr;
     }
 }
 
+/// Same as numericTextToArrayColumn, for the call sites that compare against a Field.
+bool stringToNumericArrayField(std::string_view literal, const DataTypePtr & target_type, Field & result)
+{
+    ColumnPtr column = numericTextToArrayColumn(literal, target_type);
+    if (!column)
+        return false;
+    column->get(0, result);
+    return true;
+}
+
+/// Strip the quotes, and an optional x/b prefix, from a hex literal token.
+/// Accepted forms: 'ABCD', "ABCD", x'ABCD', X'ABCD', b'0101', B'0101', ABCD.
+std::string_view hexLiteralToDigits(const String & raw)
+{
+    if (raw.size() >= 2
+        && ((raw.front() == '\'' && raw.back() == '\'') || (raw.front() == '"' && raw.back() == '"')))
+        return std::string_view(raw).substr(1, raw.size() - 2);
+    if (raw.size() >= 3
+        && (raw[0] == 'x' || raw[0] == 'X' || raw[0] == 'b' || raw[0] == 'B')
+        && raw[1] == '\'' && raw.back() == '\'')
+        return std::string_view(raw).substr(2, raw.size() - 3);
+    return std::string_view(raw);
+}
+
+/// Decode hex digits to raw bytes. The decoding loop is ClickHouse's own `hexStringDecode`, which is
+/// exactly the body of the built-in `unhex` function (`UnhexImpl::decode` in
+/// src/Functions/FunctionsBinaryRepresentation.cpp). The digit check in front of it is not a
+/// re-implementation of the decoding: it tells hex text apart from raw bytes, because `unhex` accepts
+/// any byte and maps non-hex characters to an arbitrary value instead of rejecting them.
+/// Input: hex digits like "0000004000000040" (no prefix, no quotes).
+bool decodeHexToBytes(std::string_view hex, String & bytes)
+{
+    if (hex.empty())
+        return true;
+    if (hex.size() % 2 != 0)
+        return false;
+    for (char c : hex)
+    {
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+            return false;
+    }
+    bytes.resize(hex.size() / 2);
+    char * out = bytes.data();
+    const char * pos = hex.data();
+    const char * end = hex.data() + hex.size();
+    hexStringDecode(pos, end, out, /*word_size=*/2);
+    return true;
+}
+
+/// Decode an x'...' / b'...' literal token into the raw bytes the parser would store in the AST.
+/// The lexer keeps the original token text (prefix and quotes included, e.g. `x'0000803F'`) in the
+/// parameter list, while `ParserStringLiteral::parseImpl` decodes it via `makeHexOrBinStringLiteral`
+/// into raw bytes for the `ASTLiteral`.  Reproducing that decoding here keeps a restored AST literal
+/// byte-identical to a freshly parsed one, which is required both for the result cache key and for
+/// `reinterpret` to see the same bytes it would see without the plan cache.
+/// Returns false if `raw` is not an x'...' / b'...' token.
+bool decodeHexOrBinStringLiteral(const String & raw, String & bytes)
+{
+    if (raw.size() < 3 || raw[1] != '\'' || raw.back() != '\'')
+        return false;
+
+    const char prefix = raw[0];
+    const bool is_hex = (prefix == 'x' || prefix == 'X');
+    const bool is_bin = (prefix == 'b' || prefix == 'B');
+    if (!is_hex && !is_bin)
+        return false;
+
+    const size_t word_size = is_hex ? 2 : 8;
+    const char * pos = raw.data() + 2;
+    const char * end = raw.data() + raw.size() - 1;
+    if (pos == end)
+    {
+        /// x'' / b'' — the parser turns these into an empty string literal.
+        bytes.clear();
+        return true;
+    }
+
+    /// Sized for the worst case exactly like makeHexOrBinStringLiteral;
+    /// a binary literal whose length is not a multiple of eight writes fewer bytes.
+    bytes.resize((end - pos + word_size - 1) / word_size);
+    char * out = bytes.data();
+    if (is_hex)
+        hexStringDecode(pos, end, out, word_size);
+    else
+        binStringDecode(pos, end, out, word_size);
+    bytes.resize(out - bytes.data());
+    return true;
+}
+
+/// Reinterpret raw bytes as a ClickHouse Column of `target_type` (must be Array(T)) by
+/// calling the built-in `reinterpret` function through the FunctionFactory, which handles
+/// the byte reinterpretation natively (src/Functions/reinterpretAs.cpp).
+///
+/// Example: 4 bytes of little-endian float {0x3F, 0x80, 0x00, 0x00} with target Array(Float32) → [1.0]
+///
+/// Returns nullptr if the bytes cannot be reinterpreted as `target_type`.
+ColumnPtr reinterpretBytesToArrayColumn(std::string_view raw_bytes, const DataTypePtr & target_type)
+{
+    if (!target_type)
+    {
+        return nullptr;
+    }
+    const auto * array_type = typeid_cast<const DataTypeArray *>(target_type.get());
+    if (!array_type)
+    {
+        return nullptr;
+    }
+
+    auto bytes_column = ColumnString::create();
+    bytes_column->insertData(raw_bytes.data(), raw_bytes.size());
+
+    ColumnsWithTypeAndName arguments
+    {
+        {ColumnConst::create(std::move(bytes_column), 1), std::make_shared<DataTypeString>(), {}},
+        {DataTypeString().createColumnConst(1, target_type->getName()), std::make_shared<DataTypeString>(), {}}
+    };
+
+    auto resolver = FunctionFactory::instance().get("reinterpret", nullptr);
+    if (!resolver)
+    {
+        return nullptr;
+    }
+
+    auto function = resolver->build(arguments);
+    if (!function)
+    {
+        return nullptr;
+    }
+
+    ColumnPtr result;
+    try
+    {
+        result = function->execute(arguments, target_type, 1, /*dry_run=*/false);
+    }
+    catch (...)
+    {
+        LOG_DEBUG(logger, "reinterpretBytesToArrayColumn: execute threw: {}", getCurrentExceptionMessage(false));
+        return nullptr;
+    }
+
+    return result;
+}
+
+/// Same as reinterpretBytesToArrayColumn, for the call sites that compare against a Field.
+bool binaryToArrayField(const String & raw_bytes, const DataTypePtr & target_type, Field & result)
+{
+    ColumnPtr column = reinterpretBytesToArrayColumn(raw_bytes, target_type);
+    if (!column)
+        return false;
+    column->get(0, result);
+    return true;
+}
+
+/// Convert a hex literal token (from unhex('...') or x'...') into a column of the target array type:
+/// hex digits are decoded to raw bytes, which are then reinterpreted by the built-in `reinterpret`.
+ColumnPtr hexTextToArrayColumn(const String & raw_hex_token, const DataTypePtr & target_type)
+{
+    String raw_bytes;
+    if (!decodeHexToBytes(hexLiteralToDigits(raw_hex_token), raw_bytes))
+        return nullptr;
+    return reinterpretBytesToArrayColumn(raw_bytes, target_type);
+}
+
+/// Same as hexTextToArrayColumn, for the call sites that compare against a Field.
+bool hexStringToArrayField(const String & raw_hex_token, const DataTypePtr & target_type, Field & result)
+{
+    ColumnPtr column = hexTextToArrayColumn(raw_hex_token, target_type);
+    if (!column)
+        return false;
+    column->get(0, result);
+    return true;
+}
+
+/// Convert a String parameter into the Array column a plan node expects, using ClickHouse's own
+/// conversion code for each of the three ways such a parameter can be written:
+///   1. array text   '[...]'     — cast('[...]', 'Array(Float32)');
+///   2. hex text     'hexdigits' — reinterpret(unhex('...'), 'Array(Float32)');
+///   3. raw bytes    <bytes>     — reinterpret(x'...', 'Array(Float32)'), decoded by the lexer already.
+/// The order matters: array text must be recognized first, otherwise a short text literal whose
+/// length happens to be a whole number of elements would be reinterpreted as raw bytes.
+/// Returns nullptr when none of the three applies, in which case the parameter is not an array value.
+ColumnPtr stringParamToArrayColumn(const String & raw_text, const DataTypePtr & target_type)
+{
+    if (ColumnPtr column = numericTextToArrayColumn(raw_text, target_type))
+        return column;
+    if (ColumnPtr column = hexTextToArrayColumn(raw_text, target_type))
+        return column;
+    return reinterpretBytesToArrayColumn(raw_text, target_type);
+}
+
+/// Check if a raw parameter string looks like a hex literal from reinterpret(unhex('...')) or reinterpret(x'...').
+[[maybe_unused]] bool isHexLiteralString(const String & raw)
+{
+    if (raw.size() >= 3 && raw.front() == '\'' && raw.back() == '\'')
+        return true;
+    if (raw.size() >= 4 &&
+        (raw[0] == 'x' || raw[0] == 'X' || raw[0] == 'b' || raw[0] == 'B') &&
+        raw[1] == '\'' && raw.back() == '\'')
+        return true;
+    return false;
+}
 
 /// Check if a Field type is one of the three numeric types (UInt64, Int64, Float64).
 bool isNumericFieldType(Field::Types::Which type)
@@ -535,6 +730,10 @@ std::string_view getFunctionName(FunctionNames fn_enum)
             return HASTOKEN_FUNCTION_NAME;
         case FunctionNames::CAST:
             return CAST_FUNCTION_NAME;
+        case FunctionNames::REINTERPRET:
+            return REINTERPRET_FUNCTION_NAME;
+        case FunctionNames::UNHEX:
+            return UNHEX_FUNCTION_NAME;
     }
     UNREACHABLE();
 }
@@ -544,6 +743,78 @@ void appendFunctionName(String & out, FunctionNames fn_enum)
 {
     const auto name = getFunctionName(fn_enum);
     out.append(name.data(), name.size());
+}
+
+String getThirdLastFunctionName(const std::vector<String> & function_list)
+{
+    if (function_list.size() < 3)
+        return {};
+    return Poco::toLower(function_list[function_list.size() - 3]);
+}
+
+bool isVectorDistanceFunctionName(const String & function_name)
+{
+    return function_name == getFunctionName(FunctionNames::L2DISTANCE) 
+        || function_name == getFunctionName(FunctionNames::COSINEDISTANCE) ;
+}
+
+bool isVectorArgumentTransformFunctionName(const String & function_name)
+{
+    return function_name == getFunctionName(FunctionNames::CAST)
+        || function_name == getFunctionName(FunctionNames::REINTERPRET);
+}
+
+/// Number of CAST/reinterpret layers sitting between a literal and the vector search
+/// function it is an argument of. `function_list` holds the enclosing function names
+/// outermost first, so walking backwards from its end visits the layers from the
+/// literal outwards; the first name that is not a transform must be the vector search.
+///
+/// `distance(v, CAST([1,2], 'Array(Float32)'))` has depth 1, and
+/// `distance(v, CAST(CAST('[1,2]', 'Array(Float)') AS Array(Float32)))` - the shape
+/// enable_cast_vector's rewriter used to produce for `CAST([..] AS Array(Float32))`
+/// queries - has depth 2. A depth of 0 means the literal is not a vector search
+/// argument reached through transforms.
+size_t vectorArgumentTransformDepthUnderVectorSearch(const std::vector<String> & function_list)
+{
+    size_t index = function_list.size();
+    while (index > 0 && isVectorArgumentTransformFunctionName(function_list[index - 1]))
+        --index;
+    /// No transform layer at all, or nothing above the outermost one.
+    if (index == function_list.size() || index == 0)
+        return 0;
+    const String & outer_function_name = function_list[index - 1];
+    if (!isVectorDistanceFunctionName(outer_function_name))
+        return 0;
+    return function_list.size() - index;
+}
+
+std::vector<String> collectDirectIdentifiersFromFunctionArguments(const ASTFunction & function)
+{
+    std::vector<String> result;
+    if (!function.arguments)
+        return result;
+
+    for (const auto & child : function.arguments->children)
+    {
+        if (const auto * ident = child->as<ASTIdentifier>())
+            result.push_back(ident->name());
+    }
+    return result;
+}
+
+std::vector<String> collectNearestVectorSearchIdentifiers(const std::vector<ASTPtr> & parent_list)
+{
+    for (auto it = parent_list.rbegin(); it != parent_list.rend(); ++it)
+    {
+        if (!*it)
+            continue;
+        const auto * function = (*it)->as<ASTFunction>();
+        if (!function)
+            continue;
+        if (isVectorDistanceFunctionName(Poco::toLower(function->name)))
+            return collectDirectIdentifiersFromFunctionArguments(*function);
+    }
+    return {};
 }
 
 /// Extract the field name portion after the last '.' in a qualified name.
@@ -589,9 +860,13 @@ bool candidateMatchesAstLiteral(
     const VectorQueryParameters::NormalizedQueryResult & parameters)
 {
     if (!scopeMatchesStepType(position.step_type, candidate.binding.dag_scope))
+    {
         return false;
+    }
     if (!position.identifier_name.empty() && candidate.identifier_names != position.identifier_name)
+    {
         return false;
+    }
     if (!candidate.function_names.empty())
     {
         size_t number = candidate.function_names.size();
@@ -622,16 +897,52 @@ bool candidateMatchesAstLiteral(
     }
     if (ast_index < parameters.parsed_params.size())
     {
-        if (parameters.parsed_params[ast_index].getType() == Field::Types::String &&
-            position.field_type == Field::Types::Array)
+        /// A String parameter can stand for a non-String plan constant: literals inside
+        /// reinterpret(x'...'), reinterpret(unhex('...')) and cast('[...]', 'Array(...)') stay
+        /// Strings in the AST — that keeps a restored AST identical to a freshly parsed one — and
+        /// are converted to the target type only when the plan constant binding is applied.
+        /// The `position.field_type` is therefore not required to be Array; what matters is the
+        /// value type of the constant taken from the plan.
+        if (parameters.parsed_params[ast_index].getType() == Field::Types::String
+            && candidate.value.getType() != Field::Types::String)
         {
-            if (candidate.value.getType() != Field::Types::String && candidate.binding.target_type)
+            // LOG_ERROR(logger, "candidateMatchesAstLiteral: string+non-string path, candidate_value_type={}, has_target_type={}, target_type={}",
+            //     static_cast<int>(candidate.value.getType()),
+            //     static_cast<bool>(candidate.binding.target_type),
+            //     candidate.binding.target_type ? dataTypePtrToString(candidate.binding.target_type) : "null");
+            if (candidate.binding.target_type)
             {
                 Field converted;
                 const auto & raw_text = parameters.parsed_params[ast_index].safeGet<String>();
+                // LOG_ERROR(logger, "candidateMatchesAstLiteral: raw_text_size={}, raw_text_prefix={}", raw_text.size(), raw_text.substr(0, std::min(raw_text.size(), size_t(20))));
                 if (stringToNumericArrayField(raw_text, candidate.binding.target_type, converted))
-                    return fieldsEquivalent(converted, candidate.value);
-                return false;
+                {
+                    bool eq = fieldsEquivalent(converted, candidate.value);
+                    LOG_DEBUG(logger, "candidateMatchesAstLiteral: stringToArray match, raw_text_size={}, eq={}", raw_text.size(), eq);
+                    return eq;
+                }
+                if (hexStringToArrayField(raw_text, candidate.binding.target_type, converted))
+                {
+                    bool eq = fieldsEquivalent(converted, candidate.value);
+                    LOG_DEBUG(logger, "candidateMatchesAstLiteral: hexStringToArray match, raw_text_size={}, eq={}", raw_text.size(), eq);
+                    return eq;
+                }
+                /// For raw_bytes_x (x'...'), the AST literal value is already decoded to binary
+                /// by the ClickHouse lexer. Neither stringToNumericArrayField nor
+                /// hexStringToArrayField can handle raw binary data, so we use
+                /// binaryToArrayField which reinterprets the bytes directly.
+                /// Uses position.target_type (from reinterpret's second argument) as the
+                /// array element type, since candidate.binding.target_type may differ.
+                if (position.target_type && binaryToArrayField(raw_text, position.target_type, converted))
+                {
+                    bool eq = fieldsEquivalent(converted, candidate.value);
+                    LOG_DEBUG(logger, "candidateMatchesAstLiteral: binaryToArray match, raw_text_size={}, eq={}", raw_text.size(), eq);
+                    return eq;
+                }
+                // LOG_ERROR(logger, "candidateMatchesAstLiteral: binaryToArray failed or skipped, target_type={}, candidate_target_type={}, position_target_type_is_null={}",
+                //     candidate.binding.target_type ? dataTypePtrToString(candidate.binding.target_type) : "null",
+                //     position.target_type ? dataTypePtrToString(position.target_type) : "null",
+                //     position.target_type ? "false" : "true");
             }
             return false;
         }
@@ -640,7 +951,35 @@ bool candidateMatchesAstLiteral(
             LOG_DEBUG(logger, "not support tuple type");
             return false;
         }
-        return fieldsEquivalent(parameters.parsed_params[ast_index], candidate.value);
+        bool eq = fieldsEquivalent(parameters.parsed_params[ast_index], candidate.value);
+        if (!eq && candidate.binding.target_type)
+        {
+            /// The AST literal may contain Float64 values (the default ClickHouse parser type)
+            /// while the plan constant stores values that went through a Float32 column and
+            /// were promoted back to Float64 with precision loss (e.g. 0.1 -> ~0.10000000149011612).
+            /// Converting the AST literal to the candidate's target type with inexact float
+            /// rounding and retrying the comparison closes the gap.
+            Field converted = convertFieldToType(
+                parameters.parsed_params[ast_index],
+                *candidate.binding.target_type,
+                nullptr,   // from_type_hint
+                {},        // format_settings (default)
+                false,     // strict
+                true);     // convert_inexact_floats
+            if (converted.getType() != Field::Types::Null)
+            {
+                bool eq_converted = fieldsEquivalent(converted, candidate.value);
+                if (eq_converted)
+                {
+                    LOG_DEBUG(logger, "candidateMatchesAstLiteral: match after inexact float conversion");
+                    return true;
+                }
+            }
+        }
+        if (!eq)
+            LOG_DEBUG(logger, "candidateMatchesAstLiteral: value mismatch, parsed_type={}, candidate_type={}",
+                static_cast<int>(parameters.parsed_params[ast_index].getType()), static_cast<int>(candidate.value.getType()));
+        return eq;
     }
     return false;
 }
@@ -705,6 +1044,14 @@ void findActionsDAGAndCollectConstants(
                         for (const auto * child : node->children)
                             traverse_node(child, node, function_names);
                         function_names.pop_back();
+                    }
+                    else
+                    {
+                        /// Even if the function is not tracked in the name list (e.g. reinterpret
+                        /// when only_vector=true), we must still traverse its children to reach
+                        /// constant COLUMN nodes that are buried inside transform functions.
+                        for (const auto * child : node->children)
+                            traverse_node(child, node, function_names);
                     }
                 }
                 break;
@@ -772,6 +1119,9 @@ void findActionsDAGAndCollectConstants(
                         candidate.step_type = step_type;
                         candidate.function_names = function_names;
                         candidate.identifier_names = current_field_name;
+                        // LOG_ERROR(logger, "findActionsDAGAndCollectConstants: found candidate, identifier_names={}, function_names={}, field_type={}, step_type={}, value_type={}, target_type={}",
+                        //     current_field_name, function_names, static_cast<int>(value.getType()), step_type, static_cast<int>(value.getType()),
+                        //     result_type ? dataTypePtrToString(result_type) : "null");
                         out_candidates.push_back(candidate);
                     }
                 }
@@ -867,8 +1217,8 @@ void findActionsDAGAndCollectConstants(
             size_t new_node_index = dag.getNodes().size() - 1;
             candidate.binding.dag_node_index = static_cast<UInt32>(new_node_index);
 
-            LOG_DEBUG(logger, "Split shared COLUMN node: candidate[{}] now points to new node {} (value='{}'), parent FUNCTION node {} updated",
-                candidate_idx, new_node_index, candidate.binding.value_text, parent_func_idx);
+            // LOG_ERROR(logger, "Split shared COLUMN node: candidate[{}] now points to new node {} (value='{}'), parent FUNCTION node {} updated",
+            //     candidate_idx, new_node_index, candidate.binding.value_text, parent_func_idx);
         }
     }
 }
@@ -954,19 +1304,17 @@ bool parseNormalizedParams(
 
         if (type == Field::Types::String)
         {
-            try
+            // LOG_ERROR(logger, "parseNormalizedParams: String type, raw_size={}, raw_prefix={}", raw.size(), raw.substr(0, std::min(raw.size(), size_t(20))));
+            /// x'...' / b'...' literals: the parameter keeps the original token text while the
+            /// parser decodes it into raw bytes for the AST literal.  Decode here as well, so that
+            /// the restored AST literal is byte-identical to a freshly parsed one.
+            String decoded;
+            if (decodeHexOrBinStringLiteral(raw, decoded))
             {
-                parsed = parseStringLiteral(raw, converted);
+                converted = std::move(decoded);
+                parsed = true;
             }
-            catch (...)
-            {
-                parsed = false;
-                LOG_TRACE(logger, "parse string error:{},raw={},size={}", getCurrentExceptionMessage(false), raw, raw.size());
-            }
-        }
-        else if (type == Field::Types::Array)
-        {
-            if (raw.size() > 2 && ((raw.front() == '\'' && raw.back() == '\'') || (raw.front() == '"' && raw.back() == '"')))
+            else
             {
                 try
                 {
@@ -975,11 +1323,62 @@ bool parseNormalizedParams(
                 catch (...)
                 {
                     parsed = false;
-                    LOG_TRACE(logger, "parse string error:{},raw={},size={}", getCurrentExceptionMessage(false), raw, raw.size());
+                    LOG_DEBUG(logger, "parse string error:{},raw={},size={}", getCurrentExceptionMessage(false), raw, raw.size());
                 }
             }
+            // LOG_ERROR(logger, "parseNormalizedParams: String parse result, parsed={}, converted_type={}", parsed, static_cast<int>(converted.getType()));
+        }
+        else if (type == Field::Types::Array)
+        {
+            // LOG_ERROR(logger, "parseNormalizedParams: Array type, raw_size={}, raw_prefix={}", raw.size(), raw.substr(0, std::min(raw.size(), size_t(20))));
+            /// Quoted string literal: 'hex_digits...' — used by unhex('...') pattern
+            if (raw.size() > 2 && ((raw.front() == '\'' && raw.back() == '\'') || (raw.front() == '"' && raw.back() == '"')))
+            {
+                if (target_types[i])
+                    parsed = hexStringToArrayField(raw, target_types[i], converted);
+                if (!parsed)
+                {
+                    try
+                    {
+                        parsed = parseStringLiteral(raw, converted);
+                    }
+                    catch (...)
+                    {
+                        parsed = false;
+                        LOG_DEBUG(logger, "parse string error:{},raw={},size={}", getCurrentExceptionMessage(false), raw, raw.size());
+                    }
+                }
+                /// Fallback: treat as raw binary (for raw_bytes_x where lexer decoded x'...' to bytes)
+                if (!parsed && target_types[i])
+                    parsed = binaryToArrayField(raw, target_types[i], converted);
+            }
+            /// Hex literal with prefix: x'hex_digits...' — used by reinterpret(x'...', ...) pattern
+            else if (raw.size() > 3 && (raw[0] == 'x' || raw[0] == 'X' || raw[0] == 'b' || raw[0] == 'B') && raw[1] == '\'' && raw.back() == '\'')
+            {
+                // LOG_ERROR(logger, "parseNormalizedParams: x'...' hex literal, raw_size={}, has_target_type={}, target_type={}",
+                //     raw.size(), static_cast<bool>(target_types[i]),
+                //     target_types[i] ? dataTypePtrToString(target_types[i]) : "null");
+                if (target_types[i])
+                    parsed = hexStringToArrayField(raw, target_types[i], converted);
+                // LOG_ERROR(logger, "parseNormalizedParams: hexStringToArrayField result, parsed={}", parsed);
+                if (!parsed)
+                    parsed = stringToNumericArrayField(raw, target_types[i], converted);
+                /// Fallback: treat as raw binary (for raw_bytes_x where lexer decoded x'...' to bytes)
+                if (!parsed && target_types[i])
+                    parsed = binaryToArrayField(raw, target_types[i], converted);
+            }
+            /// Unquoted/unrecognized format — try all conversion methods
+            /// Order: numeric array first (most common), then hex, then raw binary
             else
-                parsed = stringToNumericArrayField(raw, target_types[i], converted);
+            {
+                if (target_types[i])
+                    parsed = stringToNumericArrayField(raw, target_types[i], converted);
+                if (!parsed && target_types[i])
+                    parsed = hexStringToArrayField(raw, target_types[i], converted);
+                /// Fallback: treat as raw binary (for raw_bytes_x where lexer decoded x'...' to bytes)
+                if (!parsed && target_types[i])
+                    parsed = binaryToArrayField(raw, target_types[i], converted);
+            }
         }
         else if (!only_vector)
             parsed = parseNumberLiteralFast(raw, converted);
@@ -1176,6 +1575,26 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
     bool is_from = false;
     bool start_system_table_check = false;
     bool previous_is_value = false;
+    // Track reinterpret(unhex(...)) and reinterpret(x'...', ...) for binary constant extraction
+    bool in_reinterpret = false;
+    bool in_unhex = false;
+    int reinterpret_paren_depth = 0;
+    int unhex_paren_depth = 0;
+    bool reinterpret_seen_comma = false;
+
+    /// Lambda to check if a bareword token matches a given name (case-insensitive, exact length)
+    auto tokenMatchesExactly = [](const Token & t, std::string_view name) -> bool
+    {
+        if (static_cast<size_t>(t.size()) != name.size())
+            return false;
+        const char * word = t.begin;
+        for (size_t i = 0; i < name.size(); ++i)
+        {
+            if (!equalsCaseInsensitive(word[i], name[i]))
+                return false;
+        }
+        return true;
+    };
 
     while (true)
     {
@@ -1214,12 +1633,11 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
         if (token.type == TokenType::BareWord && !vector_function_type
             && (token.size() == 8 || token.size() == 10 || token.size() == 14))
         {
-            if (tokenMatchesBareWord(token, getFunctionName(FunctionNames::L2DISTANCE)))
+            if (tokenMatchesBareWord(token, getFunctionName(FunctionNames::L2DISTANCE)) 
+                || tokenMatchesBareWord(token, getFunctionName(FunctionNames::COSINEDISTANCE)))
                 vector_function_type =  1;
             else if (tokenMatchesBareWord(token, getFunctionName(FunctionNames::HASTOKEN)))
                 vector_function_type =  2;
-            else if (tokenMatchesBareWord(token, getFunctionName(FunctionNames::COSINEDISTANCE)))
-                vector_function_type =  3;
             if (vector_function_type)
                 is_bare_word = false;
         }
@@ -1228,7 +1646,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             is_comma = true;
             num_literals_in_sequence = 0;
         }
-        if (is_comma && (vector_function_type == 1 || vector_function_type == 3) &&
+        if (is_comma && (vector_function_type == 1) &&
             token.type == TokenType::BareWord && token.size() == 4 &&
             tokenMatchesBareWord(token, getFunctionName(FunctionNames::CAST)))
         {
@@ -1239,7 +1657,98 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             appendFunctionName(result.new_sql, FunctionNames::CAST);
             continue;
         }
-        if (vector_function_type && is_comma && token.type == TokenType::ClosingRoundBracket)
+        // --- Detect and handle reinterpret(unhex('...')) pattern for binary constants ---
+        // When inside a vector function (after comma), track reinterpret(unhex(...)) nesting
+        // so we can extract the inner hex string as a cacheable parameter.
+        if (vector_function_type && is_comma && token.type == TokenType::BareWord
+            && static_cast<size_t>(token.size()) == 11 && tokenMatchesExactly(token, "reinterpret"))
+        {
+            in_reinterpret = true;
+            reinterpret_paren_depth = 0;
+            reinterpret_seen_comma = false;
+        }
+        if (in_reinterpret && token.type == TokenType::OpeningRoundBracket)
+        {
+            ++reinterpret_paren_depth;
+        }
+        if (in_reinterpret && reinterpret_paren_depth > 0
+            && token.type == TokenType::BareWord && static_cast<size_t>(token.size()) == 5
+            && tokenMatchesExactly(token, "unhex"))
+        {
+            in_unhex = true;
+            unhex_paren_depth = 0;
+        }
+        if (in_unhex && token.type == TokenType::OpeningRoundBracket)
+        {
+            ++unhex_paren_depth;
+        }
+        // Extract the hex string literal from inside unhex() as a cacheable parameter
+        if (in_unhex && unhex_paren_depth > 0 && token.type == TokenType::StringLiteral)
+        {
+            String params_value = String(token.begin, token.size());
+            result.params.emplace_back(params_value, ParameterInfo::Type::STRING);
+            result.new_sql += params_value;
+            result.normalized_sql += "?:string";
+            hash.update("\x00", 1);
+            continue;
+        }
+        // Handle raw_bytes_x pattern: reinterpret(x'...', ...) where StringLiteral appears
+        // directly inside reinterpret (without unhex wrapper) and before the comma separator.
+        if (in_reinterpret && !in_unhex && reinterpret_paren_depth > 0
+            && !reinterpret_seen_comma && token.type == TokenType::StringLiteral)
+        {
+            // Check if this is a hex literal (starts with 'x' or 'X' followed by quote),
+            // which is the raw_bytes_x pattern. Standard string literals (type name like 'Array(Float32)')
+            // should not be extracted. Hex/bin literals from the lexer start with x/X or b/B prefix.
+            bool is_raw_bytes_literal = false;
+            if (token.size() >= 3)
+            {
+                char first_char = token.begin[0];
+                if (first_char == 'x' || first_char == 'X' || first_char == 'b' || first_char == 'B')
+                    is_raw_bytes_literal = true;
+            }
+            if (is_raw_bytes_literal)
+            {
+                String params_value = String(token.begin, token.size());
+                result.params.emplace_back(params_value, ParameterInfo::Type::STRING);
+                result.new_sql += params_value;
+                result.normalized_sql += "?:string";
+                hash.update("\x00", 1);
+                continue;
+            }
+        }
+        // Track unhex closing parenthesis
+        if (in_unhex && token.type == TokenType::ClosingRoundBracket)
+        {
+            --unhex_paren_depth;
+            if (unhex_paren_depth <= 0)
+            {
+                in_unhex = false;
+            }
+        }
+        // Track comma separator inside reinterpret (between unhex result and type string)
+        if (in_reinterpret && reinterpret_paren_depth > 0 && token.type == TokenType::Comma)
+        {
+            reinterpret_seen_comma = true;
+        }
+        // Track reinterpret closing parenthesis
+        if (in_reinterpret && token.type == TokenType::ClosingRoundBracket)
+        {
+            --reinterpret_paren_depth;
+            if (reinterpret_paren_depth <= 0)
+            {
+                in_reinterpret = false;
+                reinterpret_seen_comma = false;
+            }
+        }
+        // --- End reinterpret(unhex) handling ---
+        // Only trigger vector_complete when we see a ClosingRoundBracket that is NOT
+        // inside a reinterpret() call.  Without this guard, the ')' from unhex() or
+        // from reinterpret() itself would prematurely reset vector_function_type,
+        // causing subsequent tokens (like the type string 'Array(Float32)') to be
+        // mis-handled by the generic literal path.
+        if (vector_function_type && is_comma && token.type == TokenType::ClosingRoundBracket
+            && !in_reinterpret)
         {
             vector_complete = true;
             vector_function_type = 0;
@@ -1248,9 +1757,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
         }
         if (is_comma && token.type == TokenType::StringLiteral &&
                 (vector_function_type == 2 ||
-                    (is_cast &&
-                        (vector_function_type == 1 || vector_function_type == 3)
-                    )
+                    (is_cast && vector_function_type == 1)
                 )
             )
         {
@@ -1303,7 +1810,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
 
                 last_significant = nested;
             }
-            if (use_cast && array_depth == 1  && !is_function && (vector_function_type == 1 || vector_function_type == 3))
+            if (use_cast && !is_cast && array_depth == 1  && !is_function && vector_function_type == 1)
             {
                 appendFunctionName(result.new_sql, FunctionNames::CAST);
                 result.new_sql += "('";
@@ -1338,19 +1845,19 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizeQue
             {
                 String original_array(array_begin, static_cast<size_t>(array_end - array_begin));
                 result.new_sql += original_array;
-                if (array_depth == 1  && !is_function && (vector_function_type == 1 || vector_function_type == 3))
+                if (array_depth == 1  && !is_function && vector_function_type == 1)
                     result.normalized_sql += "?:array";
                 else
                     result.normalized_sql += original_array;
                 result.params.emplace_back(original_array, ParameterInfo::Type::NUMERIC_VECTOR);
 
                 vector_complete = true;
-                if (num_literals_in_sequence == 0 && (vector_function_type == 1 || vector_function_type == 3))
+                if (num_literals_in_sequence == 0 && vector_function_type == 1)
                     hash.update("\x00", 1);
 
                 ++num_literals_in_sequence;
 
-                if (use_cast && array_depth == 1  && !is_function && (vector_function_type == 1 || vector_function_type == 3))
+                if (use_cast && !is_cast && array_depth == 1  && !is_function && vector_function_type == 1)
                 {
                     result.new_sql += "','Array(Float)')";
                     result.normalized_sql += ",?:string)";
@@ -1567,16 +2074,26 @@ bool VectorQueryParameters::replaceConstantsInQueryPlan(
         try
         {
             Field raw_value = parameters.parsed_params[parameter_index];
-            if (raw_value.getType() == Field::Types::String && isArray(dag_node.result_type))
-            {
-                Field converted;
-                const auto & raw_text = raw_value.safeGet<String>();
-                if (stringToNumericArrayField(raw_text, dag_node.result_type, converted))
-                    raw_value = std::move(converted);
-            }
             DataTypePtr final_type = getType(data_type_ptr, dag_node.result_type);
+            /// A String parameter can stand for the Array constant of this plan node: the literals of
+            /// cast('[...]', 'Array(...)'), reinterpret(unhex('...'), 'Array(...)') and
+            /// reinterpret(x'...', 'Array(...)') stay Strings in the AST — that keeps a restored AST
+            /// identical to a freshly parsed one — and are converted to the Array only here, using
+            /// the type the plan node itself carries. The conversion returns the constant column
+            /// directly, so a vector literal never has to be materialized as a Field.
+            if (raw_value.getType() == Field::Types::String && isArray(final_type))
+            {
+                if (ColumnPtr converted_column = stringParamToArrayColumn(raw_value.safeGet<String>(), final_type))
+                {
+                    /// The conversion yields a single value, so the node keeps the same shape as on
+                    /// the generic path below — but the value never goes through a Field.
+                    const_cast<DataTypePtr &>(dag_node.result_type) = std::move(final_type);
+                    dag_node.column = ColumnConst::create(std::move(converted_column), 1);
+                    return true;
+                }
+            }
             if (final_type->getTypeId() != static_cast<TypeIndex>(raw_value.getType()))
-                raw_value = convertFieldToType(raw_value, *final_type);
+                raw_value = convertFieldToType(raw_value, *final_type, nullptr, {}, false, true);
             // ActionsDAG constants are rewritten by replacing the const column payload
             // at the recorded node index with the parsed runtime Field value.
             ColumnConstPtr new_column = final_type->createColumnConst(1, raw_value);
@@ -1721,12 +2238,58 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
 
             size_t parent_size = parent_list.size();
             int parent_index = static_cast<int>(parent_size) - 2;
-            if (last_function_name == getFunctionName(FunctionNames::CAST) &&
-                    (last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)
-                    || last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
+            bool is_reinterpret_unhex = false;
+            bool is_reinterpret_raw_bytes = false;
+            /// Target type extracted from reinterpret's second argument (e.g. Array(Float32)).
+            /// Used to override the default type inferred from the literal value,
+            /// which would be String for both unhex('...') and x'...' literals.
+            DataTypePtr reinterpret_target_type;
+            if (last_function_name == getFunctionName(FunctionNames::CAST) 
+                && isVectorDistanceFunctionName(last_second_function_name)
                 )
             {
                 is_cast = true;
+                parent_index = parent_index - 2;
+            }
+            else if (last_function_name == "unhex" && last_second_function_name == "reinterpret")
+            {
+                String third_function_name;
+                if (function_size >= 3)
+                    third_function_name = function_list[function_size - 3];
+                if (isVectorDistanceFunctionName(third_function_name))
+                {
+                    is_reinterpret_unhex = true;
+                    parent_index = parent_index - 4;
+                }
+                else
+                {
+                    LOG_DEBUG(logger, "unhex inside reinterpret but not inside vector function, skip");
+                    parent_list.pop_back();
+                    return;
+                }
+            }
+            else if (last_function_name == "reinterpret" &&
+                     isVectorDistanceFunctionName(last_second_function_name))
+            {
+                if (parent_index >= 0 && static_cast<size_t>(parent_index) < parent_list.size())
+                {
+                    auto reinterpret_args = parent_list[parent_index];
+                    bool is_first_arg = false;
+                    for (size_t ci = 0; ci < reinterpret_args->children.size(); ++ci)
+                    {
+                        if (reinterpret_args->children[ci].get() == ast.get())
+                        {
+                            is_first_arg = (ci == 0);
+                            break;
+                        }
+                    }
+                    if (!is_first_arg)
+                    {
+                        parent_list.pop_back();
+                        return;
+                    }
+                }
+                is_reinterpret_raw_bytes = true;
                 parent_index = parent_index - 2;
             }
             if (parent_index < 0 || static_cast<size_t>(parent_index) >= parent_list.size())
@@ -1744,7 +2307,7 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     ident_name_list.push_back(ident_node->name());
             }
             parent_list.pop_back();
-            if (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
+            if (isVectorDistanceFunctionName(last_function_name))
             {
                 if (static_cast<Int32>(type) != FieldRef::Types::Array)
                 {
@@ -1766,19 +2329,15 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
             }
             else if (last_function_name == getFunctionName(FunctionNames::CAST))
             {
-                if (last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
+                if (isVectorDistanceFunctionName(last_second_function_name))
                 {
-                    pos.field_type = FieldRef::Types::Array;
+                    /// The literal keeps its own type: `cast('[1,2,3]', 'Array(Float32)')` holds a
+                    /// String literal, and converting it to an Array here would make the restored
+                    /// AST differ from the freshly parsed one.  The conversion happens when the
+                    /// QueryPlan constant binding is applied, using the type from the plan.
                     if (is_vector)
                     {
                         is_vector = false;
-                        if (static_cast<Int32>(type) != FieldRef::Types::String)
-                        {
-                            can_cache = false;
-                            LOG_DEBUG(logger, "3, last_function_name = {} type = {}",
-                                last_function_name, static_cast<Int32>(type));
-                            return;
-                        }
                     }
                     else
                     {
@@ -1791,6 +2350,69 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     can_cache = false;
                     LOG_DEBUG(logger, "4, last_function_name = {} type = {}",
                             last_function_name, static_cast<Int32>(type));
+                    return;
+                }
+            }
+            else if (is_reinterpret_unhex || is_reinterpret_raw_bytes)
+            {
+                /// As for CAST above: `reinterpret(x'...')` and `reinterpret(unhex('...'))` hold a
+                /// String literal, which must stay a String until the QueryPlan binding is applied.
+                /// Extract the target Array type from reinterpret's second argument.
+                /// For reinterpret(unhex('...'), 'Array(Float32)'), the second argument is the
+                /// string literal 'Array(Float32)', which we resolve via DataTypeFactory.
+                /// For reinterpret(x'...', 'Array(Float32)'), same logic applies.
+                ///
+                /// Index calculation (parent_size counts the current literal, which is the last
+                /// element of parent_list):
+                ///   is_reinterpret_raw_bytes: [..., reinterpret, reinterpret.arguments, literal]
+                ///     → reinterpret.arguments is at parent_size-2
+                ///   is_reinterpret_unhex: [..., reinterpret, reinterpret.arguments, unhex,
+                ///     unhex.arguments, literal] → reinterpret.arguments is two levels further up,
+                ///     at parent_size-4
+                /// Note that both indices must point at reinterpret.arguments, whose second child
+                /// holds the target type; pointing at the `unhex` function made the extraction
+                /// fail for `reinterpret(unhex('...'))`.
+                {
+                    size_t reinterpret_args_idx = is_reinterpret_unhex ? (parent_size - 4) : (parent_size - 2);
+                    // LOG_ERROR(logger, "collectASTLiteralPositions: looking for reinterpret.args, parent_size={}, reinterpret_args_idx={}", parent_size, reinterpret_args_idx);
+                    if (reinterpret_args_idx < parent_list.size())
+                    {
+                        auto reinterpret_args = parent_list[reinterpret_args_idx];
+                        // LOG_ERROR(logger, "collectASTLiteralPositions: reinterpret_args node id={}, children_size={}", reinterpret_args->getID(), reinterpret_args->children.size());
+                        if (reinterpret_args->children.size() >= 2)
+                        {
+                            if (const auto * type_lit = reinterpret_args->children[1]->as<ASTLiteral>())
+                            {
+                                if (type_lit->value.getType() == Field::Types::String)
+                                {
+                                    const auto & type_str = type_lit->value.safeGet<String>();
+                                    try
+                                    {
+                                        reinterpret_target_type = DataTypeFactory::instance().get(type_str);
+                                    }
+                                    catch (...)
+                                    {
+                                        LOG_DEBUG(logger, "collectASTLiteralPositions: failed to parse reinterpret target type: {}", type_str);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                LOG_DEBUG(logger, "collectASTLiteralPositions: reinterpret.args[1] is not ASTLiteral, id={}", reinterpret_args->children[1]->getID());
+                            }
+                        }
+                    }
+                }
+                // LOG_ERROR(logger, "collectASTLiteralPositions: found reinterpret/unhex literal, is_reinterpret_unhex={}, is_reinterpret_raw_bytes={}, type={}, ident_name_list.size()={}, reinterpret_target_type={}",
+                //     is_reinterpret_unhex, is_reinterpret_raw_bytes, static_cast<Int32>(type), ident_name_list.size(),
+                //     reinterpret_target_type ? dataTypePtrToString(reinterpret_target_type) : "null");
+                if (is_vector)
+                {
+                    is_vector = false;
+                }
+                else
+                {
+                    is_vector = true;
                     return;
                 }
             }
@@ -1824,9 +2446,9 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                 }
             }
             if (!ident_name_list.empty()  &&
-                    (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) ||
-                        (is_cast && last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)) ||
-                        (is_cast && last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
+                    (isVectorDistanceFunctionName(last_function_name) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) ||
+                        (is_cast && isVectorDistanceFunctionName(last_second_function_name)) ||
+                        (is_reinterpret_unhex || is_reinterpret_raw_bytes)
                     )
                 )
             {
@@ -1850,10 +2472,10 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     char step_char = ast_path_name[static_cast<size_t>(Offset::StepType)];
                     if (step_char == 'E')
                     {
-                        if (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) ||
-                            (is_cast && last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)) ||
-                            (is_cast && last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
-                        )
+                        if (isVectorDistanceFunctionName(last_function_name) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) ||
+                            (is_cast && isVectorDistanceFunctionName(last_second_function_name)) ||
+                            (is_reinterpret_unhex || is_reinterpret_raw_bytes)
+                            )
                             pos.step_type = 4;
                         else
                             pos.step_type = 1;
@@ -1871,10 +2493,17 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
                     return;
                 }
                 pos.path = path;
-                pos.target_type = target_type;
+                /// Use the extracted reinterpret target type (e.g. Array(Float32)) if available,
+                /// otherwise fall back to the type inferred from the literal value itself.
+                /// For reinterpret(unhex('...'), 'Array(Float32)') and reinterpret(x'...', 'Array(Float32)'),
+                /// reinterpret_target_type is extracted from the second argument of reinterpret.
+                pos.target_type = reinterpret_target_type ? reinterpret_target_type : target_type;
                 pos.function_list = function_list;
                 pos.ast_path_name = ast_path_name;
                 pos.identifier_name = getFieldName(pos.identifier_name);
+                // LOG_DEBUG(logger, "collectASTLiteralPositions: added position, identifier_name={}, field_type={}, step_type={}, function_list_size={}, target_type={}",
+                //     pos.identifier_name, pos.field_type, pos.step_type, pos.function_list.size(),
+                //     pos.target_type ? dataTypePtrToString(pos.target_type) : "null");
                 positions.push_back(pos);
             }
             return;
@@ -1887,18 +2516,28 @@ std::vector<VectorQueryPlanCache::ASTLiteralPosition> VectorQueryParameters::col
             // AST literal position -> QueryPlan binding.
             String function_name = Poco::toLower(func->name);
 
+            // Check if we're currently inside a vector function context
+            bool inside_vector_function = !function_list.empty() &&
+                (isVectorDistanceFunctionName(function_list.back()) ||
+                 function_list.back() == getFunctionName(FunctionNames::HASTOKEN));
+            bool inside_reinterpret = !function_list.empty() && function_list.back() == "reinterpret";
+
             if (!only_vector ||
                     (only_vector &&
-                        (function_name == getFunctionName(FunctionNames::COSINEDISTANCE) || function_name == getFunctionName(FunctionNames::L2DISTANCE) || function_name == getFunctionName(FunctionNames::HASTOKEN) ||
+                        (isVectorDistanceFunctionName(function_name) || function_name == getFunctionName(FunctionNames::HASTOKEN) ||
                             (function_name == getFunctionName(FunctionNames::CAST) &&
-                                (last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) || last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN))
-                            )
+                                (isVectorDistanceFunctionName(last_function_name))
+                            ) ||
+                            /// Support reinterpret(unhex('...')) inside vector functions
+                            (function_name == "reinterpret" && (inside_vector_function || inside_reinterpret)) ||
+                            /// Support unhex inside reinterpret for binary constant extraction
+                            (function_name == "unhex" && inside_reinterpret)
                         )
                     )
                 )
             {
                 function_list.push_back(function_name);
-                if (function_name != getFunctionName(FunctionNames::COSINEDISTANCE) && function_name != getFunctionName(FunctionNames::L2DISTANCE))
+                if (!isVectorDistanceFunctionName(function_name))
                 {
                     for (size_t i = 0; i < ast->children.size(); ++i)
                     {
@@ -1980,7 +2619,9 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
     NormalizedQueryResult query_result;
 
     if (!query_ast)
+    {
         return query_result;
+    }
 
     Field converted;
     std::string_view raw = "'__VEC_PLACEHOLDER__'";
@@ -1991,6 +2632,18 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
     catch (...)
     {
         LOG_DEBUG(logger, "parse string error,raw={},size={},error={}", raw, raw.size(), getCurrentExceptionMessage(false));
+        return query_result;
+    }
+
+    Field converted_str_in_cast;
+    std::string_view raw_str_in_cast = "'__VEC_STR_PLACEHOLDER__'";
+    try
+    {
+        parseStringLiteral(raw_str_in_cast, converted_str_in_cast);
+    }
+    catch (...)
+    {
+        LOG_DEBUG(logger, "parse string error,raw={},size={},error={}", raw_str_in_cast, raw_str_in_cast.size(), getCurrentExceptionMessage(false));
         return query_result;
     }
 
@@ -2025,7 +2678,7 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
         return child->getID('-');
     };
 
-    bool is_vector = true;
+    UInt32 vector_parameter_number = 0;
 
     std::function<void(ASTPtr &, std::vector<ASTPtr> &, size_t, NodePath &, std::vector<String> &, String)> collect
         = [&](ASTPtr & ast, std::vector<ASTPtr> & parent_list, size_t depth, NodePath & path,
@@ -2042,11 +2695,19 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
         String last_second_function_name;
         if (function_size >= 2)
             last_second_function_name = function_list[function_size - 2];
+        const size_t vector_argument_transform_depth = vectorArgumentTransformDepthUnderVectorSearch(function_list);
+        const bool is_vector_argument_transform = vector_argument_transform_depth > 0;
+        const bool is_reinterpret_child_literal = last_second_function_name == getFunctionName(FunctionNames::REINTERPRET)
+            && (isVectorDistanceFunctionName(getThirdLastFunctionName(function_list)));
+        bool is_reinterpret_unhex = false;
+        bool is_reinterpret_raw_bytes = false;
+        DataTypePtr reinterpret_target_type;
         if (auto * literal_node = ast->as<ASTLiteral>())
         {
             if (!functionCanCache(last_function_name))
             {
                 can_cache = false;
+                LOG_DEBUG(logger, "do not support {} Function", last_function_name);
                 return;
             }
             if (last_function_name == "modulo")
@@ -2056,7 +2717,40 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                 return;
             }
             const auto type = literal_node->value.getType();
-            const auto target_type = applyVisitor(FieldToDataType(), literal_node->value);
+            DataTypePtr target_type;
+            for (auto it = parent_list.rbegin(); it != parent_list.rend(); ++it)
+            {
+                if (!*it)
+                    continue;
+                const auto * cast_func = (*it)->as<ASTFunction>();
+                if (!cast_func)
+                    continue;
+                const auto func_name_lower = Poco::toLower(cast_func->name);
+                if (func_name_lower != CAST_FUNCTION_NAME && func_name_lower != "_cast")
+                    continue;
+                if (cast_func->arguments && cast_func->arguments->children.size() >= 2)
+                {
+                    const auto & type_arg = cast_func->arguments->children[1];
+                    try
+                    {
+                        if (const auto * type_literal = type_arg->as<ASTLiteral>())
+                        {
+                            target_type = DataTypeFactory::instance().get(type_literal->value.safeGet<String>());
+                        }
+                        else
+                        {
+                            target_type = DataTypeFactory::instance().get(type_arg);
+                        }
+                    }
+                    catch (...)
+                    {
+                        LOG_DEBUG(logger, "Failed to get target type from CAST AST: {}", getCurrentExceptionMessage(false));
+                    }
+                }
+                break;
+            }
+            if (!target_type)
+                target_type = applyVisitor(FieldToDataType(), literal_node->value);
             std::vector<String> ident_name_list;
             VectorQueryPlanCache::ASTLiteralPosition pos;
             pos.identifier_name = "";
@@ -2065,12 +2759,57 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
 
             size_t parent_size = parent_list.size();
             int parent_index = static_cast<int>(parent_size) - 2;
-            if (last_function_name == getFunctionName(FunctionNames::CAST) &&
-                    (last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)
-                    || last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
-                )
+            if (is_vector_argument_transform)
             {
+                // LOG_ERROR(logger, "normalizedAST: is_vector_argument_transform=true, depth={}, function_list=[{}], last_function_name={}, last_second_function_name={}, parent_size={}",
+                //     vector_argument_transform_depth,
+                //     [&]() { String s; for (const auto & f : function_list) { if (!s.empty()) s += ","; s += f; } return s; }(),
+                //     last_function_name, last_second_function_name, parent_size);
                 is_cast = true;
+                /// Every CAST/reinterpret layer contributes its own function node plus
+                /// its argument list to parent_list, so the vector search function that
+                /// owns the vector argument sits 2 entries further up per layer.
+                parent_index = parent_index - 2 * static_cast<int>(vector_argument_transform_depth);
+                // LOG_ERROR(logger, "normalizedAST: is_vector_argument_transform adjusted parent_index={}", parent_index);
+            }
+            else if (last_function_name == getFunctionName(FunctionNames::UNHEX) && last_second_function_name == getFunctionName(FunctionNames::REINTERPRET))
+            {
+                String third_function_name = getThirdLastFunctionName(function_list);
+                if (isVectorDistanceFunctionName(third_function_name))
+                {
+                    is_reinterpret_unhex = true;
+                    parent_index = parent_index - 4;
+                }
+                else
+                {
+                    LOG_DEBUG(logger, "unhex inside reinterpret but not inside vector function, skip");
+                    parent_list.pop_back();
+                    return;
+                }
+            }
+            else if (last_function_name == getFunctionName(FunctionNames::REINTERPRET)
+                     && !is_vector_argument_transform
+                     && (isVectorDistanceFunctionName(last_second_function_name)))
+            {
+                if (parent_index >= 0 && static_cast<size_t>(parent_index) < parent_list.size())
+                {
+                    auto reinterpret_args = parent_list[parent_index];
+                    bool is_first_arg = false;
+                    for (size_t ci = 0; ci < reinterpret_args->children.size(); ++ci)
+                    {
+                        if (reinterpret_args->children[ci].get() == ast.get())
+                        {
+                            is_first_arg = (ci == 0);
+                            break;
+                        }
+                    }
+                    if (!is_first_arg)
+                    {
+                        parent_list.pop_back();
+                        return;
+                    }
+                }
+                is_reinterpret_raw_bytes = true;
                 parent_index = parent_index - 2;
             }
             if (parent_index < 0 || static_cast<size_t>(parent_index) >= parent_list.size())
@@ -2087,18 +2826,17 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                 if (const auto * ident_node = parent->children[i]->as<ASTIdentifier>())
                     ident_name_list.push_back(ident_node->name());
             }
+            if (ident_name_list.empty() && (is_vector_argument_transform || is_reinterpret_child_literal || is_reinterpret_unhex || is_reinterpret_raw_bytes))
+                ident_name_list = collectNearestVectorSearchIdentifiers(parent_list);
             parent_list.pop_back();
-            if (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
+            if (isVectorDistanceFunctionName(last_second_function_name))
             {
-                if (static_cast<Int32>(type) != FieldRef::Types::Array)
+                if (vector_parameter_number)
                 {
-                    can_cache = false;
-                    LOG_DEBUG(logger, "1, last_function_name = {} type = {}",
-                        last_function_name, static_cast<Int32>(type));
                     return;
                 }
             }
-            else if (last_function_name == getFunctionName(FunctionNames::HASTOKEN))
+            if (last_function_name == getFunctionName(FunctionNames::HASTOKEN))
             {
                 if (static_cast<Int32>(type) != FieldRef::Types::String)
                 {
@@ -2108,33 +2846,143 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                     return;
                 }
             }
-            else if (last_function_name == getFunctionName(FunctionNames::CAST))
+            else if (isVectorArgumentTransformFunctionName(last_function_name))
             {
-                if (last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
+                // LOG_ERROR(logger, "normalizedAST: entered isVectorArgumentTransformFunctionName handler, last_function_name={}, is_vector_argument_transform={}, vector_parameter_number={}", last_function_name, is_vector_argument_transform, vector_parameter_number);
+                if (is_vector_argument_transform)
                 {
-                    pos.field_type = FieldRef::Types::Array;
-                    if (is_vector)
+                    /// Keep the literal's own type: a literal written as a string, e.g.
+                    /// cast('[11,36,..]', 'Array(Float32)'), must stay a string position.
+                    /// The enclosing CAST already parses the text, so a restored string is
+                    /// both equivalent for execution and much cheaper to key on. Forcing
+                    /// Array here made the parameter be re-parsed into a 128-element numeric
+                    /// array on every restore, and made the result-cache key differ from the
+                    /// one written by the non-plan-cache path (result_off/only_cache_query_plan),
+                    /// which is what made the cast workload slower with the plan cache enabled.
+                    pos.field_type = static_cast<Int32>(type) == FieldRef::Types::String
+                        ? FieldRef::Types::String
+                        : FieldRef::Types::Array;
+                    if (!path.empty() && path.back() > 0)
+                        return;
+                    if (!vector_parameter_number)
                     {
-                        is_vector = false;
-                        if (static_cast<Int32>(type) != FieldRef::Types::String)
+                        if (last_function_name == getFunctionName(FunctionNames::CAST)
+                            && static_cast<Int32>(type) != FieldRef::Types::String
+                            && static_cast<Int32>(type) != FieldRef::Types::Array)
                         {
                             can_cache = false;
-                            LOG_DEBUG(logger, "3, last_function_name = {} type = {}",
-                                last_function_name, static_cast<Int32>(type));
+                            LOG_DEBUG(logger, "3, last_function_name = {} vector_parameter_number = {} type = {}",
+                                last_function_name, vector_parameter_number, static_cast<Int32>(type));
                             return;
+                        }
+                        if (last_function_name == getFunctionName(FunctionNames::REINTERPRET))
+                        {
+                            pos.field_type = FieldRef::Types::String;
+                            if (static_cast<Int32>(type) != FieldRef::Types::String)
+                            {
+                                can_cache = false;
+                                LOG_DEBUG(logger, "4, last_function_name = {} vector_parameter_number = {} type = {}",
+                                    last_function_name, vector_parameter_number, static_cast<Int32>(type));
+                                return;
+                            }
+                            /// Extract reinterpret_target_type from reinterpret's second argument
+                            /// (the type string, e.g. 'Array(Float32)') for raw_bytes_x literals.
+                            /// Without this, candidateMatchesAstLiteral cannot convert the String
+                            /// parameter to the Array type needed to match the plan constant,
+                            /// causing CollectQueryPlanConstants to return empty bindings and
+                            /// preventing the plan from being cached.
+                            {
+                                // LOG_ERROR(logger, "normalizedAST(isVectorArgTransform): extracting reinterpret_target_type, parent_size={}, parent_list.size()={}", parent_size, parent_list.size());
+                                size_t reinterpret_args_idx = parent_size >= 2 ? parent_size - 2 : 0;
+                                // LOG_ERROR(logger, "normalizedAST(isVectorArgTransform): reinterpret_args_idx={}", reinterpret_args_idx);
+                                if (reinterpret_args_idx < parent_list.size())
+                                {
+                                    auto reinterpret_args = parent_list[reinterpret_args_idx];
+                                    // LOG_ERROR(logger, "normalizedAST(isVectorArgTransform): reinterpret_args id={}, children.size()={}", reinterpret_args->getID(), reinterpret_args->children.size());
+                                    if (reinterpret_args->children.size() >= 2)
+                                    {
+                                        // LOG_ERROR(logger, "normalizedAST(isVectorArgTransform): child[0] id={}, child[1] id={}", reinterpret_args->children[0]->getID(), reinterpret_args->children[1]->getID());
+                                        if (const auto * type_lit = reinterpret_args->children[1]->as<ASTLiteral>())
+                                        {
+                                            if (type_lit->value.getType() == Field::Types::String)
+                                            {
+                                                const auto & type_str = type_lit->value.safeGet<String>();
+                                                try
+                                                {
+                                                    reinterpret_target_type = DataTypeFactory::instance().get(type_str);
+                                                    // LOG_ERROR(logger, "normalizedAST(isVectorArgTransform): parsed target_type={}", reinterpret_target_type ? reinterpret_target_type->getName() : "null");
+                                                }
+                                                catch (...)
+                                                {
+                                                    LOG_DEBUG(logger, "normalizedAST(isVectorArgTransform): failed to parse type '{}': {}", type_str, getCurrentExceptionMessage(false));
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     else
-                    {
-                        is_vector = true;
                         return;
-                    }
                 }
                 else
                 {
                     can_cache = false;
-                    LOG_DEBUG(logger, "4, last_function_name = {} type = {}",
-                            last_function_name, static_cast<Int32>(type));
+                    LOG_DEBUG(logger, "5, last_function_name = {} vector_parameter_number = {} type = {}",
+                            last_function_name, vector_parameter_number, static_cast<Int32>(type));
+                    return;
+                }
+            }
+            else if (is_reinterpret_unhex || is_reinterpret_raw_bytes)
+            {
+                /// reinterpret(unhex('<hex>'), 'Array(Float32)') and
+                /// reinterpret(x'<hex>', 'Array(Float32)') take the same treatment as the
+                /// CAST above: the literal is a string and stays one, so the restored
+                /// parameter is the original text. The QueryPlan side turns it into the
+                /// array with the real target type of the vector column (apply_bindings_to_dag
+                /// / apply_bindings_to_vector_info), which is where the type is known.
+                /// Forcing Array here only sent the restore down the array-parsing path,
+                /// which re-decoded the hex and then failed to build the array anyway.
+                pos.field_type = static_cast<Int32>(type) == FieldRef::Types::String
+                    ? FieldRef::Types::String
+                    : FieldRef::Types::Array;
+                {
+                    size_t reinterpret_args_idx = is_reinterpret_unhex ? (parent_size - 3) : (parent_size - 2);
+                    if (reinterpret_args_idx < parent_list.size())
+                    {
+                        auto reinterpret_args = parent_list[reinterpret_args_idx];
+                        if (reinterpret_args->children.size() >= 2)
+                        {
+                            if (const auto * type_lit = reinterpret_args->children[1]->as<ASTLiteral>())
+                            {
+                                if (type_lit->value.getType() == Field::Types::String)
+                                {
+                                    const auto & type_str = type_lit->value.safeGet<String>();
+                                    try
+                                    {
+                                        reinterpret_target_type = DataTypeFactory::instance().get(type_str);
+                                    }
+                                    catch (...)
+                                    {
+                                        LOG_DEBUG(logger, "normalizedAST: failed to parse reinterpret target type: {}", type_str);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!path.empty() && path.back() > 0)
+                    return;
+                if (vector_parameter_number)
+                    return;
+            }
+            else if (is_reinterpret_child_literal)
+            {
+                if (static_cast<Int32>(type) != FieldRef::Types::String)
+                {
+                    can_cache = false;
+                    LOG_DEBUG(logger, "reinterpret child function literal has invalid type, last_function_name = {} type = {}", last_function_name, type);
                     return;
                 }
             }
@@ -2167,13 +3015,14 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                     pos.identifier_name = " ";
                 }
             }
-            if (!ident_name_list.empty()  &&
-                    (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) ||
-                        (is_cast && last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)) ||
-                        (is_cast && last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
+            if (!ident_name_list.empty()  && !vector_parameter_number && 
+                    (isVectorDistanceFunctionName(last_function_name) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) ||
+                        is_vector_argument_transform ||
+                        is_reinterpret_child_literal || is_reinterpret_unhex || is_reinterpret_raw_bytes
                     )
                 )
             {
+                vector_parameter_number++;
                 ast_path_name += "Identifier-" + ident_name_list[0];
                 pos.identifier_name = ident_name_list[0];
             }
@@ -2194,9 +3043,9 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                     char step_char = ast_path_name[static_cast<size_t>(Offset::StepType)];
                     if (step_char == 'E')
                     {
-                        if (last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) || last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) ||
-                            (is_cast && last_second_function_name == getFunctionName(FunctionNames::L2DISTANCE)) ||
-                            (is_cast && last_second_function_name == getFunctionName(FunctionNames::COSINEDISTANCE))
+                        if (isVectorDistanceFunctionName(last_function_name) || last_function_name == getFunctionName(FunctionNames::HASTOKEN) ||
+                            is_vector_argument_transform ||
+                            is_reinterpret_child_literal || is_reinterpret_unhex || is_reinterpret_raw_bytes
                         )
                             pos.step_type = 4;
                         else
@@ -2215,13 +3064,26 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
                     return;
                 }
                 pos.path = path;
-                pos.target_type = target_type;
+                pos.target_type = reinterpret_target_type ? reinterpret_target_type : target_type;
                 pos.function_list = function_list;
                 pos.ast_path_name = ast_path_name;
                 pos.identifier_name = getFieldName(pos.identifier_name);
                 positions.push_back(pos);
+                // LOG_ERROR(logger, "normalizedAST: added position index={}, identifier_name={}, target_type={}, reinterpret_target_type={}, step_type={}, field_type={}, function_list={}",
+                //     positions.size() - 1,
+                //     pos.identifier_name,
+                //     pos.target_type ? dataTypePtrToString(pos.target_type) : "null",
+                //     reinterpret_target_type ? dataTypePtrToString(reinterpret_target_type) : "null",
+                //     pos.step_type,
+                //     static_cast<int>(pos.field_type),
+                //     [&]() {
+                //         String s;
+                //         for (const auto & f : function_list) { if (!s.empty()) s += ","; s += f; }
+                //         return s;
+                //     }());
+                // LOG_ERROR(logger, "normalizedAST: pos.target_type FINAL={}", dataTypePtrToString(pos.target_type));
                 query_result.parsed_params.push_back(literal_node->value);
-                literal_node->value = converted;
+                literal_node->value = (is_cast && static_cast<Int32>(type) == FieldRef::Types::String) ? converted_str_in_cast : converted;
             }
             return;
         }
@@ -2233,18 +3095,29 @@ VectorQueryParameters::NormalizedQueryResult VectorQueryParameters::normalizedAS
             // AST literal position -> QueryPlan binding.
             String function_name = Poco::toLower(func->name);
 
+            // Check if we're currently inside a vector function context
+            bool inside_vector_function = !function_list.empty() &&
+                (isVectorDistanceFunctionName(function_list.back()) ||
+                 function_list.back() == getFunctionName(FunctionNames::HASTOKEN));
+            bool inside_reinterpret = !function_list.empty() && function_list.back() == "reinterpret";
+
             if (!only_vector ||
                     (only_vector &&
-                        (function_name == getFunctionName(FunctionNames::COSINEDISTANCE) || function_name == getFunctionName(FunctionNames::L2DISTANCE) || function_name == getFunctionName(FunctionNames::HASTOKEN) ||
-                            (function_name == getFunctionName(FunctionNames::CAST) &&
-                                (last_function_name == getFunctionName(FunctionNames::COSINEDISTANCE) || last_function_name == getFunctionName(FunctionNames::L2DISTANCE) || last_function_name == getFunctionName(FunctionNames::HASTOKEN))
-                            )
+                        (isVectorDistanceFunctionName(function_name) || function_name == getFunctionName(FunctionNames::HASTOKEN) ||
+                            (isVectorArgumentTransformFunctionName(function_name) &&
+                                isVectorDistanceFunctionName(last_function_name)
+                            ) ||
+                            last_function_name == getFunctionName(FunctionNames::REINTERPRET) ||
+                            (function_name == getFunctionName(FunctionNames::REINTERPRET) && (inside_vector_function || inside_reinterpret)) ||
+                            (function_name == getFunctionName(FunctionNames::UNHEX) && inside_reinterpret)
                         )
                     )
                 )
             {
+                if (isVectorDistanceFunctionName(function_name))
+                    vector_parameter_number = 0;
                 function_list.push_back(function_name);
-                if (function_name != getFunctionName(FunctionNames::COSINEDISTANCE) && function_name != getFunctionName(FunctionNames::L2DISTANCE))
+                if (!isVectorDistanceFunctionName(function_name))
                 {
                     for (size_t i = 0; i < ast->children.size(); ++i)
                     {
@@ -2331,6 +3204,9 @@ std::vector<Field> VectorQueryParameters::buildParameterValuesFromAST(
         const auto * literal = node ? node->as<ASTLiteral>() : nullptr;
         if (!literal)
             return {};
+        // LOG_ERROR(logger, "buildParameterValuesFromAST: pos.field_type={}, value_type={}, value_size={}",
+        //     pos.field_type, static_cast<int>(literal->value.getType()),
+        //     literal->value.getType() == Field::Types::String ? literal->value.safeGet<String>().size() : 0);
         values.push_back(literal->value);
     }
 
@@ -2365,6 +3241,15 @@ bool VectorQueryParameters::applyParametersByASTLiteralPositions(
                 continue;
 
             literal->value = parameters.parsed_params[i];
+            /// The literal keeps the value the parser itself produces for that token, so a String
+            /// stays a String even when the surrounding expression turns it into an Array:
+            /// cast('[...]', 'Array(...)'), reinterpret(unhex('...'), 'Array(...)') and
+            /// reinterpret(x'...', 'Array(...)') all reinterpret a String at their own level.
+            /// Converting it here would make the restored AST differ from a freshly parsed one,
+            /// which changes the query result cache key and the value the plan is rebuilt with when
+            /// the cached plan cannot be restored. Converting a String parameter into the Array the
+            /// plan node expects is done at the QueryPlan stage instead, where the node carries the
+            /// target type (see apply_bindings_to_dag).
             ++replaced_count;
         }
         return replaced_count > 0;
@@ -2555,7 +3440,13 @@ bool VectorQueryParameters::parseNormalizedParamsWithPlan(
     bool only_vector) const
 {
     if (parameters.params.empty())
+    {
+        // When params is empty but parsed_params already populated (from normalizedAST),
+        // the values are already typed Fields and no further parsing is needed.
+        if (!parameters.parsed_params.empty())
+            return true;
         return false;
+    }
     if (!plan_constant_bindings)
         return false;
     std::vector<DataTypePtr> target_types(parameters.params.size());

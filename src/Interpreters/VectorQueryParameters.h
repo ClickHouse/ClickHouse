@@ -22,7 +22,9 @@ enum class FunctionNames
     COSINEDISTANCE,  ///< cosinedistance(vector1, vector2) — cosine similarity distance
     L2DISTANCE,      ///< l2distance(vector1, vector2) — Euclidean (L2) distance
     HASTOKEN,        ///< hastoken(column, token) — text search token matching
-    CAST             ///< cast(expr, type) — explicit type cast, used to wrap vector literals
+    CAST,            ///< cast(expr, type) — explicit type cast, used to wrap vector literals
+    REINTERPRET,
+    UNHEX
 };
 
 /// Offsets into AST/DAG path names for extracting metadata.
