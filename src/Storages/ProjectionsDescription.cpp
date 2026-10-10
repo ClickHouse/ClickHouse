@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
@@ -94,34 +95,65 @@ extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
 namespace
 {
 
-/// The first release admits codecs whose behavior does not depend on session opt-ins or
-/// a changing part default. Keep the original AST spelling so omitted codec arguments can
-/// follow an allowed change to the projection output type.
-std::unordered_map<String, ASTPtr> resolveProjectionColumnCodecs(
+/// Bind declared names to the projection's typed, physical columns. The SELECT-facing name can
+/// be an alias, while the part must keep its existing expression-derived column name.
+void applyProjectionColumnCodecs(
     const IAST & declarations,
-    const Block & sample_block,
+    const Names & visible_names,
+    const Names & physical_names,
     const ColumnsDescription & source_columns,
-    const String & projection_name)
+    const String & projection_name,
+    bool with_parent_part_offset,
+    ColumnsDescription & projection_columns)
 {
     static const Settings codec_policy;
     static const NameSet allowed_families = {"NONE", "LZ4", "ZSTD", "DELTA", "DOUBLEDELTA"};
 
-    std::unordered_map<String, ASTPtr> result;
+    if (visible_names.size() != physical_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} has mismatched visible and physical output bindings", backQuote(projection_name));
+
+    NameSet unique_physical_names;
+    for (const auto & physical_name : physical_names)
+        if (!unique_physical_names.insert(physical_name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} has multiple SELECT outputs stored in column {}",
+                backQuote(projection_name), backQuote(physical_name));
+
+    NameSet bound_columns;
     for (const auto & child : declarations.children)
     {
         const auto & declaration = child->as<const ASTColumnDeclaration &>();
         const auto & name = declaration.name;
-        if (result.contains(name))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN,
-                "Column {} is declared more than once in projection {}", backQuote(name), backQuote(projection_name));
 
-        const auto * output = sample_block.findByName(name);
-        if (!output)
+        std::optional<size_t> output_position;
+        for (size_t i = 0; i < visible_names.size(); ++i)
+        {
+            if (visible_names[i] != name && physical_names[i] != name)
+                continue;
+            if (output_position && *output_position != i)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Column {} ambiguously names more than one output of projection {}",
+                    backQuote(name), backQuote(projection_name));
+            output_position = i;
+        }
+
+        if (!output_position)
             throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
                 "Column {} is not produced by projection {}", backQuote(name), backQuote(projection_name));
-        if (source_columns.hasSubcolumn(GetColumnsOptions::All, name))
+
+        const auto & physical_name = physical_names[*output_position];
+        if (source_columns.hasSubcolumn(GetColumnsOptions::All, physical_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Projection {} cannot declare a codec for subcolumn {}", backQuote(projection_name), backQuote(name));
+                "Projection {} cannot declare a codec for subcolumn {}", backQuote(projection_name), backQuote(physical_name));
+
+        const String storage_name = with_parent_part_offset && physical_name == "_part_offset"
+            ? "_parent_part_offset" : physical_name;
+        if (!projection_columns.has(storage_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} cannot declare a codec for an implicit column {}", backQuote(projection_name), backQuote(name));
+        if (!bound_columns.insert(storage_name).second)
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                "Column {} is declared more than once in projection {}", backQuote(storage_name), backQuote(projection_name));
 
         if (declaration.getType() || declaration.default_specifier != ColumnDefaultSpecifier::Empty
             || declaration.getDefaultExpression() || declaration.getComment() || declaration.getTTL()
@@ -151,10 +183,27 @@ std::unordered_map<String, ASTPtr> resolveProjectionColumnCodecs(
                     stage->formatForErrorMessage(), backQuote(name));
         }
 
-        result.emplace(name, CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-            codec_ast, output->type, CodecValidationSettings(codec_policy)));
+        const auto & output_type = projection_columns.get(storage_name).type;
+        auto & factory = CompressionCodecFactory::instance();
+        auto effective_codec = factory.validateCodecAndGetPreprocessedAST(
+            codec_ast, output_type, CodecValidationSettings(codec_policy));
+
+        /// A lossy projection could return different answers from a base-table scan. Resolve the
+        /// codec for every written substream, just as the part writer does for compound types.
+        bool is_lossy = false;
+        ISerialization::StreamCallback callback = [&](const auto & substream_path)
+        {
+            if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+                return;
+            is_lossy = factory.get(effective_codec, substream_path.back().data.type.get())->isLossyCompression();
+        };
+        output_type->getDefaultSerialization()->enumerateStreams(callback, output_type);
+        if (is_lossy)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} cannot use a lossy codec for column {}", backQuote(projection_name), backQuote(name));
+
+        projection_columns.modify(storage_name, [&](ColumnDescription & output) { output.codec = effective_codec; });
     }
-    return result;
 }
 
 }
@@ -556,6 +605,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
+    Names visible_output_names;
+    Names physical_output_names;
     {
         /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
         /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
@@ -573,6 +624,27 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         query_tree_pass_manager.runOnlyResolve(query_tree);
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
+
+        if (declared_columns)
+        {
+            const auto & resolved_outputs = query_node.getProjectionColumns();
+            const size_t visible_count = resolved_outputs.size() - (projection_order_by ? 1 : 0);
+            visible_output_names.reserve(visible_count);
+            physical_output_names.reserve(visible_count);
+            const auto & projection_nodes = query_node.getProjection().getNodes();
+            if (projection_nodes.size() != resolved_outputs.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot bind codec declarations to the outputs of projection {}", backQuote(result.name));
+            for (size_t i = 0; i < visible_count; ++i)
+            {
+                visible_output_names.push_back(resolved_outputs[i].name);
+                ConvertToASTOptions ast_options;
+                ast_options.fully_qualified_identifiers = false;
+                auto physical_expression = projection_nodes[i]->toAST(ast_options);
+                physical_expression->setAlias({});
+                physical_output_names.push_back(physical_expression->getColumnName());
+            }
+        }
 
         /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
         /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
@@ -662,12 +734,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         metadata.primary_key.definition_ast = nullptr;
     }
 
-    /// Resolve names as the SELECT exposes them, before the internal _part_offset rename.
-    std::unordered_map<String, ASTPtr> declared_codecs;
-    if (declared_columns)
-        declared_codecs = resolveProjectionColumnCodecs(
-            *declared_columns, result.sample_block, columns, result.name);
-
     /// Rename parent _part_offset to _parent_part_offset column
     if (can_hold_parent_part_offset && result.sample_block.has("_part_offset"))
     {
@@ -705,14 +771,14 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             /// before the column was added reads the table default, not the column type's default.
             if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
                 column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
-            const String select_column_name = result.with_parent_part_offset && column_with_type_name.name == "_parent_part_offset"
-                ? "_part_offset" : column_with_type_name.name;
-            if (auto codec = declared_codecs.find(select_column_name);
-                codec != declared_codecs.end())
-                column_description.codec = codec->second;
             metadata_columns.add(std::move(column_description));
         }
     }
+
+    if (declared_columns)
+        applyProjectionColumnCodecs(
+            *declared_columns, visible_output_names, physical_output_names, columns,
+            result.name, result.with_parent_part_offset, metadata_columns);
 
     metadata.setColumns(std::move(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));

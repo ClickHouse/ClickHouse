@@ -9,6 +9,7 @@ set -euo pipefail
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dst_legacy ON CLUSTER test_shard_localhost FORMAT Null;
+DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dst_non_merge ON CLUSTER test_shard_localhost FORMAT Null;
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.dst_current ON CLUSTER test_shard_localhost FORMAT Null;
 DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.src;
 CREATE TABLE ${CLICKHOUSE_DATABASE}.src
@@ -35,6 +36,20 @@ printf 'legacy_rejected\n'
 ${CLICKHOUSE_CLIENT} -q "
 SELECT count() FROM system.tables
 WHERE database = currentDatabase() AND name = 'dst_legacy';
+SELECT count() = 0 FROM system.distributed_ddl_queue
+WHERE query LIKE '%${CLICKHOUSE_DATABASE}%dst_legacy%';
+"
+
+# A non-MergeTree destination does not copy projection metadata and remains valid at format 2.
+${CLICKHOUSE_CLIENT} --allow_projection_column_codecs_in_replicated_or_distributed_ddl 1 \
+    --distributed_ddl_entry_format_version 2 --distributed_ddl_output_mode throw -q "
+CREATE TABLE ${CLICKHOUSE_DATABASE}.dst_non_merge ON CLUSTER test_shard_localhost
+AS ${CLICKHOUSE_DATABASE}.src ENGINE = Memory FORMAT Null;
+"
+${CLICKHOUSE_CLIENT} -q "
+SELECT count() = 0 FROM system.projections
+WHERE database = currentDatabase() AND table = 'dst_non_merge';
+DROP TABLE dst_non_merge ON CLUSTER test_shard_localhost FORMAT Null;
 "
 
 # A current entry copies and normalizes the source on the initiator before enqueueing.
