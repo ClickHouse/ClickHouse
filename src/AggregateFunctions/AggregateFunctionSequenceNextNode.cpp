@@ -410,9 +410,7 @@ public:
         const size_t n = sorted_value.size();
         const size_t size = std::min(static_cast<size_t>(events_size + 1), n);
 
-        /// Version 1 keeps the extreme nodes of both orders, so that a merge with a version 0 state
-        /// after the round trip still finds the nodes of the low 32-bit order. The two orders differ
-        /// only if the event times span more than one block of 2^32.
+        /// Version 1 also keeps the extreme nodes of the low 32-bit order, which a merge with a version 0 state sorts by.
         if (full_timestamps && has_full_timestamps && n > size
             && (seq_base_kind == SequenceBase::Head || seq_base_kind == SequenceBase::Tail)
             && (sorted_value.front()->event_time >> 32) != (sorted_value.back()->event_time >> 32))
