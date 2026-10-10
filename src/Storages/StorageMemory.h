@@ -152,6 +152,9 @@ public:
       */
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
+    /// Marks a table created with `CREATE TEMPORARY TABLE`, which is subject to `max_temporary_table_memory_usage`.
+    void markAsTemporaryTable() { is_temporary_table = true; }
+
     /// Stored as a weak_ptr to break the reference cycle: MaterializedCTE owns the StorageMemory
     /// (via its `storage` and `table_holder` members), and this back-pointer lets us recover the
     /// CTE descriptor from the storage. If we kept a shared_ptr here, neither object would ever
@@ -163,7 +166,7 @@ private:
     static VirtualColumnsDescription createVirtuals();
 
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const ContextPtr & context);
 
     /// The blocks of the table together with the exact number of rows and bytes in them.
     /// The counters are a part of the same object, so they are published atomically with the
@@ -187,6 +190,7 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
+    bool is_temporary_table = false;
     MaterializedCTEWeakPtr materialized_cte;
 
     std::unique_ptr<MemorySettings> memory_settings;
