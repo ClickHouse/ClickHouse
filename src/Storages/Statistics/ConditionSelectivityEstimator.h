@@ -24,6 +24,10 @@ struct ColumnStats
     std::optional<Field> max_value = {};
     /// Fraction of NULL values; unset when unknown.
     std::optional<Float64> null_fraction = {};
+    /// Most distinct values the column can have, proven by a filter (`x = c`, `x IN (c1, ...)`) and kept
+    /// by what follows it; zero when nothing proves a limit. Unlike `num_distinct_values` it never
+    /// comes from a sketch, so the row bounds may use it.
+    UInt64 max_distinct_values = 0;
 };
 
 struct RelationProfile

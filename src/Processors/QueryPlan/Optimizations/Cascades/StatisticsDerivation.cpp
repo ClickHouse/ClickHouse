@@ -40,6 +40,13 @@ namespace Setting
     extern const SettingsBool allow_statistics_optimize;
 }
 
+/// Drops the distinct-value caps of a result whose values the derivation does not follow.
+static void clearDistinctValueCaps(ExpressionStatistics & statistics)
+{
+    for (auto & [_, column_stats] : statistics.column_statistics)
+        column_stats.max_distinct_values = 0;
+}
+
 void StatisticsDerivation::deriveStatistics(GroupId group_id)
 {
     /// The leaves first, so that the search value of a source without statistics, the largest known
@@ -193,6 +200,12 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
                         continue;
                     output_column->second.num_distinct_values
                         = std::min(output_column->second.num_distinct_values, other_column->second.num_distinct_values);
+                    /// Any input's proven limit holds for the output.
+                    if (const UInt64 other_max = other_column->second.max_distinct_values)
+                    {
+                        auto & output_max = output_column->second.max_distinct_values;
+                        output_max = output_max == 0 ? other_max : std::min(output_max, other_max);
+                    }
                 }
             }
             /// Without the clamp a row-count reduction could leave a column NDV above the row count.
@@ -210,6 +223,8 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
         result.rows_unknown = true;
         result.min_row_count = 0;
         result.max_row_count = Float64(std::numeric_limits<UInt64>::max());
+        /// The array columns become their elements, which the caps of the arrays do not bound.
+        clearDistinctValueCaps(result);
         group->statistics = std::move(result);
     }
     else if (!expression->inputs.empty())
@@ -217,6 +232,8 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
         /// By default take statistics from the first input; a result derived from an input without an
         /// estimate has none either.
         group->statistics = input_statistics(0);
+        /// A step not derived here can add values (`ROLLUP` and `CUBE` fill keys with defaults).
+        clearDistinctValueCaps(*group->statistics);
         for (size_t input_index = 1; input_index < expression->inputs.size(); ++input_index)
         {
             group->statistics->rows_unknown |= input_statistics(input_index).rows_unknown;
@@ -329,6 +346,15 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
     return statistics;
 }
 
+/// A `PREWHERE` that keeps only listed constants proves the values of its columns, whatever estimated the rows.
+static void capReadDistinctValues(const ReadFromMergeTree & read_step, ExpressionStatistics & statistics)
+{
+    if (const auto & prewhere_info = read_step.getPrewhereInfo())
+        QueryPlanOptimizations::capDistinctValuesByFilter(
+            prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name), statistics.column_statistics,
+            &prewhere_info->prewhere_actions.getOutputs());
+}
+
 ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMergeTree & read_step)
 {
     ExpressionStatistics statistics;
@@ -374,8 +400,13 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                 statistics.estimated_row_count = analyzed_result
                     ? std::min(Float64(relation_profile.rows), Float64(analyzed_result->selected_rows))
                     : Float64(relation_profile.rows);
+            /// A default in the profile makes the rows a guess, which the replication gate must not take as proven.
+            statistics.estimate_from_defaults |= relation_profile.estimate_from_defaults;
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
+            {
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
+                statistics.column_statistics[column_name].max_distinct_values = column_stats.max_distinct_values;
+            }
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
             /// tables look nearly free to move over the network.
             fillReadColumnWidths(statistics, read_step, table_name);
@@ -383,6 +414,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             fillPhysicalReadBytes(statistics, physical_selected_rows);
 
             LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
+            capReadDistinctValues(read_step, statistics);
             return statistics;
         }
     }
@@ -405,6 +437,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step, statistics);
     fillPhysicalReadBytes(statistics, physical_selected_rows);
 
+    capReadDistinctValues(read_step, statistics);
     return statistics;
 }
 
@@ -627,6 +660,8 @@ ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterSt
         for (auto & [column_name, column_stats] : result_statistics.column_statistics)
             column_stats.num_distinct_values = QueryPlanOptimizations::distinctValuesAfterFilter(
                 column_stats.num_distinct_values, roundToRowCount(input_statistics.estimated_row_count), roundToRowCount(result_statistics.estimated_row_count));
+        QueryPlanOptimizations::capDistinctValuesByFilter(
+            filter_node, result_statistics.column_statistics, &filter_step.getExpression().getOutputs());
         LOG_TEST(getLogger("StatisticsDerivation"), "Filter '{}' selectivity: {}", filter_step.getFilterColumnName(), selectivity);
     }
 

@@ -119,6 +119,19 @@ RelationStats estimateGroupStats(const Names & keys, const RelationStats & input
     }
 
     auto groups = estimateGroupCount(key_distinct_values, input_stats.estimated_rows, input_stats.max_rows);
+    /// Keys limited to constants by a filter below bound the groups by the product of their values.
+    std::optional<UInt64> proven_groups = keys.empty() ? std::nullopt : std::optional<UInt64>(1);
+    for (const auto & key : keys)
+    {
+        const UInt64 values = aggregation_stats.column_stats[key].max_distinct_values;
+        proven_groups = values && proven_groups ? std::optional<UInt64>(saturatingMul(*proven_groups, values)) : std::nullopt;
+    }
+    if (proven_groups)
+    {
+        groups.max_rows = groups.max_rows ? std::min(*groups.max_rows, *proven_groups) : *proven_groups;
+        if (groups.estimated_rows)
+            groups.estimated_rows = std::min(*groups.estimated_rows, *proven_groups);
+    }
     aggregation_stats.estimated_rows = groups.estimated_rows;
     aggregation_stats.max_rows = groups.max_rows;
     return aggregation_stats;
@@ -135,11 +148,38 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         stats.estimated_rows = multiplyRows(stats.estimated_rows, sets);
         stats.max_rows = multiplyRows(input_stats.max_rows, sets);
         stats.imprecise_estimate = true;
+        /// A key missing from a set is filled with a default or NULL: one more value.
+        for (auto & [_, column_stats] : stats.column_stats)
+            if (column_stats.max_distinct_values)
+                column_stats.max_distinct_values = saturatingAdd(column_stats.max_distinct_values, UInt64{1});
     }
     return stats;
 }
 
+namespace
+{
+RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG::Node * filter);
+}
+
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+{
+    auto stats = estimateReadRowsCountImpl(node, filter);
+    /// A filter on the read proves the values it keeps whatever estimated the rows.
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node.step.get()))
+    {
+        capDistinctValuesByFilter(filter, stats.column_stats);
+        if (const auto & prewhere_info = reading->getPrewhereInfo())
+            capDistinctValuesByFilter(
+                prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name), stats.column_stats,
+                &prewhere_info->prewhere_actions.getOutputs());
+    }
+    return stats;
+}
+
+namespace
+{
+
+RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -399,6 +439,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto stats = estimateReadRowsCount(*node.children.front(), predicate);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
+        capDistinctValuesByFilter(predicate, stats.column_stats, &filter_step->getExpression().getOutputs());
         return stats;
     }
 
@@ -435,6 +476,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*node.children.front(), filter);
 
     return {};
+}
+
 }
 
 }

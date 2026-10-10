@@ -75,6 +75,22 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     column_stats = left->column_stats;
     column_stats.insert(right->column_stats.begin(), right->column_stats.end());
 
+    /// An outer join pads the unmatched rows of one side with NULLs or defaults for the other side's
+    /// columns: one more value each.
+    const auto add_padding_value = [&](const std::unordered_map<String, ColumnStats> & padded_side)
+    {
+        for (const auto & [column, _] : padded_side)
+            if (auto & values = column_stats[column].max_distinct_values; values != 0)
+                values = saturatingAdd(values, UInt64{1});
+    };
+    if (join_operator.strictness != JoinStrictness::Semi && join_operator.strictness != JoinStrictness::Anti)
+    {
+        if (join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Full)
+            add_padding_value(right->column_stats);
+        if (join_operator.kind == JoinKind::Right || join_operator.kind == JoinKind::Full)
+            add_padding_value(left->column_stats);
+    }
+
     for (const auto & predicate : join_operator.expression)
     {
         auto [op, left_node, right_node] = predicate.asBinaryPredicate();

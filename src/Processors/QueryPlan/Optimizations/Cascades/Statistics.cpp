@@ -33,8 +33,13 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
         out << " physical_read_bytes: " << physical_read_bytes;
     out << "\n";
     for (const auto & column : column_statistics)
+    {
         out << "`" << column.first << "` NDV : " << column.second.num_distinct_values
-            << " avg_bytes: " << column.second.avg_bytes << "\n";
+            << " avg_bytes: " << column.second.avg_bytes;
+        if (column.second.max_distinct_values)
+            out << " at most " << column.second.max_distinct_values << " values";
+        out << "\n";
+    }
     std::unordered_set<const void *> visited_classes;
     for (const auto & [member, class_ptr] : equivalences.getMemberToClassMap())
     {

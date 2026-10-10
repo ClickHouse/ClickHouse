@@ -105,6 +105,15 @@ UInt64 keyDomain(const RelationStats & relation, const String & column);
 /// rows does. Zero when the NDV is unknown; never above `rows_after`.
 UInt64 distinctValuesAfterFilter(UInt64 distinct_values, UInt64 rows_before, UInt64 rows_after);
 
+/// Sets `max_distinct_values` of the columns `predicate` limits to constants, for each conjunct: one
+/// value for `x = c` without a lossy conversion, the size of the set for `x IN (c1, ...)` with a set of
+/// literals. `x` is an input of the step, which passes through, or one of `outputs` (the step's outputs,
+/// may be null). A column without an entry gets one.
+void capDistinctValuesByFilter(
+    const ActionsDAG::Node * predicate,
+    std::unordered_map<String, ColumnStats> & column_stats,
+    const ActionsDAG::NodeRawConstPtrs * outputs = nullptr);
+
 /// Share of one side's key values that the other side also has, from the two NDVs (zero =
 /// unknown) and the key's domain: fewer values on the other side all lie within this side's; as
 /// many or more meet this side's in proportion to their share of the domain, all of them when the
