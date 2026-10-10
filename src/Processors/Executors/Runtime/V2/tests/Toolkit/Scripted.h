@@ -28,6 +28,7 @@ struct Action
 
 Action work(std::function<void(IProcessor &)> on_work);
 Action emit(UInt64 value);
+std::vector<Action> emits(UInt64 first_value, size_t count);
 
 Action async(std::function<int(IProcessor &)> on_async);
 Action fd(int descriptor);

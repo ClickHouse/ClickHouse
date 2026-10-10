@@ -187,6 +187,14 @@ Action emit(UInt64 value)
     return work([value](IProcessor & processor) { dynamic_cast<Scripted &>(processor).current = makeChunk(value); });
 }
 
+std::vector<Action> emits(UInt64 first_value, size_t count)
+{
+    std::vector<Action> actions;
+    for (size_t index = 0; index < count; ++index)
+        actions.push_back(emit(first_value + index));
+    return actions;
+}
+
 Action async(std::function<int(IProcessor &)> on_async)
 {
     Action action;

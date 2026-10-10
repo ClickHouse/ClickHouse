@@ -7,8 +7,8 @@
 namespace DB::Runtime::V2
 {
 
-Processors chain(std::vector<ProcessorPtr> stages);
-Processors fanIn(std::vector<ProcessorPtr> sources, ProcessorPtr sink);
-Processors fanOut(ProcessorPtr source, std::vector<ProcessorPtr> sinks);
+void chain(const std::vector<ProcessorPtr> & stages);
+ProcessorPtr fanIn(const std::vector<ProcessorPtr> & sources, const ProcessorPtr & sink);
+ProcessorPtr fanOut(const ProcessorPtr & source, const std::vector<ProcessorPtr> & sinks);
 
 }

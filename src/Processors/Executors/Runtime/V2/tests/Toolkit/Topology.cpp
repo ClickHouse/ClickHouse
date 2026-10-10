@@ -8,15 +8,13 @@
 namespace DB::Runtime::V2
 {
 
-Processors chain(std::vector<ProcessorPtr> stages)
+void chain(const std::vector<ProcessorPtr> & stages)
 {
     for (size_t index = 1; index < stages.size(); ++index)
         connect(stages[index - 1]->getOutputs().front(), stages[index]->getInputs().front());
-
-    return Processors(std::make_move_iterator(stages.begin()), std::make_move_iterator(stages.end()));
 }
 
-Processors fanIn(std::vector<ProcessorPtr> sources, ProcessorPtr sink)
+ProcessorPtr fanIn(const std::vector<ProcessorPtr> & sources, const ProcessorPtr & sink)
 {
     auto resize = std::make_shared<ResizeProcessor>(makeHeader(), sources.size(), 1);
 
@@ -24,14 +22,10 @@ Processors fanIn(std::vector<ProcessorPtr> sources, ProcessorPtr sink)
     for (auto [source, input] : std::views::zip(sources, resize->getInputs()))
         connect(source->getOutputs().front(), input);
 
-    Processors processors;
-    processors.append_range(std::move(sources));
-    processors.push_back(std::move(resize));
-    processors.push_back(std::move(sink));
-    return processors;
+    return resize;
 }
 
-Processors fanOut(ProcessorPtr source, std::vector<ProcessorPtr> sinks)
+ProcessorPtr fanOut(const ProcessorPtr & source, const std::vector<ProcessorPtr> & sinks)
 {
     auto resize = std::make_shared<ResizeProcessor>(makeHeader(), 1, sinks.size());
 
@@ -39,11 +33,7 @@ Processors fanOut(ProcessorPtr source, std::vector<ProcessorPtr> sinks)
     for (auto [output, sink] : std::views::zip(resize->getOutputs(), sinks))
         connect(output, sink->getInputs().front());
 
-    Processors processors;
-    processors.append_range(std::move(sinks));
-    processors.push_back(std::move(resize));
-    processors.push_back(std::move(source));
-    return processors;
+    return resize;
 }
 
 }
