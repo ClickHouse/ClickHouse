@@ -9,8 +9,7 @@
 --     predicate (no predicate-only reuse path), including skip-index-only TopK shapes where no
 --     `__topKFilter` node is folded into the filter DAG, so the plain condition hash of the TopK
 --     read would otherwise match the plain `WHERE` entry, and TopK reads with an existing
---     `PREWHERE`, which is folded into the filter DAG before the threshold filter is installed and
---     so reaches the WHERE consult under the primer's own predicate hash;
+--     `PREWHERE`, whose key would otherwise match the plain `PREWHERE` query's;
 --   * a TopK read must not write any QCC entry (neither the WHERE write in
 --     `updateQueryConditionCache`, nor index-analysis exclusions in `selectRangesToRead`,
 --     nor row-level entries from the reader);
@@ -110,10 +109,6 @@ SELECT '--- A TopK read with an existing PREWHERE must not reuse a plain PREWHER
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
--- An explicit `PREWHERE` takes dynamic filtering as well as the minmax skip index, so the read is
--- stamped as TopK by both arms. The `PREWHERE` is folded into the filter DAG before the threshold
--- filter is installed, so the WHERE consult in `filterPartsByQueryConditionCache` recovers the
--- primer's plain predicate hash and without the read-side gate the TopK read would hit its entry.
 SELECT v1 FROM tab_idx PREWHERE v2 = 30000 FORMAT Null SETTINGS log_comment = '04628_pw_prime';
 SELECT v1 FROM tab_idx PREWHERE v2 = 30000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04628_pw_topk_after_prime';
 SELECT v1 FROM tab_idx PREWHERE v2 = 30000 FORMAT Null SETTINGS log_comment = '04628_pw_plain_reuse';
