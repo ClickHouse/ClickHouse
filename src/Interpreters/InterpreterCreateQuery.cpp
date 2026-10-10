@@ -2036,14 +2036,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Cannot ATTACH VIEW {}.{}, it is a Table",
                 backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
 
-        /// `isView` also covers Window Views, which the view parser cannot spell, so the stub would
-        /// silently take the stored kind.
-        if (create.isView() && create_query.is_window_view)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Cannot ATTACH VIEW {}.{}, it is a WindowView. Replace VIEW with TABLE, keeping the "
-                "rest of the query",
-                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
-
         /// Follows the checks of the stored kind above: the conversion rewrites the metadata on disk
         /// and removes transaction files, and neither can be rolled back once the query fails.
         if (create.attach_as_replicated.has_value())
