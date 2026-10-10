@@ -2,6 +2,7 @@
 
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
+#include <base/types.h>
 
 #include <optional>
 #include <vector>

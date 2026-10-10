@@ -83,6 +83,7 @@ TEST(Wyrd, SimulationFindsLockOrderDeadlock)
     for (UInt64 seed = 1; seed <= 200 && !found; ++seed)
     {
         SimulationParams params;
+        params.collect_timeline = true;
         params.seed = seed;
         SimulationResult result = Simulation(params).run(lock_in_opposite_order);
         ASSERT_NE(result.status, SimulationResult::Status::Exception) << result.exception_message;
@@ -132,6 +133,7 @@ TEST(Wyrd, SimulationStopsAtTheStepLimit)
 TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
 {
     SimulationParams params;
+    params.collect_timeline = true;
     params.max_steps = 1000;
     params.seed = 43;
 
@@ -153,6 +155,7 @@ TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
 TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
 {
     SimulationParams params;
+    params.collect_timeline = true;
     params.lock_free_suspend_probability = 1.0;
     params.max_suspended_threads = 2;
 
@@ -220,6 +223,7 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
     for (UInt64 seed = 1; seed <= 200 && !found; ++seed)
     {
         SimulationParams params;
+        params.collect_timeline = true;
         params.seed = seed;
         params.lock_free_suspend_probability = 1.0;
         params.preempt_probability = 1.0;

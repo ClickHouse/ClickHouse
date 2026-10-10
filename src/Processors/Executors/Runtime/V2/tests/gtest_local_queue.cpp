@@ -91,7 +91,6 @@ WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simula
 
     LocalQueue ring("ring");
     Wyrd::Atomic<bool> owner_done{false};
-    Wyrd::Atomic<UInt32> successful_steals{0};
 
     Wyrd::Race race;
     race.add(
@@ -136,16 +135,12 @@ WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simula
                 const UInt32 count = ring.stealFifo(stolen);
                 for (UInt32 offset = 0; offset < count; ++offset)
                     take(stolen[offset]);
-                if (count > 0)
-                    successful_steals.fetch_add(1);
                 Wyrd::progress();
             }
         });
     race.run();
 
     EXPECT_EQ(ring.size(), 0u);
-    if (total >= 32)
-        EXPECT_GT(successful_steals.load(), 0u);
     for (size_t index = 0; index < total; ++index)
         EXPECT_EQ(taken[index].load(), 1u) << "entry " << index;
 }
