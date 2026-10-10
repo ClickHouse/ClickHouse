@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "
 # Only a file that has not been modified for a few seconds is cached.
 touch -d "1 minute ago" "${FILE_PATH}"
 
-QUERY="SELECT count() > 0 FROM system.columns_cache WHERE endsWith(part, '/${FILE}')"
+QUERY="SELECT count() > 0 FROM system.columns_cache WHERE database = '' AND endsWith(part, '/${FILE}')"
 
 function populate()
 {
