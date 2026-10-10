@@ -1097,8 +1097,18 @@ void RestorerFromBackup::skipTableDataOnBackupMetadataOnlyStoragePolicy(
 
     /// The table finds its data on the storage under a path derived from its UUID, so it must keep its UUID from the backup.
     /// `createTable` keeps it when it sees the policy in the definition of the table, this catches the cases it doesn't.
+    /// A table without a UUID, e.g. in an `Ordinary` database, keeps its data under a path derived from its name, which
+    /// `RESTORE ... AS` or a restore into another database changes, so it is refused too.
     auto uuid = storage->getStorageID().uuid;
-    if (uuid != UUIDHelpers::Nil && uuid_in_backup != UUIDHelpers::Nil && uuid != uuid_in_backup)
+    if (uuid == UUIDHelpers::Nil || uuid_in_backup == UUIDHelpers::Nil)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it must "
+            "have its UUID from the backup to find the data on the storage, but {}",
+            tableNameWithTypeToString(table_name.database, table_name.table, false),
+            uuid == UUIDHelpers::Nil ? "its database doesn't give tables UUIDs" : "the backup records no UUID for it");
+
+    if (uuid != uuid_in_backup)
         throw Exception(
             ErrorCodes::CANNOT_RESTORE_TABLE,
             "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it must "

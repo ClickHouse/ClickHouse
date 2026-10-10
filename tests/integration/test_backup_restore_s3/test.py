@@ -1352,6 +1352,12 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     assert "<name>metadata/default/sample.sql</name>" in backup_manifest, backup_manifest
     assert "<name>data/" not in backup_manifest, backup_manifest
 
+    # Only the definition is backed up, so a backup of some partitions would restore as the whole table.
+    err = instance.query_and_get_error(
+        f"BACKUP TABLE sample PARTITIONS 0 TO S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
+
     # The restored table keeps its UUID, so it can't be restored next to the source table.
     err = instance.query_and_get_error(
         f"RESTORE TABLE sample AS sample_copy FROM {backup_destination}"
@@ -1367,6 +1373,17 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     )
     assert "CANNOT_RESTORE_TABLE" in err and "partition filter cannot be applied" in err, err
     instance.query("DROP TABLE IF EXISTS sample SYNC")
+
+    # A table in an `Ordinary` database has no UUID: its data would be under a path derived from its name.
+    instance.query(
+        "CREATE DATABASE ordinary_db ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample AS ordinary_db.sample FROM {backup_destination}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and "its database doesn't give tables UUIDs" in err, err
+    instance.query("DROP DATABASE ordinary_db SYNC")
 
     # An existing table with another UUID doesn't see the data of the table from the backup.
     instance.query(

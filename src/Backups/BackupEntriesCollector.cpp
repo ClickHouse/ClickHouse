@@ -660,6 +660,18 @@ void BackupEntriesCollector::gatherTablesMetadata()
                 tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
         }
 
+        /// The data of a table on a storage policy marked `backup_metadata_only` is never backed up, the storage provides
+        /// it. A backup of some of its partitions would be restored as the whole table, so refuse it.
+        if (it != database_info.tables.end() && it->second.anyElementNamedPartitions() && res_table_info.storage
+            && BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(res_table_info.storage, context))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Cannot backup specific partitions of {}: it is on a storage policy marked backup_metadata_only, so only its "
+                "definition is backed up, and it is restored with all the data of its storage",
+                tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+        }
+
         /// An excluded table contributes no partitions, so the scope below is left unset for it.
         if (!res_table_info.should_backup_data)
             continue;
