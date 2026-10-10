@@ -914,6 +914,21 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// Whether `database_replicated_allow_only_replicated_engine` restricts the tables that `create` may define.
+bool isOnlyReplicatedEngineAllowed(const ASTCreateQuery & create, const DatabasePtr & database, const ContextPtr & context)
+{
+    return !create.attach
+        && context->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine]
+        && database && database->getEngineName() == "Replicated";
+}
+
+[[noreturn]] void throwUnreplicatedTableDataNotAllowed()
+{
+    throw Exception(ErrorCodes::UNKNOWN_STORAGE,
+                    "Only tables with a replicated engine or tables which do not store their own data on disk "
+                    "are allowed in a Replicated database");
+}
+
 }
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
@@ -1199,6 +1214,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
+
+        /// Classify the table function before inferring the structure from it: the inference opens and
+        /// reads the source, which would turn a deterministic rejection into a file or access error.
+        /// The same check runs in `doCreateTable` for a definition with an explicit column list.
+        if (!create.isTemporary()
+            && isOnlyReplicatedEngineAllowed(create, DatabaseCatalog::instance().tryGetDatabase(create.getDatabase()), getContext())
+            && table_function->hasUnreplicatedTableDataOnDisk())
+            throwUnreplicatedTableDataNotAllowed();
+
         properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
@@ -2691,15 +2715,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
         database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
-    bool only_replicated_engine_allowed = !create.attach
-        && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine]
-        && database && database->getEngineName() == "Replicated";
-    auto throw_unreplicated_table_data_not_allowed = []
-    {
-        throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                        "Only tables with a replicated engine or tables which do not store their own data on disk "
-                        "are allowed in a Replicated database");
-    };
+    bool only_replicated_engine_allowed = isOnlyReplicatedEngineAllowed(create, database, getContext());
 
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
@@ -2720,7 +2736,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// directly, which may not have enough information to decide (e.g. `url` with a relative URL resolved
         /// against `url_base`), see `ITableFunction::hasUnreplicatedTableDataOnDisk`.
         if (only_replicated_engine_allowed && table_function->hasUnreplicatedTableDataOnDisk())
-            throw_unreplicated_table_data_not_allowed();
+            throwUnreplicatedTableDataNotAllowed();
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -2769,7 +2785,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     validateStorage(*res, mode, getContext(), create.isTemporary());
 
     if (only_replicated_engine_allowed && res->hasUnreplicatedTableDataOnDisk())
-        throw_unreplicated_table_data_not_allowed();
+        throwUnreplicatedTableDataNotAllowed();
 
     if (from_path && !res->storesDataOnDisk())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
