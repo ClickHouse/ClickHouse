@@ -47,8 +47,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     bool save_unneeded_columns = true,
     bool null_as_default = false);
 
-/// Converting a column between these types replaces its NULLs with the column DEFAULT, so its subcolumns must be
-/// taken from the converted column.
+/// Converting between these types replaces NULLs with the column DEFAULT, so subcolumns must come from the converted column.
 bool conversionReplacesNullsWithDefault(const DataTypePtr & type_in_part, const DataTypePtr & type_in_storage);
 
 /// Tries to convert columns in block to required_columns

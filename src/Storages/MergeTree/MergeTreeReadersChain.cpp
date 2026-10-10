@@ -392,8 +392,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// fillMissingColumns() must be called after reading but before any filterings because
     /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
     /// fillMissingColumns() fixes this.
-    /// Names of columns produced by earlier chain steps (advertised in `previous_header`, or projected out of it into
-    /// `result.additional_columns`, which evaluateMissingDefaults also receives), so a
+    /// Names of columns produced by earlier chain steps (in `previous_header` or `result.additional_columns`), so a
     /// subcolumn whose parent is among them is deferred to evaluateMissingDefaults, not default-filled.
     NameSet previous_step_columns;
     for (const auto & col : previous_header)
