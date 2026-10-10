@@ -258,6 +258,7 @@ bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info
 
 namespace ProfileEvents
 {
+    extern const Event RuntimeFilterIndexAnalysisReads;
     extern const Event IndexAnalysisRounds;
     extern const Event SelectedParts;
     extern const Event SelectedPartsTotal;
@@ -625,6 +626,9 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
     /// virtual columns that only this task map materializes.
     parallel_replicas_step->index_read_tasks = index_read_tasks;
+    /// Empty for a classic parallel-replicas local plan, which is still unoptimized here and gets its
+    /// descriptors from its own optimization; carries them for a plan-based fragment, which does not.
+    parallel_replicas_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*this);
     return parallel_replicas_step;
 }
 
@@ -4742,6 +4746,10 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    /// Plan-based parallel replicas clone the subtree to ship a fragment, and the fragment's local plan is
+    /// optimized with `enable_join_runtime_filters = false` (the filters are already in it), so the
+    /// optimization that attaches these descriptors does not run there and cannot put them back.
+    cloned_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*this);
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }
@@ -5467,11 +5475,20 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         && runtime_filter_lookup
         && !runtime_filters_for_data_read.empty()
         && !pending_mutations
-        /// Not supported under parallel replicas: the descriptor is not carried to remote replica
-        /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
-        /// The setting's description documents this no-op, and
-        /// `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
-        && !isParallelReadingFromReplicas()
+        /// Parallel replicas prune too, each replica over the granules it reads with the filter it built.
+        /// That filter is not always complete: exactly one side of the join is split among the replicas
+        /// and the other is read in full on every replica, so for a `RIGHT` join the build side is the
+        /// split one and each replica's filter covers only its own share of it. It is still safe, because
+        /// every matching pair of rows meets on exactly one replica - the one that reads the split side's
+        /// row - and each replica emits a disjoint share of the result. A probe granule a replica drops has
+        /// no match among the build rows of that replica, and its matches with any other build rows are
+        /// produced by the replica that reads them. A granule skipped this way is reported to the
+        /// coordinator as read, so the work is not handed to another replica instead.
+        ///
+        /// Descriptors are attached by a plan optimization, so a replica has them whether it planned the
+        /// query itself or optimized a plan it deserialized. A read that has none leaves
+        /// `runtime_prune_primary_key` and `runtime_skip_indexes` empty below and reads its share unpruned,
+        /// which costs coverage, not correctness; `make_distributed_plan` still reads that way.
         && indexes.has_value())
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
@@ -5509,6 +5526,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                     runtime_skip_indexes.push_back(MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings));
             }
         }
+
+        /// A read that gets here with something to prune kept its descriptors through every rebuild of the
+        /// step, which is the invariant the parallel-replicas paths kept breaking; the granule counters only
+        /// move once a granule is actually examined, which depends on the coordinator's assignment and on
+        /// the filter being ready, so they cannot stand in for it.
+        if (runtime_prune_primary_key || !runtime_skip_indexes.empty())
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterIndexAnalysisReads);
     }
 
     /// A top-K read whose threshold column is a primary key column skips granules by the primary index as the
@@ -7168,12 +7192,11 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         query_info.prewhere_info->serialize(ctx);
 
     /// `join_runtime_filters_for_index_analysis` (the descriptors that drive left-side granule pruning
-    /// for `enable_join_runtime_filters_index_analysis`) is intentionally not serialized: the worker
-    /// rebuilds a fresh `ReadFromMergeTree` in `deserialize` without these descriptors, so the pruning is
-    /// simply skipped on distributed reads. Results stay correct (the read just does no runtime pruning);
-    /// only the optimization is lost. This mirrors the parallel-replicas guard in `initializePipeline`.
-    /// Propagating the descriptors to worker plans is a follow-up. The setting's description documents
-    /// this no-op, and `05153_join_runtime_filters_index_analysis_distributed_noop` pins it.
+    /// for `enable_join_runtime_filters_index_analysis`) is not serialized, and does not need to be: the
+    /// worker rebuilds a fresh `ReadFromMergeTree` in `deserialize` and then optimizes the plan it
+    /// received, which attaches its own descriptors. A read that ends up without them reads its share
+    /// unpruned - correct, just unoptimized - which is what still happens with `make_distributed_plan`.
+    /// `05153_join_runtime_filters_index_analysis_modes` pins which modes prune.
 
     /// Bucketed reads exist only since query-plan serialization version 2. If the peer only understands
     /// version 1, throw a clear error rather than write bytes it would misread (the deserialize side checks
