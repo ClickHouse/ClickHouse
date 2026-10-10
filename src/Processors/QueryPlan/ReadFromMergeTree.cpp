@@ -4720,6 +4720,12 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregat
     if (isQueryWithFinal())
         return false;
 
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
+        return false;
+
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
     /// With aggregation-by-partitions optimisation we might create a separate pool for each partition.
     if (is_parallel_reading_from_replicas)
@@ -4739,6 +4745,12 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregat
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy()
 {
     if (isQueryWithFinal())
+        return false;
+
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -4761,6 +4773,12 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy(
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForCreatingSet()
 {
     if (isQueryWithFinal())
+        return false;
+
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
         return false;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -4812,6 +4830,12 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
     if (isQueryWithFinal())
         return;
 
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
+        return;
+
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
     /// With distinct-by-partitions optimisation we might create a separate pool for each partition.
     if (is_parallel_reading_from_replicas)
@@ -4831,6 +4855,12 @@ void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForDistinct
 void ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForWindow()
 {
     if (isQueryWithFinal())
+        return;
+
+    /// A bucketed distributed read does not ship this layout to the worker, which would read with
+    /// ordinary splitting while the downstream steps still skip the cross-stream merge (see
+    /// `supportsBucketedRead`).
+    if (distributed_read_bucket_count)
         return;
 
     /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
@@ -7387,7 +7417,12 @@ bool ReadFromMergeTree::supportsBucketedRead() const
     /// An order set before the plan was optimized is rejected in getReasonReadCannotBeDistributed,
     /// so it cannot reach here. Do not gate on it: the worker
     /// path asks for its order before consulting this, and refusing would route the read to a node with no catalog.
+    /// `output_each_partition_through_separate_port` is not serialized: a worker would replay the read with
+    /// ordinary splitting, spreading one partition across several streams, while the downstream
+    /// `LimitByStep` / `DistinctStep` / `AggregatingStep` still skip the cross-stream merge they were
+    /// told is unnecessary. Keep such a read local.
     return !unsupported_deferred_filters
+        && !output_each_partition_through_separate_port
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         && index_read_tasks.empty();
 }
