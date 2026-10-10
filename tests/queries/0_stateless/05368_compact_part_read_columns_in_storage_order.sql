@@ -9,7 +9,8 @@ DROP TABLE IF EXISTS t_compact_order;
 CREATE TABLE t_compact_order (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k
 SETTINGS storage_policy = 's3_no_cache', index_granularity = 64, index_granularity_bytes = 10485760,
     min_bytes_for_wide_part = 10737418240, min_bytes_for_full_part_storage = 0,
-    compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1;
+    compress_per_column_in_compact_parts = 1, ratio_of_defaults_for_sparse_serialization = 1,
+    compact_parts_max_granules_to_buffer = 1;
 
 SYSTEM STOP MERGES t_compact_order;
 

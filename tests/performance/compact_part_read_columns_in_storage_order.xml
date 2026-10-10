@@ -7,7 +7,8 @@
     <create_query>
         CREATE TABLE compact_part_read_order (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k
         SETTINGS disk = disk(type = s3, endpoint = 'http://localhost:11111/test/perf/compact_part_read_order/', access_key_id = 'clickhouse', secret_access_key = 'clickhouse'),
-            index_granularity = 256, min_bytes_for_wide_part = 10737418240, min_bytes_for_full_part_storage = 0
+            index_granularity = 256, min_bytes_for_wide_part = 10737418240, min_bytes_for_full_part_storage = 0,
+            compact_parts_max_granules_to_buffer = 1
     </create_query>
     <fill_query>SYSTEM STOP MERGES compact_part_read_order</fill_query>
     <fill_query>INSERT INTO compact_part_read_order SELECT number, number FROM numbers(100000)</fill_query>
