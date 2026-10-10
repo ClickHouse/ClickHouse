@@ -174,3 +174,18 @@ write_pcap(out_dir / "ipv6.pcap", [(ipv6(6, tcp), len(ipv6(6, tcp)))], linktype=
 # still produces a row with the capture metadata and `raw`, but no layer columns.
 sll2 = bytes.fromhex("0800000000000001000106") + bytes(9) + ipv4(17, udp)
 write_pcap(out_dir / "sll2.pcap", [(sll2, len(sll2))], linktype=276)
+
+# IEEE 802.3 frames: the type field is the length of the frame data (at most
+# 1500) and the data starts with an LLC header. With both SAPs 0xAA and control
+# 0x03, a SNAP header (OUI 000000, EtherType 0x0800) carries an IPv4 packet; the
+# second frame is a plain LLC frame (SAPs 0x42, an STP BPDU) padded to the
+# 60-byte minimum. The third frame is Ethernet II for comparison.
+def dot3(llc_data, addresses="0180c20000000011223344aa"):
+    return bytes.fromhex(addresses) + struct.pack(">H", len(llc_data)) + llc_data
+
+
+snap_ip = dot3(bytes.fromhex("aaaa03000000") + struct.pack(">H", 0x0800) + ipv4(17, udp))
+stp = dot3(bytes.fromhex("424203") + bytes(35))
+stp_padded = stp + b"\xee" * (60 - len(stp))
+dot3_frames = [snap_ip, stp_padded, ethernet(ipv4(17, udp))]
+write_pcap(out_dir / "dot3.pcap", [(packet, len(packet)) for packet in dot3_frames])

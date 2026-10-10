@@ -132,7 +132,7 @@ FROM file('$DATA_DIR/truncated.pcap', PCAP)
 ORDER BY number FORMAT TSV"
 
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap packets.pcapng truncated.pcap raw_ip.pcap ipv4.pcap ipv6.pcap sll2.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap raw_ip.pcap ipv4.pcap ipv6.pcap sll2.pcap dot3.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
@@ -210,3 +210,9 @@ echo "--- a link type that is not dissected yields rows with the capture metadat
 $CLICKHOUSE_LOCAL -q "
 SELECT number, link_type, protocols, capture_length, length(raw), ip_version, ip_protocol, src_port
 FROM file('$DATA_DIR/sll2.pcap', PCAP) FORMAT TSV"
+
+echo "--- IEEE 802.3 frames: LLC, and IP behind SNAP ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, link_type, protocols, eth_src, eth_dst, eth_type, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port
+FROM file('$DATA_DIR/dot3.pcap', PCAP)
+ORDER BY number FORMAT TSV"

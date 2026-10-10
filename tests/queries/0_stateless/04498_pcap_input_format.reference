@@ -98,6 +98,7 @@ raw_ip.pcap	0	0	0
 ipv4.pcap	0	0	0
 ipv6.pcap	0	0	0
 sll2.pcap	0	0	0
+dot3.pcap	0	0	0
 --- padded short frame: payload excludes the Ethernet padding ---
 60	4	ping	0	42
 --- tunnels: IP columns describe the outer header ---
@@ -140,3 +141,7 @@ ipv4.pcap	1	IP	['IP','UDP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	0
 ipv6.pcap	1	IPv6	['IPv6','TCP','RAW']	\N		6	2001:db8::1	2001:db8::2	TCP	12345	80	22
 --- a link type that is not dissected yields rows with the capture metadata only ---
 1	RAW	['RAW']	48	48	\N		\N
+--- IEEE 802.3 frames: LLC, and IP behind SNAP ---
+1	IEEE802_3	['IEEE802_3','SNAP','IP','UDP']	00:11:22:33:44:aa	01:80:c2:00:00:00	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
+2	IEEE802_3	['IEEE802_3','LLC','STP']	00:11:22:33:44:aa	01:80:c2:00:00:00	LLC	\N	\N	\N		\N	\N
+3	ETHERNET_II	['ETHERNET_II','IP','UDP']	66:77:88:99:aa:bb	00:11:22:33:44:55	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
