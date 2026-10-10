@@ -12,3 +12,7 @@
 │  a[hint~1000] ⋈ d[no_stats<=10000]
 -- a set from a subquery: no proof
 │  a[hint~1000] ⋈ d
+-- a projection alias is visible in WHERE: the filter is on substring(substring(s, 1, 2), 1, 2), which is the alias itself, at most 3 rows
+│  a[hint~1000] ⋈ d[no_stats<=3]
+-- a shorter prefix of the alias keeps several values of it: no proof
+│  a[hint~1000] ⋈ d[no_stats<=10000]

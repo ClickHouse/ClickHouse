@@ -33,10 +33,15 @@ DROP TABLE IF EXISTS t_dc_decimal;
 CREATE TABLE t_dc_decimal (id UInt64, d Decimal(38, 0)) ENGINE = MergeTree ORDER BY id
     SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 8192, index_granularity_bytes = '10Mi';
 INSERT INTO t_dc_decimal SELECT number, number % 50 FROM numbers(10000);
+DROP TABLE IF EXISTS t_dc_strings;
+CREATE TABLE t_dc_strings (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1, index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO t_dc_strings SELECT number, toString(number) FROM numbers(10000);
 -- The runner randomizes the insert block size; one part per table keeps the granule counts in the plan fixed.
 OPTIMIZE TABLE t_dc_outer FINAL;
 OPTIMIZE TABLE t_dc_values FINAL;
 OPTIMIZE TABLE t_dc_decimal FINAL;
+OPTIMIZE TABLE t_dc_strings FINAL;
 
 SELECT '-- DISTINCT over v IN (three values): at most 3 rows';
 SELECT trimBoth(explain) FROM (EXPLAIN SELECT count() FROM t_dc_outer AS a
@@ -67,6 +72,17 @@ SELECT '-- a set from a subquery: no proof';
 SELECT trimBoth(explain) FROM (EXPLAIN SELECT count() FROM t_dc_outer AS a
 JOIN (SELECT DISTINCT v FROM t_dc_values WHERE v IN (SELECT number FROM numbers(3))) AS d ON a.k = d.v) WHERE explain LIKE '%⋈%';
 
+SELECT '-- a projection alias is visible in WHERE: the filter is on substring(substring(s, 1, 2), 1, 2), which is the alias itself, at most 3 rows';
+SELECT trimBoth(explain) FROM (EXPLAIN SELECT count() FROM t_dc_outer AS a
+JOIN (SELECT DISTINCT p FROM (SELECT substr(s, 1, 2) AS p FROM t_dc_strings WHERE substr(p, 1, 2) IN ('10', '11', '12'))) AS d
+ON toString(a.k) = d.p) WHERE explain LIKE '%⋈%';
+
+SELECT '-- a shorter prefix of the alias keeps several values of it: no proof';
+SELECT trimBoth(explain) FROM (EXPLAIN SELECT count() FROM t_dc_outer AS a
+JOIN (SELECT DISTINCT p FROM (SELECT substr(s, 1, 2) AS p FROM t_dc_strings WHERE substr(p, 1, 1) IN ('1', '2', '3'))) AS d
+ON toString(a.k) = d.p) WHERE explain LIKE '%⋈%';
+
+DROP TABLE t_dc_strings;
 DROP TABLE t_dc_outer;
 DROP TABLE t_dc_values;
 DROP TABLE t_dc_decimal;

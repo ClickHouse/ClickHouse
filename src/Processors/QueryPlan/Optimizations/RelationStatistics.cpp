@@ -130,6 +130,55 @@ bool equalityKeepsOneValue(const ActionsDAG::Node & column, const ActionsDAG::No
     return isInteger(column_type) && isInteger(constant_type);
 }
 
+std::optional<Int64> constantInteger(const ActionsDAG::Node * node)
+{
+    if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+        return {};
+    /// A constant of the plan is a `ColumnConst`, often of zero rows.
+    const auto * column_const = typeid_cast<const ColumnConst *>(node->column.get());
+    if (!column_const)
+        return {};
+    const Field value = column_const->getField();
+    if (value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() <= UInt64(std::numeric_limits<Int64>::max()))
+        return Int64(value.safeGet<UInt64>());
+    if (value.getType() == Field::Types::Int64)
+        return value.safeGet<Int64>();
+    return {};
+}
+
+/// The length `n` of a call `substring(y, 1, n)` on a `String`, with constant arguments.
+std::optional<Int64> prefixLength(const ActionsDAG::Node * node)
+{
+    if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base || node->function_base->getName() != "substring"
+        || node->children.size() != 3 || !isString(removeLowCardinalityAndNullable(node->result_type)))
+        return {};
+    const auto offset = constantInteger(node->children[1]);
+    const auto length = constantInteger(node->children[2]);
+    if (!offset || *offset != 1 || !length || *length <= 0)
+        return {};
+    return length;
+}
+
+/// `substring(y, 1, n)` is `y` itself when `y` is `substring(x, 1, m)` with `m <= n`: `y` has at most `m`
+/// bytes, so the outer call keeps all of them. A projection alias is visible in `WHERE`, so a filter on
+/// the alias of `substring(x, 1, m)` written as the same call filters such a prefix of the prefix.
+const ActionsDAG::Node * skipPrefixOfShorterPrefix(const ActionsDAG::Node * node)
+{
+    while (true)
+    {
+        const auto outer_length = prefixLength(node);
+        if (!outer_length)
+            return node;
+        const auto * inner = node->children[0];
+        while (inner->type == ActionsDAG::ActionType::ALIAS)
+            inner = inner->children.front();
+        const auto inner_length = prefixLength(inner);
+        if (!inner_length || *inner_length > *outer_length)
+            return node;
+        node = inner;
+    }
+}
+
 void capDistinctValues(std::unordered_map<String, ColumnStats> & column_stats, const String & column, UInt64 values)
 {
     auto & stats = column_stats[column];
@@ -196,6 +245,7 @@ void capDistinctValuesByFilter(
         return;
     while (lhs->type == ActionsDAG::ActionType::ALIAS)
         lhs = lhs->children.front();
+    lhs = skipPrefixOfShorterPrefix(lhs);
     for (const auto & column : visibleNames(lhs, outputs))
         capDistinctValues(column_stats, column, std::max<UInt64>(*values, 1));
 }
