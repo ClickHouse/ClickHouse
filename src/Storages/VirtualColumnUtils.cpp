@@ -392,7 +392,7 @@ ColumnPtr getFilterByPathAndFileIndexes(
     if (file_names && file_names->size() != paths.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of paths and file names do not match: {} != {}", paths.size(), file_names->size());
 
-    /// Only the columns the filter reads, so a path is never asked for a Hive column the filter does not use.
+    /// Only the columns the filter reads: a path may lack a Hive column the filter does not use.
     const NameSet required = actions->getRequiredColumnsWithTypes().getNameSet();
 
     Block block;
