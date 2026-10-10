@@ -19,6 +19,7 @@
 
 #include <Databases/MySQL/DatabaseMySQL.h>
 #include <Common/parseRemoteDescription.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -224,6 +225,14 @@ SELECT * FROM mysql('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING
 SELECT * FROM mysql('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
 ```
 
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to MySQL, so it must not end with a semicolon.
+
+With a [named collection](/concepts/features/configuration/server-config/named-collections) such as `creds` from the [examples](#examples), pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+SELECT * FROM mysql(creds, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
+```
+
 This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`MySQL`](/reference/engines/table-engines/integrations/mysql) table engine.
 
 <Note>
@@ -376,7 +385,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 - [mysql_map_fixed_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](/reference/settings/session-settings/mysql-map#mysql_map_string_to_text_in_show_columns)
 - [mysql_max_rows_to_insert](/reference/settings/session-settings/mysql#mysql_max_rows_to_insert)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, mysqlPostgreSQLSecretArguments(4));
 }
 
 }

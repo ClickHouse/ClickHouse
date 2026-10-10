@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
@@ -22,13 +23,7 @@ namespace ErrorCodes
 /// both bounds; a nested Dynamic's Fields carry per-element type tags, which Field ordering compares first.
 static bool hasMeaningfulFieldExtremes(const IDataType & type)
 {
-    bool result = !isDynamic(type) && !isVariant(type);
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (isDynamic(child) || isVariant(child))
-            result = false;
-    });
-    return result;
+    return !anyInTypeTree(type, [](const IDataType & subtype) { return isDynamic(subtype) || isVariant(subtype); });
 }
 
 
