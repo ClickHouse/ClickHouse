@@ -114,6 +114,10 @@ MatchedTrees::Matches matchTrees(
     bool check_monotonicity = true,
     size_t max_size_for_sets_from_tuple_to_compare = 0);
 
+/// The type of the argument `pos` of the function `node` to ask about monotonicity with. A date or time function,
+/// or `toString`, with a constant time zone argument executes in that time zone.
+DataTypePtr getArgumentTypeForMonotonicity(const ActionsDAG::Node & node, size_t pos);
+
 /// Update SortDescription (inplace) by applying ActionsDAG.
 ///
 /// Assuming that sorting properties are fulfilled for inputs, calculate sorting properties for the outputs.
