@@ -3002,7 +3002,6 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 carries the side of every input of the actions DAG.
     registry.registerStep("Join", JoinStepLogical::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_INPUT_SIDES}});
 }
 

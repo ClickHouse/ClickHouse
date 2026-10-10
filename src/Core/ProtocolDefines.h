@@ -212,8 +212,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
-/// First global query-plan version that writes version 1 of `Join`, which carries the side of every input of the join's
-/// actions DAG, so that a receiver does not have to infer it from the input names.
+/// First global query-plan version that writes version 1 of `Join`, which carries the side of every input of its actions DAG.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_INPUT_SIDES = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
