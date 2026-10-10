@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer, no-parallel-replicas
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: the storage-join path this test is about is not taken at all, so the plan
 -- routes through `IEJoin` and both `ON` sections below join without the errors asserted here.
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
+#include <Common/SeccompFilter.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -133,6 +135,7 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
+DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -228,11 +231,20 @@ DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 enum class TextIndexPostingListApplyMode : uint8_t
 {
-    MATERIALIZE,
-    LAZY,
+    Materialize,
+    Lazy,
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
+
+enum class TextIndexPostingsIntersectionAlgorithm : uint8_t
+{
+    BruteForce,
+    Leapfrog,
+    Auto,
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm)
 
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
@@ -253,6 +265,15 @@ enum class UniqueKeyProbeImplementation : uint8_t
 };
 
 DECLARE_SETTING_ENUM(UniqueKeyProbeImplementation)
+
+enum class UniqueKeyConflictAction : uint8_t
+{
+    Overwrite = 0, /// Incoming row supersedes the existing live row (UPSERT).
+    Ignore,        /// Existing row wins; the conflicting incoming row is dropped.
+    Abort,         /// INSERT fails on the first live duplicate; nothing is published.
+};
+
+DECLARE_SETTING_ENUM(UniqueKeyConflictAction)
 
 enum class MySQLDataTypesSupport : uint8_t
 {
@@ -314,6 +335,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetComp
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(ArrowUnsupportedTypes, FormatSettings::ArrowUnsupportedTypes)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
 enum class Dialect : uint8_t
@@ -324,6 +347,8 @@ enum class Dialect : uint8_t
     promql,
     polyglot,
     clickhouse_json,
+    logsql,
+    trino,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -394,6 +419,7 @@ enum class ObjectStorageQueueMode : uint8_t
 {
     ORDERED,
     UNORDERED,
+    EXCLUSIVE,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueMode)
@@ -451,6 +477,10 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
     DISCARD
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
+
+DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
+
+DECLARE_SETTING_ENUM(SeccompMode)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
@@ -520,6 +550,7 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreePatchPartsVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
 
@@ -536,7 +567,8 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking
+    Bitpacking,
+    PFor
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)

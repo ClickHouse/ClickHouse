@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -37,7 +38,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "block_numbers.partition_id",    std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "For mutations of replicated tables, the array contains the partitions' IDs (one record for each partition). For mutations of non-replicated tables the array is empty."},
         { "block_numbers.number",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()),
             "For mutations of replicated tables, the array contains one record for each partition, with the block number that was acquired by the mutation. "
-            "Only parts that contain blocks with numbers less than this number will be mutated in the partition."
+            "Only parts that contain blocks with numbers less than this number will be mutated in the partition. "
             "In non-replicated tables, block numbers in all partitions form a single sequence. "
             "This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation."
         },
@@ -51,9 +52,9 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
             "0 if the mutation is still in process. "
         },
         { "is_killed", std::make_shared<DataTypeUInt8>(),
-            "Indicates whether a mutation has been killed. Only available in ClickHouse Cloud."
-            "Note: is_killed=1 does not necessarily mean the mutation is completely finalized."
-            "It is possible for a mutation to remain in a state where is_killed=1 and is_done=0 for an extended period."
+            "Indicates whether a mutation has been killed. Only available in ClickHouse Cloud. "
+            "Note: is_killed=1 does not necessarily mean the mutation is completely finalized. "
+            "It is possible for a mutation to remain in a state where is_killed=1 and is_done=0 for an extended period. "
             "This can occur if another long-running mutation is blocking the killed mutation. This is a normal situation."
         },
         { "latest_failed_part",           std::make_shared<DataTypeString>(), "The name of the most recent part that could not be mutated."},
@@ -88,11 +89,8 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table)
-                continue;
-
-            if (!dynamic_cast<const MergeTreeData *>(table.get()))
                 continue;
 
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
@@ -142,6 +140,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
         std::vector<MergeTreeMutationStatus> statuses;
         {
             const IStorage * storage = merge_tree_tables[database][table].get();
+            /// NOLINT(storage-cast): `merge_tree_tables` is filled with already resolved storages.
             if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage))
                 statuses = merge_tree->getMutationsStatus();
         }

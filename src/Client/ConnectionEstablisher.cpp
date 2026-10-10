@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_SOCKET;
     extern const int CANNOT_WRITE_TO_SOCKET;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
+    extern const int NO_FREE_CONNECTION;
 }
 
 namespace FailPoints
@@ -156,6 +157,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         }
     };
 
+    result.local_pool_exhausted = false;
+
     for (size_t tries = 0; ; ++tries)
     {
         /// Every distributed connection attempt passes through here, so this is the one place where a
@@ -171,15 +174,15 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-            /// All of these mean the connection taken from the pool turned out to be unusable, which
-            /// is expected: the pooled connection is used optimistically, without a preceding ping.
-            /// `UNEXPECTED_PACKET_FROM_SERVER` covers a connection left out of sync by a previous
-            /// query (e.g. a stale `ProfileInfo` read instead of the `TablesStatusResponse` we
-            /// requested). Anything else is a genuine error and is rethrown.
+            /// All of these mean this replica is not usable right now, which is expected: the pooled
+            /// connection is used optimistically, without a preceding ping. `UNEXPECTED_PACKET_FROM_SERVER`
+            /// covers a connection left out of sync by a previous query (e.g. a stale `ProfileInfo` read
+            /// instead of the `TablesStatusResponse` we requested), and `NO_FREE_CONNECTION` an exhausted
+            /// per-replica pool. Anything else is a genuine error and is rethrown.
             if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
                 && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
                 && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET && e.code() != ErrorCodes::CANNOT_WRITE_TO_SOCKET
-                && e.code() != ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER)
+                && e.code() != ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER && e.code() != ErrorCodes::NO_FREE_CONNECTION)
                 throw;
 
             fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
@@ -205,6 +208,8 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             /// then reports `ALL_CONNECTION_TRIES_FAILED` instead of the cancellation.
             CurrentThread::checkIfNotCancelled();
 
+            result.local_pool_exhausted = e.code() == ErrorCodes::NO_FREE_CONNECTION;
+
             /// Report a soft failure, so the caller can retry on another replica instead of failing
             /// the whole distributed query.
             return;
@@ -212,7 +217,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
     }
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     ConnectionPoolPtr pool_,
@@ -294,7 +299,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
         if (haveMoreAddressesToConnect())
         {
             /// There are more addresses to try. Set a flag on the Connection so that
-            /// when the fiber resumes, it will throw a timeout exception and the
+            /// when the coroutine resumes, it will throw a timeout exception and the
             /// Connection::connect() loop can try the next address.
             if (!result.entry.isNull())
                 result.entry->setAddressConnectTimeoutExpired();
@@ -305,7 +310,7 @@ bool ConnectionEstablisherAsync::checkTimeout()
                 epoll.remove(socket_fd);
                 socket_fd = -1;
             }
-            /// Return true to resume the fiber, which will throw the timeout exception.
+            /// Return true to resume the coroutine, which will throw the timeout exception.
             return true;
         }
 

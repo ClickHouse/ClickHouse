@@ -72,7 +72,7 @@ ClickHouse는 확장자와 내용을 기반으로 유형을 자동으로 추론�
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 LIMIT 1
 ```
 
@@ -87,7 +87,7 @@ LIMIT 1
 파일 포맷을 별도로 지정하지 않아도 된다는 점에 주목하십시오. 대신 glob 패턴을 사용하여 버킷 내의 모든 `*.json.gz` 파일을 읽습니다. ClickHouse는 파일 확장자와 내용을 바탕으로 포맷이 `JSONEachRow` (ndjson)임을 자동으로 추론합니다. ClickHouse가 포맷을 감지하지 못하는 경우, 매개변수 함수를 통해 포맷을 수동으로 지정할 수 있습니다.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 ```
 
 <Info>
@@ -99,7 +99,7 @@ SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi
 이 파일의 행을 불러오려면 [`INSERT INTO SELECT`](/ko/reference/statements/insert-into#inserting-the-results-of-select)를 사용할 수 있습니다:
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
 ```
 
 ```response
@@ -159,7 +159,7 @@ ClickHouse는 전용 [`JSON`](/ko/reference/data-types/newjson) 타입으로 이
 
 ```
 
-여기서 tags 컬럼은 예측이 불가능하므로 모델링할 수 없습니다. 이 데이터를 로드하려면 이전에 사용한 스키마를 그대로 사용하되, [`JSON`](/ko/reference/data-types/newjson) 타입의 `tags` 컬럼을 추가로 제공하면 됩니다:
+여기서 tags 컬럼은 예측할 수 없으므로 모델링할 수 없습니다. 이 데이터를 로드하려면 이전에 사용한 스키마를 그대로 사용하되, [`JSON`](/ko/reference/data-types/newjson) 타입의 `tags` 컬럼을 추가로 제공하면 됩니다:
 
 ```sql
 SET enable_json_type = 1;
@@ -183,12 +183,12 @@ ORDER BY (project, date);
 원본 데이터셋과 동일한 방식으로 테이블을 채웁니다:
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
 ```
 
 ```response

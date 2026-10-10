@@ -9,9 +9,13 @@ doc_type: 'reference'
 AI Functions are built-in functions in ClickHouse that you can use to call AI or generate embeddings to work with your data, extract information, classify data, etc...
 
 <Note>
-AI functions are experimental. Set [`allow_experimental_ai_functions`](/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) to enable them.
+AI functions are beta.
 
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
+</Note>
+
+<Note>
+AI functions are not available in ClickHouse Cloud services at the moment. Stay tuned for updates.
 </Note>
 
 <Warning>
@@ -183,6 +187,10 @@ Credentials (a named collection specifying the provider, model, endpoint, and op
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
 
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
 **Syntax**
 
 ```sql
@@ -216,6 +224,8 @@ positive
 **Classify a column with explicit credentials**
 
 ```sql title=Query
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
@@ -278,6 +288,8 @@ SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_e
 **Embed a column of texts**
 
 ```sql title=Query
+CREATE TABLE articles (title String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
@@ -296,6 +308,10 @@ In schema mode, the function returns a JSON object string whose keys match the r
 Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
 
 **Syntax**
 
@@ -330,6 +346,8 @@ late and damaged package
 **Schema extraction**
 
 ```sql title=Query
+CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
@@ -354,6 +372,10 @@ are taken from the `credentials` key of the optional parameter map, or from the
 
 Note: using `aiFilter` in `JOIN ... ON` evaluates the LLM once per candidate pair and can be expensive.
 
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
 **Syntax**
 
 ```sql
@@ -377,12 +399,16 @@ aiFilter(text, condition[, params])
 **Filter angry reviews**
 
 ```sql title=Query
+CREATE TABLE reviews (body String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
 **Filter a column with explicit credentials**
 
 ```sql title=Query
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
@@ -401,6 +427,10 @@ are taken from the `credentials` key of the optional parameter map, or from the
 The optional parameter map may also set `system_prompt` (an instruction that guides the model's
 behavior, e.g. tone, format, role), `temperature`, `max_tokens`, and `model`. If `system_prompt` is
 not set, the default is: `You are a helpful assistant. Provide a clear and concise response.`
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
 
 **Syntax**
 
@@ -440,6 +470,8 @@ SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials'
 **Summarize column values**
 
 ```sql title=Query
+CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
@@ -472,6 +504,10 @@ Because `aiRedact` returns the whole input text with PII replaced, the output is
 Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit is
 rejected with `AI_PROVIDER_RESPONSE_TRUNCATED` (or yields the column default when `ai_function_throw_on_error`
 is disabled) rather than returning partially redacted text.
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
 
 **Syntax**
 
@@ -506,6 +542,8 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **Redact the default PII categories with a custom token**
 
 ```sql title=Query
+CREATE TABLE tickets (body String) ENGINE = Memory;
+INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
@@ -559,12 +597,16 @@ SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials'
 **Rank reviews by similarity to a query**
 
 ```sql title=Query
+CREATE TABLE product_reviews (review String) ENGINE = Memory;
+INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
 ```
 
 **Semantic dedup over a self-join**
 
 ```sql title=Query
+CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
+INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
@@ -579,6 +621,10 @@ Additional style or dialect instructions may be passed via the `instructions` ke
 Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
 are taken from the `credentials` key of the optional parameter map, or from the
 `ai_function_text_default_credentials` setting when the map omits it.
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
 
 **Syntax**
 
@@ -613,6 +659,8 @@ Bonjour le monde!
 **Translate to Japanese with style instructions**
 
 ```sql title=Query
+CREATE TABLE articles (body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 {/*AUTOGENERATED_END*/}

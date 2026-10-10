@@ -83,6 +83,7 @@ static void executeCreateQuery(
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
+    interpreter.setIsMetadataReplay(true);
     if (!create)
     {
         interpreter.setForceAttach(true);

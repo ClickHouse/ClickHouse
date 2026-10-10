@@ -404,7 +404,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Skip if projection was applied. A non-null analysis result alone does not imply
     /// a projection: join-order estimation runs index analysis for join relations and
-    /// memoizes the result (see estimateReadRowsCount in optimizeJoin.cpp).
+    /// memoizes the result (see estimateReadRowsCount in RelationStatisticsEstimator.cpp).
     if (auto analyzed = reading_step->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
         return;
 
@@ -497,6 +497,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (split_result.fully_replaced)
         return;
 
+    /// `trySplitNonIntersectingParts` can return before running these checks, e.g. for a `Nullable` key.
+    if (stops_reading_early || !reading_step->getIndexReadTasks().empty())
+        return;
+
     const auto & context = reading_step->getContext();
     const auto & storage_snapshot = reading_step->getStorageSnapshot();
     auto mutations_snapshot = reading_step->getMutationsSnapshot();
@@ -517,7 +521,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Use FutureSetFromStorage — the Set will be filled by CreatingSetStep before
     /// LazyFinalKeyAnalysisStep runs (they are in the same pipeline).
-    auto future_set = std::make_shared<FutureSetFromStorage>(FutureSet::Hash{}, /*ast=*/ nullptr, set, /*storage_id=*/ std::nullopt);
+    /// Not mutable: the query owns this set, fills it once through the `CreatingSetStep` below, and
+    /// nothing outside the query can reach it.
+    auto future_set = std::make_shared<FutureSetFromStorage>(
+        FutureSet::Hash{}, /*ast=*/ nullptr, set, /*storage_id=*/ std::nullopt, /*is_mutable_during_query_=*/ false);
 
     /// Build the set-building sub-plan: read columns needed for predicates
     /// (prewhere, row policy, filter) and primary key, then project to PK columns.
@@ -687,7 +694,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Compute primary key expression and project to PK columns only.
     /// Add all header columns as inputs so that unused ones are properly consumed
-    /// and can be dropped by tryRemoveUnusedColumns.
+    /// and can be dropped by `removeUnusedColumns`.
     {
         auto dag = primary_key_dag.clone();
         NamesWithAliases projection;
@@ -706,11 +713,14 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     }
 
     /// CreatingSetStep fills the Set from the pipeline.
+    /// Unlike the sets of `IN`, the set never spills to disk: it only serves index analysis, which needs its
+    /// values, and its own BREAK-mode size limits above bound its memory.
     set_plan.addStep(std::make_unique<CreatingSetStep>(
         set_plan.getCurrentHeader(),
         set_and_key,
         SizeLimits{},
-        nullptr));
+        nullptr,
+        FutureSetSettings{}));
 
     /// The per-partition pre-deduplication for set builds (see `optimizeCreatingSetPerPartition`) is
     /// scoped to `IN (subquery)` set fills; this internal set build has its own BREAK-mode size limits

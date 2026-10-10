@@ -472,9 +472,9 @@ SELECT
     toTypeName(readWKTPolygon('POLYGON((2 0,10 0,10 10,0 10,2 0))')) AS type,
     readWKTPolygon('POLYGON((2 0,10 0,10 10,0 10,2 0))') AS output
         )",
-        R"(
-[[(2,0),(10,0),(10,10),(0,10),(2,0)]]
-        )"
+        R"DOCS_MD(
+Polygon	[[(2,0),(10,0),(10,10),(0,10),(2,0)]]
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_polygon = {21, 4};
@@ -498,9 +498,9 @@ SELECT
     toTypeName(readWKTMultiPolygon('MULTIPOLYGON(((2 0,10 0,10 10,0 10,2 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))')) AS type,
     readWKTMultiPolygon('MULTIPOLYGON(((2 0,10 0,10 10,0 10,2 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))') AS output
         )",
-        R"(
-[[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]]
-        )"
+        R"DOCS_MD(
+MultiPolygon	[[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]]
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_multipolygon = {21, 4};

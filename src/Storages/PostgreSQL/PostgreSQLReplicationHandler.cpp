@@ -4,7 +4,9 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -26,6 +28,7 @@
 #include <Databases/DatabaseOnDisk.h>
 
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/String.h>
 
@@ -341,9 +344,9 @@ String PostgreSQLReplicationHandler::doubleQuoteWithSchema(const String & table_
     auto [schema, table] = getSchemaAndTableName(table_name);
 
     if (schema.empty())
-        return doubleQuoteString(table);
+        return doubleQuoteStringPostgreSQL(table);
 
-    return doubleQuoteString(schema) + '.' + doubleQuoteString(table);
+    return doubleQuoteStringPostgreSQL(schema) + '.' + doubleQuoteStringPostgreSQL(table);
 }
 
 
@@ -462,12 +465,12 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
 
     auto slot_exists = [&](const String & name)
     {
-        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_replication_slots WHERE slot_name = '{}'", name))};
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_replication_slots WHERE slot_name = {}", quoteStringPostgreSQL(name)))};
         return !result.empty();
     };
     auto publication_exists = [&](const String & name)
     {
-        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = '{}'", name))};
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = {}", quoteStringPostgreSQL(name)))};
         return !result.empty();
     };
 
@@ -508,7 +511,7 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     else
     {
         pqxx::result result{tx.exec(fmt::format(
-            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{}'", legacy_publication_name))};
+            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(legacy_publication_name)))};
         if (result.empty())
             ownership_conflict = fmt::format(
                 "the legacy publication {} publishes no tables, so the schema-blind legacy replication slot "
@@ -582,7 +585,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             if (user_provided_snapshot.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Using a user-defined replication slot must "
-                                "be provided with a snapshot from EXPORT SNAPSHOT when the slot is created."
+                                "be provided with a snapshot from EXPORT SNAPSHOT when the slot is created. "
                                 "Pass it to `materialized_postgresql_snapshot` setting");
             snapshot_name = user_provided_snapshot;
         }
@@ -699,7 +702,9 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 {
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection.getRef());
 
-    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
+    /// Not always PostgreSQL's own snapshot id from `CREATE_REPLICATION_SLOT`: with a user-managed
+    /// slot it is `materialized_postgresql_snapshot` verbatim, so it has to be sent as data.
+    std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT {}", quoteStringPostgreSQL(snapshot_name));
     tx->exec(query_str);
 
     PostgreSQLTableStructurePtr table_structure;
@@ -728,7 +733,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /// We should not use columns list from getTableAllowedColumns because it may have broken columns order
         Strings allowed_columns;
         for (const auto & column : table_structure->physical_columns->columns)
-            allowed_columns.push_back(doubleQuoteString(column.name));
+            allowed_columns.push_back(doubleQuoteStringPostgreSQL(column.name));
 
         query_str = fmt::format("SELECT {} FROM ONLY {}", boost::algorithm::join(allowed_columns, ","), quoted_name);
     }
@@ -844,7 +849,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
 
 bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
+    std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = {})", quoteStringPostgreSQL(publication_name));
     pqxx::result result{tx.exec(query_str)};
     chassert(!result.empty());
     return result[0][0].as<std::string>() == "t";
@@ -895,7 +900,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
 
         /// 'ONLY' means just a table, without descendants.
-        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteString(publication_name), tables_list);
+        std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), tables_list);
         try
         {
             tx.exec(query_str);
@@ -922,7 +927,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
     else
         slot_name = replication_slot;
 
-    String query_str = fmt::format("SELECT active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = '{}'", slot_name);
+    String query_str = fmt::format("SELECT active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = {}", quoteStringPostgreSQL(slot_name));
     pqxx::result result{tx.exec(query_str)};
 
     /// Replication slot does not exist
@@ -965,7 +970,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
     else
         slot_name = replication_slot;
 
-    query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", doubleQuoteString(slot_name));
+    query_str = fmt::format("CREATE_REPLICATION_SLOT {} LOGICAL pgoutput EXPORT_SNAPSHOT", doubleQuoteStringPostgreSQL(slot_name));
 
     try
     {
@@ -992,7 +997,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
     else
         slot_name = replication_slot;
 
-    std::string query_str = fmt::format("SELECT pg_drop_replication_slot('{}')", slot_name);
+    std::string query_str = fmt::format("SELECT pg_drop_replication_slot({})", quoteStringPostgreSQL(slot_name));
 
     tx.exec(query_str);
     LOG_DEBUG(log, "Dropped replication slot: {}", slot_name);
@@ -1001,7 +1006,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
 
 void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 {
-    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", doubleQuoteString(publication_name));
+    std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", doubleQuoteStringPostgreSQL(publication_name));
     tx.exec(query_str);
     LOG_DEBUG(log, "Dropped publication: {}", doubleQuoteString(publication_name));
 }
@@ -1009,7 +1014,7 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
-    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
+    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
     LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
 }
@@ -1019,7 +1024,7 @@ void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransacti
 {
     try
     {
-        std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name));
+        std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", doubleQuoteStringPostgreSQL(publication_name), doubleQuoteWithSchema(table_name));
         ntx.exec(query_str);
         LOG_TRACE(log, "Removed table `{}` from publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
     }
@@ -1042,6 +1047,24 @@ void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 }
 
 
+/// `pos` points at the `"` that opens a quoted identifier; returns the position of the `"` closing it, or
+/// the last position when it is unterminated. A `""` pair inside the identifier is one escaped quote.
+static size_t skipQuotedIdentifier(std::string_view str, size_t pos)
+{
+    chassert(str[pos] == '"');
+    for (++pos; pos < str.size(); ++pos)
+    {
+        if (str[pos] != '"')
+            continue;
+        if (pos + 1 < str.size() && str[pos + 1] == '"')
+            ++pos;
+        else
+            return pos;
+    }
+    return str.size() - 1;
+}
+
+
 /// Allowed columns for table from materialized_postgresql_tables_list setting
 Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string & table_name) const
 {
@@ -1049,30 +1072,98 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
     if (tables_list.empty())
         return result;
 
-    size_t table_pos = 0;
-    while (true)
+    /// `fetchRequiredTables` wrote every element through `doubleQuoteWithSchema`, so the table is looked
+    /// up by that spelling. A column may be spelled exactly like another element's relation, so the list
+    /// is walked element by element and only the relation names are compared.
+    const String quoted_table_name = doubleQuoteWithSchema(table_name);
+
+    size_t scan_pos = 0;
+    size_t after_name = std::string::npos;
+    while (scan_pos < tables_list.size())
     {
-        table_pos = tables_list.find(table_name, table_pos + 1);
-        if (table_pos == std::string::npos)
-            return result;
-        if (table_pos + table_name.length() + 1 > tables_list.length())
-            return result;
-        if (tables_list[table_pos + table_name.length() + 1] == '(' ||
-            tables_list[table_pos + table_name.length() + 1] == ',' ||
-            tables_list[table_pos + table_name.length() + 1] == ' '
-        )
+        while (scan_pos < tables_list.size() && (tables_list[scan_pos] == ',' || tables_list[scan_pos] == ' '))
+            ++scan_pos;
+
+        const size_t name_start = scan_pos;
+        while (scan_pos < tables_list.size() && tables_list[scan_pos] != '(' && tables_list[scan_pos] != ',')
+        {
+            if (tables_list[scan_pos] == '"')
+                scan_pos = skipQuotedIdentifier(tables_list, scan_pos);
+            ++scan_pos;
+        }
+
+        std::string_view element = std::string_view(tables_list).substr(name_start, scan_pos - name_start);
+        element = trimWhitespace(element);
+        if (element == quoted_table_name)
+        {
+            after_name = scan_pos;
             break;
+        }
+
+        if (scan_pos < tables_list.size() && tables_list[scan_pos] == '(')
+        {
+            for (; scan_pos < tables_list.size(); ++scan_pos)
+            {
+                if (tables_list[scan_pos] == '"')
+                    scan_pos = skipQuotedIdentifier(tables_list, scan_pos);
+                else if (tables_list[scan_pos] == ')')
+                    break;
+            }
+            if (scan_pos < tables_list.size())
+                ++scan_pos;
+        }
     }
 
-    String column_list = tables_list.substr(table_pos + table_name.length() + 1);
-    column_list.erase(std::remove(column_list.begin(), column_list.end(), '"'), column_list.end());
-    boost::trim(column_list);
+    if (after_name == std::string::npos)
+        return result;
+
+    std::string_view column_list = std::string_view(tables_list).substr(after_name);
+    column_list = trimWhitespace(column_list);
     if (column_list.empty() || column_list[0] != '(')
         return result;
 
-    size_t end_bracket_pos = column_list.find(')');
+    /// `fetchRequiredTables` has already quoted this list (`"t"("id","a""b")`), so the identifier
+    /// delimiters have to be honoured while scanning: a `)` or a `,` inside a quoted name belongs to the
+    /// name rather than ending the list or the element.
+    size_t end_bracket_pos = std::string::npos;
+    for (size_t pos = 1; pos < column_list.size(); ++pos)
+    {
+        if (column_list[pos] == '"')
+            pos = skipQuotedIdentifier(column_list, pos);
+        else if (column_list[pos] == ')')
+        {
+            end_bracket_pos = pos;
+            break;
+        }
+    }
+
     column_list = column_list.substr(1, end_bracket_pos - 1);
-    splitInto<','>(result, column_list);
+    if (column_list.empty())
+        return result;
+
+    size_t part_start = 0;
+    for (size_t pos = 0; pos <= column_list.size(); ++pos)
+    {
+        if (pos < column_list.size())
+        {
+            if (column_list[pos] == '"')
+                pos = skipQuotedIdentifier(column_list, pos);
+            if (column_list[pos] != ',')
+                continue;
+        }
+
+        String column(trimWhitespace(column_list.substr(part_start, pos - part_start)));
+        part_start = pos + 1;
+
+        /// A quoted element carries the name with its `"` doubled; an unquoted one is a legacy list
+        /// element and stands for itself.
+        if (column.size() > 1 && column.front() == '"' && column.back() == '"')
+        {
+            column = column.substr(1, column.size() - 2);
+            boost::replace_all(column, "\"\"", "\"");
+        }
+        result.push_back(std::move(column));
+    }
 
     return result;
 }
@@ -1157,6 +1248,80 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
             boost::trim(table_name);
         }
     }
+
+    /// `schema1.table1, schema2.table2, ...` -> `"schema1"."table1", "schema2"."table2", ...`
+    /// or
+    /// `table1, table2, ...` + setting `schema` -> `"schema"."table1", "schema"."table2", ...`
+    /// or
+    /// `table1, table2(id,name), ...` + setting `schema` -> `"schema"."table1", "schema"."table2"("id","name"), ...`
+    /// Every return below leaves `tables_list` in the spelling `getTableAllowedColumns` looks up by.
+    if (!tables_list.empty())
+    {
+        Strings parts;
+        splitInto<','>(parts, tables_list);
+        if (parts.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty list of tables");
+
+        bool is_column = false;
+        WriteBufferFromOwnString buf;
+        for (auto & part : parts)
+        {
+            boost::trim(part);
+            /// `splitInto` keeps empty tokens, and the `part.back()` below needs a byte to read.
+            if (part.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty element in tables list: {}", tables_list);
+
+            size_t bracket_pos = part.find('(');
+            if (bracket_pos != std::string::npos)
+            {
+                is_column = true;
+                std::string table_name = part.substr(0, bracket_pos);
+                boost::trim(table_name);
+                buf << doubleQuoteWithSchema(table_name);
+
+                part = part.substr(bracket_pos + 1);
+                boost::trim(part);
+                buf << '(';
+                /// A single-column subset carries both brackets in one element, so the closing one is
+                /// here rather than in a later element.
+                if (part.ends_with(')'))
+                {
+                    is_column = false;
+                    part = part.substr(0, part.size() - 1);
+                    boost::trim(part);
+                    buf << doubleQuoteStringPostgreSQL(part);
+                    buf << ')';
+                }
+                else
+                {
+                    buf << doubleQuoteStringPostgreSQL(part);
+                }
+            }
+            else if (part.back() == ')')
+            {
+                is_column = false;
+                part = part.substr(0, part.size() - 1);
+                boost::trim(part);
+                buf << doubleQuoteStringPostgreSQL(part);
+                buf << ')';
+            }
+            else if (is_column)
+            {
+                buf << doubleQuoteStringPostgreSQL(part);
+            }
+            else
+            {
+                buf << doubleQuoteWithSchema(part);
+            }
+            buf << ",";
+        }
+        tables_list = buf.str();
+        tables_list.resize(tables_list.size() - 1);
+    }
+    /// Also we make sure that queries in postgres always use quoted version "table_schema"."table_name".
+    /// But tables in ClickHouse in case of multi-schame database are never double-quoted.
+    /// It is ok, because they are accessed with backticks: postgres_database.`table_schema.table_name`.
+    /// We do quote tables_list table AFTER collected expected_tables, because expected_tables are future clickhouse tables.
 
     /// Try to fetch tables list from publication if there is not tables list.
     /// If there is a tables list -- check that lists are consistent and if not -- remove publication, it will be recreated.
@@ -1262,71 +1427,13 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
         }
     }
 
-
-    /// `schema1.table1, schema2.table2, ...` -> `"schema1"."table1", "schema2"."table2", ...`
-    /// or
-    /// `table1, table2, ...` + setting `schema` -> `"schema"."table1", "schema"."table2", ...`
-    /// or
-    /// `table1, table2(id,name), ...` + setting `schema` -> `"schema"."table1", "schema"."table2"("id","name"), ...`
-    if (!tables_list.empty())
-    {
-        Strings parts;
-        splitInto<','>(parts, tables_list);
-        if (parts.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty list of tables");
-
-        bool is_column = false;
-        WriteBufferFromOwnString buf;
-        for (auto & part : parts)
-        {
-            boost::trim(part);
-
-            size_t bracket_pos = part.find('(');
-            if (bracket_pos != std::string::npos)
-            {
-                is_column = true;
-                std::string table_name = part.substr(0, bracket_pos);
-                boost::trim(table_name);
-                buf << doubleQuoteWithSchema(table_name);
-
-                part = part.substr(bracket_pos + 1);
-                boost::trim(part);
-                buf << '(';
-                buf << doubleQuoteString(part);
-            }
-            else if (part.back() == ')')
-            {
-                is_column = false;
-                part = part.substr(0, part.size() - 1);
-                boost::trim(part);
-                buf << doubleQuoteString(part);
-                buf << ')';
-            }
-            else if (is_column)
-            {
-                buf << doubleQuoteString(part);
-            }
-            else
-            {
-                buf << doubleQuoteWithSchema(part);
-            }
-            buf << ",";
-        }
-        tables_list = buf.str();
-        tables_list.resize(tables_list.size() - 1);
-    }
-    /// Also we make sure that queries in postgres always use quoted version "table_schema"."table_name".
-    /// But tables in ClickHouse in case of multi-schame database are never double-quoted.
-    /// It is ok, because they are accessed with backticks: postgres_database.`table_schema.table_name`.
-    /// We do quote tables_list table AFTER collected expected_tables, because expected_tables are future clickhouse tables.
-
     return result_tables;
 }
 
 
 std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
-    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
+    std::string query = fmt::format("SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name));
     std::set<String> tables;
 
     for (const auto & [schema, table] : tx.stream<std::string, std::string>(query))

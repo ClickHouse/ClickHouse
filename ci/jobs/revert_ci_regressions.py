@@ -54,6 +54,7 @@ import tempfile
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from ci.defs.defs import BASE_BRANCH
@@ -65,7 +66,7 @@ from ci.praktika.git import Git
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
-from ci.praktika.utils import Shell
+from ci.praktika.utils import Shell, Utils
 
 # How far back the failures are taken from, and on how many distinct `master`
 # commits a failure has to appear in that window to be investigated ("failed
@@ -93,11 +94,14 @@ SYNTHETIC_TEST_NAMES = frozenset(
         "Check errors",
         "Server died",
         "Server liveness check failed",
+        "Test command killed by signal",
         "Unknown error",
         "Unknown job error",
         "Parse failure error",
         "Job error",
         "Timeout",
+        # Names a dmesg line the host wrote, not the test that was running.
+        "OOM in dmesg",
     }
 )
 
@@ -1320,9 +1324,7 @@ def culprit_guard(
     merged_at = pull_request.get("mergedAt") or ""
     if not merged_at:
         return f"pull request #{number} has no merge time recorded"
-    merged = datetime.strptime(merged_at, "%Y-%m-%dT%H:%M:%SZ").replace(
-        tzinfo=timezone.utc
-    )
+    merged = Utils.to_datetime(merged_at, input_format="iso")
     if now - merged > timedelta(days=MAX_CULPRIT_AGE_DAYS):
         return (
             f"pull request #{number} was merged {(now - merged).days} days ago, longer "
@@ -2493,6 +2495,21 @@ def prepare(info: Info) -> bool:
                 file=sys.stderr,
             )
             return False
+        # The unshallow turned the checkout into a partial clone, but the pack
+        # `actions/checkout` downloaded is still a regular, non-promisor pack.
+        # Once the base branch moves, the next fetch brings commits whose
+        # parent is in that pack, `index-pack` tries to repack these "local
+        # links" into a promisor pack, and `pack-objects` stops on
+        # `BUG: should_include_obj should only be called on existing objects`
+        # when the traversal reaches a tree the filter left out. All these
+        # objects came from `origin`, the promisor remote, so mark their pack
+        # as a promisor pack, as if the checkout had been a partial clone from
+        # the start.
+        pack_dir = Shell.get_output(
+            "git rev-parse --git-path objects/pack", strict=True
+        ).strip()
+        for pack in Path(pack_dir).glob("*.pack"):
+            pack.with_suffix(".promisor").touch()
     Shell.check(
         f"git fetch --no-tags --prune --no-recurse-submodules origin "
         f"+refs/heads/{BASE_BRANCH}:refs/remotes/origin/{BASE_BRANCH}",
@@ -2511,13 +2528,9 @@ def prepare(info: Info) -> bool:
 
 def connect() -> CIDB:
     info = Info()
-    url, user, password = (
-        info.get_secret(Settings.SECRET_CI_DB_URL)
-        .join_with(info.get_secret(Settings.SECRET_CI_DB_USER))
-        .join_with(info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
-        .get_value()
+    return CIDB.from_connection_secret(
+        info.get_secret(Settings.SECRET_CI_DB_CONNECTION).get_value()
     )
-    return CIDB(url=url, user=user, passwd=password)
 
 
 def table_exists(cidb: CIDB, table: str) -> bool:

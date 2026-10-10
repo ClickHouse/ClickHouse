@@ -30,7 +30,10 @@
 ///    snapshot recorded as producing its rows, so the first rerun after a context change drops it;
 ///  - `duplicateColumnNames` names the columns a header carries more than once, whose sort and filter
 ///    controls are not offered at all - the name-keyed `order` / `filter` settings could not tell the
-///    namesakes apart.
+///    namesakes apart;
+///  - `resultIsWorthShaping` withholds the sort and filter controls from a result of at most one row
+///    on its first page, where they could only re-run the query for the same rows, while keeping them
+///    on the two single-row results that need them - a shaped one and one cut off at the display limit.
 ///
 /// Driven by `test.py` inside the `clickhouse/mysql-js-client` container (node:22-alpine),
 /// against the `/play` page served by a real ClickHouse server. Can also be run standalone
@@ -59,7 +62,7 @@ const HELPERS = [
     'sortOrderExpression', 'filterExpression', 'shapeQueryKey',
     'applySortToggle', 'resetPagination', 'clearResultShape',
     'shapeUrlParams', 'resolveShapeForRun', 'shapeContextKey',
-    'snapshotShapeContext', 'duplicateColumnNames',
+    'snapshotShapeContext', 'duplicateColumnNames', 'resultIsWorthShaping',
 ];
 
 function extractShapeHelpers(js) {
@@ -437,6 +440,24 @@ async function main() {
         check('duplicate-columns', 'a missing header has none', [...H.duplicateColumnNames(undefined)], []);
         check('duplicate-columns', 'a name repeated more than twice is recorded once',
             [...H.duplicateColumnNames([{ name: 'x' }, { name: 'x' }, { name: 'x' }])], ['x']);
+    }
+
+    /// Contract 15: the sort and filter controls are withheld from a result of at most one row on its
+    /// first page - any order of one row is the same order, and a filter on it can only keep it or drop
+    /// it - but not from the two single-row results where they are the only way back: one the user has
+    /// already shaped (its sort must stay reversible and its filter clearable) and one cut off at the
+    /// display limit (the first page of a longer result, which a very wide result can be cut to).
+    {
+        check('worth-shaping', 'many rows are worth shaping', H.resultIsWorthShaping(1000, false, false), true);
+        check('worth-shaping', 'two rows are', H.resultIsWorthShaping(2, false, false), true);
+        check('worth-shaping', 'a single row is not', H.resultIsWorthShaping(1, false, false), false);
+        check('worth-shaping', 'an empty result is not', H.resultIsWorthShaping(0, false, false), false);
+        check('worth-shaping', 'a single row of a shaped result is',
+            H.resultIsWorthShaping(1, false, true), true);
+        check('worth-shaping', 'an empty shaped result is - its filter must stay clearable',
+            H.resultIsWorthShaping(0, false, true), true);
+        check('worth-shaping', 'a single row cut off at the display limit is',
+            H.resultIsWorthShaping(1, true, false), true);
     }
 
     console.log(failures ? `${failures} check(s) failed` : 'All scenarios passed');

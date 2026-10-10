@@ -107,7 +107,7 @@ FROM url(
   ### 创建 Iceberg 表
 </div>
 
-要将数据写入 Iceberg，请使用 [`IcebergS3` 表引擎](/zh/reference/engines/table-engines/integrations/iceberg)创建表。
+如需直接读取现有 Iceberg 表，我们建议使用 [`icebergS3` 表函数](/zh/reference/functions/table-functions/iceberg)。本指南演示如何创建和填充独立的 Iceberg 表，因此使用带有显式 schema 的 [`IcebergS3` 表引擎](/zh/reference/engines/table-engines/integrations/iceberg)。示例中的 S3 位置已包含完整的表；要运行 `CREATE` 和 `INSERT` 语句，请将这两个位置替换为您可控制的空且可写入的 S3 前缀及相应凭据。
 
 请注意，与 MergeTree 源表相比，schema 必须适当简化。ClickHouse 支持的类型系统比 Iceberg 及其底层 Parquet 文件更丰富，因此 `Enum`、`LowCardinality` 和 `UInt8` 等类型在 Iceberg 中不受支持，必须映射为兼容类型。
 
@@ -138,8 +138,10 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 使用 `INSERT INTO SELECT` 将数据从 MergeTree 表写入 Iceberg 表。在此示例中，我们只写入伦敦的事务：
 
+此示例需要启用 [`allow_insert_into_iceberg` 设置](/zh/reference/settings/session-settings/allow#allow_insert_into_iceberg)。有关当前的成熟度和限制，请参阅[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix)。
+
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 
 INSERT INTO uk.uk_iceberg SELECT *
 FROM uk.uk_price_paid

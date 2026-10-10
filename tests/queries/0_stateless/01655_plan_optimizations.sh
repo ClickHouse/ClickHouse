@@ -94,8 +94,8 @@ echo "> (analyzer) filter is split, one part is filtered before ARRAY JOIN"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1 select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
-    ) array join x where y != 2 and x != 0" |
-    grep -o "Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))\|ARRAY JOIN __array_join_exp_1\|Filter column: notEquals(__table2.y, 2_UInt8)"
+    ) array join x where y != 2 and x != 0 settings serialize_query_plan = 0" |
+    grep -o "Element filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))\|ARRAY JOIN __array_join_exp_1\|Filter column: notEquals(__table2.y, 2_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
@@ -182,7 +182,7 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)
     ) as r on a = r.b where a != 1 and b != 2 settings enable_optimize_predicate_expression = 0, query_plan_join_swap_table = 0, enable_join_runtime_filters = 0" |
-        grep -o "  Join\|Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))\|Filter column: and(notEquals(__table2.b, 1_UInt8), notEquals(__table2.b, 2_UInt8))"
+        grep -o "  Join\|Filter column: and(notEquals(__table1.number, 1_UInt8), notEquals(__table1.number, 2_UInt8))\|Filter column: and(notEquals(__table2.b, 2_UInt8), notEquals(__table2.b, 1_UInt8))"
 $CLICKHOUSE_CLIENT -q "
     select number as a, r.b from numbers(4) as l any inner join (
         select number + 2 as b from numbers(3)

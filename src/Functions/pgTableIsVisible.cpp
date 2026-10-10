@@ -67,9 +67,9 @@ Since the `pg_class` view emulated by ClickHouse exposes only the tables of the 
         "Usage example",
         "SELECT pg_table_is_visible(0)",
         R"(
-┌─pgTableIsVisible(0)─┐
-│                   1 │
-└─────────────────────┘
+┌─pg_table_is_visible(0)─┐
+│                      1 │
+└────────────────────────┘
         )"
     }
     };

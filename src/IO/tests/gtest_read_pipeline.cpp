@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <optional>
 
 
 using namespace DB;
@@ -36,13 +37,25 @@ namespace
 class TestReadBuffer : public ReadBufferFromFileBase
 {
 public:
-    explicit TestReadBuffer(String data_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+    /// `bound_out`, when set, receives the right bound that the gather stage forwards to this buffer.
+    explicit TestReadBuffer(
+        String data_,
+        std::shared_ptr<std::optional<size_t>> bound_out_ = nullptr,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
         : ReadBufferFromFileBase(buf_size, nullptr, 0)
         , data(std::move(data_))
+        , bound_out(std::move(bound_out_))
     {
     }
 
     String getFileName() const override { return "test"; }
+
+    void setReadUntilPosition(size_t position) override
+    {
+        read_until_position = position;
+        if (bound_out)
+            *bound_out = position;
+    }
 
     off_t seek(off_t off, int whence) override
     {
@@ -60,9 +73,10 @@ public:
 private:
     bool nextImpl() override
     {
-        if (file_offset >= data.size())
+        const size_t limit = std::min(data.size(), read_until_position.value_or(data.size()));
+        if (file_offset >= limit)
             return false;
-        size_t to_read = std::min(data.size() - file_offset, internal_buffer.size());
+        size_t to_read = std::min(limit - file_offset, internal_buffer.size());
         memcpy(internal_buffer.begin(), data.data() + file_offset, to_read);
         working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + to_read);
         file_offset += to_read;
@@ -70,6 +84,8 @@ private:
     }
 
     String data;
+    std::shared_ptr<std::optional<size_t>> bound_out;
+    std::optional<size_t> read_until_position;
     size_t file_offset = 0;
 };
 
@@ -95,6 +111,17 @@ ReadPipeline::BufferCreator perObjectCreator(std::map<String, String> object_dat
         if (it == data.end())
             throw std::runtime_error("No data for object " + object.remote_path);
         return std::make_unique<TestReadBuffer>(it->second);
+    };
+}
+
+/// Helper: like `memoryCreator`, but the buffer reports the right bound the gather stage forwards.
+ReadPipeline::BufferCreator boundRecordingCreator(const std::string & data, const std::shared_ptr<std::optional<size_t>> & bound_out)
+{
+    return [data, bound_out](const StoredObject & /* object */, const ReadSettings & /* settings */,
+        bool /* use_external_buffer */, bool /* restrict_seek */)
+        -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<TestReadBuffer>(data, bound_out);
     };
 }
 
@@ -232,6 +259,173 @@ try
     String result;
     readStringUntilEOF(result, *buf);
     EXPECT_EQ(result, "BBCCC");
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+/// -- Gather right bound --
+
+TEST(ReadPipeline, GatherPassesRightBoundAtObjectEnd)
+try
+{
+    /// A read up to the end of the object must get the bound as well. Without it the request to object
+    /// storage is open-ended, and `ReadBufferFromS3` returns the HTTP connection to the pool only after
+    /// a read observes EOF, which never happens when the caller reads exactly the remaining bytes.
+    auto bound = std::make_shared<std::optional<size_t>>();
+
+    ReadPipeline pipeline;
+    pipeline.setSource(boundRecordingCreator("ABCDEFGHIJ", bound), StoredObjects{testObject("obj/a", 10)}, ReadSettings{});
+    pipeline.needGather();
+    auto buf = pipeline.build();
+
+    buf->setReadUntilPosition(10);
+    buf->next();
+
+    ASSERT_TRUE(bound->has_value());
+    EXPECT_EQ(**bound, 10);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, GatherPassesRightBoundForUnknownObjectSize)
+try
+{
+    /// The size of the object is unknown, as it is for an HTTP server that answers without
+    /// `Content-Length`. The end of such an object does not bound the position, so the bound has to be
+    /// forwarded unconditionally.
+    auto bound = std::make_shared<std::optional<size_t>>();
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        boundRecordingCreator("ABCDEFGHIJ", bound),
+        StoredObjects{testObject("obj/a", StoredObject::UnknownSize)},
+        ReadSettings{});
+    pipeline.needGather();
+    auto buf = pipeline.build();
+
+    buf->setReadUntilPosition(4);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, "ABCD");
+
+    ASSERT_TRUE(bound->has_value());
+    EXPECT_EQ(**bound, 4);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, GatherRejectsUnknownSizeObjectWhenAnotherFollows)
+try
+{
+    /// An object of an unknown size must be the only one of its file: the offsets of the other objects
+    /// could not be computed, so neither the right bound nor a seek could be translated into their
+    /// coordinates. Reject such a layout explicitly instead of reading it at wrong offsets - the same
+    /// invariant `OffsetMap::build` enforces.
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        perObjectCreator({
+            {"obj/a", "ABCDEFGHIJ"},
+            {"obj/b", "XYZ"},
+        }),
+        StoredObjects{testObject("obj/a", StoredObject::UnknownSize), testObject("obj/b", 3)},
+        ReadSettings{});
+    pipeline.needGather();
+
+    EXPECT_THROW(pipeline.build(), Exception);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, GatherRejectsUnknownSizeObjectAfterAnother)
+try
+{
+    /// The same layout with the object of an unknown size at the end. It is rejected as well: the size
+    /// is `UINT64_MAX`, so `initialize` wraps `start_offset` around when it walks past it, and a `seek`
+    /// to the start of that object reports EOF instead of reading it.
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        perObjectCreator({
+            {"obj/a", "ABC"},
+            {"obj/b", "XYZ"},
+        }),
+        StoredObjects{testObject("obj/a", 3), testObject("obj/b", StoredObject::UnknownSize)},
+        ReadSettings{});
+    pipeline.needGather();
+
+    EXPECT_THROW(pipeline.build(), Exception);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, GatherEmptyRangeAtFileStart)
+try
+{
+    /// An empty range at offset zero. A `0` right bound is indistinguishable from "no bound" when the
+    /// bound is stored in a plain `size_t`, and the read then returns the contents of the first object
+    /// instead of EOF.
+    auto bound = std::make_shared<std::optional<size_t>>();
+
+    ReadPipeline pipeline;
+    pipeline.setSource(boundRecordingCreator("ABCDEFGHIJ", bound), StoredObjects{testObject("obj/a", 10)}, ReadSettings{});
+    pipeline.needGather();
+    auto buf = pipeline.build();
+
+    buf->seek(0, SEEK_SET);
+    buf->setReadUntilPosition(0);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, "");
+
+    /// Nothing was requested from object storage at all.
+    EXPECT_FALSE(bound->has_value());
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, GatherEmptyRangeAtObjectBoundary)
+try
+{
+    /// An empty range at the boundary between two objects: the position is already at the right bound,
+    /// so nothing must be read from the object that starts exactly there.
+    auto creator = perObjectCreator({
+        {"obj/a", "AAA"},
+        {"obj/b", "BBB"},
+    });
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        std::move(creator),
+        StoredObjects{testObject("obj/a", 3), testObject("obj/b", 3)},
+        ReadSettings{});
+    pipeline.needGather();
+    auto buf = pipeline.build();
+
+    buf->seek(3, SEEK_SET);
+    buf->setReadUntilPosition(3);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, "");
 }
 catch (...)
 {
