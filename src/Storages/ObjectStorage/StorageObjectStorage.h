@@ -19,6 +19,7 @@
 #include <memory>
 #include <mutex>
 
+#include <Common/MultiVersion.h>
 #include <Storages/IPartitionStrategy.h>
 namespace DB
 {
@@ -276,8 +277,13 @@ protected:
     /// instead of overwriting them from the data lake snapshot.
     const bool preserve_structure_for_reads = false;
 
-    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    NamesAndTypesList file_columns;
+    struct HivePartitioningColumns
+    {
+        NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+        NamesAndTypesList file_columns;
+    };
+    /// Replaced as a whole by a deferred resolution while other queries read it.
+    MultiVersion<HivePartitioningColumns> hive_partitioning_columns;
 
     /// Set only in the constructor when hive partitioning detection is deferred to the first use.
     bool hive_partitioning_sample_path_deferred = false;

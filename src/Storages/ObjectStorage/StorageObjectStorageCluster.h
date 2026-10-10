@@ -78,7 +78,8 @@ private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
-        const ContextPtr & context) override;
+        const ContextPtr & context,
+        const String & target_cluster_name) override;
 
     /// Pins `state` and, when the per-format reload is enabled, adopts the snapshot-derived
     /// metadata; `preserve_structure_for_reads` keeps the caller's columns across that adoption.
