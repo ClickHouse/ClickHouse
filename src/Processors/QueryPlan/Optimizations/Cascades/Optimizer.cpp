@@ -482,6 +482,10 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
                 .rows = group_statistics.rows_unknown ? std::nullopt : std::optional<Float64>(group_statistics.estimated_row_count),
                 .cost = frame.expression->cost->subtree_cost.total(cost_config),
                 .source = RowEstimateSource::NoSource,
+                .max_rows = group_statistics.max_row_count < Float64(std::numeric_limits<UInt64>::max())
+                    ? std::optional<Float64>(group_statistics.max_row_count) : std::nullopt,
+                .estimate_from_defaults = group_statistics.estimate_from_defaults,
+                .search_rows = group_statistics.rows_unknown ? std::optional<Float64>(group_statistics.estimated_row_count) : std::nullopt,
             };
         LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", frame.group_id, dumpQueryPlanShort(*result));
 

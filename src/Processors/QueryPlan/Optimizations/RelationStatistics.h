@@ -44,7 +44,9 @@ inline CostEstimationInfo toCostEstimationInfo(const RelationStats & stats)
     return CostEstimationInfo{
         .rows = stats.estimated_rows ? std::optional<Float64>(Float64(*stats.estimated_rows)) : std::nullopt,
         .cost = std::nullopt,
-        .source = stats.source};
+        .source = stats.source,
+        .max_rows = stats.max_rows ? std::optional<Float64>(Float64(*stats.max_rows)) : std::nullopt,
+        .estimate_from_defaults = stats.estimate_from_defaults};
 }
 
 namespace QueryPlanOptimizations

@@ -85,6 +85,8 @@ struct ExplainPlanOptions
     bool pretty = false;
     /// Show estimates
     bool estimates = false;
+    /// With `estimates`, also show the rows a step cannot exceed and whether its estimate took a default
+    bool bounds = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
     /// For EXPLAIN ANALYZE: make joins do the extra per-row bookkeeping needed for the matched

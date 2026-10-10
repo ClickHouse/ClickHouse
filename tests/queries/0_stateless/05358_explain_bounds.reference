@@ -1,0 +1,3 @@
+(rows: ~1000.0, bound: 1000000, from defaults)
+-- without bounds
+(rows: ~1000.0)

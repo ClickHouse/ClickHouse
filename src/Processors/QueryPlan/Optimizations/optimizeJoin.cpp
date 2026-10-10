@@ -479,7 +479,9 @@ static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & n
         node.cost_estimation = CostEstimationInfo{
             .rows = join.rows ? std::optional<Float64>(Float64(*join.rows)) : std::nullopt,
             .cost = std::nullopt,
-            .source = RowEstimateSource::NoSource};
+            .source = RowEstimateSource::NoSource,
+            .max_rows = join.max_rows ? std::optional<Float64>(Float64(*join.max_rows)) : std::nullopt,
+            .estimate_from_defaults = left_stats.estimate_from_defaults || right_stats.estimate_from_defaults};
 }
 
 static String dumpStatsForLogs(const RelationStats & stats)
@@ -1175,7 +1177,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             input_nodes[relation_id]->cost_estimation = CostEstimationInfo{
                 .rows = leaf_info.estimated_rows ? std::optional<Float64>(Float64(*leaf_info.estimated_rows)) : std::nullopt,
                 .cost = std::nullopt,
-                .source = leaf_info.source};
+                .source = leaf_info.source,
+                .max_rows = leaf_info.max_rows ? std::optional<Float64>(Float64(*leaf_info.max_rows)) : std::nullopt};
             node_stack.push(input_nodes[relation_id]);
         }
         else
@@ -1436,7 +1439,9 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             new_node.cost_estimation = CostEstimationInfo{
                 .rows = entry->estimated_rows ? std::optional<Float64>(Float64(*entry->estimated_rows)) : std::nullopt,
                 .cost = entry->cost,
-                .source = RowEstimateSource::NoSource};
+                .source = RowEstimateSource::NoSource,
+                .max_rows = entry->max_rows ? std::optional<Float64>(Float64(*entry->max_rows)) : std::nullopt,
+                .estimate_from_defaults = entry->estimate_from_defaults};
             node_stack.push(&new_node);
         }
     }

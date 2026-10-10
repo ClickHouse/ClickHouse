@@ -20,6 +20,12 @@ struct CostEstimationInfo
     /// Absent when the optimizer has no cost for the step; the unit is that optimizer's own.
     std::optional<Float64> cost;
     RowEstimateSource source{};
+    /// Rows the step cannot exceed; absent when nothing bounds them. `EXPLAIN bounds = 1` prints it.
+    std::optional<Float64> max_rows = {};
+    /// The estimate took a default selectivity or a model assumption, so it is a guess.
+    bool estimate_from_defaults = false;
+    /// Without an estimate, the row count the cost model searched with (Cascades).
+    std::optional<Float64> search_rows = {};
 };
 
 }

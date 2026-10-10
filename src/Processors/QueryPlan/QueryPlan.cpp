@@ -460,6 +460,15 @@ static void explainStep(
                 settings.out << fmt::format(", cost: {:.1f}", *cost_estimation->cost);
             if (auto source_name = rowEstimateSourceName(cost_estimation->source); !source_name.empty())
                 settings.out << ", source: " << source_name;
+            if (options.bounds)
+            {
+                if (cost_estimation->max_rows)
+                    settings.out << fmt::format(", bound: {:.0f}", *cost_estimation->max_rows);
+                if (cost_estimation->search_rows)
+                    settings.out << fmt::format(", search: {:.3g}", *cost_estimation->search_rows);
+                if (cost_estimation->estimate_from_defaults)
+                    settings.out << ", from defaults";
+            }
             settings.out << ')';
         }
         else
