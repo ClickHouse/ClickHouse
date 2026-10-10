@@ -920,7 +920,7 @@ bool StorageFileLog::streamToViews(std::vector<UInt64> & round_inodes)
 
     round_inodes.clear();
     for (const auto & file : file_infos.file_names)
-        if (const auto & file_ctx = findInMap(file_infos.context_by_name, file); file_ctx.status != FileStatus::NO_CHANGE)
+        if (const auto & file_ctx = findInMap(file_infos.context_by_name, file); file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
             round_inodes.push_back(file_ctx.inode);
 
     /// Nothing to read until the watcher events are applied, e.g. when only files that the glob excludes changed.
@@ -1549,7 +1549,7 @@ void StorageFileLog::setFilesException(const std::vector<UInt64> & inodes, const
         {
             struct stat file_stat{};
             if (::stat(getFullDataPath(statistics.file_name).c_str(), &file_stat) != 0 || file_stat.st_ino != inode
-                || static_cast<UInt64>(file_stat.st_size) <= statistics.offset)
+                || static_cast<UInt64>(file_stat.st_size) <= getReadOffset(statistics.offset, file_stat.st_size))
                 continue;
         }
         statistics.last_exception = exception;
