@@ -34,6 +34,7 @@ static struct InitFiu
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
     ONCE(replicated_queue_fail_next_entry) \
+    ONCE(nats_fail_resubscribe_within_query) \
     REGULAR(replicated_queue_unfail_entries) \
     REGULAR(executing_graph_add_node_fail) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
@@ -90,6 +91,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    REGULAR(file_top_k_query_condition_cache_inject_file_change) \
     ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
@@ -124,6 +126,7 @@ static struct InitFiu
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE(file_segment_pause_before_write) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
+    PAUSEABLE(plain_object_storage_pause_on_file_copy) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -148,6 +151,8 @@ static struct InitFiu
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
     ONCE(check_table_inject_retryable_zk_error) \
+    ONCE(check_table_inject_shutdown_abort) \
+    ONCE(check_table_inject_part_check_cancelled) \
     REGULAR(database_catalog_throw_on_table_shutdown) \
     REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
     REGULAR(database_replicated_throw_on_stop_replication) \
@@ -182,10 +187,13 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(nats_pause_before_building_insert_pipeline) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_is_active_remove) \
     PAUSEABLE(smt_create_table_pause_before_replicas_check) \
     PAUSEABLE(dummy_pausable_failpoint) \
+    PAUSEABLE_ONCE(paimon_incremental_read_pause_before_processing_lock) \
+    PAUSEABLE_ONCE(paimon_incremental_read_pause_before_watermark_commit) \
     PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(framing_finalize_throw) \
@@ -239,11 +247,17 @@ static struct InitFiu
     REGULAR(zero_copy_lock_zk_fail_after_op) \
     REGULAR(plain_object_storage_write_fail_on_directory_create) \
     REGULAR(plain_object_storage_write_fail_on_directory_move) \
+    PAUSEABLE(plain_object_storage_pause_before_unlink_file_finalize) \
+    PAUSEABLE(plain_object_storage_pause_before_remove_recursive_finalize) \
+    PAUSEABLE(plain_object_storage_pause_before_remove_recursive_metadata) \
+    REGULAR(plain_object_storage_fail_on_finalize) \
     ONCE(plain_object_storage_fail_after_copy_on_file_move) \
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
+    PAUSEABLE(storage_merge_tree_load_mutations_pause_before_read) \
+    PAUSEABLE(merge_tree_drop_all_data_pause_before_removing_parts) \
     PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
@@ -270,6 +284,7 @@ static struct InitFiu
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
     REGULAR(slowdown_skip_index_read_result_build) \
+    REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \
@@ -320,8 +335,10 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     ONCE(mt_alter_throw_in_start_mutation) \
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
+    ONCE(mt_throw_after_renaming_empty_parts) \
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
+    PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
     PAUSEABLE_ONCE(mt_pause_before_loading_outdated_part) \
     PAUSEABLE(mt_pause_before_loading_queued_outdated_part) \
     ONCE(mt_alter_readonly_throw_in_start_background_workers) \
@@ -344,6 +361,7 @@ static struct InitFiu
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
+    ONCE(disk_set_builder_stop_before_finish) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
     REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \
     ONCE(parallel_replicas_insert_select_drop_active_replica) \
@@ -414,6 +432,8 @@ static struct InitFiu
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
+    PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
+    PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
     REGULAR(replicated_database_status_finished_node_missing) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
@@ -422,6 +442,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_drop_cancelled_chunk) \
     PAUSEABLE_ONCE(storage_url_pause_before_empty_file_probe) \
     PAUSEABLE_ONCE(storage_url_pause_between_metadata_probes) \
     PAUSEABLE_ONCE(storage_url_pause_before_read_buffer_creation) \
@@ -445,7 +467,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
-    REGULAR(marks_loader_hold_task_until_canceled)
+    REGULAR(marks_loader_hold_task_until_canceled) \
+    REGULAR(whatif_projection_scan_cut_short)
 
 namespace FailPoints
 {

@@ -514,6 +514,7 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
             "No local log entries above the snapshot, nothing can reference the {} removed orphaned subtree root(s): [{}]",
             removed_orphan_subtree_roots.size(),
             roots_str);
+        persistRepairedSnapshot();
         removed_orphan_subtree_roots.clear();
         removed_orphan_ephemeral_sessions.clear();
         return {};
@@ -745,6 +746,8 @@ KeeperStateMachine::findOrphanConflictInLogTail(uint64_t start_idx, uint64_t end
         start_idx,
         end_idx,
         removed_orphan_subtree_roots.size());
+
+    persistRepairedSnapshot();
 
     /// One-shot startup token: clearing makes a second call a no-op and keeps a stale value from
     /// surviving into a later `apply_snapshot` that replaces `storage`.
@@ -1551,6 +1554,15 @@ nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
     /// Just return the latest snapshot.
     std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
+}
+
+void KeeperStateMachine::persistRepairedSnapshot()
+{
+    std::lock_guard snapshots_guard(snapshots_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_guard);
+    KeeperStorageSnapshot snapshot(storage.get(), latest_snapshot_meta, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
+    auto file_info = snapshot_manager.rewriteSnapshotAfterRecovery(snapshot);
+    latest_snapshot_size.store(file_info->disk->getFileSize(file_info->path), std::memory_order_relaxed);
 }
 
 SnapshotFileInfoPtr KeeperStateMachine::writeSnapshotToDisk(const KeeperStorageSnapshot & snapshot)

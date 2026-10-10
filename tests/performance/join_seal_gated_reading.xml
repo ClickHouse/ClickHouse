@@ -1,0 +1,67 @@
+<test>
+    <settings>
+        <enable_join_runtime_filters>1</enable_join_runtime_filters>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>gated</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_seal_probe_perf (k UInt64, v1 UInt64, v2 UInt64, v3 UInt64)
+        ENGINE = MergeTree ORDER BY k
+    </create_query>
+    <fill_query>
+        INSERT INTO t_seal_probe_perf
+        SELECT number, number, number * 2, number * 3 FROM numbers(90000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE t_seal_probe_perf FINAL</fill_query>
+
+    <!-- 100 keys spread over the probe primary key range: the exact IN-set delivered by the
+         seal prunes all probe granules except ~100 at task-cut time. -->
+    <create_query>CREATE TABLE t_seal_build_sparse (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO t_seal_build_sparse SELECT number * 900000 FROM numbers(100)</fill_query>
+
+    <!-- 1M keys in a narrow band: the exact set overflows into a bloom filter, so the seal
+         prunes through the [min, max] envelope of the build keys (~1/90 of the table). -->
+    <create_query>CREATE TABLE t_seal_build_band (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO t_seal_build_band SELECT 45000000 + number FROM numbers(1000000)</fill_query>
+
+    <query>
+        SELECT sum(v1), sum(v2), sum(v3) FROM t_seal_probe_perf AS p JOIN t_seal_build_sparse AS b ON p.k = b.k
+        SETTINGS enable_join_seal_gated_reading = {gated}
+    </query>
+
+    <query>
+        SELECT sum(v1), sum(v2), sum(v3) FROM t_seal_probe_perf AS p JOIN t_seal_build_band AS b ON p.k = b.k
+        SETTINGS enable_join_seal_gated_reading = {gated}
+    </query>
+
+    <!-- The read-time granule pruning by the same runtime filter, for comparison: it skips
+         granules inside the readers instead of never creating the tasks. On local storage the
+         two are expected to be on par (the probe side cannot run far ahead of the build anyway:
+         the join does not consume it, so port backpressure stalls it after about a chunk per
+         stream); the structural difference of gating is that no read or prefetch is issued for
+         pruned ranges at all. -->
+    <query>
+        SELECT sum(v1), sum(v2), sum(v3) FROM t_seal_probe_perf AS p JOIN t_seal_build_sparse AS b ON p.k = b.k
+        SETTINGS enable_join_seal_gated_reading = 0, enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1
+    </query>
+
+    <query>
+        SELECT sum(v1), sum(v2), sum(v3) FROM t_seal_probe_perf AS p JOIN t_seal_build_band AS b ON p.k = b.k
+        SETTINGS enable_join_seal_gated_reading = 0, enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_seal_probe_perf</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_seal_build_sparse</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_seal_build_band</drop_query>
+</test>

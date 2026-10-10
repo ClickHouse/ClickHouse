@@ -109,7 +109,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("ytsaurus", create_dictionary_source, Documentation{
+    factory.registerSource("ytsaurus", create_dictionary_source, SecretArgumentsSpec{.secret_keys = {"oauth_token"}}, Documentation{
         .description = R"DOCS_MD(
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
