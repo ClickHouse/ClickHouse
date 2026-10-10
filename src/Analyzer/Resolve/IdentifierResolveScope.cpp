@@ -31,6 +31,7 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
         in_prewhere = parent_scope->in_prewhere;
+        resolving_join_on_expression = parent_scope->resolving_join_on_expression;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();
