@@ -75,6 +75,12 @@ SELECT count() FROM tab_str WHERE multiSearchAny(m['abc'], ['hello']) SETTINGS o
 SELECT count() FROM tab_str WHERE multiSearchAny(m['abc'], ['hello']) SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT count() FROM tab_str WHERE m['abc'] = 'hello' SETTINGS force_data_skipping_indices = 'idx';
 
+SELECT '-- a LowCardinality predicate result is evaluated like a plain one';
+SELECT count() FROM tab_str WHERE toLowCardinality(m['abc']) = 'hello' SETTINGS optimize_functions_to_subcolumns = 0, force_data_skipping_indices = 'idx';
+SELECT count() FROM tab_str WHERE toLowCardinality(m['abc']) = 'hello' SETTINGS optimize_functions_to_subcolumns = 1, force_data_skipping_indices = 'idx';
+SELECT count() FROM tab_str WHERE toLowCardinality(m['nokey']) = '';
+SELECT count() FROM tab_str WHERE toLowCardinality(m['nokey']) = '' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
 SELECT '-- a set inside the subscript is prepared, not executed unready';
 SELECT count() FROM tab_str WHERE m[if(0 IN (SELECT number FROM numbers(1)), 'abc', 'zzz')] = 'hello';
 

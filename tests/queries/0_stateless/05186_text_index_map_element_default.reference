@@ -32,6 +32,10 @@
 1
 1
 1
+-- a LowCardinality predicate result is evaluated like a plain one
+1
+1
+1
 -- a set inside the subscript is prepared, not executed unready
 1
 -- a map key is a literal, not a pattern

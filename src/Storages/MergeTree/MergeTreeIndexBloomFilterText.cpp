@@ -590,7 +590,7 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
     const bool negating = function_name == "notEquals" || function_name == "notLike";
 
     if (!predicate_node || !predicate_node->function_base || !predicate_node->isDeterministic()
-        || !WhichDataType(removeNullable(predicate_node->result_type)).isUInt8())
+        || !WhichDataType(removeLowCardinalityAndNullable(predicate_node->result_type)).isUInt8())
         return true;
 
     auto subdag = ActionsDAG::cloneSubDAG({predicate_node}, /* remove_aliases = */ true);
