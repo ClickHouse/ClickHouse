@@ -1,4 +1,6 @@
-SET enable_parallel_replicas = 0,
+-- Exercise local filter elimination alongside independent aggregation in the distributed-plan suite.
+SET serialize_query_plan = 0,
+    enable_parallel_replicas = 0,
     optimize_use_projections = 0,
     optimize_use_implicit_projections = 0,
     optimize_read_in_order = 0,

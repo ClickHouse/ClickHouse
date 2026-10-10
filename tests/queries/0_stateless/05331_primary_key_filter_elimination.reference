@@ -6,6 +6,10 @@ where_disabled	2	15522
 where_enabled	0	14316
 where_enabled	1	15496
 where_enabled	2	15522
+serialized_plan	1
+serialized	0	14316
+serialized	1	15496
+serialized	2	15522
 automatic_prewhere_plan	1
 automatic_prewhere	0	14316
 automatic_prewhere	1	15496

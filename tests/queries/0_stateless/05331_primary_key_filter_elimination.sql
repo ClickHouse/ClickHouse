@@ -1,4 +1,6 @@
-SET enable_parallel_replicas = 0,
+-- The optimization requires a local plan; the distributed-plan suite enables `serialize_query_plan`.
+SET serialize_query_plan = 0,
+    enable_parallel_replicas = 0,
     optimize_use_projections = 0,
     optimize_use_implicit_projections = 0,
     optimize_read_in_order = 0,
@@ -52,6 +54,16 @@ SETTINGS query_plan_optimize_primary_key_filter_elimination = 0;
 SELECT 'where_enabled', bucket, sum(amount) FROM pk_filter_elimination
 WHERE tenant = 1 AND ts >= 13 AND ts < 51
 GROUP BY bucket ORDER BY bucket;
+
+-- A serialized plan must retain the filter and return the same aggregate results.
+SELECT 'serialized_plan', countIf(explain LIKE '%Primary key proven filter%') = 0
+FROM (EXPLAIN description = 1
+    SELECT bucket, sum(amount) FROM pk_filter_elimination
+    WHERE tenant = 1 AND ts >= 13 AND ts < 51 GROUP BY bucket
+    SETTINGS serialize_query_plan = 1);
+SELECT 'serialized', bucket, sum(amount) FROM pk_filter_elimination
+WHERE tenant = 1 AND ts >= 13 AND ts < 51
+GROUP BY bucket ORDER BY bucket SETTINGS serialize_query_plan = 1;
 
 -- Automatic and explicit `PREWHERE` must produce the same proof and results.
 SELECT 'automatic_prewhere_plan', countIf(explain LIKE '%Primary key proven filter%') > 0
