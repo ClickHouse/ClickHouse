@@ -151,6 +151,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.kind = kind;
         entry.strictness = strictness;
         entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, keys, kind, strictness);
+        entry.assumes_independent_keys = assumesIndependentKeys(keys, dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows);
         entry.max_rows = estimateJoinRowsUpperBound(dp_table[lhs_subset].max_rows, dp_table[rhs_subset].max_rows, kind, strictness);
         entry.edges.assign(edge.begin(), edge.end());
     }

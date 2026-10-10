@@ -500,6 +500,8 @@ JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
             UInt64 domain_distinct_values = 0;
             bool has_left = false;
             bool has_right = false;
+            std::vector<UInt64> left_columns;
+            std::vector<UInt64> right_columns;
             for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
             {
                 auto relation = equiv_member.getSourceRelations().getSingleBit();
@@ -511,11 +513,13 @@ JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 {
                     has_left = true;
                     side = &left_distinct_values;
+                    left_columns.push_back(keyColumnId(equiv_member.getColumnName()));
                 }
                 else if (right_mask & relation_bit)
                 {
                     has_right = true;
                     side = &right_distinct_values;
+                    right_columns.push_back(keyColumnId(equiv_member.getColumnName()));
                 }
                 else
                     continue;
@@ -525,7 +529,10 @@ JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 domain_distinct_values = std::max(domain_distinct_values, getColumnDomain(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
             }
             if (has_left && has_right)
+            {
                 keys.add(left_distinct_values, right_distinct_values, domain_distinct_values);
+                keys.countIndependentKey(left_distinct_values, right_distinct_values, left_columns, right_columns);
+            }
         }
     }
 
@@ -558,7 +565,9 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
-    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
+    auto join_entry = std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
+    join_entry->estimate_from_defaults |= entry.assumes_independent_keys;
+    return join_entry;
 }
 
 /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
@@ -603,6 +612,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};
+        /// The rows rest on the independence of the key columns, see `assumesIndependentKeys`.
+        bool assumes_independent_keys = false;
         JoinKind kind{JoinKind::Inner};
         JoinStrictness strictness{JoinStrictness::All};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation

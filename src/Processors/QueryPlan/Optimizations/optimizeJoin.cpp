@@ -465,7 +465,7 @@ static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & n
         left_stats.imprecise_estimate || right_stats.imprecise_estimate,
         join.selectivity,
         join.max_rows,
-        left_stats.estimate_from_defaults || right_stats.estimate_from_defaults,
+        join.estimate_from_defaults,
         input_estimate(left_stats),
         input_estimate(right_stats));
 
@@ -482,7 +482,7 @@ static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & n
             .cost = std::nullopt,
             .source = RowEstimateSource::NoSource,
             .max_rows = join.max_rows ? std::optional<Float64>(Float64(*join.max_rows)) : std::nullopt,
-            .estimate_from_defaults = left_stats.estimate_from_defaults || right_stats.estimate_from_defaults};
+            .estimate_from_defaults = join.estimate_from_defaults};
 }
 
 static String dumpStatsForLogs(const RelationStats & stats)

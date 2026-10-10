@@ -127,6 +127,8 @@ JoinKeyEstimate computeSelectivity(
         UInt64 domain_distinct_values = 0;
         bool has_left = false;
         bool has_right = false;
+        std::vector<UInt64> left_columns;
+        std::vector<UInt64> right_columns;
         for (const auto & equiv_member : *equiv_class)
         {
             auto relation = equiv_member.getSourceRelations().getSingleBit();
@@ -137,11 +139,13 @@ JoinKeyEstimate computeSelectivity(
             {
                 has_left = true;
                 side = &left_distinct_values;
+                left_columns.push_back(keyColumnId(equiv_member.getColumnName()));
             }
             else if (right.test(*relation))
             {
                 has_right = true;
                 side = &right_distinct_values;
+                right_columns.push_back(keyColumnId(equiv_member.getColumnName()));
             }
             else
                 continue;
@@ -151,7 +155,10 @@ JoinKeyEstimate computeSelectivity(
             domain_distinct_values = std::max(domain_distinct_values, getColumnDomain(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
         }
         if (has_left && has_right)
+        {
             keys.add(left_distinct_values, right_distinct_values, domain_distinct_values);
+            keys.countIndependentKey(left_distinct_values, right_distinct_values, left_columns, right_columns);
+        }
     }
 
     return keys;

@@ -111,6 +111,7 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                     }
                     applied_edges = std::move(edges);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, keys.selectivity, cardinality, std::move(join_operator));
+                    best_plan->estimate_from_defaults |= assumesIndependentKeys(keys, left->estimated_rows, right->estimated_rows);
                     best_plan_equi_connected = equi_connected;
                     best_i = i;
                     best_j = j;

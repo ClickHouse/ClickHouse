@@ -5,7 +5,10 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <algorithm>
+#include <functional>
 #include <limits>
+#include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -77,7 +80,67 @@ struct JoinKeyEstimate
         right_match_fraction = std::min(right_match_fraction.value_or(1.0),
             QueryPlanOptimizations::keyContainment(right.from_statistics, left.from_statistics, domain_distinct_values).value_or(1.0));
     }
+
+    /// Keys counted once each for a key of several columns, see `countIndependentKey`.
+    size_t independent_keys = 0;
+    bool independent_keys_from_statistics = true;
+    /// Product of the NDVs of the independent keys on each side.
+    double left_key_combinations = 1.0;
+    double right_key_combinations = 1.0;
+    /// Hashes of the columns of the independent keys on each side.
+    std::vector<UInt64> left_key_columns = {};
+    std::vector<UInt64> right_key_columns = {};
+
+    /// Counts a key added with `add` for the estimate of a key of several columns. A key that shares a
+    /// column with one counted before is not independent of it and is not counted.
+    void countIndependentKey(
+        const KeyDistinctValues & left, const KeyDistinctValues & right,
+        const std::vector<UInt64> & left_columns, const std::vector<UInt64> & right_columns)
+    {
+        const auto seen = [](const std::vector<UInt64> & counted, const std::vector<UInt64> & columns)
+        { return std::ranges::any_of(columns, [&](UInt64 column) { return std::ranges::find(counted, column) != counted.end(); }); };
+        if (seen(left_key_columns, left_columns) || seen(right_key_columns, right_columns))
+            return;
+        left_key_columns.insert(left_key_columns.end(), left_columns.begin(), left_columns.end());
+        right_key_columns.insert(right_key_columns.end(), right_columns.begin(), right_columns.end());
+        ++independent_keys;
+        if (!left.from_statistics || !right.from_statistics)
+        {
+            independent_keys_from_statistics = false;
+            return;
+        }
+        left_key_combinations *= static_cast<double>(left.from_statistics);
+        right_key_combinations *= static_cast<double>(right.from_statistics);
+    }
+
+    /// For two or more independent keys with statistics: one over the distinct key combinations of
+    /// the side with more of them, each side having the product of its key NDVs, at most its `rows`.
+    /// It assumes the key columns independent: correlated columns have fewer combinations, and the
+    /// estimate is then too low.
+    std::optional<double> multiColumnSelectivity(double left_rows, double right_rows) const
+    {
+        if (independent_keys < 2 || !independent_keys_from_statistics)
+            return {};
+        const double combinations = std::max(std::min(left_rows, left_key_combinations), std::min(right_rows, right_key_combinations));
+        if (combinations < 1.0)
+            return {};
+        return std::min(statistics_selectivity, 1.0 / combinations);
+    }
+
+    /// Whether the estimate for inputs of `left_rows` and `right_rows` rests on the independence of the
+    /// key columns, see `multiColumnSelectivity`.
+    bool assumesIndependentKeys(double left_rows, double right_rows) const
+    {
+        const auto multi_column = multiColumnSelectivity(left_rows, right_rows);
+        return multi_column && *multi_column < statistics_selectivity;
+    }
 };
+
+/// Identifies a key column for `JoinKeyEstimate::countIndependentKey`.
+inline UInt64 keyColumnId(const String & column_name)
+{
+    return std::hash<String>{}(column_name);
+}
 
 /// Rows the cost model counts for an entry: its estimate; for a join without one, its selectivity
 /// times its inputs' values (its bound is the product of its inputs' bounds, which would grow with
@@ -175,10 +238,18 @@ inline void collectEdgeKeys(
         if (!edge_selectivity.is_equality)
             continue;
         const bool lhs_on_left = isSubsetOf(edge_selectivity.lhs_relations, left);
-        keys.add(
-            lhs_on_left ? edge_selectivity.lhs_distinct_values : edge_selectivity.rhs_distinct_values,
-            lhs_on_left ? edge_selectivity.rhs_distinct_values : edge_selectivity.lhs_distinct_values,
-            edge_selectivity.domain_distinct_values);
+        const auto & left_values = lhs_on_left ? edge_selectivity.lhs_distinct_values : edge_selectivity.rhs_distinct_values;
+        const auto & right_values = lhs_on_left ? edge_selectivity.rhs_distinct_values : edge_selectivity.lhs_distinct_values;
+        keys.add(left_values, right_values, edge_selectivity.domain_distinct_values);
+
+        /// An edge inside an equivalence class is counted as a key of several columns with its class.
+        auto [op, lhs, rhs] = edge->asBinaryPredicate();
+        const auto equivalence_class = query_graph.column_equivalences.getClass(lhs);
+        if (equivalence_class && std::ranges::find(*equivalence_class, rhs) != equivalence_class->end())
+            continue;
+        const UInt64 lhs_column = keyColumnId(lhs.getColumnName());
+        const UInt64 rhs_column = keyColumnId(rhs.getColumnName());
+        keys.countIndependentKey(left_values, right_values, {lhs_on_left ? lhs_column : rhs_column}, {lhs_on_left ? rhs_column : lhs_column});
     }
 }
 
@@ -263,10 +334,18 @@ inline std::optional<UInt64> estimateJoinRowsUpperBound(
 inline double estimateJoinedRows(const JoinKeyEstimate & keys, double lhs, double rhs)
 {
     if (keys.from_statistics)
-        return keys.statistics_selectivity * lhs * rhs;
+        return keys.multiColumnSelectivity(lhs, rhs).value_or(keys.statistics_selectivity) * lhs * rhs;
     if (keys.has_equality)
         return std::max(lhs, rhs);
     return lhs * rhs;
+}
+
+/// Whether the rows of a join of inputs with these estimates rest on the independence of its key columns,
+/// so they are a guess, see `JoinKeyEstimate::multiColumnSelectivity`.
+inline bool assumesIndependentKeys(const JoinKeyEstimate & keys, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows)
+{
+    return keys.from_statistics && left_rows && right_rows
+        && keys.assumesIndependentKeys(static_cast<double>(*left_rows), static_cast<double>(*right_rows));
 }
 
 /// Join cardinality for every planner, by the join kind and strictness, at least one row. An empty
@@ -388,6 +467,8 @@ struct JoinEstimate
     std::optional<UInt64> max_rows;
     double selectivity = 1.0;
     std::unordered_map<String, ColumnStats> column_stats;
+    /// An input estimate or the join's own rests on a default or an assumption.
+    bool estimate_from_defaults = false;
 };
 
 inline JoinEstimate estimateJoin(
@@ -407,19 +488,22 @@ inline JoinEstimate estimateJoin(
             std::swap(lhs, rhs);
         if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
-        keys.add(
-            QueryPlanOptimizations::keyDistinctValues(left, lhs.getColumnName()),
-            QueryPlanOptimizations::keyDistinctValues(right, rhs.getColumnName()),
+        const auto left_values = QueryPlanOptimizations::keyDistinctValues(left, lhs.getColumnName());
+        const auto right_values = QueryPlanOptimizations::keyDistinctValues(right, rhs.getColumnName());
+        keys.add(left_values, right_values,
             std::max(QueryPlanOptimizations::keyDomain(left, lhs.getColumnName()), QueryPlanOptimizations::keyDomain(right, rhs.getColumnName())));
+        keys.countIndependentKey(left_values, right_values, {keyColumnId(lhs.getColumnName())}, {keyColumnId(rhs.getColumnName())});
     }
 
     const auto rows = estimateJoinCardinality(left_entry, right_entry, keys, join_operator.kind, join_operator.strictness);
     DPJoinEntry joined(left_entry, right_entry, /*cost*/ 0.0, keys.selectivity, rows, join_operator);
+    joined.estimate_from_defaults |= assumesIndependentKeys(keys, left.estimated_rows, right.estimated_rows);
     return JoinEstimate{
         .rows = joined.estimated_rows,
         .max_rows = joined.max_rows,
         .selectivity = keys.selectivity,
-        .column_stats = std::move(joined.column_stats)};
+        .column_stats = std::move(joined.column_stats),
+        .estimate_from_defaults = joined.estimate_from_defaults};
 }
 
 }

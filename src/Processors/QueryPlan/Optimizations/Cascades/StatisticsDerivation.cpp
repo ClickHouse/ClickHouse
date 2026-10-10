@@ -285,7 +285,8 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     ExpressionStatistics statistics;
     statistics.min_row_count = 0;
-    statistics.estimate_from_defaults = left_statistics.estimate_from_defaults || right_statistics.estimate_from_defaults;
+    statistics.estimate_from_defaults = left_statistics.estimate_from_defaults || right_statistics.estimate_from_defaults
+        || join.estimate_from_defaults;
     statistics.column_statistics = join.column_stats;
     statistics.max_row_count = join.max_rows ? Float64(*join.max_rows) : Float64(std::numeric_limits<UInt64>::max());
 

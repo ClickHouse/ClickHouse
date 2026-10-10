@@ -56,6 +56,7 @@ DPJoinEntryPtr evaluateJoin(
         effective_kind, query_graph.join_strictness, JoinLocality::Unspecified,
         std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
     auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, keys.selectivity, cardinality, std::move(join_operator));
+    new_entry->estimate_from_defaults |= assumesIndependentKeys(keys, left->estimated_rows, right->estimated_rows);
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
         new_entry->dump(), left->dump(), right->dump(),
