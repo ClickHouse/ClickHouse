@@ -2151,8 +2151,7 @@ protected:
             const DiskPtr disk;
 
             bool is_loaded = false;
-            /// Set from the ancestor that loaded `Active` and therefore covers this part. Stored by
-            /// value rather than as a part pointer, because a merge may replace the cover during startup.
+            /// Set from the ancestor that loaded `Active` and therefore covers this part.
             bool covering_part_is_non_transactional = false;
             String covering_part_name;
             std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;

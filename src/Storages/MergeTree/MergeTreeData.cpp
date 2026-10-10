@@ -485,9 +485,7 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
-    /// Pauses a commit after the covering parts are durable and before the covered parts are stamped
-    /// with their removal TID. Killing the server here leaves the on-disk state those two writes are
-    /// not atomic against.
+    /// Pauses a commit after the covering parts are durable and before the covered parts get their removal TID.
     extern const char merge_tree_commit_pause_before_removing_covered_parts[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
@@ -2753,9 +2751,8 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     }
 }
 
-/// A part covered by an `Active` part has been removed even when its removal TID is not on disk: the
-/// covering part's directory is made durable before `MergeTreeTransaction::addNewPartAndRemoveCovered`
-/// stores the TID, and the two are separate writes. Storing it here writes what a finished commit writes.
+/// A part covered by an `Active` part has been removed even when its removal TID is not on disk: a commit makes
+/// the covering part durable before `MergeTreeTransaction::addNewPartAndRemoveCovered` stores the TID.
 static void completeRemovalOfCoveredPart(
     const MergeTreeMutableDataPartPtr & part,
     bool covering_part_is_non_transactional,
@@ -2764,10 +2761,8 @@ static void completeRemovalOfCoveredPart(
 {
     auto current_version_info = part->version->getInfo();
 
-    /// `Tx::NonTransactionalTID` asserts that the removal was visible from the beginning of time, so it
-    /// is the truthful marker only when the removal was never recorded, the creation was committed by a
-    /// real transaction, and the covering part was itself created without one. Anything else is either
-    /// already handled elsewhere or corrupt metadata, and must keep reaching the check above.
+    /// `Tx::NonTransactionalTID` marks a removal visible from the beginning of time: truthful only for an unremoved part
+    /// created by a committed transaction and covered by a non-transactional part. Other states keep failing the check above.
     if (current_version_info.isRemoved())
         return;
 
@@ -2954,8 +2949,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         return res;
     }
 
-    /// Before publication: a background merge started by `startup` also stamps removal TIDs, and it can
-    /// see this part as soon as it is in `data_parts_indexes`.
+    /// Before the part is in `data_parts_indexes`, where a merge started by `startup` also stamps removal TIDs.
     if (part_loading_node)
         completeRemovalOfCoveredPart(
             res.part, part_loading_node->covering_part_is_non_transactional, part_loading_node->covering_part_name,
@@ -3100,10 +3094,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                 part->is_loaded = true;
                 bool is_active_part = res.part->getState() == DataPartState::Active;
 
-                /// This part covers its whole subtree and, being `Active`, is the part whose existence
-                /// accounts for those rows. Record how it was created while its metadata is in memory:
-                /// a part that did not load `Active` hands its children back to the queue below instead,
-                /// so whichever descendant does load `Active` is the one that records this.
+                /// An `Active` part covers its whole subtree; a part that is not `Active` requeues its children below.
                 if (is_active_part && !part->children.empty())
                 {
                     auto covering_info = res.part->version->getInfo();
