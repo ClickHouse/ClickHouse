@@ -145,3 +145,21 @@ TEST(DiskAccessStorageRecovery, KeepsUserCreatedAfterFailedListWrite)
     DiskAccessStorage restarted("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
     EXPECT_TRUE(restarted.find<User>("bob").has_value());
 }
+
+TEST(DiskAccessStorageRecovery, KeepsUserWhenMarkCannotBeCreated)
+{
+    Poco::TemporaryFile temp_dir;
+    temp_dir.createDirectories();
+    String dir = temp_dir.path() + "/";
+    UUID id = UUIDHelpers::generateV4();
+    auto path = std::filesystem::path(dir) / (toString(id) + ".sql");
+    writeEntityToFile(path, *makeUser("alice"));
+
+    AccessChangesNotifier notifier;
+    DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
+    std::filesystem::create_directory(dir + "need_rebuild_lists.mark"); /// The mark cannot be created as a file.
+
+    EXPECT_THROW(storage.remove(id), Exception);
+    EXPECT_TRUE(storage.find<User>("alice").has_value());
+    EXPECT_TRUE(std::filesystem::exists(path));
+}

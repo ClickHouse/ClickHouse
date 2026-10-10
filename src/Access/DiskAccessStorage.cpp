@@ -17,7 +17,6 @@
 #include <boost/range/adaptor/map.hpp>
 #include <base/range.h>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 
 
@@ -322,7 +321,7 @@ void DiskAccessStorage::scheduleWriteLists(AccessEntityType type)
     /// This file will be used later to find out if writing lists is successful or not.
     /// It's created on every call because `reloadAllAndRebuildLists` can remove it while the lists-writing thread is waiting,
     /// and the lists are never written again after a failed write.
-    std::ofstream out{getNeedRebuildListsMarkFilePath(directory_path)};
+    WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
     out.close();
 
     if (failed_to_write_lists)
