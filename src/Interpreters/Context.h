@@ -1037,9 +1037,10 @@ public:
     /// Call after `makeQueryContext` and before the group is created.
     void setParentSchedulingGroup(QuerySchedulingGroupPtr group);
     /// Throws if this context is a part of a query (a copy of a query context, or a query context with a
-    /// parent scheduling group) and its `workload` or scheduling settings differ from the query's.
-    /// Called when they are set, so such a query is rejected before it runs.
-    void checkSchedulingSettingsOfQueryPart() const;
+    /// parent scheduling group), `changes` touch its `workload` or scheduling settings, and they differ
+    /// from the query's. Called after the `SETTINGS` clause of a part is applied, so such a query is
+    /// rejected before it runs.
+    void checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes) const;
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.

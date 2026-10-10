@@ -316,6 +316,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             auto checked_changes = set_query.changes;
             updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
             updated_context->applySettingsChanges(checked_changes);
+            /// All parts of a query are scheduled under the query's settings.
+            updated_context->checkSchedulingSettingsOfQueryPart(checked_changes);
             settings_changes = set_query.changes;
         }
     }

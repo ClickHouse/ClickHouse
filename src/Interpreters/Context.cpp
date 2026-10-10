@@ -2767,11 +2767,6 @@ bool sameScheduling(const String & workload, const ClassifierSettings & settings
         && settings.priority.value == other.priority.value;
 }
 
-bool sameScheduling(const Settings & settings, const Settings & other)
-{
-    return sameScheduling(settings[Setting::workload], makeClassifierSettings(settings, false), other[Setting::workload], makeClassifierSettings(other, false));
-}
-
 }
 
 QuerySchedulingGroupPtr Context::getSchedulingGroup() const
@@ -2805,8 +2800,11 @@ void Context::setParentSchedulingGroup(QuerySchedulingGroupPtr group)
     parent_scheduling_group = std::move(group);
 }
 
-void Context::checkSchedulingSettingsOfQueryPart() const
+void Context::checkSchedulingSettingsOfQueryPart(const SettingsChanges & changes) const
 {
+    if (!std::ranges::any_of(changes, [](const SettingChange & change) { return isQuerySchedulingSetting(change.name); }))
+        return;
+
     QuerySchedulingGroupPtr parent;
     {
         std::lock_guard lock(mutex);
@@ -3794,16 +3792,10 @@ SettingsChanges enforceConstraintsAlongProfileChanges(const ContextPtr & context
 
 void Context::setSettings(const Settings & settings_)
 {
-    bool scheduling_changed = false;
-    {
-        std::lock_guard lock(mutex);
-        scheduling_changed = !sameScheduling(*settings, settings_);
-        *settings = settings_;
-        need_recalculate_access = true;
-        contextSanityClampSettings(*this, *settings);
-    }
-    if (scheduling_changed)
-        checkSchedulingSettingsOfQueryPart();
+    std::lock_guard lock(mutex);
+    *settings = settings_;
+    need_recalculate_access = true;
+    contextSanityClampSettings(*this, *settings);
 }
 
 void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
@@ -3865,23 +3857,15 @@ void Context::applySettingsChangesWithLock(const SettingsChanges & changes, cons
 
 void Context::setSetting(std::string_view name, const String & value)
 {
-    {
-        std::lock_guard lock(mutex);
-        setSettingWithLock(name, value, lock);
-    }
-    if (isQuerySchedulingSetting(name))
-        checkSchedulingSettingsOfQueryPart();
+    std::lock_guard lock(mutex);
+    setSettingWithLock(name, value, lock);
 }
 
 void Context::setSetting(std::string_view name, const Field & value)
 {
-    {
-        std::lock_guard lock(mutex);
-        setSettingWithLock(name, value, lock);
-        contextSanityClampSettingsWithLock(*this, *settings, lock);
-    }
-    if (isQuerySchedulingSetting(name))
-        checkSchedulingSettingsOfQueryPart();
+    std::lock_guard lock(mutex);
+    setSettingWithLock(name, value, lock);
+    contextSanityClampSettingsWithLock(*this, *settings, lock);
 }
 
 void Context::setServerSetting(std::string_view name, const Field & value)
@@ -3909,12 +3893,8 @@ void Context::applySettingChange(const SettingChange & change)
 
 void Context::applySettingsChanges(const SettingsChanges & changes)
 {
-    {
-        std::lock_guard lock(mutex);
-        applySettingsChangesWithLock(changes, lock);
-    }
-    if (std::ranges::any_of(changes, [](const SettingChange & change) { return isQuerySchedulingSetting(change.name); }))
-        checkSchedulingSettingsOfQueryPart();
+    std::lock_guard lock(mutex);
+    applySettingsChangesWithLock(changes, lock);
 }
 
 void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)
