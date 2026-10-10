@@ -15,6 +15,11 @@ bool MergeTreeReaderIndex::canSkipAnyMark() const
     return index_read_result && index_read_result->canSkipAnyMark();
 }
 
+bool MergeTreeReaderIndex::canSkipAnyMarkBesidesTopKPrimaryKey() const
+{
+    return index_read_result && index_read_result->canSkipAnyMarkBesidesTopKPrimaryKey();
+}
+
 MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_)
     : IMergeTreeReader(
           main_reader_->data_part_info_for_read,

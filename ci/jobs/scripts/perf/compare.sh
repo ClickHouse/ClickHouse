@@ -419,7 +419,7 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=($(ls "$test_prefix" | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
+        test_files=($(ls "$test_prefix" | rg '\.xml$' | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
 # TODO: remove
 #    elif [ "$PR_TO_TEST" -ne 0 ] \
 #        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
@@ -452,6 +452,15 @@ function run_tests
         # to have sequential indexes...
         test_files=("${test_files[@]}")
     fi
+
+    for test in "${test_files[@]}"
+    do
+        if rg -q 'requires_s3="1"' "$test"
+        then
+            echo "Cannot compare $test: perf_s3 requires the Praktika performance job for S3 provisioning and per-side namespaces" >&2
+            exit 1
+        fi
+    done
 
     if [ "$run_only_changed_tests" -ne 0 ]; then
         if [ ${#test_files[@]} -eq 0 ]; then
