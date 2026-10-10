@@ -1827,7 +1827,7 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
 
-`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL`). Use the `ARRAY JOIN` clause for those queries.
+`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` and `LATERAL unnest(...)`). Use the `ARRAY JOIN` clause for those queries. `JOIN LATERAL` over a correlated subquery is a separate experimental feature and does not make `unnest` usable as a table source.
 
 `arrayJoin`, including via its `unnest` alias, cannot be used in a `JOIN ON` condition that is evaluated during the join, because such a condition must
 preserve the number of rows. A condition that applies to one side only, and an equality key over `arrayJoin`, are
@@ -3243,6 +3243,62 @@ SELECT arrayRemove(['a', NULL, 'b', NULL], NULL)
 
 ```response title=Response
 ['a','b']
+```
+
+## arrayRemoveAt {#arrayRemoveAt}
+
+Introduced in: v26.10.0
+
+Removes the element at the specified index from an array.
+Indexes are 1-based. Negative indexes count from the end of the array.
+If the index is outside the array bounds, the array is returned unchanged.
+Index 0 is invalid.
+
+**Syntax**
+
+```sql
+arrayRemoveAt(arr, index)
+```
+
+**Arguments**
+
+- `arr` — Source array. [`Array(T)`](/reference/data-types/array)
+- `index` — Non-Nullable integer index of the element to remove. Negative indexes count from the end. [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+
+**Returned value**
+
+Returns the source array without the element at `index`, or the original array if `index` is out of bounds. [`Array(T)`](/reference/data-types/array)
+
+**Examples**
+
+**Positive index**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 2)
+```
+
+```response title=Response
+[1,3,4]
+```
+
+**Negative index**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], -1)
+```
+
+```response title=Response
+[1,2,3]
+```
+
+**Out of bounds**
+
+```sql title=Query
+SELECT arrayRemoveAt([1, 2, 3, 4], 10)
+```
+
+```response title=Response
+[1,2,3,4]
 ```
 
 ## arrayResize {#arrayResize}
