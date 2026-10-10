@@ -59,11 +59,12 @@ public:
     void update(size_t key, RuntimeDataflowStatistics stats);
 
     /// The key of the single-replica plan's boundary - the node matched to the top of the replicas plan - that an
-    /// earlier execution of the single-replica plan with this root found, so that a later one can find its
-    /// statistics without building a replicas plan to match against.
-    std::optional<UInt64> getBoundaryHash(UInt64 root_hash) const;
+    /// earlier execution found, so that a later one can find its statistics without building a replicas plan to
+    /// match against. `root_key` combines the single-replica plan's root hash with the settings that can move the
+    /// boundary without changing that plan.
+    std::optional<UInt64> getBoundaryHash(UInt64 root_key) const;
 
-    void setBoundaryHash(UInt64 root_hash, UInt64 boundary_hash);
+    void setBoundaryHash(UInt64 root_key, UInt64 boundary_hash);
 
 private:
     using BoundaryCache = DB::CacheBase<UInt64, UInt64>;

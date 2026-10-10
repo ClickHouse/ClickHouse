@@ -10,6 +10,9 @@
 #include <Interpreters/Context.h>
 
 #include <Common/SipHash.h>
+
+#include <algorithm>
+#include <string_view>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
 
@@ -169,6 +172,49 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_SETTING_VALUE;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// The settings that the build of the replicas plan reads and that can move where the replicas' half of the
+/// plan ends, while leaving the single-replica plan as it is - so that plan's root hash, under which automatic
+/// parallel replicas remembers the boundary, cannot see them.
+///
+/// Registration rule: a setting belongs here when the build of the replicas plan reads it (in
+/// `findParallelReplicasQuery`, `buildQueryTreeForShard` or `ClusterProxy::executeQueryWithParallelReplicas`), it
+/// can change which subquery is shipped or how it is rewritten, and it does not change the single-replica plan.
+/// The `parallel_replicas_` family is taken whole, by prefix, so a setting added to it is covered without anyone
+/// remembering this place; the price is a missed cache entry when a session changes one that does not move the
+/// boundary. The names below are the ones outside that family.
+///
+/// A setting counts only when its value differs from the declared default, so sessions left at the defaults
+/// share one hash; `changes` returns the settings in declaration order, so the order they were set in does not
+/// matter.
+UInt64 parallelReplicasBoundarySettingsHash(const Settings & settings)
+{
+    static constexpr std::string_view settings_outside_family[] = {
+        "prefer_global_in_and_join",
+        "distributed_product_mode",
+        "enable_add_distinct_to_in_subqueries",
+        "serialize_query_plan",
+    };
+
+    SipHash hash;
+    for (const auto & change : settings.changes())
+    {
+        const std::string_view name = change.name;
+        if (!name.starts_with("parallel_replicas_") && std::ranges::find(settings_outside_family, name) == std::end(settings_outside_family))
+            continue;
+        const auto value = Settings::valueToStringUtil(name, change.value);
+        if (value == settings.getDefaultValueString(name))
+            continue;
+        hash.update(name);
+        hash.update(value);
+    }
+    return hash.get64();
+}
+
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -396,6 +442,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
+    parallel_replicas_boundary_settings_hash = parallelReplicasBoundarySettingsHash(from);
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];

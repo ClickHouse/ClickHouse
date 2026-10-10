@@ -24,9 +24,12 @@ SET enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3
 SET automatic_parallel_replicas_min_bytes_per_replica = 1;
 -- Pin what the comparison reads: the thread count, the task size bounding the useful thread count, the
 -- plan shape, and the join order, which decides which read the statistics end up naming.
+-- An aggregation that spills to disk merges on a path that collects no statistics, so the first execution
+-- would leave nothing for the later ones to decide from; the harness randomizes the spill threshold.
 SET max_threads = 16, max_threads_min_free_memory_per_thread = 0,
     merge_tree_min_bytes_per_task_for_remote_reading = 4096, max_block_size = 65505,
-    serialize_query_plan = 0, max_rows_to_group_by = 0, query_plan_optimize_join_order_randomize = 0;
+    serialize_query_plan = 0, max_rows_to_group_by = 0,
+    max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, query_plan_optimize_join_order_randomize = 0;
 
 -- Grouping a high-cardinality key into many aggregates makes the output several times the read, so a
 -- single node wins and the model declines. The margin is deliberately wide: the byte counts are sampled
@@ -53,7 +56,10 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     log_comment,
-    ProfileEvents['AutomaticParallelReplicasDecidedWithoutBuildingPlan'] > 0 AS decided_without_building_the_plan
+    ProfileEvents['AutomaticParallelReplicasDecidedWithoutBuildingPlan'] > 0 AS decided_without_building_the_plan,
+    -- Statistics are collected only at a boundary the plan with parallel replicas named, so recollecting after
+    -- drift builds that plan rather than trusting the remembered boundary.
+    ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] > 0 AS built_the_plan
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - toIntervalMinute(15)
   AND current_database = currentDatabase() AND type = 'QueryFinish'

@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -789,12 +790,21 @@ void considerEnablingParallelReplicas(
     /// built to find it again. Mode 2 recollects, so it always matches against a fresh replicas plan.
     const auto nopr_node_hashes = calculateHashTableCacheKeys(root);
     auto & stats_cache = getRuntimeDataflowStatisticsCache();
-    const auto root_hash_it = nopr_node_hashes.find(&root);
+    /// Where the replicas' half ends also depends on settings that leave the single-replica plan as it is, so the
+    /// key carries them beside the root's hash.
+    std::optional<UInt64> root_key;
+    if (const auto root_hash_it = nopr_node_hashes.find(&root); root_hash_it != nopr_node_hashes.end())
+    {
+        SipHash hash;
+        hash.update(root_hash_it->second);
+        hash.update(optimization_settings.parallel_replicas_boundary_settings_hash);
+        root_key = hash.get64();
+    }
     const QueryPlan::Node * single_replica_plan_boundary = nullptr;
     size_t single_replica_plan_boundary_hash = 0;
-    if (optimization_settings.automatic_parallel_replicas_mode != 2 && root_hash_it != nopr_node_hashes.end())
+    if (optimization_settings.automatic_parallel_replicas_mode != 2 && root_key)
     {
-        if (const auto boundary_hash = stats_cache.getBoundaryHash(root_hash_it->second))
+        if (const auto boundary_hash = stats_cache.getBoundaryHash(*root_key))
         {
             single_replica_plan_boundary_hash = *boundary_hash;
             single_replica_plan_boundary = findSingleReplicaPlanBoundary(root, nopr_node_hashes, *boundary_hash);
@@ -810,8 +820,8 @@ void considerEnablingParallelReplicas(
             *replicas_plan_boundary, *plan_with_parallel_replicas->getRootNode(), root, nopr_node_hashes);
         if (!single_replica_plan_boundary)
             return false;
-        if (root_hash_it != nopr_node_hashes.end())
-            stats_cache.setBoundaryHash(root_hash_it->second, single_replica_plan_boundary_hash);
+        if (root_key)
+            stats_cache.setBoundaryHash(*root_key, single_replica_plan_boundary_hash);
         return true;
     };
 
@@ -826,9 +836,10 @@ void considerEnablingParallelReplicas(
         plan_with_parallel_replicas,
         replicas_plan_boundary);
 
-    /// The cache is keyed by the single-replica plan alone, while where the replicas' half ends also depends on how
-    /// the replicas plan is built. Adopting needs the replicas plan anyway, so let it name the boundary and decide
-    /// again; it exists by then, so the second decision cannot ask for it again.
+    /// The cached boundary comes from a key that cannot see everything that decides where the replicas' half ends.
+    /// Adopting needs the replicas plan anyway, and so does collecting, so that statistics are never gathered at a
+    /// wrong node; let it name the boundary and decide again. It exists by then, so the second decision cannot ask
+    /// for it again.
     if (needs_replicas_plan && match_boundary_in_replicas_plan())
     {
         [[maybe_unused]] const bool asked_again = decideAtBoundary(
@@ -843,9 +854,9 @@ void considerEnablingParallelReplicas(
 }
 
 /// Prices the query at `single_replica_plan_boundary` and then parallelizes it, leaves it alone, or
-/// instruments it to collect statistics. Returns true only when the verdict is to parallelize but there is no
-/// replicas plan yet - the boundary came from the cache - so the caller is to build the replicas plan and call
-/// again with the boundary it matches.
+/// instruments it to collect statistics. Returns true only when the verdict is to parallelize or to collect but
+/// there is no replicas plan yet - the boundary came from the cache - so the caller is to build the replicas plan
+/// and call again with the boundary it matches.
 static bool decideAtBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & query_plan,
@@ -1060,6 +1071,12 @@ static bool decideAtBoundary(
         || optimization_settings.automatic_parallel_replicas_mode == 2 // automatic_parallel_replicas_mode == 2 enforces statistics recollection
     )
     {
+        /// Collect only at a boundary the replicas plan named. The cached one comes from a key that is approximate
+        /// by design, and statistics collected at a wrong node would keep confirming it; going through the replicas
+        /// plan here re-checks the mapping whenever the statistics are refreshed anyway.
+        if (!plan_with_parallel_replicas)
+            return true;
+
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_boundary_hash, rows_to_read);
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         single_replica_plan_boundary->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
