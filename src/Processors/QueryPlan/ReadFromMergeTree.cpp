@@ -2837,7 +2837,6 @@ bool ReadFromMergeTree::hasTextIndexInMetadata() const
     });
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache() const
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation(bool allow_query_condition_cache_) const
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the

@@ -1648,7 +1648,7 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
             auto quota = context->getQuota();
             res.pipeline.setLimitsAndQuota(limits, quota);
         }
-        if (output.can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
+        if (output.can_use_query_result_cache)
         {
             auto created_at = std::chrono::system_clock::now();
             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
@@ -3105,7 +3105,7 @@ static BlockIO executeQueryImpl(
                     settings[Setting::logsql_message_column],
                     new_begin,
                     new_end,
-                    settings[Setting::allow_experimental_logsql_dialect],
+                    settings[Setting::enable_logsql_dialect],
                     settings[Setting::max_parser_depth],
                     max_query_size);
                 out_ast = parseLogsQLQuery(parser, new_begin, new_end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -3716,18 +3716,23 @@ static BlockIO executeQueryImpl(
             if (http_continue_callback && !internal)
                 http_continue_callback();
         }
-
+        QueryResultCacheOnDiskPtr query_result_cache_on_disk;
         if (!can_use_query_result_cache)
         {
             can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
                 && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
                 && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
             context->setCanUseQueryResultCache(can_use_query_result_cache);
+
+            /// The query result cache on disk (backed by a preconfigured filesystem cache), see setting `query_cache_on_disk_cache_name`.
+            
+            if (can_use_query_result_cache)
+                query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
             /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
             /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
             /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
             /// another overflow mode. This is only needed if the query result cache can actually store the result.
-            if (settings[Setting::use_query_cache] && canWriteToQueryResultCache(context) && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
+            if (settings[Setting::use_query_cache] && hasQueryResultCacheWriteBackend(context, query_result_cache_on_disk) && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
                 || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
                 || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
                 || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
@@ -3903,7 +3908,7 @@ static BlockIO executeQueryImpl(
                 }
                 /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                 /// top of the pipeline which stores the result in the query cache.
-                if (checkCanWriteQueryResultCache(out_ast, context))
+                if (checkCanWriteQueryResultCache(out_ast, context, query_result_cache_on_disk))
                 {
                     auto created_at = std::chrono::system_clock::now();
                     auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
