@@ -682,6 +682,13 @@ enum class ExplainQueryPlanDefault : uint8_t
 };
 DECLARE_SETTING_ENUM(ExplainQueryPlanDefault)
 
+enum class PipelineExecutorKind : uint8_t
+{
+    V1,
+    V2,
+};
+DECLARE_SETTING_ENUM(PipelineExecutorKind)
+
 enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
 {
     WILDCARD,

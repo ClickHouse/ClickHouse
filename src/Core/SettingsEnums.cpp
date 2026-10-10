@@ -597,6 +597,10 @@ IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
     {{"legacy", ExplainQueryPlanDefault::LEGACY},
      {"pretty", ExplainQueryPlanDefault::PRETTY}})
 
+IMPLEMENT_SETTING_ENUM(PipelineExecutorKind, ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", PipelineExecutorKind::V1},
+     {"v2", PipelineExecutorKind::V2}})
+
 IMPLEMENT_SETTING_ENUM(
     FileLikeEngineDefaultPartitionStrategy,
     ErrorCodes::BAD_ARGUMENTS,
