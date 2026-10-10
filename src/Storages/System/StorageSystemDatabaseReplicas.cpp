@@ -126,6 +126,7 @@ Chunk SystemDatabaseReplicasSource::generate()
 
         res_columns[col_num++]->insert(status->is_readonly);
         res_columns[col_num++]->insert(status->max_log_ptr);
+        res_columns[col_num++]->insert(status->logs_to_keep);
         res_columns[col_num++]->insert(status->replica_name);
         res_columns[col_num++]->insert(status->replica_path);
         res_columns[col_num++]->insert(status->zookeeper_path);
@@ -260,6 +261,7 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
         = {{"database", std::make_shared<DataTypeString>(), "The name of the Replicated database is in."},
            {"is_readonly", std::make_shared<DataTypeUInt8>(), "Whether the database replica is in read-only mode."},
            {"max_log_ptr", std::make_shared<DataTypeInt32>(), "Maximum entry number in the log of general activity."},
+           {"logs_to_keep", std::make_shared<DataTypeUInt32>(), "Number of log entries kept in ClickHouse Keeper, shared by all replicas of the database."},
            {"replica_name", std::make_shared<DataTypeString>(), "Replica name in ClickHouse Keeper."},
            {"replica_path", std::make_shared<DataTypeString>(), "Path to replica data in ClickHouse Keeper."},
            {"zookeeper_path", std::make_shared<DataTypeString>(), "Path to database data in ClickHouse Keeper."},
@@ -313,7 +315,7 @@ void StorageSystemDatabaseReplicas::readImpl(
     bool with_zk_fields = false;
     for (const auto & column_name : column_names)
     {
-        if (column_name == "max_log_ptr" || column_name == "log_ptr" || column_name == "total_replicas")
+        if (column_name == "max_log_ptr" || column_name == "log_ptr" || column_name == "total_replicas" || column_name == "logs_to_keep")
         {
             with_zk_fields = true;
             break;

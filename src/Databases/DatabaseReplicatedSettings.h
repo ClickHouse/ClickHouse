@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 
+#include <limits>
 
 namespace Poco
 {
@@ -15,6 +16,7 @@ namespace DB
 {
 class ASTSetQuery;
 class ASTStorage;
+struct SettingChange;
 struct DatabaseReplicatedSettingsImpl;
 
 /// List of available types supported in ReplicatedSettings object
@@ -39,6 +41,7 @@ struct DatabaseReplicatedSettings
 
     void loadFromQuery(ASTStorage & storage_def, bool loading_from_existing_metadata);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+    void applyChange(const SettingChange & change);
 
     /// Validates `logs_to_keep` in the `SETTINGS` clause of a `Replicated` database definition against
     /// the 32-bit DDL log counter. An out-of-range value is rejected with `BAD_ARGUMENTS`, or, with
@@ -46,8 +49,13 @@ struct DatabaseReplicatedSettings
     static void checkOrClampLogsToKeep(ASTSetQuery & settings, bool clamp_on_overflow);
 
     String toString() const;
+    bool has(std::string_view name) const;
 
     static bool hasBuiltin(std::string_view name);
+
+    static UInt32 parseLogsToKeepFromKeeper(const String & logs_to_keep_str, UInt64 * keeper_logs_to_keep = nullptr);
+
+    static constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<UInt32>::max();
 
 private:
     std::unique_ptr<DatabaseReplicatedSettingsImpl> impl;
