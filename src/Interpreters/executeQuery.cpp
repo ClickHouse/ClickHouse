@@ -2895,10 +2895,6 @@ static BlockIO executeQueryImpl(
             checkASTSizeLimits(*out_ast, settings);
         }
 
-        /// Create the scheduling group of the query before the query is analyzed. Subqueries run on
-        /// copies of this context, and a copy shares the group only if it exists when the copy is made.
-        context->getSchedulingGroup();
-
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {

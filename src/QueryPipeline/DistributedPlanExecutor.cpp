@@ -1031,8 +1031,6 @@ public:
 protected:
     static ContextPtr makeContextForLocalExecution(ContextPtr ctx)
     {
-        /// Create the scheduling group of the query before the copy, so the copy (and the tasks) share it.
-        ctx->getSchedulingGroup();
         auto new_context = Context::createCopy(ctx);
         /// We will execute tasks with local plan fragments. They should not be converted into distributed plan themselves.
         new_context->setSetting("make_distributed_plan", false);

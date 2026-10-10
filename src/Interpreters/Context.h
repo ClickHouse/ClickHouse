@@ -660,7 +660,7 @@ protected:
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
 
     /// Scheduling group of the query; holds the resource classifier, which holds smart pointers
-    /// required for ResourceLink.
+    /// required for ResourceLink. Set only in a query context; not copied.
     /// NOTE: all resource links became invalid after the classifier destruction
     mutable QuerySchedulingGroupPtr scheduling_group;
     /// Group of the query this query context is a part of, see `setParentSchedulingGroup`.
@@ -1025,8 +1025,9 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    /// Scheduling group of the query, see `QuerySchedulingGroup`. The parent group if there is one,
-    /// otherwise created on the first call from the `workload` and scheduling settings.
+    /// Scheduling group of the query, see `QuerySchedulingGroup`. For a copy of a query context, the
+    /// group of that query context. Otherwise the parent group if there is one, or a group created on
+    /// the first call from the `workload` and scheduling settings, so planning may still change them.
     /// NOTE: Workload cannot be changed after the group is created.
     QuerySchedulingGroupPtr getSchedulingGroup() const;
     /// Makes this query context a part of the query that owns `group`: the query is scheduled together

@@ -1526,8 +1526,6 @@ ContextData::ContextData(const ContextData &o) :
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
-    scheduling_group(o.scheduling_group),
-    parent_scheduling_group(o.parent_scheduling_group),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
@@ -2737,6 +2735,10 @@ ClassifierPtr Context::getWorkloadClassifier() const
 
 QuerySchedulingGroupPtr Context::getSchedulingGroup() const
 {
+    // A copy of a query context (e.g. the context of a subquery) is a part of that query.
+    if (auto query_context_ptr = query_context.lock(); query_context_ptr && query_context_ptr.get() != this)
+        return query_context_ptr->getSchedulingGroup();
+
     const auto & query_settings = getSettingsRef();
     // Pass the query's scheduling settings so the classifier can build this query's scheduling
     // context. `throw_on_unknown_workload` is read here (not under `mutex`) to avoid locking the
@@ -4306,8 +4308,7 @@ void Context::makeQueryContext()
     runtime_filter_lookup = createRuntimeFilterLookup();
     columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
     /// A new query gets its own scheduling group, built lazily from its own workload and scheduling
-    /// settings. The ContextData copy-ctor copies the group of the context this one was created from,
-    /// which is a different query. A part of a query (a `PARALLEL WITH` subquery, a task of a
+    /// settings. A part of a query with its own query context (a `PARALLEL WITH` subquery, a task of a
     /// distributed query) joins the group of its query explicitly with `setParentSchedulingGroup`.
     scheduling_group.reset();
     parent_scheduling_group.reset();
