@@ -218,7 +218,7 @@ TEST(ObjectSerialization, FlattenAndBucketSharedDataPaths)
 }
 
 /// The shared-data-paths statistics count in the ObjectStructure prefix is only read when
-/// `object_and_dynamic_read_statistics` is enabled -- the MergeTree part read path, which the
+/// `read_statistics` is enabled -- the MergeTree part read path, which the
 /// `Native` input format (covered by 04350_json_native_too_many_paths) never reaches, since it
 /// always leaves statistics disabled. A corrupted count there must be rejected with a clean
 /// `INCORRECT_DATA` error instead of escaping as an uncaught `std::bad_alloc` /
@@ -242,7 +242,7 @@ TEST(ObjectSerialization, TooManySharedDataPathsStatistics)
     ReadBufferFromString structure_stream(structure_bytes);
 
     ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.object_and_dynamic_read_statistics = true;
+    settings.read_statistics = true;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
         if (!path.empty() && path.back().type == ISerialization::Substream::ObjectStructure)
@@ -826,7 +826,7 @@ std::string makeDynamicStructurePrefixV3(const std::vector<std::string> & type_d
 }
 
 /// Drives `SerializationDynamic::deserializeDynamicStructureStatePrefix` over such a prefix.
-/// `object_and_dynamic_read_statistics` is what both MergeTree readers set, and it is what makes the
+/// `read_statistics` is what both MergeTree readers set, and it is what makes the
 /// statistics list be read at all.
 ///
 /// `chunk_size` / `delay` are the stream's pacing. The default 4 KiB / 2 ms is what makes a read span
@@ -847,7 +847,7 @@ size_t readDynamicStructurePrefix(
         structure_bytes, chunk_size, delay, std::move(cancel), cancel_after_bytes);
 
     ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.object_and_dynamic_read_statistics = true;
+    settings.read_statistics = true;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
         if (!path.empty() && path.back().type == ISerialization::Substream::DynamicStructure)
@@ -1636,7 +1636,7 @@ ObjectPrefixFanOutResult readObjectPrefixWithTwoPathStreams(
     /// As both production readers do (`MergeTreeReaderWide`, `MergeTreeReaderCompact`). Without it a
     /// `Dynamic` prefix stops after its few header bytes, so the paced path would finish before the
     /// cancellation could land and the cells below would pass without testing anything.
-    settings.object_and_dynamic_read_statistics = true;
+    settings.read_statistics = true;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
         if (path.empty())

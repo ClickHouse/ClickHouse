@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 
 #include <base/sleep.h>
 
@@ -175,7 +176,10 @@ avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(
             try
             {
                 Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Fetching schema id = {} from url {}", id, url.toString());
+                std::string masked_url = url.toString();
+                maskURIUserinfo(masked_url);
+                maskPresignedURLParameters(masked_url);
+                LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Fetching schema id = {} from url {}", id, masked_url);
 
                 auto connection_timeouts = buildTimeouts(timeouts);
 
