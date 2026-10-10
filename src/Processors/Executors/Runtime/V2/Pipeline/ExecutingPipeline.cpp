@@ -1,11 +1,11 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/Exception.h>
 
 #include <fmt/format.h>
 
@@ -14,11 +14,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace Runtime::V2
 {
@@ -37,8 +32,7 @@ void checkNeighbourIsKnown(const Records & records, const ExecutingProcessor & e
 {
     const IProcessor * to = &connected_port.getProcessor();
     if (!records.contains(to))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+        Wyrd::abort(
             "Processor {} was found as {} for processor {}, but not found in list of processors",
             describeProcessor(to),
             found_as,
@@ -49,11 +43,11 @@ void checkNeighboursHaveChannels(ExecutingProcessor & executing)
 {
     for (auto & input : executing.processor->getInputs())
         if (input.isConnected() && !input.getOutputPort().getRoundUpdatesChannel().isConnected())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected output port from a pipeline update that did not list it in to_reconnect", describeProcessor(&input.getOutputPort().getProcessor()));
+            Wyrd::abort("Processor {} got a connected output port from a pipeline update that did not list it in to_reconnect", describeProcessor(&input.getOutputPort().getProcessor()));
 
     for (auto & output : executing.processor->getOutputs())
         if (output.isConnected() && !output.getInputPort().getRoundUpdatesChannel().isConnected())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected input port from a pipeline update that did not list it in to_reconnect", describeProcessor(&output.getInputPort().getProcessor()));
+            Wyrd::abort("Processor {} got a connected input port from a pipeline update that did not list it in to_reconnect", describeProcessor(&output.getInputPort().getProcessor()));
 }
 
 void checkConnectedOnlyInsideGroup(const Processors & group)
@@ -65,8 +59,7 @@ void checkConnectedOnlyInsideGroup(const Processors & group)
     auto check = [&](const IProcessor & processor, const IProcessor & neighbour)
     {
         if (!members.contains(&neighbour))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+            Wyrd::abort(
                 "Cannot remove processor {}: it is still connected to {}, which stays in the pipeline",
                 processor.getName(),
                 neighbour.getName());
@@ -88,7 +81,7 @@ ExecutingProcessor & addRecord(Records & records, IProcessor * processor)
 {
     auto [it, inserted] = records.try_emplace(processor);
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
+        Wyrd::abort("Processor {} was already added to pipeline", processor->getName());
 
     it->second.processor = processor;
     it->second.setName(fmt::format("processor[{}]", processor->getUniqID()));
@@ -167,7 +160,7 @@ std::vector<ExecutingProcessor *> ExecutingPipeline::update(ExecutingProcessor &
     {
         auto it = records.find(processor.get());
         if (it == records.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} listed in to_reconnect does not exist in pipeline", processor->getName());
+            Wyrd::abort("Processor {} listed in to_reconnect does not exist in pipeline", processor->getName());
 
         updated.push_back(&it->second);
     }
@@ -218,10 +211,10 @@ void ExecutingPipeline::removeReady()
     {
         auto it = records.find(processor.get());
         if (it == records.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} does not exist in pipeline", processor->getName());
+            Wyrd::abort("Processor {} submitted for removal does not exist in pipeline", processor->getName());
 
         if (it->second.status.load() != ExecutingProcessor::Status::Finished)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
+            Wyrd::abort("Trying to remove not finished processor {}", processor->getName());
 
         disconnectPorts(*processor);
         records.erase(it);

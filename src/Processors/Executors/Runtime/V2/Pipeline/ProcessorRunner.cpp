@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
 #include <Common/Exception.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -18,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -290,7 +290,7 @@ void ProcessorRunner::run(ExecutingProcessor & executing)
         case ExecutingProcessor::Status::Idle:
         case ExecutingProcessor::Status::Async:
         case ExecutingProcessor::Status::Finished:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was picked while not scheduled", executing.processor->getName());
+            Wyrd::abort("Processor {} was picked while not scheduled", executing.processor->getName());
     }
 }
 

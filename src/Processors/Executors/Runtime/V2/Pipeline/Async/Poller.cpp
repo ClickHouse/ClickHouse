@@ -1,5 +1,5 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/Async/Poller.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Enabled.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -12,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -75,7 +74,7 @@ void Poller::unregister(ExecutingProcessor * processor)
 {
     auto it = fds.find(processor);
     if (it == fds.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is not registered in the poller", static_cast<const void *>(processor));
+        Wyrd::abort("Processor {} is not registered in the poller", fmt::ptr(processor));
 
     epoll.remove(it->second);
     fds.erase(it);
@@ -122,10 +121,10 @@ Poller::~Poller() = default;
 
 bool Poller::add(const PollRequest & request)
 {
-    Wyrd::unreachable("Epoll does not supported in wyrd");
+    Wyrd::abort("Epoll does not supported in wyrd");
 
     if (!fds.emplace(request.processor, request.fd).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is already registered in the poller", static_cast<const void *>(request.processor));
+        Wyrd::abort("Processor {} is already registered in the poller", fmt::ptr(request.processor));
 
     epoll.add(request.fd, request.processor, request.events);
 

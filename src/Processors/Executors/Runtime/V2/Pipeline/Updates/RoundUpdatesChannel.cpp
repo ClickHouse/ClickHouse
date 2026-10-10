@@ -1,15 +1,10 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/Updates/RoundUpdatesChannel.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingProcessor.h>
 #include <Processors/Port.h>
-#include <Common/Exception.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace Runtime::V2
 {
@@ -18,14 +13,14 @@ template <class PortT>
 RoundUpdatesChannel<PortT>::RoundUpdatesChannel(const RoundUpdatesChannel & other)
 {
     if (other.isConnected())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy a port with a connected update channel");
+        Wyrd::abort("Cannot copy a port with a connected update channel");
 }
 
 template <class PortT>
 void RoundUpdatesChannel<PortT>::connect(ExecutingProcessor & owner_, PortT & port_)
 {
     if (isConnected())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Update channel is already connected");
+        Wyrd::abort("Update channel is already connected");
 
     port = &port_;
     owner = &owner_;
@@ -48,7 +43,7 @@ template <class PortT>
 ExecutingProcessor & RoundUpdatesChannel<PortT>::getOwner() const
 {
     if (!isConnected())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Update channel is not connected");
+        Wyrd::abort("Update channel is not connected: the port was connected outside a pipeline update");
 
     return *owner;
 }

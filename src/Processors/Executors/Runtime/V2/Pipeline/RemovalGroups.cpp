@@ -1,14 +1,9 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/RemovalGroups.h>
 #include <Processors/IProcessor.h>
-#include <Common/Exception.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace Runtime::V2
 {
@@ -33,7 +28,7 @@ void RemovalGroups::submitForRemoval(const Processors & processors)
             continue;
 
         if (!pending_finish_groups.emplace(processor.get(), &group).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is already pending_finish_groups removal", processor->getName());
+            Wyrd::abort("Processor {} is already submitted for removal", processor->getName());
 
         ++group.unfinished;
     }
