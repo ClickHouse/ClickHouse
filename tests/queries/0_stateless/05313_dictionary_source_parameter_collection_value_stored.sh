@@ -22,9 +22,10 @@ SOURCE(HTTP(URL 'http://example.test/' FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0)
 "
 
 metadata_file=$(grep -rl -F "URL 'http://example.test/'" "${WORKING_DIR}" --include='*.sql')
-sed -i "s|URL 'http://example.test/'|URL tuple('http://example.test/')|" "${metadata_file}"
+# Not `URL`: `create_table_query` hides a non-literal `url` whole, so the probe below could not see the tuple.
+sed -i "s|FORMAT 'TSV'|FORMAT tuple('TSV')|" "${metadata_file}"
 # Without this the arm would pass on an unmodified definition, i.e. assert nothing.
-grep -c -m 1 -F "URL tuple('http://example.test/')" "${metadata_file}"
+grep -c -m 1 -F "FORMAT tuple('TSV')" "${metadata_file}"
 
 echo '--- the stored definition attaches ---'
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
@@ -36,7 +37,7 @@ SELECT count() FROM system.tables WHERE database = 'db' AND name = 'd' AND posit
 echo '--- the same value stated in a new definition is refused ---'
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" --send_logs_level fatal -q "
 CREATE DICTIONARY db.d2 (id UInt64) PRIMARY KEY id
-SOURCE(HTTP(URL tuple('http://example.test/') FORMAT 'TSV')) LAYOUT(FLAT()) LIFETIME(0);" 2>&1 >/dev/null \
+SOURCE(HTTP(URL 'http://example.test/' FORMAT tuple('TSV'))) LAYOUT(FLAT()) LIFETIME(0);" 2>&1 >/dev/null \
     | grep -o -m 1 -F 'does not accept a collection value'
 
 rm -rf "${WORKING_DIR}"
