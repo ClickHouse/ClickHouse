@@ -11,8 +11,9 @@ namespace DB::Runtime::Wyrd
 void setRandomSeed(UInt64 seed);
 
 UInt64 randomNumber();
-size_t randomBetween(size_t from, size_t to);
-bool randomEventEvery(size_t freq);
+UInt64 randomNumberBetween(UInt64 from, UInt64 to);
+double randomReal(double from, double to);
+bool randomEvent(double probability);
 
 template <typename T>
 T popRandom(std::vector<T> & items);

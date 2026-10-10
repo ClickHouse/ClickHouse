@@ -21,7 +21,7 @@ std::vector<Action> emitsAfterIdleWork(UInt64 first_value, size_t chunks, size_t
     std::vector<Action> actions;
     for (size_t chunk = 0; chunk < chunks; ++chunk)
     {
-        const size_t idle_work = Wyrd::randomBetween(0, max_idle_work);
+        const size_t idle_work = Wyrd::randomNumberBetween(0, max_idle_work);
         for (size_t step = 0; step < idle_work; ++step)
             actions.push_back(work([](auto &) {}));
         actions.push_back(emit(first_value + chunk));
@@ -39,15 +39,15 @@ std::vector<UInt64> sorted(std::vector<UInt64> values)
 
 WYRD_TEST(Parking, BurstsAndPausesFinishEveryChunk, .runs = 1000, .simulation = {.max_steps = 2'000'000})
 {
-    const size_t sources_count = Wyrd::randomBetween(1, 6);
-    const size_t threads = Wyrd::randomBetween(1, 4);
-    const size_t max_idle_work = Wyrd::randomBetween(0, 6);
+    const size_t sources_count = Wyrd::randomNumberBetween(1, 6);
+    const size_t threads = Wyrd::randomNumberBetween(1, 4);
+    const size_t max_idle_work = Wyrd::randomNumberBetween(0, 6);
 
     std::vector<ProcessorPtr> sources;
     std::vector<UInt64> expected;
     for (size_t index = 0; index < sources_count; ++index)
     {
-        const size_t chunks = Wyrd::randomBetween(1, 5);
+        const size_t chunks = Wyrd::randomNumberBetween(1, 5);
         const UInt64 first_value = 100 * (index + 1);
         sources.push_back(makeSource(fmt::format("source{}", index), emitsAfterIdleWork(first_value, chunks, max_idle_work)));
         for (size_t chunk = 0; chunk < chunks; ++chunk)
@@ -67,7 +67,7 @@ WYRD_TEST(Parking, BurstsAndPausesFinishEveryChunk, .runs = 1000, .simulation = 
 
 WYRD_TEST(Parking, WorkReleasedWhileOthersSleepWakesThem, .runs = 1000, .simulation = {.max_steps = 2'000'000})
 {
-    const size_t threads = Wyrd::randomBetween(2, 4);
+    const size_t threads = Wyrd::randomNumberBetween(2, 4);
     Wyrd::Gate gate;
 
     auto held = makeSource("held", {emit(1), work([&gate](auto &) { gate.pass(); }), emit(2), emit(3)});

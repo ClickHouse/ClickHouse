@@ -11,7 +11,7 @@ using namespace DB;
 using namespace DB::Runtime;
 using namespace DB::Runtime::V2;
 
-WYRD_TEST(ScriptedPipeline, ChainDeliversEveryChunkInOrder, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
+WYRD_TEST(ScriptedPipeline, ChainDeliversEveryChunkInOrder, .runs = 1000, .simulation = { .preempt_probability = 0.5 })
 {
     auto source = makeSource("source", {emit(1), emit(2), emit(3)});
     auto transform = makeTransform("transform", {});
@@ -23,7 +23,7 @@ WYRD_TEST(ScriptedPipeline, ChainDeliversEveryChunkInOrder, .runs = 1000, .simul
     EXPECT_EQ(received(*sink), (std::vector<UInt64>{1, 2, 3}));
 }
 
-WYRD_TEST(ScriptedPipeline, ThrowInWorkIsRethrownByExecute, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
+WYRD_TEST(ScriptedPipeline, ThrowInWorkIsRethrownByExecute, .runs = 1000, .simulation = { .preempt_probability = 0.5 })
 {
     auto source = makeSource("source", {emit(1), work([](auto &) { throw std::runtime_error("scripted failure"); })});
     auto sink = makeSink("sink", {});
@@ -33,7 +33,7 @@ WYRD_TEST(ScriptedPipeline, ThrowInWorkIsRethrownByExecute, .runs = 1000, .simul
     EXPECT_THROW(runPipeline({source, sink}, threads), std::runtime_error);
 }
 
-WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
+WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation = { .preempt_probability = 0.5 })
 {
     auto first = makeSource("first", {emit(1)});
     auto second = makeSource("second", {emit(2)});
@@ -48,7 +48,7 @@ WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation 
     EXPECT_EQ(values, (std::vector<UInt64>{1, 2}));
 }
 
-WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
+WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulation = { .preempt_probability = 0.5 })
 {
     auto source = makeSource("source", {emit(1), emit(2), emit(3)});
     auto first = makeSink("first", {});

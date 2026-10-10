@@ -153,7 +153,7 @@ TEST(Wyrd, SimulationSwitchesAtAPreemptionPoint)
 TEST(Wyrd, SimulationHoldsAThreadInsideLockFreeScope)
 {
     SimulationParams params;
-    params.lock_free_suspend_one_in = 1;
+    params.lock_free_suspend_probability = 1.0;
     params.max_suspended_threads = 2;
 
     SimulationResult result = Simulation(params).run(
@@ -221,8 +221,8 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
     {
         SimulationParams params;
         params.seed = seed;
-        params.lock_free_suspend_one_in = 1;
-        params.max_syncs_before_preempt = 1;
+        params.lock_free_suspend_probability = 1.0;
+        params.preempt_probability = 1.0;
         SimulationResult result = Simulation(params).run(block_on_a_lock_free_peer);
         if (result.status == SimulationResult::Status::Deadlock)
         {
@@ -235,7 +235,7 @@ TEST(Wyrd, SimulationFindsBlockingInsideLockFreeScope)
     EXPECT_TRUE(found);
 }
 
-WYRD_TEST(Wyrd, SimulationSpuriousFailureEveryTime, .runs = 1, .simulation = {.spurious_failure_one_in = 1})
+WYRD_TEST(Wyrd, SimulationSpuriousFailureEveryTime, .runs = 1, .simulation = {.spurious_failure_probability = 1.0})
 {
     Atomic<int> value{0};
     int expected = 0;

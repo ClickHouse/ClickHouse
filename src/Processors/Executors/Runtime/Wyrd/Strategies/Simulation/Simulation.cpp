@@ -216,7 +216,7 @@ void Simulation::spawn(std::function<void()> body, std::source_location location
 bool Simulation::spuriousFailure(std::source_location location)
 {
     traceEvent("spuriousFailure", location);
-    return randomEventEvery(params.spurious_failure_one_in);
+    return randomEvent(params.spurious_failure_probability);
 }
 
 void Simulation::enterLockFreeScope(std::source_location location)

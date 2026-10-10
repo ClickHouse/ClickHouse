@@ -41,8 +41,8 @@ std::vector<UInt64> receivedByAll(const std::vector<ProcessorPtr> & sinks)
 
 WYRD_TEST(Topology, ChainOfTransformsKeepsTheOrder, .runs = 300)
 {
-    const size_t chunks = Wyrd::randomBetween(1, 8);
-    const size_t transforms = Wyrd::randomBetween(0, 5);
+    const size_t chunks = Wyrd::randomNumberBetween(1, 8);
+    const size_t transforms = Wyrd::randomNumberBetween(0, 5);
 
     std::vector<ProcessorPtr> stages{makeSource("source", emits(1, chunks))};
     for (size_t index = 0; index < transforms; ++index)
@@ -51,19 +51,19 @@ WYRD_TEST(Topology, ChainOfTransformsKeepsTheOrder, .runs = 300)
     stages.push_back(sink);
     chain(stages);
 
-    EXPECT_NO_THROW(runPipeline(Processors(stages.begin(), stages.end()), Wyrd::randomBetween(1, 4)));
+    EXPECT_NO_THROW(runPipeline(Processors(stages.begin(), stages.end()), Wyrd::randomNumberBetween(1, 4)));
     EXPECT_EQ(received(*sink), values(1, chunks));
 }
 
 WYRD_TEST(Topology, FanInGathersEverySource, .runs = 300)
 {
-    const size_t sources_count = Wyrd::randomBetween(1, 6);
+    const size_t sources_count = Wyrd::randomNumberBetween(1, 6);
 
     std::vector<ProcessorPtr> sources;
     std::vector<UInt64> expected;
     for (size_t index = 0; index < sources_count; ++index)
     {
-        const size_t chunks = Wyrd::randomBetween(1, 4);
+        const size_t chunks = Wyrd::randomNumberBetween(1, 4);
         sources.push_back(makeSource(fmt::format("source{}", index), emits(100 * (index + 1), chunks)));
         expected.append_range(values(100 * (index + 1), chunks));
     }
@@ -74,14 +74,14 @@ WYRD_TEST(Topology, FanInGathersEverySource, .runs = 300)
     processors.push_back(resize);
     processors.push_back(sink);
 
-    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomBetween(1, 4)));
+    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomNumberBetween(1, 4)));
     EXPECT_EQ(sorted(received(*sink)), expected);
 }
 
 WYRD_TEST(Topology, FanOutDeliversEachChunkToOneSink, .runs = 300)
 {
-    const size_t chunks = Wyrd::randomBetween(1, 8);
-    const size_t sinks_count = Wyrd::randomBetween(1, 6);
+    const size_t chunks = Wyrd::randomNumberBetween(1, 8);
+    const size_t sinks_count = Wyrd::randomNumberBetween(1, 6);
 
     std::vector<ProcessorPtr> sinks;
     for (size_t index = 0; index < sinks_count; ++index)
@@ -93,20 +93,20 @@ WYRD_TEST(Topology, FanOutDeliversEachChunkToOneSink, .runs = 300)
     Processors processors{source, resize};
     processors.append_range(sinks);
 
-    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomBetween(1, 4)));
+    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomNumberBetween(1, 4)));
     EXPECT_EQ(sorted(receivedByAll(sinks)), values(1, chunks));
 }
 
 WYRD_TEST(Topology, FanInThroughATransformIntoFanOut, .runs = 300)
 {
-    const size_t sources_count = Wyrd::randomBetween(1, 4);
-    const size_t sinks_count = Wyrd::randomBetween(1, 4);
+    const size_t sources_count = Wyrd::randomNumberBetween(1, 4);
+    const size_t sinks_count = Wyrd::randomNumberBetween(1, 4);
 
     std::vector<ProcessorPtr> sources;
     std::vector<UInt64> expected;
     for (size_t index = 0; index < sources_count; ++index)
     {
-        const size_t chunks = Wyrd::randomBetween(1, 4);
+        const size_t chunks = Wyrd::randomNumberBetween(1, 4);
         sources.push_back(makeSource(fmt::format("source{}", index), emits(100 * (index + 1), chunks)));
         expected.append_range(values(100 * (index + 1), chunks));
     }
@@ -124,6 +124,6 @@ WYRD_TEST(Topology, FanInThroughATransformIntoFanOut, .runs = 300)
     processors.push_back(split);
     processors.append_range(sinks);
 
-    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomBetween(1, 4)));
+    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomNumberBetween(1, 4)));
     EXPECT_EQ(sorted(receivedByAll(sinks)), expected);
 }

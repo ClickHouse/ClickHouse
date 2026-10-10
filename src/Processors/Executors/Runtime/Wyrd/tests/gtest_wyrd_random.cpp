@@ -18,11 +18,11 @@ WYRD_TEST(Wyrd, RandomSeedReplaysTheSequence)
     EXPECT_NE(randomNumber(), first);
 }
 
-WYRD_TEST(Wyrd, RandomEventFrequencies)
+WYRD_TEST(Wyrd, RandomEventProbabilities)
 {
     for (size_t i = 0; i < 100; ++i)
     {
-        EXPECT_TRUE(randomEventEvery(1));
-        EXPECT_FALSE(randomEventEvery(0));
+        EXPECT_TRUE(randomEvent(1.0));
+        EXPECT_FALSE(randomEvent(0.0));
     }
 }

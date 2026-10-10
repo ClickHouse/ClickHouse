@@ -5,6 +5,7 @@
 #include <pcg_random.hpp>
 
 #include <atomic>
+#include <random>
 #include <utility>
 
 namespace DB::Runtime::Wyrd
@@ -34,17 +35,19 @@ UInt64 randomNumber()
     return generator()();
 }
 
-size_t randomBetween(size_t from, size_t to)
+UInt64 randomNumberBetween(UInt64 from, UInt64 to)
 {
     return from + randomNumber() % (to - from + 1);
 }
 
-bool randomEventEvery(size_t freq)
+double randomReal(double from, double to)
 {
-    if (freq == 0)
-        return false;
+    return std::uniform_real_distribution<double>(from, to)(generator());
+}
 
-    return generator()() % freq == 0;
+bool randomEvent(double probability)
+{
+    return std::bernoulli_distribution(probability)(generator());
 }
 
 template <typename T>

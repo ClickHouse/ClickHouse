@@ -77,13 +77,13 @@ WYRD_TEST(LocalQueue, FullRingRefusesPushUntilSteal)
     EXPECT_EQ(ring.size(), LocalQueue::capacity / 2 + 1);
 }
 
-WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simulation = { .max_syncs_before_preempt = 1 })
+WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simulation = { .preempt_probability = 1.0 })
 {
     constexpr UInt32 largest_batch = 4;
-    const size_t total = Wyrd::randomBetween(8, 64);
-    const size_t thieves = Wyrd::randomBetween(3, 4);
-    const size_t batch = Wyrd::randomBetween(1, largest_batch);
-    const size_t owner_pops_one_in = Wyrd::randomBetween(2, 8);
+    const size_t total = Wyrd::randomNumberBetween(8, 64);
+    const size_t thieves = Wyrd::randomNumberBetween(3, 4);
+    const size_t batch = Wyrd::randomNumberBetween(1, largest_batch);
+    const double owner_pop_probability = Wyrd::randomReal(0.1, 0.5);
 
     std::vector<ExecutingProcessor> records(total);
     std::vector<Wyrd::Atomic<UInt32>> taken(total);
@@ -109,7 +109,7 @@ WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simula
                 }
                 Wyrd::progress();
 
-                if (Wyrd::randomEventEvery(owner_pops_one_in))
+                if (Wyrd::randomEvent(owner_pop_probability))
                 {
                     if (auto * popped = ring.popLifo())
                         take(popped);

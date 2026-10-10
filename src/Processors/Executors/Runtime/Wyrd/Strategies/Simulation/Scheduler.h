@@ -9,7 +9,7 @@ namespace DB::Runtime::Wyrd
 
 struct SimulatedThread;
 
-/// Picks a random runnable thread and preempts it after a random slice of sync operations.
+/// Picks a random runnable thread and preempts it at a sync operation with the configured probability.
 class Scheduler
 {
 public:
@@ -39,8 +39,6 @@ private:
 
     /// Currently running thread information.
     SimulatedThread * current_thread = nullptr;
-    size_t current_thread_slice_left = 0;
-    size_t progress_streak = 0;
 };
 
 }

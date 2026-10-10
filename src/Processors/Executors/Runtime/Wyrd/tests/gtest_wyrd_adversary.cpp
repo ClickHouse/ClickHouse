@@ -12,7 +12,7 @@
 
 using namespace DB::Runtime::Wyrd;
 
-WYRD_TEST(Wyrd, AdversaryYieldsAtEveryFaultPoint, .runs = 1, .adversary = {.yield_one_in = 1, .suspend_one_in = 0, .pin_to_single_core = false})
+WYRD_TEST(Wyrd, AdversaryYieldsAtEveryFaultPoint, .runs = 1, .adversary = {.pin_to_single_core = false, .yield_probability = 1.0, .suspend_probability = 0.0})
 {
     Atomic<size_t> counter{0};
     for (size_t i = 0; i < 100; ++i)
@@ -22,7 +22,7 @@ WYRD_TEST(Wyrd, AdversaryYieldsAtEveryFaultPoint, .runs = 1, .adversary = {.yiel
     EXPECT_GE(adversary()->report().yields, 100u);
 }
 
-WYRD_TEST(Wyrd, AdversaryYieldsAtEveryPreemptionPoint, .runs = 1, .adversary = {.yield_one_in = 1, .suspend_one_in = 0, .pin_to_single_core = false})
+WYRD_TEST(Wyrd, AdversaryYieldsAtEveryPreemptionPoint, .runs = 1, .adversary = {.pin_to_single_core = false, .yield_probability = 1.0, .suspend_probability = 0.0})
 {
     for (size_t i = 0; i < 100; ++i)
         preemptionPoint();
@@ -30,7 +30,7 @@ WYRD_TEST(Wyrd, AdversaryYieldsAtEveryPreemptionPoint, .runs = 1, .adversary = {
     EXPECT_EQ(adversary()->report().yields, 100u);
 }
 
-WYRD_TEST(Wyrd, AdversarySpuriousFailureEveryTime, .runs = 1, .adversary = {.spurious_failure_one_in = 1, .suspend_one_in = 0, .pin_to_single_core = false})
+WYRD_TEST(Wyrd, AdversarySpuriousFailureEveryTime, .runs = 1, .adversary = {.pin_to_single_core = false, .spurious_failure_probability = 1.0, .suspend_probability = 0.0})
 {
     Atomic<int> value{0};
     int expected = 0;
@@ -47,7 +47,7 @@ WYRD_TEST(Wyrd, AdversarySpuriousFailureEveryTime, .runs = 1, .adversary = {.spu
 WYRD_TEST(
     Wyrd,
     AdversarySuspendsInsideLockFreeScope,
-    .adversary = {.yield_one_in = 2, .suspend_one_in = 1, .max_suspended_threads = 1, .resume_one_in = 1, .pin_to_single_core = false})
+    .adversary = {.pin_to_single_core = false, .yield_probability = 0.5, .suspend_probability = 1.0, .max_suspended_threads = 1, .resume_probability = 1.0})
 {
     Atomic<size_t> counter{0};
     Atomic<UInt32> arrived{0};
