@@ -77,6 +77,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('00184_serial', '00184_parallel')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment IN ('00184_serial', '00184_parallel')
 ORDER BY event_time_microseconds;
 "

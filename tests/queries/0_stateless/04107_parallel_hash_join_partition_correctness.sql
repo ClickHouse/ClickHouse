@@ -137,11 +137,12 @@ ORDER BY l.k, l.ts
 SETTINGS parallel_hash_join_threshold=0;
 
 -- Each EXCEPT query with a Nullable right key must have built one serial and one parallel join, and
--- each ASOF query one parallel join.
+-- each ASOF query one parallel join. A `Replicated` database also logs each `CREATE TABLE ... AS SELECT`
+-- as a secondary query of its DDL worker, with the same log comment, so only initial queries count.
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['HashJoinBuiltWithSerialLayout'] AS serial, ProfileEvents['HashJoinBuiltWithParallelLayout'] AS parallel
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
     AND log_comment IN ('04107_inner', '04107_inner_reverse', '04107_left', '04107_left_reverse',
         '04107_right', '04107_right_reverse', '04107_full', '04107_full_reverse',
         '04107_asof_left_serial', '04107_asof_left_parallel')
