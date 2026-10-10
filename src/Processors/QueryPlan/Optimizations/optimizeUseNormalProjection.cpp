@@ -505,13 +505,7 @@ UseProjectionsResult optimizeUseNormalProjections(
     {
         for (const auto & col : required_columns)
         {
-            /// A name that the table declares as a column in its own right (such as `a.size0` next to an
-            /// `Array` column `a`) is provided only by a projection column of that exact name, never by a
-            /// same-named subcolumn of another projection column.
-            const bool found = table_columns.hasPhysical(col)
-                ? projection->sample_block.findByName(col) != nullptr
-                : projection->sample_block.findColumnOrSubcolumnByName(col).has_value();
-            if (!found && !projection->metadata->virtuals.has(col))
+            if (!projection->providesColumn(col, table_columns))
                 return false;
         }
 

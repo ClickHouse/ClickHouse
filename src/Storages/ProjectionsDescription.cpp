@@ -77,6 +77,14 @@ extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
 
 }
 
+bool ProjectionDescription::providesColumn(const String & column_name, const ColumnsDescription & table_columns) const
+{
+    const bool stored = table_columns.hasPhysical(column_name)
+        ? sample_block.findByName(column_name) != nullptr
+        : sample_block.findColumnOrSubcolumnByName(column_name).has_value();
+    return stored || metadata->virtuals.has(column_name);
+}
+
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
