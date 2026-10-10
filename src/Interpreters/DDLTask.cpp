@@ -29,6 +29,10 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 
 namespace DB
 {
@@ -811,6 +815,18 @@ void ZooKeeperMetadataTransaction::commit()
         finalizer();
         finalizer = FinalizerCallback();
     }
+}
+
+bool isSecondaryDDLReplay(const ContextPtr & context)
+{
+    const auto txn = context->getZooKeeperMetadataTransaction();
+    if (txn && !txn->isInitialQuery())
+        return true;
+#if CLICKHOUSE_CLOUD
+    return context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context);
+#else
+    return false;
+#endif
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
