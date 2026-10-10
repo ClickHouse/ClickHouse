@@ -459,7 +459,7 @@ namespace
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale);
 
             scale = scale_;
         }
@@ -2444,7 +2444,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
         )",
         R"(
 ┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                             2025-01-04 23:00:00 │
+│                                            2025-01-04 23:00:00  │
 └─────────────────────────────────────────────────────────────────┘
         )"
     }

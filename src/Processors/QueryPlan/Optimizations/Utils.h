@@ -76,9 +76,10 @@ enum class FilterResult
 
 [[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
 
-/// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
-/// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
-[[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
+/// True when the expression holds a function that is non-deterministic within the query (`rand`), stateful
+/// (`rowNumberInAllBlocks`, `aiEmbed`), or has observable side effects (`sleep`), so an observer can see how
+/// many times and on which rows it was evaluated.
+[[nodiscard]] bool isSensitiveToEvaluationCount(const ActionsDAG & dag);
 
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,

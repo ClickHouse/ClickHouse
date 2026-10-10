@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -142,16 +141,6 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     bool first = true;
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
-        /// The layer split compares key values as `greater(tuple(pk), tuple(border))`, and an IEEE
-        /// comparison answers false for `NaN` against anything, so a row with a `NaN` key fails the
-        /// filter of every layer - including the last one, which only has a lower bound - and is
-        /// dropped at read time. `Null` and a `NaN` nested in a container compare inconsistently there
-        /// for the same reason, which is why every other consumer of
-        /// `splitIntersectingPartsRangesIntoLayers` gates on this predicate. Only the prefix the split
-        /// actually reads has to be safe, so an unsafe column just ends the prefix here.
-        if (!isSafePrimaryDataKeyType(*lhs_pk.data_types[pos]) || !isSafePrimaryDataKeyType(*rhs_pk.data_types[pos]))
-            break;
-
         bool ldesc = (pos < lhs_pk.reverse_flags.size()) ? lhs_pk.reverse_flags[pos] : false;
         bool rdesc = (pos < rhs_pk.reverse_flags.size()) ? rhs_pk.reverse_flags[pos] : false;
         if (ldesc != rdesc)
@@ -253,8 +242,6 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     /// Here we take all the parts from all the sources.
     /// Update part index to restore back the set of parts.
     RangesInDataParts all_parts;
-    /// The `part_index_in_query` a part had in its source, by its position in `all_parts`.
-    std::vector<size_t> original_part_indexes;
     std::vector<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
     for (auto & source : data.sources)
     {
@@ -264,15 +251,12 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 
         size_t added_parts = all_parts.size();
         /// Renumber part_index_in_query to be contiguous starting from added_parts.
-        /// Index analysis and filterPartsByQueryConditionCache may drop parts from selectRangesToRead(),
+        /// filterPartsByQueryConditionCache may drop parts from selectRangesToRead(),
         /// leaving non-contiguous part_index_in_query values. The distribution logic
         /// below assumes contiguous indices to assign parts back to their sources.
-        /// The original index is remembered: the read step keys its per-part state
-        /// (the ranges read by the skip indexes, the `_part_index` virtual column) by it.
         for (size_t local_idx = 0; local_idx < analysis_result->parts_with_ranges.size(); ++local_idx)
         {
             all_parts.push_back(analysis_result->parts_with_ranges[local_idx]);
-            original_part_indexes.push_back(all_parts.back().part_index_in_query);
             all_parts.back().part_index_in_query = added_parts + local_idx;
         }
 
@@ -310,7 +294,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
             while (next_part < layer.size() && layer[next_part].part_index_in_query < sum_parts + num_parts_in_source)
             {
                 auto & new_part_range = new_layer.emplace_back(layer[next_part]);
-                new_part_range.part_index_in_query = original_part_indexes[new_part_range.part_index_in_query];
+                new_part_range.part_index_in_query -= sum_parts;
                 ++next_part;
             }
             sum_parts += num_parts_in_source;

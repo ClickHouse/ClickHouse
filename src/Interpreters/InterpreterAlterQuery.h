@@ -39,22 +39,18 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    /// Skip this query's own access check. Set only for the internal `ATTACH PARTITION` that fills the
-    /// temporary table of a `CREATE OR REPLACE TABLE ... CLONE AS` (see `fillTableIfNeeded`): the query
-    /// addresses a random `_tmp_replace_*` name that no grant can cover, and the caller has already
-    /// authorized the very same access -- `getRequiredAccessForCommand` -- against the user-visible name
-    /// the table is published under. Never set this for a user-visible target table.
-    void setSkipAccessCheck(bool skip) { skip_access_check = skip; }
-
 private:
     AccessRightsElements getRequiredAccess(const StoragePtr & storage) const;
+
+    /// Adds the grants `processSQLSecurityOption` demands for the view's stored SQL security, so replacing the
+    /// body of a `DEFINER` or `NONE` view takes the same authority as declaring that security in the first place.
+    void addRequiredAccessForModifyQuerySQLSecurity(AccessRightsElements & required_access, const StoragePtr & storage) const;
 
     BlockIO executeToTable(const ASTAlterQuery & alter);
 
     BlockIO executeToDatabase(const ASTAlterQuery & alter);
 
     ASTPtr query_ptr;
-    bool skip_access_check = false;
 };
 
 }
