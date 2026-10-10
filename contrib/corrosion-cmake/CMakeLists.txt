@@ -146,7 +146,9 @@ endif()
 
 # `-fwhole-program-vtables` only matters for C++ and is only accepted together with `-flto`. Some crates
 # (e.g. `blake3`) append `-fno-lto` to `CFLAGS` in their build scripts, which makes clang reject it.
-string(REPLACE "-fwhole-program-vtables" "" RUST_CFLAGS "${RUST_CFLAGS}")
+# It also implies `-fsplit-lto-unit`, and `lld` rejects a ThinLTO link that mixes split and non-split
+# bitcode ("inconsistent LTO Unit splitting"), so keep `-fsplit-lto-unit`, which is accepted with `-fno-lto`.
+string(REPLACE "-fwhole-program-vtables" "-fsplit-lto-unit" RUST_CFLAGS "${RUST_CFLAGS}")
 
 # Some crates (e.g. `lance-linalg`) compile their SIMD kernels with `-march=native`, which picks the build
 # host's CPU and fails when cross-compiling. For the baseline x86-64 level no `-march` is passed above,
