@@ -104,6 +104,13 @@ void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
 {
     /// Columns might be reordered during optimization, so we better to update sort description.
     group_by_sort_description = std::move(input_sort_description);
+
+    /// The memory-bound merging path (`FinishAggregatingInOrderTransform`, `MergingAggregatedBucketTransform`)
+    /// converts through `Aggregator::mergeBlocks` and never reaches `Aggregator::convertOneBucketToChunkTopK`,
+    /// so the bucket-local Top-K conversion would be a silent no-op there. Drop it, like the constructor does
+    /// for the memory-efficient merging.
+    if (memoryBoundMergingWillBeUsed())
+        params.bucket_top_k = 0;
 }
 
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
