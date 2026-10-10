@@ -204,14 +204,17 @@ NameSet getMinMaxIndexColumns(const ChooseContext & ctx)
 
 /// The storage columns that `key_columns` keep on the horizontal stage, like `MergeTask` does: the alias and
 /// ephemeral columns are not merged at all, and a key column that is a subcolumn keeps its whole storage column,
-/// so several subcolumns of one column count once.
+/// so several subcolumns of one column count once. The persistent virtual columns `_block_number` and
+/// `_block_offset` of the min-max index are merged as they are, see `getMinMaxIndexColumns`.
 NameSet getKeyColumnsInStorage(const ChooseContext & ctx, const NameSet & key_columns)
 {
     const auto physical_columns = ctx.metadata_snapshot.getColumns().getAllPhysical().getNameSet();
     NameSet key_columns_in_storage;
     for (const auto & column : key_columns)
     {
-        if (auto name_in_storage = Nested::tryGetColumnNameInStorage(column, physical_columns))
+        if (column == BlockNumberColumn::name || column == BlockOffsetColumn::name)
+            key_columns_in_storage.insert(column);
+        else if (auto name_in_storage = Nested::tryGetColumnNameInStorage(column, physical_columns))
             key_columns_in_storage.insert(std::move(*name_in_storage));
     }
     return key_columns_in_storage;
