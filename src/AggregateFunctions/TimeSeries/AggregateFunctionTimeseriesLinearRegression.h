@@ -6,8 +6,7 @@
 #include <cstring>
 #include <limits>
 #include <optional>
-#include <type_traits>
-#include <utility>
+
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
@@ -22,39 +21,18 @@
 namespace DB
 {
 
-/// What the functions fitting a line to the samples in each window return for a grid point.
-enum class TimeseriesLinearRegressionReturnKind : UInt8
-{
-    Slope,          /// `timeSeriesDerivToGrid`: the slope per second.
-    Prediction,     /// `timeSeriesPredictLinearToGrid`: the value of the line at the grid point's timestamp plus a fixed `predict_offset`.
-    InterceptAndSlope,   /// `timeSeriesLinearRegressionToGrid`: both the value of the line at the grid point's timestamp (`intercept`) and the
-                    /// slope per second, so that the prediction for any offset is `intercept + slope * offset` (used by the PromQL
-                    /// `predict_linear` with a per-step offset).
-};
-
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, TimeseriesLinearRegressionReturnKind return_kind_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_predict_>
 struct AggregateFunctionTimeseriesLinearRegressionTraits
 {
-    static constexpr TimeseriesLinearRegressionReturnKind return_kind = return_kind_;
+    static constexpr bool is_predict = is_predict_;
 
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
-    using ResultType = std::conditional_t<return_kind == TimeseriesLinearRegressionReturnKind::InterceptAndSlope, std::pair<ValueType, ValueType>, ValueType>;
 
     static String getName()
     {
-        if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Slope)
-            return "timeSeriesDerivToGrid";
-        else if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Prediction)
-            return "timeSeriesPredictLinearToGrid";
-        else
-            return "timeSeriesLinearRegressionToGrid";
-    }
-
-    static Strings getResultTupleElementNames() requires (return_kind == TimeseriesLinearRegressionReturnKind::InterceptAndSlope)
-    {
-        return {"intercept", "slope"};
+        return is_predict ? "timeSeriesPredictLinearToGrid" : "timeSeriesDerivToGrid";
     }
 
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
@@ -117,16 +95,15 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
         TimestampType base;
         Float64 predict_offset;
-        TimestampType timestamp_scale_multiplier;
 
-        Aggregator(size_t stack_size, TimestampType base_, Float64 predict_offset_, TimestampType timestamp_scale_multiplier_)
-            : sliding_sum(stack_size), base(base_), predict_offset(predict_offset_), timestamp_scale_multiplier(timestamp_scale_multiplier_)
+        Aggregator(size_t stack_size, TimestampType base_, Float64 predict_offset_)
+            : sliding_sum(stack_size), base(base_), predict_offset(predict_offset_)
         {
         }
 
         void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
-            /// Preaggregate the bucket's samples into centered moments; the accumulation is order-independent, so any iteration order would do.
+            /// Preaggregate the bucket's samples into centered moments; the merge is order-independent, so no sorting.
             Summary summary;
             samples.forEachSample([&summary, this](TimestampType timestamp, ValueType value)
             {
@@ -147,75 +124,42 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(TimestampType grid_timestamp) const
+        std::optional<ValueType> getResult(TimestampType grid_timestamp) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (combined.count < 2 || combined.m2_x == 0)
                 return std::nullopt;
 
-            /// The slope is per unit of the timestamps, `slope_per_second` converts it to per second.
             const Float64 slope = combined.c_xy / combined.m2_x;
-            const Float64 slope_per_second = slope * static_cast<Float64>(timestamp_scale_multiplier);
-            if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Slope)
-            {
-                return static_cast<ValueType>(slope_per_second);
-            }
-            else
-            {
-                /// The line passes through the point (mean_x, mean_y) with x centered on `base`; the grid point is at
-                /// `grid_timestamp - base` in these coordinates (subtracted in `Int128` to be overflow-safe).
-                const Float64 grid_x = static_cast<Float64>(
-                    static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - static_cast<Int128>(static_cast<Int64>(base)));
+            if (!is_predict)
+                return static_cast<ValueType>(slope);
 
-                if constexpr (return_kind == TimeseriesLinearRegressionReturnKind::Prediction)
-                {
-                    /// Extrapolate to `grid_timestamp + predict_offset`.
-                    const Float64 intercept_at_base = combined.mean_y - slope * combined.mean_x;
-                    return static_cast<ValueType>(slope * (grid_x + predict_offset) + intercept_at_base);
-                }
-                else
-                {
-                    /// The returned intercept is the one with time counted from the grid point, i.e. the value of the line
-                    /// there. This is how Prometheus's linearRegression() defines the intercept it returns.
-                    const Float64 intercept_at_grid_point = combined.mean_y + slope * (grid_x - combined.mean_x);
-                    return ResultType{static_cast<ValueType>(intercept_at_grid_point), static_cast<ValueType>(slope_per_second)};
-                }
-            }
+            /// Line y = slope * x + intercept with x centered on `base`; extrapolate to `grid_timestamp +
+            /// predict_offset`, expressed in the same centered coordinates (subtract `base` in `Int128`).
+            const Float64 intercept = combined.mean_y - slope * combined.mean_x;
+            const Float64 predict_x = static_cast<Float64>(
+                static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - static_cast<Int128>(static_cast<Int64>(base)))
+                + predict_offset;
+            const Float64 predicted = slope * predict_x + intercept;
+            return static_cast<ValueType>(predicted);
         }
     };
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
-
-    static constexpr UInt16 FORMAT_VERSION = 3;
-
-    /// `getStackSizeForTwoStacks` switches to the two-stack queue once the average number of populated buckets
-    /// in a window reaches this value; below it, recomputing the window each grid point is cheaper. The
-    /// `timeseries_to_grid_two_stack_vs_recompute` example measures the crossover by driving the real finalize over
-    /// a larger-than-cache dataset (so recompute pays the same per-point cache misses as the real query) and puts
-    /// it at 4 populated buckets per window. Sparse data needs no margin here: the density factor in
-    /// `getStackSizeForTwoStacks` already converts `buckets_per_window` to the populated average.
-    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 4;
-
-    /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets. The
-    /// density estimate in `getStackSizeForTwoStacks` is an average, but density is not uniform - a low average
-    /// can still hide a locally dense window whose recompute folds far more buckets than the average. Beyond this
-    /// capacity we stop trusting the average and bound the worst case: at this size a fully dense window already
-    /// makes recompute ~2x slower than two-stacks (measured by the `timeseries_to_grid_two_stack_vs_recompute` example).
-    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 12;
 };
 
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, TimeseriesLinearRegressionReturnKind return_kind_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_predict_>
 class AggregateFunctionTimeseriesLinearRegression final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesLinearRegression<TimestampType_, IntervalType_, ValueType_, return_kind_>,
-        AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType_, IntervalType_, ValueType_, return_kind_>>
+        AggregateFunctionTimeseriesLinearRegression<TimestampType_, IntervalType_, ValueType_, is_predict_>,
+        AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType_, IntervalType_, ValueType_, is_predict_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType_, IntervalType_, ValueType_, return_kind_>;
+    using Traits = AggregateFunctionTimeseriesLinearRegressionTraits<TimestampType_, IntervalType_, ValueType_, is_predict_>;
 
-    static constexpr TimeseriesLinearRegressionReturnKind return_kind = Traits::return_kind;
+    static constexpr bool is_predict = Traits::is_predict;
 
     using TimestampType = typename Traits::TimestampType;
     using IntervalType = typename Traits::IntervalType;
@@ -225,9 +169,9 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesLinearRegression, Traits>;
     using Base::Base;
 
-    /// Constructor for timeSeriesPredictLinearToGrid (return_kind = Prediction).
-    /// The other functions reach the base constructor via `using Base::Base` above,
-    /// it takes the same arguments except predict_offset_.
+    /// Constructor for timeSeriesPredictLinearToGrid (is_predict = true).
+    /// For timeSeriesDerivToGrid (is_predict = false) it reaches the base constructor via `using Base::Base` above.
+    /// The base constructor takes the same arguments except predict_offset_.
     explicit AggregateFunctionTimeseriesLinearRegression(const DataTypes & argument_types_, const Array & parameters_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_, Float64 predict_offset_)
         : Base(argument_types_, parameters_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
@@ -235,23 +179,53 @@ public:
     {
     }
 
-    Aggregator createAggregator(size_t stack_size_for_two_stacks) const
+    /// `createAggregator` switches to the two-stack queue once the average number of populated buckets in a
+    /// window reaches this value; below it, recomputing the window each grid point is cheaper. The
+    /// `timeseries_to_grid_two_stack_vs_recompute` example measures the crossover by driving the real finalize over
+    /// a larger-than-cache dataset (so recompute pays the same per-point cache misses as the real query) and puts
+    /// it around 8-10 populated buckets per window, matching an end-to-end A/B. Sparse data needs no margin here:
+    /// the density factor in `createAggregator` already converts `buckets_per_window` to the populated average.
+    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
+
+    /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets. The
+    /// density estimate below is an average, but density is not uniform - a low average can still hide a locally
+    /// dense window whose recompute folds far more buckets than the average. Beyond this capacity we stop trusting
+    /// the average and bound the worst case: at this size a fully dense window already makes recompute ~2x slower
+    /// than two-stacks (measured by the `timeseries_to_grid_two_stack_vs_recompute` example).
+    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
+
+    Aggregator createAggregator(size_t num_populated_buckets) const
     {
-        return Aggregator{stack_size_for_two_stacks, Base::start_timestamp, predict_offset, Base::timestamp_scale_multiplier};
+        /// Recompute folds the populated buckets in each window - on average `buckets_per_window * density`, where
+        /// `density = num_populated_buckets / bucket_count`. Compare that average (not the dense maximum
+        /// `buckets_per_window`) to the threshold, so sparse data, whose windows hold fewer populated buckets,
+        /// stays on the cheaper recompute path without inflating the threshold. The hard cap still forces
+        /// two-stacks for large windows, where a non-uniform spread could hide a locally dense window.
+        const size_t avg_buckets_in_window = Base::bucket_count
+            ? static_cast<size_t>(static_cast<double>(Base::buckets_per_window) * static_cast<double>(num_populated_buckets)
+                / static_cast<double>(Base::bucket_count))
+            : 0;
+        const bool use_two_stacks = avg_buckets_in_window >= AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS
+            || Base::buckets_per_window >= BPW_TO_FORCE_TWO_STACKS;
+        /// Reserve at most `buckets_per_window`, but capped by `num_populated_buckets` - else a huge window
+        /// (forced onto two-stacks by the hard cap) would `reserve(~INT64_MAX)` and fail to allocate.
+        const size_t stack_size = use_two_stacks ? std::min(Base::buckets_per_window, num_populated_buckets) : 0;
+        return Aggregator{stack_size, Base::start_timestamp, predict_offset};
     }
+
+    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr bool DateTime64Supported = true;
 
 protected:
     const Float64 predict_offset{};    /// Predict offset used by timeSeriesPredictLinearToGrid function, used to calculate the timestamp of the predicted value
 };
 
-/// Each SQL function as a 3-argument template with its variant baked in, so registration names the function directly.
+/// Each SQL function as a 3-argument template with its is_predict variant baked in, so registration names the
+/// function directly.
 template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesDerivToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, IntervalType, ValueType, TimeseriesLinearRegressionReturnKind::Slope>;
+using AggregateFunctionTimeseriesDerivToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, IntervalType, ValueType, false>;
 
 template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesPredictLinearToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, IntervalType, ValueType, TimeseriesLinearRegressionReturnKind::Prediction>;
-
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesLinearRegressionToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, IntervalType, ValueType, TimeseriesLinearRegressionReturnKind::InterceptAndSlope>;
+using AggregateFunctionTimeseriesPredictLinearToGrid = AggregateFunctionTimeseriesLinearRegression<TimestampType, IntervalType, ValueType, true>;
 
 }

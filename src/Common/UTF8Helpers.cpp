@@ -1,10 +1,8 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/StringUtils.h>
 #include <Poco/UTF8Encoding.h>
-#include <Poco/Unicode.h>
 
 #include <widechar_width.h>
-#include <array>
 #include <bit>
 
 namespace DB
@@ -59,7 +57,7 @@ struct UTF8Decoder
     UInt32 decode(UInt8 byte)
     {
         UInt32 type = TABLE[byte];
-        codepoint = (state != ACCEPT) ? (byte & 0x3fu) | (codepoint << 6) : (0xff >> type) & byte;
+        codepoint = (state != ACCEPT) ? (byte & 0x3fu) | (codepoint << 6) : (0xff >> type) & (byte);
         state = TABLE[256 + state * 16 + type];
         return state;
     }
@@ -260,31 +258,6 @@ std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_
     if (res >= 0)
         return res;
     return {};
-}
-
-bool isASCIIReachableByCaseFolding(char c)
-{
-    /// Derived from Poco's tables rather than hardcoded, so it cannot drift from the folding it describes.
-    static const std::array<bool, 128> reachable = []
-    {
-        std::array<bool, 128> result{};
-        for (int code_point = 0x80; code_point <= 0x10FFFF; ++code_point)
-        {
-            const int folded = Poco::Unicode::toLower(code_point);
-            if (folded >= 0x80)
-                continue;
-
-            result[folded] = true;
-            /// The needle character is folded too, so the other case is equally unsafe.
-            const int other_case = Poco::Unicode::toUpper(folded);
-            if (other_case < 0x80)
-                result[other_case] = true;
-        }
-        return result;
-    }();
-
-    const auto index = static_cast<unsigned char>(c);
-    return index < 0x80 && reachable[index];
 }
 
 }

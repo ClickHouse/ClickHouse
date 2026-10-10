@@ -1,30 +1,30 @@
 ---
 slug: /cloud/managed-postgres/monitoring/prometheus
 sidebarTitle: 'Prometheus 엔드포인트'
-title: 'ClickHouse Managed Postgres Prometheus 통합'
-description: 'ClickHouse Managed Postgres 메트릭을 Prometheus, Grafana, Datadog 또는 OpenMetrics와 호환되는 모든 collector로 스크레이프합니다'
+title: 'Managed Postgres Prometheus 통합'
+description: 'Managed Postgres 메트릭을 Prometheus, Grafana, Datadog 또는 OpenMetrics와 호환되는 모든 collector로 스크레이프합니다'
 keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', '메트릭', 'openmetrics', '관측성']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
 
-ClickHouse Managed Postgres는 [ClickHouse Cloud API][cloud-api]를 통해
+Managed Postgres는 [ClickHouse Cloud API][cloud-api]를 통해
 Prometheus와 호환되는 메트릭 엔드포인트 2개를 제공합니다.
 
-| Endpoint | Path                                                   | Returns                                      |
-| -------- | ------------------------------------------------------ | -------------------------------------------- |
-| 조직       | `/v1/organizations/{orgId}/postgres/prometheus`        | 조직 내 모든 ClickHouse Managed Postgres 서비스의 메트릭 |
-| 인스턴스     | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | 단일 서비스의 메트릭                                  |
+| Endpoint | Path                                                   | Returns                           |
+| -------- | ------------------------------------------------------ | --------------------------------- |
+| 조직       | `/v1/organizations/{orgId}/postgres/prometheus`        | 조직 내 모든 Managed Postgres 서비스의 메트릭 |
+| 인스턴스     | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | 단일 서비스의 메트릭                       |
 
 <Note>
   조직 수준 엔드포인트는 최대 100개 서비스의 메트릭을 반환합니다. 조직에
-  ClickHouse Managed Postgres 서비스가 100개를 초과하는 경우 [지원팀에
+  Managed Postgres 서비스가 100개를 초과하는 경우 [지원팀에
   문의하십시오](https://clickhouse.com/support/program).
 </Note>
 
@@ -122,22 +122,28 @@ scrape_configs:
 사용량, 상태별 연결, 트랜잭션 및 롤백 비율, Tuple 활동, I/O, 데이터베이스별 스토리지,
 그리고 교착 상태를 표시합니다.
 
-<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="ClickHouse Managed Postgres 서비스의 Grafana 대시보드" size="md" border />
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Managed Postgres 서비스의 Grafana 대시보드" size="md" border />
 
 <div id="import-dashboard">
   ### 대시보드 가져오기
 </div>
 
 <Steps>
-  <Step title="대시보드 JSON 다운로드" id="download">
+  <Step>
+    #### 대시보드 JSON 다운로드
+
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">대시보드 JSON 다운로드</TrackedLink>.
   </Step>
 
-  <Step title="Grafana에서 가져오기 화면 열기" id="open-import">
+  <Step>
+    #### Grafana에서 가져오기 화면 열기
+
     **Dashboards → New → Import**로 이동하세요. JSON 파일을 업로드하거나 내용을 붙여넣으세요.
   </Step>
 
-  <Step title="Prometheus 데이터 소스 선택" id="pick-datasource">
+  <Step>
+    #### Prometheus 데이터 소스 선택
+
     `DS_PROMETHEUS` 입력 항목이 표시되면 [이전 섹션](#configuring-prometheus)에서 구성한 엔드포인트를 스크레이프하는 Prometheus 데이터 소스를 선택하세요.
   </Step>
 </Steps>
@@ -176,9 +182,9 @@ scrape_configs:
 이 엔드포인트는 [ClickHouse Prometheus
 엔드포인트](/ko/products/cloud/features/monitoring/prometheus)와 동일한 형식을 따르므로, 해당 문서에 설명된 Grafana Cloud, Grafana
 Alloy, Datadog OpenMetrics 에이전트 구성도
-여기에서 그대로 적용할 수 있습니다. `metrics_path`는 ClickHouse 경로가 아니라 ClickHouse Managed Postgres 조직 또는
-인스턴스 경로를 가리키도록 설정하십시오.
+여기에서 그대로 적용할 수 있습니다. `metrics_path`는 ClickHouse 경로가 아니라 Managed Postgres 조직 또는
+instance 경로를 가리키도록 설정하십시오.
 
-[cloud-api]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
+[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
 
 [API keys]: /products/cloud/features/admin-features/api/openapi "API Key 관리"

@@ -6,11 +6,18 @@
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
-#include <Processors/Transforms/ChunkRowRange.h>
 
 
 namespace DB
 {
+
+/// Chunk-local half-open range of rows `[start, start + length)`.
+struct ChunkRowRange
+{
+    UInt64 start = 0;
+    UInt64 length = 0;
+};
+
 
 /// General `LIMIT BY` transform for input where equal grouping keys are not
 /// guaranteed to be contiguous.
@@ -31,12 +38,7 @@ namespace DB
 class LimitByTransform final : public ISimpleTransform
 {
 public:
-    LimitByTransform(
-        SharedHeader header,
-        UInt64 group_length_,
-        UInt64 group_offset_,
-        const Names & column_names,
-        bool always_read_till_end_ = false);
+    LimitByTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names);
 
     String getName() const override { return "LimitByTransform"; }
 
@@ -49,14 +51,6 @@ private:
     void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx);
 
     template <typename Method>
-    requires MapAggregationMethod<Method>
-    void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
-
-    /// LimitBy keeps a group index in the cell's mapped slot, so it cannot use a set method. This overload
-    /// exists only because the dispatch macro is generated over every `AggregatedDataVariants::Type`,
-    /// including the set ones that `GROUP BY` without aggregate functions uses.
-    template <typename Method>
-    requires SetAggregationMethod<Method>
     void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
 
     /// Positions of the non-constant grouping key columns in the chunk header.
@@ -65,7 +59,6 @@ private:
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
     const UInt64 group_limit_end;
-    const bool always_read_till_end;
 
     AggregatedDataVariants data;
     ColumnsHashing::HashMethodContextPtr hash_method_context;
@@ -101,12 +94,7 @@ private:
 class LimitBySortedStreamTransform final : public ISimpleTransform
 {
 public:
-    LimitBySortedStreamTransform(
-        SharedHeader header,
-        UInt64 group_length_,
-        UInt64 group_offset_,
-        const SortDescription & sorted_columns_descr,
-        bool always_read_till_end_ = false);
+    LimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr);
 
     String getName() const override { return "LimitBySortedStreamTransform"; }
 
@@ -131,7 +119,6 @@ private:
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
     const UInt64 group_limit_end;
-    const bool always_read_till_end;
 
     MutableColumns previous_chunk_last_grouping_key_columns;
 

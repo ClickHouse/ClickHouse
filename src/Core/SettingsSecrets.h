@@ -43,7 +43,6 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     {"format_avro_schema_registry_url", maskURLCredentials},
     {"url_base", maskURLCredentials},
-    {"s3_base", maskURLCredentials},
 };
 
 /// Returns whether anything was masked.
@@ -67,7 +66,7 @@ bool maskSettingValue(const String & setting_name, const Field & field, String &
 /// The masking runs on the raw string and the result is quoted afterwards, because the two cannot be
 /// done in the other order: the value of a presigned URL parameter ends at the end of the text, so
 /// masking an already-quoted literal takes the closing quote with it and leaves
-/// `s3_base = 'https://bucket/f.csv?X-Amz-Signature=[HIDDEN]`, which no longer parses.
+/// `url_base = 'https://bucket/f.csv?X-Amz-Signature=[HIDDEN]`, which no longer parses.
 ///
 /// Whether a value holds a secret and how that secret is hidden are the same question, so a
 /// `formatImpl` and the matching `hasSecretParts` both ask it here and cannot disagree.

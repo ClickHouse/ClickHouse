@@ -72,13 +72,6 @@ private:
     void appendRun(const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 start, UInt64 length, size_t group_idx);
 
     template <typename Method>
-    requires MapAggregationMethod<Method>
-    void consumeImpl(Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows);
-
-    /// Keeps a group index in the cell's mapped slot, so a set method cannot be used. This overload exists
-    /// only because the dispatch macro is generated over every `AggregatedDataVariants::Type`.
-    template <typename Method>
-    requires SetAggregationMethod<Method>
     void consumeImpl(Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows);
 
     std::vector<size_t> key_positions;

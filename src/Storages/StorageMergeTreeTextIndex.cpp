@@ -1,4 +1,5 @@
 
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageMergeTreeTextIndex.h>
 
 #include <Columns/ColumnString.h>
@@ -176,7 +177,7 @@ private:
 
                 size_t block_idx = matching_blocks[next_matching_block++];
                 dictionary_buf->seek(sparse_index.getOffsetInFile(block_idx), 0);
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
             else /// Sequential reading without filtering.
             {
@@ -186,7 +187,7 @@ private:
                     continue;
                 }
 
-                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*skip_postings=*/true);
+                return TextIndexSerialization::deserializeDictionaryBlock(*dictionary_buf, /*postings_serialization=*/nullptr);
             }
         }
     }
@@ -362,6 +363,7 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 void ReadFromMergeTreeTextIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// Taken at read time: the storage outlives the query in a table created from the function before that was forbidden.
+    /// NOLINT(storage-cast): the table function resolves the source table before building this.
     auto data_parts = dynamic_cast<const MergeTreeData &>(*storage->source_table).getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
     auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(data_parts, virtual_columns_filter);
@@ -410,7 +412,7 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
-    if (!dynamic_cast<const MergeTreeData *>(source_table.get()))
+    if (!castStorage<MergeTreeData>(source_table, DeferredTable::Load))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table->getName());
 
     StorageInMemoryMetadata storage_metadata;

@@ -32,15 +32,15 @@ keywords: ['собственный протокол', 'TCP-протокол', '�
 
 Ответ на [client hello](/ru/resources/develop-contribute/native-protocol/client#hello).
 
-| поле              | тип     | значение                     | описание                 |
-| ----------------- | ------- | ---------------------------- | ------------------------ |
-| name              | String  | `ClickHouse`                 | Имя сервера              |
-| version&#95;major | UVarInt | `21`                         | Мажорная версия сервера  |
-| version&#95;minor | UVarInt | `12`                         | Минорная версия сервера  |
-| revision          | UVarInt | `54452`                      | Ревизия сервера          |
-| tz                | String  | `Europe/Moscow`              | Часовой пояс сервера     |
-| display&#95;name  | String  | `<display_name-or-hostname>` | Имя сервера в интерфейсе |
-| version&#95;patch | UVarInt | `3`                          | Патч-версия сервера      |
+| поле              | тип     | значение        | описание                 |
+| ----------------- | ------- | --------------- | ------------------------ |
+| name              | String  | `Clickhouse`    | Имя сервера              |
+| version&#95;major | UVarInt | `21`            | Мажорная версия сервера  |
+| version&#95;minor | UVarInt | `12`            | Минорная версия сервера  |
+| revision          | UVarInt | `54452`         | Ревизия сервера          |
+| tz                | String  | `Europe/Moscow` | Часовой пояс сервера     |
+| display&#95;name  | String  | `Clickhouse`    | Имя сервера в интерфейсе |
+| version&#95;patch | UVarInt | `3`             | Патч-версия сервера      |
 
 <div id="exception">
   ## Исключение
@@ -51,14 +51,14 @@ keywords: ['собственный протокол', 'TCP-протокол', '�
 | поле            | тип    | значение                               | описание                     |
 | --------------- | ------ | -------------------------------------- | ---------------------------- |
 | code            | Int32  | `60`                                   | См. [ErrorCodes.cpp][codes]. |
-| name            | String | `DB::Exception`                        | мажорная версия сервера      |
-| message         | String | `DB::Exception: Table X doesn't exist` | минорная версия сервера      |
+| name            | String | `DB::Exception`                        | Основная версия сервера      |
+| message         | String | `DB::Exception: Table X doesn't exist` | Младшая версия сервера       |
 | stack&#95;trace | String | ~                                      | Трассировка стека C++        |
 | nested          | Bool   | `true`                                 | Дополнительные ошибки        |
 
 Это может быть непрерывный список исключений, пока `nested` не равно `false`.
 
-[codes]: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp "Список кодов ошибок"
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "Список кодов ошибок"
 
 <div id="progress">
   ## Прогресс

@@ -80,6 +80,13 @@ public:
         {
             return count != 0 || !nested_maps.empty() || !replaced_arguments.empty() || !masked_arguments.empty();
         }
+
+        /// Whether the argument at raw index `n` is hidden: by the span, individually or by a partial
+        /// replacement. The nested maps are not positional: their entries are matched by name.
+        bool isSecretArgument(size_t n) const
+        {
+            return (n >= start && n - start < count) || masked_arguments.contains(n) || replaced_arguments.contains(n);
+        }
     };
 
     explicit FunctionSecretArgumentsFinder(std::unique_ptr<AbstractFunction> && function_) : function(std::move(function_)) {}
@@ -87,11 +94,17 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
     /// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
-    /// value stays visible when the map is masked (`role_arn` and `role_session_name`; the map's
-    /// secret is `external_id`). Any other key - unknown, malformed or an expression - fails closed.
+    /// value stays visible when the map is masked. Only `role_arn` qualifies: it names the role to
+    /// assume, like `access_key_id` names a key. The other two keys of the assume-role triple are
+    /// secrets: `external_id` is its shared secret, and `role_session_name` can be one too, because a
+    /// trust policy can require a specific value through the `sts:RoleSessionName` condition (the
+    /// ClickHouse Cloud guide documents exactly this use). Any other key - unknown, malformed or an
+    /// expression - fails closed.
+    /// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
+    /// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
     static bool isNonSecretExtraCredentialsKey(std::string_view key)
     {
-        return key == "role_arn" || key == "role_session_name";
+        return key == "role_arn";
     }
 
 protected:
@@ -99,30 +112,20 @@ protected:
     Result result;
 
     /// Named arguments carrying S3 secrets, shared by every S3 form (explicit-url and named-collection).
-    /// `external_id` is the shared secret of the assume-role triple; the other two (`role_arn`,
-    /// `role_session_name`) are non-secret identifiers passed inside `extra_credentials` and stay
-    /// visible (see isNonSecretExtraCredentialsKey).
+    /// `external_id` and `role_session_name` are the secrets of the assume-role triple; the third key
+    /// (`role_arn`) is a non-secret identifier passed inside `extra_credentials` and stays visible
+    /// (see isNonSecretExtraCredentialsKey).
     static constexpr std::string_view s3_secret_keys[]
-        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
-
-    /// Named arguments carrying TLS credentials as the literal contents of a certificate or a key file,
-    /// rather than as a path to it. They are secret and have to be hidden the same way a password is.
-    static constexpr std::string_view tls_credentials_secret_keys[]
-        = {"ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
-
-    /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
-    /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
-    /// `nats_server_list` is a destination and can carry URI userinfo credentials, so hide it whole.
-    /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
-    static constexpr std::string_view nats_secret_keys[]
-        = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials", "nats_server_list"};
+        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id",
+           "role_session_name"};
 
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
     /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
-    /// (`extra_credentials` carries the assume-role secret `external_id`; its non-secret identifiers
-    /// stay visible, see isNonSecretExtraCredentialsKey). The parsers accept them at any position, not
-    /// just at the tail. Record them so their values are hidden with the keys kept.
+    /// (`extra_credentials` carries the assume-role secrets `external_id` and `role_session_name`; its
+    /// non-secret identifier `role_arn` stays visible, see isNonSecretExtraCredentialsKey). The parsers
+    /// accept them at any position, not just at the tail. Record them so their values are hidden with
+    /// the keys kept.
     /// Idempotent: each map is recorded at most once.
     void maskNestedSecretMaps();
 
@@ -158,7 +161,6 @@ protected:
 
     void findOrdinaryFunctionSecretArguments();
     void findMySQLFunctionSecretArguments();
-    void findTLSCredentialsSecretArguments(size_t start);
     void findMongoDBSecretArguments();
     void findRedisTableEngineSecretArguments();
     void findArrowFlightSecretArguments();
@@ -171,6 +173,11 @@ protected:
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
+    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes
+    /// from `start` can be shown: only an argument written here can carry a credential, and each has
+    /// to be readable enough to tell that it does not. `positional_limit` bounds the plain literals
+    /// read beside the overrides: one filename for a backup locator, none for a table engine.
+    bool azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a
     /// named `url = ...` override, and the `headers(...)` values at any position. `url` is at
@@ -179,6 +186,18 @@ protected:
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
+
+    /// `BackupInfo` keeps named overrides and a trailing map for every backup engine, including the
+    /// ones that read neither, so an argument that is not a plain literal can carry a credential.
+    static bool hasOnlyLiteralArguments(const AbstractFunction & function);
+
+    /// Whether a backup locator names its destination with exactly the literal arguments its engine
+    /// accepts, and therefore holds no credential. An engine that takes fewer rejects the rest only
+    /// after the statement has been formatted for logging, so the count has to be checked here too.
+    static bool isCredentialFreeBackupLocator(const AbstractFunction & function);
+
+    /// Hides every argument, for a shape whose valid slots cannot be established.
+    void maskEveryArgument();
 
     void findRemoteFunctionSecretArguments();
 
@@ -198,14 +217,16 @@ protected:
     void findAzureBlobStorageTableEngineSecretArguments();
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
-    void findBigQuerySecretArguments();
-    void findNATSTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findMySQLDatabaseSecretArguments();
     void findS3DatabaseSecretArguments();
     void findDataLakeCatalogSecretArguments();
     void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
+
+    /// A backup destination reads a different signature than the table engine of the same name, so the
+    /// table-engine rule leaves an argument it does not model visible.
+    void findAzureBlobStorageBackupSecretArguments();
 
     /// Whether a specified argument can be the name of a named collection?
     bool isNamedCollectionName(size_t arg_idx) const;

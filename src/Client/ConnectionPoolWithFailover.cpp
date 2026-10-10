@@ -51,7 +51,7 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     get_priority_load_balancing.hostname_longest_common_suffix.resize(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
     {
-        IConnectionPool & connection_pool = *nested_pools[i];
+        ConnectionPool & connection_pool = dynamic_cast<ConnectionPool &>(*nested_pools[i]);
         get_priority_load_balancing.hostname_prefix_distance[i] = getHostNamePrefixDistance(local_hostname, connection_pool.getHost());
         get_priority_load_balancing.hostname_levenshtein_distance[i] = getHostNameLevenshteinDistance(local_hostname, connection_pool.getHost());
         get_priority_load_balancing.hostname_longest_common_prefix[i] = getHostNameLongestCommonPrefix(local_hostname, connection_pool.getHost());
@@ -210,10 +210,6 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
             DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
             "Cannot get connection from ConnectionPoolWithFailover cause nested pools are empty");
 
-    /// A caller that asks for endpoint skipping itself is skipping interchangeable workers, where an
-    /// unused endpoint costs nothing; only `skip_unavailable_shards` is about shards, which own rows.
-    const bool skip_unavailable_endpoints_from_setting = !skip_unavailable_endpoints.has_value();
-
     if (!skip_unavailable_endpoints.has_value())
         skip_unavailable_endpoints = settings[Setting::skip_unavailable_shards];
 
@@ -245,8 +241,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors].value;
     bool fallback_to_stale_replicas = settings[Setting::fallback_to_stale_replicas_for_distributed_queries].value;
 
-    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, skip_read_only_replicas,
-        skip_unavailable_endpoints_from_setting, try_get_entry, priority_func);
+    return Base::getMany(min_entries, max_entries, max_tries, max_ignored_errors, fallback_to_stale_replicas, skip_read_only_replicas, try_get_entry, priority_func);
 }
 
 ConnectionPoolWithFailover::TryResult

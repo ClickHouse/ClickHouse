@@ -311,7 +311,7 @@ bytes_on_disk:               207.07 MiB
   ClickHouse позволяет вставлять несколько строк с одинаковыми значениями в столбцах первичного ключа. В этом случае (см. строку 1 и строку 2 на диаграмме ниже) итоговый порядок определяется указанным ключом сортировки и, следовательно, значением столбца `EventTime`.
 </Note>
 
-ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">столбцовая система управления базами данных</a>. Как показано на диаграмме ниже,
+ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">столбцовая система управления базами данных</a>. Как показано на диаграмме ниже,
 
 * в представлении на диске для каждого столбца таблицы существует отдельный файл данных (*.bin), в котором все значения этого столбца хранятся в <a href="/ru/get-started/about/distinctive-features#data-compression" target="_blank">сжатом</a> формате, и
 * 8,87 миллиона строк хранятся на диске в лексикографическом порядке по возрастанию по столбцам первичного ключа (и дополнительным столбцам ключа сортировки), то есть в данном случае
@@ -355,7 +355,7 @@ ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-c
 
     Поэтому все гранулы (кроме последней) в нашей таблице-примере имеют одинаковый размер.
 
-  * Для таблиц с адаптивной гранулярностью индекса (по [умолчанию](/ru/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes) гранулярность индекса является адаптивной) размер некоторых гранул может быть меньше 8192 строк в зависимости от размера данных в строках.
+  * Для таблиц с адаптивной гранулярностью индекса (по [умолчанию](/ru/reference/settings/merge-tree-settings#index_granularity_bytes) гранулярность индекса является адаптивной) размер некоторых гранул может быть меньше 8192 строк в зависимости от размера данных в строках.
 
   * Мы выделили оранжевым цветом некоторые значения из столбцов первичного ключа (`UserID`, `URL`).
     Эти выделенные оранжевым значения столбцов — значения столбцов первичного ключа из первой строки каждой гранулы.
@@ -389,81 +389,66 @@ ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-c
   * Файл первичного индекса полностью загружается в оперативную память. Если размер файла превышает объём доступной свободной памяти, ClickHouse выдаст ошибку.
 </Note>
 
-<Accordion title="Проверка содержимого первичного индекса">
-  В самоуправляемом кластере ClickHouse мы можем использовать [табличную функцию file](/ru/reference/functions/table-functions/file), чтобы проверить содержимое первичного индекса нашей таблицы-примера.
+<Accordion title="Просмотр содержимого первичного индекса">
+  <p>
+    В самоуправляемом кластере ClickHouse мы можем использовать <a href="/ru/reference/functions/table-functions/file" target="_blank">табличную функцию file</a>, чтобы просмотреть содержимое первичного индекса нашей таблицы-примера.
 
-  Для этого нам сначала нужно скопировать файл первичного индекса в [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings/user#user_files_path) одного из узлов работающего кластера:
+    Для этого сначала нужно скопировать файл первичного индекса в <a href="/ru/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a> одного из узлов работающего кластера:
 
-  **Шаг 1: Получите путь к part, содержащему файл первичного индекса**
+    <ul>
+      <li>Шаг 1: Получить путь к части, содержащей файл первичного индекса</li>
+      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
 
-  ```sql
-  SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
-  ```
+      на тестовой машине возвращает `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`.
 
-  возвращает `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` на тестовой машине.
+      <li>Шаг 2: Получить user&#95;files&#95;path</li>
+      <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">Значение user&#95;files&#95;path по умолчанию</a> в Linux:
+      `/var/lib/clickhouse/user_files/`
 
-  **Шаг 2: Получите user&#95;files&#95;path**
+      В Linux можно проверить, не было ли оно изменено: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  [Значение user&#95;files&#95;path по умолчанию](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) в Linux — `/var/lib/clickhouse/user_files/`
+      На тестовой машине этот путь — `/Users/tomschreiber/Clickhouse/user_files/`
 
-  и в Linux вы можете проверить, не было ли оно изменено: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+      <li>Шаг 3: Скопировать файл первичного индекса в user&#95;files&#95;path</li>
 
-  На тестовой машине этот путь — `/Users/tomschreiber/ClickHouse/user_files/`
+      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
+    </ul>
 
-  **Шаг 3: Скопируйте файл первичного индекса в user&#95;files&#95;path**
+    <br />
 
-  ```bash
-  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
-  ```
+    Теперь мы можем просмотреть содержимое первичного индекса через SQL:
 
-  Теперь мы можем проверить содержимое первичного индекса через SQL:
+    <ul>
+      <li>Получить количество записей</li>
+      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
+      возвращает `1083`
 
-  **Получите количество записей**
+      <li>Получить первые две метки индекса</li>
+      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
 
-  ```sql
-  SELECT count()
-  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
-  ```
+      возвращает
 
-  возвращает `1083`
+      `240923, http://showtopics.html%3...<br/>
+                  4073710, http://mk.ru&pos=3_0`
 
-  **Получите первые две метки индекса**
+      <li>Получить последнюю метку индекса</li>
+      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
+      возвращает
+      `4292714039 │ http://sosyal-mansetleri...`
+    </ul>
 
-  ```sql
-  SELECT UserID, URL
-  FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
-  LIMIT 0, 2;
-  ```
+    <br />
 
-  возвращает
-
-  ```response
-  240923, http://showtopics.html%3...
-  4073710, http://mk.ru&pos=3_0
-  ```
-
-  **Получите последнюю метку индекса**
-
-  ```sql
-  SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
-  LIMIT 1082, 1;
-  ```
-
-  возвращает
-
-  ```response
-  4292714039 │ http://sosyal-mansetleri...
-  ```
-
-  Это в точности соответствует нашей диаграмме содержимого первичного индекса для таблицы-примера:
+    Это в точности соответствует нашей диаграмме содержимого первичного индекса для таблицы-примера:
+  </p>
 </Accordion>
 
-Записи первичного ключа называются метками индекса, потому что каждая запись индекса отмечает начало определённого диапазона данных. В частности, для примерной таблицы:
+Записи первичного ключа называются метками индекса, потому что каждая запись индекса обозначает начало определённого диапазона данных. В частности, для таблицы-примера:
 
-* Метки индекса для UserID:
+* Метки индекса UserID:
 
-  Сохранённые значения `UserID` в первичном индексе отсортированы в порядке возрастания.<br />
-  Поэтому «метка 1» на диаграмме выше указывает, что значения `UserID` всех строк таблицы в грануле 1 и во всех последующих гранулах гарантированно больше или равны 4.073.710.
+  Значения `UserID`, хранящиеся в первичном индексе, отсортированы по возрастанию.<br />
+  Поэтому «метка 1» на диаграмме выше указывает, что значения `UserID` всех строк таблицы в грануле 1 и во всех следующих гранулах гарантированно больше либо равны 4.073.710.
 
 [Как мы увидим позже](#the-primary-index-is-used-for-selecting-granules), этот глобальный порядок позволяет ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">использовать алгоритм двоичного поиска</a> по меткам индекса для первого столбца ключа, когда запрос фильтрует по первому столбцу первичного ключа.
 
@@ -476,7 +461,7 @@ ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-c
   Позже мы подробнее обсудим, как это влияет на производительность выполнения запросов.
 
 <div id="the-primary-index-is-used-for-selecting-granules">
-  ### Первичный индекс используется для выбора гранул
+  ### Первичный индекс используется для отбора гранул
 </div>
 
 Теперь мы можем выполнять запросы с использованием первичного индекса.
@@ -515,7 +500,7 @@ Processed 8.19 thousand rows,
 
 Теперь вывод клиента ClickHouse показывает, что вместо полного сканирования таблицы в ClickHouse было передано только 8,19 тысячи строк.
 
-Если <a href="/ru/reference/settings/server-settings/settings/other#logger" target="_blank">трассировочное логирование</a> включено, то в файле журнала сервера ClickHouse видно, что ClickHouse выполнял <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">двоичный поиск</a> по 1083 меткам индекса UserID, чтобы определить гранулы, которые могут содержать строки со значением `749927693` в столбце UserID. Для этого требуется 19 шагов при средней временной сложности `O(log2 n)`:
+Если <a href="/ru/reference/settings/server-settings/settings#logger" target="_blank">трассировочное логирование</a> включено, то в файле журнала сервера ClickHouse видно, что ClickHouse выполнял <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">двоичный поиск</a> по 1083 меткам индекса UserID, чтобы определить гранулы, которые могут содержать строки со значением `749927693` в столбце UserID. Для этого требуется 19 шагов при средней временной сложности `O(log2 n)`:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -527,10 +512,6 @@ Processed 8.19 thousand rows,
               1/1083 marks by primary key, 1 marks to read from 1 ranges
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
-
-:::note
-В последних версиях ClickHouse сообщения `Running binary search on index range`, `Found (LEFT) boundary mark` и `Found (RIGHT) boundary mark` регистрируются на уровне `test` (наивысшем уровне детализации), а не `trace`. Чтобы увидеть их, повысьте уровень логирования до `test` (например, `SET send_logs_level = 'test'` в клиенте или `<logger><level>test</level></logger>` в конфигурации сервера). Остальные показанные выше строки по-прежнему регистрируются на уровне `trace`. Это относится ко всем примерам журналов двоичного поиска в этом руководстве.
-:::
 
 Мы видим в приведённом выше журнале трассировки, что запросу удовлетворила одна метка из 1083 существующих меток.
 
@@ -636,11 +617,11 @@ LIMIT 10;
 После этого все 8192 строки, принадлежащие найденной несжатой грануле, передаются в ClickHouse для дальнейшей обработки.
 
 <Note>
-  * Для таблиц с [широким форматом](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) и без [адаптивной гранулярности индекса](/ru/resources/changelogs/oss/2019#experimental-features-1) ClickHouse использует файлы меток `.mrk`, как показано выше. Они содержат записи, в каждой из которых по два 8-байтных адреса. Эти записи указывают на физическое расположение гранул, и все такие гранулы имеют одинаковый размер.
+  * Для таблиц с [широким форматом](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) и без [адаптивной гранулярности индекса](/ru/resources/changelogs/oss/2019#experimental-features-1) ClickHouse использует файлы меток `.mrk`, как показано выше; они содержат записи с двумя 8-байтными адресами в каждой записи. Эти записи представляют собой физические расположения гранул, и все такие гранулы имеют одинаковый размер.
 
-  Гранулярность индекса [по умолчанию](/ru/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes) является адаптивной, но для нашей таблицы-примера мы отключили адаптивную гранулярность индекса (чтобы упростить изложение в этом руководстве, а также сделать схемы и результаты воспроизводимыми). Наша таблица использует широкий формат, потому что объём данных превышает [min&#95;bytes&#95;for&#95;wide&#95;part](/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) (по умолчанию это 10 МБ для самоуправляемых кластеров).
+  Гранулярность индекса по [умолчанию](/ru/reference/settings/merge-tree-settings#index_granularity_bytes) адаптивна, но для нашей таблицы-примера мы отключили адаптивную гранулярность индекса (чтобы упростить объяснение в этом руководстве, а также сделать диаграммы и результаты воспроизводимыми). Наша таблица использует широкий формат, потому что объём данных превышает [min&#95;bytes&#95;for&#95;wide&#95;part](/ru/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (по умолчанию это 10 МБ для самоуправляемых кластеров).
 
-  * Для таблиц с широким форматом и адаптивной гранулярностью индекса ClickHouse использует файлы меток `.mrk2`, которые содержат записи, аналогичные записям в файлах `.mrk`, но с дополнительным третьим значением в каждой записи: числом строк в грануле, с которой связана текущая запись.
+  * Для таблиц с широким форматом и адаптивной гранулярностью индекса ClickHouse использует файлы меток `.mrk2`, которые содержат записи, аналогичные файлам `.mrk`, но с дополнительным третьим значением в каждой записи: числом строк в грануле, с которой связана текущая запись.
 
   * Для таблиц с [компактным форматом](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) ClickHouse использует файлы меток `.mrk3`.
 </Note>
@@ -681,7 +662,7 @@ LIMIT 10;
 
 На схеме выше показано, как ClickHouse находит гранулу в файле данных UserID.bin.
 
-Параллельно ClickHouse делает то же самое для гранулы 176 в файле данных URL.bin. Эти две соответствующие гранулы выравниваются и передаются в движок ClickHouse для дальнейшей обработки, то есть агрегации и подсчёта значений URL по группам для всех строк, где UserID равен 749.927.693, а затем вывода 10 самых больших групп URL в порядке убывания количества.
+Параллельно ClickHouse делает то же самое для гранулы 176 в файле данных URL.bin. Эти две соответствующие гранулы выравниваются и передаются в ClickHouse engine для дальнейшей обработки, то есть агрегации и подсчёта значений URL по группам для всех строк, где UserID равен 749.927.693, а затем вывода 10 самых больших групп URL в порядке убывания количества.
 
 <div id="using-multiple-primary-indexes">
   ## Использование нескольких индексов первичного ключа
@@ -741,9 +722,9 @@ Processed 8.81 million rows,
 799.69 MB (102.11 million rows/s., 9.27 GB/s.)
 ```
 
-Вывод клиента показывает, что ClickHouse почти выполнил полное сканирование таблицы, несмотря на то, что [столбец URL является частью составного первичного ключа](#a-table-with-a-primary-key)! ClickHouse считывает 8,81 миллиона строк из 8,87 миллиона строк таблицы.
+Вывод клиента показывает, что ClickHouse почти выполнил полное сканирование таблицы, несмотря на то, что [столбец URL является частью составного первичного ключа](#a-table-with-a-primary-key)! ClickHouse считывает 8,81 миллиона строк из 8,87 миллиона строк в таблице.
 
-Если включен [trace&#95;logging](/ru/reference/settings/server-settings/settings/other#logger), то файл журнала сервера ClickHouse показывает, что ClickHouse использовал <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">универсальный алгоритм поиска с исключением</a> по 1083 меткам индекса URL, чтобы определить гранулы, которые потенциально могут содержать строки со значением столбца URL &quot;http://public&#95;search&quot;:
+Если включен [trace&#95;logging](/ru/reference/settings/server-settings/settings#logger), то файл журнала сервера ClickHouse показывает, что ClickHouse использовал <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">универсальный алгоритм поиска с исключением</a> по 1083 меткам индекса URL, чтобы определить гранулы, которые потенциально могут содержать строки со значением столбца URL &quot;http://public&#95;search&quot;:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
@@ -981,7 +962,7 @@ Processed 319.49 thousand rows,
 С первичным индексом из [исходной таблицы](#a-table-with-a-primary-key), где UserID был первым, а URL — вторым ключевым столбцом, ClickHouse использовал [универсальный алгоритм поиска с исключением](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) по меткам индекса для выполнения этого запроса, и это было не слишком эффективно из-за одинаково высокой мощности UserID и URL.
 
 Когда URL стал первым столбцом в первичном индексе, ClickHouse теперь выполняет <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">двоичный поиск</a> по меткам индекса.
-Соответствующий журнал сервера подтверждает это (в последних версиях сообщения о двоичном поиске записываются на уровне `test` — см. [примечание выше](#the-primary-index-is-used-for-selecting-granules)):
+Это подтверждает соответствующий трассировочный лог в файле журнала сервера ClickHouse:
 
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1088,7 +1069,7 @@ Ok.
   <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-2.webp" size="md" alt="Sparse Primary Indices 12b2" />
 </Note>
 
-Неявно созданную таблицу (и её первичный индекс), лежащую в основе materialized view, теперь можно использовать для значительного ускорения выполнения нашего запроса из примера с фильтрацией по столбцу URL:
+Неявно созданная таблица (и её первичный индекс), лежащая в основе materialized view, теперь может использоваться для значительного ускорения выполнения нашего запроса из примера с фильтрацией по столбцу URL:
 
 ```sql highlight={2}
 SELECT UserID, count(UserID) AS Count
@@ -1122,7 +1103,7 @@ Processed 335.87 thousand rows,
 
 Поскольку неявно созданная таблица (и её первичный индекс), лежащая в основе materialized view, фактически идентична [вторичной таблице, которую мы создали явно](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), запрос выполняется по сути так же, как и для явно созданной таблицы.
 
-Соответствующий журнал сервера подтверждает, что ClickHouse выполняет двоичный поиск по меткам индекса (в последних версиях сообщения о двоичном поиске записываются на уровне `test` — см. [примечание выше](#the-primary-index-is-used-for-selecting-granules)):
+Соответствующий трассировочный лог в файле журнала сервера ClickHouse подтверждает, что ClickHouse выполняет двоичный поиск по меткам индекса:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1206,7 +1187,7 @@ Processed 319.49 thousand rows, 1
 
 Поскольку скрытая таблица (и её первичный индекс), созданная проекцией, фактически идентична [вторичной таблице, которую мы создали явным образом](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), запрос выполняется практически так же, как и для таблицы, созданной явным образом.
 
-Соответствующий журнал сервера подтверждает, что ClickHouse выполняет двоичный поиск по меткам индекса (в последних версиях сообщения о двоичном поиске записываются на уровне `test` — см. [примечание выше](#the-primary-index-is-used-for-selecting-granules)):
+Соответствующий трассировочный лог в файле журнала сервера ClickHouse подтверждает, что ClickHouse выполняет двоичный поиск по меткам индекса:
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

@@ -32,11 +32,6 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     remote_table_id = std::move(parsed.remote_table_id);
     sharding_key = std::move(parsed.sharding_key);
     remote_table_function_ptr = std::move(parsed.remote_table_function_ptr);
-    settings_changes = std::move(parsed.settings_changes);
-
-    /// Validate the settings early, so that a misspelled setting is reported during parsing
-    /// rather than at the first read from the storage.
-    DistributedSettings{}.applyChanges(settings_changes);
 }
 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
@@ -63,9 +58,6 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     else if (has_local_shard)
         context->checkAccess(AccessType::INSERT, remote_table_id);
 
-    DistributedSettings distributed_settings;
-    distributed_settings.applyChanges(settings_changes);
-
     StoragePtr res = std::make_shared<StorageDistributed>(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
@@ -78,7 +70,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             sharding_key,
             String{},
             String{},
-            distributed_settings,
+            DistributedSettings{},
             LoadingStrictnessLevel::CREATE,
             cluster,
             remote_table_function_ptr,
@@ -118,25 +110,24 @@ Both functions can be used in `SELECT` and `INSERT` queries when the target is a
 ## Syntax {#syntax}
 
 ```sql
-remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
-remote(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
-remote(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
-remoteSecure(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
-remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
-remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
+remote(addresses_expr, [db, table, user [, password], sharding_key])
+remote(addresses_expr, [db.table, user [, password], sharding_key])
+remote(named_collection[, option=value [,..]])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
+remoteSecure(named_collection[, option=value [,..]])
 ```
 
 ## Parameters {#parameters}
 
 | Argument       | Description                                                                                                                                                                                                                                                                                                                                                        |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `addresses_expr` | A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.<br/><br/>    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in `[]`.<br/><br/>    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](/reference/settings/server-settings/settings/tcp-port#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](/reference/settings/server-settings/settings/tcp-port#tcp_port_secure) for table function `remoteSecure` (by default, 9440).<br/><br/>    For IPv6 addresses, a port is required.<br/><br/>    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.<br/><br/>    Type: [String](/reference/data-types/string). |
+| `addresses_expr` | A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.<br/><br/>    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in `[]`.<br/><br/>    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](/reference/settings/server-settings/settings#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](/reference/settings/server-settings/settings#tcp_port_secure) for table function `remoteSecure` (by default, 9440).<br/><br/>    For IPv6 addresses, a port is required.<br/><br/>    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.<br/><br/>    Type: [String](/reference/data-types/string). |
 | `db`           | Database name. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                                                             |
 | `table`        | Table name. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                                                               |
 | `user`         | User name. If not specified, `default` is used. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                         |
 | `password`     | User password. If not specified, an empty password is used. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                             |
 | `sharding_key` | Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](/reference/data-types/int-uint).                                                                                                                                                 |
-| `SETTINGS name = value, ...` | Settings of the Distributed table created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. This clause is accepted only inside the table function; the `Remote` and `RemoteSecure` table engines take the same settings after the engine definition, see [Remote and RemoteSecure engines](/reference/engines/table-engines/special/distributed#distributed-remote-engines). |
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections).
 
@@ -156,7 +147,7 @@ The `remote` table function can be useful in the following cases:
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
 
-The same parameters can be used with the `Remote` and `RemoteSecure` table engines to create a persistent table instead of an ad-hoc one, see [Remote and RemoteSecure engines](/reference/engines/table-engines/special/distributed#distributed-remote-engines). The only difference is the `SETTINGS` clause: the engines take it after the engine definition, `ENGINE = Remote(...) SETTINGS skip_unavailable_shards = 1`, not among the arguments.
+The same parameters can be used with the `Remote` and `RemoteSecure` table engines to create a persistent table instead of an ad-hoc one, see [Remote and RemoteSecure engines](/reference/engines/table-engines/special/distributed#distributed-remote-engines).
 
 ### Addresses {#addresses}
 
@@ -277,8 +268,8 @@ The following pattern types are supported.
 - `{0n..0m}` - A range of numbers with leading zeroes. This pattern preserves leading zeroes in indices. For instance, `example{01..03}-1` generates `example01-1`, `example02-1` and `example03-1`.
 - `{a|b}` - Any number of variants separated by a `|`. The pattern specifies replicas. For instance, `example01-{1|2}` generates replicas `example01-1` and `example01-2`.
 
-The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing) setting.
-The number of generated addresses is limited by [table_function_remote_max_addresses](/reference/settings/session-settings/table#table_function_remote_max_addresses) setting.
+The query will be sent to the first healthy replica. However, for `remote` the replicas are iterated in the order currently set in the [load_balancing](/reference/settings/session-settings#load_balancing) setting.
+The number of generated addresses is limited by [table_function_remote_max_addresses](/reference/settings/session-settings#table_function_remote_max_addresses) setting.
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}});
     factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {.description = R"DOC(Like the remote table function, but establishes a TLS-encrypted (secure) connection to the remote server.)DOC", .category = FunctionDocumentation::Category::TableFunction}});
     factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {.description = R"DOCS_MD(
@@ -293,10 +284,10 @@ All available clusters are listed in the [system.clusters](/reference/system-tab
 ## Syntax {#syntax}
 
 ```sql
-cluster(['cluster_name', db.table, sharding_key][, SETTINGS name = value, ...])
-cluster(['cluster_name', db, table, sharding_key][, SETTINGS name = value, ...])
-clusterAllReplicas(['cluster_name', db.table, sharding_key][, SETTINGS name = value, ...])
-clusterAllReplicas(['cluster_name', db, table, sharding_key][, SETTINGS name = value, ...])
+cluster(['cluster_name', db.table, sharding_key])
+cluster(['cluster_name', db, table, sharding_key])
+clusterAllReplicas(['cluster_name', db.table, sharding_key])
+clusterAllReplicas(['cluster_name', db, table, sharding_key])
 ```
 ## Arguments {#arguments}
 
@@ -305,15 +296,14 @@ clusterAllReplicas(['cluster_name', db, table, sharding_key][, SETTINGS name = v
 | `cluster_name`              | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers, set `default` if not specified. |
 | `db.table` or `db`, `table` | Name of a database and a table.                                                                                                                   |
 | `sharding_key`              | A sharding key. Optional. Needs to be specified if the cluster has more than one shard.                                                           |
-| `SETTINGS name = value, ...` | Settings of the Distributed table created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. |
 
-## Returned value {#returned-value}
+## Returned value {#returned_value}
 
 The dataset from clusters.
 
-## Using macros {#using-macros}
+## Using macros {#using_macros}
 
-`cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](/reference/settings/server-settings/settings/other#macros) section of the server configuration file.
+`cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](/reference/settings/server-settings/settings#macros) section of the server configuration file.
 
 Example:
 
@@ -335,8 +325,8 @@ Connection settings like `host`, `port`, `user`, `password`, `compression`, `sec
 
 ## Related {#related}
 
-- [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
-- [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing)
+- [skip_unavailable_shards](/reference/settings/session-settings#skip_unavailable_shards)
+- [load_balancing](/reference/settings/session-settings#load_balancing)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
     factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.description = R"DOC(Like the cluster table function, but queries all replicas of every shard in the cluster instead of a single replica per shard.)DOC", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true}});
 }

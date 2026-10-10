@@ -231,7 +231,7 @@ See [here](https://clickhouse.com/blog/real-world-data-noaa-climate-data#load-th
 
 ```sql
 INSERT INTO noaa SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/noaa/noaa_enriched.parquet', NOSIGN)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/noaa/noaa_enriched.parquet')
 
 ```
 For how to speed this up, see our blog post on [tuning large data loads](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2).

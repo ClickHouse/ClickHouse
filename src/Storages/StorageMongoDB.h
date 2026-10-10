@@ -34,9 +34,11 @@ public:
     MongoDBInstanceHolder(MongoDBInstanceHolder const &) = delete;
     void operator=(MongoDBInstanceHolder const &) = delete;
 
-    /// Defined out of line: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static MongoDBInstanceHolder & instance();
+    static MongoDBInstanceHolder & instance()
+    {
+        static MongoDBInstanceHolder instance;
+        return instance;
+    }
 
     ~MongoDBInstanceHolder()
     {
@@ -60,6 +62,10 @@ private:
 
 struct MongoDBConfiguration
 {
+    /// Declared first: the driver requires the instance to exist before any other driver object is created,
+    /// and a URI parsed on another thread while the instance installs its log handler races in `mongoc_log`.
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
+
     std::unique_ptr<mongocxx::uri> uri;
     String collection;
     std::unordered_set<String> oid_fields = {"_id"};
@@ -110,8 +116,6 @@ public:
         size_t num_streams) override;
 
 private:
-    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
-
     std::optional<bsoncxx::document::value> visitWhereConstant(
         const ContextPtr & context,
         const ConstantNode * const_node,

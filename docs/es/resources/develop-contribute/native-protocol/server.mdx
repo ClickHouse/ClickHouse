@@ -30,17 +30,17 @@ Los paquetes `Data`, `Totals` y `Extremes` pueden comprimirse.
   ## Hello
 </div>
 
-Respuesta a [Client hello](/es/resources/develop-contribute/native-protocol/client#hello).
+Respuesta a [client hello](/es/resources/develop-contribute/native-protocol/client#hello).
 
-| campo             | tipo    | valor                        | descripción                     |
-| ----------------- | ------- | ---------------------------- | ------------------------------- |
-| name              | String  | `ClickHouse`                 | Nombre del servidor             |
-| version&#95;major | UVarInt | `21`                         | Versión principal del servidor  |
-| version&#95;minor | UVarInt | `12`                         | Versión secundaria del servidor |
-| revision          | UVarInt | `54452`                      | Revisión del servidor           |
-| tz                | String  | `Europe/Moscow`              | Zona horaria del servidor       |
-| display&#95;name  | String  | `<display_name-or-hostname>` | Nombre del servidor para la UI  |
-| version&#95;patch | UVarInt | `3`                          | Versión de parche del servidor  |
+| campo             | tipo    | valor           | descripción                     |
+| ----------------- | ------- | --------------- | ------------------------------- |
+| name              | String  | `Clickhouse`    | Nombre del servidor             |
+| version&#95;major | UVarInt | `21`            | Versión principal del servidor  |
+| version&#95;minor | UVarInt | `12`            | Versión secundaria del servidor |
+| revision          | UVarInt | `54452`         | Revisión del servidor           |
+| tz                | String  | `Europe/Moscow` | Zona horaria del servidor       |
+| display&#95;name  | String  | `Clickhouse`    | Nombre del servidor para la UI  |
+| version&#95;patch | UVarInt | `3`             | Versión de parche del servidor  |
 
 <div id="exception">
   ## Excepción
@@ -58,7 +58,7 @@ Excepción del servidor durante el procesamiento de la consulta.
 
 Puede ser una secuencia continua de excepciones hasta que `nested` sea `false`.
 
-[codes]: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp "Lista de códigos de error"
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "Lista de códigos de error"
 
 <div id="progress">
   ## Progress

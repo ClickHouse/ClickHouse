@@ -13,7 +13,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/saturatedDuration.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
@@ -31,7 +30,7 @@ namespace Setting
 namespace DatabaseReplicatedSetting
 {
     extern const DatabaseReplicatedSettingsBool check_consistency;
-    extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
+    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
     extern const DatabaseReplicatedSettingsUInt64 max_retries_before_automatic_recovery;
     extern const DatabaseReplicatedSettingsUInt64 wait_entry_commited_timeout_sec;
     extern const DatabaseReplicatedSettingsBool allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views;
@@ -293,9 +292,9 @@ void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
     DDLWorker::scheduleTasks(reinitialized);
     if (need_update_cached_cluster)
     {
-        database->updateCluster(false /* all_groups */, true /* force_overwrite */);
+        database->setCluster(database->getClusterImpl());
         if (!database->replica_group_name.empty())
-            database->updateCluster(true /* all_groups */, true /* force_overwrite */);
+            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
         need_update_cached_cluster = false;
     }
 }
@@ -362,7 +361,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     {
         std::unique_lock lock{mutex};
         LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
-        bool processed = wait_current_task_change.wait_for(lock, saturatedMilliseconds(timeout_ms), [&]()
+        bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
         {
             return zookeeper->expired() || current_task >= max_log || stop_flag;
         });
@@ -479,7 +478,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     {
         std::unique_lock lock{mutex};
-        bool processed = wait_current_task_change.wait_for(lock, saturatedSeconds(timeout), [&]()
+        bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
         {
             chassert(zookeeper->expired() || current_task <= entry_name);
 
@@ -539,7 +538,7 @@ static bool getRMVCoordinationInfo(
         return false;
     auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
-    if (!refresh || refresh->isAppend())
+    if (!refresh || refresh->append)
         return false;
     const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
     if (!mv)

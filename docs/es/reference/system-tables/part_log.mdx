@@ -15,7 +15,7 @@ import SystemTableCloud from '/snippets/es/_system_table_cloud.mdx';
   ## Descripción
 </div>
 
-La tabla `system.part_log` se crea solo si se ha especificado la configuración del servidor [part&#95;log](/es/reference/settings/server-settings/settings/other#part_log).
+La tabla `system.part_log` se crea solo si se ha especificado la configuración del servidor [part&#95;log](/es/reference/settings/server-settings/settings#part_log).
 
 Esta tabla contiene información sobre eventos ocurridos con las [partes de datos](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key) en las tablas de la familia [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree), como la adición o la fusión de datos.
 
@@ -43,7 +43,7 @@ La tabla `system.part_log` contiene las siguientes columnas:
 * `partition_id` ([String](/es/reference/data-types/string)) — ID de la partición en la que se insertó la parte de datos. La columna toma el valor `all` si la partición se define mediante `tuple()`.
 * `partition` ([String](/es/reference/data-types/string)) — El nombre de la partición.
 * `part_type` ([String](/es/reference/data-types/string)) — El tipo de la parte. Posibles valores: Wide y Compact.
-* `part_storage_type` ([String](/es/reference/data-types/string)) — El tipo de `DataPartStorage`. Valores posibles: `Packed` - la mayoría de los archivos de la parte se almacenan en un único archivo (las proyecciones y algunos archivos de servicio como `txn_version.txt` se escriben por separado), `Full` - cada archivo se almacena por separado.
+* `part_storage_type` ([String](/es/reference/data-types/string)) — El tipo de DataPartStorage. Valores posibles: Packed - todos los archivos se almacenan en un solo blob, Full - un blob por archivo.
 * `disk_name` ([String](/es/reference/data-types/string)) — El nombre del disco en el que reside la parte de datos.
 * `path_on_disk` ([String](/es/reference/data-types/string)) — Ruta absoluta de la carpeta que contiene los archivos de la parte de datos.
 * `rows` ([UInt64](/es/reference/data-types/int-uint)) — El número de filas en la parte de datos.
@@ -97,16 +97,15 @@ part_name:               all_1_7_1
 partition_id:            all
 partition:               tuple()
 part_type:               Wide
-part_storage_type:       Full
 disk_name:               default
 path_on_disk:            ./data/store/1ad/1ad33424-f5f5-402b-ac03-ec82282634ab/all_1_7_1/
-rows:                    3285726 -- 3.29 million
-size_in_bytes:           438968542 -- 438.97 million
+rows:                    3285726 -- 3,29 millones
+size_in_bytes:           438968542 -- 438,97 millones
 merged_from:             ['all_1_1_0','all_2_2_0','all_3_3_0','all_4_4_0','all_5_5_0','all_6_6_0','all_7_7_0']
-bytes_uncompressed:      1373137767 -- 1.37 billion
-read_rows:               3285726 -- 3.29 million
-read_bytes:              1429206946 -- 1.43 billion
-peak_memory_usage:       303611887 -- 303.61 million
+bytes_uncompressed:      1373137767 -- 1,37 mil millones
+read_rows:               3285726 -- 3,29 millones
+read_bytes:              1429206946 -- 1,43 mil millones
+peak_memory_usage:       303611887 -- 303,61 millones
 error:                   0
 exception:
 mutation_ids:

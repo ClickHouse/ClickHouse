@@ -39,7 +39,9 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 * На вашем компьютере установлен Docker
 
 <Steps>
-  <Step title="Настройка структуры каталогов и тестовой среды" id="set-up">
+  <Step>
+    ## Настройка структуры каталогов и тестовой среды
+
     <ExampleFiles />
 
     В этом руководстве вы будете использовать [Docker compose](https://docs.docker.com/compose/) для
@@ -52,12 +54,12 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     mkdir cluster_1S_2R
     cd cluster_1S_2R
 
-    # Create clickhouse-keeper directories
+    # Создание директорий clickhouse-keeper
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Create clickhouse-server directories
+    # Создание директорий clickhouse-server
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -141,7 +143,9 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step title="Настройка узлов ClickHouse" id="configure-clickhouse-servers">
+  <Step>
+    ## Настройка узлов ClickHouse
+
     ### Настройка сервера
 
     Теперь измените каждый пустой файл конфигурации `config.xml`, расположенный по пути
@@ -250,11 +254,11 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-        <!-- cluster name (should not contain dots) -->
+        <!-- имя кластера (не должно содержать точек) -->
         <cluster_1S_2R>
             <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
             <shard>
-                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
+                <!-- Необязательно. Записывать ли данные только на одну из реплик. По умолчанию: false (записывать данные на все реплики). -->
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>clickhouse-01</host>
@@ -377,7 +381,9 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step title="Настройка ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
+  <Step>
+    ## Настройка ClickHouse Keeper
+
     ### Настройка Keeper
 
     <KeeperConfig />
@@ -393,7 +399,9 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step title="Проверьте настройку" id="test-the-setup">
+  <Step>
+    ## Проверьте настройку
+
     Убедитесь, что Docker запущен на вашем компьютере.
     Запустите кластер командой `docker-compose up` из корневого каталога `cluster_1S_2R`:
 
@@ -418,7 +426,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     следующий запрос. Ниже показана команда для подключения к первому узлу:
 
     ```bash
-    # Connect to any node
+    # Подключитесь к любому узлу
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -472,7 +480,9 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     На следующем шаге вы создадите таблицу в кластере.
   </Step>
 
-  <Step title="Создайте базу данных" id="creating-a-database">
+  <Step>
+    ## Создайте базу данных
+
     Теперь, когда вы убедились, что cluster настроен правильно и работает,
     вам предстоит заново создать ту же table, которая использовалась в обучающем
     примере набора данных [UK property prices](/ru/get-started/sample-datasets/uk-price-paid).
@@ -511,7 +521,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ON CLUSTER cluster_1S_2R;
     ```
 
-    Вы можете снова выполнить тот же запрос, что и раньше, в клиенте на каждом хосте,
+    Вы можете снова выполнить тот же запрос, что и раньше, из клиента на каждом хосте,
     чтобы убедиться, что база данных была создана во всём кластере, хотя
     запрос был выполнен только на `clickhouse-01`:
 
@@ -530,7 +540,9 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step title="Создайте таблицу на кластере" id="creating-a-table">
+  <Step>
+    ## Создайте таблицу на кластере
+
     Теперь, когда база данных создана, создайте таблицу на кластере.
     Выполните следующий запрос на любом из клиентских хостов:
 
@@ -582,7 +594,9 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step title="Вставка данных" id="inserting-data">
+  <Step>
+    ## Вставка данных
+
     Поскольку набор данных велик и его полный приём занимает несколько минут, для начала мы вставим лишь небольшое подмножество.
 
     Вставьте меньшее подмножество данных, используя приведённый ниже запрос на `clickhouse-01`:
@@ -697,7 +711,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-       ┌─id─┬─name───────────────┐
+    ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -716,7 +730,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-       ┌─id─┬─name───────────────┐
+    ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -771,8 +785,8 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-       ┌──count()─┐
-    1. │ 30212555 │ -- 30.21 million
+    ┌──count()─┐
+    1. │ 30212555 │ -- 30,21 миллиона
        └──────────┘
     ```
   </Step>

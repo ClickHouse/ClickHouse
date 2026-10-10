@@ -53,9 +53,9 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
 
 In this format, all data is represented as a single JSON Array.
 
-<Note>
+:::note
 The `JSONCompactColumns` output format buffers all data in memory to output it as a single block which can lead to high memory consumption.
-</Note>
+:::
 
 ## Example usage {#example-usage}
 
@@ -103,7 +103,7 @@ The output will be in JSON format:
 ]
 ```
 
-Columns that are not present in the block will be filled with default values (you can use [`input_format_defaults_for_omitted_fields`](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) setting here)
+Columns that are not present in the block will be filled with default values (you can use [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
 
 ## Format settings {#format-settings}
 )DOCS_MD"});
