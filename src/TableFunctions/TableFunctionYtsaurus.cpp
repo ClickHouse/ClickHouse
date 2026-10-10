@@ -67,7 +67,7 @@ StoragePtr TableFunctionYTsaurus::executeImpl(
     bool is_insert_query) const
 {
     if (!context->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_function])
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function ytsaurus is experimental."
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function ytsaurus is experimental. "
                 "Set `allow_experimental_ytsaurus_table_function` setting to enable it");
 
     auto columns = getActualTableStructure(context, is_insert_query);
@@ -165,7 +165,9 @@ A table with the specified structure for reading data in the specified ytsaurus 
 **See Also**
 
 - [ytsaurus engine](/reference/engines/table-engines/integrations/ytsaurus)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        /// ytsaurus('http_proxy_url', 'cypress_path', 'oauth_token', 'structure')
+        SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"oauth_token"}});
 }
 
 }

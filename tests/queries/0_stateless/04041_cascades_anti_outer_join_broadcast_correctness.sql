@@ -13,7 +13,6 @@ SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 -- The test profile installed in CI sets a non-zero max_rows_to_group_by, which keeps
 -- aggregations local.  Pin it to 0 so distributed two-phase aggregation is exercised.
@@ -73,7 +72,7 @@ EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey;
 
 SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
@@ -86,7 +85,7 @@ EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey;
 
 SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
@@ -98,7 +97,7 @@ EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey;
 
 SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;

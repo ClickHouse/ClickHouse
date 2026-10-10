@@ -40,3 +40,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 对配置参数所做的更改通常会在一分钟内保存到实例。某些参数需要重启数据库后才会生效。这些更改将在下次重启后应用，你可以从 **Service actions** 工具栏手动触发重启。
 
 请参阅有关配置参数的官方[文档](https://www.postgresql.org/docs/current/runtime-config.html)。可设置的参数列表很快会进一步扩展。在此期间，如果你需要当前尚不支持的参数，请联系[支持团队](https://clickhouse.com/support/program)提出申请。
+
+<div id="scheduled-upgrades">
+  ## 计划升级
+</div>
+
+您还可以在**配置**部分控制平台维护的执行时间，包括 PostgreSQL 次要版本升级、托管服务功能更新和操作系统补丁。请在**计划升级**小节中选择**配置计划**，设置一个两小时的 UTC 时间窗口，并可选择允许执行升级的星期几。
+
+有关可用时间窗口，以及计划升级涵盖和不涵盖的内容，请参阅[计划升级](/zh/products/managed-postgres/upgrades#scheduled-upgrades)。

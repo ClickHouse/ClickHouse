@@ -162,6 +162,24 @@ Aqui, as 4096 dimensões são divididas em 4 grupos de 1024. As subcolunas segue
 
 Para executar uma busca em dimensão reduzida, passe o número de dimensões a serem lidas como o quarto argumento das funções de distância transpostas (veja abaixo). O vetor de referência deve ter pelo menos essa quantidade de elementos (quaisquer elementos extras ao final são ignorados), e o valor deve ser um múltiplo de `stride`.
 
+<div id="qbit-element-access">
+  ## Acesso a elementos e fatiamento
+</div>
+
+[`arrayElement`](/pt-BR/reference/functions/regular-functions/array-functions#arrayElement) (e o operador `vec[n]`) retorna o enésimo elemento do vetor, reconstruído com a precisão total do tipo de elemento. Apenas os planos de bits do grupo de stride que contém o elemento são lidos. [`arraySlice`](/pt-BR/reference/functions/regular-functions/array-functions#arraySlice) retorna um `QBit` com as dimensões selecionadas (uma projeção para um subconjunto de dimensões); o deslocamento e o comprimento devem ser constantes, pois a dimensão de um `QBit` faz parte do seu tipo. Um fatiamento alinhado aos limites dos grupos de stride preserva o stride e reutiliza os fluxos de planos de bits armazenados sem copiá-los:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
+
 <div id="vector-search-functions">
   ## Funções de busca vetorial
 </div>

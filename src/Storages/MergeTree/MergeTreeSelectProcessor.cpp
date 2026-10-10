@@ -24,18 +24,30 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace
 {
+
+/// Identifies which replica a span belongs to: the callbacks of the initiator-local replica run
+/// on the initiator, so the host of the span alone is not enough.
+struct ReplicaSpanIdentity
+{
+    size_t replica_num = 0;
+    size_t replicas_count = 0;
+    String stream_id;
+};
 
 template <typename Func>
 struct TelemetryWrapper
 {
-    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_)
-        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_))
+    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_, ReplicaSpanIdentity identity_)
+        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_)), identity(std::move(identity_))
     {
     }
 
@@ -43,6 +55,13 @@ struct TelemetryWrapper
     auto operator()(Args &&... args)
     {
         DB::OpenTelemetry::SpanHolder span(span_name);
+        /// Attributes are built only for a traced query.
+        if (span.isTraceEnabled())
+        {
+            span.addAttribute("clickhouse.replica_num", identity.replica_num);
+            span.addAttribute("clickhouse.replicas_count", identity.replicas_count);
+            span.addAttributeIfNotEmpty("clickhouse.stream_id", identity.stream_id);
+        }
         DB::ProfileEventTimeIncrement<DB::Time::Microseconds> increment(event);
         return callback(std::forward<Args>(args)...);
     }
@@ -51,6 +70,7 @@ private:
     Func callback;
     ProfileEvents::Event event;
     std::string span_name;
+    ReplicaSpanIdentity identity;
 };
 
 }
@@ -85,11 +105,13 @@ ParallelReadingExtension::ParallelReadingExtension(
     , total_nodes_count(total_nodes_count_)
     , stream_id(std::move(stream_id_))
 {
+    ReplicaSpanIdentity identity{.replica_num = number_of_current_replica, .replicas_count = total_nodes_count, .stream_id = stream_id};
+
     all_callback = TelemetryWrapper<MergeTreeAllRangesCallback>{
-        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement"};
+        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement", identity};
 
     callback = TelemetryWrapper<MergeTreeReadTaskCallback>{
-        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
+        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest", std::move(identity)};
 }
 
 std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
@@ -150,6 +172,38 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     return index_read_result;
 }
 
+/// A mark that the primary key skips against the top-K threshold has all its rows beyond the threshold, so the
+/// `__topKFilter` would have dropped all of them. With the filter as a conjunct of the PREWHERE, the mark does not
+/// match the PREWHERE either, and the query condition cache entry of the PREWHERE is salted with the top-K plan
+/// (see `MergeTreeSelectProcessor::read`), so it is only reused by the same plan over the same parts.
+static bool prewhereFiltersByTopKThreshold(const PrewhereInfoPtr & prewhere_info, const MergeTreeReaderSettings & reader_settings)
+{
+    if (!prewhere_info || !reader_settings.query_condition_cache_top_k_salt)
+        return false;
+
+    const ActionsDAG::Node * output = nullptr;
+    for (const auto * node : prewhere_info->prewhere_actions.getOutputs())
+    {
+        if (node->result_name == prewhere_info->prewhere_column_name)
+        {
+            output = node;
+            break;
+        }
+    }
+    if (!output || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+        return false;
+
+    auto is_top_k_filter = [](const ActionsDAG::Node * node)
+    {
+        return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "__topKFilter";
+    };
+    if (is_top_k_filter(output))
+        return true;
+    if (output->type != ActionsDAG::ActionType::FUNCTION || output->function_base->getName() != "and")
+        return false;
+    return std::ranges::any_of(output->children, is_top_k_filter);
+}
+
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     MergeTreeReadPoolPtr pool_,
     MergeTreeSelectAlgorithmPtr algorithm_,
@@ -173,8 +227,10 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
           reader_settings_.force_short_circuit_execution,
+          reader_settings_.read_ahead_prewhere_columns,
           columns_))
     , reader_settings(reader_settings_)
+    , prewhere_filters_by_top_k_threshold(prewhereFiltersByTopKThreshold(prewhere_info, reader_settings))
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
@@ -202,6 +258,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const ExpressionActionsSettings & actions_settings,
     bool enable_multiple_prewhere_read_steps,
     bool force_short_circuit_execution,
+    bool read_ahead_prewhere_columns,
     const ColumnsDescription * columns)
 {
     PrewhereExprInfo prewhere_actions;
@@ -235,7 +292,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     }
 
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns)))
     {
         PrewhereExprStep prewhere_step
         {
@@ -307,7 +364,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// still have been fully filtered out. Record those granules immediately so that
             /// future queries can skip them without waiting for an entire batch to be zero.
             if (prewhere_info && !res.unmatched_mark_ranges.empty()
-                && !current_task.readersChainCanSkipMarksBeforePrewhere()
+                && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                 && !current_task.appliesMutationsBeforePrewhere()
                 && !row_level_filter)
                 current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
@@ -328,7 +385,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     /// on the query PREWHERE hash, so a mark hidden by a row policy would be wrongly attributed to the
     /// PREWHERE predicate and read by a later query without that policy.
     if (reader_settings.use_query_condition_cache && prewhere_info
-        && !current_task.readersChainCanSkipMarksBeforePrewhere()
+        && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
         && !current_task.appliesMutationsBeforePrewhere()
         && !row_level_filter)
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
@@ -416,7 +473,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
                 /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
                 if (reader_settings.use_query_condition_cache && task && prewhere_info
-                    && !task->readersChainCanSkipMarksBeforePrewhere()
+                    && !task->readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                     && !task->appliesMutationsBeforePrewhere()
                     && !row_level_filter
                     /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
@@ -426,8 +483,26 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     {
                         if (output->result_name == prewhere_info->prewhere_column_name)
                         {
+                            /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+                            /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
+                            /// `unsigned long long`).
+                            size_t condition_hash = queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt);
                             if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
+                            {
+                                /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the
+                                /// granules it drops depend on the running threshold. They can still be
+                                /// recorded: for a fixed plan and data the threshold only tightens, so a
+                                /// granule with no surviving rows has no row that could have reached the
+                                /// final top-N. The entry is keyed with the TopK plan salt (mirroring the
+                                /// WHERE write path in `updateQueryConditionCache` and the consult in
+                                /// `filterPartsByQueryConditionCache`), so only the same TopK plan, part set,
+                                /// and post-PREWHERE predicate ever reuses it. Any other non-deterministic
+                                /// condition must not be cached at all.
+                                if (!reader_settings.query_condition_cache_top_k_salt
+                                    || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(output))
+                                    break;
+                                boost::hash_combine(condition_hash, *reader_settings.query_condition_cache_top_k_salt);
+                            }
 
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             const auto & data_part_info = task->getInfo().data_part_info;
@@ -439,7 +514,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 /// QueryConditionCache is a coordinator feature; concrete part present here.
                                 data_part_info->getDataPart()->storage.getStorageID().uuid,
                                 part_name,
-                                output->getHash(),
+                                condition_hash,
                                 prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part_info->getIndexGranularity().getMarksCount(),

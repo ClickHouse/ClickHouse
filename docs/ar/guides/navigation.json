@@ -4,8 +4,9 @@
       "group": "أدلة ClickHouse",
       "pages": [
         "ar/guides/clickhouse/index",
+        "ar/guides/clickhouse/kusto-query-language",
         {
-          "group": "تنسيقات البيانات",
+          "group": "صيغ البيانات",
           "pages": [
             "ar/guides/clickhouse/data-formats/intro",
             "ar/guides/clickhouse/data-formats/csv-tsv",
@@ -54,7 +55,16 @@
         {
           "group": "الأداء والمراقبة",
           "pages": [
-            "ar/guides/clickhouse/performance-and-monitoring/query-optimization",
+            {
+              "group": "تحسين الاستعلامات",
+              "pages": [
+                "ar/guides/clickhouse/performance-and-monitoring/query-optimization",
+                "ar/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
+                "ar/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks",
+                "ar/guides/clickhouse/performance-and-monitoring/optimization-approaches",
+                "ar/guides/clickhouse/performance-and-monitoring/query-optimization-example"
+              ]
+            },
             "ar/guides/clickhouse/performance-and-monitoring/analyzer",
             "ar/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
             "ar/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
@@ -62,7 +72,7 @@
         },
         {
           "expanded": false,
-          "group": "أمثلة على مُعدِّلات الدوال التجميعية",
+          "group": "أمثلة على معدِّلات دوال التجميع",
           "pages": [
             "ar/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
             "ar/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -94,7 +104,7 @@
         },
         "ar/guides/oss/update",
         {
-          "group": "أفضل ممارسات OSS",
+          "group": "أفضل ممارسات النسخة مفتوحة المصدر",
           "pages": [
             "ar/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "ar/guides/oss/best-practices/tips"
@@ -102,7 +112,7 @@
         },
         {
           "expanded": false,
-          "group": "النشر والتوسع",
+          "group": "النشر والتوسّع",
           "pages": [
             "ar/guides/oss/deployment-and-scaling/terminology",
             "ar/guides/oss/deployment-and-scaling/shards",
@@ -144,7 +154,7 @@
       "pages": [
         "ar/guides/use-cases/index",
         {
-          "group": "التحليلات اللحظية",
+          "group": "التحليلات في الوقت الفعلي",
           "pages": [
             {
               "expanded": false,
@@ -163,13 +173,13 @@
           ]
         },
         {
-          "group": "أوبزرفابيليتي",
+          "group": "إمكانية المراقبة",
           "pages": [
             "ar/guides/use-cases/observability/index",
             "ar/guides/use-cases/observability/cloud-monitoring",
             "ar/guides/use-cases/observability/self-managed-monitoring",
             {
-              "group": "أنشئه بنفسك",
+              "group": "أنشئ حلك الخاص",
               "pages": [
                 "ar/guides/use-cases/observability/build-your-own/index",
                 "ar/guides/use-cases/observability/build-your-own/introduction",
@@ -206,6 +216,7 @@
                 "ar/guides/use-cases/data-warehousing/nessie-catalog",
                 "ar/guides/use-cases/data-warehousing/onelake-catalog",
                 "ar/guides/use-cases/data-warehousing/polaris-catalog",
+                "ar/guides/use-cases/data-warehousing/horizon-catalog",
                 "ar/guides/use-cases/data-warehousing/rest-catalog",
                 "ar/guides/use-cases/data-warehousing/seaweedfs-catalog",
                 "ar/guides/use-cases/data-warehousing/unity-catalog",
@@ -216,11 +227,12 @@
           ]
         },
         {
-          "group": "الذكاء الاصطناعي/تعلّم الآلة",
+          "group": "الذكاء الاصطناعي وتعلّم الآلة",
           "pages": [
             "ar/guides/use-cases/ai-ml/index",
             "ar/guides/use-cases/ai-ml/vector-search",
             "ar/guides/use-cases/ai-ml/ai-powered-sql-generation",
+            "ar/guides/use-cases/ai-ml/import-langfuse-trace-data",
             {
               "group": "استكشاف البيانات",
               "pages": [
@@ -242,21 +254,21 @@
                   "group": "مكتبات وكلاء الذكاء الاصطناعي",
                   "pages": [
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
-                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
-                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
-                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
-                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
-                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
-                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
-                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
                   ]
                 }
               ]
@@ -267,5 +279,5 @@
     }
   ],
   "icon": "/images/icons/icon-guides.svg",
-  "item": "الأدلة"
+  "item": "أدلة إرشادية"
 }

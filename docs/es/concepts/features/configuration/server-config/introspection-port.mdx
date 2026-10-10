@@ -1,0 +1,60 @@
+---
+description: 'Un puerto de protocolo nativo que atiende consultas mientras el servidor se inicia o se apaga, cuando los puertos habituales no aceptan conexiones.'
+sidebarTitle: 'Puerto de introspección'
+slug: /operations/introspection-port
+title: 'Puerto de introspección'
+doc_type: 'reference'
+---
+
+Cuando `clickhouse-server` se bloquea durante el inicio o el apagado, los puertos habituales no aceptan conexiones y no se le puede preguntar al servidor qué está haciendo.
+
+Un puerto de introspección es un listener TCP de protocolo nativo que se inicia antes de que el servidor comience a adjuntar tablas y se detiene únicamente después de que finalice la desvinculación de las tablas. Durante estos intervalos, un operador puede conectarse a él con un `clickhouse-client` estándar y ejecutar consultas como `SHOW PROCESSLIST`, `SELECT * FROM system.stack_trace` o `SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5`.
+
+<div id="configuration">
+  ## Configuración
+</div>
+
+Un puerto de introspección es un endpoint de [protocolo componible](/es/concepts/features/configuration/server-config/composable-protocols) marcado con `<introspection>true</introspection>`. De forma predeterminada, no hay ningún puerto de introspección configurado:
+
+```xml
+<protocols>
+    <introspection_native>
+        <type>tcp</type>
+        <introspection>true</introspection>
+        <description>introspection native protocol (tcp)</description>
+        <host>127.0.0.1</host>
+        <port>9010</port>
+    </introspection_native>
+
+    <introspection_native_secure>
+        <type>tls</type>
+        <impl>introspection_native</impl>
+        <introspection>true</introspection>
+        <description>secure introspection native protocol (tcp_secure)</description>
+        <host>127.0.0.1</host>
+        <port>9011</port>
+    </introspection_native_secure>
+</protocols>
+```
+
+Como endpoint de protocolo componible normal, admite todo lo que admite un endpoint: `host`, `port`, `description`, una lista de permitidos de `networks`, `default_database` y el encapsulamiento en capas `tls` y `proxy1`.
+
+El indicador `introspection` es una propiedad del endpoint —la entrada que incluye el `port`— y no se hereda mediante referencias `impl`, por lo que una capa puede compartirse entre un endpoint de introspección y uno normal.
+
+La pila debe terminar en una capa `tcp`, ya que la semántica descrita a continuación la implementa el controlador del protocolo nativo. Marcar un endpoint cuya pila contiene una capa `http`, `mysql`, `postgres`, `prometheus` o `interserver` se rechaza con `INVALID_CONFIG_PARAMETER` al inicio, en lugar de generar un puerto que deje de responder justo cuando se necesite.
+
+| Clave           | Descripción                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `introspection` | Marca un endpoint de protocolo componible como puerto de introspección. Predeterminado: `false`. |
+
+<div id="behavior">
+  ## Comportamiento
+</div>
+
+* Las consultas permitidas son `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `KILL QUERY`, `SYSTEM`, `SET` y `USE`. El resto, incluidas las sentencias DDL y las consultas que modifican datos, se rechaza con `QUERY_IS_PROHIBITED`, ya que el puerto permanece abierto mientras el servidor aún no se ha inicializado por completo o se está apagando.
+* `SYSTEM RELOAD CONFIG` y `SYSTEM RELOAD USERS` se rechazan con `QUERY_IS_PROHIBITED` hasta que el servidor se haya iniciado por completo, ya que recargar la configuración durante el inicio puede alterar el orden de inicialización.
+* Las consultas en estos puertos omiten `max_concurrent_queries` y el planificador de cargas de trabajo, igual que `SHOW PROCESSLIST`.
+* Las conexiones son atendidas por un grupo de subprocesos dedicado, por lo que el agotamiento del grupo de conexiones habitual no afecta a estos puertos. El tamaño del grupo se determina mediante `max_connections`.
+* Las conexiones se aceptan incluso cuando el servidor rechaza conexiones habituales debido a una sobrecarga de CPU.
+* Se aplican la autenticación y la autorización habituales: conectarse a este puerto no concede derechos de acceso adicionales. Sin embargo, se eliminan los límites de concurrencia mencionados anteriormente, por lo que debe enlazarlo a una dirección a la que solo puedan acceder los operadores.
+* Estos puertos no están sujetos a `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (incluidos `ALL` y `CUSTOM`) ni se reconfiguran al recargar la configuración.
