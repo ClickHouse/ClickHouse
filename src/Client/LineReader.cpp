@@ -17,7 +17,7 @@ namespace
 /// Trim ending whitespace inplace
 void trim(String & s)
 {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
 struct NoCaseCompare
@@ -26,7 +26,7 @@ struct NoCaseCompare
     {
         return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char c1, const char c2)
         {
-            return std::tolower(c1) < std::tolower(c2);
+            return std::tolower(static_cast<unsigned char>(c1)) < std::tolower(static_cast<unsigned char>(c2));
         });
     }
 };
