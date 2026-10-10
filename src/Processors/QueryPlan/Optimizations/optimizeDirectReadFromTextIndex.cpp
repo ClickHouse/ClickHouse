@@ -668,8 +668,8 @@ private:
                 = !require_index_analyzed_predicate || isIndexAnalyzedPredicate(index_name, info, canonical_node);
 
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`) and has no
-            /// patched parts. Otherwise just inject the tokenizer/preprocessor/postprocessor (no virtual column),
-            /// same as None mode.
+            /// patched parts. Otherwise, or if the query has no virtual column, just inject the
+            /// tokenizer/preprocessor/postprocessor, same as None mode.
             if (!direct_read_from_text_index || !info.index || info.has_patched_parts || drops_nullable
                 || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
@@ -679,10 +679,7 @@ private:
             }
 
             auto virtual_column_name = text_index_condition.replaceToVirtualColumn(*search_query, index_name);
-            if (!virtual_column_name)
-                continue;
-
-            selected_conditions.emplace_back(search_query, index_name, *virtual_column_name, &info, is_index_analyzed);
+            selected_conditions.emplace_back(search_query, index_name, virtual_column_name.value_or(String{}), &info, is_index_analyzed);
             used_index_columns.insert(index_header.begin()->name);
         }
 
