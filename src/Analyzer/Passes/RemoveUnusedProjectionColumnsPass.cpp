@@ -5,6 +5,8 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/InterpolateNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
@@ -36,6 +38,61 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     }
 
     return result;
+}
+
+bool containsExpression(const QueryTreeNodePtr & node, const IQueryTreeNode & expression)
+{
+    if (node->isEqual(expression, {.compare_aliases = false}))
+        return true;
+
+    for (const auto & child : node->getChildren())
+        if (child && containsExpression(child, expression))
+            return true;
+
+    return false;
+}
+
+/// An INTERPOLATE expression reads the interpolated values of the targets whose expressions it contains.
+void addInterpolateTargetsReadByUsedTargets(const QueryNode & query_node, std::unordered_set<size_t> & used_projection_columns_indexes)
+{
+    const auto & projection_columns = query_node.getProjectionColumns();
+    std::unordered_map<std::string, size_t> projection_index_by_name;
+    std::unordered_set<std::string> used_names;
+    for (size_t i = 0; i < projection_columns.size(); ++i)
+    {
+        projection_index_by_name.emplace(projection_columns[i].name, i);
+        if (used_projection_columns_indexes.contains(i))
+            used_names.insert(projection_columns[i].name);
+    }
+
+    const auto & interpolate_nodes = query_node.getInterpolate()->as<const ListNode &>().getNodes();
+    std::vector<const InterpolateNode *> readers;
+    for (const auto & node : interpolate_nodes)
+    {
+        const auto & interpolate_node = node->as<const InterpolateNode &>();
+        if (used_names.contains(interpolate_node.getExpressionName()))
+            readers.push_back(&interpolate_node);
+    }
+
+    while (!readers.empty())
+    {
+        const auto * reader = readers.back();
+        readers.pop_back();
+
+        for (const auto & node : interpolate_nodes)
+        {
+            const auto & target = node->as<const InterpolateNode &>();
+            auto it = projection_index_by_name.find(target.getExpressionName());
+            if (it == projection_index_by_name.end() || used_names.contains(target.getExpressionName())
+                || target.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT
+                || !containsExpression(reader->getInterpolateExpression(), *target.getExpression()))
+                continue;
+
+            used_projection_columns_indexes.insert(it->second);
+            used_names.insert(target.getExpressionName());
+            readers.push_back(&target);
+        }
+    }
 }
 
 /// We cannot remove aggregate functions, if query does not contain GROUP BY or arrayJoin from subquery projection
@@ -88,6 +145,9 @@ void updateUsedProjectionIndexes(const QueryTreeNodePtr & query_or_union_node, s
         if ((!query_node.hasGroupBy() && hasAggregateFunctionNodes(projection_node)) || hasFunctionNode(projection_node, "arrayJoin"))
             used_projection_columns_indexes.insert(i);
     }
+
+    if (query_node.hasInterpolate())
+        addInterpolateTargetsReadByUsedTargets(query_node, used_projection_columns_indexes);
 }
 
 }
