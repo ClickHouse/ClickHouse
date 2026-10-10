@@ -46,6 +46,10 @@ protected:
 
     void addChunk();
 
+    /// Frees the memory of all chunks and leaves the buffer empty.
+    /// Used when the chunks are dropped without going through ~MemoryWriteBuffer.
+    void freeChunks();
+
     friend class ReadBufferFromMemoryWriteBuffer;
 };
 

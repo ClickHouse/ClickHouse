@@ -201,7 +201,8 @@ private:
 
 using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
-MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
+MutableDataPartStoragePtr createTemporaryTextIndexStorage(
+    const DiskPtr & disk, const String & part_relative_path, const MergeTreeSettings & settings);
 
 /// Opens a substream of a text index.
 /// If `expected_buffer_size` is set, the read buffer of the dictionary or postings is limited to it.
