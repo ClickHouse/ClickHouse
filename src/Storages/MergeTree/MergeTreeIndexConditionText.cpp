@@ -334,6 +334,8 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "match"
         || function_name == "multiSearchAny"
         || function_name == "multiSearchAnyUTF8"
+        || function_name == "multiSearchAnyCaseInsensitive"
+        || function_name == "multiSearchAnyCaseInsensitiveUTF8"
         || function_name == "multiMatchAny";
 }
 
@@ -845,12 +847,12 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
+VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(const Field & field, bool compact) const
 {
-    return stringToTokens(std::string_view(field.safeGet<String>()));
+    return stringToTokens(std::string_view(field.safeGet<String>()), compact);
 }
 
-VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(std::string_view raw) const
+VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(std::string_view raw, bool compact) const
 {
     VectorWithMemoryTracking<String> tokens;
     if (has_preprocessor)
@@ -862,11 +864,12 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(std
     {
         tokenizer->stringToTokens(raw.data(), raw.size(), tokens);
     }
-    if (!has_postprocessor)
+    if (compact && !has_postprocessor)
         return tokenizer->compactTokens(tokens);
 
     /// Containment compaction is unsound after a postprocessor (it maps tokens independently), so only dedup.
-    tokens = postprocessor->processTokens(std::move(tokens));
+    if (has_postprocessor)
+        tokens = postprocessor->processTokens(std::move(tokens));
     std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
     return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
 }
@@ -1312,6 +1315,35 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         ITokenizer::Type::Array
     };
 
+    const bool can_search_substrings
+        = tokenizer->supportsStringLike() || like_optimization_supported_tokenizers.contains(tokenizer->getType());
+
+    /// Exact: a needle occurs in a value iff its `%needle%` pattern matches one of the value's tokens.
+    auto try_search_needle_by_infix_pattern = [&](std::string_view needle, bool case_insensitive)
+    {
+        const bool tokenizer_supported = like_optimization_supported_tokenizers.contains(tokenizer->getType());
+        const bool scan_enabled = settings[Setting::use_text_index_like_evaluation_by_dictionary_scan];
+        const bool processors_supported
+            = !has_postprocessor && (!has_preprocessor || (case_insensitive && preprocessor->isASCIILowerOrUpper()));
+        const bool needle_supported = UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle.data()), needle.size());
+
+        if (!tokenizer_supported || !scan_enabled || !processors_supported || !candidate_for_exact_mode
+            || !affix_patterns_allowed || !needle_supported)
+            return false;
+
+        auto patterns = stringLikeToPatterns(
+            "%" + escapeForLikePattern(needle) + "%", case_insensitive, /*allow_arbitrary_patterns=*/ true);
+        if (patterns.size() != 1)
+            return false;
+
+        out.function = RPNElement::FUNCTION_LIKE;
+        out.text_search_queries.emplace_back(
+            std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                VectorWithMemoryTracking<String>(), std::move(patterns)));
+        return true;
+    };
+
     if (has_map_keys_column || has_map_values_column)
     {
         if (!value_data_type.isStringOrFixedString())
@@ -1333,7 +1365,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (has_map_keys_column)
         {
             if (function_name == "mapContainsKey" || function_name == "has")
-                return make_map_function(stringToTokens(value_field));
+                return make_map_function(stringToTokens(value_field, /*compact=*/ true));
             if (function_name == "mapContainsKeyLike" && tokenizer->supportsStringLike())
                 return make_map_function(stringLikeToTokens(value_field));
         }
@@ -1342,7 +1374,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (has_map_values_column)
         {
             if (function_name == "mapContainsValue")
-                return make_map_function(stringToTokens(value_field));
+                return make_map_function(stringToTokens(value_field, /*compact=*/ true));
             if (function_name == "mapContainsValueLike" && tokenizer->supportsStringLike())
                 return make_map_function(stringLikeToTokens(value_field));
         }
@@ -1364,7 +1396,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (value_field.safeGet<String>().empty())
             return false;
 
-        auto tokens = stringToTokens(value_field);
+        auto tokens = stringToTokens(value_field, /*compact=*/ true);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
@@ -1376,7 +1408,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
         {
-            search_tokens = stringToTokens(value_field);
+            search_tokens = stringToTokens(value_field, /*compact=*/ function_name == "hasAllTokens");
         }
         else
         {
@@ -1430,7 +1462,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (element.getType() != Field::Types::String)
                     return false;
 
-                VectorWithMemoryTracking<String> element_tokens = stringToTokens(element);
+                VectorWithMemoryTracking<String> element_tokens = stringToTokens(element, /*compact=*/ true);
                 if (element_tokens.empty())
                     return false;
 
@@ -1459,7 +1491,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     return false;
                 }
 
-                auto element_tokens = stringToTokens(element);
+                auto element_tokens = stringToTokens(element, /*compact=*/ true);
 
                 /// An element that tokenizes to nothing cannot be proven present by the index.
                 /// Bail out to keep the original predicate, same as tryPrepareSetForTextSearch does for IN.
@@ -1492,7 +1524,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (function_name == "hasToken" && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
             return false;
 
-        auto tokens = stringToTokens(value_field);
+        auto tokens = stringToTokens(value_field, /*compact=*/ true);
         if (tokens.empty())
         {
             /// A needle without a word character is invalid: leave it to the scan, which raises or returns NULL.
@@ -1612,7 +1644,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// preprocessor and the postprocessor so the lookup tokens match what was stored in the index;
         /// in Hint mode any false positives are resolved by the row-level filter.
         /// An all-dropped phrase yields empty tokens, i.e. a query that matches nothing (consistent with hasAllTokens).
-        auto tokens = stringToTokens(value_field);
+        auto tokens = stringToTokens(value_field, /*compact=*/ true);
 
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1743,7 +1775,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         return true;
     }
-    if ((function_name == "multiSearchAny" || function_name == "multiSearchAnyUTF8") && tokenizer->supportsStringLike())
+    if ((function_name == "multiSearchAny" || function_name == "multiSearchAnyUTF8"
+         || function_name == "multiSearchAnyCaseInsensitive" || function_name == "multiSearchAnyCaseInsensitiveUTF8")
+        && can_search_substrings)
     {
         if (!value_data_type.isArray())
             return false;
@@ -1760,6 +1794,17 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.function = RPNElement::ALWAYS_FALSE;
             return true;
         }
+
+        const bool is_case_insensitive = function_name.starts_with("multiSearchAnyCaseInsensitive");
+
+        /// One needle only: the dictionary scan searches every block once per needle.
+        if (needles.size() == 1 && needles.front().getType() == Field::Types::String
+            && try_search_needle_by_infix_pattern(needles.front().safeGet<String>(), is_case_insensitive))
+            return true;
+
+        /// The tokens below are matched case-sensitively.
+        if (is_case_insensitive || !tokenizer->supportsStringLike())
+            return false;
 
         /// multiSearchAny is an OR over literal substrings, so each needle becomes a separate query and the granule passes if any of them may be present.
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -1836,7 +1881,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "has")
     {
-        auto tokens = stringToTokens(value_field);
+        auto tokens = stringToTokens(value_field, /*compact=*/ true);
 
         /// Empty needles produce no tokens that can be searched for, fall back to brute force scan.
         /// See function "equals" for a longer explanation.
@@ -2016,7 +2061,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (mayBeTrueOnDefaultValue(subdag))
         return false;
 
-    auto tokens = stringToTokens(std::string_view(*key_const_value));
+    auto tokens = stringToTokens(std::string_view(*key_const_value), /*compact=*/ true);
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
     return true;
@@ -2205,7 +2250,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     if (mayBeTrueOnDefaultValue(subdag))
         return false;
 
-    auto tokens = stringToTokens(Field(json_info->path));
+    auto tokens = stringToTokens(Field(json_info->path), /*compact=*/ true);
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
         "JSONPathExists", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
@@ -2334,7 +2379,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        VectorWithMemoryTracking<String> tokens = stringToTokens(element);
+        VectorWithMemoryTracking<String> tokens = stringToTokens(element, /*compact=*/ true);
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.
