@@ -2617,7 +2617,8 @@ void registerStorageLance(StorageFactory & factory)
 {
     auto check_lance_enabled = [](const StorageFactory::Arguments & args)
     {
-        if (args.mode <= LoadingStrictnessLevel::CREATE
+        /// A full-definition `ATTACH TABLE ... ENGINE = Lance...` is a fresh definition too, so it is gated as well.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext())
             && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_lance])
         {
             throw Exception(
