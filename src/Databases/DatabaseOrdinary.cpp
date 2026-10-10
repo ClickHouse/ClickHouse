@@ -922,6 +922,9 @@ StoragePtr DatabaseOrdinary::detachTable(ContextPtr /* context_ */, const String
         forgetExpiredDetachedTablesByName(keep_alive);
         /// Track the storage behind a materialized lazy-load stand-in, which the database iterator hands out
         /// directly and which outlives the stand-in. `mutex` is held, so do not wait for a load in flight.
+        /// None can be in flight when the table stays detached: `DETACH TABLE` and `SYSTEM RESTART REPLICA`
+        /// call `flushAndShutdown` first, which waits for it and forbids any later one. `RENAME` re-attaches
+        /// the table under its exclusive lock, which a query that is materializing it holds shared.
         detached_tables_by_name.emplace(table_name, unwrapMaterializedLazyTable(table, /* wait_for_materialization= */ false));
     }
     return table;
