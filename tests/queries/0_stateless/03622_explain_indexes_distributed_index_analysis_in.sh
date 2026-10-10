@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long, no-parallel, no-fasttest
 # - no-parallel - due to usage of fail points
 
 # FIXME: convert to .sql
