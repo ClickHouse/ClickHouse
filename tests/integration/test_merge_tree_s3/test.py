@@ -605,9 +605,13 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
 
     node.query("DROP TABLE s3_test SYNC")
     # Backup data should remain in S3.
+    # The frozen copies of the two adopted parts keep their `invalidated_system_columns.txt`.
 
     wait_for_delete_s3_objects(
-        cluster, FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 4
+        cluster,
+        FILES_OVERHEAD_PER_PART_WIDE * 4
+        - FILES_OVERHEAD_METADATA_VERSION * 4
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     remove_all_s3_objects(cluster)

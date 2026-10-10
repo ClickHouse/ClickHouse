@@ -2,6 +2,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -108,7 +109,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
     StorageID source_table_id{source_database, source_table};
-    auto source_table_ptr = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     /// The metadata of an `Alias` is its target's, so the index below is the target's index.
     checkSourceStorageAccess(context, source_table_ptr, source_table_id, AccessType::SHOW_COLUMNS);
     auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
@@ -120,7 +121,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
             "Got index '{}' of type '{}', expected 'text'",
             source_index_name, index_desc.type);
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table_ptr.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table_ptr, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
@@ -242,7 +243,7 @@ SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
 4. │ all_2_2_0 │ date   │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
    └───────────┴────────┴────────────────────────┴─────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
     );
 }
