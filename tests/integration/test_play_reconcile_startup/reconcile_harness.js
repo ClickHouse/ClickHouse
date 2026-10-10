@@ -1790,6 +1790,66 @@ async function main() {
             { defaultPrevented: reopen.defaultPrevented, embedded: embedded(), opened });
     }
 
+    /// Contract: on a trusted host, whose origin every terminal accepts the handover from, a cross-origin
+    /// terminal is still embedded only for the server the host itself handed over. A foreign `?url=`
+    /// target must not receive the login the browser may have autofilled for the host's origin: a plain
+    /// click on the icon and the `~` shortcut open its terminal in a new tab instead.
+    {
+        const opened = [];
+        const r = await runScenario(js, {
+            href: 'https://clickhouse.com/play?url=https%3A%2F%2Fevil.example%2F',
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+            fetch: async (url, opts) => {
+                if (opts && opts.method === 'HEAD' && !String(url).startsWith('https://clickhouse.com/'))
+                    throw new TypeError('Failed to fetch');
+                return {
+                    ok: true,
+                    status: 200,
+                    statusText: 'OK',
+                    headers: { get: () => null },
+                    text: async () => '',
+                    json: async () => ({}),
+                };
+            },
+            open: (href, target) => { opened.push({ href, target }); return null; },
+        });
+        const terminal_icon = r.sandbox.document.getElementById('terminal-icon');
+        const terminal_panel = r.sandbox.document.getElementById('terminal-panel');
+        const embedded = () => terminal_panel.children.filter(c => c.tagName === 'IFRAME').map(c => c.src);
+        const plain_click = () => {
+            const ev = new Event('click', { cancelable: true });
+            terminal_icon.dispatchEvent(ev);
+            return ev;
+        };
+        const tilde = () => {
+            const ev = new Event('keydown', { cancelable: true });
+            ev.key = '~';
+            r.sandbox.document.dispatchEvent(ev);
+            return ev;
+        };
+        vm.runInContext("user_elem.value = 'alice'; password_elem.value = 'autofilled';", r.sandbox);
+        await sleep(50);
+        const click = plain_click();
+        check('trusted-host-terminal', 'a plain click does not embed the terminal of a foreign ?url= server',
+            !click.defaultPrevented && embedded().length === 0 && !terminal_panel.classList.contains('active'),
+            { defaultPrevented: click.defaultPrevented, embedded: embedded() });
+        tilde();
+        check('trusted-host-terminal', 'the ~ shortcut opens the terminal of a foreign ?url= server in a new tab',
+            opened.length === 1 && opened[0].href.startsWith('https://evil.example/webterminal')
+                && !opened[0].href.includes('autofilled') && embedded().length === 0,
+            { opened, embedded: embedded() });
+
+        vm.runInContext("applyConnectionFromHost({ url: 'https://b.example/', user: 'bob', password: 'secret' });", r.sandbox);
+        await sleep(50);
+        const handed_click = plain_click();
+        check('trusted-host-terminal', 'a plain click embeds the terminal of the server the host handed over',
+            handed_click.defaultPrevented && embedded().length === 1 && embedded()[0] === 'https://b.example/webterminal'
+                && terminal_panel.classList.contains('active') && opened.length === 1,
+            { defaultPrevented: handed_click.defaultPrevented, embedded: embedded(), opened });
+    }
+
     /// Contract: a docs relay window (`/play?docs_relay=...`, opened by the Documentation button) is not
     /// a playground. It shares the `clickhouse-play` `IndexedDB` with the real `/play` tab but never sees
     /// that tab's live state, so it must neither open the workspace database nor persist into it, and

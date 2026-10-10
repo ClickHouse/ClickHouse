@@ -10907,6 +10907,11 @@ function isTrustedHostOrigin(origin) {
     return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
 }
 
+/// The server address the last `clickhouse-credentials` handover from the host page left configured,
+/// or `null` if no connection was handed over. The inline Web Terminal of a cross-origin server is
+/// offered only for this address (see `terminalAcceptsHandover`).
+let host_handed_server = null;
+
 /// Adopt a connection handed over by the host page.
 ///
 /// `url` is optional and defaults to the one already configured, so a host embedding a page served
@@ -10926,6 +10931,7 @@ function applyConnectionFromHost(data) {
     /// tuple, which is complete the moment it arrives, is committed here instead of waiting for
     /// focus to leave the connection surface.
     [url_elem, user_elem, password_elem].forEach(el => el.dispatchEvent(new Event('input')));
+    host_handed_server = url_elem.value;
     commitConnection();
 }
 
@@ -22767,11 +22773,22 @@ document.getElementById('download-button').addEventListener('click', async funct
     /// the user logs in by hand. The inline panel is therefore offered only when the handover is known
     /// to be accepted; the terminal of any other server opens in a new tab through the icon's `href`,
     /// where it reads `user` from its URL and prompts for the password.
+    ///
+    /// On a trusted host the cross-origin terminal would accept the handover, but being accepted is
+    /// not enough: the credentials in the fields may be a login the browser autofilled for this page's
+    /// origin, while the server may be one named by a foreign `?url=` link. Posting them into that
+    /// server's terminal would bypass the rule the rest of this page follows for such a target (see
+    /// `isOwnServerTarget`). So a cross-origin terminal is embedded only for the server the trusted host
+    /// itself handed over (`host_handed_server`), whose credentials came with it; any other server opens
+    /// in a new tab, where the user logs in by hand.
     function terminalAcceptsHandover() {
         const terminal_url = getTerminalURL();
         if (!terminal_url) return false;
         const terminal_origin = new URL(terminal_url).origin;
-        return terminal_origin === location.origin || TRUSTED_HOST_ORIGINS.includes(location.origin);
+        if (terminal_origin === location.origin) return true;
+        return TRUSTED_HOST_ORIGINS.includes(location.origin)
+            && host_handed_server !== null
+            && sameServerAddress(url_elem.value, host_handed_server);
     }
 
     /// The new-tab path of the icon, for the keyboard shortcut: a plain click reaches it through the
