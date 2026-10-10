@@ -57,6 +57,18 @@ SELECT 'table-qualified tuple matcher in a filter', groupArray(id) FROM tup_0522
 SELECT 'database-qualified tuple matcher in a filter', groupArray(id) FROM tup_05227 SETTINGS additional_table_filters = {'tup_05227': 'greatest(${CLICKHOUSE_DATABASE}.tup_05227.tup.*) > 0'};
 CREATE ROW POLICY OR REPLACE p_05227 ON tup_05227 USING greatest(tup_05227.tup.*) > 0 TO ALL;
 SELECT 'table-qualified tuple matcher in a row policy', groupArray(id) FROM tup_05227;
+-- A Tuple matcher over a parameter of a SQL UDF expands into the elements of the argument once the UDF is inlined.
+DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_udf_tuple;
+CREATE FUNCTION ${CLICKHOUSE_DATABASE}_udf_tuple AS (x) -> greatest(x.*);
+SELECT 'tuple matcher over a UDF parameter in a filter', groupArray(id) FROM tup_05227 SETTINGS additional_table_filters = {'tup_05227': '${CLICKHOUSE_DATABASE}_udf_tuple(tup) > 0'};
+CREATE ROW POLICY OR REPLACE p_05227 ON tup_05227 USING ${CLICKHOUSE_DATABASE}_udf_tuple(tup) > 0 TO ALL;
+SELECT 'tuple matcher over a UDF parameter in a row policy', groupArray(id) FROM tup_05227;
+-- The same UDF called with the table expands into the table columns, so it is rejected.
+SELECT count() FROM tup_05227 SETTINGS additional_table_filters = {'tup_05227': '${CLICKHOUSE_DATABASE}_udf_tuple(tup_05227) > 0'}; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tup_05227 SETTINGS additional_table_filters = {'tup_05227': '${CLICKHOUSE_DATABASE}_udf_tuple(tup) > 0 AND ${CLICKHOUSE_DATABASE}_udf_tuple(tup_05227) > 0'}; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY OR REPLACE p_05227 ON tup_05227 USING ${CLICKHOUSE_DATABASE}_udf_tuple(tup_05227) > 0 TO ALL; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY OR REPLACE p_05227 ON tup_05227 USING greatest(tup.*) > 0 TO ALL;
+DROP FUNCTION ${CLICKHOUSE_DATABASE}_udf_tuple;
 -- When the table exists, a qualified matcher is checked against its columns when the policy is created or altered.
 CREATE ROW POLICY OR REPLACE p_05227 ON tup_05227 USING not ignore(tup_05227.*) TO ALL; -- { serverError BAD_ARGUMENTS }
 CREATE ROW POLICY OR REPLACE p_05227 ON tup_05227 USING not ignore(no_such_column.*) TO ALL; -- { serverError BAD_ARGUMENTS }

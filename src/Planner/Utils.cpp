@@ -757,7 +757,7 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         std::move(database_and_table_name),
         query_context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]);
 
-    if (const auto * matcher = findColumnMatcherInExpression(*filter_expression, is_column_qualifier))
+    if (auto matcher = findColumnMatcherInExpression(filter_expression, is_column_qualifier))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Column matcher {} is not allowed in an expression over a single table (a row policy, `additional_table_filters`, "
             "`additional_result_filter` or `parallel_replicas_custom_key`); list the columns explicitly. In expression {}",

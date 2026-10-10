@@ -30,7 +30,7 @@ void checkRowPolicyFilterExpression(const ASTPtr & expression)
     /// exists, or by `checkRowPolicyFilterMatchersAgainstStorage` on the read, when the columns are known.
     if (expression)
     {
-        if (const auto * matcher = findColumnMatcherInExpression(*expression, [](const ASTIdentifier &) { return true; }))
+        if (auto matcher = findColumnMatcherInExpression(expression, [](const ASTIdentifier &) { return true; }))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Column matcher {} is not allowed in a row policy filter expression; list the columns explicitly. In filter {}",
                 matcher->formatForErrorMessage(),

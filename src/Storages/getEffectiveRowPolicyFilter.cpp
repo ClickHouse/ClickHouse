@@ -41,7 +41,7 @@ void checkRowPolicyFilterMatchersAgainstStorage(const ASTPtr & filter, const ISt
         std::make_pair(storage_id.getDatabaseName(), storage_id.getTableName()),
         context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]);
 
-    if (const auto * matcher = findColumnMatcherInExpression(*filter, is_column_qualifier))
+    if (auto matcher = findColumnMatcherInExpression(filter, is_column_qualifier))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Column matcher {} is not allowed in a row policy filter expression; list the columns explicitly. In filter {}",
             matcher->formatForErrorMessage(),
