@@ -211,7 +211,9 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
 
     if (has_write_errors)
         bson_append_array_end(bson_doc, &write_errors);
-    /// A mutation is asynchronous, so its modified count is not known at acknowledgement time.
+    /// A mutation does not report how many rows it matched or rewrote. A `SELECT count()` before it
+    /// would be a separate query with no shared snapshot, so concurrent writes could make it report
+    /// documents this command never touched; the count is reported as unknown (`0`) instead.
     appendCount(bson_doc, "n", 0);
     BSON_APPEND_INT32(bson_doc, "nModified", 0);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);

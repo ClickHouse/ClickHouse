@@ -178,6 +178,9 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
 
     if (has_write_errors)
         bson_append_array_end(bson_doc, &write_errors);
+    /// A `DELETE FROM` does not report how many rows it removed. A `SELECT count()` before it would
+    /// be a separate query with no shared snapshot, so concurrent writes could make it report
+    /// documents this command never deleted; the count is reported as unknown (`0`) instead.
     appendCount(bson_doc, "n", 0);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
