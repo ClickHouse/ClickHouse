@@ -1,3 +1,6 @@
+-- Random settings limits: merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=(0, 0)
+-- `PartsSplitter` fault injection reads the granule on each layer border twice, which changes `read_rows`.
+
 -- an empty set behind IN (subquery) must skip the read, Nullable column included
 -- prewhere is pinned off so the condition lands in a filter above the read, which is what folds it
 DROP TABLE IF EXISTS t_short_circuit;
