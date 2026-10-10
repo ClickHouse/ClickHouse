@@ -62,6 +62,78 @@ def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
 # line), so match either form -- both are server-origin because of the prefix.
 SERVER_MLE_SIGNATURE = r"Received from.*(?:MEMORY_LIMIT_EXCEEDED|memory limit exceeded)"
 
+# The client returns its exception code and the OS keeps the low byte, except that a code with a
+# zero low byte returns -1 (`Client::main`). BuzzHouse findings throw `BUZZHOUSE_ORACLE`
+# (1024 -> 255); fuzzer errors are generic client failures.
+BUZZHOUSE_ORACLE_ERROR_CODE = 1024
+BUZZHOUSE_ORACLE_EXIT_CODE = 255
+
+# On an AST fuzzer oracle mismatch (server-side oracle or peer server comparison) the client prints
+# the `AST FUZZER ORACLE MISMATCH` block and exits with `AST_FUZZER_ORACLE_MISMATCH` (906 -> 138)
+AST_FUZZER_ORACLE_EXIT_CODE = 906 & 0xFF
+
+
+def _last_exception(fuzzer_log: Path, error_code: int, error_name: str) -> str:
+    """The exception that ended the run. Several codes share an exit code, so it is the proof.
+    Multi-line messages (e.g. health check `Details:`) run until the `(ERROR_NAME)` suffix, which
+    ends its line (before `--stacktrace`'s section) and is followed by an empty line. Buffered stdout
+    lands in the same log (before, mid-line or after the exception) and can quote both, so only a
+    block closed that way counts, and the last one wins."""
+    marker = f"Code: {error_code}. DB::Exception:".encode()
+    endings = (
+        f"({error_name})".encode(),
+        f"({error_name}), Stack trace (when copying this message, always include the lines below):".encode(),
+    )
+    # Blocks are byte ranges, so an open one costs no memory however far its suffix is
+    found: tuple[int, int] | None = None
+    # A closed block, kept once the next line turns out empty
+    pending: tuple[int, int] | None = None
+    # Where the block of the newest marker starts, so a marker quoted shortly before cannot swallow the message
+    start: int | None = None
+    position = 0
+    with open(fuzzer_log, "rb") as fh:
+        for raw_line in fh:
+            line = raw_line.rstrip(b"\n")
+            if pending:
+                found = found if line else pending
+                pending = None
+            if marker in line:
+                start = position + line.index(marker)
+            if start is not None and line.endswith(endings):
+                pending = (start, position + len(line))
+                start = None
+            position += len(raw_line)
+        if not found:
+            return ""
+        fh.seek(found[0])
+        return fh.read(found[1] - found[0]).decode("utf-8", errors="replace").strip()
+
+
+# The exact first and last lines of the block `exitOnOracleMismatch` in `programs/client/FuzzLoop.cpp` prints
+ORACLE_MISMATCH_FIRST_LINE = "=== AST FUZZER ORACLE MISMATCH (fatal) ==="
+ORACLE_MISMATCH_LAST_LINE = "=" * 42
+
+
+def _oracle_mismatch_block(fuzzer_log: Path, max_lines: int = 500) -> str:
+    """The client's `AST FUZZER ORACLE MISMATCH` block, from its exact first line through its exact last one.
+    The client prints it after `\\n\\n` and exits, so a fuzzed query quoting the marker does not open it,
+    and the last block wins over anything stdout flushes after it. The reproduction settings come last
+    in it, so a fixed line count would cut them first."""
+    found = ""
+    block: list[str] | None = None
+    with open(fuzzer_log, "r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if line == ORACLE_MISMATCH_FIRST_LINE:
+                block = []
+            if block is None:
+                continue
+            block.append(line)
+            if (len(block) > 1 and line == ORACLE_MISMATCH_LAST_LINE) or len(block) >= max_lines:
+                found = "\n".join(block)
+                block = None
+    return found
+
 # A client-origin 241 line: "Code: 241" with NO "Received from" on the same line.
 # clickhouse-client raises 241 for its own --max_memory_usage_in_client cap (see
 # tests/queries/0_stateless/02003_memory_limit_in_client.sh) and prints it as
@@ -448,6 +520,8 @@ def run_fuzz_job(check_name: str):
     status = Result.Status.FAIL
     info = []
     is_failed = True
+    # A fuzzer finding reported by the client while the server stayed alive
+    finding = None
     if server_died:
         # Server died - status will be determined after OOM checks
         is_failed = True
@@ -473,32 +547,33 @@ def run_fuzz_job(check_name: str):
         status = Result.Status.OK
         info.append("Server hit its memory limit (Code 241) but stayed alive")
         info.append("\n")
-    elif fuzzer_exit_code in (227,):
-        # BuzzHouse exception, it means a query oracle failed, or
-        # an unwanted exception was found
-        status = Result.Status.ERROR
-        error_info = (
-            Shell.get_output(
-                f"rg --text -o 'DB::Exception: Found disallowed error code.*' {fuzzer_log}"
-            )
-            or "BuzzHouse fuzzer exception not found, fuzzer issue?"
+    elif fuzzer_exit_code == BUZZHOUSE_ORACLE_EXIT_CODE and (
+        oracle_error := _last_exception(
+            fuzzer_log, BUZZHOUSE_ORACLE_ERROR_CODE, "BUZZHOUSE_ORACLE"
         )
-        info.append(f"ERROR: {error_info}")
-    elif fuzzer_exit_code == 49 and not buzzhouse:
-        # AST fuzzer client called _exit(49) after the server-side oracle
-        # reported a wrong-result mismatch. The fuzzer log contains a clearly
-        # delimited "AST FUZZER ORACLE MISMATCH (fatal)" block with the
-        # reproducer query and the server-side oracle output.
-        status = Result.Status.ERROR
-        error_info = Shell.get_output(
-            f"rg --text -A 30 'AST FUZZER ORACLE MISMATCH' {fuzzer_log}"
+    ):
+        # A BuzzHouse oracle or the disallowed error code check caught the server misbehaving
+        name = oracle_error.splitlines()[0].removeprefix(
+            f"Code: {BUZZHOUSE_ORACLE_ERROR_CODE}. DB::Exception: "
         )
-        if not error_info:
-            error_info = (
-                "AST fuzzer oracle mismatch detected, but the marker block was "
-                "not found in the fuzzer log (see attached fuzzer.log)."
-            )
-        info.append(f"ERROR: AST fuzzer oracle mismatch\n{error_info}")
+        name = name.removesuffix(" (BUZZHOUSE_ORACLE)").removesuffix(".")
+        finding = Result(
+            # The name is the CIDB test name, so drop ports, counts and metric values
+            name=re.sub(r"\d+", "N", name),
+            info=oracle_error,
+            status=Result.Status.FAIL,
+        )
+        info.append(f"BuzzHouse oracle failure: {oracle_error}")
+    elif fuzzer_exit_code == AST_FUZZER_ORACLE_EXIT_CODE and (
+        oracle_error := _oracle_mismatch_block(fuzzer_log)
+    ):
+        # The marker block (with the reproducer) tells this apart from other codes ending in 138
+        finding = Result(
+            name="AST fuzzer oracle mismatch",
+            info=oracle_error,
+            status=Result.Status.FAIL,
+        )
+        info.append("AST fuzzer oracle mismatch")
     else:
         status = Result.Status.ERROR
         # The server was alive, but the fuzzer returned some error. This might
@@ -512,9 +587,10 @@ def run_fuzz_job(check_name: str):
             Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
         )
 
-    results = []
+    results = [finding] if finding else []
 
-    if is_failed:
+    # The OOM checks explain a dead server; a finding came from a live one
+    if is_failed and not finding:
         if is_sanitized:
             sanitizer_oom = Shell.get_output(
                 f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
@@ -560,7 +636,7 @@ def run_fuzz_job(check_name: str):
             else:
                 print("WARNING: dmesg not enabled")
 
-    if is_failed and status != Result.Status.ERROR:
+    if is_failed and status != Result.Status.ERROR and not finding:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
             server_log=str(server_log),

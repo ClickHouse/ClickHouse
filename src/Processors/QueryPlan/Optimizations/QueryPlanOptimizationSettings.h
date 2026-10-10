@@ -4,6 +4,7 @@
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/FutureSetSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <chrono>
@@ -60,6 +61,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool filter_push_down_below_limit_by;
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
@@ -68,6 +70,7 @@ struct QueryPlanOptimizationSettings
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
+    bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
@@ -89,7 +92,10 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
+    bool enable_group_by_top_k_dynamic_filtering;
+    bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
+    bool top_k_optimization_shared_boundary = true;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -135,6 +141,7 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
+    bool join_seal_gated_reading;
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
@@ -169,6 +176,8 @@ struct QueryPlanOptimizationSettings
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;
+    /// `EXPLAIN WHATIF` plans cannot see the projections that it weighs, so a forced projection must not fail them
+    bool skip_forced_projection_check = false;
     String force_projection_name;
 
     /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
@@ -212,7 +221,7 @@ struct QueryPlanOptimizationSettings
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;
-    size_t use_index_for_in_with_subqueries_max_values;
+    FutureSetSettings set_settings;
     PreparedSetsCachePtr prepared_sets_cache;
 
     /// This is needed for conversion JoinLogical -> Join
