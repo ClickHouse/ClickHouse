@@ -673,19 +673,19 @@ def test_optimize_aborts_on_metadata_commit_conflict(
     started_cluster_iceberg_no_spark, storage_type
 ):
     """
-    `writeMetadataFileAndVersionHint` returns false when the target `vN.metadata.json` already
-    exists (a concurrent writer won the commit). Compaction must propagate that and skip
-    `clearOldFiles`, otherwise it deletes the pre-compaction data/metadata while the table still
-    points at the other writer's snapshot -> data loss. We simulate the race by pre-creating a
-    valid next metadata version (the "winner") while keeping the version hint on the current one,
-    so compaction reads the current metadata but its commit target already exists. OPTIMIZE must
+    `writeMetadataFile` returns false when the target `vN.metadata.json` already exists (a
+    concurrent writer won the commit). Compaction must propagate that and skip `clearOldFiles`,
+    otherwise it deletes the pre-compaction data/metadata while the table still points at the
+    other writer's snapshot -> data loss. We simulate the race by pre-creating a valid next
+    metadata version (the "winner") that ranks below the current one by `last-updated-ms`, so
+    compaction reads the current metadata but its commit target already exists. OPTIMIZE must
     fail and the pre-compaction data files must survive.
     """
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     TABLE_NAME = "test_optimize_commit_conflict_" + storage_type + "_" + get_uuid_str()
 
-    # iceberg_use_version_hint=1 so the version hint (not directory listing) selects the metadata
-    # compaction reads, letting us keep it on vN while a valid vN+1 already exists on disk.
+    # Rank metadata by `last-updated-ms` rather than by version number, so a valid vN+1 that is
+    # older by that field leaves compaction reading vN.
     create_iceberg_table(
         storage_type,
         instance,
@@ -693,7 +693,7 @@ def test_optimize_aborts_on_metadata_commit_conflict(
         started_cluster_iceberg_no_spark,
         "(id Int32, value Nullable(String))",
         2,
-        use_version_hint=True,
+        additional_settings=["iceberg_recent_metadata_file_by_last_updated_ms_field = true"],
     )
 
     instance.query(
@@ -707,7 +707,7 @@ def test_optimize_aborts_on_metadata_commit_conflict(
     )
 
     metadata_dir = _metadata_dir(TABLE_NAME)
-    _, latest_path = _read_latest_metadata(instance, TABLE_NAME)
+    meta, latest_path = _read_latest_metadata(instance, TABLE_NAME)
     n = int(latest_path.split("/v")[-1].split(".")[0])
     next_path = f"{metadata_dir}/v{n + 1}.metadata.json"
     data_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/data"
@@ -731,12 +731,10 @@ def test_optimize_aborts_on_metadata_commit_conflict(
     # The winner must therefore be preserved because cleanup only touches names the rewrite itself
     # generated, not merely because it happened to be in that listing.
     objects_before = object_set()
-    # Concurrent winner: a valid vN+1 already committed. Keep the version hint on vN so compaction
-    # plans from vN but its commit target vN+1 already exists.
-    instance.exec_in_container(["bash", "-c", f"cp {latest_path} {next_path}"])
-    instance.exec_in_container(
-        ["bash", "-c", f"echo -n {n} > {metadata_dir}/version-hint.text"]
-    )
+    # Concurrent winner: a valid vN+1 that ranks below vN, so compaction plans from vN but its
+    # commit target vN+1 already exists.
+    meta["last-updated-ms"] -= 1
+    _write_metadata(instance, meta, next_path)
     expected_after = objects_before | {next_path.rsplit("/", 1)[-1]}
 
     err = instance.query_and_get_error(
@@ -768,65 +766,6 @@ def test_optimize_aborts_on_metadata_commit_conflict(
         == "yes"
     ), "cleanup after a lost commit removed the concurrent winner's metadata"
     # The table still reads its pre-compaction contents.
-    assert (
-        instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
-    )
-
-
-@pytest.mark.parametrize("storage_type", ["local"])
-def test_optimize_keeps_version_hint(started_cluster_iceberg_no_spark, storage_type):
-    """
-    `version-hint.text` is a fixed path rewritten in place, so it must survive compaction's
-    cleanup of the previous metadata generation. If the pre-compaction listing is deleted after
-    the commit, `iceberg_use_version_hint = 1` readers lose their discovery file and the table
-    cannot be read at all.
-    """
-    instance = started_cluster_iceberg_no_spark.instances["node1"]
-    TABLE_NAME = "test_optimize_version_hint_" + storage_type + "_" + get_uuid_str()
-
-    create_iceberg_table(
-        storage_type,
-        instance,
-        TABLE_NAME,
-        started_cluster_iceberg_no_spark,
-        "(id Int32, value Nullable(String))",
-        2,
-        use_version_hint=True,
-    )
-
-    instance.query(
-        f"INSERT INTO {TABLE_NAME} VALUES (1,'a'),(2,'b'),(3,'c');",
-        settings={"allow_insert_into_iceberg": 1},
-    )
-    # Positional delete so compaction has work to do.
-    instance.query(
-        f"DELETE FROM {TABLE_NAME} WHERE id = 2;",
-        settings={"allow_insert_into_iceberg": 1},
-    )
-
-    hint_path = f"{_metadata_dir(TABLE_NAME)}/version-hint.text"
-
-    def hint_contents():
-        return instance.exec_in_container(
-            ["bash", "-c", f"cat {hint_path} 2>/dev/null || true"]
-        ).strip()
-
-    before = hint_contents()
-    assert before, "version hint must exist before OPTIMIZE"
-
-    instance.query(
-        f"OPTIMIZE TABLE {TABLE_NAME};",
-        settings={
-            "allow_experimental_iceberg_compaction": 1,
-            "allow_insert_into_iceberg": 1,
-        },
-    )
-
-    after = hint_contents()
-    assert after, f"version hint was deleted by compaction (was {before})"
-    # It points at the compacted metadata, so it must have advanced past the pre-compaction one.
-    assert int(after) > int(before), f"version hint did not advance: {before} -> {after}"
-    # The table is still discoverable and returns the compacted contents.
     assert (
         instance.query(f"SELECT id, value FROM {TABLE_NAME} ORDER BY id") == "1\ta\n3\tc\n"
     )
@@ -996,33 +935,33 @@ def test_optimize_rejected_after_nested_requiredness_change(
 
 def test_compaction_keeps_everything_if_the_commit_throws():
     """
-    The commit helper publishes the metadata before it inspects the version hint, and those hint
-    operations are unguarded, so an exception can escape after the table was already committed. The
-    call must therefore be wrapped and keep every file, or the cleanup would delete the rewritten
-    data that the published metadata references.
+    The metadata is published before the version hint is updated, and that update can throw. It
+    must therefore be wrapped and keep every file: the published metadata references the rewritten
+    data and a reader may still resolve the previous generation through the hint, so a throw there
+    must neither remove files nor fail an OPTIMIZE that already committed.
 
-    Asserted statically: making the helper throw after publishing needs fault injection inside
-    object storage, which an integration test cannot arrange.
+    Asserted statically: making the hint update throw needs fault injection inside object storage,
+    which an integration test cannot arrange.
     """
     source = pathlib.Path(__file__).resolve().parents[3] / (
         "src/Storages/ObjectStorage/DataLakes/Iceberg/Compaction.cpp"
     )
     statements = " ".join(source.read_text().split())
-    assert "writeMetadataFileAndVersionHint" in statements, (
-        f"{source} no longer commits through writeMetadataFileAndVersionHint; update this guard"
+    assert "Iceberg::tryWriteVersionHintFile(" in statements, (
+        f"{source} no longer updates the version hint through tryWriteVersionHintFile; update this guard"
     )
     # The `try {` must be the last thing before the call, and its handler must keep everything.
     # Checking only for "a try somewhere earlier" would pass even with the wrapper deleted.
-    call = statements.index("Iceberg::writeMetadataFileAndVersionHint")
+    call = statements.index("Iceberg::tryWriteVersionHintFile(")
     window = statements[max(0, call - 120) : call]
     assert "try {" in window, (
-        "the metadata commit is no longer directly inside a try block, so a throw after publication "
-        f"would reach the cleanup handler; preceding text: {window!r}"
+        "the version hint update is no longer directly inside a try block, so a throw after "
+        f"publication escapes the commit; preceding text: {window!r}"
     )
-    handler = statements[call : call + 1200]
+    catch = statements.index("catch", call)
+    handler = statements[catch : statements.index("}", catch)]
     assert "CommitResult::KeepEverything" in handler, (
-        "the metadata commit's exception handler no longer keeps every file, so a throw after "
-        "publication would delete data the committed metadata references"
+        f"the version hint update's exception handler no longer keeps every file: {handler!r}"
     )
 
 
