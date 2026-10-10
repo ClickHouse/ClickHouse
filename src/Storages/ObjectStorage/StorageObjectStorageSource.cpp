@@ -494,7 +494,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
                 VirtualColumnUtils::filterByPathOrFile(
                     paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
                     /*format_settings=*/std::nullopt,
@@ -502,7 +502,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             }
             else
             {
-                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
             }
         }
 
@@ -687,7 +687,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             /// FILE_DOESNT_EXIST.
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
-                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
                 VirtualColumnUtils::filterByPathOrFile(
                     keys, paths, actions, virtual_columns, hive_columns, local_context,
                     /*format_settings=*/std::nullopt,
@@ -695,7 +695,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             }
             else
             {
-                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(local_context));
             }
         }
         else
@@ -1891,6 +1891,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         use_page_cache = false;
     }
 
+    if (use_distributed_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    {
+        LOG_DEBUG(log, "Cannot use distributed cache, etag is missing or not a strong content identifier");
+        use_distributed_cache = false;
+    }
+
     const auto & object_size = object_info.metadata->size_bytes;
     const bool is_size_known = object_info.metadata->is_size_known;
 
@@ -1965,6 +1971,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
     if (validate_etag_on_read && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
+    /// The distributed cache keys on the etag whether or not this read validates it.
+    if (use_distributed_cache)
+        stored_object.etag_hash = getETagHash(object_info.metadata->etag);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
@@ -2007,7 +2016,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// Distributed cache
     if (use_distributed_cache)
-        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true);
+        pipeline.needDistributedCache(/* include_credentials_in_cache_key */ true, /* include_etag_in_cache_key */ true);
 
     /// Page cache
     if (use_page_cache)
@@ -2104,7 +2113,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
-            filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(getContext()));
         }
     }
     else

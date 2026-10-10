@@ -2093,6 +2093,18 @@ class SettingsRandomizer:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
+        # With parallel replicas, `optimize_aggregation_in_order` rejects every projection, including the implicit
+        # `_minmax_count_projection` behind trivial `count()`, so tests asserting on projections, exact counts
+        # or read limits break under the `ParallelReplicas` configuration: https://github.com/ClickHouse/ClickHouse/issues/123061
+        if args.no_parallel_replicas:
+            random_settings["optimize_aggregation_in_order"] = 0
+            # With `parallel_replicas_local_plan = 0` the local replica is queried like a remote one, so plan- and
+            # log-based assertions of ~100 tests break under the `ParallelReplicas` configuration without finding
+            # anything about the default setup. Other configurations keep randomizing it.
+            random_settings["parallel_replicas_local_plan"] = 1
+            # `automatic_parallel_replicas_mode = 2` only collects statistics and never switches to parallel replicas,
+            # so the `ParallelReplicas` configuration would run such a test without them.
+            random_settings["automatic_parallel_replicas_mode"] = 0
 
     @staticmethod
     def get_random_settings(args, tags):

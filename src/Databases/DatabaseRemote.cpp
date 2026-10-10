@@ -1362,6 +1362,7 @@ SELECT * FROM remote_system.one;
     factory.registerDatabase(
         "Remote",
         create_fn,
+        mysqlPostgreSQLSecretArguments(3),
         features,
         Documentation{
             .description = common_description,
@@ -1371,6 +1372,7 @@ SELECT * FROM remote_system.one;
     factory.registerDatabase(
         "RemoteSecure",
         create_fn,
+        mysqlPostgreSQLSecretArguments(3),
         features,
         Documentation{
             .description = common_description,

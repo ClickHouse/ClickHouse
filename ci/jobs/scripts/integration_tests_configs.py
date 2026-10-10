@@ -34,6 +34,9 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     # writeback load pushed a 967/967-green test over the margin (9.6 s
     # observed vs 8.5 s allowed).
     "test_distributed_respect_user_timeouts/",
+    # 30 GROUP BY queries (15 concurrent) fill a 4 GB container: ~50 s on
+    # a release build, 500-900 s under coverage, vs. a 900 s test timeout.
+    "test_memory_limit/",
 ]
 
 # Additionally skipped on the per-test coverage build (`WITH_COVERAGE_DEPTH`).

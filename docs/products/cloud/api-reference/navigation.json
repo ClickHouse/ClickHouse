@@ -24,6 +24,12 @@
         ]
       },
       {
+        "group": "Notifications",
+        "pages": [
+          "products/cloud/api-reference/notifications/notification-types-get-list"
+        ]
+      },
+      {
         "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
@@ -105,7 +111,9 @@
           "products/cloud/api-reference/service/service-clickhouse-settings-update",
           "products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
           "products/cloud/api-reference/service/service-clickhouse-setting-get",
-          "products/cloud/api-reference/service/service-clickhouse-setting-delete"
+          "products/cloud/api-reference/service/service-clickhouse-setting-delete",
+          "products/cloud/api-reference/service/replica-aware-routing-get",
+          "products/cloud/api-reference/service/replica-aware-routing-update"
         ]
       },
       {

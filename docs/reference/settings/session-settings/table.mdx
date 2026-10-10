@@ -22,7 +22,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc). The cache is keyed on the object's ETag, so that an object overwritten in place is not served stale. An object whose ETag is missing or is not a strong content identifier is read from the object storage directly.
 
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
