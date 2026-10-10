@@ -797,7 +797,7 @@ namespace QueryPlanOptimizations
 
 /// The key under which an execution remembers its boundary: the single-replica plan's root hash, with the settings
 /// that can move where the replicas' half ends without changing that plan.
-std::optional<UInt64> rememberedBoundaryKey(
+static std::optional<UInt64> rememberedBoundaryKey(
     const QueryPlan::Node & root,
     const std::unordered_map<const QueryPlan::Node *, UInt64> & nopr_node_hashes,
     const QueryPlanOptimizationSettings & optimization_settings)
@@ -824,7 +824,7 @@ std::optional<UInt64> rememberedBoundaryKey(
 /// two reads of one table apart. So the matching that built the entry remembered the read by its table expression's
 /// name, and it is looked up by that name here. The root key ignores those names, so a plan that shares the key may
 /// name its reads differently; when the name does not resolve to exactly one read, build the plan.
-bool declineFromRememberedBoundary(
+static bool declineFromRememberedBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Node & root,
     const std::unordered_map<const QueryPlan::Node *, UInt64> & nopr_node_hashes,
