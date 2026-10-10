@@ -1102,7 +1102,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// it through a `Field`, so throw instead of silently changing its type.
         if (from_type_hint && (typeContainsUUID2(type) || typeContainsUUID2(*from_type_hint)))
         {
-            const auto hint_discriminator = type_variant->tryGetVariantDiscriminator(from_type_hint->getName());
+            auto hint_discriminator = type_variant->tryGetVariantDiscriminator(from_type_hint->getName());
+            if (!hint_discriminator)
+            {
+                /// A non-NULL value of `Nullable(T)` or `LowCardinality(T)` is a value of `T`, which may be an alternative.
+                const IDataType * nested_hint = from_type_hint;
+                if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(nested_hint))
+                    nested_hint = low_cardinality_hint->getDictionaryType().get();
+                if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(nested_hint))
+                    nested_hint = nullable_hint->getNestedType().get();
+                if (nested_hint != from_type_hint)
+                    hint_discriminator = type_variant->tryGetVariantDiscriminator(nested_hint->getName());
+            }
+
             const auto & variants = type_variant->getVariants();
             for (size_t i = 0; i < variants.size(); ++i)
             {
