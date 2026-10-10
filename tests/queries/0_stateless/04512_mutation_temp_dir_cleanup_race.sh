@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
 # Tag no-parallel: the failpoints pause every ReplicatedMergeTree mutation on the server
 # Tag no-shared-merge-tree: the failpoints are in the ReplicatedMergeTree mutation task
 # Tag no-replicated-database: additional replicas execute the same mutation

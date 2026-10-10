@@ -917,8 +917,11 @@ void FillingTransform::transform(Chunk & chunk)
 
         if (generateSuffixIfNeeded(input.getHeader().getColumns(), result_columns))
         {
+            /// A true return only means the fill constraints were satisfied, not that rows were produced:
+            /// STALENESS with an exhausted window leaves result_columns freshly cloneEmpty()'d and empty.
             size_t num_output_rows = result_columns[0]->size();
-            chunk.setColumns(std::move(result_columns), num_output_rows);
+            if (num_output_rows)
+                chunk.setColumns(std::move(result_columns), num_output_rows);
         }
 
         return;

@@ -101,8 +101,16 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         const auto & context = storage_.getContext();
 
         /// The sorting key may be calculated from subcolumns, which are not separate columns of the header.
+        /// A merge calculates the sorting key before the TTL, so its header may already have a column named after
+        /// a subcolumn, e.g. `n.a` for `ORDER BY n.a`. It holds the value calculated before `SET`, so the subcolumn
+        /// is extracted from the stored column instead.
         auto sorting_key_dag = sorting_key.expression->getActionsDAG().clone();
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, sorting_key_dag.getRequiredColumnsNames(), context);
+        const auto & storage_columns = metadata_snapshot_->getColumns();
+        Block header_of_stored_columns;
+        for (const auto & column : header)
+            if (storage_columns.hasPhysical(column.name))
+                header_of_stored_columns.insert(column);
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header_of_stored_columns, sorting_key_dag.getRequiredColumnsNames(), context);
         if (!extracting_subcolumns_dag.getNodes().empty())
             sorting_key_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_dag));
 
