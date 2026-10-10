@@ -29,9 +29,7 @@ SharedMergeTree 带来的一项重大改进是，相比 ReplicatedMergeTree，�
 
 与 ReplicatedMergeTree 不同，SharedMergeTree 不要求各副本之间彼此通信。相反，所有通信都通过共享存储和 clickhouse-keeper 完成。SharedMergeTree 实现了异步、无 leader 的复制，并使用 clickhouse-keeper 进行协调和元数据存储。这意味着，随着 service 扩容或缩容，元数据无需一并复制。因此，复制、变更、合并 和扩容操作都能更快完成。SharedMergeTree 允许每张表拥有数百个副本，从而可以在不使用 shards 的情况下实现动态扩展。ClickHouse Cloud 采用分布式查询执行方式，以便为单个查询利用更多计算资源。
 
-<div id="introspection">
-  ## 内部信息
-</div>
+## 内部信息 {#introspection}
 
 用于查看 ReplicatedMergeTree 内部信息的大多数系统表，在 SharedMergeTree 中也同样存在；不过由于这里不会发生数据和元数据复制，`system.replication_queue` 和 `system.replicated_fetches` 这两个表除外。SharedMergeTree 为这两个表提供了相应的替代表。
 
@@ -43,9 +41,7 @@ SharedMergeTree 带来的一项重大改进是，相比 ReplicatedMergeTree，�
 
 该表是 SharedMergeTree 中 `system.replicated_fetches` 的替代表。它包含当前正在进行的、将主键和校验和拉取到内存中的操作信息。
 
-<div id="enabling-sharedmergetree">
-  ## 启用 SharedMergeTree
-</div>
+## 启用 SharedMergeTree {#enabling-sharedmergetree}
 
 `SharedMergeTree` 默认处于启用状态。
 
@@ -98,9 +94,7 @@ ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica
 ORDER BY key
 ```
 
-<div id="settings">
-  ## 设置
-</div>
+## 设置 {#settings}
 
 某些设置项的行为已发生显著变化：
 
@@ -108,9 +102,7 @@ ORDER BY key
 * `insert_quorum_parallel` -- 所有写入 SharedMergeTree 的 insert 都是 quorum 插入 (写入共享存储) ，因此使用 SharedMergeTree 表引擎时不需要此设置。
 * `select_sequential_consistency` -- 不要求 quorum 插入，但会在执行 `SELECT` 查询时给 clickhouse-keeper 带来额外负载
 
-<div id="consistency">
-  ## 一致性
-</div>
+## 一致性 {#consistency}
 
 与 ReplicatedMergeTree 相比，SharedMergeTree 提供了更好的轻量级一致性。向 SharedMergeTree 插入数据时，无需提供 `insert_quorum` 或 `insert_quorum_parallel` 之类的设置。插入操作默认为 quorum 插入，这意味着元数据会存储在 ClickHouse-Keeper 中，并复制到至少达到 quorum 的 ClickHouse Keeper 节点。集群中的每个副本都会异步从 ClickHouse-Keeper 拉取新信息。
 
@@ -121,3 +113,11 @@ ORDER BY key
 2. 如果你写入一个副本、却从另一个副本读取，可以使用 `SYSTEM SYNC REPLICA LIGHTWEIGHT` 强制该副本从 ClickHouse-Keeper 拉取元数据。
 
 3. 将 `select_sequential_consistency` 作为查询设置的一部分使用。
+
+## `ALTER` 与变更可见性 {#alter-and-mutation-visibility}
+
+`SharedMergeTree` 通过 ClickHouse Keeper 协调元数据变更。副本以异步方式拉取变更后的元数据，因此元数据变更不一定会立即在所有副本上可见。在同一节点的同一会话中执行的读取已会使用最新的元数据。如果需要在元数据变更后立即在另一个副本上执行读取，请使用 `SYSTEM SYNC REPLICA LIGHTWEIGHT`，让该副本从 ClickHouse Keeper 拉取元数据。
+
+会产生变更的 `ALTER` 操作会执行后台任务，在共享存储中创建新的 parts，并通过 ClickHouse Keeper 协调其可见性。这与 `ReplicatedMergeTree` 中逐副本重写或传输数据的过程不同。
+
+在 ClickHouse Cloud 中，[`alter_sync`](/zh/reference/settings/session-settings/alter#alter_sync) 默认为 `0`；如果客户端需要等待元数据操作或非元数据类的 `MODIFY COLUMN` 重写完成，请设置该参数。对于 `UPDATE`、`DELETE` 和 `MATERIALIZE ...` 操作，请使用 [`mutations_sync`](/zh/reference/settings/session-settings/mutations#mutations_sync) 控制是否等待，并通过 [`system.mutations`](/zh/reference/system-tables/mutations) 监控进度。
