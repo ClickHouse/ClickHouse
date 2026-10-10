@@ -193,7 +193,7 @@ WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vect
 }
 
 /// `convertFieldToType` converts a `Decimal` only to another `Decimal`.
-Field decimalToNativeNumber(const Field & offset, const IDataType & order_by_type)
+Field decimalToNumber(const Field & offset, const IDataType & order_by_type)
 {
     if (isFloat(order_by_type))
         return applyVisitor(FieldVisitorConvertToNumber<Float64>(), offset);
@@ -211,8 +211,8 @@ WindowFrame prepareRangeOffsets(const WindowFrame & frame, const DataTypePtr & o
     const auto key_type = removeNullable(order_by_type);
     auto convert = [&](const Field & offset, std::string_view bound_name)
     {
-        const Field source = Field::isDecimal(offset.getType()) && isNativeNumber(key_type)
-            ? decimalToNativeNumber(offset, *key_type)
+        const Field source = Field::isDecimal(offset.getType()) && (isInteger(key_type) || isFloat(key_type))
+            ? decimalToNumber(offset, *key_type)
             : offset;
         const Field converted = convertFieldToTypeOrThrow(source, *order_by_type, nullptr, {}, /*convert_inexact_floats=*/true);
         if (accurateLess(converted, Field(0)))
