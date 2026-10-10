@@ -4,6 +4,7 @@
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/FutureSetSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <chrono>
@@ -91,6 +92,7 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
+    bool enable_group_by_top_k_dynamic_filtering;
     bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
     bool top_k_optimization_shared_boundary = true;
@@ -219,7 +221,7 @@ struct QueryPlanOptimizationSettings
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;
-    size_t use_index_for_in_with_subqueries_max_values;
+    FutureSetSettings set_settings;
     PreparedSetsCachePtr prepared_sets_cache;
 
     /// This is needed for conversion JoinLogical -> Join
