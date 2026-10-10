@@ -291,6 +291,10 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
 
 bool weaklyCanonicalPathStartsWith(const String & path, const String & prefix_path)
 {
+    /// libc truncates a path at an embedded NUL, so the path checked here would not be the one opened later.
+    if (path.contains('\0') || prefix_path.contains('\0'))
+        return false;
+
     std::error_code ec;
     const auto resolved_path = fs::weakly_canonical(path, ec);
     if (ec)

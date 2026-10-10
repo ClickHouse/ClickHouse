@@ -83,7 +83,7 @@ StorageFileCluster::StorageFileCluster(
     /// Not grabbing the file_columns because it is not necessary to do it here.
     std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
-        paths.empty() ? "" : paths.front(),
+        paths.empty() ? "" : StorageFile::getUserFilesVirtualPath(paths.front(), user_files_volume),
         columns_.empty(),
         std::nullopt,
         context);
@@ -150,7 +150,8 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     /// through `IStorageCluster::read`, so this is the one place every path shares.
     checkWriteAccessIfFilesAreRenamed(context);
 
-    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
+    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context,
+        /*distributed_processing_=*/ false, /*archive_member_path_=*/ String{}, user_files_volume);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();

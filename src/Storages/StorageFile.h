@@ -181,6 +181,10 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
+    /// Translates an internal `<disk_path>/<relative>` path produced with `user_files_policy`
+    /// into the user-visible path: the one exposed as `_path` and parsed for hive partitioning.
+    static String getUserFilesVirtualPath(const String & path, const VolumePtr & volume);
+
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
@@ -288,7 +292,8 @@ public:
             const NamesAndTypesList & hive_columns_,
             const ContextPtr & context_,
             bool distributed_processing_ = false,
-            String archive_member_path_ = {});
+            String archive_member_path_ = {},
+            VolumePtr user_files_volume_ = {});
 
         String next();
 
@@ -330,6 +335,9 @@ private:
         /// A known archive member is part of the user-visible `_path` / `_file` value, although
         /// this iterator must open the outer archive file.
         const String archive_member_path;
+        /// With `user_files_policy`, the volume `files` live on: the `_path` / `_file` and hive
+        /// filters see the user-visible path, as returned by `StorageFile::getUserFilesVirtualPath`.
+        const VolumePtr user_files_volume;
     };
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;

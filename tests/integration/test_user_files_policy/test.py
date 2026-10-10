@@ -339,6 +339,44 @@ def test_s3_path_virtual_column_round_trips():
     )
 
 
+def test_s3_path_filter_and_hive_partitioning_use_visible_path():
+    """The `_path` prefilter and hive partitioning must see the same user-visible path as the
+    `_path` column, not the internal `<disk_path>/<relative>` form of a relative-root disk."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_path_filter_a.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_path_filter_b.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+    assert (
+        node_s3.query(
+            "SELECT x FROM file('s3_path_filter_*.csv', 'CSV', 'x UInt64') "
+            "WHERE _path = 's3_path_filter_a.csv'"
+        ).strip()
+        == "1"
+    )
+
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_hive/k=v1/data.csv', 'CSV', 'x UInt64') SELECT 10"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_hive/k=v2/data.csv', 'CSV', 'x UInt64') SELECT 20"
+    )
+    settings = "SETTINGS use_hive_partitioning = 1"
+    assert (
+        node_s3.query(
+            f"SELECT k, x FROM file('s3_hive/*/data.csv', 'CSV', 'x UInt64') ORDER BY x {settings}"
+        )
+        == "v1\t10\nv2\t20\n"
+    )
+    assert (
+        node_s3.query(
+            f"SELECT x FROM file('s3_hive/*/data.csv', 'CSV', 'x UInt64') WHERE k = 'v2' {settings}"
+        ).strip()
+        == "20"
+    )
+
+
 def test_local_embedded_nul_rejected():
     """The containment checks see the whole path, while a local disk opens it through libc,
     which stops at the first NUL. Both the `file` table function and the scalar `file` must
@@ -354,6 +392,10 @@ def test_local_embedded_nul_rejected():
         "SELECT file(concat('nul_dir/a.csv', char(0), '/junk'))"
     )
     assert "embedded NUL" in err, err
+    err = node_local.query_and_get_error(
+        "SELECT count() FROM filesystem(concat('nul_dir', char(0), '/junk'))"
+    )
+    assert "DATABASE_ACCESS_DENIED" in err, err
 
 
 def test_local_time_virtual_column():

@@ -716,7 +716,7 @@ std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_pa
 /// a relative object-key prefix (e.g. `s3_plain`) user entrypoints treat that form as an
 /// ordinary relative path, so the disk-relative part is returned instead: it addresses the
 /// same file when passed back to `file`.
-static String getUserFilesVirtualPath(const String & path, const VolumePtr & volume)
+String StorageFile::getUserFilesVirtualPath(const String & path, const VolumePtr & volume)
 {
     if (!volume)
         return path;
@@ -2222,7 +2222,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     storage_metadata.setConstraints(args.constraints);
     storage_metadata.setComment(args.comment);
 
-    const auto sample_path = paths.empty() ? "" : paths[0];
+    /// Hive partitioning parses the user-visible path, not the internal disk prefix of `user_files_policy`.
+    const auto sample_path = paths.empty() ? "" : getUserFilesVirtualPath(paths[0], user_files_volume);
 
     auto & storage_columns = storage_metadata.columns;
 
@@ -2282,7 +2283,8 @@ StorageFileSource::FilesIterator::FilesIterator(
     const NamesAndTypesList & hive_columns_,
     const ContextPtr & context_,
     bool distributed_processing_,
-    String archive_member_path_)
+    String archive_member_path_,
+    VolumePtr user_files_volume_)
     : WithContext(context_)
     , files(files_)
     , archive_info(std::move(archive_info_))
@@ -2290,6 +2292,7 @@ StorageFileSource::FilesIterator::FilesIterator(
     , virtual_columns(virtual_columns_)
     , hive_columns(hive_columns_)
     , archive_member_path(std::move(archive_member_path_))
+    , user_files_volume(std::move(user_files_volume_))
 {
     std::optional<ActionsDAG> filter_dag;
     auto & filter_sources = archive_info ? archive_info->paths_to_archives : files;
@@ -2302,9 +2305,10 @@ StorageFileSource::FilesIterator::FilesIterator(
         {
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             Strings filter_paths = filter_sources;
-            if (!archive_member_path.empty())
+            for (auto & path : filter_paths)
             {
-                for (auto & path : filter_paths)
+                path = StorageFile::getUserFilesVirtualPath(path, user_files_volume);
+                if (!archive_member_path.empty())
                     path += fmt::format("::{}", archive_member_path);
             }
             std::vector<String> archive_member_names;
@@ -2346,7 +2350,7 @@ String StorageFileSource::FilesIterator::next()
         if (deferred_filter_actions)
         {
             std::vector<String> filtered_files({path});
-            std::vector<String> filter_paths({path});
+            std::vector<String> filter_paths({StorageFile::getUserFilesVirtualPath(path, user_files_volume)});
             if (!archive_member_path.empty())
                 filter_paths.front() += fmt::format("::{}", archive_member_path);
             std::vector<String> archive_member_names;
@@ -3042,7 +3046,7 @@ Chunk StorageFileSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    current_path,
+                    StorageFile::getUserFilesVirtualPath(current_path, storage->user_files_volume),
                     storage->format_settings,
                     getContext());
             }
@@ -3051,7 +3055,7 @@ Chunk StorageFileSource::generate()
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
                 {
-                    .path = getUserFilesVirtualPath(current_path, storage->user_files_volume),
+                    .path = StorageFile::getUserFilesVirtualPath(current_path, storage->user_files_volume),
                     .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
@@ -3509,7 +3513,8 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing,
-        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
+        storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{},
+        storage->user_files_volume);
 }
 
 StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const
