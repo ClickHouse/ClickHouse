@@ -874,7 +874,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
-    M(DiskPlainRewritableSnapshotRead, "Number of times the state of a 'plain_rewritable' disk was loaded using the snapshot file as the base (the snapshot is still reconciled with the listing of the object storage).", ValueType::Number) \
+    M(DiskPlainRewritableSnapshotRead, "Number of times a read-only 'plain_rewritable' disk loaded its state from the snapshot file instead of listing the object storage (a refresh that finds the snapshot unchanged does not read it and is not counted).", ValueType::Number) \
     M(DiskPlainRewritableSnapshotWritten, "Number of snapshot files written by 'plain_rewritable' disks.", ValueType::Number) \
     M(DiskPlainRewritableSnapshotWriteFailed, "Number of failed attempts to write the snapshot file of a 'plain_rewritable' disk (the write is retried).", ValueType::Number) \
     M(DiskPlainRewritableOrphanedObjectsRemoved, "Number of objects deleted by the 'plain_rewritable' metadata storage while loading, because they were left by removals that a previous server process had committed but not finished (for example, it was killed during DROP TABLE).", ValueType::Number) \

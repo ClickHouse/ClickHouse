@@ -183,8 +183,12 @@ def test_readonly_replica_trusts_snapshot(start_cluster):
 
     # The reader works on a delayed state: it trusts the snapshot and does not list the object storage,
     # so the parts committed after the snapshot are not visible until the snapshot is rewritten.
+    # Wait for two refreshes that found the snapshot unchanged, so that at least one of them started after the insert.
+    # `t_lazy` is the only table of the reader with periodic refreshes, so the messages are of its disk.
+    unchanged_message = "The snapshot file did not change since it was loaded"
+    unchanged_before = int(reader.count_in_log(unchanged_message))
     writer.query("INSERT INTO t_lazy SELECT number FROM numbers(10, 10)")
-    time.sleep(3)
+    wait_for(lambda: int(reader.count_in_log(unchanged_message)) >= unchanged_before + 2)
     assert reader.query("SELECT count(), sum(id) FROM t_lazy") == "10\t45\n"
     assert snapshot_etag(key) == etag
 
