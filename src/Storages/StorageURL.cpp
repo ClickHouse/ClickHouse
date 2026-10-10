@@ -1041,9 +1041,11 @@ Chunk StorageURLSource::generate()
 
 std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
 {
-    /// Only a table with a UUID has cache entries.
+    /// Only a table with a UUID has cache entries. A row policy pushed into the read is not part of
+    /// `condition_hash`, so with it a row group could be recorded as not matching only because the
+    /// policy rejected its rows, and a later query of another user with the same filter would skip them.
     if (!allow_query_condition_cache || !format_filter_info || !format_filter_info->condition_hash
-        || storage_id.uuid == UUIDHelpers::Nil)
+        || format_filter_info->row_level_filter || storage_id.uuid == UUIDHelpers::Nil)
         return {};
 
     /// A web server reports no `ETag` here, so the version of a file is its modification time and size.

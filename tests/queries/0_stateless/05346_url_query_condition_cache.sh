@@ -72,7 +72,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-ThreadingHTTPServer(('127.0.0.1', $HTTP_PORT), Handler).serve_forever()
+class Server(ThreadingHTTPServer):
+    # The server closes connections it no longer needs, e.g. after a range read; do not print that.
+    def handle_error(self, request, client_address):
+        pass
+
+Server(('127.0.0.1', $HTTP_PORT), Handler).serve_forever()
 " &
 HTTP_PID=$!
 
@@ -146,6 +151,17 @@ touch -d '2020-01-02 00:00:01' "${DIR}/b.parquet"
 run rewritten_1 "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%'"
 run rewritten_2 "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%'"
 
+echo "--- a row policy"
+# A row policy is not part of the key: a read under it neither consults nor writes the cache.
+POLICY_USER="u_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${POLICY_USER}"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${POLICY_USER}"
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_05346, READ ON URL TO ${POLICY_USER}"
+${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY ${POLICY_USER}_policy ON ${CLICKHOUSE_DATABASE}.t_05346 USING k < 1000950 TO ${POLICY_USER}"
+${CLICKHOUSE_CLIENT} --user ${POLICY_USER} --query_id "${CLICKHOUSE_TEST_UNIQUE_NAME}_policy" --query "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%' SETTINGS ${SETTINGS}"
+${CLICKHOUSE_CLIENT} --query "DROP ROW POLICY ${POLICY_USER}_policy ON ${CLICKHOUSE_DATABASE}.t_05346"
+${CLICKHOUSE_CLIENT} --query "DROP USER ${POLICY_USER}"
+
 echo "--- a recently modified file"
 touch "${DIR}/b.parquet"
 run recent_1 "SELECT count(), min(k) FROM t_05346 WHERE s LIKE '10009%'"
@@ -158,6 +174,6 @@ run function_1 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 run function_2 "SELECT count() FROM ${URL} WHERE s LIKE '9%'"
 
 echo "--- query condition cache lookups"
-events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 recent_1 recent_2 function_1 function_2
+events where_1 where_2 where_top_k top_k_1 top_k_plain rewritten_1 rewritten_2 policy recent_1 recent_2 function_1 function_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05346"

@@ -12,6 +12,8 @@
 --- a file is rewritten
 100	1000900
 100	1000900
+--- a row policy
+50	1000900
 --- a recently modified file
 100	1000900
 100	1000900
@@ -26,6 +28,7 @@ top_k_1	1	0
 top_k_plain	1	0
 rewritten_1	1	0
 rewritten_2	1	1
+policy	0	0
 recent_1	1	1
 recent_2	1	1
 function_1	0	0
