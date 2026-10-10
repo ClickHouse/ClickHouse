@@ -768,7 +768,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// first command scan so their MATERIALIZED closure can be seeded into dependency analysis
     /// below, before the per-command stage loop runs.
     NameSet clear_column_names;
-    bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
+    bool materialize_ttl_recalculate_only = settings.materialize_ttl_recalculate_only
+        ? *settings.materialize_ttl_recalculate_only : source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
     bool has_clear_column = false;
