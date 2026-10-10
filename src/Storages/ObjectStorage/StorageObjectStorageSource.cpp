@@ -1115,8 +1115,11 @@ Chunk StorageObjectStorageSource::generate()
         /// Do not write the count cache for a bucketed read: `total_rows_in_file` then holds
         /// only this bucket's rows, and the cache key ignores the bucket id, so the partial
         /// count would be stored as the whole-object total and poison later count queries.
+        /// The same holds when TopN dynamic filtering (`__topKFilter`) was applied: then only
+        /// the rows that survived the running threshold were counted.
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->filter_actions_dag
+            && !reader.getInputFormat()->isTopKFilterApplied()
             && !hasAttachedDeletes(*reader.getObjectInfo())
             && !reader.getObjectInfo()->file_bucket_info
             && !reader.getObjectInfo()->rows_to_read)

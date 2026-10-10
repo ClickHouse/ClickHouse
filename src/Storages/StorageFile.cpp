@@ -2613,8 +2613,11 @@ Chunk StorageFileSource::generate()
         if (storage->use_table_fd)
             finished_generate = true;
 
+        /// A filtered, TopN-filtered (`__topKFilter`) or bucketed read counts only a subset of the
+        /// file's rows, which must not be stored as the whole-file total.
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter())
+            && !input_format->isTopKFilterApplied()
             && !file_bucket_info)
             addNumRowsToCache(current_path, total_rows_in_file);
 
