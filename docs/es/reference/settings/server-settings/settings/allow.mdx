@@ -20,14 +20,20 @@ Estos ajustes corresponden a la configuración del servidor de ClickHouse y se g
 
 Controla si el usuario puede cambiar configuraciones relacionadas con los distintos niveles de funcionalidades.
 
-* `0` - Se permiten cambios en cualquier configuración (experimental, beta, producción).
-* `1` - Solo se permiten cambios en configuraciones de funcionalidades beta y de producción. Se rechazan los cambios en configuraciones experimentales.
-* `2` - Solo se permiten cambios en configuraciones de funcionalidades de producción. Se rechazan los cambios en configuraciones experimentales o beta.
+* `0` - Se permiten cambios en cualquier configuración (experimental, vista previa privada, beta, producción).
+* `1` - Solo se permiten cambios en configuraciones de funcionalidades en vista previa privada, beta y de producción. Se rechazan los cambios en configuraciones experimentales.
+* `2` - Solo se permiten cambios en configuraciones de funcionalidades beta y de producción. Se rechazan los cambios en configuraciones experimentales o en vista previa privada.
+* `3` - Solo se permiten cambios en configuraciones de producción. Se rechazan los cambios en configuraciones experimentales, en vista previa privada o beta.
 
-Esto equivale a aplicar una restricción readonly a todas las funcionalidades `EXPERIMENTAL` / `BETA`.
+Esto equivale a aplicar una restricción readonly a todas las funcionalidades `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA`.
 
 <Note>
   Un valor de `0` significa que se pueden cambiar todas las configuraciones.
+</Note>
+
+<Note>
+  `2` anteriormente significaba &quot;solo configuraciones de producción&quot;. Ahora también permite configuraciones beta, por lo que una configuración
+  que fijaba `2` para permitir solo configuraciones de producción debe usar `3`.
 </Note>
 
 <div id="allow_impersonate_user">
@@ -42,6 +48,8 @@ Esto equivale a aplicar una restricción readonly a todas las funcionalidades `E
 
 Prohíbe crear un usuario sin contraseña, a menos que se especifique explícitamente &#39;IDENTIFIED WITH no&#95;password&#39;.
 
+* **Predeterminado:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -52,6 +60,8 @@ Prohíbe crear un usuario sin contraseña, a menos que se especifique explícita
 
 Indica si se permite o no el tipo de contraseña no segura `no_password`.
 
+* **Predeterminado:** `true`
+
 ```xml
 <allow_no_password>1</allow_no_password>
 ```
@@ -61,6 +71,8 @@ Indica si se permite o no el tipo de contraseña no segura `no_password`.
 </div>
 
 Indica si se permiten o no los tipos de contraseña en texto plano (inseguros).
+
+* **Predeterminado:** `true`
 
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>

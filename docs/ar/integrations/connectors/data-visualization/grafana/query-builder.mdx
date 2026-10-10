@@ -17,7 +17,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 <ClickHouseSupportedBadge />
 
 يمكن تشغيل أي query باستخدام إضافة ClickHouse.
-يُعد منشئ الاستعلامات خيارًا مناسبًا للاستعلامات الأبسط، لكنك ستحتاج إلى استخدام [SQL Editor](#sql-editor) عند التعامل مع الاستعلامات المعقدة.
+يُعد منشئ الاستعلامات خيارًا مناسبًا للاستعلامات الأبسط، لكنك ستحتاج إلى استخدام [محرر SQL](#sql-editor) عند التعامل مع الاستعلامات المعقدة.
 
 تتضمن جميع الاستعلامات في منشئ الاستعلامات [نوع استعلام](#query-types)، كما تتطلب تحديد عمود واحد على الأقل.
 
@@ -27,7 +27,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 * [السجلات](#logs): مُحسَّن لإنشاء استعلامات السجلات. ويعمل بأفضل شكل في عرض Explore مع [تهيئة الإعدادات الافتراضية](/ar/integrations/connectors/data-visualization/grafana/config#logs).
 * [السلاسل الزمنية](#time-series): الأنسب لإنشاء استعلامات السلاسل الزمنية. ويتيح تحديد عمود زمني مخصص وإضافة دوال تجميعية.
 * [التتبعات](#traces): مُحسَّن للبحث في التتبعات وعرضها. ويعمل بأفضل شكل في عرض Explore مع [تهيئة الإعدادات الافتراضية](/ar/integrations/connectors/data-visualization/grafana/config#traces).
-* [SQL Editor](#sql-editor): يمكن استخدام SQL Editor عندما تريد تحكمًا كاملاً في الاستعلام. في هذا الوضع، يمكن تنفيذ أي SQL query.
+* [محرر SQL](#sql-editor): يمكن استخدام محرر SQL عندما تريد تحكمًا كاملاً في الاستعلام. في هذا الوضع، يمكن تنفيذ أي SQL query.
 
 <div id="query-types">
   ## أنواع الاستعلامات
@@ -92,9 +92,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="مثال على الحقول الإضافية في استعلام السجلات" border />
 
-<div id="time-series">
-  ### سلاسل زمنية
-</div>
+### سلاسل زمنية {#time-series}
 
 يشبه نوع استعلام السلاسل الزمنية [الجدول](#table)، لكنه يركز على بيانات السلاسل الزمنية.
 
@@ -128,9 +126,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 يعرض نوع الاستعلام هذا البيانات باستخدام لوحة السلاسل الزمنية.
 
-<div id="traces">
-  ### التتبعات
-</div>
+### التتبعات {#traces}
 
 يوفّر نوع استعلام التتبّع منشئ الاستعلامات لتسهيل البحث في التتبعات وعرضها.
 وهو مصمَّم لبيانات OpenTelemetry، لكن يمكن تحديد الأعمدة لعرض التتبعات من مخطط مختلف.
@@ -211,11 +207,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 إذا كان OpenTelemetry مفعّلًا في استعلام [السجلات](#logs) أو [التتبّع](#traces)، فسيُدرج عمود معرّف التتبّع تلقائيًا.
 
-عند تضمين عمود لمعرّف التتبّع، سيُرفق بالبيانات رابطا &quot;**عرض التتبّع**&quot; و&quot;**عرض السجلات**&quot;.
+عند وجود عمود لمعرّف التتبّع، يمكن للإضافة إرفاق رابطَي &quot;**عرض التتبّع**&quot; و&quot;**عرض السجلات**&quot; بالبيانات.
 
-<div id="linking-abilities">
-  ### قدرات الربط
-</div>
+تكون أزرار التبديل مفعّلة افتراضيًا. لا يتطلب رابط نوع الاستعلام الحالي إعدادات افتراضية مهيّأة، بينما لا يظهر الرابط بين الإشارات إلا إذا كانت الإعدادات الافتراضية لإشارة الهدف مهيّأة في مصدر البيانات. يمكنك إخفاؤها باستخدام زري التبديل **إظهار روابط &quot;عرض التتبّع&quot;** و**إظهار روابط &quot;عرض السجلات&quot;** في قسمي تهيئة [التتبّع](/ar/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) و[السجلات](/ar/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) لمصدر البيانات.
+
+### قدرات الربط {#linking-abilities}
 
 عند توفر روابط البيانات، يمكنك فتح التتبّعات والسجلات باستخدام معرّف التتبّع المتاح.
 

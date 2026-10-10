@@ -55,6 +55,38 @@
                 <background_download_queue_size_limit>0</background_download_queue_size_limit>
                 <load_metadata_asynchronously>0</load_metadata_asynchronously>
             </s3_cache_02933>
+            <!-- Dedicated cache for 04511_reader_executor_disk_cache: the test asserts the executor
+                 cold-populates and the warm read serves from cache, which needs its populate to
+                 reserve space reliably. On the shared s3_cache that fails under the flaky check
+                 (other tables' background merges saturate it with non-releasable segments), so it
+                 gets its own uncontended cache. -->
+            <s3_cache_04511>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>s3_cache_04511/</path>
+                <max_size>128Mi</max_size>
+                <max_file_segment_size>5Mi</max_file_segment_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <cache_policy>LRU</cache_policy>
+                <background_download_threads>0</background_download_threads>
+                <background_download_queue_size_limit>0</background_download_queue_size_limit>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </s3_cache_04511>
+            <!-- Dedicated cache for 04930_reader_executor_detached_segment: the test arms a failpoint
+                 that turns every segment this cache reports into a detached placeholder, so it must
+                 not be shared with tests reading through the same cache. -->
+            <s3_cache_04930>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>s3_cache_04930/</path>
+                <max_size>128Mi</max_size>
+                <max_file_segment_size>5Mi</max_file_segment_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <cache_policy>LRU</cache_policy>
+                <background_download_threads>0</background_download_threads>
+                <background_download_queue_size_limit>0</background_download_queue_size_limit>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </s3_cache_04930>
             <s3_plain_rewritable>
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
@@ -159,6 +191,20 @@
                     </main>
                 </volumes>
             </s3_cache>
+            <s3_cache_04511>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_04511</disk>
+                    </main>
+                </volumes>
+            </s3_cache_04511>
+            <s3_cache_04930>
+                <volumes>
+                    <main>
+                        <disk>s3_cache_04930</disk>
+                    </main>
+                </volumes>
+            </s3_cache_04930>
             <s3_no_fake_transaction>
                 <volumes>
                     <main>

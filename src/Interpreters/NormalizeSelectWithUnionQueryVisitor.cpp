@@ -72,8 +72,13 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
             else if (data.union_default_mode == SetOperationMode::DISTINCT)
                 union_modes[i] = SelectUnionMode::UNION_DISTINCT;
             else
+                /// Say what to write: this is the wall that everyone coming from a database where a bare
+                /// UNION means UNION DISTINCT runs into, and `SelectWithUnion` is the name of an AST class
+                /// rather than of anything the query says.
                 throw Exception(DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT,
-                    "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty");
+                    "Expected ALL or DISTINCT after UNION. Write `UNION ALL` to keep duplicate rows or "
+                    "`UNION DISTINCT` to remove them, or set `union_default_mode` to choose what a bare "
+                    "UNION means");
         }
 
         if (union_modes[i] == SelectUnionMode::UNION_ALL)

@@ -1,10 +1,15 @@
-"""S3 baseline for PromQL compliance (same layout idea as LLVM coverage .info).
+"""S3 baseline and PR-scoped PromQL compliance JSON (same layout idea as LLVM coverage).
 
 Master publishes to (HTTPS, public read):
   https://clickhouse-builds.s3.amazonaws.com/REFs/master/<sha>/promql_compliance/promql_compliance_result.json
 
+PR integration batches upload (via ``promql_compliance_upload_hook.py``):
+  https://clickhouse-builds.s3.amazonaws.com/PRs/<pr>/<sha>/promql_compliance/promql_compliance_result.json
+
 PR jobs walk ``master_track_commits_sha`` (Config Workflow / store_data) and use the first
-object that exists, mirroring ``generate_diff_coverage_report.sh`` for LLVM.
+master object that exists, mirroring ``generate_diff_coverage_report.sh`` for LLVM.
+
+The GitHub comment is posted by the dedicated ``PromQL Compliance`` job (see ``promql_compliance_job.py``).
 """
 
 from __future__ import annotations
@@ -29,20 +34,55 @@ MASTER_BRANCH = "master"
 URL_TIMEOUT_SEC = 30
 
 
-def _baseline_payload_ok(data: dict[str, Any]) -> bool:
-    """Reject malformed or non-finite S3 JSON (same spirit as strict baseline checks)."""
-    for k in ("pct", "passed", "failed", "unsupported"):
+SUITE_COMPLIANCE = "compliance"
+SUITE_EXTENDED = "extended_support"
+SCHEMA_VERSION = 2
+COUNT_KEYS = ("passed", "failed", "unsupported")
+
+
+def _counts_ok(data: dict[str, Any]) -> bool:
+    for k in COUNT_KEYS:
         if k not in data:
             return False
     try:
         pct = float(data["pct"])
         if not math.isfinite(pct):
             return False
-        for k in ("passed", "failed", "unsupported"):
+        for k in COUNT_KEYS:
             int(data[k])
     except (TypeError, ValueError):
         return False
     return True
+
+
+def _baseline_payload_ok(data: dict[str, Any]) -> bool:
+    """Accept schema v2 named suites or the legacy flat payload."""
+    if not isinstance(data, dict):
+        return False
+    suites = suites_from_payload(data)
+    if SUITE_COMPLIANCE not in suites:
+        return False
+    return _counts_ok(suites[SUITE_COMPLIANCE])
+
+
+def suites_from_payload(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    if int(data.get("schema_version") or 0) >= SCHEMA_VERSION and isinstance(
+        data.get("suites"), dict
+    ):
+        return data["suites"]
+    if all(k in data for k in COUNT_KEYS + ("pct",)):
+        return {SUITE_COMPLIANCE: data}
+    return {}
+
+
+def build_result_payload(
+    compliance: dict[str, Any],
+    extended: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    suites = {SUITE_COMPLIANCE: compliance}
+    if extended is not None:
+        suites[SUITE_EXTENDED] = extended
+    return {"schema_version": SCHEMA_VERSION, "suites": suites}
 
 
 def result_url_for_master_commit(sha: str) -> str:
@@ -50,6 +90,31 @@ def result_url_for_master_commit(sha: str) -> str:
         f"https://{S3_BUCKET_HTTP_ENDPOINT}/REFs/{MASTER_BRANCH}/{sha}/"
         f"{S3_KEY_DIR}/{RESULT_NAME}"
     )
+
+
+def result_url_for_pr_commit(pr_number: int, sha: str) -> str:
+    return (
+        f"https://{S3_BUCKET_HTTP_ENDPOINT}/PRs/{pr_number}/{sha}/"
+        f"{S3_KEY_DIR}/{RESULT_NAME}"
+    )
+
+
+def upload_pr_result(local_path: Path, pr_number: int, sha: str) -> Optional[str]:
+    """Upload JSON to PRs/<pr>/<sha>/promql_compliance/; return public URL or None."""
+    if not local_path.is_file():
+        return None
+    prefix = Settings.S3_ARTIFACT_BUCKET or ""
+    if not prefix:
+        print("PromQL compliance S3: S3_ARTIFACT_BUCKET empty, skip PR upload")
+        return None
+    s3_dir = f"{prefix}/PRs/{pr_number}/{sha}/{S3_KEY_DIR}"
+    try:
+        link = S3.copy_file_to_s3(s3_path=s3_dir, local_path=str(local_path))
+        print(f"PromQL compliance S3: uploaded PR result to {link}")
+        return link
+    except Exception as e:
+        print(f"PromQL compliance S3: PR upload failed: {e}")
+        return None
 
 
 def fetch_baseline_from_s3(commits: list[str]) -> Tuple[Optional[dict[str, Any]], Optional[str]]:
@@ -111,9 +176,9 @@ def upload_master_result(local_path: Path, commit_sha: str) -> Optional[str]:
     """Upload JSON to canonical S3 path; return public URL or None on failure."""
     if not local_path.is_file():
         return None
-    prefix = Settings.S3_ARTIFACT_PATH or ""
+    prefix = Settings.S3_ARTIFACT_BUCKET or ""
     if not prefix:
-        print("PromQL compliance S3: S3_ARTIFACT_PATH empty, skip upload")
+        print("PromQL compliance S3: S3_ARTIFACT_BUCKET empty, skip upload")
         return None
     s3_dir = f"{prefix}/REFs/{MASTER_BRANCH}/{commit_sha}/{S3_KEY_DIR}"
     try:

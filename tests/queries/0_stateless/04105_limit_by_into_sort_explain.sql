@@ -8,6 +8,8 @@ SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_push_limit_by_into_sort = 1;
 SET max_threads = 12;
+-- This test inspects the pipeline shape of the LIMIT BY into sort optimization, so pin the unrelated virtual row optimization off.
+SET read_in_order_use_virtual_row = 0;
 
 -- `LIMIT BY` keys are not a prefix of the sort keys, so the optimization is not applied.
 -- The pipeline keeps only the final `LimitByTransform` above the sort.
@@ -120,8 +122,9 @@ SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
 ORDER BY k, v LIMIT 2, 3 BY k;
 
--- With `full_sorting_merge`, the optimization applies to the final `ORDER BY` sort above
--- the `JOIN`, not to the input sorts used by the join algorithm.
+-- With `full_sorting_merge`, the join emits its result in join-key order, so the final `ORDER BY k, v`
+-- above it only finishes the sort by `v` within each `k` (a `FinishSorting`): there is no full sort to
+-- push the `LIMIT BY` into, and neither the input sorts used by the join algorithm are touched.
 EXPLAIN PIPELINE
 SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k

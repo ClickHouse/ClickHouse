@@ -2,29 +2,112 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'سجل تغييرات Cloud - 2026'
-description: 'سجل تغييرات ClickHouse Cloud الذي يقدّم وصفًا لما هو جديد في كل إصدار من إصدارات ClickHouse Cloud'
+description: 'سجل تغييرات ClickHouse Cloud الذي يقدّم وصفًا لكل ما هو جديد في كل إصدار من ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['سجل التغييرات', 'ملاحظات الإصدار', 'التحديثات', 'الميزات الجديدة', 'تغييرات Cloud']
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
+rss: true
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-بالإضافة إلى Cloud changelog الخاص بـ ClickHouse Cloud، يُرجى أيضًا الاطلاع على صفحة [Cloud Compatibility](/ar/products/cloud/guides/cloud-compatibility).
+بالإضافة إلى سجل التغييرات هذا الخاص بـ ClickHouse Cloud، يُرجى الاطلاع على صفحة [توافق Cloud](/ar/products/cloud/guides/cloud-compatibility).
+
+<Update label="2026-09-22">
+  توسّع تحديثات هذا الأسبوع نطاق امتثال ClickHouse Cloud ليشمل مناطق جديدة في آسيا والمحيط الهادئ، وتضيف التوجيه المراعي للنسخ المتماثلة في مرحلة بيتا عامة، وتقدّم قدرات جديدة للمقاييس والحوسبة وdbt. فقد أصبحت الخلايا الخاضعة لتنظيمات HIPAA وPCI متاحة الآن في منطقتي AWS سيول وسيدني؛ ويمكن للعملاء المؤهلين تقييم أعباء عمل المقاييس المتوافقة مع Prometheus والحوسبة عند الطلب؛ كما أصبح ClickHouse متاحًا عبر dbt Core v2 وdbt Platform.
+
+  ## الأمان
+
+  ### دعم HIPAA وPCI في AWS سيول وسيدني
+
+  أصبحت الخلايا الخاضعة لتنظيمات HIPAA وPCI متاحة الآن في منطقتي AWS سيول (`ap-northeast-2`) وAWS سيدني (`ap-southeast-2`). اختر HIPAA أو PCI عند إنشاء الخدمة لتشغيل أعباء عمل متوافقة في هاتين المنطقتين؛ راجع [نظرة عامة على الامتثال](/ar/products/cloud/reference/security/compliance-overview#hipaa-since-2024) و[المناطق المدعومة](/ar/products/cloud/reference/supported-regions) لمزيد من التفاصيل.
+
+  ## ميزات جديدة
+
+  ### التوجيه المراعي للنسخ المتماثلة متاح الآن في بيتا عامة
+
+  [التوجيه المراعي للنسخ المتماثلة](/ar/products/cloud/features/infrastructure/replica-aware-routing) متاح الآن في بيتا عامة لعملاء Enterprise، مع دعم عمليات النشر الأصلية على ClickHouse Cloud وBYOC. وبمجرد تفعيله على حسابك، يمكنك تشغيله مباشرةً من إعدادات الخدمة. راجع [الإعلان](https://clickhouse.com/blog/replica-aware-routing-public-beta).
+
+  ### دعم PromQL في المعاينة الخاصة
+
+  يمكنك الآن تخزين مقاييس Prometheus في محرك الجداول `TimeSeries` والاستعلام عنها باستخدام PromQL مباشرةً على خدمة ClickHouse الخاصة بك—دون الحاجة إلى مُحوِّل أو وكيل، بحيث تستمر أدوات الجمع الحالية ولوحات معلومات Grafana وأدوات Prometheus في العمل دون أي تغيير. اكتب البيانات باستخدام Prometheus remote-write v1 واقرأها عبر واجهة برمجة تطبيقات HTTP لـ Prometheus، أو شغّل PromQL من جلسة SQL باستخدام دالتي الجدول `prometheusQuery` و`prometheusQueryRange`. وهذه الميزة متاحة لعملاء مختارين من ClickHouse Cloud وBYOC عبر [قائمة انتظار المعاينة الخاصة](https://clickhouse.com/cloud/promql-support-waitlist) على AWS وGCP وAzure. راجع [توثيق واجهة Prometheus](/ar/concepts/features/interfaces/prometheus) و[الإعلان](https://clickhouse.com/blog/introducing-promql).
+
+  ### الحوسبة عند الطلب متاحة الآن في المعاينة الخاصة
+
+  تتيح الحوسبة عند الطلب لاستعلامات `SELECT` المؤهلة وكثيفة الحوسبة الاستفادة من عاملي ClickHouse إضافيين عبر خدمتك ونقطة النهاية الحالية—دون الحاجة إلى تغيير الحجم أو توفير موارد إضافية. ويمكنك تفعيلها لاستعلامات مفردة عبر إعدادات الاستعلام، بينما تواصل خدمتك التعامل مع المصادقة والتخطيط والتنسيق والنتائج؛ وتعتمد في عملها على مُحسِّن قائم على التكلفة وتنفيذ متعدد المراحل للاستعلامات. وهي مناسبة لعمليات القراءة الثقيلة العَرَضية غير المخطط لها، وعمليات المسح الكبيرة، وعمليات الربط، والتجميعات على بيانات `SharedMergeTree` أو Apache Iceberg أو Delta Lake. وهي متاحة لعملاء مختارين عبر [قائمة انتظار المعاينة الخاصة](https://clickhouse.com/cloud/on-demand-compute-waitlist). راجع [توثيق الحوسبة عند الطلب](/ar/products/cloud/features/infrastructure/on-demand-compute) و[الإعلان](https://clickhouse.com/blog/on-demand-compute).
+
+  ## عمليات التكامل
+
+  ### ClickHouse adapter لـ dbt v2 وClickHouse في dbt Platform
+
+  يمكنك الآن تشغيل dbt على ClickHouse باستخدام محرك Core v2 الجديد المبني على Rust مع adapter الإصدار v2 من dbt، المتاح في بيتا عامة. كما أصبح ClickHouse متاحًا لأول مرة كاتصال في dbt Platform (Studio والمهام والبيئات)، في إصدار تجريبي خاص يُفعَّل لكل حساب على حدة. ويبقى adapter الإصدار v1 الحالي (`dbt-clickhouse`) مدعومًا بالكامل بالتوازي. راجع [dbt Core](https://github.com/dbt-labs/dbt)، و[طلب سحب dbt-clickhouse adapter](https://github.com/ClickHouse/dbt-clickhouse/pull/739)، و[طلب سحب توثيق dbt Platform](https://github.com/dbt-labs/docs.getdbt.com/pull/9975).
+</Update>
+
+<Update label="8 سبتمبر 2026">
+  يجلب هذا الأسبوع تحسينات جاهزة للإنتاج في الأمان وتكامل البيانات إلى ClickHouse Cloud. أصبحت مصادقة JWT متاحة عمومًا لخدمات Enterprise، وانتقل موصّل MySQL CDC الخاص بـ ClickPipes إلى مرحلة GA مع لقطات أسرع وإعدادات افتراضية أكثر أمانًا وobservability أفضل.
+
+  ### أصبحت مصادقة JWT لخدمات ClickHouse متاحة عمومًا
+
+  يمكنك الآن المصادقة على خدمة ClickHouse الخاصة بك باستخدام رموز JWT الصادرة من مزوّد الهوية الخاص بك، بما في ذلك Okta أو Auth0 أو Microsoft Entra ID أو Keycloak أو أي مزوّد ينشر نقطة نهاية JWKS. تتيح لك مصادقة JWT إدارة الوصول من خلال مزوّد الهوية الحالي لديك، مع انتهاء صلاحية للرموز تفرضه السياسات — مما يلغي الحاجة إلى كلمات مرور ClickHouse منفصلة وإلى أسرار مشتركة يجب تدويرها. تتوفر هذه الميزة في خطة Enterprise للخدمات التي تعمل بإصدار ClickHouse 26.4 أو أحدث. اضبطها من **Service → Settings → Security → JWT authentication**. راجع [دليل إعداد مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+
+  ### أصبح موصّل MySQL CDC الخاص بـ ClickPipes متاحًا عمومًا
+
+  أصبح موصّل MySQL CDC الخاص بـ ClickPipes جاهزًا للإنتاج الآن. يضيف هذا الإصدار أخذ لقطات متوازية تلقائيًا، مما يوفّر عمليات تحميل أولي أسرع بما يصل إلى 27 مرة، إلى جانب إعدادات افتراضية أكثر أمانًا لعمليات النشر في الإنتاج، بما في ذلك النسخ المتماثل المعتمد على GTID وفترة استبقاء binlog لا تقل عن 72 ساعة. كما تُسهّل المقاييس الجديدة لاستخدام الموارد والتأخر مراقبة خطوط الأنابيب. والموصّل متاح لجميع عملاء ClickHouse Cloud من خلال ClickPipes UI وOpenAPI وTerraform. راجع [وثائق MySQL ClickPipes](/ar/integrations/clickpipes/mysql) و[إعلان إصدار GA](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available).
+</Update>
+
+<Update label="31 أغسطس 2026">
+  يوسّع هذا الأسبوع نطاق انتشار ClickHouse Cloud عالميًا بإضافة مناطق AWS جديدة في تايبيه وماليزيا، ويضيف دعم Global Access لـ Private Service Connect، ويُسهّل على مستخدمي SAML التنقل بين المؤسسات.
+
+  ### مناطق AWS جديدة: تايبيه وماليزيا
+
+  أصبح ClickHouse Cloud متاحًا الآن في AWS Taipei (`ap-east-2`) وAWS Malaysia (`ap-southeast-5`). أُعدّت كلتاهما كمناطق خاصة مع دعم ClickPipes. راجع [وثائق المناطق المدعومة](/ar/cloud/reference/supported-regions) و[اعتبارات المناطق الخاصة](/ar/cloud/reference/supported-regions#private-regions) للتفاصيل.
+
+  ### ClickPipes: يدعم Private Service Connect ميزة Global Access
+
+  يدعم ClickPipes الآن ميزة Global Access لعمليات الاتصال الخاصة **عبر المناطق** باستخدام Private Service Connect ‏(PSC). عند تمكينها، يمكن لـ ClickPipes الاتصال بنقطة نهاية PSC في منطقة مختلفة عن منطقة GCP التي تعمل فيها الخدمة، بما في ذلك المناطق غير المدعومة أصلاً في ClickHouse Cloud (*مثل* `asia-northeast3` (سيول)).
+
+  ### التبديل بين مؤسسات SAML
+
+  يمكن لمستخدمي SAML المنتمين إلى عدة مؤسسات SAML الآن التبديل بينها مباشرةً من مبدّل المؤسسة، الذي يعيد مصادقتهم في الخلفية. لم تعد هناك حاجة إلى حفظ URL كل مؤسسة كإشارة مرجعية أو تسجيل الخروج ثم تسجيل الدخول يدويًا — ما عليك سوى حفظ مؤسستك الرئيسية كإشارة مرجعية والتبديل من هناك. يغطي هذا التبديل من SAML إلى SAML؛ أما التبديل الحالي بين المؤسسات غير التابعة لـ SAML فلم يتغير.
+</Update>
+
+<Update label="17 أغسطس 2026">
+  توسّع تحديثات هذا الأسبوع نطاق المنصة وتحسّن الرؤية التشغيلية. أصبح Managed Postgres متاحًا الآن على GCP لشركاء التصميم المختارين، وأصبحت إدارة موارد ClickStack ممكنة عبر Terraform provider الرسمي، كما توفّر إشعارات الفوترة الجديدة للعملاء تنبيهًا مبكرًا قبل انتهاء الأرصدة أو انقطاع الخدمة. أطلقنا أيضًا تتبعًا محسّنًا لـ ClickHouse Agents وتجربة تسجيل دخول أكثر سلاسة عبر SAML.
+
+  ### Managed Postgres متاح الآن على GCP
+
+  أصبح [ClickHouse Cloud Managed Postgres](/ar/products/managed-postgres/overview) متاحًا الآن على GCP لشركاء التصميم المختارين في جميع مناطق GCP العامة، مع `us-west1` كأول منطقة خاصة. يوسّع ذلك إتاحة Managed Postgres للعملاء الذين يبنون خدماتهم على GCP، ومن المقرر إطلاق المعاينة الخاصة في 2026-08.
+
+  ### إدارة موارد ClickStack باستخدام Terraform
+
+  يتوفر دعم ClickStack الآن في مرحلة بيتا عبر الإصدار 3.25.0 من Terraform provider الرسمي [`ClickHouse/clickhouse`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha). يمكن للفرق إنشاء لوحات المعلومات والتنبيهات والمصادر وعمليات البحث المحفوظة والاتصالات وwebhooks، وتحديثها واستيرادها وإزالتها باستخدام سير عمل `terraform plan` و`terraform apply` القياسي. يدعم التكامل كلاً من Managed ClickStack وعمليات النشر ذاتية الاستضافة.
+
+  ### إشعارات فوترة جديدة للأرصدة والمدفوعات
+
+  تُدار إشعارات الفوترة الآن عبر مركز إشعارات ClickHouse Cloud، وتُرسل من خلال وحدة التحكم والبريد الإلكتروني وSlack. يتلقى العملاء إشعارًا مسبقًا عندما توشك الأرصدة المدفوعة مسبقًا أو التجريبية على الانتهاء أو النفاد، بالإضافة إلى إشعارات عند إضافة أرصدة أو تغيير طرق الدفع أو دخول الحساب في فترة سماح بسبب عدم السداد. يوفّر ذلك وقتًا إضافيًا للتجديد أو إضافة أرصدة أو معالجة مشكلات الدفع قبل انقطاع الخدمة.
+
+  ### فتح آثار جلسات Langfuse من ClickHouse Agents
+
+  يمكن لمسؤولي المؤسسة الآن فتح جلسة Langfuse المقابلة مباشرةً من دردشة [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents/index) وفحص الآثار الخاصة بالمحادثة بأكملها. يسهّل ذلك التحقيق في سلوك الوكيل وتصحيح أخطاء عمليات التشغيل متعددة الخطوات. يتوفر هذا التحسين في بيتا عامة للمحادثات المنشأة حديثًا.
+
+  ### عمليات إعادة توجيه SAML تساعد في منع الحسابات المكررة
+
+  عندما يحاول مستخدم تسجيل الدخول باستخدام Google أو Microsoft في حين تكون SAML مهيأة لمؤسسته، يعيد ClickHouse Cloud توجيهه الآن إلى مسار تسجيل الدخول الصحيح عبر SAML. يساعد ذلك في منع المستخدمين من إنشاء مؤسسة منفصلة عن طريق الخطأ عندما كانوا يقصدون الوصول إلى حساب قائم.
+</Update>
 
 <Update label="13 يوليو 2026">
-  تتضمن تحديثات هذا الأسبوع توجيهًا مثبتًا للنسخ المتماثلة عبر HTTPS العادي، وتواريخ بدء مخصّصة لفترة الفوترة، وعناصر تحكم جديدة في initial load لـ Object Storage ClickPipes.
+  تتضمن تحديثات هذا الأسبوع توجيهًا ثابتًا للنسخ المتماثلة عبر HTTPS القياسي، وتواريخ بدء مخصصة لفترة الفوترة، وخيارات جديدة للتحكم في التحميل الأولي لـ ClickPipes لتخزين الكائنات.
 
-  ### توجيه مثبت للنسخ المتماثلة عبر HTTPS (معاينة خاصة)
+  ### توجيه ثابت للنسخ المتماثلة عبر HTTPS (معاينة خاصة)
 
-  يمكنك الآن تثبيت queries على replica محددة عبر HTTPS القياسي من خلال إضافة المعامل `?session_id=` إلى عنوان URL العادي الخاص بالخدمة، من دون الحاجة إلى أسماء مضيفين خاصة أو أي تغييرات في DNS. يضمن ذلك بقاء الكائنات المحصورة ضمن session، مثل الجداول المؤقتة، متاحة عبر queries، كما يساعد queries المتكررة على الاستفادة من ذاكرات التخزين المؤقت المحلية الدافئة على مستوى replica. ويجري طرح هذه الميزة في private preview لجميع عملاء Enterprise، ولعملاء Scale عند الطلب. وسيستمر التوجيه الحالي المستند إلى النطاقات الفرعية في العمل، لكنه سينتقل في نهاية المطاف إلى هذا النهج. راجع وثائق [replica-aware routing](/manage/replica-aware-routing).
+  يمكنك الآن تثبيت الاستعلامات على نسخة متماثلة محددة عبر HTTPS القياسي بإضافة المعلَمة `?session_id=` إلى عنوان URL المعتاد لخدمتك، دون الحاجة إلى أسماء مضيفين خاصة أو تغييرات في DNS. يحافظ ذلك على إتاحة الكائنات ذات نطاق الجلسة، مثل الجداول المؤقتة، عبر الاستعلامات، ويساعد الاستعلامات المتكررة على استخدام ذاكرات التخزين المؤقت المحلية الدافئة للنسخة المتماثلة. يجري طرح هذه الميزة في معاينة خاصة لجميع عملاء Enterprise، ولعملاء Scale عند الطلب. يظل التوجيه الحالي المستند إلى النطاقات الفرعية يعمل، لكنه سينتقل في النهاية إلى هذا النهج. راجع وثائق [التوجيه المراعي للنسخ المتماثلة](/ar/products/cloud/features/infrastructure/replica-aware-routing).
 
-  ### تواريخ بدء مخصّصة لفترة الفوترة
+  ### تواريخ بدء مخصصة لفترة الفوترة
 
-  يمكنك الآن طلب تغيير تاريخ الفوترة الخاص بمؤسستك، أي اليوم من الشهر الذي تبدأ فيه كل billing period، على سبيل المثال لمواءمة invoices مع الشهر التقويمي. افتح تذكرة دعم تتضمن التاريخ المطلوب. تُطبَّق تواريخ الفوترة وفق UTC، وتغطي كل invoice الاستخدام من تاريخ الفوترة حتى التاريخ نفسه من الشهر التالي (من دون تضمينه).
+  يمكنك الآن طلب تغيير تاريخ فوترة مؤسستك، وهو اليوم من الشهر الذي تبدأ فيه كل فترة فوترة، على سبيل المثال لمواءمة الفواتير مع الشهر التقويمي. افتح تذكرة دعم بالتاريخ المطلوب. تُطبّق تواريخ الفوترة وفق UTC، وتغطي كل فاتورة الاستخدام من تاريخ الفوترة حتى التاريخ نفسه من الشهر التالي، دون تضمينه.
 
-  ### تخطي initial load لـ Object Storage ClickPipes
+  ### تخطي التحميل الأولي لـ ClickPipes لتخزين الكائنات
 
-  يوفّر Object storage [ClickPipes](/ar/integrations/clickpipes) ‏(S3 وGCS وAzure Blob Storage) الآن طريقتين للتحكم في initial load عند إنشاء pipe: **Start after**، التي تتخطى الملفات حتى مفتاح object معيّن وبما يشمله، و**Skip initial load**، التي تتخطى الملفات الموجودة مسبقًا بالكامل وتعالج فقط إشعارات object الجديدة. في السابق، كان pipe جديد يُجري دائمًا backfill لكل ملف في المسار. والخياران متنافيان ودائمان بالنسبة إلى pipe معيّن: لا يمكن تشغيل backfill الذي تم تخطيه لاحقًا. الميزة متاحة في UI وCloud API وTerraform v3.18.0 والإصدارات الأحدث.
+  توفر [ClickPipes](/ar/integrations/clickpipes/home) لتخزين الكائنات (S3 وGCS وAzure Blob Storage) الآن طريقتين للتحكم في التحميل الأولي عند إنشاء pipe: **البدء بعد**، الذي يتخطى الملفات حتى مفتاح كائن معين وضمنه، و**تخطي التحميل الأولي**، الذي يتخطى الملفات الموجودة مسبقًا بالكامل ويعالج إشعارات الكائنات الجديدة فقط. في السابق، كان pipe الجديد يحمّل بيانات كل ملف في المسار بأثر رجعي دائمًا. الخياران متنافيان ودائمان لـ pipe معين: لا يمكن تشغيل التحميل بأثر رجعي الذي تم تخطيه لاحقًا. متاح في UI وCloud واجهة برمجة تطبيقات وTerraform الإصدار v3.18.0 والإصدارات الأحدث.
 </Update>
 
 <Update label="30 يونيو 2026">
@@ -66,33 +149,33 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   تعمل البنية التحتية لـ ClickPipes الآن في منطقة GCP ذاتها التي تعمل فيها خدمة ClickHouse Cloud الخاصة بك، لجميع خدمات GCP الجديدة المُنشأة بعد 26 مايو، بما في ذلك دعم Private Service Connect (PSC). يُزيل هذا التحديث تكاليف الـ egress عبر السحابات، ويُقلل زمن الاستجابة، ويُبقي البيانات محلية، ويُتيح لك الاتصال بمصادر GCP عبر الشبكات الخاصة الأصيلة في GCP عوضاً عن الحلول الالتفافية كنفق SSH. أما الخدمات الحالية فيمكن ترحيلها بمساعدة فريقنا.
 
-  لمزيد من التفاصيل، راجع [قائمة عناوين IP الثابتة لـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips).
+  لمزيد من التفاصيل، راجع [قائمة عناوين IP الثابتة لـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips).
 
-  ### ClickPipes for GCP Pub/Sub (معاينة خاصة)
+  ### ClickPipes لخدمة GCP Pub/Sub (معاينة خاصة)
 
   بات بإمكان ClickPipes الآن بث البيانات من موضوعات GCP Pub/Sub مباشرةً إلى ClickHouse Cloud، مما يمنح الفرق التي تعتمد على GCP مساراً مباشراً لتحليل البيانات الواردة من Cloud Logging وCloud Monitoring وGKE وغيرها. متاح عبر واجهة ClickPipes UI وOpenAPI وTerraform؛ ويُشترط [التسجيل](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview) خلال مرحلة المعاينة الخاصة.
 
   راجع [وثائق ClickPipes for GCP Pub/Sub](/ar/integrations/clickpipes/pubsub/overview) للاطلاع على تفاصيل الإعداد والضبط.
 
-  ### ClickHouse Agents: تحليلات وكلاء الذكاء الاصطناعي مدعومة بـ Claude (إصدار تجريبي عام)
+  ### ClickHouse Agents: تحليلات وكيل مدعومة بـ Claude (النسخة التجريبية العامة)
 
-  ClickHouse Agents متاح الآن في Public Beta على [ai.clickhouse.cloud](http://ai.clickhouse.cloud) — منصة وكلاء أصيلة مدعومة بـ Claude لإجراء تحليلات تحادثية واعية بمخطط البيانات على بيانات ClickHouse Cloud الخاصة بك. أنشئ وكلاء مخصصين باستخدام AgentBuilder بدون كتابة أي كود، وصِّل MCP servers (Slack وLinear وNotion وغيرها)، وأنشئ سير عمل الوكلاء الفرعيين، وولّد الاستعلامات والمسارات والتطبيقات دون مغادرة المحادثة. يتضمن ذلك تكاملاً مع AWS Bedrock AgentCore وأسساً مُدارة من LibreChat.
+  ClickHouse Agents متاح الآن في النسخة التجريبية العامة على [ai.clickhouse.cloud](http://ai.clickhouse.cloud) — منصة وكلاء رسمية مدعومة بواسطة Claude لإجراء تحليلات محادثية وواعية بالمخطط على بيانات ClickHouse Cloud الخاصة بك. أنشئ وكلاء مخصصين باستخدام AgentBuilder بدون كود، وَصِل خوادم MCP (مثل Slack وLinear وNotion والمزيد)، أنشئ سير عمل للوكلاء الفرعيين، وولّد الاستعلامات، سلاسل المعالجة، والتطبيقات دون مغادرة المحادثة. يتضمن ذلك تكاملاً مع AWS Bedrock AgentCore وأُسُس LibreChat مُدارة.
 
   تعرّف على المزيد في [وثائق ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents/index).
 
-  ### ClickHouse Postgres (النسخة التجريبية العامة)
+  ### ClickHouse Managed Postgres (النسخة التجريبية العامة)
 
-  Postgres المُدار بالكامل على تخزين NVMe المحلي متاح الآن في نسخة Public Beta، إذ يوفر أداءً يفوق AWS RDS بأكثر من 5 أضعاف من حيث عدد المعاملات في الثانية، ويجمع بين OLTP وOLAP في منظومة واحدة مُدارة. تُتيح قناة CDC الأصيلة بث البيانات مباشرةً إلى ClickHouse دون الحاجة إلى أي بنية تحتية وسيطة، كما يُمكّنك امتداد `pg_clickhouse` مفتوح المصدر من الاستعلام عن جداول ClickHouse من جلسات Postgres القياسية.
+  ClickHouse Managed Postgres، وهو Postgres المُدار بالكامل على تخزين NVMe المحلي، متاح الآن في إصدار تجريبي عام (public beta)، ويوفر أكثر من 5 أضعاف عدد المعاملات في الثانية مقارنةً بـ AWS RDS، ويجسر بين OLTP وOLAP في حزمة مُدارة واحدة. تقوم قناة CDC الأصلية ببث البيانات مباشرةً إلى ClickHouse دون بنية تحتية وسيطة، ويتيح امتداد `pg_clickhouse` مفتوح المصدر الاستعلام عن جداول ClickHouse من جلسات Postgres الاعتيادية.
 
   اقرأ المزيد في [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements).
 
-  ### ClickStack Cloud: أوبزيرفابيليتي بلا خوادم (معاينة خاصة)
+  ### ClickStack Cloud: أداة مراقبة بدون خوادم (معاينة خاصة)
 
-  ClickStack Cloud هي منصة observability مُدارة بالكامل وبلا خوادم، مدعومة بـ ClickHouse Cloud. وجِّه OpenTelemetry Collector الخاص بك إلى نقطة نهاية OTLP مُدارة واستكشف السجلات والمقاييس والتتبعات فوراً في ClickStack UI — إذ تتولى المنصة عنك عمليات الاستيعاب والتخزين المؤقت والتوسع والتخزين وخدمة الاستعلامات والمصادقة وRBAC بالكامل. متاحة في معاينة خاصة محدودة على AWS us-east-1.
+  ClickStack Cloud هي منصة مراقبة مُدارة بالكامل وبلا خوادم، مدعومة بواسطة ClickHouse Cloud. قم بتوجيه OpenTelemetry Collector الخاص بك إلى نقطة نهاية OTLP مُدارة واستكشف فورًا السجلات والمقاييس والتتبعات في واجهة ClickStack — إذ تتولى المنصة عنك عمليات الاستيعاب والتخزين المؤقت والتوسع والتخزين وخدمة الاستعلامات والمصادقة وإدارة الوصول المعتمدة على الأدوار (RBAC). متاحة في معاينة خاصة محدودة على AWS us-east-1.
 
   لمزيد من التفاصيل، راجع [ClickStack Cloud private preview](https://clickhouse.com/blog/clickstack-cloud-private-preview) و[قائمة انتظار ClickStack Cloud](https://clickhouse.com/cloud/clickstack-cloud-waitlist).
 
-  ### AI Notebooks لـ Managed ClickStack (beta)
+  ### دفاتر ملاحظات الذكاء الاصطناعي لـ Managed ClickStack (نسخة تجريبية)
 
   تُتيح AI Notebooks مساحة عمل دائمة وشفافة للتحقيق في الحوادث بمساعدة الذكاء الاصطناعي ضمن Managed ClickStack. سجِّل تسلسلات منظَّمة من الطلبات والاستعلامات والمخططات البيانية وخطوات التفكير، وتشعَّب لاستكشاف فرضيات متعددة، وشارك التحقيقات بوصفها مخرجات تعاونية للفريق — مع إمكانية عرض جميع الاستعلامات والنتائج المُولَّدة وتعديلها. يمكن الوصول إليها من شريط التنقل الأيسر في واجهة ClickStack UI.
 
@@ -103,27 +186,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   ### التوسع التلقائي الأفقي (معاينة خاصة)
 
-  يعمل التوسع التلقائي الأفقي على ضبط عدد النسخ المتماثلة في مجموعة ClickHouse Cloud تلقائيًا، إذ يتوسع بشكل مكثف عند ارتفاع الطلب ويتقلص تدريجيًا مع انخفاض الحمل — مما يُغني الفرق ذات أعباء العمل المتغيرة وعالية التزامن عن ضبط حجم المجموعات يدويًا. تعتمد مرحلة private preview على عدد الاستعلامات المتزامنة، فيما يُخطط لإضافة إشارات CPU والذاكرة في مرحلة public beta. متاح لعملاء مستويَي Enterprise وScale على ClickHouse 26.2 وما فوق.
+  يعمل التوسيع التلقائي الأفقي على ضبط عدد النسخ في مجموعة ClickHouse Cloud تلقائيًا، حيث يتوسع بقوة عند ارتفاع الطلب ويتقلص تدريجيًا مع انخفاض الحمل — بحيث لم تعد الفرق التي لديها أحمال عمل متغيرة وعالية التزامن بحاجة إلى ضبط حجم المجموعات يدويًا. تعتمد المرحلة التجريبية الخاصة (private preview) على عدد الاستعلامات المتزامنة؛ وتُخطط إضافة إشارات وحدة المعالجة المركزية والذاكرة في النسخة التجريبية العامة (public beta). متاح لعملاء طبقتي Enterprise وScale على ClickHouse 26.2 وما فوق.
 
-  ملاحظة: عند الإطلاق الأولي للإتاحة العامة (GA)، يتعارض التوسع الأفقي التلقائي مع التوسع الرأسي التلقائي ولا يمكن تفعيلهما في آنٍ واحد. لن يُفعَّل التوسع الأفقي التلقائي إلا عند تعطيل التوسع الرأسي التلقائي (أي عندما تكون الخدمة مضبوطة على حجم ثابت). وينطبق الأمر ذاته على تفعيل التوسع الرأسي التلقائي حين يكون عدد النسخ المتماثلة ثابتاً. سيصبح هذا السلوك أكثر مرونة في الإصدارات القادمة.
+  ملاحظة: عند الإطلاق الأولي للإصدار العام (GA)، يكون التوسيع التلقائي الأفقي والتوسيع التلقائي الرأسي متبادلين ولا يمكن تفعيلهما معًا. لن يُفعّل التوسيع التلقائي الأفقي إلا عند تعطيل التوسيع التلقائي الرأسي (أي عندما تكون الخدمة مضبوطة على حجم ثابت). وينطبق الشيء نفسه على تفعيل التوسيع التلقائي الرأسي عندما يكون عدد النسخ ثابتًا. سيصبح هذا السلوك أكثر مرونة في الإصدارات القادمة.
 
   ### ClickStack MCP Server (مفتوح المصدر)
 
   يمنح MCP Server الجديد مفتوح المصدر لـ ClickStack وكلاءَ الذكاء الاصطناعي الخارجيين أدواتٍ منظَّمة للتحقيق في المراقبة، مبنيةً على ClickStack وClickHouse. يكشف هذا الخادم عن primitives دلالية للسجلات والمقاييس والتتبعات — تشمل تحليل أنماط السجلات، والتحقيق في الشذوذات ضمن التتبعات، وتحليل الارتباطات، وتصحيح الأخطاء عبر الإشارات المختلفة — كما يمكنه حفظ لوحات المعلومات وعمليات البحث والتنبيهات، مع الاحتفاظ بإمكانية الوصول الأصيل إلى SQL لاستكشاف أعمق. يمكنك توصيل وكلاء مثل Claude Code وCursor وCodex أو أطر عمل مخصصة.
 
-  لمزيد من التفاصيل، راجع [توثيق ClickStack MCP Server](/ar/clickstack/mcp) و[منشور المدونة حول Observability MCP Server + AI Notebooks](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#clickstack-mcp-server).
+  لمزيد من التفاصيل راجع [توثيق خادم ClickStack MCP](/ar/clickstack/mcp) و[منشور المدونة حول Observability MCP Server + AI Notebooks](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#clickstack-mcp-server).
 
   {/* vale off */}
 
-  ### دوال معرَّفة من قِبَل المستخدم قابلة للتنفيذ
+  ### دوال معرَّفة من قِبَل المستخدم قابلة للتنفيذ
 
   {/* vale on */}
 
-  يمكنك الآن كتابة دالة بلغة بايثون، وضغطها في ملف مضغوط، ورفعها إلى الـ cluster الخاص بك، ثم استدعاؤها من SQL تمامًا كأي دالة مدمجة. يُشغّل ClickHouse مجموعة من العمليات المعزولة طويلة الأمد ويمرر الصفوف عبرها بسرعة الاستعلام، مما يتيح لك استدعاء دالتك في أي سياق يدعم SQL: الاستعلامات المباشرة، وعمليات الـ join، بل وحتى الـ materialized views التي تُطلَق عند كل عملية إدراج. يبقى كود النموذج الخاص بك مجاورًا للبيانات مباشرةً، ونشره لا يتطلب سوى شاشة رفع واحدة في Cloud Console.
+  يمكنك الآن كتابة دالة بلغة بايثون، وضغطها في ملف مضغوط، ورفعها إلى العنقود الخاص بك، ثم استدعاؤها من SQL مثل أي دالة مدمجة. يقوم ClickHouse بتشغيل مجموعة من العمليات المعزولة طويلة العمر ويمرر الصفوف عبرها بسرعة الاستعلام، لذلك يمكنك استدعاء دالتك في أي مكان يعمل فيه SQL: استعلامات مخصصة، عمليات الربط (joins)، وحتى العروض المادية (materialized views) التي تُنفّذ عند كل إدراج. يكون كود النموذج بجوار البيانات، ونشره لا يتطلب سوى شاشة رفع واحدة في وحدة تحكم السحابة.
 
   لإظهار ما يمكنه فعله، أنشأنا [عرضاً توضيحياً](https://github.com/ClickHouse/stock-anomaly-udf). انطلاقاً من بيانات تداول الأسهم لدينا في الوقت الفعلي في StockHouse، درّبنا مشفِّراً تلقائياً صغيراً مبنياً على PyTorch لتقييم وحدات تداول الأسهم بحثاً عن الشذوذات أثناء استيعابها. يتطلب الأمر UDF واحداً وعبارة DDL واحدة، وما تبقى مجرد SQL عادي. كما أدرجنا معاينةً لـ UDFs الخاصة بالوصول إلى الشبكة (نسخة تجريبية خاصة)، التي تُمكِّن UDFs من إجراء استدعاءات HTTPS خارجية. نستخدم ذلك لجلب الأخبار وملفات SEC، ونطلب من Claude تصنيف سبب ظهور صفقة معينة بوصفها شاذة.
 
-  لمزيد من التفاصيل، راجع [مدونة الإعلان](https://clickhouse.com/blog/executable-udfs-clickhouse-cloud-beta) أو [التوثيق](/ar/products/cloud/features/sql-console-features/user-defined-functions)
+  لمزيد من التفاصيل، اطلع على [مدونة الإعلان](https://clickhouse.com/blog/executable-udfs-clickhouse-cloud-beta) أو على [التوثيق](/ar/products/cloud/features/sql-console-features/user-defined-functions)
 </Update>
 
 <Update label="25 مايو 2026">
@@ -177,7 +260,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Update label="8 مايو 2026">
   ### رؤى استعلامات Postgres (معاينة خاصة)
 
-  أصبح تبويب **Query insights** متاحًا الآن في [ClickHouse Cloud Managed Postgres](/ar/products/managed-postgres/overview) (معاينة خاصة). ويصنّف كل نمط استعلام حسب التأثير، ويعرض سبب بطء كل منها عبر ثلاثة مواضع عرض:
+  أصبح تبويب **Query insights** متاحًا الآن في [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) (معاينة خاصة). ويصنّف كل نمط استعلام حسب التأثير، ويعرض سبب بطء كل منها عبر ثلاثة مواضع عرض:
 
   * **Overview** — صحة قاعدة البيانات في شاشة واحدة
   * **Patterns** — جدول قابل للفرز حسب زمن التشغيل وCPU والأخطاء وP95
@@ -207,7 +290,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   ### Terraform وOpenAPI لـ ClickPipes (إتاحة عامة)
 
-  أصبحت موارد ClickPipes في [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) الخاص بـ ClickHouse متاحةً للاستخدام العام الآن كجزء من الإصدارات المستقرة، ولم تعد [نقاط نهاية OpenAPI](/ar/products/cloud/api-reference/organization/get-list-of-available-organizations) مصنّفة على أنها تجريبية. ويشمل ذلك تغطية كاملة لموصلات CDC ‏(Postgres وMySQL وMongoDB). اطّلع على [توثيق Terraform](/ar/integrations/clickpipes/programmatic-access/terraform) و[توثيق OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[مقالة المدونة](https://clickhouse.com/blog/terraform-ga) لمزيد من التفاصيل.
+  أصبحت موارد ClickPipes في [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) الخاص بـ ClickHouse متاحة عمومًا الآن كجزء من الإصدارات المستقرة، ولم تعد [نقاط نهاية OpenAPI](/ar/products/cloud/api-reference/organization/get-list-of-available-organizations) مصنّفة على أنها تجريبية. ويشمل ذلك تغطية كاملة لموصلات CDC ‏(Postgres وMySQL وMongoDB). اطّلع على [توثيق Terraform](/ar/integrations/clickpipes/programmatic-access/terraform) و[توثيق OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[مقالة المدونة](https://clickhouse.com/blog/terraform-ga) لمزيد من التفاصيل.
 </Update>
 
 <Update label="17 أبريل 2026">
@@ -221,17 +304,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   ### تكافؤ المناطق لـ ClickPipes على AWS
 
-  أصبحت ClickPipes متاحة الآن في جميع مناطق AWS ‏(العامة والخاصة) التي يدعمها ClickHouse Cloud، بعد أن توسّعت من 6 مناطق إلى 18. ويشمل ذلك مناطق استراتيجية مثل Singapore ‏(ap-southeast-1) وSeoul ‏(ap-northeast-2) وTokyo ‏(ap-northeast-1). وتتوفر المناطق الجديدة للخدمات التي أُنشئت بعد 14 أبريل 2026. راجع [التوثيق](/ar/integrations/clickpipes/home#list-of-static-ips) لمزيد من التفاصيل.
+  أصبحت ClickPipes متاحة الآن في جميع مناطق AWS ‏(العامة والخاصة) التي يدعمها ClickHouse Cloud، بعد أن توسّعت من 6 مناطق إلى 18. ويشمل ذلك مناطق استراتيجية مثل Singapore ‏(ap-southeast-1) وSeoul ‏(ap-northeast-2) وTokyo ‏(ap-northeast-1). وتتوفر المناطق الجديدة للخدمات التي أُنشئت بعد 14 أبريل 2026. راجع [التوثيق](/ar/integrations/clickpipes/networking/static-ips) لمزيد من التفاصيل.
 </Update>
 
 <Update label="10 أبريل 2026">
   ### فوترة marketplace الموحّدة مركزيًا
 
-  يمكن للعملاء الآن توحيد الفوترة عبر organizations من خلال marketplace subscription سحابي واحد (AWS وAzure وGCP). تشمل التحديثات الرئيسية ما يلي:
+  يمكن للعملاء الآن توحيد الفوترة عبر مؤسسات من خلال marketplace subscription سحابي واحد (AWS وAzure وGCP). تشمل التحديثات الرئيسية ما يلي:
 
-  * **مشاركة Marketplace Subscription:** يمكنك تحويل organization من الفوترة عبر credit card إلى marketplace subscription موجود تابع لـ organization أخرى، مما يلغي الحاجة إلى إعداد marketplace subscription إضافي. يتم توحيد استخدام PAYG فقط (وليس الأرصدة المدفوعة مسبقًا).
-  * **تحديث Marketplace Subscriptions:** يمكنك استبدال marketplace subscription الخاص بـ organization بآخر تستخدمه organization مختلفة.
-  * **طريقة دفع احتياطية:** يمكن لـ organizations التي تستخدم marketplace billing الآن إضافة credit card كخيار احتياطي إذا أُلغي marketplace subscription الأساسي أو انتهت صلاحيته.
+  * **مشاركة Marketplace Subscription:** يمكنك تحويل مؤسسة من الفوترة عبر credit card إلى marketplace subscription موجود تابع لـ مؤسسة أخرى، مما يلغي الحاجة إلى إعداد marketplace subscription إضافي. يتم توحيد استخدام PAYG فقط (وليس الأرصدة المدفوعة مسبقًا).
+  * **تحديث Marketplace Subscriptions:** يمكنك استبدال marketplace subscription الخاص بـ مؤسسة بآخر تستخدمه مؤسسة مختلفة.
+  * **طريقة دفع احتياطية:** يمكن لـ المؤسسات التي تستخدم marketplace billing الآن إضافة credit card كخيار احتياطي إذا أُلغي marketplace subscription الأساسي أو انتهت صلاحيته.
 
   راجع [وثائق الفوترة](/ar/products/cloud/reference/billing/managing-payment-methods) لمزيد من التفاصيل.
 
@@ -247,10 +330,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Update label="3 أبريل 2026">
   * **التحجيم التلقائي الأذكى باستخدام مُوصٍ بنافذتين:** يستخدم ClickHouse Cloud الآن نهجًا يعتمد على نافذتي مراجعة سابقتين للتحجيم التلقائي الرأسي، بدلًا من النافذة السابقة الوحيدة البالغة 30 ساعة، وذلك عبر الجمع بين &quot;نافذة صغيرة&quot; مدتها 3 ساعات و&quot;نافذة كبيرة&quot; مدتها 30 ساعة. ويؤدي ذلك إلى تقليل زمن التأخر في خفض التحجيم من مدة قد تصل إلى 30 ساعة إلى 3 ساعات فقط، مما يخفض تكاليف infrastructure لأعباء العمل المتغيرة من دون التضحية بسرعة الاستجابة عند زيادة التحجيم. اقرأ [منشور المدونة](https://clickhouse.com/blog/smarter-auto-scaling) لمزيد من التفاصيل.
   * **Monitoring في Cloud Console:** توفّر الآن لوحات معلومات جديدة لكل من Overview وinfrastructure رؤية أوضح لسلوك ClickHouse servers. كما يتلقى المستخدمون المسؤولون الآن إشعارات عبر البريد الإلكتروني بشأن المشكلات الشائعة عند استخدام ClickHouse Cloud. اقرأ [منشور المدونة](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities) لمزيد من التفاصيل.
-  * **الفصل بين الحوسبة والحوسبة (warehouses):** يجري الآن طرح دعم auto-idling على الخدمات الأساسية (ويُشار إليها أيضًا باسم الخدمات الأصل) ضمن المعاينة العامة. إذا لم تكن feature مفعّلة لـ organization الخاص بك، [فاتصل بالدعم](https://clickhouse.com/support/program) للحصول على إمكانية الوصول. وبمجرد انتقال feature إلى general access، سيكون السلوك الافتراضي هو أن الخدمات الأساسية الحالية سيتاح لها خيار تشغيل auto-idling، بينما ستكون الخدمات الأساسية الجديدة مفعّلة به افتراضيًا.
-  * **تكامل كتالوج البيانات:** يدعم ClickHouse Cloud الآن كلاً من Iceberg REST Catalog وMicrosoft OneLake كتكاملات catalog لبحيرات البيانات ضمن data sources UI. وبمجرد الاتصال، يظهر catalog كقاعدة بيانات، مما يتيح لك قراءة جداول Iceberg مباشرةً من دون تكرار البيانات.
-  * **Bring Your Own Cloud (BYOC) على GCP متاح الآن بشكل عام:** أصبح ClickHouse BYOC الآن في مرحلة GA على Google Cloud، مما يتيح لك نشر خدمات ClickHouse داخل مشروع GCP الخاص بك والامتثال لمتطلبات صارمة تتعلق بإقامة البيانات. اقرأ [الوثائق](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview) و[منشور المدونة](https://clickhouse.com/blog/byoc-gcp-ga) لمزيد من التفاصيل. يمكنك [التواصل معنا](https://clickhouse.com/cloud/bring-your-own-cloud) لطلب الوصول.
-  * **إشعارات الفوترة للأرصدة المدفوعة مسبقًا وتغييرات طريقة الدفع:** يرسل ClickHouse Cloud الآن إشعارات عند إضافة أرصدة مدفوعة مسبقًا إلى organization الخاص بك بعد committed contract، أو عند تحديث payment method (credit card أو marketplace subscription). تكون الإشعارات مفعّلة افتراضيًا في كل من UI والبريد الإلكتروني، ويمكن تهيئتها أيضًا للإرسال إلى Slack.
+  * **الفصل بين الحوسبة والحوسبة (warehouses):** يجري الآن طرح دعم auto-idling على الخدمات الأساسية (ويُشار إليها أيضًا باسم الخدمات الأصل) ضمن المعاينة العامة. إذا لم تكن feature مفعّلة لـ مؤسسة الخاص بك، [فاتصل بالدعم](https://clickhouse.com/support/program) للحصول على إمكانية الوصول. وبمجرد انتقال feature إلى general access، سيكون السلوك الافتراضي هو أن الخدمات الأساسية الحالية سيتاح لها خيار تشغيل auto-idling، بينما ستكون الخدمات الأساسية الجديدة مفعّلة به افتراضيًا.
+  * **تكامل كتالوج البيانات:** يدعم ClickHouse Cloud الآن كلاً من Iceberg REST Catalog وMicrosoft OneLake كتكاملات كتالوج لبحيرات البيانات ضمن data sources UI. وبمجرد الاتصال، يظهر كتالوج كقاعدة بيانات، مما يتيح لك قراءة جداول Iceberg مباشرةً من دون تكرار البيانات.
+  * **Bring Your Own Cloud (BYOC) على GCP متاح الآن عمومًا:** أصبح ClickHouse BYOC الآن في مرحلة GA على Google Cloud، مما يتيح لك نشر خدمات ClickHouse داخل مشروع GCP الخاص بك والامتثال لمتطلبات صارمة تتعلق بإقامة البيانات. اقرأ [الوثائق](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview) و[منشور المدونة](https://clickhouse.com/blog/byoc-gcp-ga) لمزيد من التفاصيل. يمكنك [التواصل معنا](https://clickhouse.com/cloud/bring-your-own-cloud) لطلب الوصول.
+  * **إشعارات الفوترة للأرصدة المدفوعة مسبقًا وتغييرات طريقة الدفع:** يرسل ClickHouse Cloud الآن إشعارات عند إضافة أرصدة مدفوعة مسبقًا إلى مؤسسة الخاص بك بعد committed contract، أو عند تحديث payment method (credit card أو marketplace subscription). تكون الإشعارات مفعّلة افتراضيًا في كل من UI والبريد الإلكتروني، ويمكن تهيئتها أيضًا للإرسال إلى Slack.
 </Update>
 
 <Update label="20 مارس 2026">
@@ -260,7 +343,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Update>
 
 <Update label="20 فبراير 2026">
-  * **ClickPipes:** ستُزال الآن Reverse Private Endpoints التي تكون في حالة غير نشطة تلقائيًا بعد فترة سماح محددة. ويضمن ذلك عدم الاحتفاظ بـ endpoints غير المستخدمة أو التي أُسيء تكوينها إلى أجل غير مسمى في النظام الخلفي. راجع [وثائق](/ar/integrations/clickpipes/aws-privatelink#automatic-cleanup) التنظيف التلقائي لمزيد من التفاصيل.
+  * **ClickPipes:** ستُزال الآن Reverse Private Endpoints التي تكون في حالة غير نشطة تلقائيًا بعد فترة سماح محددة. ويضمن ذلك عدم الاحتفاظ بـ endpoints غير المستخدمة أو التي أُسيء تكوينها إلى أجل غير مسمى في النظام الخلفي. راجع [وثائق](/ar/integrations/clickpipes/networking/aws-privatelink#automatic-cleanup) التنظيف التلقائي لمزيد من التفاصيل.
 </Update>
 
 <Update label="13 فبراير 2026">
@@ -275,13 +358,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Update>
 
 <Update label="23 يناير 2026">
-  * أصبح ClickPipes متاحًا الآن في AWS `eu-west-1`. بالنسبة إلى خدمات ClickHouse Cloud الجديدة التي أُنشئت اعتبارًا من 20 يناير في تلك المنطقة، ستُستخدم المنطقة المطابقة لـ ClickPipes. أما الخدمات الأقدم، فسيستخدم ClickPipes افتراضيًا `eu-central-1`. راجع [الوثائق](/ar/integrations/clickpipes/home#list-of-static-ips) لمزيد من التفاصيل.
+  * أصبح ClickPipes متاحًا الآن في AWS `eu-west-1`. بالنسبة إلى خدمات ClickHouse Cloud الجديدة التي أُنشئت اعتبارًا من 20 يناير في تلك المنطقة، ستُستخدم المنطقة المطابقة لـ ClickPipes. أما الخدمات الأقدم، فسيستخدم ClickPipes افتراضيًا `eu-central-1`. راجع [الوثائق](/ar/integrations/clickpipes/networking/static-ips) لمزيد من التفاصيل.
 </Update>
 
 <Update label="16 يناير 2026">
   * **تصفية تكاليف الاستخدام على مستوى الخدمة عبر واجهة برمجة تطبيقات:** تدعم واجهة برمجة تطبيقاتنا الآن تصفية تكاليف استخدام مؤسستك حسب وسوم خدمة محددة، مما يسهّل تحليل الإنفاق بمستوى أدق.
   * **تكامل كتالوج البيانات:** يمكنك الآن ربط كتالوج بيانات خارجي بوصفه مصدر بيانات. تدعم ClickHouse Cloud كلاً من AWS Glue وUnity Catalog (مع المزيد قريبًا). وبمجرد الاتصال، يظهر الكتالوج كقاعدة بيانات، مما يتيح لك قراءة جداول Iceberg مباشرةً، من دون تكرار البيانات. للحصول على إمكانية الوصول، تواصل مع الدعم لطلبه.
   * **ClickPipes:**
-    * تمت ترقية connector الخاص بـ MongoDB إلى الإصدار التجريبي العام، وهو متاح الآن لعملاء ClickHouse Cloud الجدد والحاليين عبر جميع فئات الخدمة. اقرأ [منشور المدونة](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-beta) للاطلاع على نظرة عامة على الميزات الجديدة، ثم انتقل إلى [الوثائق](/ar/integrations/clickpipes/mongodb/index) للبدء.
+    * تمت ترقية connector الخاص بـ MongoDB إلى بيتا عامة، وهو متاح الآن لعملاء ClickHouse Cloud الجدد والحاليين عبر جميع فئات الخدمة. اقرأ [منشور المدونة](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-beta) للاطلاع على نظرة عامة على الميزات الجديدة، ثم انتقل إلى [الوثائق](/ar/integrations/clickpipes/mongodb/index) للبدء.
     * أصبح [S3 ClickPipe](/ar/integrations/clickpipes/object-storage/amazon-s3/overview) متوافقًا الآن مع OVH Object Storage، وهي خدمة تخزين كائنات متوافقة مع واجهة برمجة تطبيقات S3 في OVHcloud.
 </Update>

@@ -1,0 +1,8 @@
+-- a single SET works, with and without the gate --
+OK
+OK
+-- a statement after the SET is rejected, not silently dropped --
+1
+1
+-- with the gate off the escape hatch does not fire for a multi-statement --
+1

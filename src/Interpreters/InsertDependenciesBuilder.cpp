@@ -6,11 +6,11 @@
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/Transforms/RemovingSparseTransform.h>
 #include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
@@ -25,6 +25,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -100,12 +101,13 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsFloat shrink_over_allocated_columns_min_waste_ratio;
+    extern const SettingsUInt64 shrink_over_allocated_columns_min_waste_bytes;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
@@ -299,35 +301,6 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         return ptr;
     }
 }
-
-
-class PushingToWindowViewSink final : public SinkToStorage
-{
-public:
-    PushingToWindowViewSink(SharedHeader header, StorageWindowView & window_view_, ContextPtr context_)
-        : SinkToStorage(header)
-        , window_view(window_view_)
-        , context(std::move(context_))
-    {
-    }
-    String getName() const override { return "PushingToWindowViewSink"; }
-    void consume(Chunk & chunk) override
-    {
-        Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-        StorageWindowView::writeIntoWindowView(
-            window_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
-
-        if (auto process = context->getProcessListElement())
-            process->updateProgressIn(local_progress);
-
-        ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
-        ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
-    }
-
-private:
-    StorageWindowView & window_view;
-    ContextPtr context;
-};
 
 
 class BeginingViewsTransform final : public ISimpleTransform
@@ -539,7 +512,7 @@ static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, 
 {
     auto constraints = metadata->getConstraints();
 
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
     if (storage_merge_tree
         && (storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Collapsing
             || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -654,7 +627,7 @@ private:
     {
         /// We create a table with the same name as original table and the same alias columns,
         ///  but it will contain single block (that is INSERT-ed into main table).
-        /// InterpreterSelectQuery will do processing of alias columns.
+        /// The interpreter will do processing of alias columns.
         auto local_context = Context::createCopy(context);
 
         local_context->addViewSource(std::make_shared<StorageValues>(
@@ -665,15 +638,13 @@ private:
 
         QueryPipelineBuilder pipeline;
 
-        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
+            /// Mark this region to avoid counting the `QueryExecutionCounters` metrics several times:
+            /// the pipeline is built again for every source block.
+            QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(view_id.getFullTableName());
+
             InterpreterSelectQueryAnalyzer interpreter(
                 select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
-            pipeline = interpreter.buildQueryPipeline();
-        }
-        else
-        {
-            InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
             pipeline = interpreter.buildQueryPipeline();
         }
         pipeline.resize(1);
@@ -719,7 +690,7 @@ private:
                 local_context);
 
             bool inner_share_nested_offsets = true;
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(inner_storage.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(inner_storage, DeferredTable::Load).get())
                 inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             auto adding_missing_defaults_dag = addMissingDefaults(
@@ -787,7 +758,7 @@ bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StorageP
     /// MergeTree-family engines deduplicate inserted blocks when their (synchronous) deduplication
     /// window is enabled. This mirrors how `MergeTreeSink` / `ReplicatedMergeTreeSink` compute their
     /// own `deduplicate` flag.
-    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+    if (const auto * merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
     {
         const auto merge_tree_settings = merge_tree->getSettings();
         if (storage->supportsReplication())
@@ -1445,7 +1416,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     const auto & parent = path.parent(1);
     const auto & current = path.current();
 
-    auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
+    auto storage = current == init_table_id ? init_storage : resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(current, init_context));
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
     if (!lock)
     {
@@ -1478,11 +1449,28 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     }
 
     chassert(storage);
+
+    /// `InterpreterInsertQuery` refreshes only the root target; do the same here, once per storage, in the parent view's context.
+    /// Views are skipped: only a non-view `current` has a view parent, and a regular root table is keyed as `root_view` (`{}`).
+    if (current != init_table_id && !storage->isView() && !metadata_snapshots.contains(current))
+        storage->updateExternalDynamicMetadataIfExists(insert_contexts.at(parent));
+
     auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
     auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
 
     if (materialized_view && current != init_table_id)
     {
+        /// A view selects from its own source, never from the view that forwards into it, so on a target edge
+        /// the check below is never satisfied and the path is abandoned with no output header. Abandoning is
+        /// right for a view reached as a dependent, which is skipped, but `createPreSink` requires the header
+        /// of the view the insert addresses.
+        if (parent == init_table_id && isView(parent) && inner_tables.at(parent) == current)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Table '{}' is a materialized view, so it cannot be the target of materialized view '{}'. "
+                "Use the target table of '{}' instead.",
+                current, parent, current);
+
         StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
         if (select_table_id != parent)
         {
@@ -1545,38 +1533,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         if (init_context->hasQueryContext())
             init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
-
-        return true;
-    }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(init_storage.get()))
-    {
-        if (current == init_table_id)
-        {
-            set_defaults_for_root_view(init_table_id, init_table_id);
-            view_types[init_table_id] = QueryViewsLogElement::ViewType::WINDOW;
-            return true;
-        }
-
-        inner_tables[current] = current;
-        select_queries[current] = window_view->getMergeableQuery();
-        input_headers[current] = output_headers.at(path.parent(2));
-        thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
-        view_types[current] = QueryViewsLogElement::ViewType::WINDOW;
-        views_error_registry->init(current);
-
-        auto parent_select_context = select_contexts.at(path.parent(2));
-        auto view_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
-        view_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
-        select_contexts[current] = view_context;
-        insert_contexts[current] = view_context;
-
-        if (init_context->hasQueryContext())
-        {
-            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
-            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
-        }
-
-        dependent_views[path.parent(2)].push_back(current);
 
         return true;
     }
@@ -1763,7 +1719,7 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     auto insert_context = insert_contexts.at(view_id);
 
     bool inner_share_nested_offsets = true;
-    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(storages.at(inner_table_id).get()))
+    if (auto * merge_tree = castStorage<MergeTreeData>(storages.at(inner_table_id), DeferredTable::Load).get())
         inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     /// Widen Enum columns to their target type before adding defaults, so the valid Enum-widening
@@ -1800,6 +1756,17 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     result.addSink(std::make_shared<ConvertingTransform>(input_headers.at(view_id), std::make_shared<ExpressionActions>(std::move(merged_dag))));
 
     inner_metadata->check(result.getOutputHeader().getColumnsWithTypeAndName());
+
+    /// Shrink over-allocated columns produced by materialization (e.g. a String materialized into a
+    /// JSON column over-allocates its buffers) to fit, right after they are built and before the sink,
+    /// to reduce peak memory usage on INSERT.
+    const auto & insert_settings = insert_context->getSettingsRef();
+    const double shrink_min_waste_ratio = static_cast<double>(insert_settings[Setting::shrink_over_allocated_columns_min_waste_ratio]);
+    if (shrink_min_waste_ratio > 1.0)
+        result.addSink(std::make_shared<ShrinkColumnsTransform>(
+            result.getOutputSharedHeader(),
+            shrink_min_waste_ratio,
+            insert_settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     return result;
 }
@@ -1846,7 +1813,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     {
         bool skip_nested_validation = false;
-        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(inner_storage.get()))
+        if (auto * merge_tree = castStorage<MergeTreeData>(inner_storage, DeferredTable::Load).get())
             skip_nested_validation = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
         if (!skip_nested_validation)
             result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
@@ -1861,14 +1828,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
 
     const bool has_dependent_materialized_views = !dependent_views.at(view_id).empty();
 
-    if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
-    {
-        auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
-        sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
-        result.addSink(std::move(sink));
-    }
-    else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
+    if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
     {
         // Data is never inserted to the StorageMaterializedView, it is inserted to its inner table
         UNREACHABLE();
@@ -1956,6 +1916,19 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 }
 
 
+/// A half-built view can reach the log with its query stored but not its context. The context
+/// only supplies the log cut-off, so the init one stands in for a missing one.
+String InsertDependenciesBuilder::getViewQueryForLog(StorageID view_id) const
+{
+    auto query_it = select_queries.find(view_id);
+    if (query_it == select_queries.end())
+        return {};
+
+    auto context_it = select_contexts.find(view_id);
+    return getCleanQueryAst(query_it->second, context_it == select_contexts.end() ? init_context : context_it->second);
+}
+
+
 void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start) const
 {
     const auto & settings = init_context->getSettingsRef();
@@ -2000,7 +1973,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
             element.view_name = view_id.getFullTableName();
             element.view_uuid = view_id.uuid;
             element.view_type = view_type;
-            element.view_query = getCleanQueryAst(select_queries.at(view_id), select_contexts.at(view_id));
+            element.view_query = getViewQueryForLog(view_id);
             element.view_target = inner_table_id.getFullTableName();
 
             element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;

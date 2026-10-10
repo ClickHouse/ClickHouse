@@ -31,7 +31,7 @@ SELECT toDateTime64OrNull(toInt64(253402300799), 3, 'UTC'), toDateTime64OrNull(t
 SELECT toDateTime64OrNull(toUInt8(255), 3, 'UTC'), toDateTime64OrNull(toUInt16(65535), 3, 'UTC'), toDateTime64OrNull(toUInt32(4294967295), 3, 'UTC');
 -- Overflow of the value scaled to a high precision produces NULL as well.
 SELECT toDateTime64OrNull(10413791999, 9, 'UTC');
--- With zero precision the function returns DateTime, like toDateTime64.
+-- With zero precision the function returns DateTime64(0), like toDateTime64.
 SELECT toDateTime64OrNull(1583851242, 0, 'UTC'), toTypeName(toDateTime64OrNull(1583851242, 0, 'UTC'));
 
 -- Non-constant columns and NULL values.
