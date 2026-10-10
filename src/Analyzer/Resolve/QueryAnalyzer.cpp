@@ -904,6 +904,25 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
         window_node_typed.getOrderByNode() = parent_window_node_typed.getOrderBy().clone();
 }
 
+/** Give the window nodes of a clone of a projection item the snapshots of the named windows taken
+  * for the corresponding window nodes of the original, see `expandMatchersInsideProjectionExpression`.
+  */
+void QueryAnalyzer::copyNamedWindowSnapshots(const QueryTreeNodePtr & original_node, const QueryTreeNodePtr & cloned_node)
+{
+    if (auto snapshot_it = named_window_snapshots.find(original_node); snapshot_it != named_window_snapshots.end())
+        named_window_snapshots[cloned_node] = snapshot_it->second->clone();
+
+    const auto & original_children = original_node->getChildren();
+    const auto & cloned_children = cloned_node->getChildren();
+    chassert(original_children.size() == cloned_children.size());
+
+    for (size_t i = 0; i < original_children.size(); ++i)
+    {
+        if (original_children[i] && cloned_children[i])
+            copyNamedWindowSnapshots(original_children[i], cloned_children[i]);
+    }
+}
+
 /** Replace nodes in node list with positional arguments.
   *
   * Example: SELECT id, value FROM test_table GROUP BY 1, 2;
@@ -985,6 +1004,10 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         {
             resolved_expressions[*node_to_replace] = it->second;
         }
+
+        /// The clone must resolve its named windows from the same definitions as the projection item it is made from.
+        if (!named_window_snapshots.empty())
+            copyNamedWindowSnapshots(projection_nodes[pos], *node_to_replace);
     }
 }
 
