@@ -43,7 +43,7 @@ function(add_contrib cmake_folder)
 endfunction()
 
 # Use the original launchers for the projects that are needed for source code generation:
-# protoc and llvm-tlbgen.
+# protoc, flatc and llvm-tlbgen.
 disable_heavy_build_check_if_needed()
 disable_dummy_launchers_if_needed()
 
@@ -58,6 +58,15 @@ add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
+# Declared here rather than in `arrow-cmake`, because `flatbuffers-cmake` below builds `flatc` only
+# when Arrow needs it, and has to see the final value on the first configure.
+set (ENABLE_PARQUET_DEFAULT ${ENABLE_LIBRARIES})
+if (OS_FREEBSD)
+    set (ENABLE_PARQUET_DEFAULT OFF)
+endif()
+option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
+
+add_contrib (flatbuffers-cmake flatbuffers) # builds `flatc`, which generates the Arrow IPC bindings
 add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
 add_contrib (llvm-project-cmake llvm-project)
@@ -105,7 +114,7 @@ add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc
 add_contrib (xsimd-cmake xsimd) # required by arrow's SIMD codepaths
-add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd
+add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion, xsimd, flatbuffers
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (openldap-cmake openldap)
 add_contrib (msgpack-c-cmake msgpack-c)
@@ -281,6 +290,8 @@ endif()
 add_contrib (jwt-cpp-cmake jwt-cpp)
 
 add_contrib (sha3iuf-cmake SHA3IUF)
+
+add_contrib (xgboost-cmake xgboost dmlc-core)
 
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
