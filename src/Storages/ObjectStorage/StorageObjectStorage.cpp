@@ -39,7 +39,6 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
@@ -1036,14 +1035,12 @@ void StorageObjectStorage::dropImpl(
     if (delete_data_on_drop && configuration->isIcebergConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, drop_context);
 
-    /// A Nil database UUID means Ordinary/Memory, as in InterpreterDropQuery.
+    /// Only Atomic/Replicated databases give a non-temporary table a UUID.
     DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;
     if (catalog == nullptr)
-    {
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.database_name);
-        policy = (database && database->getUUID() == UUIDHelpers::Nil) ? DropCleanupPolicy::Reattaching
-                                                                       : DropCleanupPolicy::AsyncRetry;
-    }
+        policy = (storage_id.hasUUID() && storage_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+            ? DropCleanupPolicy::AsyncRetry
+            : DropCleanupPolicy::Reattaching;
     configuration->drop(drop_context, catalog, storage_id, policy);
 }
 
