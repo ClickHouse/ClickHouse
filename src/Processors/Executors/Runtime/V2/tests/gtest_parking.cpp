@@ -1,0 +1,93 @@
+#include <Processors/Executors/Runtime/V2/tests/Toolkit/RunPipeline.h>
+#include <Processors/Executors/Runtime/V2/tests/Toolkit/Scripted.h>
+#include <Processors/Executors/Runtime/V2/tests/Toolkit/Topology.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
+#include <Processors/Executors/Runtime/Wyrd/Random.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Gate.h>
+#include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
+
+#include <algorithm>
+#include <vector>
+
+using namespace DB;
+using namespace DB::Runtime;
+using namespace DB::Runtime::V2;
+
+namespace
+{
+
+std::vector<Action> emitsAfterIdleWork(UInt64 first_value, size_t chunks, size_t max_idle_work)
+{
+    std::vector<Action> actions;
+    for (size_t chunk = 0; chunk < chunks; ++chunk)
+    {
+        const size_t idle_work = Wyrd::randomBetween(0, max_idle_work);
+        for (size_t step = 0; step < idle_work; ++step)
+            actions.push_back(work([](auto &) {}));
+        actions.push_back(emit(first_value + chunk));
+    }
+    return actions;
+}
+
+std::vector<UInt64> sorted(std::vector<UInt64> values)
+{
+    std::ranges::sort(values);
+    return values;
+}
+
+}
+
+WYRD_TEST(Parking, BurstsAndPausesFinishEveryChunk, .runs = 1000, .simulation = {.max_steps = 2'000'000})
+{
+    const size_t sources_count = Wyrd::randomBetween(1, 6);
+    const size_t threads = Wyrd::randomBetween(1, 4);
+    const size_t max_idle_work = Wyrd::randomBetween(0, 6);
+
+    std::vector<ProcessorPtr> sources;
+    std::vector<UInt64> expected;
+    for (size_t index = 0; index < sources_count; ++index)
+    {
+        const size_t chunks = Wyrd::randomBetween(1, 5);
+        const UInt64 first_value = 100 * (index + 1);
+        sources.push_back(makeSource(fmt::format("source{}", index), emitsAfterIdleWork(first_value, chunks, max_idle_work)));
+        for (size_t chunk = 0; chunk < chunks; ++chunk)
+            expected.push_back(first_value + chunk);
+    }
+
+    auto sink = makeSink("sink", {});
+    auto resize = fanIn(sources, sink);
+
+    Processors processors(sources.begin(), sources.end());
+    processors.push_back(resize);
+    processors.push_back(sink);
+
+    EXPECT_NO_THROW(runPipeline(std::move(processors), threads));
+    EXPECT_EQ(sorted(received(*sink)), expected);
+}
+
+WYRD_TEST(Parking, WorkReleasedWhileOthersSleepWakesThem, .runs = 1000, .simulation = {.max_steps = 2'000'000})
+{
+    const size_t threads = Wyrd::randomBetween(2, 4);
+    Wyrd::Gate gate;
+
+    auto held = makeSource("held", {emit(1), work([&gate](auto &) { gate.pass(); }), emit(2), emit(3)});
+    auto transform = makeTransform("transform", {});
+    auto sink = makeSink("sink", {});
+    chain({held, transform, sink});
+
+    Wyrd::Thread opener([&gate] { gate.open(); });
+    EXPECT_NO_THROW(runPipeline({held, transform, sink}, threads));
+    opener.join();
+
+    EXPECT_EQ(received(*sink), (std::vector<UInt64>{1, 2, 3}));
+}
+
+WYRD_TEST(Parking, IdleWorkersAreStoppedAtTheEnd, .runs = 1000)
+{
+    auto source = makeSource("source", {emit(1)});
+    auto sink = makeSink("sink", {});
+    chain({source, sink});
+
+    EXPECT_NO_THROW(runPipeline({source, sink}, 4));
+    EXPECT_EQ(received(*sink), (std::vector<UInt64>{1}));
+}

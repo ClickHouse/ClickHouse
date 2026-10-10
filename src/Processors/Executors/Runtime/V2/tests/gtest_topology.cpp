@@ -1,8 +1,11 @@
+#include <Processors/Executors/Runtime/V2/tests/Toolkit/RunPipeline.h>
 #include <Processors/Executors/Runtime/V2/tests/Toolkit/Scripted.h>
 #include <Processors/Executors/Runtime/V2/tests/Toolkit/Topology.h>
+#include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
 #include <Processors/Port.h>
 
+#include <algorithm>
 #include <vector>
 
 using namespace DB;
@@ -12,78 +15,115 @@ using namespace DB::Runtime::V2;
 namespace
 {
 
-const IProcessor & downstreamOf(const IProcessor & processor)
+std::vector<UInt64> values(UInt64 first_value, size_t count)
 {
-    return processor.getOutputs().front().getInputPort().getProcessor();
+    std::vector<UInt64> result;
+    for (size_t index = 0; index < count; ++index)
+        result.push_back(first_value + index);
+    return result;
 }
 
-std::vector<ProcessorPtr> ordered(const Processors & processors)
+std::vector<UInt64> sorted(std::vector<UInt64> result)
 {
-    return {processors.begin(), processors.end()};
+    std::ranges::sort(result);
+    return result;
+}
+
+std::vector<UInt64> receivedByAll(const std::vector<ProcessorPtr> & sinks)
+{
+    std::vector<UInt64> result;
+    for (const auto & sink : sinks)
+        result.append_range(received(*sink));
+    return result;
 }
 
 }
 
-WYRD_TEST(Topology, ChainConnectsEachStageToTheNext, .runs = 1000)
+WYRD_TEST(Topology, ChainOfTransformsKeepsTheOrder, .runs = 300)
 {
-    auto source = makeSource("source", {});
-    auto transform = makeTransform("transform", {});
+    const size_t chunks = Wyrd::randomBetween(1, 8);
+    const size_t transforms = Wyrd::randomBetween(0, 5);
+
+    std::vector<ProcessorPtr> stages{makeSource("source", emits(1, chunks))};
+    for (size_t index = 0; index < transforms; ++index)
+        stages.push_back(makeTransform(fmt::format("transform{}", index), {}));
     auto sink = makeSink("sink", {});
+    stages.push_back(sink);
+    chain(stages);
 
-    auto processors = ordered(chain({source, transform, sink}));
-
-    ASSERT_EQ(processors.size(), 3u);
-    EXPECT_EQ(processors[0], source);
-    EXPECT_EQ(processors[1], transform);
-    EXPECT_EQ(processors[2], sink);
-    EXPECT_EQ(&downstreamOf(*source), transform.get());
-    EXPECT_EQ(&downstreamOf(*transform), sink.get());
-    EXPECT_TRUE(sink->getInputs().front().isConnected());
+    EXPECT_NO_THROW(runPipeline(Processors(stages.begin(), stages.end()), Wyrd::randomBetween(1, 4)));
+    EXPECT_EQ(received(*sink), values(1, chunks));
 }
 
-WYRD_TEST(Topology, FanInJoinsSourcesThroughOneResize, .runs = 1000)
+WYRD_TEST(Topology, FanInGathersEverySource, .runs = 300)
 {
-    auto first = makeSource("first", {});
-    auto second = makeSource("second", {});
+    const size_t sources_count = Wyrd::randomBetween(1, 6);
+
+    std::vector<ProcessorPtr> sources;
+    std::vector<UInt64> expected;
+    for (size_t index = 0; index < sources_count; ++index)
+    {
+        const size_t chunks = Wyrd::randomBetween(1, 4);
+        sources.push_back(makeSource(fmt::format("source{}", index), emits(100 * (index + 1), chunks)));
+        expected.append_range(values(100 * (index + 1), chunks));
+    }
     auto sink = makeSink("sink", {});
+    auto resize = fanIn(sources, sink);
 
-    auto processors = ordered(fanIn({first, second}, sink));
+    Processors processors(sources.begin(), sources.end());
+    processors.push_back(resize);
+    processors.push_back(sink);
 
-    ASSERT_EQ(processors.size(), 4u);
-    EXPECT_EQ(processors[0], first);
-    EXPECT_EQ(processors[1], second);
-    EXPECT_EQ(processors[3], sink);
-
-    const auto & resize = *processors[2];
-    EXPECT_EQ(resize.getName(), "Resize");
-    EXPECT_EQ(resize.getInputs().size(), 2u);
-    EXPECT_EQ(resize.getOutputs().size(), 1u);
-    EXPECT_EQ(&downstreamOf(*first), &resize);
-    EXPECT_EQ(&downstreamOf(*second), &resize);
-    EXPECT_EQ(&downstreamOf(resize), sink.get());
+    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomBetween(1, 4)));
+    EXPECT_EQ(sorted(received(*sink)), expected);
 }
 
-WYRD_TEST(Topology, FanOutSplitsOneSourceThroughOneResize, .runs = 1000)
+WYRD_TEST(Topology, FanOutDeliversEachChunkToOneSink, .runs = 300)
 {
-    auto source = makeSource("source", {});
-    auto first = makeSink("first", {});
-    auto second = makeSink("second", {});
+    const size_t chunks = Wyrd::randomBetween(1, 8);
+    const size_t sinks_count = Wyrd::randomBetween(1, 6);
 
-    auto processors = ordered(fanOut(source, {first, second}));
+    std::vector<ProcessorPtr> sinks;
+    for (size_t index = 0; index < sinks_count; ++index)
+        sinks.push_back(makeSink(fmt::format("sink{}", index), {}));
 
-    ASSERT_EQ(processors.size(), 4u);
-    EXPECT_EQ(processors[0], source);
-    EXPECT_EQ(processors[2], first);
-    EXPECT_EQ(processors[3], second);
+    auto source = makeSource("source", emits(1, chunks));
+    auto resize = fanOut(source, sinks);
 
-    const auto & resize = *processors[1];
-    EXPECT_EQ(resize.getName(), "Resize");
-    EXPECT_EQ(resize.getInputs().size(), 1u);
-    EXPECT_EQ(resize.getOutputs().size(), 2u);
-    EXPECT_EQ(&downstreamOf(*source), &resize);
+    Processors processors{source, resize};
+    processors.append_range(sinks);
 
-    std::vector<const IProcessor *> sinks;
-    for (const auto & output : resize.getOutputs())
-        sinks.push_back(&output.getInputPort().getProcessor());
-    EXPECT_EQ(sinks, (std::vector<const IProcessor *>{first.get(), second.get()}));
+    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomBetween(1, 4)));
+    EXPECT_EQ(sorted(receivedByAll(sinks)), values(1, chunks));
+}
+
+WYRD_TEST(Topology, FanInThroughATransformIntoFanOut, .runs = 300)
+{
+    const size_t sources_count = Wyrd::randomBetween(1, 4);
+    const size_t sinks_count = Wyrd::randomBetween(1, 4);
+
+    std::vector<ProcessorPtr> sources;
+    std::vector<UInt64> expected;
+    for (size_t index = 0; index < sources_count; ++index)
+    {
+        const size_t chunks = Wyrd::randomBetween(1, 4);
+        sources.push_back(makeSource(fmt::format("source{}", index), emits(100 * (index + 1), chunks)));
+        expected.append_range(values(100 * (index + 1), chunks));
+    }
+    std::vector<ProcessorPtr> sinks;
+    for (size_t index = 0; index < sinks_count; ++index)
+        sinks.push_back(makeSink(fmt::format("sink{}", index), {}));
+
+    auto middle = makeTransform("middle", {});
+    auto join = fanIn(sources, middle);
+    auto split = fanOut(middle, sinks);
+
+    Processors processors(sources.begin(), sources.end());
+    processors.push_back(join);
+    processors.push_back(middle);
+    processors.push_back(split);
+    processors.append_range(sinks);
+
+    EXPECT_NO_THROW(runPipeline(std::move(processors), Wyrd::randomBetween(1, 4)));
+    EXPECT_EQ(sorted(receivedByAll(sinks)), expected);
 }

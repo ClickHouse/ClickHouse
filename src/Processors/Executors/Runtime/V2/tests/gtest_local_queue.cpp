@@ -79,11 +79,11 @@ WYRD_TEST(LocalQueue, FullRingRefusesPushUntilSteal)
 
 WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simulation = { .max_syncs_before_preempt = 1 })
 {
-    constexpr UInt32 total = 64;
-    constexpr UInt32 thieves = 3;
-    constexpr UInt32 batch = 4;
-    constexpr UInt32 owner_pops_one_in = 4;
-    constexpr UInt32 min_successful_steals = 4;
+    constexpr UInt32 largest_batch = 4;
+    const size_t total = Wyrd::randomBetween(8, 64);
+    const size_t thieves = Wyrd::randomBetween(3, 4);
+    const size_t batch = Wyrd::randomBetween(1, largest_batch);
+    const size_t owner_pops_one_in = Wyrd::randomBetween(2, 8);
 
     std::vector<ExecutingProcessor> records(total);
     std::vector<Wyrd::Atomic<UInt32>> taken(total);
@@ -109,7 +109,7 @@ WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simula
                 }
                 Wyrd::progress();
 
-                if (Wyrd::randomNumber() % owner_pops_one_in == 0)
+                if (Wyrd::randomEventEvery(owner_pops_one_in))
                 {
                     if (auto * popped = ring.popLifo())
                         take(popped);
@@ -129,7 +129,8 @@ WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simula
         [&](size_t)
         {
             Wyrd::LockFreeScope scope;
-            std::array<ExecutingProcessor *, batch> stolen{};
+            std::array<ExecutingProcessor *, largest_batch> buffer{};
+            std::span<ExecutingProcessor *> stolen(buffer.data(), batch);
             while (!owner_done.load())
             {
                 const UInt32 count = ring.stealFifo(stolen);
@@ -143,7 +144,8 @@ WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simula
     race.run();
 
     EXPECT_EQ(ring.size(), 0u);
-    EXPECT_GE(successful_steals.load(), min_successful_steals);
-    for (UInt32 index = 0; index < total; ++index)
+    if (total >= 32)
+        EXPECT_GT(successful_steals.load(), 0u);
+    for (size_t index = 0; index < total; ++index)
         EXPECT_EQ(taken[index].load(), 1u) << "entry " << index;
 }

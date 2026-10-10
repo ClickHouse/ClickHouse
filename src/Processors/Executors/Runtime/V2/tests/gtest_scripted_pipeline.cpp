@@ -13,30 +13,35 @@ using namespace DB::Runtime::V2;
 
 WYRD_TEST(ScriptedPipeline, ChainDeliversEveryChunkInOrder, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
 {
+    auto source = makeSource("source", {emit(1), emit(2), emit(3)});
+    auto transform = makeTransform("transform", {});
     auto sink = makeSink("sink", {});
-    auto processors = chain({makeSource("source", {emit(1), emit(2), emit(3)}), makeTransform("transform", {}), sink});
+    chain({source, transform, sink});
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    EXPECT_NO_THROW(runPipeline(std::move(processors), threads));
+    EXPECT_NO_THROW(runPipeline({source, transform, sink}, threads));
     EXPECT_EQ(received(*sink), (std::vector<UInt64>{1, 2, 3}));
 }
 
 WYRD_TEST(ScriptedPipeline, ThrowInWorkIsRethrownByExecute, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
 {
+    auto source = makeSource("source", {emit(1), work([](auto &) { throw std::runtime_error("scripted failure"); })});
     auto sink = makeSink("sink", {});
-    auto processors = chain({makeSource("source", {emit(1), work([](auto &) { throw std::runtime_error("scripted failure"); })}), sink});
+    chain({source, sink});
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    EXPECT_THROW(runPipeline(std::move(processors), threads), std::runtime_error);
+    EXPECT_THROW(runPipeline({source, sink}, threads), std::runtime_error);
 }
 
 WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
 {
+    auto first = makeSource("first", {emit(1)});
+    auto second = makeSource("second", {emit(2)});
     auto sink = makeSink("sink", {});
-    auto processors = fanIn({makeSource("first", {emit(1)}), makeSource("second", {emit(2)})}, sink);
+    auto resize = fanIn({first, second}, sink);
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    EXPECT_NO_THROW(runPipeline(std::move(processors), threads));
+    EXPECT_NO_THROW(runPipeline({first, second, resize, sink}, threads));
 
     auto values = received(*sink);
     std::ranges::sort(values);
@@ -45,12 +50,13 @@ WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation 
 
 WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulation = { .max_syncs_before_preempt = 3 })
 {
+    auto source = makeSource("source", {emit(1), emit(2), emit(3)});
     auto first = makeSink("first", {});
     auto second = makeSink("second", {});
-    auto processors = fanOut(makeSource("source", {emit(1), emit(2), emit(3)}), {first, second});
+    auto resize = fanOut(source, {first, second});
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    EXPECT_NO_THROW(runPipeline(std::move(processors), threads));
+    EXPECT_NO_THROW(runPipeline({source, resize, first, second}, threads));
 
     auto values = received(*first);
     auto rest = received(*second);
