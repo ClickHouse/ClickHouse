@@ -1,0 +1,21 @@
+<clickhouse>
+    <!--
+        Negative case: a section shaped like a `GraphiteMergeTree` rollup whose immediate children are
+        all recognized (here a single `<default>` rule), but the rule itself contains a foreign NESTED
+        child (`<not_a_graphite_key>`) that `appendGraphitePattern` rejects with
+        `UNKNOWN_ELEMENT_IN_CONFIG`. Validating only the section's immediate children would accept the
+        section; the validator must recurse into each `<pattern>`/`<default>` rule and reject the whole
+        section as an unknown top-level key (a typo), otherwise a misspelled section sneaks through.
+        The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    -->
+    <graphite_nested_foreign>
+        <default>
+            <function>max</function>
+            <retention>
+                <age>0</age>
+                <precision>60</precision>
+            </retention>
+            <not_a_graphite_key>oops</not_a_graphite_key>
+        </default>
+    </graphite_nested_foreign>
+</clickhouse>

@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas
--- Tag no-parallel-replicas: asserts on the top-K `ProfileEvents` of one aggregation, but with parallel replicas every replica aggregates only its share of the rows
 -- A plateau of equal worst keys in the top-K heap must not stop eviction when
 -- enough strictly better keys remain: such a plateau lies outside the top-K and
 -- is fully evictable.  Only the tie-set that straddles the capacity boundary is

@@ -1,8 +1,8 @@
 Inject trivial count optimization from the text index into the query plan
 -- fires: single-token hasToken / hasAnyTokens / hasAllTokens
-└──ReadFromTextIndexCount (Trivial count from text index (idx, token = "alpha"))
-└──ReadFromTextIndexCount (Trivial count from text index (idx, token = "alpha"))
-└──ReadFromTextIndexCount (Trivial count from text index (idx, token = "alpha"))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
 -- result matches the normal path
 750
 750
@@ -22,11 +22,11 @@ Inject trivial count optimization from the text index into the query plan
 0
 750
 -- fires: multi-token hasAnyTokens (union)
-└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = ["alpha", "zeta"]))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'alpha\', \'zeta\']))
 1500
 1500
 -- fires: multi-token hasAllTokens (intersection)
-└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = ["alpha", "beta"]))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'alpha\', \'beta\']))
 500
 500
 0
@@ -49,7 +49,7 @@ Read limits: an over-limit or concurrency-capped query falls back to the reader
 500
 Multi-block postings (small block size exercises read_postings, block skipping, intersection)
 -- fires with a multi-block token
-└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = ["common", "rare"]))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'common\', \'rare\']))
 -- results match the reader (each pair: optimization on, then off)
 10
 10
@@ -65,28 +65,28 @@ Multi-block postings (small block size exercises read_postings, block skipping, 
 2500
 Array and Map carriers reach the optimization through the shared direct-read query
 -- fires: has (single token)
-└──ReadFromTextIndexCount (Trivial count from text index (idx, token = "foo"))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'foo\'))
 500
 500
 -- fires: hasAny (union)
-└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = ["baz", "foo"]))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'baz\', \'foo\']))
 1000
 1000
 -- fires: hasAll (intersection)
-└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = ["bar", "foo"]))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = [\'bar\', \'foo\']))
 500
 500
 -- fires: mapContains (key)
-└──ReadFromTextIndexCount (Trivial count from text index (idx_keys, token = "k0"))
+└──ReadFromTextIndexCount (Trivial count from text index (idx_keys, token = \'k0\'))
 500
 500
 -- fires: mapContainsValue
-└──ReadFromTextIndexCount (Trivial count from text index (idx_values, token = "v0"))
+└──ReadFromTextIndexCount (Trivial count from text index (idx_values, token = \'v0\'))
 500
 500
 -- the owning index is resolved per predicate: idx_keys for keys, idx_values for values
-└──ReadFromTextIndexCount (Trivial count from text index (idx_keys, token = "k0"))
-└──ReadFromTextIndexCount (Trivial count from text index (idx_values, token = "v0"))
+└──ReadFromTextIndexCount (Trivial count from text index (idx_keys, token = \'k0\'))
+└──ReadFromTextIndexCount (Trivial count from text index (idx_values, token = \'v0\'))
 -- does not fire: m[k] = v needs a residual recheck (hint mode, not exact)
 0
 500
@@ -95,7 +95,7 @@ Partially materialized text index
 1
 1
 AggregatingProjection
-└──ReadFromTextIndexCount (Trivial count from text index (idx, token = "alpha"))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
 -- results match the reader
 750
 750
@@ -110,7 +110,7 @@ AggregatingProjection
 -- fully materialized after ALTER: back to the plain count source
 0
 0
-└──ReadFromTextIndexCount (Trivial count from text index (idx, token = "alpha"))
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = \'alpha\'))
 750
 -- does not fire: no part has the index
 0
