@@ -31,6 +31,21 @@ c.jsonl	16	16	0	consuming	1
 -- a temporary table is not shown
 1
 0
+-- a file that cannot be opened is stuck, and a file recreated with a new inode starts a new row
+2
+link.jsonl	16	16	2	consuming	0
+0
+link.jsonl	0	\N	2	stuck	1
+2
+link.jsonl	16	16	4	consuming	1
+0
+3
+1
+link.jsonl	24	24	3	consuming	0
+-- a file truncated in place is read again from its start
+link.jsonl	0	8	3	consuming	0
+1
+link.jsonl	8	8	4	consuming	0
 -- a table of a lazy_load_tables database is shown once it is loaded
 TableProxy
 0

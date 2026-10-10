@@ -28,7 +28,8 @@ ColumnsDescription StorageSystemFileLogFiles::getColumnsDescription()
         {"file_name", std::make_shared<DataTypeString>(), "Name of the file in the directory of the table, the same as the `_filename` virtual column."},
         {"path", std::make_shared<DataTypeString>(), "Absolute path of the file."},
         {"inode", std::make_shared<DataTypeUInt64>(), "Inode of the file. The table tracks files by inode, so a renamed file keeps its row."},
-        {"current_offset", std::make_shared<DataTypeUInt64>(), "Number of bytes of the file already read. The next read starts at this offset."},
+        {"current_offset", std::make_shared<DataTypeUInt64>(),
+         "Number of bytes of the file already read, or 0 if the file became smaller and is read again from its start. The next read starts at this offset."},
         {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
          "Current size of the file. `file_size - current_offset` is the number of bytes not read yet. "
          "`NULL` if `path` no longer refers to `inode`, because the file was renamed or removed and the table has not processed it yet."},
@@ -36,15 +37,15 @@ ColumnsDescription StorageSystemFileLogFiles::getColumnsDescription()
         {"last_poll_time", std::make_shared<DataTypeDateTime>(),
          "Time when the table last started reading the file, including reads that returned nothing or failed."},
         {"last_exception", std::make_shared<DataTypeString>(),
-         "Text of the most recent exception of a background read round (to materialized views) that included the file or failed while the file had unread bytes. "
-         "It is kept after the file is consumed again."},
+         "Text of the most recent exception of a background read round (to materialized views) that included the file or failed while the file had unread bytes, "
+         "or of the most recent failed attempt to open the file. It is kept after the file is consumed again."},
         {"last_exception_time", std::make_shared<DataTypeDateTime>(), "Time of `last_exception`."},
         {"state",
          std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
              {"consuming", 0},
              {"stuck", 1},
          }),
-         "`stuck` if a background read round failed while it included the file or the file had unread bytes, and no later round that included the file succeeded; `consuming` otherwise."},
+         "`stuck` if the file cannot be opened, or if a background read round failed while it included the file or the file had unread bytes and no later round that included the file succeeded; `consuming` otherwise."},
     };
 }
 
@@ -76,11 +77,13 @@ void StorageSystemFileLogFiles::fillData(MutableColumns & res_columns, ContextPt
                 res_columns[i++]->insert(statistics.file_name);
                 res_columns[i++]->insert(path);
                 res_columns[i++]->insert(inode);
-                res_columns[i++]->insert(statistics.offset);
 
                 struct stat file_stat{};
-                if (::stat(path.c_str(), &file_stat) == 0 && file_stat.st_ino == inode)
-                    res_columns[i++]->insert(static_cast<UInt64>(file_stat.st_size));
+                const bool file_found = ::stat(path.c_str(), &file_stat) == 0 && file_stat.st_ino == inode;
+                const auto file_size = static_cast<UInt64>(file_stat.st_size);
+                res_columns[i++]->insert(file_found ? StorageFileLog::getReadOffset(statistics.offset, file_size) : statistics.offset);
+                if (file_found)
+                    res_columns[i++]->insert(file_size);
                 else
                     res_columns[i++]->insertDefault();
 
@@ -88,7 +91,7 @@ void StorageSystemFileLogFiles::fillData(MutableColumns & res_columns, ContextPt
                 res_columns[i++]->insert(statistics.last_poll_time);
                 res_columns[i++]->insert(statistics.last_exception);
                 res_columns[i++]->insert(statistics.last_exception_time);
-                res_columns[i++]->insert(static_cast<Int8>(statistics.stuck ? 1 : 0));
+                res_columns[i++]->insert(static_cast<Int8>(statistics.stuck || statistics.open_failed ? 1 : 0));
             }
         }
     }

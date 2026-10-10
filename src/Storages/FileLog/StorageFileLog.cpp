@@ -614,6 +614,7 @@ void StorageFileLog::openFilesAndSetPos()
             {
                 if (!file_ctx.open_failed)
                     LOG_ERROR(log, "Cannot open file {}, will retry: {}", getFullDataPath(file), errnoToString(open_errno));
+                setFileOpenFailed(file_ctx.inode, fmt::format("Cannot open file {}: {}", getFullDataPath(file), errnoToString(open_errno)));
                 file_ctx.reader.reset();
                 file_ctx.status = FileStatus::NO_CHANGE;
                 file_ctx.open_failed = true;
@@ -651,7 +652,10 @@ void StorageFileLog::openFilesAndSetPos()
                     disk->removeFileIfExists(getFullMetaPath(file));
                     file_ctx.inode = inode;
                     file_infos.meta_by_inode.insert_or_assign(inode, FileMeta{.file_name = file});
+                    syncFileStatistics();
+                    setFilePolled(inode);
                 }
+                setFileOpened(file_ctx.inode);
                 file_ctx.open_failed = false;
                 file_ctx.status = FileStatus::UPDATED;
             }
@@ -1510,6 +1514,25 @@ void StorageFileLog::addRecordsRead(UInt64 inode, size_t num_records)
     std::lock_guard lock(file_statistics_mutex);
     if (auto it = file_statistics.find(inode); it != file_statistics.end())
         it->second.num_records_read += num_records;
+}
+
+void StorageFileLog::setFileOpenFailed(UInt64 inode, const String & error)
+{
+    const auto now = static_cast<UInt64>(time(nullptr));
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+    {
+        it->second.last_exception = error;
+        it->second.last_exception_time = now;
+        it->second.open_failed = true;
+    }
+}
+
+void StorageFileLog::setFileOpened(UInt64 inode)
+{
+    std::lock_guard lock(file_statistics_mutex);
+    if (auto it = file_statistics.find(inode); it != file_statistics.end())
+        it->second.open_failed = false;
 }
 
 void StorageFileLog::setFilesException(const std::vector<UInt64> & inodes, const String & exception)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # system.filelog_files: one row per file of a FileLog table with its read offset, size, number of records read and
 # state; it follows files added to, removed from and renamed in the directory, shows only tables the user may see, and
-# shows a table of a lazy_load_tables database once it is loaded.
+# shows a table of a lazy_load_tables database once it is loaded; a file that cannot be opened is stuck.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -115,6 +115,52 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT count() FROM system.tables WHERE is_temporary AND name = 'file_log_tmp';
     SELECT count() FROM system.filelog_files WHERE endsWith(path, '/${CLICKHOUSE_TEST_UNIQUE_NAME}_tmp/a.jsonl');
 "
+
+echo '-- a file that cannot be opened is stuck, and a file recreated with a new inode starts a new row'
+# A single-file table on a symlink: once the target is gone, every read retries opening it.
+single_dir="${dir}_single"
+single_target="${dir}_single_target.jsonl"
+mkdir -p "${single_dir}"
+printf '{"a":1}\n{"a":2}\n' > "${single_target}"
+ln -s "${single_target}" "${single_dir}/link.jsonl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_single (a UInt64) ENGINE = FileLog('${single_dir}/link.jsonl', 'JSONEachRow')"
+
+function single_file()
+{
+    ${CLICKHOUSE_CLIENT} -q "SELECT file_name, current_offset, file_size, num_records_read, state, last_exception LIKE 'Cannot open file %'
+        FROM system.filelog_files WHERE database = currentDatabase() AND table = 'file_log_single'"
+}
+
+function read_single()
+{
+    ${CLICKHOUSE_CLIENT} --send_logs_level=fatal --stream_like_engine_allow_direct_select=1 -q "SELECT count() FROM file_log_single"
+}
+
+read_single
+single_file
+mv "${single_target}" "${single_target}.old"
+read_single
+single_file
+# The same inode again: the file was missing, so it is read from its start.
+mv "${single_target}.old" "${single_target}"
+read_single
+single_file
+# The second name keeps the old inode, so the recreated target gets a new one.
+mv "${single_target}" "${single_target}.old"
+read_single
+printf '{"a":3}\n{"a":4}\n{"a":5}\n' > "${single_target}"
+new_inode=$(stat -L -c %i "${single_dir}/link.jsonl")
+read_single
+${CLICKHOUSE_CLIENT} -q "SELECT inode = ${new_inode} FROM system.filelog_files WHERE database = currentDatabase() AND table = 'file_log_single'"
+single_file
+
+echo '-- a file truncated in place is read again from its start'
+printf '{"a":6}\n' > "${single_target}"
+single_file
+read_single
+single_file
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_single"
+rm -rf "${single_dir:?}" "${single_target}" "${single_target}.old"
 
 echo '-- a table of a lazy_load_tables database is shown once it is loaded'
 lazy_db="${CLICKHOUSE_DATABASE}_lazy"

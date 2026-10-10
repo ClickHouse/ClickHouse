@@ -152,11 +152,15 @@ public:
         String last_exception;
         UInt64 last_exception_time = 0;
         bool stuck = false;
+        bool open_failed = false;
     };
     using InodeToFileStatistics = std::unordered_map<UInt64, FileStatistics>;
 
     InodeToFileStatistics getFileStatistics() const;
     void addRecordsRead(UInt64 inode, size_t num_records);
+
+    /// A file smaller than its stored offset was truncated in place and is read again from its start.
+    static UInt64 getReadOffset(UInt64 stored_offset, UInt64 file_size) { return file_size < stored_offset ? 0 : stored_offset; }
 
     const LoggerPtr & getLog() const { return log; }
 
@@ -247,6 +251,8 @@ private:
     void eraseFileStatistics(UInt64 inode);
     void setFileOffset(UInt64 inode, const FileMeta & meta);
     void setFilePolled(UInt64 inode);
+    void setFileOpenFailed(UInt64 inode, const String & error);
+    void setFileOpened(UInt64 inode);
     void setFilesException(const std::vector<UInt64> & inodes, const String & exception);
     void setFilesConsuming(const std::vector<UInt64> & inodes);
 
