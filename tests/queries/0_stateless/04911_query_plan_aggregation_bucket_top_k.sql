@@ -7,6 +7,8 @@
 -- exactness pair checks the results. The two plan settings the rewrite depends on are pinned
 -- against the runner's randomization.
 
+-- The bucket top-K pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
+SET serialize_query_plan = 0;
 SET query_plan_enable_optimizations = 1;
 SET query_plan_push_down_limit = 1;
 SET query_plan_aggregation_bucket_top_k = 1;

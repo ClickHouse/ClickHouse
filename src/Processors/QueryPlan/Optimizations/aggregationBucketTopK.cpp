@@ -33,8 +33,13 @@ const String * traceThroughExpression(const ExpressionStep & expression, const S
 
 }
 
-size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
+    /// `AggregatingStep::serialize` does not write the bucket top-K fields, so a serialized or distributed
+    /// plan would show the optimization without executing it.
+    if (settings.make_distributed_plan || settings.serialize_query_plan)
+        return 0;
+
     /// The shape: Limit over Sorting (with a pushed-down limit, by one plain column) over zero
     /// or more pass-through expressions over a final aggregation, and the sort column is the
     /// output of the aggregation's lone `count()`, `uniqExact` or `uniqExactIf`. `HAVING`,

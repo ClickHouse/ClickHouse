@@ -10,6 +10,8 @@
 -- top-5 is exact: every cell prints whether the two results are equal (1) and the number of rows of
 -- the pruned result (5).
 
+-- The bucket top-K pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
+SET serialize_query_plan = 0;
 SET max_threads = 4;
 SET max_block_size = 8192;
 SET group_by_two_level_threshold = 100;

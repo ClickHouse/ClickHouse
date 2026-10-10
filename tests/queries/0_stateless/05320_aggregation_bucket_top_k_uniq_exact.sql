@@ -12,6 +12,8 @@
 -- table. The cells cover the distinct count alone, next to other aggregates, with a Nullable argument, with a
 -- condition, with two arguments, an ascending order, an offset, and a String key.
 
+-- The bucket top-K pass refuses a serialized plan, so pin the setting for the distributed-plan suite.
+SET serialize_query_plan = 0;
 SET query_plan_enable_optimizations = 1, query_plan_push_down_limit = 1, query_plan_aggregation_bucket_top_k = 1;
 SET count_distinct_implementation = 'uniqExact';
 SET enable_adaptive_aggregator = 0, max_threads = 4, group_by_two_level_threshold = 100, group_by_two_level_threshold_bytes = 0;
