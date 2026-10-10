@@ -4939,7 +4939,8 @@ bool isRealNullOrNaN(const Field & field)
     return is_real_null || field.isNaN();
 }
 
-/// Whether `field` is a `NULL` or a `NaN`, or one sits inside it below a chain of `Tuple`s.
+/// Whether `field`, or a value inside it below a chain of `Tuple`s, satisfies `predicate` -
+/// for `hasNullOrNaNInside`, whether it is a `NULL` or a `NaN`.
 /// `Field::isNull` and `Field::isNaN` only look at the top level, while a whole-tuple comparison carries
 /// its `NULL`s and `NaN`s inside a `Tuple`. An `Array` or a `Map` is not descended: its comparison is
 /// `compareAt`-based, so it answers a definite value for a nested `NULL` and orders a nested `NaN`
@@ -4956,7 +4957,7 @@ bool isRealNullOrNaN(const Field & field)
 ///
 /// A bound comes from stored key data, so the walk uses an explicit worklist that keeps the nesting
 /// depth of the value off the native stack.
-bool hasNullOrNaNInside(const Field & field)
+bool anyFieldBelowTuplesSatisfies(const Field & field, bool (*predicate)(const Field &))
 {
     absl::InlinedVector<const Field *, 16> pending{&field};
 
@@ -4965,7 +4966,7 @@ bool hasNullOrNaNInside(const Field & field)
         const Field * current = pending.back();
         pending.pop_back();
 
-        if (isRealNullOrNaN(*current))
+        if (predicate(*current))
             return true;
 
         if (current->getType() == Field::Types::Tuple)
@@ -4974,6 +4975,17 @@ bool hasNullOrNaNInside(const Field & field)
     }
 
     return false;
+}
+
+bool hasNullOrNaNInside(const Field & field)
+{
+    return anyFieldBelowTuplesSatisfies(field, isRealNullOrNaN);
+}
+
+/// Like `hasNullOrNaNInside`, but for a `NaN` only.
+bool hasNaNInside(const Field & field)
+{
+    return anyFieldBelowTuplesSatisfies(field, isNaNField);
 }
 
 }
@@ -5341,9 +5353,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// `isNotDistinctFrom` is the exception for a `NULL`: it compares a `Tuple` element-wise in
             /// the null-safe way, so a nested `NULL` is an ordinary value that matches only a `NULL` at
             /// the same position, and key order puts it in the same place for the key and the constant.
-            /// A nested `NaN` is still rejected for it: `(nan, 1) <=> (nan, 1)` is false.
+            /// A `NaN` nested in a `Tuple` is still rejected for it: `(nan, 1) <=> (nan, 1)` is false. One
+            /// inside an `Array` or a `Map` is not: `[nan] <=> [nan]` is true, as in key order.
             const bool nested_null_is_ordinary_value = func_name == "isNotDistinctFrom";
-            if (nested_null_is_ordinary_value ? anyFieldSatisfies(const_value, isNaNField) : hasNullOrNaNInside(const_value))
+            if (nested_null_is_ordinary_value ? hasNaNInside(const_value) : hasNullOrNaNInside(const_value))
                 return false;
 
             bool condition_is_relaxed = false;

@@ -83,7 +83,9 @@ A NaN nested in an Array is ordered the same way at row level and in the key
 3	3
 4	4
 1	1
+1	1
 4	4
 3	3
 3	3
 3	3
+1	1

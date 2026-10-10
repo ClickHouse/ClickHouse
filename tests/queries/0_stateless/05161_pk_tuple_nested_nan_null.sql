@@ -268,6 +268,8 @@ SELECT count(), sum(x) FROM t_pk_array_nan WHERE a != [nan];
 SELECT count(), sum(x) FROM t_pk_array_nan WHERE a <= [nan];
 SELECT count(), sum(x) FROM t_pk_array_nan WHERE a > [1];
 SELECT count(), sum(x) FROM t_pk_array_nan WHERE NOT (a < [1]);
+-- `[nan] <=> [nan]` is true, so `<=>` matches the rows that hold `[nan]`.
+SELECT count(), sum(x) FROM t_pk_array_nan WHERE a <=> [nan];
 
 DROP TABLE t_pk_array_nan;
 
@@ -281,5 +283,6 @@ SELECT count(), sum(x) FROM t_pk_tuple_array_nan WHERE t != ([nan], 1);
 SELECT count(), sum(x) FROM t_pk_tuple_array_nan WHERE t <= ([nan], 1);
 SELECT count(), sum(x) FROM t_pk_tuple_array_nan WHERE t > ([1], 5);
 SELECT count(), sum(x) FROM t_pk_tuple_array_nan WHERE NOT (t < ([nan], 1));
+SELECT count(), sum(x) FROM t_pk_tuple_array_nan WHERE t <=> ([nan], 1);
 
 DROP TABLE t_pk_tuple_array_nan;
