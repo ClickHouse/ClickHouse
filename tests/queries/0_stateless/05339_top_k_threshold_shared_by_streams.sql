@@ -39,7 +39,8 @@ SETTINGS max_threads = 1, max_block_size = 5, log_comment = '05339_engagement';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT read_rows < 149 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '05339_engagement' AND type = 'QueryFinish';
+WHERE current_database = currentDatabase() AND log_comment = '05339_engagement' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- The first 100 rows hold b = 0..98 and 200, so the threshold is 200 and the later b = 99 must pass it.
 SELECT 'boundary value';
@@ -79,7 +80,8 @@ SETTINGS max_threads = 8, max_block_size = 5, log_comment = '05339_streams';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT read_rows < 480 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '05339_streams' AND type = 'QueryFinish';
+WHERE current_database = currentDatabase() AND log_comment = '05339_streams' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 SELECT max(k), count() FROM
 (
