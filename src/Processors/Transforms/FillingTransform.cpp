@@ -96,16 +96,28 @@ static std::optional<Int64> calendarStepOutOfStorageType(T value, Int64 delta, c
     return {};
 }
 
-/** A step of a fixed-length kind over DateTime64 is a fixed number of ticks of the column. Returns that number for
-  * the kinds not finer than the scale of the column, and nothing for the other kinds.
+/** A step of a fixed-length kind over DateTime64 is a fixed number of ticks of the column. Returns the step as a
+  * number of units and the number of ticks per unit, or nothing for the kinds that are not of fixed length.
+  *
+  * A unit finer than the scale of the column (e.g. `MILLISECOND` over `DateTime64(2)`) is not a whole number of
+  * ticks. The generic functions adding such a unit return the result in the finer scale of the unit
+  * (`toDateTime64(..., 2) + INTERVAL 1 MILLISECOND` is a `DateTime64(3)`), which the filling would store back with
+  * the scale of the column, so such a step is converted to whole ticks of the column instead, and a step that is
+  * not a whole number of ticks is rejected: the column cannot hold the values it would generate.
   */
-static std::optional<Int64> fixedLengthStepTicks(IntervalKind::Kind kind, UInt32 scale)
+static std::optional<std::pair<Int64, Int64>> fixedLengthStep(IntervalKind::Kind kind, Int64 step, UInt32 scale)
 {
-    auto ticks = [scale](Int64 seconds_per_unit, UInt32 unit_scale) -> std::optional<Int64>
+    auto ticks = [kind, step, scale](Int64 seconds_per_unit, UInt32 unit_scale) -> std::pair<Int64, Int64>
     {
-        if (unit_scale > scale)
-            return {};
-        return seconds_per_unit * DecimalUtils::scaleMultiplier<Int64>(scale - unit_scale);
+        if (unit_scale <= scale)
+            return {step, seconds_per_unit * DecimalUtils::scaleMultiplier<Int64>(scale - unit_scale)};
+
+        const Int64 units_per_tick = DecimalUtils::scaleMultiplier<Int64>(unit_scale - scale);
+        if (step % units_per_tick != 0)
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STEP INTERVAL {} {} is not a whole number of ticks of the ORDER BY column type DateTime64({})",
+                step, IntervalKind(kind).toKeyword(), scale);
+        return {step / units_per_tick, 1};
     };
 
     switch (kind)
@@ -178,19 +190,19 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             /// of a fixed-length step with saturation instead: a saturated value lies past the range of the column
             /// in the direction of the step, so the jump is shortened, and a single saturated step is rejected as a
             /// value the column cannot hold or stops the filling at its border.
-            if (const auto ticks_per_unit = fixedLengthStepTicks(step_kind->getKind(), date_time64->getScale()))
+            if (const auto fixed_length_step = fixedLengthStep(step_kind->getKind(), converted_step, date_time64->getScale()))
             {
-                return [converted_step, step_ticks = *ticks_per_unit](Field & field, Int64 jumps_count)
+                return [step_units = fixed_length_step->first, step_ticks = fixed_length_step->second](Field & field, Int64 jumps_count)
                 {
                     auto field_decimal = field.safeGet<DecimalField<DateTime64>>();
                     Int64 units = 0;
                     Int64 delta = 0;
                     Int64 res = 0;
-                    if (common::mulOverflow(converted_step, jumps_count, units)
+                    if (common::mulOverflow(step_units, jumps_count, units)
                         || common::mulOverflow(units, step_ticks, delta)
                         || common::addOverflow(field_decimal.getValue().value, delta, res))
                     {
-                        const bool forward = (converted_step < 0) == (jumps_count < 0);
+                        const bool forward = (step_units < 0) == (jumps_count < 0);
                         res = forward ? std::numeric_limits<Int64>::max() : std::numeric_limits<Int64>::min();
                     }
                     field = DecimalField<DateTime64>(DateTime64(res), field_decimal.getScale());

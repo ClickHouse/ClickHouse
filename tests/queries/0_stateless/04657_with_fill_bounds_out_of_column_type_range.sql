@@ -281,3 +281,13 @@ SELECT 'a fixed-length INTERVAL step over DateTime64 saturates at the boundary o
 SELECT t FROM (SELECT toDateTime64('2262-04-11 23:47:14', 9, 'UTC') AS t) ORDER BY t WITH FILL FROM toDateTime64('2262-04-11 23:47:14', 9, 'UTC') TO toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC') STEP INTERVAL 1 SECOND;
 SELECT t FROM (SELECT toDateTime64('2262-04-11 23:47:14', 9, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC') STEP INTERVAL 1 MINUTE;
 SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t UNION ALL SELECT toDateTime64('2262-04-11 23:47:14', 9, 'UTC')) ORDER BY t WITH FILL STEP INTERVAL 1 SECOND STALENESS INTERVAL 2 SECOND;
+
+SELECT 'an INTERVAL step finer than the scale of DateTime64 is converted to whole ticks of the column';
+
+-- `toDateTime64(..., 2) + INTERVAL 10 MILLISECOND` is a `DateTime64(3)`, so the step used to store a value of the
+-- finer scale back into the column of scale 2, ten times further in time.
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 2, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2000-01-01 00:00:00.05', 2, 'UTC') STEP INTERVAL 10 MILLISECOND;
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2000-01-01 00:00:03', 0, 'UTC') STEP INTERVAL 1000000 MICROSECOND;
+-- A step that is not a whole number of ticks of the column is rejected.
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 2, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2000-01-01 00:00:01', 2, 'UTC') STEP INTERVAL 15 MILLISECOND; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2000-01-01 00:00:01', 0, 'UTC') STEP INTERVAL 1 NANOSECOND; -- { serverError INVALID_WITH_FILL_EXPRESSION }
