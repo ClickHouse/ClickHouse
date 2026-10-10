@@ -4630,7 +4630,8 @@ bool MutateTask::prepare()
         /// columns and preserve the columns that are not affected, but after the update all columns must have the same number of row
         MutationsInterpreter::Settings settings(true);
         settings.apply_deleted_mask = false;
-        settings.materialize_ttl_recalculate_only = ctx->recalculate_ttl_only;
+        if (ctx->recalculate_ttl_only)
+            settings.materialize_ttl_recalculate_only = true;
         settings.ttl_only_drop_parts = ttl_only_drop_parts;
 
         ctx->interpreter = std::make_unique<MutationsInterpreter>(
