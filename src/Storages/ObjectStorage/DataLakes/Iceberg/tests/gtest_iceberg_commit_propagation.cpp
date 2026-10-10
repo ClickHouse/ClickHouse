@@ -140,6 +140,11 @@ public:
                 EXPECT_EQ(write_settings.object_storage_write_if_match, hintEtag());
                 EXPECT_TRUE(write_settings.object_storage_write_if_none_match.empty());
             }
+            else
+            {
+                EXPECT_EQ(write_settings.object_storage_write_if_none_match, "*");
+                EXPECT_TRUE(write_settings.object_storage_write_if_match.empty());
+            }
 
             ++hint_writes;
             if (state.hint_conflicts > 0)
@@ -261,7 +266,8 @@ constexpr auto committed_content = "{\"format-version\":2}";
 bool commit(
     const std::shared_ptr<ReconcilingObjectStorage> & storage,
     CompressionMethod compression_method = CompressionMethod::None,
-    Int32 version = 2)
+    Int32 version = 2,
+    bool try_write_version_hint = false)
 {
     Iceberg::IcebergPathResolver resolver(
         "/table",
@@ -280,7 +286,7 @@ bool commit(
         Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/version-hint.text"),
         storage,
         getContext().context,
-        /*try_write_version_hint=*/ false);
+        try_write_version_hint);
 }
 
 bool commitAgainst(StoreState state, CompressionMethod compression_method = CompressionMethod::None)
@@ -356,6 +362,16 @@ TEST(IcebergCommitPropagation, VersionHintConvergesPastConcurrentWriters)
     auto storage = std::make_shared<ReconcilingObjectStorage>(state);
     EXPECT_TRUE(commit(storage, CompressionMethod::None, /*version=*/ 6));
     EXPECT_EQ(storage->hint().value_or("<absent>"), "6");
+}
+
+TEST(IcebergCommitPropagation, VersionHintIsCreatedExclusively)
+{
+    /// Two writers creating the hint at once must not both succeed, or the one with the lower version can win.
+    StoreState state;
+    state.stored_content = committed_content;
+    auto storage = std::make_shared<ReconcilingObjectStorage>(state);
+    EXPECT_TRUE(commit(storage, CompressionMethod::None, /*version=*/ 2, /*try_write_version_hint=*/ true));
+    EXPECT_EQ(storage->hint().value_or("<absent>"), "2");
 }
 
 TEST(IcebergCommitPropagation, ContentOfAnotherWriterIsALostRace)
