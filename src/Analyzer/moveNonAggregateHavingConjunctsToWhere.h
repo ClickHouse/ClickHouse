@@ -12,7 +12,7 @@ class QueryNode;
   * query analysis that ClickHouse used before v24.3.
   *
   * Conjuncts containing aggregate, `grouping`, `arrayJoin` or non-deterministic functions stay in `HAVING`,
-  * as well as conjuncts with subqueries containing non-deterministic functions or table functions.
+  * as well as conjuncts with subqueries containing non-deterministic or stateful functions or table functions.
   * With `keep_index_hint_conjuncts`, conjuncts containing `indexHint` also stay in `HAVING`: in `HAVING` it is always true,
   * while in `WHERE` it prunes granules and leaves partial groups. The legacy rewrite moved them, so the compatibility
   * rewrite of the analyzer keeps doing it.

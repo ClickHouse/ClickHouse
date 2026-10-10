@@ -113,6 +113,18 @@ FROM (
     EXPLAIN indexes = 1, distributed = 1
     SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT toDate('2024-01-05') + rand() % 1)
 );
+SELECT '--- HAVING with stateful function in subquery';
+-- `timeSeriesStoreTags` is deterministic, but has a side effect, so the conjunct stays in HAVING.
+SELECT date, sum(x) FROM t_dist_04402 GROUP BY date
+    HAVING date IN (SELECT toDate('2024-01-05') + timeSeriesStoreTags(0, [('a', 'b')], '__name__', 'm'));
+SELECT
+    countIf(explain ILIKE '%Condition:%date in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date
+        HAVING date IN (SELECT toDate('2024-01-05') + timeSeriesStoreTags(0, [('a', 'b')], '__name__', 'm'))
+);
 
 -- Conjuncts whose result may differ between servers stay in HAVING, because HAVING is executed on the initiator:
 -- functions like `shardNum`, and subqueries reading a table or a table function.

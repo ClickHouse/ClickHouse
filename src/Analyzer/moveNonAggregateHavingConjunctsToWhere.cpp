@@ -28,10 +28,10 @@ namespace
   * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
   * - else -> `Move`.
   *
-  * Inside subqueries only the non-deterministic functions are taken into account: aggregate, window and
-  * `grouping` functions there belong to the scope of the subquery. A non-deterministic subquery keeps the
-  * conjunct in `HAVING`, because in `WHERE` a correlated subquery would be evaluated per source row instead of
-  * per group. The same holds for a subquery reading a non-deterministic table function, like `generateRandom`.
+  * Inside subqueries only the non-deterministic and stateful functions are taken into account: aggregate, window
+  * and `grouping` functions there belong to the scope of the subquery. A non-deterministic subquery, or one with
+  * a stateful function (like `timeSeriesStoreTags`, which has side effects), keeps the conjunct in `HAVING`,
+  * because in `WHERE` a correlated subquery would be evaluated per source row instead of per group. The same holds for a subquery reading a non-deterministic table function, like `generateRandom`.
   *
   * With `keep_server_dependent_conjuncts`, a conjunct also stays in `HAVING` if its result may differ between
   * servers: if it contains a function that is not deterministic at all (like `shardNum`, `hostName` or `dictGet`),
@@ -94,7 +94,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(
                 {
                     auto function_base = function_node->getFunction();
                     if (function_base
-                        && (!function_base->isDeterministicInScopeOfQuery()
+                        && (function_base->isStateful()
+                            || !function_base->isDeterministicInScopeOfQuery()
                             || (keep_server_dependent_conjuncts && !function_base->isDeterministic())))
                         keep_in_having();
                 }

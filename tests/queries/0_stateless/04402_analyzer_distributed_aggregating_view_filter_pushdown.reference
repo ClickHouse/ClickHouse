@@ -27,6 +27,9 @@
 --- HAVING with non-deterministic subquery
 2024-01-05	60002
 0	1
+--- HAVING with stateful function in subquery
+2024-01-05	60002
+0	1
 --- HAVING with shardNum
 2024-01-01	59998
 2024-01-02	59992
