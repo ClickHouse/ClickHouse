@@ -4623,8 +4623,14 @@ bool MutateTask::prepare()
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
-    /// It shouldn't be changed by mutation.
-    ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
+    /// Keep the source granularity properties while the part type survives the mutation (e.g. a
+    /// legacy part with non-adaptive granularity must stay non-adaptive). When the mutation
+    /// changes the part type, the new part must keep the granularity info of its own type, set by
+    /// the part constructor: the mark type encodes the part type in the marks file extension, and
+    /// a `Wide` part written with the source's `Compact` extension (e.g. per-column `.cmrk4`
+    /// files) is detected as `Compact` on the next load from disk and breaks.
+    if (ctx->new_data_part->getType() == ctx->source_part->getType())
+        ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
