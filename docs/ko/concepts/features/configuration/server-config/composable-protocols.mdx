@@ -228,6 +228,46 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 사용자 지정 처리기 섹션의 변경 사항은 구성 다시 로드 시 감지되며, 해당
 엔드포인트는 자동으로 다시 시작됩니다.
 
+<div id="default-session-user-per-endpoint">
+  ### 엔드포인트별 기본 세션 사용자
+</div>
+
+클라이언트가 사용자 이름을 지정하지 않고 연결하면(예: `user` 매개변수 없이 전송된 HTTP 요청 또는 사용자 이름이 비어 있는 네이티브 프로토콜 `Hello` 패킷) 서버는 기본 세션 사용자로 인증합니다. 기본 세션 사용자는 기본값이 `default`인 `default_session_user` [서버 설정](/ko/reference/settings/server-settings/settings)입니다.
+
+`<default_session_user>` 태그를 사용하면 단일 엔드포인트에 대해 이 설정을 재정의할 수 있습니다. 이를 통해 서로 다른 수신 포트에서 서로 다른 익명 사용자를 처리할 수 있습니다:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <readonly_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <default_session_user>readonly_user</default_session_user>
+  </readonly_http>
+
+</protocols>
+```
+
+이 예시에서 포트 8123으로 들어오는 자격 증명 없는 요청은 전역으로 구성된 기본 세션 사용자로 인증되며, 포트 8124로 들어오는 요청은
+`readonly_user`로 인증됩니다. 사용자 이름을 명시적으로 지정하는 클라이언트에는 영향을 주지 않습니다.
+
+태그는 엔드포인트의 모듈에서 참조된 (`impl`)
+모듈을 향해 조회되며, 엔드포인트에 가장 가까운 값이 적용됩니다. 이 설정은 `tcp`, `http`,
+`mysql`, `postgres` 프로토콜 처리기와 요청을 인증하는 `prometheus` 처리기
+(`remote_write`, `remote_read`, `query`, `api_v1`)에 적용됩니다. 메트릭 노출 엔드포인트(Keeper 메트릭 전용 엔드포인트 포함)는
+인증 없이 제공되며 이 설정을 무시합니다. 고정 사용자가 설정된 처리기(`http_handlers` 규칙의 `handler`
+내 `user` 키 또는 `prometheus.handlers` 규칙의 `handler` 내 `user` 키)는 구성된 사용자로 인증되고 이 설정도 무시합니다. 특히
+비어 있는 `default_session_user`로 인해 이러한 처리기가 거부되지는 않습니다. 이 설정은
+`interserver` 프로토콜과 함께 사용할 수 없습니다. interserver 연결은 클러스터
+시크릿과 초기 사용자로 인증되며 기본 세션 사용자를 사용하지 않습니다.
+
 <div id="some-modules-can-contain-specific-for-its-layer-parameters">
   ### 추가 레이어 매개변수 지정
 </div>

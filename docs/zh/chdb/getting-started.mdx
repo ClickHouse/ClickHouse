@@ -213,13 +213,22 @@ from chdb import session as chs
 
 接下来，我们将初始化一个会话。
 如果希望将该会话持久化到磁盘，就需要提供一个目录名。
-如果留空，数据库将仅存于内存中，并会在我们终止 Python 进程后立即丢失。
+如果留空，该会话将是临时的：chDB 会将其数据保存在磁盘上的临时目录中，并在会话关闭时删除，因此数据不会持久化。
 
 ```python
 sess = chs.Session("gettingStarted.chdb")
 ```
 
-接下来，我们来创建一个数据库：
+<Note>
+  chDB 每个进程运行一个嵌入式 引擎，因此 database 目录 (其 path) 需遵循以下规则：
+
+  * **每个 path 对应一个进程**：一个 chDB 数据目录一次只能由一个操作系统进程打开。第二个进程打开同一 path 会失败，直到第一个进程关闭为止。
+  * **每个进程对应一个 path**：当会话或 connection 处于打开状态时，打开另一个具有*不同* path 的会失败；请先关闭已打开的会话或 connection，以避免出现 error。同一 path 上可以同时存在多个会话或 connection。
+  * **并发**：同一 path 上的会话或 connection 可以并发运行查询。
+  * **无 path 的会话是共享的**：不提供 path 时，会话将使用进程范围内的 `:memory:` database (因此空白会话可以看到彼此的表) ，且其临时目录仅会在最后一个会话关闭时被移除。
+</Note>
+
+接下来，我们来创建一个 database：
 
 ```python
 sess.query("CREATE DATABASE IF NOT EXISTS youtube")

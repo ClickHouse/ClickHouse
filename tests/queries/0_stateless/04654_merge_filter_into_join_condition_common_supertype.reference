@@ -1,0 +1,16 @@
+-- `Int32` = `Nullable(Int32)` has common supertype `Nullable(Int32)`
+inner	CAST(a AS Nullable(Int32)) = b	0
+1	1
+2	2
+-- `Int32` = `UInt64` has no common supertype
+cross		1
+1	1
+2	2
+-- Conditions are not merged into a `Join` table engine
+inner	1
+1	1	1
+-- CROSS JOIN from correlated subquery with condition `Int32` = `Nullable(Int32)`
+0	2
+1	1
+2	1
+3	\N

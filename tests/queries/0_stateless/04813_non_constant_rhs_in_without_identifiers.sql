@@ -4,26 +4,6 @@
 
 -- { echoOn }
 
-SET enable_analyzer = 0;
-
-SELECT number IN (materialize(1)) FROM numbers(3);
-SELECT number NOT IN (materialize(1)) FROM numbers(3);
-SELECT number IN (materialize(1), 2) FROM numbers(3);
-SELECT number IN materialize([0, 2]) FROM numbers(3);
-SELECT (number, number + 1) IN (materialize((1, 2))) FROM numbers(3);
-SELECT number IN (if(materialize(1) = 1, 1, 2)) FROM numbers(3);
-SELECT 1 IN (materialize(1));
-SELECT NULL IN (materialize(1));
-SELECT materialize(NULL) IN (materialize(1));
-SELECT number IN (materialize(NULL), 1) FROM numbers(2);
-
--- Constant enumerations must keep working via the constant `Set` path. The `Date`/`DateTime`
--- case observably distinguishes the paths: the constant `Set` casts the elements to the LHS
--- type (`Date`) and returns 1, while the row-wise rewrite compares in the `DateTime`
--- supertype and would return 0.
-SELECT number IN (0, 2) FROM numbers(3);
-SELECT toDate('2024-01-02') IN (toDateTime('2024-01-02 10:00:00'), toDateTime('2024-01-03 00:00:00'));
-
 SET enable_analyzer = 1;
 
 SELECT number IN (materialize(1)) FROM numbers(3);

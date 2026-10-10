@@ -42,9 +42,9 @@ SELECT
 SELECT dateSub('1998-06-16'::Date, INTERVAL 10 second)
         )",
         R"(
-┌─minus(CAST('⋯Second(10))─┐
-│      1998-06-15 23:59:50 │
-└──────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalSecond(10))─┐
+│                                     1998-06-15 23:59:50 │
+└─────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

@@ -29,9 +29,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В отличие от ReplicatedMergeTree, SharedMergeTree не требует, чтобы реплики взаимодействовали друг с другом. Вместо этого всё взаимодействие происходит через общее хранилище и clickhouse-keeper. SharedMergeTree реализует асинхронную безлидерную репликацию и использует clickhouse-keeper для координации и хранения метаданных. Это означает, что при scale-up и scale-down вашего сервиса метаданные не нужно реплицировать. За счёт этого быстрее выполняются репликация, мутации, слияния и операции scale-up. SharedMergeTree позволяет использовать сотни реплик для каждой таблицы, что делает возможным динамическое масштабирование без сегментов. В ClickHouse Cloud используется подход выполнения распределённого запроса, чтобы задействовать больше вычислительных ресурсов для одного запроса.
 
-<div id="introspection">
-  ## Интроспекция
-</div>
+## Интроспекция {#introspection}
 
 Большинство системных таблиц, используемых для интроспекции ReplicatedMergeTree, доступны и для SharedMergeTree, за исключением `system.replication_queue` и `system.replicated_fetches`, поскольку здесь не происходит репликация данных и метаданных. Однако в SharedMergeTree есть соответствующие альтернативы этим двум таблицам.
 
@@ -43,9 +41,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Эта таблица служит альтернативой `system.replicated_fetches` для SharedMergeTree. Она содержит информацию о текущих загрузках в память первичных ключей и контрольных сумм.
 
-<div id="enabling-sharedmergetree">
-  ## Включение SharedMergeTree
-</div>
+## Включение SharedMergeTree {#enabling-sharedmergetree}
 
 `SharedMergeTree` включен по умолчанию.
 
@@ -98,9 +94,7 @@ ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica
 ORDER BY key
 ```
 
-<div id="settings">
-  ## Настройки
-</div>
+## Настройки {#settings}
 
 Поведение некоторых настроек существенно изменилось:
 
@@ -108,9 +102,7 @@ ORDER BY key
 * `insert_quorum_parallel` -- все вставки в SharedMergeTree являются кворумными (записываются в общее хранилище), поэтому эта настройка не нужна при использовании движка таблицы SharedMergeTree.
 * `select_sequential_consistency` -- не требует кворумных вставок, но создает дополнительную нагрузку на `clickhouse-keeper` при запросах `SELECT`
 
-<div id="consistency">
-  ## Согласованность
-</div>
+## Согласованность {#consistency}
 
 SharedMergeTree обеспечивает более строгую легковесную согласованность, чем ReplicatedMergeTree. При вставке в SharedMergeTree не нужно указывать такие настройки, как `insert_quorum` или `insert_quorum_parallel`. Вставки выполняются с кворумом: метаданные сохраняются в ClickHouse-Keeper и реплицируются как минимум на кворум узлов ClickHouse-Keeper. Каждая реплика в вашем кластере будет асинхронно получать новую информацию из ClickHouse-Keeper.
 
@@ -121,3 +113,11 @@ SharedMergeTree обеспечивает более строгую легков�
 2. Если вы записываете в одну реплику, а читаете из другой, можно использовать `SYSTEM SYNC REPLICA LIGHTWEIGHT`, чтобы принудительно заставить реплику получить метаданные из ClickHouse-Keeper.
 
 3. Используйте `select_sequential_consistency` как настройку в составе запроса.
+
+## `ALTER` и видимость мутаций {#alter-and-mutation-visibility}
+
+`SharedMergeTree` координирует изменения метаданных через ClickHouse Keeper. Реплики получают изменённые метаданные асинхронно, поэтому изменение метаданных может стать видимым не на всех репликах сразу. Операции чтения в том же сеансе на том же узле уже используют актуальные метаданные. Если чтение нужно выполнить на другой реплике сразу после изменения метаданных, используйте `SYSTEM SYNC REPLICA LIGHTWEIGHT`, чтобы эта реплика получила метаданные из ClickHouse Keeper.
+
+Операции `ALTER`, порождающие мутации, выполняют фоновую работу: создают новые части в общем хранилище и координируют их видимость через ClickHouse Keeper. В отличие от `ReplicatedMergeTree`, здесь не происходит перезаписи или передачи данных на каждой реплике по отдельности.
+
+В ClickHouse Cloud параметр [`alter_sync`](/ru/reference/settings/session-settings/alter#alter_sync) по умолчанию равен `0`; задайте его, если клиент должен дожидаться завершения операций с метаданными или перезаписи данных при `MODIFY COLUMN`, которая затрагивает не только метаданные. Для операций `UPDATE`, `DELETE` и `MATERIALIZE ...` управляйте ожиданием с помощью [`mutations_sync`](/ru/reference/settings/session-settings/mutations#mutations_sync), а ход выполнения отслеживайте в [`system.mutations`](/ru/reference/system-tables/mutations).

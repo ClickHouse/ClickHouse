@@ -251,32 +251,32 @@ INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hob
 この場合、テーブルに挿入するために `SELECT` クエリ内でカラム `hobbies` に対していくつかの操作が行われているため、ClickHouse は挿入先テーブルの構造を利用できず、スキーマ推論が行われます。
 
 <div id="schema-inference-cache">
-  ## スキーマ推論キャッシュ
+  ## スキーマ推論cache
 </div>
 
 ほとんどの入力フォーマットでは、スキーマ推論のためにデータの一部を読み取ってその構造を判定する必要があり、この処理には時間がかかることがあります。
-ClickHouse が同じファイルからデータを読み取るたびに毎回同じスキーマを推論しないよう、推論されたスキーマはキャッシュされます。そのため、同じファイルに再度アクセスした場合、ClickHouse はキャッシュ内のスキーマを使用します。
+ClickHouse が同じファイルからデータを読み取るたびに毎回同じスキーマを推論しないよう、推論されたスキーマはcacheされます。そのため、同じファイルに再度アクセスした場合、ClickHouse はcache内のスキーマを使用します。
 
-このキャッシュを制御する特別な設定があります:
+このcacheを制御する特別な設定があります:
 
-* `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - 対応するテーブル関数についてキャッシュされるスキーマの最大数です。デフォルト値は `4096` です。これらの設定はサーバー設定で指定する必要があります。
-* `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - スキーマ推論でキャッシュを使用するかどうかをオン/オフできます。これらの設定はクエリで使用できます。
+* `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - 対応するテーブル関数についてcacheされるスキーマの最大数です。デフォルト値は `4096` です。これらの設定はサーバー設定で指定する必要があります。
+* `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - スキーマ推論でcacheを使用するかどうかをオン/オフできます。これらの設定はクエリで使用できます。
 
 ファイルのスキーマは、データの変更やフォーマット設定の変更によって変わる場合があります。
-このため、スキーマ推論キャッシュでは、ファイルソース、フォーマット名、使用されているフォーマット設定、およびファイルの最終更新時刻によってスキーマを識別します。
+このため、スキーマ推論cacheでは、ファイルソース、フォーマット名、使用されているフォーマット設定、およびファイルの最終更新時刻によってスキーマを識別します。
 
 注: `url` テーブル関数で URL 経由でアクセスされる一部のファイルには、最終更新時刻の情報が含まれていない場合があります。このケースのために、特別な設定
-`schema_inference_cache_require_modification_time_for_url` があります。この設定を無効にすると、そのようなファイルでも最終更新時刻がなくてもキャッシュ内のスキーマを使用できます。
+`schema_inference_cache_require_modification_time_for_url` があります。この設定を無効にすると、そのようなファイルでも最終更新時刻がなくてもcache内のスキーマを使用できます。
 
-現在キャッシュ内にあるすべてのスキーマを確認できるシステムテーブル [schema&#95;inference&#95;cache](/ja/reference/system-tables/schema_inference_cache) と、`SYSTEM CLEAR SCHEMA CACHE [FOR File/S3/URL/HDFS]`
-というシステムクエリもあり、これによりすべてのソース、または特定のソースのスキーマキャッシュをクリアできます。
+現在cache内にあるすべてのスキーマを確認できるシステムテーブル [schema&#95;inference&#95;cache](/ja/reference/system-tables/schema_inference_cache) と、`SYSTEM CLEAR SCHEMA CACHE [FOR File/S3/URL/HDFS]`
+というシステムクエリもあり、これによりすべてのソース、または特定のソースのスキーマcacheをクリアできます。
 
 **例:**
 
-S3 上のサンプル dataset `github-2022.ndjson.gz` の構造を推論し、スキーマ推論キャッシュがどのように動作するかを見てみましょう:
+S3 上のサンプル dataset `github-2022.ndjson.gz` の構造を推論し、スキーマ推論cacheがどのように動作するかを見てみましょう:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 
 ```response
@@ -318,7 +318,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 ```
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 
 ```response
@@ -365,7 +365,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 それでは、推論されるスキーマに影響する可能性のある設定をいくつか変更してみましょう。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 SETTINGS input_format_json_try_infer_named_tuples_from_objects=0, input_format_json_read_objects_as_strings = 1
 
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
