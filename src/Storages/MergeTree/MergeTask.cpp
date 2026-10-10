@@ -437,7 +437,9 @@ static MapKeyManifest scanMapKeysFromPart(
         Names{column_name},
         /*mark_ranges=*/ std::nullopt,
         /*filtered_rows_count=*/ nullptr,
-        /*apply_deleted_mask=*/ false,
+        /// Rows removed by a lightweight delete are not in the merged part, so their keys
+        /// must not occupy `map_max_key_columns` or create empty per-key streams.
+        /*apply_deleted_mask=*/ true,
         /*read_with_direct_io=*/ false,
         /*prefetch=*/ false);
 
@@ -452,6 +454,40 @@ static MapKeyManifest scanMapKeysFromPart(
         manifests.push_back(SerializationMapWithKeyColumns::collectManifestFromColumn(*block.getByName(column_name).column));
     }
     return unionMapKeyManifests(manifests);
+}
+
+/// The on-disk manifest omits keys a patch adds and still lists keys that only deleted rows have.
+static bool mapColumnNeedsLogicalKeyScan(
+    const IMergeTreeDataPart & part,
+    const AlterConversionsPtr & conversions,
+    const String & column_name)
+{
+    if (part.hasLightweightDelete())
+        return true;
+
+    if (!conversions)
+        return false;
+
+    if (conversions->hasLightweightDelete() || conversions->hasDeleteMutation())
+        return true;
+
+    return conversions->getColumnsUpdatedInPatches().contains(column_name);
+}
+
+/// Per-key Vertical reads `m.key_*` / `m.exists_*`. A patch stores the updated Map column, not those
+/// subcolumns, so a key the patch introduces would be written as absent. Merge that column horizontally.
+static bool mapColumnCanUsePerKeyVertical(
+    const IMergeTreeDataPart & part,
+    const AlterConversionsPtr & conversions,
+    const String & column_name)
+{
+    if (!partUsesMapWithKeyColumns(part, column_name))
+        return false;
+
+    if (conversions && conversions->getColumnsUpdatedInPatches().contains(column_name))
+        return false;
+
+    return true;
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
@@ -4557,14 +4593,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::collectMapKeyUnions() const
         for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
         {
             const auto & part = global_ctx->future_part->parts[part_num];
-            if (!partUsesMapWithKeyColumns(*part, column.name))
-            {
+            const auto & conversions = global_ctx->alter_conversions[part_num];
+            if (!mapColumnCanUsePerKeyVertical(*part, conversions, column.name))
                 all_sources_with_key_columns = false;
+
+            if (!partUsesMapWithKeyColumns(*part, column.name) || mapColumnNeedsLogicalKeyScan(*part, conversions, column.name))
+            {
                 manifests.push_back(scanMapKeysFromPart(
                     *global_ctx->data,
                     global_ctx->storage_snapshot,
                     part,
-                    global_ctx->alter_conversions[part_num],
+                    conversions,
                     column.name,
                     part_num));
             }

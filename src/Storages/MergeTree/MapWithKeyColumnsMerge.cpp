@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -23,8 +24,8 @@ namespace MergeTreeSetting
 
 bool partUsesMapWithKeyColumns(const IMergeTreeDataPart & part, const String & column_name)
 {
-    auto serialization = part.getSerialization(column_name);
-    return typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()) != nullptr;
+    auto serialization = part.tryGetSerialization(column_name);
+    return serialization && typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()) != nullptr;
 }
 
 bool mergeOutputUsesMapWithKeyColumns(const MergeTreeSettings & settings, const IDataType & type)
@@ -34,9 +35,28 @@ bool mergeOutputUsesMapWithKeyColumns(const MergeTreeSettings & settings, const 
     return settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
 }
 
+static String mapKeyColumnsLogicalFileName(const String & name_in_storage)
+{
+    return escapeForFileName(name_in_storage) + ".key_columns.txt";
+}
+
 String getMapKeyColumnsFileName(const String & name_in_storage, const MergeTreeSettings & settings, const IDataPartStorage * storage)
 {
-    return replaceFileNameToHashIfNeeded(escapeForFileName(name_in_storage) + ".key_columns.txt", settings, storage);
+    return replaceFileNameToHashIfNeeded(mapKeyColumnsLogicalFileName(name_in_storage), settings, storage);
+}
+
+std::optional<String> findMapKeyColumnsFileName(const String & name_in_storage, const MergeTreeDataPartChecksums & checksums)
+{
+    const String logical = mapKeyColumnsLogicalFileName(name_in_storage);
+    if (checksums.files.contains(logical))
+        return logical;
+
+    /// `replaceFileNameToHashIfNeeded` hashes the whole name, including `.txt`, not the stem.
+    const String hashed = sipHash128String(logical);
+    if (checksums.files.contains(hashed))
+        return hashed;
+
+    return {};
 }
 
 std::unique_ptr<WriteBufferFromFileBase> writeMapKeyColumnsFile(

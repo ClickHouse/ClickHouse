@@ -2455,7 +2455,6 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 void IMergeTreeDataPart::loadMapKeyColumnsManifests()
 {
     map_key_columns_manifests.clear();
-    const auto & settings = *storage.getSettings();
 
     for (const auto & column : getColumns())
     {
@@ -2466,17 +2465,19 @@ void IMergeTreeDataPart::loadMapKeyColumnsManifests()
         if (!per_key)
             continue;
 
-        const auto file_name = getMapKeyColumnsFileName(column.name, settings, &getDataPartStorage());
-        const auto checksum_it = checksums.files.find(file_name);
-        if (checksum_it == checksums.files.end())
+        /// Checksums record the name written at part creation. Re-hashing with the current
+        /// `replace_long_file_name_to_hash` / `max_file_name_length` misses that file after a setting change.
+        const auto file_name = findMapKeyColumnsFileName(column.name, checksums);
+        if (!file_name)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Missing {} for with_key_columns Map column {} in part {}",
-                file_name,
+                "Missing key_columns.txt for with_key_columns Map column {} in part {}",
                 column.name,
                 name);
 
-        auto file = getDataPartStorage().readFile(file_name, {}, checksum_it->second.file_size);
+        const auto checksum_it = checksums.files.find(*file_name);
+
+        auto file = getDataPartStorage().readFile(*file_name, {}, checksum_it->second.file_size);
         map_key_columns_manifests.emplace(
             column.name, SerializationMapWithKeyColumns::readKeyColumnsText(*file, per_key->getKeyType()));
     }

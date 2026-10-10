@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -17,13 +18,20 @@ class ColumnMap;
 struct MergeTreeSettings;
 
 /// True when this part stores `column_name` with `with_key_columns` serialization.
+/// A column the part does not have yet (for example before `ALTER ADD COLUMN` is merged) is false.
 bool partUsesMapWithKeyColumns(const IMergeTreeDataPart & part, const String & column_name);
 
 /// True when the table setting will write merged parts with `with_key_columns`.
 bool mergeOutputUsesMapWithKeyColumns(const MergeTreeSettings & settings, const IDataType & type);
 
 /// `<column>.key_columns.txt`, using the same escaping and long-name hashing as column data files.
+/// Use this when creating a file. To open one that already exists, use `findMapKeyColumnsFileName`.
 String getMapKeyColumnsFileName(const String & name_in_storage, const MergeTreeSettings & settings, const IDataPartStorage * storage);
+
+/// Name of an existing `<column>.key_columns.txt` as stored in `checksums`: the plain name, or
+/// `sipHash128` of that plain name when the part was written with long-name hashing. Empty when
+/// the part has no such file. Does not depend on the current hashing settings.
+std::optional<String> findMapKeyColumnsFileName(const String & name_in_storage, const MergeTreeDataPartChecksums & checksums);
 
 /// Write one plain-text key list and record its uncompressed checksum. The returned buffer is
 /// pre-finalized; the caller syncs and finalizes it with the rest of the part.

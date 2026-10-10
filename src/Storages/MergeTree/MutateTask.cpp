@@ -1589,16 +1589,13 @@ static NameSet collectFilesToSkip(
     /// Skip the source file so the hardlink is not overwritten in place.
     /// The new part's header can name columns the source part does not store
     /// (`_row_exists`, `_block_number`, a name produced by `RENAME`). No serialization
-    /// means there is no `<column>.key_columns.txt` to skip. `partUsesMapWithKeyColumns`
-    /// throws when the column is absent, so check first.
+    /// means there is no `<column>.key_columns.txt` to skip.
     for (const auto & column : updated_header.getNamesAndTypesList())
     {
-        if (!source_part->tryGetSerialization(column.name))
-            continue;
         if (!partUsesMapWithKeyColumns(*source_part, column.name))
             continue;
-        files_to_skip.insert(getMapKeyColumnsFileName(
-            column.name, *source_part->storage.getSettings(), &source_part->getDataPartStorage()));
+        if (auto file_name = findMapKeyColumnsFileName(column.name, source_part->checksums))
+            files_to_skip.insert(*file_name);
     }
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
@@ -1770,26 +1767,24 @@ static NameToNameVector collectFilesForRenames(
         if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
         {
             /// An older part may not store a column added and then dropped. No serialization
-            /// means there is no `<column>.key_columns.txt` to drop or rename.
-            if (source_part->tryGetSerialization(command.column_name)
-                && partUsesMapWithKeyColumns(*source_part, command.column_name))
+            /// means there is no `<column>.key_columns.txt` to drop or rename. The source name
+            /// comes from checksums so a later change of the filename-hashing settings still matches.
+            if (partUsesMapWithKeyColumns(*source_part, command.column_name))
             {
-                const auto & storage_settings = *source_part->storage.getSettings();
-                const auto file_from = getMapKeyColumnsFileName(
-                    command.column_name, storage_settings, &source_part->getDataPartStorage());
-                if (source_part->checksums.has(file_from))
+                if (auto file_from = findMapKeyColumnsFileName(command.column_name, source_part->checksums))
                 {
                     if (command.type == MutationCommand::Type::DROP_COLUMN
                         || updated_columns_in_patches.contains(command.rename_to))
                     {
-                        add_rename(file_from, "");
+                        add_rename(*file_from, "");
                     }
                     else
                     {
+                        const auto & storage_settings = *source_part->storage.getSettings();
                         const auto file_to = getMapKeyColumnsFileName(
                             command.rename_to, storage_settings, &new_part->getDataPartStorage());
-                        if (file_from != file_to)
-                            add_rename(file_from, file_to);
+                        if (*file_from != file_to)
+                            add_rename(*file_from, file_to);
                     }
                 }
             }

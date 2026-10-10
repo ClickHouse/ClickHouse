@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -54,18 +55,30 @@ void SerializationMapWithKeyColumnsSize::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    /// `length(m)` is derived from the full per-key layout (one presence bit per key),
-    /// so enumerate exactly what that read touches. Unwrap our own deserialize state into
-    /// the underlying map state so the map serialization sees the type it expects.
+    /// `length(m)` sums presence bits. Value streams are not read, so they must not be
+    /// enumerated: MergeTree would open every `m.key_*` file before the first row.
     const auto & key_columns = assert_cast<const SerializationMapWithKeyColumns &>(*map_with_key_columns_serialization);
 
-    SubstreamData map_data(map_with_key_columns_serialization);
+    MapKeyManifest manifest;
     if (data.deserialize_state)
     {
         const auto * size_state = checkAndGetState<DeserializeBinaryBulkStateMapWithKeyColumnsSize>(data.deserialize_state);
-        map_data.deserialize_state = size_state->with_key_columns_state;
+        manifest = key_columns.getManifestFromState(size_state->with_key_columns_state);
     }
-    key_columns.enumerateStreams(settings, callback, map_data);
+    else if (settings.map_key_columns_manifest)
+        manifest = *settings.map_key_columns_manifest;
+
+    for (const auto & entry : manifest.keys)
+    {
+        if (entry.presence_kind != MapKeyPresenceKind::Tracked)
+            continue;
+
+        settings.path.push_back(ISerialization::Substream::MapKeyExists);
+        settings.path.back().name_of_substream = key_columns.keyToStreamName(entry.key);
+        auto exists_data = SubstreamData(key_columns.getExistsSerialization()).withType(std::make_shared<DataTypeUInt8>());
+        key_columns.getExistsSerialization()->enumerateStreams(settings, callback, exists_data);
+        settings.path.pop_back();
+    }
 }
 
 void SerializationMapWithKeyColumnsSize::serializeBinaryBulkStatePrefix(
@@ -131,21 +144,22 @@ void SerializationMapWithKeyColumnsSize::deserializeBinaryBulkWithMultipleStream
     /// Sum presence bits per row across dedicated keys, reading only `.exists_`
     /// streams. This never advances value streams, so it is safe to co-read with
     /// `m['k']` subcolumns that share the cached map state.
-    bool sized = false;
-    size_t rows = limit;
+    struct ExistsRead
+    {
+        bool always_present = false;
+        ColumnUInt8::Container bits;
+    };
+    std::vector<ExistsRead> reads;
+    reads.reserve(manifest.keys.size());
+
     for (size_t i = 0; i < manifest.keys.size(); ++i)
     {
         const auto & entry = manifest.keys[i];
-
         if (entry.presence_kind == MapKeyPresenceKind::AlwaysPresent)
         {
-            if (!sized)
-            {
-                data.resize_fill(start + limit, 0);
-                sized = true;
-            }
-            for (size_t row = 0; row < limit; ++row)
-                data[start + row] += 1;
+            ExistsRead read;
+            read.always_present = true;
+            reads.push_back(std::move(read));
             continue;
         }
 
@@ -160,20 +174,51 @@ void SerializationMapWithKeyColumnsSize::deserializeBinaryBulkWithMultipleStream
                 cache, settings.path, exists_column->getPtr(), exists_column->size());
         }
         settings.path.pop_back();
-
-        const auto & bits = exists_column->getData();
-        rows = bits.size();
-        if (!sized)
-        {
-            data.resize_fill(start + rows, 0);
-            sized = true;
-        }
-        for (size_t row = 0; row < rows; ++row)
-            data[start + row] += bits[row];
+        /// Copy: the column may already be shared through the substreams cache.
+        ExistsRead read;
+        const auto & stored = exists_column->getData();
+        read.bits.assign(stored.begin(), stored.end());
+        reads.push_back(std::move(read));
     }
 
-    if (!sized)
-        data.resize_fill(start + limit, 0);
+    /// `AlwaysPresent` has no stream. A tracked stream's length is the row count; every other
+    /// stream must match it. With no tracked stream, `limit` is the only count available.
+    size_t rows = limit;
+    bool saw_tracked = false;
+    for (const auto & read : reads)
+    {
+        if (read.always_present)
+            continue;
+
+        if (!saw_tracked)
+        {
+            rows = read.bits.size();
+            saw_tracked = true;
+        }
+        else if (read.bits.size() != rows)
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Map key presence row count mismatch: {} and {}",
+                read.bits.size(),
+                rows);
+        }
+    }
+
+    data.resize_fill(start + rows, 0);
+    for (const auto & read : reads)
+    {
+        if (read.always_present)
+        {
+            for (size_t row = 0; row < rows; ++row)
+                data[start + row] += 1;
+        }
+        else
+        {
+            for (size_t row = 0; row < rows; ++row)
+                data[start + row] += read.bits[row];
+        }
+    }
 }
 
 }
