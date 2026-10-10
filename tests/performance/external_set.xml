@@ -10,9 +10,10 @@
          reads neighboring blocks together, and a chunk that needs few of them reads one block at a time. In
          the next two queries, the keys repeat, and each chunk looks up each of its distinct keys once. In the
          next query, the set does not have the keys of the lookups, and its Bloom filters rule them out
-         without reading blocks. In the last query, the lookups of `String` keys come in random order. The set
+         without reading blocks. In the next query, the lookups of `String` keys come in random order. The set
          caches the blocks that lookups read, so in the queries whose chunks need the same blocks, the chunks
-         after the first get most of them from the cache instead of reading them again. -->
+         after the first get most of them from the cache instead of reading them again. In the last query, the
+         set takes more than its cache, so most chunks read most of their blocks from the file. -->
     <settings>
         <max_bytes_before_external_set>16777216</max_bytes_before_external_set>
         <max_bytes_ratio_before_external_set>0</max_bytes_ratio_before_external_set>
@@ -51,4 +52,8 @@
     <!-- The set holds `String` keys and the lookups come in random order, so each chunk needs most of the
          blocks, which the chunks after the first get from the cache. -->
     <query>SELECT count() FROM numbers_mt(10000000) WHERE toString(cityHash64(number) % 10000000) IN (SELECT toString(number) FROM numbers(5000000))</query>
+    <!-- The set holds tuples of hashes, whose keys take 32 bytes, so it takes more than its cache, and the
+         lookups come in random order. Each chunk needs most of the blocks and reads many of them from the
+         file, in ranges of neighboring blocks. -->
+    <query>SELECT count() FROM numbers_mt(10000000) WHERE (cityHash64(number), cityHash64(number + 1), cityHash64(number + 2), cityHash64(number + 3)) IN (SELECT cityHash64(number * 2), cityHash64(number * 2 + 1), cityHash64(number * 2 + 2), cityHash64(number * 2 + 3) FROM numbers(10000000))</query>
 </test>
