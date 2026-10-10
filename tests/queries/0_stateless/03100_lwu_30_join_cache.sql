@@ -1,4 +1,5 @@
 -- Tags: no-tsan, no-asan, no-msan, no-ubsan, no-debug, no-parallel, no-fasttest
+-- Random settings limits: index_granularity=(1000, None); index_granularity_bytes=(100000, None)
 -- `OPTIMIZE` can be slow under parallel load, causing flaky timeouts.
 
 DROP TABLE IF EXISTS t_patch_join_cache;
