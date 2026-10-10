@@ -410,12 +410,13 @@ struct HashMethodSerialized
     /// and hashed in advance, every pass goes over several megabytes of temporary data per thread, and with many threads
     /// it does not fit in the cache. Every row is serialized once, and the keys stay valid until the end of the block.
     mutable PaddedPODArray<char> serialized_buffer;
-    /// Offset of the serialized key of each row in `serialized_buffer`, filled for the serialized rows.
-    mutable PaddedPODArray<UInt64> serialized_key_offsets;
+    /// The serialized key of each row in `serialized_buffer`, filled for the serialized rows.
+    mutable PaddedPODArray<std::string_view> serialized_keys;
     /// The keys of the rows below this one are serialized.
     mutable size_t serialized_rows = 0;
     mutable size_t serialized_bytes = 0;
     size_t max_bytes_in_chunk = 0;
+    /// The positions to serialize the rows of the current chunk into.
     mutable PODArray<char *> memories;
 
     /// Dense cache of aggregate state pointers keyed by the linearized positions of the
@@ -507,7 +508,7 @@ struct HashMethodSerialized
             if (use_batch_serialize)
             {
                 serialized_buffer.resize(total_size);
-                serialized_key_offsets.resize(row_sizes.size());
+                serialized_keys.resize(row_sizes.size());
                 max_bytes_in_chunk = std::clamp<size_t>(getL2CacheSize() / 8, 64 * 1024, 1024 * 1024);
             }
         }
@@ -640,26 +641,31 @@ struct HashMethodSerialized
     void serializeNextChunk(size_t row) const
         requires prealloc
     {
-        /// Besides the serialized key, each row takes its offset, its hash and a pointer in `memories`.
-        static constexpr size_t bytes_per_row = sizeof(UInt64) + sizeof(size_t) + sizeof(char *);
+        /// Besides the serialized key, each row takes its `std::string_view`, its hash and a pointer in `memories`.
+        static constexpr size_t bytes_per_row = sizeof(std::string_view) + sizeof(size_t) + sizeof(char *);
         const size_t begin = serialized_rows;
         const size_t rows = row_sizes.size();
-        size_t end = begin;
-        size_t bytes = 0;
-        while (end < rows && (end <= row || bytes + row_sizes[end] + bytes_per_row <= max_bytes_in_chunk))
-        {
-            bytes += row_sizes[end] + bytes_per_row;
-            ++end;
-        }
 
-        memories.resize(end - begin);
-        char * buffer = serialized_buffer.data();
-        for (size_t i = begin; i < end; ++i)
+        /// The chunk is assembled in a single pass over the rows: it is on the hot path of aggregation.
+        memories.resize(rows - begin);
+        const UInt64 * sizes = row_sizes.data();
+        std::string_view * keys = serialized_keys.data();
+        char ** chunk_memories = memories.data();
+        char * memory = serialized_buffer.data() + serialized_bytes;
+        size_t chunk_bytes = 0;
+        size_t end = begin;
+        for (; end < rows; ++end)
         {
-            serialized_key_offsets[i] = serialized_bytes;
-            memories[i - begin] = buffer + serialized_bytes;
-            serialized_bytes += row_sizes[i];
+            const size_t size = sizes[end];
+            chunk_bytes += size + bytes_per_row;
+            if (end > row && chunk_bytes > max_bytes_in_chunk)
+                break;
+            keys[end] = std::string_view(memory, size);
+            chunk_memories[end - begin] = memory;
+            memory += size;
         }
+        serialized_bytes = memory - serialized_buffer.data();
+        memories.resize(end - begin);
 
         for (size_t i = 0; i < keys_size; ++i)
         {
@@ -677,7 +683,7 @@ struct HashMethodSerialized
     {
         if (row >= serialized_rows) [[unlikely]]
             serializeNextChunk(row);
-        return {serialized_buffer.data() + serialized_key_offsets[row], row_sizes[row]};
+        return serialized_keys[row];
     }
 
     /// The hash of the serialized key of the row with the hash function of the hash table.
