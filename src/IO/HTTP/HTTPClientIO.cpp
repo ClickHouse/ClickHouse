@@ -198,8 +198,12 @@ HTTPRequestBodyWriteBuffer::HTTPRequestBodyWriteBuffer(
     , session(session_)
     , encoding(body_info_.encoding)
     , content_length(body_info_.content_length)
-    , memory(buf_size + chunk_header_reserve + chunk_footer_size)
+    , memory(std::min(buf_size, max_transfer_at_once) + chunk_header_reserve + chunk_footer_size)
 {
+    /// Every flush leaves as a single `writeAllRaw`, whose length `Poco` narrows down to `int`,
+    /// so the buffer is capped the same way the read side caps a single transfer.
+    buf_size = std::min(buf_size, max_transfer_at_once);
+
     /// The chunk header is written in front of the data and the trailer right after it, so that
     /// a chunk leaves as a single `send` without copying the payload anywhere.
     BufferBase::set(memory.data() + chunk_header_reserve, buf_size, 0);
