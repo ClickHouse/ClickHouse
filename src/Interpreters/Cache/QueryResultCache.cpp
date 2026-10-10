@@ -751,15 +751,24 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
 
     /// Fold the dependencies of the injected filters into the query's own hash, applying the
     /// same rules (fail closed on non-deterministic functions, `dictGet`-like calls, SQL UDFs, ...).
-    SipHash combined;
-    combined.update(*query_hash);
+    /// The filters come in the order of the settings map, which carries no meaning, so sort their hashes
+    /// (keeping multiplicity) the same way as the per-table hashes: reordering the entries of an
+    /// otherwise identical `additional_table_filters` must not move the hash.
+    std::vector<UInt128> filter_hashes;
+    filter_hashes.reserve(filter_asts.size());
     for (const auto & filter_ast : filter_asts)
     {
         auto filter_hash = computeReferencedTablesModificationHashImpl(filter_ast->clone(), context);
         if (!filter_hash)
             return {};
-        combined.update(*filter_hash);
+        filter_hashes.push_back(*filter_hash);
     }
+    std::sort(filter_hashes.begin(), filter_hashes.end());
+
+    SipHash combined;
+    combined.update(*query_hash);
+    for (const auto & filter_hash : filter_hashes)
+        combined.update(filter_hash);
     return combined.get128();
 }
 
