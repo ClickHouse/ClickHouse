@@ -93,6 +93,7 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
     auto global_context = Context::getGlobalContextInstance();
     if (!global_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No global context to resolve a stateless worker cluster");
+    /// One configuration for the whole lookup, so the selection, the signature and the build agree.
     const auto & config = global_context->getConfigRef();
     /// The default cluster is cached under one key whether it was selected by an empty value or by name.
     const String canonical = canonicalizeClusterName(config, cluster_name);
@@ -111,7 +112,7 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
         providers.erase(it);
     }
 
-    auto provider = buildProvider(canonical);
+    auto provider = buildProvider(config, canonical);
     providers.emplace(canonical, ProviderEntry{provider, std::move(signature)});
     return provider;
 }
@@ -138,24 +139,22 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::tryGetProvider(con
     return nullptr;
 }
 
-StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(const String & cluster_name)
+StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(
+    const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
 {
-    auto global_context = Context::getGlobalContextInstance();
-    if (!global_context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No global context to build a stateless worker provider");
-
-    const auto & config = global_context->getConfigRef();
-
     if (!config.getBool("stateless_worker_client.enabled", false))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Stateless worker client is not enabled in configuration");
 
     /// Only the worker source is per-cluster; other settings are read from the top-level block and
-    /// shared across clusters. `getProvider` has already validated the cluster name.
+    /// shared across clusters.
     const String config_prefix = clusterConfigPrefix(cluster_name);
-    const String source = getWorkerSources(config, config_prefix).front();
-    LOG_DEBUG(log, "Building stateless worker provider for cluster '{}' from `{}`", cluster_name, source);
-    return StatelessWorkersProviderFactory::instance().get(source).create(config, config_prefix);
+    const Strings sources = getWorkerSources(config, config_prefix);
+    if (sources.size() != 1)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Stateless worker cluster '{}' must configure exactly one worker source, got {}", cluster_name, sources.size());
+    LOG_DEBUG(log, "Building stateless worker provider for cluster '{}' from `{}`", cluster_name, sources.front());
+    return StatelessWorkersProviderFactory::instance().get(sources.front()).create(config, config_prefix);
 }
 
 String StatelessWorkersProviderRegistry::computeConfigSignature(const Poco::Util::AbstractConfiguration & config, const String & cluster_name)

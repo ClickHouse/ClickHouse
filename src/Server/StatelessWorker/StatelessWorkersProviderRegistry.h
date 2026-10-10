@@ -63,7 +63,7 @@ private:
     std::map<String, ProviderEntry> providers TSA_GUARDED_BY(mutex);
 
     /// Build the provider for `cluster_name` from the current server configuration.
-    StatelessWorkersProviderPtr buildProvider(const String & cluster_name) TSA_REQUIRES(mutex);
+    StatelessWorkersProviderPtr buildProvider(const Poco::Util::AbstractConfiguration & config, const String & cluster_name) TSA_REQUIRES(mutex);
 
     /// A digest of the configuration `cluster_name` is built from; empty when it is no longer configured.
     /// A reload rebuilds only a cluster whose digest changed.

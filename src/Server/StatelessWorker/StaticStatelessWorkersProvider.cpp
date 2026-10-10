@@ -14,13 +14,13 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-std::vector<StatelessWorkerAddress> StaticStatelessWorkersProvider::resolveWorkerAddresses(const String & config_prefix)
+std::vector<StatelessWorkerAddress> StaticStatelessWorkersProvider::resolveWorkerAddresses(
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     auto global_context = Context::getGlobalContextInstance();
     if (!global_context)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No global context to resolve static stateless workers");
 
-    const auto & config = global_context->getConfigRef();
     std::vector<StatelessWorkerAddress> addresses;
 
     const String cluster_name = config.getString(config_prefix + ".cluster", "");
@@ -59,8 +59,9 @@ std::vector<StatelessWorkerAddress> StaticStatelessWorkersProvider::resolveWorke
     return addresses;
 }
 
-StaticStatelessWorkersProvider::StaticStatelessWorkersProvider(String config_prefix_)
-    : addresses(resolveWorkerAddresses(config_prefix_))
+StaticStatelessWorkersProvider::StaticStatelessWorkersProvider(
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    : addresses(resolveWorkerAddresses(config, config_prefix))
 {
 }
 
@@ -75,15 +76,15 @@ StatelessWorkerAllocationPtr StaticStatelessWorkersProvider::allocate(
 void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & factory)
 {
     StatelessWorkersProviderFactory::ProviderKind kind{
-        .create = [](const Poco::Util::AbstractConfiguration &, const String & config_prefix) -> StatelessWorkersProviderPtr
+        .create = [](const Poco::Util::AbstractConfiguration & config, const String & config_prefix) -> StatelessWorkersProviderPtr
         {
-            return std::make_shared<StaticStatelessWorkersProvider>(config_prefix);
+            return std::make_shared<StaticStatelessWorkersProvider>(config, config_prefix);
         },
         /// Sign the resolved workers, not the literal `cluster` name, whose `remote_servers` entry can change.
-        .config_signature = [](const Poco::Util::AbstractConfiguration &, const String & config_prefix) -> String
+        .config_signature = [](const Poco::Util::AbstractConfiguration & config, const String & config_prefix) -> String
         {
             String signature;
-            for (const auto & address : StaticStatelessWorkersProvider::resolveWorkerAddresses(config_prefix))
+            for (const auto & address : StaticStatelessWorkersProvider::resolveWorkerAddresses(config, config_prefix))
                 signature += address.host + ":" + std::to_string(address.stateless_worker_port)
                     + ":" + std::to_string(address.streaming_exchange_port) + "|";
             return signature;

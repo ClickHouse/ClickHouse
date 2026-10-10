@@ -58,7 +58,7 @@ TEST(StaticStatelessWorkersProvider, HostFormServesConfiguredHostAuthlessIgnorin
         </clusters>
     </stateless_worker_client>
 )");
-    StaticStatelessWorkersProvider provider("stateless_worker_client.clusters.stat");
+    StaticStatelessWorkersProvider provider(getContext().context->getConfigRef(), "stateless_worker_client.clusters.stat");
 
     const auto provided_before = ProfileEvents::global_counters[ProfileEvents::StatelessWorkerProvided];
     auto one = provider.allocate(0, PROVISIONING_TIMEOUT_MS);
@@ -85,7 +85,7 @@ TEST(StaticStatelessWorkersProvider, NoWorkerSourceThrows)
     </stateless_worker_client>
 )");
     /// Resolution happens in the constructor, so a cluster with no worker source fails when built.
-    EXPECT_THROW(StaticStatelessWorkersProvider("stateless_worker_client.clusters.empty"), Exception);
+    EXPECT_THROW(StaticStatelessWorkersProvider(getContext().context->getConfigRef(), "stateless_worker_client.clusters.empty"), Exception);
 }
 
 /// A config reload that reconfigures a cluster retires its provider from the live map, so new queries
@@ -148,7 +148,7 @@ TEST(StaticStatelessWorkersProvider, ReportsWorkersStateForIntrospection)
         </clusters>
     </stateless_worker_client>
 )");
-    StaticStatelessWorkersProvider provider("stateless_worker_client.clusters.stat");
+    StaticStatelessWorkersProvider provider(getContext().context->getConfigRef(), "stateless_worker_client.clusters.stat");
     const auto state = provider.getWorkersState();
     ASSERT_EQ(state.size(), 1u);
     EXPECT_EQ(state[0].hostname, "stat-host");
@@ -181,7 +181,7 @@ TEST(StaticStatelessWorkersProvider, ClusterFormUsesSingleShardReplicas)
         </clusters>
     </stateless_worker_client>
 )");
-    StaticStatelessWorkersProvider provider("stateless_worker_client.clusters.statc");
+    StaticStatelessWorkersProvider provider(getContext().context->getConfigRef(), "stateless_worker_client.clusters.statc");
     auto alloc = provider.allocate(0, PROVISIONING_TIMEOUT_MS);
     ASSERT_EQ(alloc->getAddresses().size(), 1u);
     EXPECT_EQ(alloc->getAddresses()[0].host, "replica-host");
@@ -207,7 +207,7 @@ TEST(StaticStatelessWorkersProvider, ClusterFormRejectsMultipleShards)
     </stateless_worker_client>
 )");
     /// The single-shard guard runs in the constructor, so a multi-shard cluster fails when built.
-    EXPECT_THROW(StaticStatelessWorkersProvider("stateless_worker_client.clusters.multishard"), Exception);
+    EXPECT_THROW(StaticStatelessWorkersProvider(getContext().context->getConfigRef(), "stateless_worker_client.clusters.multishard"), Exception);
 }
 
 /// A static provider is an immutable snapshot of its config: after a reload changes the host, the

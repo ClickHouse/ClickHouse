@@ -23,8 +23,8 @@ namespace DB
 class StaticStatelessWorkersProvider final : public IStatelessWorkersProvider
 {
 public:
-    /// `config_prefix_` is the cluster's configuration path. Throws on a broken configuration.
-    explicit StaticStatelessWorkersProvider(String config_prefix_);
+    /// `config_prefix` is the cluster's configuration path. Throws on a broken configuration.
+    StaticStatelessWorkersProvider(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
     ~StaticStatelessWorkersProvider() override = default;
 
     /// Returns a per-query allocation over the workers snapshotted at construction.
@@ -42,7 +42,8 @@ public:
 
     /// The worker addresses for the cluster at `config_prefix` in the current server configuration.
     /// Also signs the configuration, so a `remote_servers` change under `<cluster>` rebuilds the provider.
-    static std::vector<StatelessWorkerAddress> resolveWorkerAddresses(const String & config_prefix);
+    static std::vector<StatelessWorkerAddress> resolveWorkerAddresses(
+        const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 private:
     /// The worker addresses resolved from the configuration when the provider was built.
