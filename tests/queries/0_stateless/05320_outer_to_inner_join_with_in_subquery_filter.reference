@@ -1,0 +1,20 @@
+issue
+0
+left
+2
+left, IN (subquery) under OR
+2
+right
+2
+full
+2
+plan
+1
+not converted
+6
+6
+6
+any
+2	4
+2	4
+2	4
