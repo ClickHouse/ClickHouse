@@ -1,8 +1,9 @@
-"""An Iceberg `uuid` manifest bound must not drive min/max pruning. The spec serializes the value as
-16 big-endian bytes and a conforming writer orders the bound pair by unsigned byte comparison, while
-ClickHouse orders `UUID` by its second half. Byte-wise A < C < B below, so a file holding all three
-is described by the pair (A, B); in ClickHouse order those sort A < B < C, so C is outside the pair
-and stays outside it after a byte swap. Pruning on such a pair drops a file that holds matching rows.
+"""An Iceberg `uuid` manifest bound pair must not drive min/max pruning unless it is a single point.
+The spec serializes the value as 16 big-endian bytes and a conforming writer orders the bound pair by
+unsigned byte comparison, while ClickHouse orders `UUID` by its second half. Byte-wise A < C < B
+below, so a file holding all three is described by the pair (A, B); in ClickHouse order those sort
+A < B < C, so C is outside the pair and stays outside it after a byte swap. Pruning on such a pair
+drops a file that holds matching rows. A pair with equal bounds is exact once the bytes are decoded.
 The fallback is per column: `id` in the same manifest entry must keep pruning."""
 
 import uuid as uuidlib
@@ -111,7 +112,8 @@ def test_iceberg_uuid_manifest_bounds(started_cluster_iceberg_no_spark):
     # `toUUID` is explicit because a bare string literal can leave the column without a usable
     # min/max condition, and then nothing prunes whatever the bounds say. The row assertions pin the
     # result, since two empty results also satisfy the equality check inside the pruning helper.
+    # Only the single-value file is pruned for C: its bounds are the point D, the other file has none.
     assert rows(f"u = toUUID('{C}')") == "2"
-    assert pruned_files(f"u = toUUID('{C}')") == 0
+    assert pruned_files(f"u = toUUID('{C}')") == 1
     assert rows(f"u = toUUID('{D}')") == "11"
     assert pruned_files(f"u = toUUID('{D}')") == 0

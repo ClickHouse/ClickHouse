@@ -5,7 +5,9 @@
 #include <limits>
 
 #include <base/arithmeticOverflow.h>
+#include <base/unaligned.h>
 #include <Common/Exception.h>
+#include <Core/UUID.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -237,6 +239,17 @@ std::optional<Field> deserializeFieldFromBinaryRepr(
     Field result;
     column->get(0, result);
     return result;
+}
+
+std::optional<Field> deserializeUUIDPointFromBinaryRepr(const String & lower, const String & upper)
+{
+    if (lower != upper || lower.size() != sizeof(UUID))
+        return std::nullopt;
+
+    UUID uuid;
+    UUIDHelpers::getHighBytes(uuid) = unalignedLoadBigEndian<UInt64>(lower.data());
+    UUIDHelpers::getLowBytes(uuid) = unalignedLoadBigEndian<UInt64>(lower.data() + sizeof(UInt64));
+    return Field(uuid);
 }
 
 }
