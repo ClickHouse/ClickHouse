@@ -605,10 +605,10 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         else if (const auto * literal = pair->second->as<const ASTLiteral>())
         {
             /// A dictionary source parameter has no structured representation for a collection: an array literal, or a constant
-            /// expression evaluated to a tuple or map. A replayed definition may hold a `tuple(...)` call, which evaluates to a tuple.
+            /// expression evaluated to a tuple or map. Only a fresh definition is refused one, since a stored definition may hold it.
             const auto value_type = literal->value.getType();
-            if (value_type == Field::Types::Array
-                || (is_fresh_definition && (value_type == Field::Types::Tuple || value_type == Field::Types::Map)))
+            if (is_fresh_definition
+                && (value_type == Field::Types::Array || value_type == Field::Types::Tuple || value_type == Field::Types::Map))
             {
                 throw DB::Exception(
                     ErrorCodes::BAD_ARGUMENTS,
