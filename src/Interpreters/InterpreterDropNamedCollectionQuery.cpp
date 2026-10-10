@@ -51,20 +51,20 @@ StoragePtr tryGetLiveTableByUUID(const StorageID & dependency)
     return table;
 }
 
-/// Dictionaries defined in the configuration files whose source references the collection by its `name`
-/// key. Such a dictionary registers its dependency only when it is loaded, which may never have happened:
-/// it stays unloaded under `dictionaries_lazy_load` / `dictionary_lazy_load` until its first access, and
-/// after a restart that followed a drop with `check_named_collection_dependencies = 0`, its last load
-/// could not resolve the collection. Its next (re)load resolves the collection again, so it is found
-/// from the definition the loader holds, independently of whether it has ever been loaded. A dictionary
-/// created with DDL is not considered here: it is in `DatabaseCatalog` and registers its dependency when
-/// its metadata is loaded.
-std::vector<String> getConfigDictionariesReferencingCollection(const ContextPtr & context, const String & collection_name)
+/// Dictionaries whose source references the collection by its `name` key. A dictionary registers its
+/// dependency only when it is loaded, which may never have happened: it stays unloaded under
+/// `dictionaries_lazy_load` / `dictionary_lazy_load` until its first access, and after a restart that
+/// followed a drop with `check_named_collection_dependencies = 0`, its last load could not resolve the
+/// collection. Its next (re)load resolves the collection again, so it is found from the definition the
+/// loader holds, independently of whether it has ever been loaded. This covers both the dictionaries
+/// defined in the configuration files and the ones created with DDL: the loader holds the definition of
+/// the latter, built from the `CREATE DICTIONARY` query, for as long as the dictionary is attached.
+std::vector<String> getDictionariesReferencingCollection(const ContextPtr & context, const String & collection_name)
 {
     std::vector<String> dictionary_names;
     for (const auto & load_result : context->getExternalDictionariesLoader().getLoadResults())
     {
-        if (!load_result.config || !load_result.config->repository_name.empty())
+        if (!load_result.config)
             continue;
 
         const auto & config = *load_result.config->config;
@@ -75,8 +75,16 @@ std::vector<String> getConfigDictionariesReferencingCollection(const ContextPtr 
             source_types.begin(),
             source_types.end(),
             [&](const auto & source_type) { return config.getString(source_prefix + "." + source_type + ".name", "") == collection_name; });
-        if (references_collection)
-            dictionary_names.push_back(fmt::format("dictionary `{}`", load_result.name));
+        if (!references_collection)
+            continue;
+
+        /// The loader keys a dictionary created with DDL by its UUID, if any, so name it by the
+        /// identifier from the definition instead.
+        const auto dictionary_id = StorageID::fromDictionaryConfig(config, load_result.config->key_in_config);
+        const auto dictionary_name = dictionary_id.database_name.empty()
+            ? dictionary_id.table_name
+            : dictionary_id.database_name + "." + dictionary_id.table_name;
+        dictionary_names.push_back(fmt::format("dictionary `{}`", dictionary_name));
     }
     return dictionary_names;
 }
@@ -288,13 +296,13 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
         /// A collection that does not exist is left to `removeFromSQLIfNoDependencies`, which honors `IF EXISTS`.
         if (NamedCollectionFactory::instance().exists(query.collection_name))
         {
-            auto config_dictionaries = getConfigDictionariesReferencingCollection(current_context, query.collection_name);
-            if (!config_dictionaries.empty())
+            auto dictionaries = getDictionariesReferencingCollection(current_context, query.collection_name);
+            if (!dictionaries.empty())
                 throw Exception(
                     ErrorCodes::NAMED_COLLECTION_IS_USED,
-                    "Named collection `{}` is used by dictionaries defined in the configuration files: {}",
+                    "Named collection `{}` is used by dictionaries: {}",
                     query.collection_name,
-                    fmt::join(config_dictionaries, ", "));
+                    fmt::join(dictionaries, ", "));
         }
 
         if (!NamedCollectionFactory::instance().removeFromSQLIfNoDependencies(query))
