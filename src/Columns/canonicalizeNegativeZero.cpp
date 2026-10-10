@@ -382,6 +382,7 @@ void updateHashWithRawValue(const IColumn & column, size_t n, SipHash & hash)
     }
     else if (const auto * column_array = typeid_cast<const ColumnArray *>(&column))
     {
+        /// The offsets of `ColumnArray` are padded on the left with zeros, so `offsets[-1]` is 0 for the first row.
         const auto & offsets = column_array->getOffsets();
         const size_t offset = offsets[n - 1];
         const size_t array_size = offsets[n] - offset;
