@@ -149,8 +149,9 @@ CassandraDictionarySource::Configuration::Configuration(
     , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", DEFAULT_PORT)))
     , user(config.getString(config_prefix + ".user", ""))
     , password(config.getString(config_prefix + ".password", ""))
-    , db(config.getString(config_prefix + ".keyspace"))
-    , table(config.getString(config_prefix + ".column_family"))
+    , db(config.getString(config_prefix + ".keyspace", ""))
+    , table(config.getString(config_prefix + ".column_family", ""))
+    , query(config.getString(config_prefix + ".query", ""))
     , allow_filtering(config.getBool(config_prefix + ".allow_filtering", false))
     , partition_key_prefix(config.getUInt(config_prefix + ".partition_key_prefix", 1))
     , max_threads(config.getUInt(config_prefix + ".max_threads", 8))
@@ -236,7 +237,10 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
 {
     if (!configuration.allow_filtering)
         return;
-    query.pop_back();   /// remove semicolon
+    /// The generated queries end with a semicolon, a custom query may not.
+    boost::algorithm::trim_right(query);
+    if (query.ends_with(';'))
+        query.pop_back();
     query += " ALLOW FILTERING;";
 }
 
