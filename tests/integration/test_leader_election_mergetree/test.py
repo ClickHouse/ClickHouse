@@ -4572,6 +4572,32 @@ def test_vanished_patch_parts_retired_on_refresh_and_takeover(started_cluster):
             "The follower does not apply the patch part it loaded"
         )
 
+        # The documented follower contract: a lightweight update is fenced with
+        # `TABLE_IS_READ_ONLY` (it must neither build a patch part nor fall back to the
+        # `SUPPORT_IS_DISABLED` of a heavy mutation), and `OPTIMIZE ... DRY RUN` is rejected with
+        # `SUPPORT_IS_DISABLED` on every node, the follower included.
+        error = follower.query_and_get_error(
+            f"UPDATE {table} SET y = y + 1000 WHERE x = 2",
+            settings={"enable_lightweight_update": 1},
+        )
+        assert "TABLE_IS_READ_ONLY" in error, (
+            f"Follower lightweight UPDATE: expected TABLE_IS_READ_ONLY, got: {error}"
+        )
+        assert _active_patch_parts(follower, table) == patch_parts, (
+            "The rejected follower lightweight update changed the set of patch parts: "
+            f"{_active_patch_parts(follower, table)}"
+        )
+        follower_part = follower.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND partition_id = '1' LIMIT 1"
+        ).strip()
+        error = follower.query_and_get_error(
+            f"OPTIMIZE TABLE {table} DRY RUN PARTS '{follower_part}'"
+        )
+        assert "SUPPORT_IS_DISABLED" in error, (
+            f"Follower OPTIMIZE ... DRY RUN: expected SUPPORT_IS_DISABLED, got: {error}"
+        )
+
         # Materialize the patch on the leader, which makes it unused, and let the leader clean it
         # up: dropped from the active set, then deleted from the shared storage.
         node1.query(f"SYSTEM START MERGES {table}")
