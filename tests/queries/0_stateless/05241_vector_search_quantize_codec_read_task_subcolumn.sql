@@ -1,6 +1,3 @@
--- Tags: no-parallel-replicas
--- Tag no-parallel-replicas: the initiator reads only the granules assigned to it, so its `ReadCompressedBytes` is not deterministic, https://github.com/ClickHouse/ClickHouse/issues/124607
-
 -- The `quantized` companion subcolumn of a `Quantized(...)` column is exposed only by the custom serialization of the
 -- column. Planning the read task of a part must still find it in the part (which holds that serialization), so reading
 -- `vec.quantized` reads only the codes and does not inject the full `vec` column, including under PREWHERE and after
@@ -33,17 +30,28 @@ SELECT count() FROM quantize_read_task PREWHERE length(vec.quantized) > 0 FORMAT
 SYSTEM FLUSH LOGS query_log;
 
 -- The codes take 68 bytes per row, the vector 256, so reading the full column instead would be at least as large.
-WITH
-    (SELECT ProfileEvents['ReadCompressedBytes'] FROM system.query_log
-     WHERE current_database = currentDatabase() AND event_date >= yesterday()
-       AND type = 'QueryFinish' AND log_comment = '05241_full'
-     ORDER BY event_time_microseconds DESC LIMIT 1) AS full
-SELECT log_comment, ProfileEvents['ReadCompressedBytes'] * 2 < full
-FROM system.query_log
-WHERE current_database = currentDatabase() AND event_date >= yesterday()
-  AND type = 'QueryFinish' AND log_comment IN ('05241_codes', '05241_codes_prewhere')
-ORDER BY log_comment, event_time_microseconds DESC
-LIMIT 1 BY log_comment;
+-- Under parallel replicas every replica counts only the granules it reads itself, in its own row of `query_log`, logged
+-- with `current_database` = `default`. So the bytes of a query are summed over every query it initiated.
+WITH read_bytes AS
+(
+    SELECT log_comment, sum(ProfileEvents['ReadCompressedBytes']) AS bytes
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND type = 'QueryFinish'
+      AND initial_query_id IN
+      (
+          SELECT argMax(query_id, event_time_microseconds)
+          FROM system.query_log
+          WHERE current_database = currentDatabase() AND event_date >= yesterday()
+            AND type = 'QueryFinish' AND is_initial_query
+            AND log_comment IN ('05241_full', '05241_codes', '05241_codes_prewhere')
+          GROUP BY log_comment
+      )
+    GROUP BY log_comment
+)
+SELECT log_comment, bytes * 2 < (SELECT bytes FROM read_bytes WHERE log_comment = '05241_full')
+FROM read_bytes
+WHERE log_comment != '05241_full'
+ORDER BY log_comment;
 
 DROP TABLE quantize_read_task;
 
