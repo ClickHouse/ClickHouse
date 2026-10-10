@@ -981,9 +981,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 if (asof_const_column->isNullAt(0))
                     return false;
             }
-            else
+            else if (const auto * asof_null_map = assert_cast<const ColumnNullable &>(*asof_column.column).tryGetNullMapData())
             {
-                const auto & asof_column_nullable = assert_cast<const ColumnNullable &>(*asof_column.column).getNullMapData();
+                const auto & asof_column_nullable = *asof_null_map;
 
                 auto new_selector = ScatteredBlock::Indexes::create();
                 auto & new_selector_data = new_selector->getData();

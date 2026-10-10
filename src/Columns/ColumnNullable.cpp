@@ -1474,7 +1474,8 @@ bool ColumnNullable::hasOnlyTypeDefaults() const
 
 ColumnPlanes ColumnNullable::getPlanes() const
 {
-    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapData().data());
+    /// The readers of the planes only read the null map, so a column without a null map exposes the shared zeros.
+    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapRawDataOrZeros());
     planes.children = {&getNestedColumn()};
     return planes;
 }
