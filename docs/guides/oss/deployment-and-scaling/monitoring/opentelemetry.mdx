@@ -39,6 +39,13 @@ The `status_code` of such a span tells how the fragment ended:
 
 `INSERT` queries into a `Distributed` table produce analogous spans in `DistributedSink` with the same `clickhouse.cluster` and `clickhouse.shard_num` attribute keys.
 
+### Spans of a distributed plan on the initiator {#spans-of-a-distributed-plan-on-the-initiator}
+
+With the experimental `make_distributed_plan` setting, a query is split into a plan of stages that exchange data, and each stage into tasks. On the initiator, the execution of that plan is covered by the following spans:
+
+* `DistributedPlanExecutor::execute` — the whole distributed execution, from the start of the first stage to the end of the last one, with the shape of the plan in its attributes: `clickhouse.distributed.query_id` (the identifier of the distributed query, the same on every node), `clickhouse.distributed.stages` and `clickhouse.distributed.tasks` (their counts), `clickhouse.distributed.stage_dependencies` (the edges of the stage graph, each as `consumer <- producer via exchange (kind)`), `clickhouse.distributed.final_result_stream`, `clickhouse.distributed.execute_locally` and, for tasks dispatched to workers, `clickhouse.distributed.hosts`. The span ends `OK` when every stage has finished and `ERROR` with the message of the failure that stopped the query. A query cancelled by the client leaves it `UNSET` with `clickhouse.distributed.cancelled`;
+* `DistributedPlanTask::dispatch` — the start of one task, a child of the execution span, with `clickhouse.distributed.task_id`, `clickhouse.distributed.stage`, `clickhouse.distributed.depends_on` (the stages the task's stage consumes), `clickhouse.exchange.kind` (the kind of the exchanges the task writes to) and `clickhouse.initial_query_id`. When the task is sent to a stateless worker the span is of kind `CLIENT`, carries `clickhouse.target_host` and covers the start request only: the task runs asynchronously on the worker and is polled for. With `distributed_plan_execute_locally = 1` the task runs on a thread of the initiator and the span is `INTERNAL`.
+
 ## Tracing ClickHouse Keeper Requests {#tracing-clickhouse-keeper-requests}
 
 ClickHouse supports OpenTelemetry tracing for [ClickHouse Keeper](/guides/oss/deployment-and-scaling/keeper/index) requests (ZooKeeper-compatible coordination service). This feature provides detailed visibility into the lifecycle of Keeper operations, from client request submission through server-side processing.

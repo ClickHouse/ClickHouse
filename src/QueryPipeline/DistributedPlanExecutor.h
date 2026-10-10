@@ -16,6 +16,7 @@
 #endif
 
 #include <Common/DequeWithMemoryTracking.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -159,7 +160,8 @@ using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancella
 class DistributedQueryPlanExecutor
 {
 public:
-    virtual ~DistributedQueryPlanExecutor() = default;
+    /// Records the outcome of the query on `execution_span` if `execute` did not finish it.
+    virtual ~DistributedQueryPlanExecutor();
 
     void start();
     /// Returns true if the execution is finished, false if it is still in progress and should be called again later.
@@ -180,6 +182,15 @@ protected:
 
     void checkCancelled() const;
 
+    /// The dependencies of `stage_name` as the `clickhouse.distributed.depends_on` attribute of its
+    /// task spans: the producer stages, sorted. Empty for a stage that depends on nothing.
+    String dependsOnAttribute(const String & stage_name) const;
+
+    /// The identity of a task in the DAG on its `DistributedPlanTask::dispatch` span: task id, stage,
+    /// the stages it depends on, the initial query id and the kind of the exchanges it writes to.
+    /// Call only when the span is trace-enabled.
+    void addDispatchSpanAttributes(OpenTelemetry::Span & span, const String & stage_name, const DistributedQueryTask & task) const;
+
     const UUID unique_query_id;
     const DistributedQueryPlan & distributed_query_plan;
     ContextPtr context;
@@ -188,6 +199,13 @@ protected:
     StageWakeupPtr stage_wakeup;
     DequeWithMemoryTracking<String> running_stages;
     LoggerPtr logger;
+
+    /// The span of the whole distributed execution on the initiator, from the creation of the
+    /// executor to the end of its last stage, with the shape of the fragment DAG in its attributes.
+    /// The task spans of `startStage` are parented under it (see `start`), so a trace shows the DAG
+    /// on the initiator and, with the trace context propagated to the workers, each task under it.
+    /// Manual because the executor is created, driven and destroyed on different pipeline threads.
+    OpenTelemetry::ManualSpan execution_span;
 };
 
 std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
