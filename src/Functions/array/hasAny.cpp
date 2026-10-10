@@ -49,7 +49,6 @@ Code: 386. DB::Exception: There is no supertype for types Array(UInt8), String b
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayHasAny>(documentation);
-    factory.registerAlias("arrays_overlap", "hasAny", FunctionFactory::Case::Insensitive);
 }
 
 }
