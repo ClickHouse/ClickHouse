@@ -546,6 +546,8 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
+    is_no_stateful = "--no-stateful" in runner_options
+
     # The xfail inversion (and therefore the "a crash on master HEAD is a
     # reproduction" reading of a server death) only applies when the PR is
     # labelled as a bugfix; an unlabelled run of this job executes the sanity
@@ -574,11 +576,28 @@ def main():
         and not args.test
     ):
         changed_files = info.get_changed_files()
-        if changed_files and all(
-            Targeting.is_functional_test_file(f)
-            or Targeting.is_integration_test_file(f)
-            or Targeting.is_ci_job_script(f)
-            for f in changed_files
+        # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
+        # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        is_coverage_replacement_with_ci_script_changes = False
+        if info.pr_number > 0 and any(
+            Targeting.is_ci_job_script(f) for f in changed_files or []
+        ):
+            # Not at module scope: `ci.defs.job_configs` needs a bare `praktika` on `sys.path`.
+            from ci.defs.job_configs import JobConfigs
+
+            is_coverage_replacement_with_ci_script_changes = info.job_name in [
+                j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
+            ]
+        if (
+            changed_files
+            and not is_coverage_replacement_with_ci_script_changes
+            and all(
+                Targeting.is_functional_test_file(f)
+                or Targeting.is_integration_test_file(f)
+                or Targeting.is_ci_job_script(f)
+                or Targeting.is_documentation_file(f)
+                for f in changed_files
+            )
         ):
             changed_functional_files = [
                 f for f in changed_files if Targeting.is_functional_test_file(f)
@@ -1108,6 +1127,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    no_stateful=is_no_stateful,
                     # `args.options` (e.g. "amd_asan_ubsan, distributed plan, parallel")
                     # already carries the sanitizer name in the same format
                     # `prepare_stateful_data`'s `is_sanitizer` check expects, so the
@@ -1368,6 +1388,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            no_stateful=is_no_stateful,
                             build_type=bugfix_bt,
                             step_timeout=stateful_prep_step_timeout(info),
                         ):
