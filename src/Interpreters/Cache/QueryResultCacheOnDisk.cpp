@@ -305,7 +305,15 @@ std::shared_ptr<const QueryResultCacheOnDisk> QueryResultCacheOnDisk::getFromSet
 
     const String & codec_name = settings[Setting::query_cache_on_disk_codec].value;
     if (enable_writes)
-        CompressionCodecFactory::instance().get(codec_name); /// validate the codec early, a misconfiguration must fail the query
+    {
+        /// Validate the codec early, a misconfiguration must fail the query. The cache entry is a raw `Native`
+        /// byte stream without a column type, so the codec goes through the same checks as the other untyped
+        /// codec settings: the session gate of an experimental or beta codec (`enable_<family>_codec`), and
+        /// the rejection of a codec that needs the column type to compress (e.g. `PCO`) or is lossy.
+        const auto & codec_factory = CompressionCodecFactory::instance();
+        codec_factory.validateCodecString(codec_name, CodecValidationSettings(settings));
+        codec_factory.checkCodecStringSafeForUntypedData(codec_name, "query_cache_on_disk_codec");
+    }
 
     return std::make_shared<const QueryResultCacheOnDisk>(
         file_cache, enable_reads, enable_writes, codec_name,

@@ -1,0 +1,9 @@
+-- A gated codec is rejected without its dedicated setting
+enable_zxc_codec
+-- A different codec's dedicated setting does not authorize it
+enable_zxc_codec
+-- The dedicated setting authorizes it
+1
+-- A codec that requires the column type is rejected even when enabled
+BAD_ARGUMENTS
+BAD_ARGUMENTS
