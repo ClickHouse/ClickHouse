@@ -36,7 +36,7 @@
 
 #include <base/scope_guard.h>
 
-#include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Access/AccessControl.h>
 #include <Access/User.h>
@@ -420,7 +420,7 @@ static Block adaptBlockStructure(Block block, const Block & header)
 
     /// Several elements of `header` may have the same name and thus refer to the same column of `block`,
     /// so a column may be moved out of `block` only on its last use.
-    std::unordered_map<std::string_view, size_t> remaining_uses;
+    UnorderedMapWithMemoryTracking<std::string_view, size_t> remaining_uses;
     for (const auto & elem : header)
         ++remaining_uses[elem.name];
 
