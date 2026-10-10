@@ -78,8 +78,10 @@ public:
 
     /// Whether `writeFileIfNotExists` creates the file exclusively already when it returns the buffer, before
     /// any of its contents are written (an `O_EXCL` open). If the write fails afterwards, the file left in the
-    /// destination is then this caller's own, even though it does not hold the contents the caller meant to
-    /// write. Object-storage writers create the object only when the buffer is finalized, so they answer `false`.
+    /// destination was created by this caller, even though it does not hold the contents the caller meant to
+    /// write. It is not proof that the file is still the caller's: another writer reaching the same path in
+    /// rewrite mode can have written over it since. Object-storage writers create the object only when the
+    /// buffer is finalized, so they answer `false`.
     virtual bool createsFileOnOpenIfNotExists() const { return false; }
 
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;

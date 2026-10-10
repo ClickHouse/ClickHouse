@@ -1063,13 +1063,33 @@ void BackupImpl::createLockFile()
         /// back with the failed attempt (see `created_own_lock_file` above), so nothing stays fenced.
         const bool own_write_committed = lock_contents_match && writer->supportsAtomicCreateIfNotExists();
 
+        /// The open created the lock exclusively, and writing its contents failed afterwards (`ENOSPC`, `EIO`,
+        /// a failed `finalize`, ...). No other `O_EXCL` create can have replaced that file, but the same local
+        /// directory is reachable through `Disk(...)` too, whose writer opens the lock in rewrite mode and can
+        /// write over it. So the file is this attempt's own half-written lock only while it holds a prefix of
+        /// this attempt's contents (nothing at all, or a short write). Anything else - foreign contents, or a
+        /// lock that could not be read - stays on the fail-closed path below and is reported as taken.
+        bool own_half_written_lock = false;
         if (created_exclusively_on_open && !lock_contents_match)
         {
-            /// The open created the lock exclusively, and writing its contents failed afterwards (`ENOSPC`,
-            /// `EIO`, a failed `finalize`, ...). Nobody else can have created or replaced that file, so it is
-            /// this attempt's own half-written lock, not a concurrent backup's: reporting the destination as
-            /// taken would misreport a local I/O error. `removeLockFile` cannot take it back either, because it
-            /// needs the lock to hold this attempt's contents, so remove it here and rethrow the original error.
+            try
+            {
+                const UInt64 lock_file_size = writer->getFileSize(lock_file_name);
+                String unused_contents;
+                own_half_written_lock = lock_file_size <= lock_file_contents.size()
+                    && writer->fileContentsEqual(lock_file_name, lock_file_contents.substr(0, lock_file_size), unused_contents);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not read lock file {}", lock_file_name));
+            }
+        }
+
+        if (own_half_written_lock)
+        {
+            /// This is not a concurrent backup's lock: reporting the destination as taken would misreport a
+            /// local I/O error. `removeLockFile` cannot take it back either, because it needs the lock to hold
+            /// this attempt's whole contents, so remove it here and rethrow the original error.
             try
             {
                 writer->removeFile(lock_file_name);
