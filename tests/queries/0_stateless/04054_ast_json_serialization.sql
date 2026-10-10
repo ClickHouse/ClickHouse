@@ -1110,6 +1110,9 @@ SELECT 'ShowTablesQuery_databases' AS t,
     JSONExtractBool(j, 'databases') AS db_flag
 FROM (SELECT parseQueryToJSON('SHOW DATABASES') AS j);
 
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","settings":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"ShowTablesQuery","settings":true,"not_like":true,"like":"x"}'); -- { serverError BAD_ARGUMENTS }
+
 -- ==========================================================================
 -- 61. ASTShowColumnsQuery
 -- Fields: database(string), table(string)
@@ -1284,8 +1287,10 @@ SELECT 'TableOverride' AS t, 1; -- placeholder: ASTTableOverride is tested via r
 -- Fields: name(string), children(array)
 -- ==========================================================================
 
--- ASTForeignKeyDeclaration is present in the parser but not widely used
-SELECT 'ForeignKeyDeclaration' AS t, 1; -- placeholder: tested via round-trip below
+-- The parser drops the node, so `parseQueryToJSON` never emits this type; deserializing it is rejected
+-- (05229_ast_json_foreign_key_declaration_rejected).
+SELECT 'ForeignKeyDeclaration' AS t,
+    position(parseQueryToJSON('CREATE TABLE child (id Int32, pid Int32, FOREIGN KEY (pid) REFERENCES parent (pid)) ENGINE = MergeTree'), 'ForeignKeyDeclaration') AS present;
 
 
 -- ==========================================================================
@@ -1478,6 +1483,7 @@ SELECT 'RT_system_stop' AS t, formatQueryFromJSON(parseQueryToJSON('SYSTEM STOP 
 -- SHOW queries
 SELECT 'RT_show_tables' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES FROM db'));
 SELECT 'RT_show_tables_like' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES LIKE \'%test%\''));
+SELECT 'RT_show_tables_empty_like' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW TABLES LIKE \'\''));
 SELECT 'RT_show_databases' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW DATABASES'));
 SELECT 'RT_show_columns' AS t, formatQueryFromJSON(parseQueryToJSON('SHOW COLUMNS FROM t'));
 

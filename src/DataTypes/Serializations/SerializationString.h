@@ -29,6 +29,10 @@ public:
     static UInt128 getHash(MergeTreeStringSerializationVersion version_);
     static SerializationPtr create(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
+    /// Whether a resolved subcolumn is really the string lengths, which its name alone cannot tell.
+    /// Covers both the stored size stream and the virtual one computed from the data.
+    static bool isStringSizesSubcolumn(const SubstreamPath & path);
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

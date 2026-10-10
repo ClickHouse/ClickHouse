@@ -5,6 +5,8 @@
 #include <base/types.h>
 #include <base/unit.h>
 
+#include <string_view>
+
 namespace DB
 {
 
@@ -57,9 +59,12 @@ struct FormatSettings
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
+    /// The maximum number of steps of the search for the structure of a `Freeform` row, 0 means unlimited.
+    UInt64 freeform_max_search_steps = 4096;
+
     bool allow_special_serialization_kinds = false;
 
-    /// tolerates leading zeros during parsing integers
+    /// Infers a number, not a `String`, for an integer with leading zeros
     bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
@@ -133,6 +138,8 @@ struct FormatSettings
 
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
+    bool throwOnDateTimeOverflow() const { return date_time_overflow_behavior == DateTimeOverflowBehavior::Throw; }
+
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
     bool check_conversion_from_numbers_to_enum = true;
@@ -168,6 +175,22 @@ struct FormatSettings
         ZSTD
     };
 
+    /// What to do with a column whose type has no first-class Arrow mapping.
+    enum class ArrowUnsupportedTypes : uint8_t
+    {
+        /// Reject the query.
+        THROW,
+        /// Write the text representation of each value (`serializeText`) as an Arrow `Utf8` column.
+        TEXT,
+        /// Write the binary representation of each value (`serializeBinary`) as an Arrow `Binary` column.
+        BINARY
+    };
+
+    /// The Arrow extension name both Arrow writers put on a column written as an opaque `Utf8`/`Binary`
+    /// column by `TEXT`/`BINARY` above, with the original ClickHouse type name in the extension metadata,
+    /// so that a consumer can tell it apart from a genuine string or binary column.
+    static constexpr std::string_view ARROW_OPAQUE_EXTENSION_NAME = "clickhouse.opaque";
+
     struct
     {
         UInt64 max_binary_string_size = 1_GiB;
@@ -198,7 +221,9 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
-        bool output_unsupported_types_as_binary = true;
+        ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
+        UInt64 output_record_batch_rows = 0;
+        UInt64 output_record_batch_bytes = 0;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -302,6 +327,10 @@ struct FormatSettings
         bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
+        /// Set from `json_extract_named_tuples_as_objects` by the JSON functions only, not by
+        /// `getFormatSettings`: the setting governs the `JSONExtract` family, and the `JSON` data
+        /// type must keep filling named tuples from arrays positionally.
+        bool extract_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
         bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;
@@ -325,6 +354,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
+        bool type_json_skip_null_typed_paths = false;
         std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
@@ -370,8 +400,11 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         size_t dictionary_filter_push_down = 1024 * 1024;
+        size_t footer_read_size = 0;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
+        /// Copied from the `apply_string_filters_during_scan` query setting.
+        bool apply_string_filters = false;
 
         bool enable_json_parsing = true;
         bool preserve_order = false;
@@ -406,6 +439,7 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool detect_variant_by_structure = true;
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
@@ -421,6 +455,7 @@ struct FormatSettings
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
         bool highlight_trailing_spaces = true;
+        bool display_control_characters = true;
         bool multiline_fields = true;
         /// Set to 2 for auto
         UInt64 color = 2;
@@ -441,6 +476,7 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         bool named_tuples_as_json = true;
+        bool named_tuples_as_subcolumns = true;
 
         bool use_nbsp_for_padding = false;
 
@@ -616,6 +652,12 @@ struct FormatSettings
         bool use_replace = false;
         bool quote_names = true;
     } sql_insert{};
+
+    struct
+    {
+        String input_table_name;
+        String output_table_name = "table";
+    } sqlite{};
 
     struct
     {

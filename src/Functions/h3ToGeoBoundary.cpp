@@ -33,6 +33,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -123,9 +127,9 @@ Returns array of pairs `(lat, lon)`, which corresponds to the boundary of the pr
             "Get boundary coordinates for an H3 index",
             "SELECT h3ToGeoBoundary(644325524701193974) AS coordinates",
             R"(
-┌─coordinates─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [(55.71290022535552,37.79505811173474),(55.71289713485417,37.795065069971834),(55.712899340954834,37.79507312653982),(55.71290463755744,37.79507422487166),(55.71290772805917,37.79506726663345),(55.7129055219579,37.795059210064515)] │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─coordinates───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(55.71290022535552,37.79505811173474),(55.71289713485415,37.79506506997184),(55.71289934095484,37.79507312653982),(55.71290463755744,37.79507422487167),(55.71290772805917,37.79506726663346),(55.7129055219579,37.795059210064515)] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
             )"
         }
     };

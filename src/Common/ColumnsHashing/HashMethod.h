@@ -298,10 +298,9 @@ struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
     ///
     /// Computing the hash inside `build` keeps a single pass over the string data:
     /// a separate per-block hashing pass would read every key twice and allocate a
-    /// hash array per block. The flip side is that when the `Aggregator` prefetch
-    /// pipeline is active (hash table larger than L2), the look-ahead `getKeyHolder`
-    /// call rebuilds the key and hashes it a second time - the same behaviour as the
-    /// `StringHashTable` prefetch path this method replaces.
+    /// hash array per block. When the `Aggregator` prefetches (hash table larger than
+    /// L2) it builds a row's key ahead of the row; its plain `count()` loop keeps that
+    /// key, the other loops build and hash it again.
     ///
     /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
     /// aggregation derives a 64-bit hash via a dedicated conversion path.
@@ -483,6 +482,18 @@ struct HashMethodKeysFixed
         return true;
     }
 
+    /// The batch buffer is resized before probing, even when every input key is already present.
+    /// Match the padding and capacity rounding of `PaddedPODArray::resize_fill` on an empty array.
+    static size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes)
+    {
+        if (!num_rows || !usePreparedKeys(key_sizes))
+            return 0;
+
+        using Array = PaddedPODArray<Key>;
+        return roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
+            num_rows, sizeof(Key), Array::pad_left, Array::pad_right));
+    }
+
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
@@ -589,32 +600,39 @@ struct HashMethodKeysFixed
         }
     }
 
-    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    /// Returns the column order used to pack prepared keys: descending value size.
+    /// Returns `std::nullopt` when packing uses the original column order.
+    /// `unpackFixedKeyIntoColumns` uses the same order to recover key values.
+    static std::optional<std::vector<size_t>> packedKeysOrder(const Sizes & key_sizes)
     {
         if (!usePreparedKeys(key_sizes))
             return {};
 
+        std::vector<size_t> order;
+        order.reserve(key_sizes.size());
+        for (const size_t size : {16, 8, 4, 2, 1})
+            for (size_t i = 0; i < key_sizes.size(); ++i)
+                if (key_sizes[i] == size)
+                    order.push_back(i);
+        return order;
+    }
+
+    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+    {
+        const auto order = packedKeysOrder(key_sizes);
+        if (!order)
+            return {};
+
         std::vector<IColumn *> new_columns;
         new_columns.reserve(key_columns.size());
-
         Sizes new_sizes;
-        auto fill_size = [&](size_t size)
-        {
-            for (size_t i = 0; i < key_sizes.size(); ++i)
-            {
-                if (key_sizes[i] == size)
-                {
-                    new_columns.push_back(key_columns[i]);
-                    new_sizes.push_back(size);
-                }
-            }
-        };
+        new_sizes.reserve(key_sizes.size());
 
-        fill_size(16);
-        fill_size(8);
-        fill_size(4);
-        fill_size(2);
-        fill_size(1);
+        for (const size_t i : *order)
+        {
+            new_columns.push_back(key_columns[i]);
+            new_sizes.push_back(key_sizes[i]);
+        }
 
         key_columns.swap(new_columns);
         return new_sizes;

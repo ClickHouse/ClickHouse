@@ -34,9 +34,10 @@ public:
 
     OutputPort & getOutputPort();
 
-    /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
-    void addInput();
-    /// Need to be called after all inputs are added. (only if have_all_inputs was not specified).
+    /// Adds an input before registration is closed with `setHaveAllInputs`. Its header may differ
+    /// from the output header when the algorithm changes the column layout.
+    void addInput(const Block & input_header);
+    /// Closes input registration when constructed with `have_all_inputs_` set to false.
     void setHaveAllInputs();
 
     Status prepare() override;
@@ -153,6 +154,7 @@ public:
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);
+            onOutputChunk(state.output_chunk);
         }
 
         if (status.required_source >= 0)
@@ -176,6 +178,9 @@ public:
     }
 
 protected:
+    /// Is called for every chunk the merge produces, before it is pushed to the output.
+    virtual void onOutputChunk(const Chunk & /*chunk*/) {}
+
     /// Call `consume` with empty chunk when there is no more data.
     bool empty_chunk_on_finish = false;
 

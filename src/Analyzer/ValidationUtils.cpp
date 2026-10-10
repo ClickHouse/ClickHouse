@@ -6,13 +6,19 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/traverseQueryTree.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 
 #include <memory>
 #include <ranges>
@@ -23,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_PREWHERE;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int LOGICAL_ERROR;
@@ -88,6 +95,12 @@ void validateFilters(const QueryTreeNodePtr & query_node)
 
     if (query_node_typed.hasQualify())
         validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
+
+    if (query_node_typed.hasLimitAfter())
+        validateFilter(query_node_typed.getLimitAfter(), "LIMIT AFTER", query_node);
+
+    if (query_node_typed.hasLimitUntil())
+        validateFilter(query_node_typed.getLimitUntil(), "LIMIT UNTIL", query_node);
 }
 
 static bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
@@ -346,9 +359,6 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
             auto & grouping_set_keys = node->as<ListNode &>();
             for (auto & grouping_set_key : grouping_set_keys.getNodes())
             {
-                if (grouping_set_key->as<ConstantNode>())
-                    continue;
-
                 original_group_by_keys_nodes.push_back(grouping_set_key);
                 group_by_keys_nodes.push_back(grouping_set_key->clone());
                 if (params.group_by_use_nulls)
@@ -357,9 +367,6 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         }
         else
         {
-            if (node->as<ConstantNode>())
-                continue;
-
             original_group_by_keys_nodes.push_back(node);
             group_by_keys_nodes.push_back(node->clone());
             if (params.group_by_use_nulls)
@@ -385,7 +392,18 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(group_by_keys_nodes, original_group_by_keys_nodes, query_node);
 
         if (query_node_typed.hasHaving())
+        {
             validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
+
+            /// the query computes the totals together with this filter, so the filter cannot multiply rows
+            /// a key can appear in both forms, `Nullable` with `group_by_use_nulls` and original inside `grouping`
+            if (query_node_typed.isGroupByWithTotals())
+            {
+                QueryTreeNodes ready_keys = group_by_keys_nodes;
+                ready_keys.insert(ready_keys.end(), original_group_by_keys_nodes.begin(), original_group_by_keys_nodes.end());
+                assertNoArrayJoinOutside(query_node_typed.getHaving(), ready_keys, ErrorCodes::ILLEGAL_COLUMN, "in HAVING with TOTALS");
+            }
+        }
 
         if (query_node_typed.hasQualify())
             validate_group_by_columns_visitor.visit(query_node_typed.getQualify());
@@ -398,6 +416,12 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
         if (query_node_typed.hasLimitBy())
             validate_group_by_columns_visitor.visit(query_node_typed.getLimitByNode());
+
+        if (query_node_typed.hasLimitAfter())
+            validate_group_by_columns_visitor.visit(query_node_typed.getLimitAfter());
+
+        if (query_node_typed.hasLimitUntil())
+            validate_group_by_columns_visitor.visit(query_node_typed.getLimitUntil());
 
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
@@ -459,6 +483,41 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
 {
     ValidateFunctionNodesVisitor visitor(function_name, exception_code, exception_function_name, exception_place_message);
     visitor.visit(node);
+}
+
+void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
+    const std::vector<QueryTreeNodePtr> & ready_columns,
+    int exception_code,
+    std::string_view exception_place_message)
+{
+    QueryTreeNodePtrWithHashIgnoreAliasesSet ready(ready_columns.begin(), ready_columns.end());
+    QueryTreeNodes nodes_to_process{node};
+    while (!nodes_to_process.empty())
+    {
+        auto current = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+        if (!current || ready.contains(current))
+            continue;
+
+        auto node_type = current->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (const auto * function_node = current->as<FunctionNode>())
+        {
+            /// the query computes arguments of an aggregate or window function before the step
+            if (function_node->isAggregateFunction() || function_node->isWindowFunction())
+                continue;
+            if (function_node->getFunctionName() == "arrayJoin")
+                throw Exception(exception_code,
+                    "ARRAY JOIN function {} is found {} in query",
+                    function_node->formatASTForErrorMessage(),
+                    exception_place_message);
+        }
+
+        for (const auto & child : current->getChildren())
+            nodes_to_process.push_back(child);
+    }
 }
 
 void validateTreeSize(const QueryTreeNodePtr & node,
@@ -548,11 +607,109 @@ void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery
 
 }
 
-void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
+/// Whether a table's own storage is local but reading it reads other tables, so what it reaches has to
+/// be resolved through the catalog's dependency graph.
+///
+/// A table in a database with `lazy_load_tables`, and a permanent table created `AS` a table function
+/// (`CREATE TABLE t AS view(SELECT ...)`), is attached as a `StorageProxy` around the real storage.
+/// A proxy forwards `isRemote` and `readsFromOtherTables` but not its type, and the look-throughs in
+/// `readsFromRemoteTable` are keyed on the concrete storage - so a lazily loaded `Merge` would fall
+/// through to the dependency walk, which records nothing for `Merge`. `StorageTableFunctionProxy` is
+/// worse still: it reports `isView() == false` outright, and the `StorageView` it wraps answers the
+/// `IStorage` default `readsFromOtherTables() == false`, so neither predicate recognizes such a table
+/// as opaque unless the proxy is resolved first. Resolving it costs nothing at every call site below:
+/// each one is reached only after an `isRemote` call, which already materialized it.
+static bool isOpaqueTable(const StoragePtr & storage)
+{
+    auto nested_storage = unwrapStorageProxy(storage);
+    return nested_storage && (nested_storage->isView() || nested_storage->readsFromOtherTables());
+}
+
+/// Whether reading this table reaches a remote table. A `VIEW` is an opaque `TABLE` node at this
+/// point - the analyzer expands it later, inside `StorageView::read` - so its own `isRemote` says
+/// nothing about what it reads. Follow the referential dependencies the catalog records for such a
+/// table instead. Without this, a correlated subquery over a view of a `Distributed` table passed the
+/// check below and then broke a planner invariant (`Column identifier ... is already registered`,
+/// a `LOGICAL_ERROR` that aborts a debug build) instead of being refused.
+///
+/// Not every remote read is reachable this way: `DDLDependencyVisitor` records no dependency for the
+/// `remote` and `cluster` table functions, so a view over those stays invisible here, exactly as it
+/// is today. Those spellings execute rather than being refused, so nothing regresses.
+static bool readsFromRemoteTable(
+    const StoragePtr & storage,
+    const StorageID & table_id,
+    const ContextPtr & context,
+    std::unordered_set<String> & visited,
+    size_t depth)
+{
+    static constexpr size_t max_dependency_depth = 16;
+
+    if (!storage)
+        return false;
+
+    if (storage->isRemote())
+        return true;
+
+    if (!context || depth >= max_dependency_depth)
+        return false;
+
+    /// A cycle in the graph would otherwise be bounded only by the depth cap, and every `Merge` level
+    /// iterates over databases. A storage produced by a table function may not be in the catalog and then
+    /// has nothing to key on; the depth cap still bounds those.
+    if (!table_id.table_name.empty() && !visited.insert(table_id.getFullTableName()).second)
+        return false;
+
+    StoragePtr nested_storage = unwrapStorageProxy(storage);
+
+    /// Reading a materialized view only ever reads its target table, so follow that target rather than the
+    /// referential dependencies: those also include the `SELECT` source, which is read at insert time only,
+    /// and following it would refuse a materialized view with a `Distributed` source and a local target - a
+    /// query that works. `StorageMaterializedView::isRemote`, checked above, only asks the target about
+    /// itself, which misses a target that is itself a view over a `Distributed` table.
+    if (const auto * materialized_view = nested_storage->as<StorageMaterializedView>())
+        return readsFromRemoteTable(
+            materialized_view->tryGetTargetTable(), materialized_view->getTargetTableId(), context, visited, depth + 1);
+
+    /// `Merge` matches its source tables by a pattern resolved at read time, so the catalog records no
+    /// referential dependency for it. `StorageMerge::isRemote`, checked above, asks every matched source
+    /// only about itself, which misses a source that is a view over a `Distributed` table. Walk the
+    /// currently matched sources instead.
+    if (const auto * storage_merge = nested_storage->as<StorageMerge>())
+    {
+        return storage_merge->hasChildTable([&](const StoragePtr & source)
+        {
+            return readsFromRemoteTable(source, source->getStorageID(), context, visited, depth + 1);
+        });
+    }
+
+    if (!(nested_storage->isView() || nested_storage->readsFromOtherTables()))
+        return false;
+
+    /// A table function such as `view(SELECT ...)` also wraps a `StorageView`, but it is not in the catalog,
+    /// so there are no dependencies to follow.
+    if (table_id.table_name.empty())
+        return false;
+
+    for (const auto & dependency : DatabaseCatalog::instance().getReferentialDependencies(table_id))
+    {
+        auto dependency_storage = DatabaseCatalog::instance().tryGetTable(dependency, context);
+        if (readsFromRemoteTable(dependency_storage, dependency, context, visited, depth + 1))
+            return true;
+    }
+
+    return false;
+}
+
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     bool has_remote = false;
     bool has_correlated_subquery = false;
     QueryTreeNodes nodes_to_process = { node };
+
+    /// Tables whose own storage is local but that read from other tables. Resolving what they reach
+    /// takes the catalog's dependency graph, so it is deferred to the end and only done when the query
+    /// actually has a correlated subquery.
+    std::vector<std::pair<StoragePtr, StorageID>> opaque_tables;
 
     while (!nodes_to_process.empty())
     {
@@ -581,6 +738,8 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
                 const auto & storage = table_node.getStorage();
                 if (storage && storage->isRemote())
                     has_remote = true;
+                else if (storage && isOpaqueTable(storage))
+                    opaque_tables.emplace_back(storage, table_node.getStorageID());
                 break;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
@@ -589,6 +748,11 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
                 const auto & storage = table_function_node.getStorage();
                 if (storage && storage->isRemote())
                     has_remote = true;
+                /// A parameterized view is resolved as a `TableFunctionNode` wrapping the real `StorageView`,
+                /// not as a `TableNode`, so it needs the same look-through as an ordinary view. The `merge`
+                /// table function arrives the same way.
+                else if (storage && isOpaqueTable(storage))
+                    opaque_tables.emplace_back(storage, table_function_node.getStorageID());
                 break;
             }
             default:
@@ -606,12 +770,27 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
                 nodes_to_process.push_back(child);
         }
     }
+
+    if (!has_correlated_subquery)
+        return;
+
+    for (const auto & [storage, storage_id] : opaque_tables)
+    {
+        std::unordered_set<String> visited;
+        if (readsFromRemoteTable(storage, storage_id, context, visited, 0))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported with remote tables. In query {}",
+                node->formatASTForErrorMessage());
+    }
 }
 
 void validateFromClause(const QueryTreeNodePtr & node)
 {
     const auto & root_query_node = node->as<QueryNode &>();
     auto correlated_columns_set = root_query_node.getCorrelatedColumnsSet();
+
+    /// Track which nodes are allowed to have correlated columns (right side of LATERAL JOINs)
+    std::unordered_set<const IQueryTreeNode *> lateral_allowed_nodes;
 
     std::vector<QueryTreeNodePtr> nodes_to_process = { root_query_node.getJoinTreeNode() };
 
@@ -632,11 +811,14 @@ void validateFromClause(const QueryTreeNodePtr & node)
             {
                 auto & query_node = node_to_process->as<QueryNode &>();
                 const auto & correlated_columns = query_node.getCorrelatedColumns();
+                bool is_lateral_allowed = lateral_allowed_nodes.contains(node_to_process.get());
                 for (const auto & column : correlated_columns)
                 {
-                    if (!correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(column)))
+                    if (!is_lateral_allowed && !correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(column)))
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "Lateral joins are not supported. Correlated column '{}' is found in the FROM clause. In query {}",
+                            "Correlated column '{}' is found in the FROM clause. "
+                            "Correlated table expressions in the FROM clause are only supported as a subquery "
+                            "on the right side of JOIN LATERAL (experimental, requires setting allow_experimental_lateral_join = 1). In query {}",
                             column->formatASTForErrorMessage(),
                             node->formatASTForErrorMessage());
                 }
@@ -644,8 +826,13 @@ void validateFromClause(const QueryTreeNodePtr & node)
             }
             case QueryTreeNodeType::UNION:
             {
+                bool is_lateral_allowed = lateral_allowed_nodes.contains(node_to_process.get());
                 for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                {
+                    if (is_lateral_allowed)
+                        lateral_allowed_nodes.insert(union_node.get());
                     nodes_to_process.push_back(union_node);
+                }
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
@@ -664,6 +851,8 @@ void validateFromClause(const QueryTreeNodePtr & node)
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
+                if (join_node.isLateral())
+                    lateral_allowed_nodes.insert(join_node.getRightTableExpressionNode().get());
                 nodes_to_process.push_back(join_node.getRightTableExpressionNode());
                 nodes_to_process.push_back(join_node.getLeftTableExpressionNode());
                 break;
