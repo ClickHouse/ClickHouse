@@ -93,8 +93,7 @@ struct HashJoinMatchEntry
     size_t matches; // number of hash-table matches for a specific hash join.
 };
 
-/// Runs of a query until the next one that counts the bins of the bucket Top-K bound of the aggregation merge (see
-/// `ConvertingAggregatedToChunksTransform`), after a counted run skipped too few buckets to pay for them; 0 - every run.
+/// Runs of a query left until the next one that counts the bins of the bucket Top-K bound; 0 - every run counts them.
 struct AggregationBucketTopKEntry
 {
     bool shouldBeUpdated(const AggregationBucketTopKEntry & new_entry) const { return new_entry.runs_to_probe != runs_to_probe; }

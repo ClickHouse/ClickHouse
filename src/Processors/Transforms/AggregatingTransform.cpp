@@ -132,9 +132,7 @@ namespace
         return agg_info.get();
     }
 
-    /// The bucket Top-K bound: the inline counts of the groups are summed into 256 bins per two-level bucket, picked by
-    /// eight more bits of the key hash. A group's merged count cannot exceed its bin's sum, so the largest bin of a
-    /// bucket bounds every group of the bucket.
+    /// Bins picked by eight more bits of the key hash; a group's merged count never exceeds the sum of its bin.
     constexpr size_t BUCKET_TOP_K_BINS_PER_BUCKET = 256;
     constexpr size_t BUCKET_TOP_K_BINS = 256 * BUCKET_TOP_K_BINS_PER_BUCKET;
 
@@ -185,7 +183,7 @@ namespace
     M(serialized_two_level) \
     M(prealloc_serialized_two_level)
 
-    /// Adds the counts of the groups of `variants` to `bins`. False for a method without the bound or on cancellation.
+    /// False for a method without the bound, or on cancellation.
     bool addBucketTopKBins(AggregatedDataVariants & variants, UInt64 * bins, const std::atomic<bool> & is_cancelled)
     {
         switch (variants.type)
@@ -202,8 +200,7 @@ namespace
 
 #undef APPLY_FOR_BUCKET_TOP_K_BOUND_VARIANTS
 
-    /// The verdict is kept per aggregation and limit: the statistics key of the aggregation does not cover the limit,
-    /// and a larger limit skips fewer buckets.
+    /// The statistics key of the aggregation does not cover the limit, and the verdict depends on it.
     std::optional<StatsCollectingParams> bucketTopKStatsParams(const Aggregator::Params & params)
     {
         if (!params.stats_collecting_params.isCollectionAndUseEnabled())
@@ -249,7 +246,6 @@ namespace
         }
     }
 
-    /// Adds the groups of one finished producer to the bins of the merge.
     void addToSharedBucketTopKBins(
         ManyAggregatedData & many_data,
         AggregatedDataVariants & variants,
@@ -385,9 +381,7 @@ public:
         /// limit is checked against this running total.
         std::atomic<size_t> single_level_merged_rows = 0;
 
-        /// The bucket Top-K bound (`ConvertingAggregatedToChunksTransform::enableBucketTopKBound`): the buckets are merged
-        /// by descending `bucket_bound`, and once the converted buckets have produced n counts, a bucket whose bound is
-        /// below the smallest of them cannot hold a group of the result and is skipped.
+        /// The bucket Top-K bound: a bucket whose bound is below the n-th best count produced so far is skipped.
         std::array<UInt32, NUM_BUCKETS> bucket_order{};
         std::array<UInt64, NUM_BUCKETS> bucket_bound{};
         size_t bucket_top_k = 0; /// 0 - no bound
@@ -524,7 +518,6 @@ private:
         return chunk;
     }
 
-    /// Adds the counts of a converted bucket to the n best counts and raises the bound below which buckets are skipped.
     void raiseSkipBound(const Chunk & chunk)
     {
         const size_t rows = chunk.getNumRows();
@@ -836,7 +829,6 @@ public:
 
     String getName() const override { return "ConvertingAggregatedToChunksTransform"; }
 
-    /// The bins of the bucket Top-K bound of the two-level merge, summed over all producers.
     void setBucketTopKBins(std::shared_ptr<UInt64[]> bins) { bucket_top_k_bins = std::move(bins); }
 
     void work() override
@@ -944,8 +936,7 @@ public:
             // Also single level: the partition sources emit finished chunks, forward them as they come.
             return preparePartitionMerge();
 
-        /// The bound merges the buckets out of order, and its final result needs no bucket order, so its chunks are
-        /// forwarded as they come instead of being held back for the order.
+        /// Buckets merged out of order; the final result needs no bucket order, so the chunks are forwarded as they come.
         if (bucket_top_k_bound_enabled)
             return prepareBucketTopKMerge();
 
@@ -1359,8 +1350,7 @@ private:
 
         if (bucket_top_k_bins)
         {
-            /// The producers count no bins for the adaptive drain, whose staged records they would miss, nor for the
-            /// dataflow statistics, which expect every bucket.
+            /// No bins for the adaptive drain (its staged records are not in the tables) or the dataflow statistics.
             chassert(!adaptive_session && !updater);
             enableBucketTopKBound();
             bucket_top_k_bound_enabled = true;
@@ -1873,7 +1863,6 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
     }
 
-    /// Contribute to the bucket Top-K bound of the two-level merge (see `ConvertingAggregatedToChunksWithMergingSource`).
     const bool bucket_top_k_bound
         = !skip_merging && !updater && !adaptive_engaged && !params->aggregator.hasTemporaryData() && bucketTopKBoundApplies(*params);
     if (bucket_top_k_bound)

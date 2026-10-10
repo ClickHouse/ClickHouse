@@ -117,8 +117,7 @@ struct ManyAggregatedData
     /// `AdaptiveAggregationSession`); shared by all the participating transforms.
     AdaptiveAggregationSessionPtr adaptive_session;
 
-    /// The bins of the bucket Top-K bound of the two-level merge (see `ConvertingAggregatedToChunksWithMergingSource`),
-    /// summed over the producers. The bound is disabled if one producer cannot add its groups.
+    /// The bins of the bucket Top-K bound, summed over the producers; invalid if one producer cannot add its groups.
     std::mutex bucket_top_k_bins_mutex;
     std::shared_ptr<UInt64[]> bucket_top_k_bins;
     std::atomic<bool> bucket_top_k_bins_invalid{false};
