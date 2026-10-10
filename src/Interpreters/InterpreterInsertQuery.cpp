@@ -62,6 +62,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <memory>
 #include <unordered_set>
@@ -80,7 +81,6 @@ namespace Setting
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsMaxThreads max_insert_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsUInt64Auto insert_quorum;
@@ -152,9 +152,7 @@ InterpreterInsertQuery::InterpreterInsertQuery(
         quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_BYTES);
 
     const Settings & settings = getContext()->getSettingsRef();
-    max_threads = getMaxThreadsForAvailableMemory(
-        std::max<size_t>(1, settings[Setting::max_threads]),
-        settings[Setting::max_threads_min_free_memory_per_thread]);
+    max_threads = getEffectiveMaxThreads(settings);
     max_insert_threads = getMaxThreadsForAvailableMemory(
         std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
         settings[Setting::max_insert_threads_min_free_memory_per_thread]);
