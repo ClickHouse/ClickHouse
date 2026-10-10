@@ -1,4 +1,9 @@
 <test>
+    <settings>
+        <!-- Keep `INSERT ... SELECT` synchronous to measure insert itself without batching overhead -->
+        <async_insert>0</async_insert>
+    </settings>
+
     <create_query>
         CREATE TABLE hits_wide AS hits_10m_single ENGINE = MergeTree()
         PARTITION BY toYYYYMM(EventDate)

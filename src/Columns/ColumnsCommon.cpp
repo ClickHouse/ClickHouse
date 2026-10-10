@@ -21,7 +21,9 @@ namespace
     using LaneMask = bool __attribute__((ext_vector_type(64)));
 
     /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
-    ALWAYS_INLINE LaneMask isNonZero(ByteCounters bytes)
+    /// Both helpers take the vector by reference, because by value it changes the ABI without AVX-512 (clang 21 `-Wpsabi`),
+    /// and `min_vector_width` keeps their callers in 512-bit registers with AVX-512.
+    ALWAYS_INLINE __attribute__((min_vector_width(512))) LaneMask isNonZero(const ByteCounters & bytes)
     {
         return __builtin_convertvector(bytes, LaneMask);
     }
@@ -30,7 +32,7 @@ namespace
     constexpr size_t max_blocks_before_widening = 255;
 
     /// At most 64 * 255 = 16320, so the 16-bit sum cannot overflow either.
-    ALWAYS_INLINE size_t sumCounters(ByteCounters counters)
+    ALWAYS_INLINE __attribute__((min_vector_width(512))) size_t sumCounters(const ByteCounters & counters)
     {
         return __builtin_reduce_add(__builtin_convertvector(counters, WideCounters));
     }
@@ -144,6 +146,7 @@ bool memoryIsZero(const void * data, size_t start, size_t end)
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -156,6 +159,13 @@ void throwIndexesSizeTooSmall(size_t indexes_size, size_t limit)
 void throwUnsupportedIndexesColumnType(const std::string & name)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}", name);
+}
+
+NO_INLINE void throwInsertRangeFromOutOfBound(std::string_view column_name, size_t start, size_t length, size_t size)
+{
+    throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+        "Parameters start = {}, length = {} are out of bound in {}::insertRangeFrom method (size = {})",
+        start, length, column_name, size);
 }
 
 

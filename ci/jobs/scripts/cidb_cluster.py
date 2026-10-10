@@ -38,6 +38,10 @@ class CIDBCluster:
             self.pwd = None
         self._session = None
         self._auth = {}
+        # Why the last `is_ready` or `do_insert_query` call failed, and whether
+        # CIDB answered it with a 4xx other than 408 or 429.
+        self.last_error = ""
+        self.last_rejected = False
 
     def close_session(self):
         if self._session:
@@ -50,7 +54,13 @@ class CIDBCluster:
             return data.encode("utf-8")
         return data
 
+    def _record_http_error(self, response):
+        self.last_error = f"HTTP {response.status_code}: {' '.join(response.text.split())[:200]}"
+        self.last_rejected = response.status_code < 500 and response.status_code not in (408, 429)
+
     def is_ready(self):
+        self.last_error = "LogCluster not ready"
+        self.last_rejected = False
         if not self.url:
             conn = json.loads(self.conn_secret.get_value())
             self.url = conn.get("url")
@@ -82,12 +92,14 @@ class CIDBCluster:
                 print(
                     f"ERROR: No connection to cluster [{self.url}]: [{response.text}]"
                 )
+                self._record_http_error(response)
                 return False
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
                 return False
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
+            self.last_error = f"LogCluster connection failed: {type(ex).__name__}"
             return False
         return True
 
@@ -129,7 +141,7 @@ class CIDBCluster:
         print("ERROR: Failed to do select query CIDB")
         return None
 
-    def do_insert_query(self, query, data, db_name="", retries=1, timeout=5):
+    def do_insert_query(self, query, data, db_name="", retries=1, timeout=5, settings=None):
         if not self.is_ready():
             print("ERROR: LogCluster not ready")
             return False
@@ -141,6 +153,7 @@ class CIDBCluster:
             "query": query,
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
+            **(settings or {}),
         }
         if db_name:
             params["database"] = db_name
@@ -160,7 +173,8 @@ class CIDBCluster:
                     print(
                         f"WARNING: CIDB query failed with code {response.status_code}, text {response.text}"
                     )
-                if response.status_code >= 500:
+                    self._record_http_error(response)
+                if not self.last_rejected:
                     # A retryable error
                     time.sleep(1)
                     continue
@@ -172,6 +186,7 @@ class CIDBCluster:
             except Exception as ex:
                 print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()
+                self.last_error = type(ex).__name__
                 break
         print("ERROR: Failed to query CIDB")
         return False
