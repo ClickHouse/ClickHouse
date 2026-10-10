@@ -378,7 +378,7 @@ Contains stack traces collected by the [sampling query profiler](/concepts/featu
 ClickHouse creates this table when the [trace_log](/reference/settings/server-settings/settings/other#trace_log) server configuration section is set. Also see settings: [query_profiler_real_time_period_ns](/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns), [query_profiler_cpu_time_period_ns](/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns), [memory_profiler_step](/reference/settings/session-settings/memory-profiler#memory_profiler_step),
 [memory_profiler_sample_probability](/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability), [trace_profile_events](/reference/settings/session-settings/trace-profile-events#trace_profile_events).
 
-When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so you can analyze the logs directly without introspection functions. The `symbolize` setting applies to profiler-collected trace types; rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty. Function names in `symbols` come from the binary's symbol table and are available by default, while source locations in `lines` are best-effort: they require debug info (a `.dSYM` bundle on macOS) and, on ELF platforms, are resolved only for frames inside the main ClickHouse binary; unresolved frames have empty `lines` entries.
+When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so you can analyze the logs directly without introspection functions. The `symbolize` setting applies to profiler-collected trace types; rows with the `Instrumentation` trace type are symbolized regardless of it. Symbolization is supported on ELF platforms (such as Linux) and macOS; on FreeBSD the `symbols` and `lines` columns are always empty. Function names in `symbols` come from the binary's symbol table and are available by default, while source locations in `lines` are best-effort: they require debug info (a `.dSYM` bundle on macOS) and are resolved for whichever loaded object (the main ClickHouse binary or a shared library) contains the frame's address; unresolved frames have empty `lines` entries.
 If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` introspection functions. These functions are available on the same platforms as symbolization (ELF platforms such as Linux, and macOS); on FreeBSD they are not compiled in either, so the addresses in `trace` have to be resolved outside the server.
 
 ## Converting to Chrome Event Trace Format {#chrome-event-trace-format}
@@ -583,6 +583,8 @@ The `wide` schema stores each metric or profile event in a separate column. It i
 </clickhouse>
 ```
 
+Because the per-metric columns of this schema are `ALIAS` columns, it cannot be used together with a configuration that skips alias columns in system log tables (`default_system_log_flush_policy.skip_alias_columns`, or a table engine which does not support them): the server refuses to start instead of creating a table without the `ProfileEvent_*` and `CurrentMetric_*` columns. The engine settings of the bucketed `Map` serialization are part of the default table definition, so they are not applied when the configuration specifies `<engine>` explicitly.
+
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
 Changing `schema_type` for a table that already exists renames the existing table to `metric_log_0` (or the next free number) and creates a new one, the same way as for any other change of the structure of a system log table. The built-in dashboards read `merge('system', '^metric_log')`, so they keep showing the data collected before the change.
@@ -613,6 +615,13 @@ LIMIT 1;
 inline constexpr char SYSTEM_LOG_DOCUMENTATION_ERROR_LOG[] = R"DOCS_MD(
 .description
 Contains history of error values from table `system.errors`, periodically flushed to disk.
+
+.columns_notes
+<Note>
+`last_error_symbols` and `last_error_lines` are resolved from the binary's symbol table and debug info.
+`last_error_symbols` is populated wherever the symbol table is available (Linux and macOS builds).
+`last_error_lines` additionally requires DWARF debug info - read directly from the binary on Linux, or from a co-located `.dSYM` bundle on macOS - so it is empty when that debug info is not available. Both arrays are empty on platforms without introspection support (for example FreeBSD).
+</Note>
 
 .examples
 ```sql
