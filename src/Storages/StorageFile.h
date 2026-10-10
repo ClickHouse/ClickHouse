@@ -12,9 +12,11 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
 #include <Common/Logger.h>
+#include <Common/RWLock.h>
 
 #include <atomic>
-#include <shared_mutex>
+#include <mutex>
+#include <unordered_map>
 #include <sys/stat.h>
 
 namespace DB
@@ -192,6 +194,8 @@ private:
 
     void setStorageMetadata(CommonArguments args);
 
+    Strings getPathsSnapshot() const;
+
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
     // function -- in this case, format_settings is set.
@@ -203,6 +207,8 @@ private:
     String compression_method;
 
     std::string base_path;
+    /// Grows when a writer creates an extra file (`engine_file_allow_create_multiple_files`).
+    /// Mutations hold `rwlock` exclusively and `paths_mutex`; plan-time readers hold `paths_mutex`.
     std::vector<std::string> paths;
 
     std::optional<ArchiveInfo> archive_info;
@@ -212,7 +218,15 @@ private:
 
     bool supports_prewhere = false;
 
-    mutable std::shared_timed_mutex rwlock;
+    /// One query may read this table from several sources at once: one per stream, one for the lazy-materialization
+    /// pass, one per table expression in a self-join. A repeat Read by the query already holding it is admitted.
+    mutable RWLock rwlock = RWLockImpl::create();
+
+    RWLockImpl::LockHolder tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
+    RWLockImpl::LockHolder lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
+
+    /// Guards the `paths` vector object; `rwlock` serialises the writes themselves.
+    mutable std::mutex paths_mutex;
 
     LoggerPtr log = getLogger("StorageFile");
 
@@ -256,6 +270,10 @@ public:
 
         String next();
 
+        /// The files `next` returns, if they are known before reading: not with distributed processing,
+        /// from an archive, or with a `_path` / `_file` filter that can only be applied while reading.
+        std::optional<Strings> tryGetFiles() const;
+
         bool isReadFromArchive() const
         {
             return archive_info.has_value();
@@ -294,6 +312,38 @@ private:
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
 
+    /// The query condition cache key of a TopN (`ORDER BY ... LIMIT n`) read. Which row groups of a
+    /// file the TopN filter lets through depends on the running threshold, which is established from
+    /// the rows of *every* file the query reads, so the key covers the TopK plan, the predicate and
+    /// the version tokens of all these files (see `ReadFromFile::makeTopKQueryConditionCacheKey`). A file whose
+    /// token at open differs from the one recorded here must not use the key.
+    struct TopKQueryConditionCacheKey
+    {
+        UInt64 condition_hash = 0;
+        /// A printable description of the key for `system.query_condition_cache`.
+        String condition;
+        std::unordered_map<String, String> file_version_tokens;
+
+        enum class State : uint8_t
+        {
+            /// No entry under the key has been used yet, and every file read so far is in the version
+            /// the key was made for.
+            Valid,
+            /// An entry under the key has been used to skip row groups.
+            Used,
+            /// A file of the query turned out to be read in another version than the one the key was made
+            /// for: the key no longer describes the files whose rows make the threshold, so it must
+            /// neither be consulted nor written any more.
+            Invalidated,
+        };
+        /// A single atomic, so that either an entry is used before the key is invalidated (and the query
+        /// fails), or it is not used at all.
+        mutable std::atomic<State> state = State::Valid;
+
+        bool isInvalidated() const { return state.load() == State::Invalidated; }
+    };
+    using TopKQueryConditionCacheKeyPtr = std::shared_ptr<const TopKQueryConditionCacheKey>;
+
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
@@ -304,7 +354,8 @@ private:
         bool need_only_count_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        LazyFileRegistryPtr lazy_row_index_registry_ = nullptr);
+        LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
+        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -328,6 +379,16 @@ private:
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
     std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;
+
+    /// The TopK query condition cache key if it applies to the version of the file being read.
+    std::optional<UInt64> getTopKConditionHashForCurrentFile() const;
+
+    /// Invalidates the TopK query condition cache key if the file being read is not in the version the
+    /// key was made for; `still_holds` is false if the file has changed since it was opened.
+    void checkTopKQueryConditionCacheKeyHolds(bool still_holds) const;
+
+    /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
+    void writePendingTopKQueryConditionCacheEntries();
 
     std::shared_ptr<StorageFile> storage;
     FilesIteratorPtr files_iterator;
@@ -355,6 +416,20 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
+
+    /// A file read by a TopN read, whose query condition cache entry is written only when the source
+    /// is destroyed: the row groups without a row of the result are known only once the threshold is
+    /// final, and while the file is read, its rows may still wait for the sorting transforms.
+    struct PendingTopKQueryConditionCacheEntry
+    {
+        String cache_file_key;
+        size_t total_row_groups = 0;
+        std::vector<size_t> matched_row_groups;
+        /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
+        std::vector<std::pair<size_t, Field>> best_values;
+    };
+    std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
@@ -379,7 +454,7 @@ private:
     /// The registry index of the file currently being read. Assigned on the first chunk.
     std::optional<UInt64> current_file_index;
 
-    std::shared_lock<std::shared_timed_mutex> shared_lock;
+    RWLockImpl::LockHolder read_lock;
 };
 
 class ReadFromFile : public SourceStepWithFilter
@@ -390,6 +465,11 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
+
+    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
+    /// and only for a sort column it physically reads from the file.
+    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
 
     ReadFromFile(
         const Names & column_names_,
@@ -403,6 +483,7 @@ public:
         size_t num_streams_)
         : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), column_names_, query_info_, storage_snapshot_, context_)
         , storage(std::move(storage_))
+        , paths_snapshot(storage->getPathsSnapshot())
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , max_block_size(max_block_size_)
@@ -422,7 +503,10 @@ public:
     LazyFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
 private:
+    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+
     std::shared_ptr<StorageFile> storage;
+    const Strings paths_snapshot;
     ReadFromFormatInfo info;
     const bool need_only_count;
 
@@ -430,6 +514,7 @@ private:
     const size_t max_num_streams;
 
     std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
+    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyFileRegistryPtr lazy_row_index_registry;
