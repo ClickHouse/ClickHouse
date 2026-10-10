@@ -46,6 +46,8 @@
 #include <Types.hh>
 #include <ValidSchema.hh>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -656,6 +658,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 std::vector<DeserializeFn> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
 
+                std::unordered_set<ColumnVariant::Discriminator> used_discriminators;
+
                 bool union_has_null = false;
                 for (size_t i = 0; i != root_node->leaves(); ++i)
                 {
@@ -679,15 +683,18 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                             variant_type.getName(),
                             variant->getName());
 
+                    used_discriminators.insert(corresponding_discriminator.value());
                     union_index_to_global_discriminator.insert_or_assign(i, std::move(corresponding_discriminator.value()));
                 }
 
-                if (root_node->leaves() != nested_types.size() + (union_has_null ? 1 : 0))
+                /// Named branches (records, enums, fixed) with identical structure map to the same variant,
+                /// so compare distinct types, not branches.
+                if (used_discriminators.size() != nested_types.size())
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The number of (non-null) union types in Avro record ({}) does not match the number of types in destination Variant "
-                        "type ({}).",
-                        root_node->leaves() - (union_has_null ? 1 : 0),
+                        "The number of distinct (non-null) union types in Avro record ({}) does not match the number of types in "
+                        "destination Variant type ({}).",
+                        used_discriminators.size(),
                         nested_types.size());
 
                 return [union_has_null,
@@ -1286,6 +1293,25 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     return false;
 }
 
+/// A count taken from the block headers is only sound while the library checks every declared count against the payload.
+bool AvroRowInputFormat::supportsCountRows() const
+{
+    return file_reader_ptr && file_reader_ptr->checksDeclaredObjectCount();
+}
+
+size_t AvroRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (file_reader_ptr->hasMore() && num_rows < max_block_size)
+    {
+        file_reader_ptr->decr();
+        file_reader_ptr->decoder().drain();
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
     uint8_t magic = 0;
@@ -1406,14 +1432,14 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
-    checkStackSize();
-
     std::unordered_set<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
+    checkStackSize();
+
     switch (node->type())
     {
         case avro::Type::AVRO_INT:

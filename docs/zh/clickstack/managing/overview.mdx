@@ -9,24 +9,21 @@ keywords: ['管理 ClickStack', '性能', 'materialized views', '管理命令']
 
 本节介绍如何管理 ClickStack。
 
-<div id="admin-guides">
-  ## 管理指南
-</div>
+## 管理指南 {#admin-guides}
 
-| Section                                                       | Description                                        |
-| ------------------------------------------------------------- | -------------------------------------------------- |
-| [基础管理](/zh/clickstack/managing/admin)                            | 介绍如何在 ClickStack 中执行常见的管理任务。                       |
-| [配置选项](/zh/clickstack/managing/config)                           | ClickStack 各组件可用的配置选项。                             |
-| [资源估算](/zh/clickstack/managing/estimating-resources)             | 根据摄取量为托管 ClickStack 规划计算资源规模的指导。                   |
-| [投入生产](/zh/clickstack/managing/production)                       | 在生产环境中运行 ClickStack 之前建议采取的步骤和最佳实践。                |
-| [materialized views](/zh/clickstack/managing/materialized-views) | 详细介绍如何在 ClickStack 中使用 materialized views 来提升查询性能。 |
-| [性能调优](/zh/clickstack/managing/performance-tuning)               | 面向大规模工作负载的 ClickStack 综合调优指南。                      |
-| [RBAC](/zh/clickstack/managing/rbac)                             | 配置基于角色的访问控制，以管理团队对仪表盘、已保存的搜索和 sources 的权限。         |
-| [管理 TTL](/zh/clickstack/managing/ttl)                            | 在 ClickStack 中使用生存时间 (TTL) 管理数据保留期。                |
+| Section                                                       | Description                                               |
+| ------------------------------------------------------------- | --------------------------------------------------------- |
+| [基础管理](/zh/clickstack/managing/admin)                            | 介绍如何在 ClickStack 中执行常见的管理任务。                              |
+| [配置选项](/zh/clickstack/managing/config)                           | ClickStack 各组件可用的配置选项。                                    |
+| [资源估算](/zh/clickstack/managing/estimating-resources)             | 根据摄取量为托管 ClickStack 规划计算资源规模的指导。                          |
+| [投入生产](/zh/clickstack/managing/production)                       | 在生产环境中运行 ClickStack 之前建议采取的步骤和最佳实践。                       |
+| [读写隔离](/zh/clickstack/managing/isolating-read-write)             | 借助 ClickHouse Cloud 仓库，将 ClickStack 的摄取与查询工作负载分离到专用计算资源上。 |
+| [materialized views](/zh/clickstack/managing/materialized-views) | 详细介绍如何在 ClickStack 中使用 materialized views 来提升查询性能。        |
+| [性能调优](/zh/clickstack/managing/performance-tuning)               | 面向大规模工作负载的 ClickStack 综合调优指南。                             |
+| [RBAC](/zh/clickstack/managing/rbac)                             | 配置基于角色的访问控制，以管理团队对仪表盘、已保存的搜索和 数据源 的权限。                |
+| [管理 生存时间 (TTL)](/zh/clickstack/managing/ttl)                            | 在 ClickStack 中使用生存时间 (TTL) 管理数据保留期。                       |
 
-<div id="core-concepts">
-  ## ClickHouse 核心概念
-</div>
+## ClickHouse 核心概念 {#core-concepts}
 
 大多数 ClickStack 管理任务都要求熟悉底层的 ClickHouse 数据库。我们建议在执行管理或性能相关操作之前，先了解以下 ClickHouse 核心概念。
 

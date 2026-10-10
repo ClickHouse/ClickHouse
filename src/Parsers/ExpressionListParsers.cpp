@@ -36,8 +36,6 @@
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <fmt/core.h>
 
@@ -905,7 +903,7 @@ protected:
     int state = 0;
 };
 
-/// Tweaks for better highlighting of LIKE and REGEXP functions.
+/// Tweaks for better highlighting of LIKE, SIMILAR TO and REGEXP functions.
 static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t depth)
 {
     static constexpr size_t max_depth = 1000;
@@ -927,11 +925,16 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
         return;
 
     bool is_like = false;
+    bool is_similar_to = false;
     bool is_regexp = false;
     if (func->name == "like" || func->name == "notLike"
         || func->name == "ilike" || func->name == "notILike")
     {
         is_like = true;
+    }
+    else if (func->name == "similarTo" || func->name == "notSimilarTo")
+    {
+        is_similar_to = true;
     }
     else if (func->name == "match" || func->name == "notMatch"
              || func->name == "matchCaseInsensitive" || func->name == "notMatchCaseInsensitive"
@@ -971,11 +974,11 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!token_info)
         return;
 
-    chassert(is_like || is_regexp);
+    chassert(is_like || is_similar_to || is_regexp);
     expected.highlight({
        .begin = token_info->begin,
        .end = token_info->end,
-       .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
+       .highlight = is_like ? Highlight::string_like : (is_similar_to ? Highlight::string_similar_to : Highlight::string_regexp)});
 }
 
 struct ParserExpressionImpl
@@ -1538,19 +1541,22 @@ public:
                 auto old_pos = pos;
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
-                    as_keyword_parser.ignore(pos, expected) &&
-                    (type_text = parseDataTypeAsText(pos, expected)) &&
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    as_keyword_parser.ignore(pos, expected))
                 {
-                    if (!insertAlias(alias))
-                        return false;
+                    type_text = parseDataTypeAsText(pos, expected);
+                    if (type_text &&
+                        ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    {
+                        if (!insertAlias(alias))
+                            return false;
 
-                    if (!mergeElement())
-                        return false;
+                        if (!mergeElement())
+                            return false;
 
-                    elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
-                    finished = true;
-                    return true;
+                        elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
+                        finished = true;
+                        return true;
+                    }
                 }
 
                 pos = old_pos;
@@ -1571,7 +1577,8 @@ public:
 
                 pos = old_pos;
 
-                if ((type_text = parseDataTypeAsText(pos, expected)) &&
+                type_text = parseDataTypeAsText(pos, expected);
+                if (type_text &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
@@ -3384,6 +3391,8 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
+    {toStringView(Keyword::SIMILAR_TO),    Operator("similarTo",       9,  2)},
+    {toStringView(Keyword::NOT_SIMILAR_TO),Operator("notSimilarTo",    9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},
@@ -3533,20 +3542,30 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 /// `OperatorType::None`). These are routed only through the `arrayExists`/`arrayAll` lambda
 /// form, never the subquery -> `IN` rewrite, which has no meaning for them.
 ///
-/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`) are
-/// included: `MatchImpl` supports a constant haystack with a non-constant needle, so
-/// `'abc' LIKE SOME(['a%', 'b%'])` rewrites to `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])`
-/// and evaluates without throwing. Keep this in sync with the operator documentation for the
-/// array quantifier.
+/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`,
+/// `SIMILAR TO`, `NOT SIMILAR TO`) are included: `MatchImpl` supports a constant haystack with a
+/// non-constant needle (`constantVector`), so `'abc' LIKE SOME(['a%', 'b%'])` rewrites to
+/// `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])` and evaluates without throwing. Keep this in
+/// sync with the operator documentation for the array quantifier.
 static bool isArrayQuantifierPredicate(std::string_view function_name)
 {
     static const std::unordered_set<std::string_view> predicates
     {
         "isDistinctFrom", "isNotDistinctFrom",
         "like", "ilike", "notLike", "notILike",
-        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive"
+        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive",
+        "similarTo", "notSimilarTo"
     };
     return predicates.contains(function_name);
+}
+
+/// Predicates that accept a trailing `ESCAPE 'char'` clause: `LIKE` and `SIMILAR TO`
+/// with their case-insensitive and negated variants.
+static bool isEscapeSupportingPredicate(std::string_view function_name)
+{
+    return function_name == "like" || function_name == "ilike"
+        || function_name == "notLike" || function_name == "notILike"
+        || function_name == "similarTo" || function_name == "notSimilarTo";
 }
 
 /// See the declaration for the ambiguity this resolves. The word is read as a column only when an
@@ -3635,9 +3654,10 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     const auto * prev_operator = layers.back()->previousOperator();
     const bool prev_is_comparison = prev_operator && prev_operator->type == OperatorType::Comparison;
     /// The keyword comparison predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` and the
-    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` are not
-    /// tagged `OperatorType::Comparison`. They are valid on the left of the array form of
-    /// `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
+    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` /
+    /// `SIMILAR TO` / `NOT SIMILAR TO` are not tagged `OperatorType::Comparison`. They are valid
+    /// on the left of the array form of `SOME`/`ALL`, but not of the subquery form (lowered to
+    /// `IN`/`NOT IN`).
     const bool prev_is_array_predicate
         = prev_operator && !prev_is_comparison && isArrayQuantifierPredicate(prev_operator->function_name);
 
@@ -3657,7 +3677,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise. The array
         /// form also supports the keyword comparison predicates `IS DISTINCT FROM` and
         /// `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`,
-        /// `NOT LIKE`, `NOT ILIKE`, and `REGEXP`, which only go through the lambda form.
+        /// `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO`, and `NOT SIMILAR TO`, which only go
+        /// through the lambda form.
         /// `ANY` is excluded from the array form because `any` is also an aggregate
         /// function, so `expr = any(x)` must keep its function-call meaning.
         const bool any_kw = any_parser.ignore(pos, expected);
@@ -3762,7 +3783,29 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                     for (size_t suffix = 1; used_identifiers.contains(lambda_var); ++suffix)
                         lambda_var = "_a" + std::to_string(suffix);
 
-                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
+                    /// `LIKE` / `SIMILAR TO` (and their variants) accept a trailing `ESCAPE 'char'`
+                    /// clause after the array quantifier: `expr SIMILAR TO SOME(arr) ESCAPE '#'`.
+                    /// It must be consumed here, before the predicate is lowered into the lambda,
+                    /// because afterwards no `LIKE`-family operator remains on the operator stack
+                    /// for the `ESCAPE` handler in `tryParseOperator` to attach to. The escape
+                    /// literal becomes the third argument of the lambda body, mirroring the direct
+                    /// (non-quantified) form.
+                    ASTPtr escape_ast;
+                    if (isEscapeSupportingPredicate(prev_op.function_name))
+                    {
+                        Expected escape_stub;
+                        if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, escape_stub))
+                        {
+                            auto escape_pos = pos;
+                            ParserKeyword(Keyword::ESCAPE).ignore(pos, expected);
+                            if (!ParserStringLiteral().parse(pos, escape_ast, expected))
+                                pos = escape_pos;
+                        }
+                    }
+
+                    auto body = escape_ast
+                        ? makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var), escape_ast)
+                        : makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
                     auto lambda = makeASTLambda({lambda_var}, std::move(body));
                     const char * fn_name = some_kw ? "arrayExists" : "arrayAll";
                     function = makeASTFunction(fn_name, std::move(lambda), tmp);
@@ -3890,12 +3933,12 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (ParserKeyword(Keyword::IN_PARTITION).checkWithoutMoving(pos, stub))
         return Action::NONE;
 
-    /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
+    /// 'ESCAPE' can follow a LIKE or SIMILAR TO expression: expr LIKE pattern ESCAPE char
     if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
     {
         /// The pattern may use operators with priority strictly higher than `LIKE` (e.g.
         /// `LIKE 'a' || 'b' ESCAPE '#'`). Fold those first so the top of the operator
-        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE` itself.
+        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE`/`SIMILAR TO`/`NOT SIMILAR TO` itself.
         constexpr int like_priority = 9;
         while (layers.back()->previousPriority() > like_priority)
         {
@@ -3915,11 +3958,10 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         Operator top_op;
         bool popped = layers.back()->popOperator(top_op);
 
-        bool is_like = popped
-            && (top_op.function_name == "like" || top_op.function_name == "ilike"
-                || top_op.function_name == "notLike" || top_op.function_name == "notILike");
+        /// LIKE and SIMILAR TO both accept a trailing `ESCAPE 'char'` clause.
+        bool supports_escape = popped && isEscapeSupportingPredicate(top_op.function_name);
 
-        if (is_like)
+        if (supports_escape)
         {
             auto saved_pos = pos;
 
@@ -4166,14 +4208,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     return Action::OPERAND;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserExpression::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementIn(StatementFactory & factory)
-{
-    factory.registerStatement("IN",
+    documentation["IN"] =
     {
         .description = R"DOCS_MD(
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
@@ -4330,6 +4369,52 @@ FROM t_null
 └───────────────────────┘
 ```
 
+## IN in External Memory {#in-in-external-memory}
+
+The set that `IN` builds from a subquery or a table can be written to disk when it is too large to
+keep in memory. Lookups then read the set from disk, which requires additional disk I/O and can make
+queries slower. A list of values, such as `IN (1, 2, 3)`, and a table with the `Set` engine always
+stay in memory.
+
+Two settings control when spilling starts:
+
+- `max_bytes_before_external_set` sets a threshold in bytes of total query memory. It defaults to `0`
+  (disabled).
+- `max_bytes_ratio_before_external_set` sets a fraction of available memory under server or user
+  limits, measured at the start of execution. It defaults to `0` (disabled) and has no effect when
+  neither limit applies.
+
+When both thresholds apply, the smaller is used. A set is written to disk only once it takes at least
+16 MiB, or the threshold if it is smaller. For example, this query writes the set to disk once the set
+takes at least 16 MiB:
+
+```sql
+SELECT count()
+FROM numbers(10000000)
+WHERE number IN (SELECT number * 3 FROM numbers(10000000))
+SETTINGS max_bytes_before_external_set = 16777216;
+```
+
+A set is usually built before the rest of the query takes much memory. A set that stays in memory while
+it is built can still be written to disk later, while the query uses it: once query memory exceeds the
+threshold, the set is written to disk, and most of its memory is released for the rest of the query, such
+as an aggregation that grows after the set is built.
+
+`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
+set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
+other query processing and the spill itself.
+
+A set written to disk while it is built cannot be used by the primary key or data skipping indexes. With
+`GLOBAL IN`, the temporary table that sends the result of the subquery to the remote servers stays in
+memory, while the sets that the remote servers build from it can be written to disk.
+
+When a set is written to disk while it is built, the whole subquery is read before the size limits of
+the set are checked: `max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts only its
+part in memory. With `set_overflow_mode = 'break'`, the set keeps the keys that come first in the order
+in which it stores them on disk, up to the limits, and not the keys of the first rows of the subquery.
+For a `UInt64` key, these are the smallest values. For a `String` key, they form an arbitrary subset,
+since the set stores only the 128-bit SipHash of each string on disk.
+
 ## Distributed Subqueries {#distributed-subqueries}
 
 There are two options for `IN` operators with subqueries (similar to `JOIN` operators): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
@@ -4480,7 +4565,9 @@ expr IN table | (subquery) | table_function(...)
 expr [GLOBAL] [NOT] IN ...
 )",
         .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
-    });
+    };
+
+    return documentation;
 }
 
 }

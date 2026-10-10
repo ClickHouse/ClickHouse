@@ -1,5 +1,6 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -398,8 +399,7 @@ KeyDescription KeyDescription::getKeyFromAST(
                     "type instead (for example 'column.Int64' or 'json.some.path.:Int64' if its a JSON path subcolumn) or casting this column to a specific data type");
         };
 
-        check(*result.data_types.back());
-        result.data_types.back()->forEachChild(check);
+        forEachInTypeTree(*result.data_types.back(), check);
     }
 
     return result;
