@@ -1,3 +1,0 @@
-<clickhouse>
-    <use_ddl_workload>0</use_ddl_workload>
-</clickhouse>

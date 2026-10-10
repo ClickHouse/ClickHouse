@@ -48,9 +48,10 @@ class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
 
-/// True for DDL / administrative statements (schema DDL, access control, SYSTEM), by query kind.
-/// Such queries are scheduled according to the `use_ddl_workload` server setting.
-bool isDDLQuery(const IAST * ast);
+/// True for statements that change only metadata and do not read or write table data: e.g. DROP,
+/// RENAME, access control, SYSTEM, CREATE without data and ALTER without commands that copy parts.
+/// Such queries are scheduled according to the `use_metadata_workload` server setting.
+bool isMetadataQuery(const IAST * ast);
 
 /// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
 /// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.

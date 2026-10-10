@@ -663,16 +663,16 @@ protected:
     /// NOTE: all resource links became invalid after `classifier` destruction
     mutable ClassifierPtr classifier;
 
-    /// How a DDL or administrative query is scheduled, fixed by `setDDLQuery` from the `use_ddl_workload`
-    /// server setting (see getWorkloadClassifier). Copied to child contexts, so the sub-queries a DDL
-    /// runs are scheduled the same way, even if the setting is reloaded meanwhile.
-    enum class DDLScheduling : uint8_t
+    /// How a metadata query (see `isMetadataQuery`) is scheduled, fixed by `setMetadataQuery` from the
+    /// `use_metadata_workload` server setting (see getWorkloadClassifier). Copied to child contexts, so the
+    /// sub-queries it runs are scheduled the same way, even if the setting is reloaded meanwhile.
+    enum class MetadataQueryScheduling : uint8_t
     {
-        NotDDL,
-        DDLWorkload,
+        NotMetadataQuery,
+        MetadataWorkload,
         Exempt,
     };
-    DDLScheduling ddl_scheduling = DDLScheduling::NotDDL;
+    MetadataQueryScheduling metadata_query_scheduling = MetadataQueryScheduling::NotMetadataQuery;
 
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
@@ -1033,9 +1033,9 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    /// Marks the query as a DDL or administrative statement (see `ddl_scheduling`).
+    /// Marks the query as a metadata query (see `metadata_query_scheduling`).
     /// Must be called before the workload classifier is first acquired.
-    void setDDLQuery();
+    void setMetadataQuery();
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
@@ -1054,8 +1054,8 @@ public:
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
     void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
-    bool getUseDDLWorkload() const;
-    void setUseDDLWorkload(bool use_ddl_workload);
+    bool getUseMetadataWorkload() const;
+    void setUseMetadataWorkload(bool use_metadata_workload);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -2173,7 +2173,7 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
-    DDLScheduling getDDLScheduling() const;
+    MetadataQueryScheduling getMetadataQueryScheduling() const;
 
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
