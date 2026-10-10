@@ -13,6 +13,7 @@ instance = cluster.add_instance(
     main_configs=[
         "configs/conf.xml",
         "configs/asynchronous_metrics_update_period_s.xml",
+        "configs/no_memory_tracker_correction.xml",
     ],
 )
 

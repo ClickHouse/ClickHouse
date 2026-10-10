@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- This test checks that the global memory tracker does not drift on the parallel parsing path,
+         so the correction of its value from a measurement (enabled by default) has to be disabled:
+         it would erase any drift on the next tick of the memory worker. -->
+    <memory_worker_correct_memory_tracker>0</memory_worker_correct_memory_tracker>
+</clickhouse>
