@@ -2760,7 +2760,7 @@ QuerySchedulingGroupPtr Context::getSchedulingGroup() const
         if (parent_scheduling_group)
             scheduling_group = parent_scheduling_group;
         else
-            scheduling_group = std::make_shared<QuerySchedulingGroup>(getResourceManager()->acquire(workload, settings));
+            scheduling_group = std::make_shared<QuerySchedulingGroup>(workload, settings, getResourceManager()->acquire(workload, settings));
     }
     return scheduling_group;
 }

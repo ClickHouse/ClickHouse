@@ -9,6 +9,7 @@
 #include <Core/ProtocolDefines.h>
 #include <base/types.h>
 #include <IO/ReadHelpers.h>
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -21,7 +22,24 @@ namespace ErrorCodes
 namespace
 {
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const String & sched_id, const ContextPtr & context)
+/// Parameters of the start request that tell the worker which scheduling group the task joins; an
+/// older worker ignores them.
+void addSchedulingParameters(Poco::URI & uri, const DistributedQueryTaskDescription & task_description)
+{
+    if (task_description.sched_id.empty())
+        return;
+    const auto & settings = task_description.sched_settings;
+    uri.addQueryParameter("sched_id", task_description.sched_id);
+    uri.addQueryParameter("sched_workload", task_description.sched_workload);
+    uri.addQueryParameter("sched_weight", fmt::format("{}", settings.weight));
+    uri.addQueryParameter("sched_weight_lowering_factor", fmt::format("{}", settings.weight_lowering_factor));
+    uri.addQueryParameter("sched_weight_lowering_age_seconds", fmt::format("{}", settings.weight_lowering_age_seconds));
+    uri.addQueryParameter("sched_weight_lowering_cpu_seconds", fmt::format("{}", settings.weight_lowering_cpu_seconds));
+    uri.addQueryParameter("sched_weight_lowering_io_bytes", fmt::format("{}", settings.weight_lowering_io_bytes));
+    uri.addQueryParameter("sched_priority", fmt::format("{}", settings.priority.value));
+}
+
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const DistributedQueryTaskDescription & task_description, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -49,9 +67,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     /// Absent when nothing is collected, so an older worker sees the request it has always seen.
     if (collectors.any())
         uri.addQueryParameter("collect", collectors.toString());
-    /// Id of the query's scheduling group; an older worker ignores the parameter.
-    if (!sched_id.empty())
-        uri.addQueryParameter("sched_id", sched_id);
+    addSchedulingParameters(uri, task_description);
 
     auto write_body_callback = [&task_serializer] (std::ostream & os)
     {
@@ -87,7 +103,7 @@ String sendTask(const String & endpoint_uri, const String & unique_task_id, cons
         serializeTask(task_description, buf);
     };
 
-    return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, task_description.sched_id, context);
+    return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, task_description, context);
 }
 
 /// Get task status by its id.

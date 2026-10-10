@@ -1904,7 +1904,10 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
-        task_description.sched_id = toString(context->getSchedulingGroup()->getId());
+        auto scheduling_group = context->getSchedulingGroup();
+        task_description.sched_id = toString(scheduling_group->getId());
+        task_description.sched_workload = scheduling_group->getWorkload();
+        task_description.sched_settings = scheduling_group->getSettings();
 
         /// Ask for worker logs only when the initiator has a queue to receive them (e.g. not over
         /// HTTP without a framing format); the worker attaches its log collector accordingly.

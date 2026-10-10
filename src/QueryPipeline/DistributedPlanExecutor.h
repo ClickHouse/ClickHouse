@@ -17,6 +17,7 @@
 
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/SettingsChanges.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/WakeupFd.h>
@@ -227,6 +228,11 @@ struct DistributedQueryTaskDescription
     /// the serialized task: it is sent as the `sched_id` parameter of the start request, which a worker
     /// that does not know it ignores. Empty in a task from an initiator that does not send it.
     String sched_id;
+    /// The workload and scheduling settings of the initiator's query, sent with `sched_id` as
+    /// parameters of the start request. A server that has no group of the query creates it under them
+    /// rather than under the settings of the task, which may come from a part with its own `SETTINGS`.
+    String sched_workload;
+    ClassifierSettings sched_settings;
     /// Wire-format version of the task. A worker that knows only an older version rejects it.
     UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
 };

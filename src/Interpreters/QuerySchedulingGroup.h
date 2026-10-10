@@ -42,10 +42,15 @@ class QuerySlot;
 class QuerySchedulingGroup : private boost::noncopyable
 {
 public:
-    explicit QuerySchedulingGroup(ClassifierPtr classifier_);
+    QuerySchedulingGroup(String workload_, const ClassifierSettings & settings_, ClassifierPtr classifier_);
 
     /// Unique id of the group, sent to the servers that run tasks of the query's distributed plans.
     const UUID & getId() const { return id; }
+
+    /// The workload and scheduling settings of the query; sent with the id, so a server where the
+    /// initiator does not run creates the group under them.
+    const String & getWorkload() const { return workload; }
+    const ClassifierSettings & getSettings() const { return settings; }
 
     const ClassifierPtr & getClassifier() const { return classifier; }
 
@@ -56,6 +61,8 @@ public:
 
 private:
     const UUID id;
+    const String workload;
+    const ClassifierSettings settings;
     const ClassifierPtr classifier;
 
     std::timed_mutex admission_mutex;

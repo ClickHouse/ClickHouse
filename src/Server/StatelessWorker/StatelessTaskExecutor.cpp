@@ -109,16 +109,26 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
     /// The tasks of one query that run on this server, from all of its distributed plans, are
     /// scheduled as one query, together with the initiator if it runs here too (see
-    /// `QuerySchedulingGroup`). A task from an initiator that does not send the group id is
-    /// scheduled on its own.
+    /// `QuerySchedulingGroup`). The first task of the query here creates the group under the
+    /// workload and scheduling settings of the query, not of the task. A task from an initiator that
+    /// does not send the group id is scheduled on its own.
     if (!task_description.sched_id.empty())
     {
         DistributedQuerySchedulingGroups::instance().join(
             task_description.sched_id,
             [&](const QuerySchedulingGroupPtr & registered)
             {
-                query_context->setParentSchedulingGroup(registered);
-                return query_context->getSchedulingGroup();
+                auto group = registered;
+                if (!group)
+                {
+                    ClassifierSettings settings = task_description.sched_settings;
+                    settings.throw_on_unknown_workload = query_context->getThrowOnUnknownWorkload();
+                    group = std::make_shared<QuerySchedulingGroup>(
+                        task_description.sched_workload, settings,
+                        query_context->getResourceManager()->acquire(task_description.sched_workload, settings));
+                }
+                query_context->setParentSchedulingGroup(group);
+                return group;
             });
     }
 

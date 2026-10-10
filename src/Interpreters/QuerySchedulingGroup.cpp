@@ -20,8 +20,10 @@ namespace ErrorCodes
     extern const int QUERY_SLOT_ACQUISITION_TIMEOUT;
 }
 
-QuerySchedulingGroup::QuerySchedulingGroup(ClassifierPtr classifier_)
+QuerySchedulingGroup::QuerySchedulingGroup(String workload_, const ClassifierSettings & settings_, ClassifierPtr classifier_)
     : id(UUIDHelpers::generateV4())
+    , workload(std::move(workload_))
+    , settings(settings_)
     , classifier(std::move(classifier_))
 {
 }

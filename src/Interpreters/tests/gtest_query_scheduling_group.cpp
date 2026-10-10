@@ -13,7 +13,7 @@ namespace
 
 QuerySchedulingGroupPtr makeGroup()
 {
-    return std::make_shared<QuerySchedulingGroup>(/*classifier_=*/ nullptr);
+    return std::make_shared<QuerySchedulingGroup>("all", ClassifierSettings{}, /*classifier_=*/ nullptr);
 }
 
 /// Joins the query whose group is registered under `group_id`, the way a task does on a worker.
