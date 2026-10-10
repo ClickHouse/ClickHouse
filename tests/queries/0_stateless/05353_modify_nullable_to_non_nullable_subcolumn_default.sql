@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS t_lc_compact;
 DROP TABLE IF EXISTS t_lc_wide;
 DROP TABLE IF EXISTS t_on_fly;
 DROP TABLE IF EXISTS t_mutation;
+DROP TABLE IF EXISTS t_remove_default;
 
 -- Tuple.
 
@@ -39,6 +40,7 @@ SELECT c0 FROM t_tuple_compact WHERE x.b = 8 AND x.a = 7
 SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1;
 SELECT c0, tupleElement(x, 'a') FROM t_tuple_compact ORDER BY c0 SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT c0, x.a FROM t_tuple_compact ORDER BY c0 LIMIT 1 SETTINGS query_plan_optimize_lazy_materialization = 1;
+SELECT c0, x.a, x.n.d FROM t_tuple_compact PREWHERE toString(x) != '' ORDER BY c0;
 
 SELECT 'tuple, wide';
 SELECT c0, x.a, x.b, x.arr, x.arr.size0, x.s, x.s.size, x.n, x.n.d FROM t_tuple_wide ORDER BY c0;
@@ -49,6 +51,7 @@ SELECT c0 FROM t_tuple_wide WHERE x.b = 8 AND x.a = 7
 SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1;
 SELECT c0, tupleElement(x, 'a') FROM t_tuple_wide ORDER BY c0 SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT c0, x.a FROM t_tuple_wide ORDER BY c0 LIMIT 1 SETTINGS query_plan_optimize_lazy_materialization = 1;
+SELECT c0, x.a, x.n.d FROM t_tuple_wide PREWHERE toString(x) != '' ORDER BY c0;
 
 -- String.
 
@@ -126,6 +129,18 @@ SELECT 'mutation';
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutation' AND NOT is_done;
 SELECT c0, x, y FROM t_mutation ORDER BY c0;
 
+-- Without a DEFAULT the parent read by PREWHERE must still be the source of the subcolumn.
+
+CREATE TABLE t_remove_default (c0 UInt64, x Nullable(Tuple(a UInt64, b UInt64))) ENGINE = MergeTree ORDER BY c0 SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_remove_default VALUES (1, NULL), (2, (10, 20));
+SYSTEM STOP MERGES t_remove_default;
+ALTER TABLE t_remove_default MODIFY COLUMN x Tuple(a UInt64, b UInt64) DEFAULT tuple(7, 8) SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_remove_default MODIFY COLUMN x REMOVE DEFAULT SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'default removed';
+SELECT c0, x, x.a FROM t_remove_default ORDER BY c0;
+SELECT c0, x.a FROM t_remove_default PREWHERE toString(x) != '' ORDER BY c0;
+
 DROP TABLE t_tuple_compact;
 DROP TABLE t_tuple_wide;
 DROP TABLE t_string_compact;
@@ -134,3 +149,4 @@ DROP TABLE t_lc_compact;
 DROP TABLE t_lc_wide;
 DROP TABLE t_on_fly;
 DROP TABLE t_mutation;
+DROP TABLE t_remove_default;
