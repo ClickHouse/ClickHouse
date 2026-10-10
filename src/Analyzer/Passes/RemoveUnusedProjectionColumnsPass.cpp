@@ -40,9 +40,40 @@ std::unordered_set<size_t> convertUsedColumnNamesToUsedProjectionIndexes(const Q
     return result;
 }
 
+/// Whether the planner names both alike: equal structure, and the table columns come from the same table expressions.
+bool isSameExpression(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
+{
+    if (!lhs.isEqual(rhs, {.compare_aliases = false}))
+        return false;
+
+    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes_to_compare{{&lhs, &rhs}};
+    while (!nodes_to_compare.empty())
+    {
+        auto [lhs_node, rhs_node] = nodes_to_compare.back();
+        nodes_to_compare.pop_back();
+
+        if (const auto * lhs_column_node = lhs_node->as<ColumnNode>())
+        {
+            auto lhs_source = lhs_column_node->getColumnSourceOrNull();
+            bool is_expression_argument = !lhs_source || lhs_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS
+                || lhs_source->getNodeType() == QueryTreeNodeType::INTERPOLATE;
+            if (!is_expression_argument && lhs_source != rhs_node->as<const ColumnNode &>().getColumnSourceOrNull())
+                return false;
+        }
+
+        const auto & lhs_children = lhs_node->getChildren();
+        const auto & rhs_children = rhs_node->getChildren();
+        for (size_t i = 0; i < lhs_children.size(); ++i)
+            if (lhs_children[i])
+                nodes_to_compare.emplace_back(lhs_children[i].get(), rhs_children[i].get());
+    }
+
+    return true;
+}
+
 bool containsExpression(const QueryTreeNodePtr & node, const IQueryTreeNode & expression)
 {
-    if (node->isEqual(expression, {.compare_aliases = false}))
+    if (isSameExpression(*node, expression))
         return true;
 
     for (const auto & child : node->getChildren())
@@ -80,7 +111,7 @@ void addInterpolateTargetsReadByUsedTargets(const QueryNode & query_node, std::u
     {
         const auto & target = node->as<const InterpolateNode &>();
         const auto & expression = *target.getExpression();
-        auto is_expression = [&](const QueryTreeNodePtr & other) { return other->isEqual(expression, {.compare_aliases = false}); };
+        auto is_expression = [&](const QueryTreeNodePtr & other) { return isSameExpression(*other, expression); };
 
         if (expression.getNodeType() == QueryTreeNodeType::CONSTANT
             || (query_node.hasOrderBy() && std::ranges::any_of(query_node.getOrderBy().getNodes(),

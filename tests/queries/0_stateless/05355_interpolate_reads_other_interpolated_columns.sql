@@ -50,6 +50,10 @@ SELECT g, x FROM
     ORDER BY g WITH FILL INTERPOLATE (d AS d + 1, x AS x + d)
 );
 
+SELECT 'constant target declared after its reader';
+SELECT toUInt16(number * 3) AS g, 5 AS d, toUInt32(number) AS x FROM numbers(2)
+ORDER BY g WITH FILL INTERPOLATE (x AS x + d, d AS d + 1);
+
 SELECT 'the fill column is not a target';
 SELECT g, g AS h, x FROM (SELECT toUInt16(number * 3) AS g, toUInt32(number) AS x FROM numbers(2))
 ORDER BY g WITH FILL INTERPOLATE (h AS h + 10, x AS x + g);
@@ -78,4 +82,13 @@ SELECT g, c FROM
 (
     SELECT g, x AS a, x AS b, toUInt32(number) AS c FROM (SELECT toUInt16(number * 3) AS g, toUInt32(number + 1) AS x, number FROM numbers(2))
     ORDER BY g WITH FILL INTERPOLATE (a AS intDiv(a, a - a), b AS b, c AS c + a)
+);
+
+SELECT 'equal columns of different tables are different expressions';
+SELECT g, c FROM
+(
+    SELECT toUInt16(l.number * 3) AS g, l.x AS a, r.x AS b, toUInt32(l.number) AS c
+    FROM (SELECT number, toUInt32(number + 1) AS x FROM numbers(2)) AS l
+    INNER JOIN (SELECT number, toUInt32(number + 1) AS x FROM numbers(2)) AS r ON l.number = r.number
+    ORDER BY g WITH FILL INTERPOLATE (a AS a * 2, b AS intDiv(b, b - b), c AS c + l.x)
 );
