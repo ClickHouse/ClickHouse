@@ -4865,16 +4865,18 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 {
     MutationCommands result;
     UInt64 part_data_version = part->info.getDataVersion();
+    /// Patch parts live in synthetic `patch-*` partitions, but mutations are scoped by the partition of the data they patch.
+    const auto partition_id = part->info.getOriginalPartitionId();
 
     for (const auto & [mutation_version, entry] : mutations_by_version | std::views::reverse)
     {
         if (mutation_version <= part_data_version)
             break;
 
-        if (!containsInPartitionIdsOrEmpty(entry.partition_ids, part->info.getPartitionId()))
+        if (!containsInPartitionIdsOrEmpty(entry.partition_ids, partition_id))
             continue;
 
-        addSupportedCommands(*entry.commands, mutation_version, part->info.getPartitionId(), result);
+        addSupportedCommands(*entry.commands, mutation_version, partition_id, result);
     }
 
     std::reverse(result.begin(), result.end());
