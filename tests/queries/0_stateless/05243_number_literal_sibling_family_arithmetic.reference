@@ -1,0 +1,21 @@
+float	1e23	Float64
+float	0	Float64
+float	1e23	Float64
+float	1e23	Float64
+decimal	1e23	Float64
+decimal	1.1	Float64
+decimal	1.1	Float64
+decimal	2.1234567890123457	Float64
+decimal	1.0015	Float64
+decimal	1.0015	Float64
+decimal	-99999	Float64
+decimal	1.5	Float64
+type	Float64	Float64	Float64
+divide	0.6666666666666666	Float64
+divide	0.6666666666666666	Float64
+divide	1.5	Float64
+divide	1.5	Float64
+divide	inf	Float64
+divide	inf	Float64
+decimal	Float64
+int	100000000000000000000000	Int128

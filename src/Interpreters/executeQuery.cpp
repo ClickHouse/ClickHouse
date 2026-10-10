@@ -14,6 +14,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
@@ -92,6 +93,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -251,6 +253,7 @@ namespace Setting
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool enable_context_typed_number_literals;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
     extern const SettingsBool apply_mutations_on_fly;
@@ -898,7 +901,7 @@ static void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                String value = convertFieldToString(change.value);
+                String value = convertFieldToSettingValueString(change.value);
                 CoreSettings::maskSettingValue(change.name, change.value, value);
                 query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), value);
             }
@@ -1373,16 +1376,13 @@ static String convertSortToOrderBy(const String & sort)
 /// be any numeric type or a quoted string.
 static Float64 fieldToLimitOffsetFloat(const Field & f)
 {
-    switch (f.getType())
-    {
-        case Field::Types::Float64: return f.safeGet<Float64>();
-        case Field::Types::UInt64: return static_cast<Float64>(f.safeGet<UInt64>());
-        case Field::Types::Int64: return static_cast<Float64>(f.safeGet<Int64>());
-        case Field::Types::String: return parseFromString<Float64>(f.safeGet<String>());
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Expected a numeric or string value for `limit` / `offset` setting, got {}", f.getTypeName());
-    }
+    const auto type = f.getType();
+    if (type == Field::Types::String)
+        return parseFromString<Float64>(f.safeGet<String>());
+    if (type == Field::Types::Float64 || type == Field::Types::UInt64 || type == Field::Types::Int64 || Field::isWideInteger(type))
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), f);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Expected a numeric or string value for `limit` / `offset` setting, got {}", f.getTypeName());
 }
 
 /// Translate the `page` setting into `limit` / `offset` (`offset = limit * (page - 1)`), in place.
@@ -2772,6 +2772,13 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            /// Only for queries that are not stored: a stored definition keeps its literals, so they are typed by the
+            /// session that reads it, both before and after a restart.
+            if (!settings[Setting::enable_context_typed_number_literals]
+                && (out_ast->as<ASTSelectWithUnionQuery>() || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTExplainQuery>()
+                    || out_ast->as<ASTInsertQuery>()))
+                resolveNumberLiteralsAsFloat64(*out_ast);
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.

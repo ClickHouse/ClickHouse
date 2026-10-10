@@ -64,7 +64,8 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
         literal_type != Field::Types::Int128 &&
         literal_type != Field::Types::UInt256 &&
         literal_type != Field::Types::Int256 &&
-        literal_type != Field::Types::Float64)
+        literal_type != Field::Types::Float64 &&
+        literal_type != Field::Types::Number)
         return;
 
     const auto * column = func_plus_minus->arguments->children[column_id]->as<ASTIdentifier>();

@@ -1,0 +1,20 @@
+0
+1
+0
+1
+0
+0
+0
+Row 1:
+──────
+eq:                      0
+in_scalar:               0
+in_tuple_numeric:        0
+in_tuple_string_key:     0
+in_tuple_mixed_key:      0
+in_tuple_mixed_key_list: 0
+Row 1:
+──────
+eq:                      1
+in_tuple_mixed_key:      1
+in_tuple_mixed_key_list: 1

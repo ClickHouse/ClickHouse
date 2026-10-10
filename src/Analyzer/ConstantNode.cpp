@@ -49,7 +49,10 @@ ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
 
 ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
     : ConstantNode(ConstantValue{convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_})
-{}
+{
+    if (value_.getType() == Field::Types::Number)
+        number_literal_text = value_.safeGet<NumberLiteral>().value;
+}
 
 ConstantNode::ConstantNode(Field value_)
     : ConstantNode(value_, applyVisitor(FieldToDataType(), value_))
@@ -184,6 +187,7 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
     auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
     result->mask_id = mask_id;
+    result->number_literal_text = number_literal_text;
     return result;
 }
 
@@ -215,6 +219,10 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         return source_expression->toAST(options);
 
     const auto & constant_value_type = constant_value.getType();
+
+    if (options.keep_number_literal_text && hasNumberLiteralText() && !source_expression
+        && constant_value_type->equals(*applyVisitor(FieldToDataType(), Field(NumberLiteral(number_literal_text)))))
+        return make_intrusive<ASTLiteral>(NumberLiteral(number_literal_text));
 
     /// `Decimal` constants (including decimals nested in `Array`/`Tuple`/`Map`/`Variant`/`Dynamic`) have no
     /// exact literal syntax: a bare numeric literal is re-parsed as `Float64` on the receiving side and

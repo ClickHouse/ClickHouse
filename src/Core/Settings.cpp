@@ -9127,6 +9127,19 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 )", 0, \
         {"26.1", false, true, "Improves usability."}, \
         {"24.1", false, false, "Allow to use Variant in if/multiIf if there is no common type"}) \
+    DECLARE(Bool, enable_context_typed_number_literals, true, R"(
+Numeric literals are typed by the context they are used in instead of by their spelling.
+
+When enabled, a decimal integer literal that does not fit `Int64`/`UInt64` becomes a big integer (`UInt128`/`Int128`/`UInt256`/`Int256`), and a literal compared with a `Decimal` argument is parsed exactly from its text into a wide `Decimal`. In arithmetic with a `Decimal` argument a literal stays a `Float64`. Literals also keep their original spelling when a query is formatted.
+
+When disabled, every literal that is not a plain `Int64`/`UInt64` is a `Float64`, as in previous versions.
+
+Possible values:
+
+- 0 — Literals that are not `Int64`/`UInt64` are `Float64`.
+- 1 — Literals are typed by context.
+)", 0, \
+        {"26.10", false, true, "Numeric literals are typed by the context they are used in. `compatibility` with versions before 26.10 restores the previous `Float64` typing."}) \
     DECLARE(Bool, allow_lossy_numeric_supertype, false, R"(
 When enabled, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` over a set of numeric arguments that has no lossless common type (for example a `Decimal` and a `Float64`, or an `Int64` and a `Float64`) resolve to a numeric supertype (`Float64`) instead of failing, with possible precision loss. This allows the result to be used directly with value-combining aggregate functions like `sum`, `avg`, `min` and `max`. This is independent of `use_variant_as_common_type`: the numeric supertype is produced whether or not `use_variant_as_common_type` is enabled. When disabled (the default), such argument sets have no common type, so they either become a `Variant` (if `use_variant_as_common_type` is enabled) or raise `NO_COMMON_TYPE`.
 )", 0, \

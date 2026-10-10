@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
@@ -142,9 +143,14 @@ namespace
                 return T(x);
             }
         }
-        else
-            throw Exception(
-                ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
+        /// A literal too large for UInt64 used to arrive as a Float64; go through Float64 again so the
+        /// branch above range-checks it.
+        if (Field::isWideInteger(f.getType()))
+            return fieldToNumber<T>(Field(applyVisitor(FieldVisitorConvertToNumber<Float64>(), f)));
+        if (f.getType() == Field::Types::Number)
+            return fieldToNumber<T>(f.resolveNumberLiteral());
+        throw Exception(
+            ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
     }
 
     Map stringToMap(const String & str)

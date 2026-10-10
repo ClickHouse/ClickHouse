@@ -33,7 +33,7 @@ void ASTAlterNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::Fo
 
             formatSettingName(change.name, ostr);
             if (settings.show_secrets)
-                ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+                ostr << " = " << applyVisitor(FieldVisitorToSettingValueString(), change.value);
             else
                 ostr << " = " << HIDDEN_SECRET_LITERAL;
             auto override_value = overridability.find(change.name);

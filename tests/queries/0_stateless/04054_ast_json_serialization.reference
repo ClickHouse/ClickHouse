@@ -22,6 +22,7 @@ Literal_uint64	UInt64	42
 Literal_string	String	hello
 Literal_null	Null
 Literal_float	Float64
+Literal_float	Number
 Literal_int64	
 Literal_alias	x
 Literal_array	

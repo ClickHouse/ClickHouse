@@ -91,6 +91,7 @@ bool tryGetLiteralBool(const IAST * ast, bool & value)
         case Field::Types::Int128:
         case Field::Types::UInt256:
         case Field::Types::Int256:
+        case Field::Types::Number:
             value = applyVisitor(FieldVisitorConvertToNumber<bool>(), literal->value);
             return true;
         default:

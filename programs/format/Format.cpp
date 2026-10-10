@@ -21,6 +21,7 @@
 #include <Common/TerminalSize.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Functions/FunctionFactory.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
@@ -49,6 +50,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_context_typed_number_literals;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -96,6 +98,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         Settings cmd_settings;
         cmd_settings.addToProgramOptions("max_parser_depth", desc);
         cmd_settings.addToProgramOptions("max_query_size", desc);
+        cmd_settings.addToProgramOptions("enable_context_typed_number_literals", desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -274,6 +277,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     cmd_settings[Setting::max_query_size],
                     cmd_settings[Setting::max_parser_depth],
                     cmd_settings[Setting::max_parser_backtracks]);
+
+                if (!cmd_settings[Setting::enable_context_typed_number_literals])
+                    resolveNumberLiteralsAsFloat64(*res);
 
                 std::unique_ptr<ReadBuffer> insert_query_payload;
                 /// If the query is INSERT ... VALUES, then we will try to parse the data.

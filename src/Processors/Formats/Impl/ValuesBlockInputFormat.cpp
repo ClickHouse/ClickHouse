@@ -4,6 +4,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -31,6 +32,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_context_typed_number_literals;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -493,6 +495,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             *token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
 
         expression_parsed = parser.parse(*token_iterator, ast, expected);
+        if (expression_parsed && !settings[Setting::enable_context_typed_number_literals])
+            resolveNumberLiteralsAsFloat64(*ast);
 
         /// The delimiter after the value ( ',' or ')' ) is considered part of the expression.
         if (is_last_column)

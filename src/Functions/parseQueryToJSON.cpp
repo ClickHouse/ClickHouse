@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
@@ -21,6 +22,7 @@ namespace Setting
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool enable_context_typed_number_literals;
 }
 
 namespace ErrorCodes
@@ -51,9 +53,25 @@ public:
         max_ast_elements = settings[Setting::max_ast_elements];
         allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
         implicit_select = settings[Setting::implicit_select];
+        context_typed_number_literals = settings[Setting::enable_context_typed_number_literals];
     }
 
     String getName() const override { return name; }
+
+    /// The captured parser settings decide whether a query is serialized or rejected, and how the
+    /// number literals in it are rendered, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(max_query_size);
+        hash.update(max_parser_depth);
+        hash.update(max_parser_backtracks);
+        hash.update(max_ast_depth);
+        hash.update(max_ast_elements);
+        hash.update(allow_settings_after_format_in_insert);
+        hash.update(implicit_select);
+        hash.update(context_typed_number_literals);
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
@@ -86,6 +104,8 @@ public:
                 ast->checkDepth(max_ast_depth);
             if (max_ast_elements)
                 ast->checkSize(max_ast_elements);
+            if (!context_typed_number_literals)
+                resolveNumberLiteralsAsFloat64(*ast);
 
             result->insert(serializeASTToJSON(*ast));
         }
@@ -101,6 +121,7 @@ private:
     size_t max_ast_elements;
     bool allow_settings_after_format_in_insert;
     bool implicit_select;
+    bool context_typed_number_literals;
 };
 
 }

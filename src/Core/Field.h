@@ -342,6 +342,14 @@ public:
             || which == Types::Decimal256;
     }
 
+    static bool isWideInteger(Types::Which which)
+    {
+        return which == Types::UInt128
+            || which == Types::Int128
+            || which == Types::UInt256
+            || which == Types::Int256;
+    }
+
     /// Whether values of the type are single scalar values with a plain value comparison, as opposed
     /// to composite values (Array, Tuple, Map, Object — compared element-wise, where elements of
     /// different types are ordered by type index rather than by value) and opaque values

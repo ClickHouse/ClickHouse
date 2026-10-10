@@ -34,3 +34,11 @@ AlterQuery  t (children 2)
     Literal UInt64_42
     Literal Float64_3.14
  Identifier t
+AlterQuery  t (children 2)
+ ExpressionList (children 1)
+  AlterCommand EXECUTE_COMMAND (children 1)
+   ExpressionList (children 3)
+    Literal \'a\'
+    Literal UInt64_42
+    Literal Number_3.14
+ Identifier t

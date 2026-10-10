@@ -56,6 +56,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/resolveNumberLiteral.h>
 
 
 namespace DB
@@ -67,6 +68,7 @@ namespace Setting
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool enable_context_typed_number_literals;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
@@ -645,10 +647,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
-        if (context->getSettingsRef()[Setting::use_variant_as_common_type])
-            result = std::make_shared<ConstantNode>(ast_literal->value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), ast_literal->value));
+        const auto & settings = context->getSettingsRef();
+        const Field value = settings[Setting::enable_context_typed_number_literals]
+            ? ast_literal->value
+            : resolveNumberLiteralsAsFloat64(ast_literal->value);
+        if (settings[Setting::use_variant_as_common_type])
+            result = std::make_shared<ConstantNode>(value, applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), value));
         else
-            result = std::make_shared<ConstantNode>(ast_literal->value);
+            result = std::make_shared<ConstantNode>(value);
     }
     else if (const auto * function = expression->as<ASTFunction>())
     {

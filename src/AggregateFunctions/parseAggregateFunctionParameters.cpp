@@ -45,7 +45,7 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
             throw;
         }
 
-        params_row[i] = literal->as<ASTLiteral>()->value;
+        params_row[i] = literal->as<ASTLiteral>()->value.resolveNumberLiteral();
     }
 
     return params_row;

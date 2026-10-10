@@ -1,0 +1,1 @@
+CREATE WORKLOAD `all` SETTINGS max_bytes_per_second = 18446744073709551616

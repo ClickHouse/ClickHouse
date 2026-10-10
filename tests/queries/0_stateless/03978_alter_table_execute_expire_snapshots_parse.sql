@@ -33,6 +33,10 @@ SELECT formatQuerySingleLine('ALTER TABLE t EXECUTE cmd(1 + 2)');
 -- AST clone/format roundtrip via EXPLAIN AST (exercises ASTAlterCommand::clone for execute_args)
 EXPLAIN AST ALTER TABLE t EXECUTE expire_snapshots('2024-06-01 00:00:00');
 EXPLAIN AST ALTER TABLE t EXECUTE expire_snapshots();
+SET enable_context_typed_number_literals = 0;
+EXPLAIN AST ALTER TABLE t EXECUTE some_cmd('a', 42, 3.14);
+-- With context typed literals `3.14` keeps its text until its type is known.
+SET enable_context_typed_number_literals = 1;
 EXPLAIN AST ALTER TABLE t EXECUTE some_cmd('a', 42, 3.14);
 
 -- Runtime: EXECUTE on MergeTree should fail with NOT_IMPLEMENTED

@@ -67,6 +67,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <Analyzer/QueryNode.h>
@@ -83,6 +84,7 @@ namespace Setting
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool enable_context_typed_number_literals;
 }
 
 namespace ErrorCodes
@@ -1464,7 +1466,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (size_t i = 0; i < parameters_size; ++i)
             {
                 ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
-                parameters[i] = literal->as<ASTLiteral>()->value;
+                parameters[i] = literal->as<ASTLiteral>()->value.resolveNumberLiteral();
             }
         }
 
@@ -1736,13 +1738,18 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
-    DataTypePtr type;
-    if (data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
-        type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
-    else
-        type = applyVisitor(FieldToDataType(), literal.value);
+    const auto & settings = data.getContext()->getSettingsRef();
+    const Field literal_value = settings[Setting::enable_context_typed_number_literals]
+        ? literal.value
+        : resolveNumberLiteralsAsFloat64(literal.value);
 
-    const auto value = convertFieldToType(literal.value, *type);
+    DataTypePtr type;
+    if (settings[Setting::use_variant_as_common_type])
+        type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal_value);
+    else
+        type = applyVisitor(FieldToDataType(), literal_value);
+
+    const auto value = convertFieldToType(literal_value, *type);
 
     // FIXME why do we have a second pass with a clean sample block over the same
     // AST here? Anyway, do not modify the column name if it is set already.
