@@ -164,6 +164,7 @@ ExecutingProcessor * Worker::tryPick()
         auto * picked = trySteal(steal_rounds);
         pool.coordinator.stopStealing();
         metrics.steal_picks += picked != nullptr;
+        metrics.steal_misses += picked == nullptr;
         wakeFor(picked != nullptr);
         return picked;
     }
@@ -224,12 +225,23 @@ void Worker::pushManyLifo(std::span<ExecutingProcessor * const> many)
 
 void Worker::wakeFor(Int64 extra_work)
 {
-    if (extra_work <= 0 || pool.coordinator.hasStealer())
+    if (extra_work <= 0)
         return;
 
+    if (pool.coordinator.hasStealer())
+    {
+        metrics.wake_skips += 1;
+        return;
+    }
+
     if (pool.coordinator.hasSleepers() || pool.coordinator.hasPoller())
+    {
         if (pool.coordinator.wakeOne())
+        {
+            metrics.wakes += 1;
             return;
+        }
+    }
 
     pool.grow(1);
 }
