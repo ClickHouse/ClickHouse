@@ -193,6 +193,7 @@ void StatelessWorkersProviderRegistry::reloadConfig(const Poco::Util::AbstractCo
             }
             /// Removed or reconfigured: queries holding the provider drain on it, and the cluster is
             /// rebuilt on its next use.
+            /// A retired provider is not refreshed any more, so queries draining on it may eventually fail.
             LOG_INFO(log, "Retiring stateless worker provider for cluster '{}' after a configuration change", it->first);
         }
         catch (...)
