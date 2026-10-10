@@ -85,8 +85,7 @@ std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
 /// A drain marker is followed by its UInt64 number.
 constexpr char DRAIN_MARKER = 2;
 
-/// Shared by the successive collectors of the process. Marker numbers are never reset, so a marker
-/// of an older collector cannot release a waiter of a newer one.
+/// Shared by the successive collectors of the process; marker numbers are never reset.
 std::mutex drain_mutex;
 std::condition_variable drain_cv;
 UInt64 collector_generation = 0;
