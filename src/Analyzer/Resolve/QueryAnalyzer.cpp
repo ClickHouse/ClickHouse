@@ -3436,6 +3436,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         && node != query_node->getWindowNode())
                         return;
 
+                    /// Without `group_by_use_nulls` the projection is already resolved when the other clauses are,
+                    /// so their matchers do not rewrite it, see `queries_with_deferred_projection`.
+                    if (node == query_node->getProjectionNode() && queries_with_deferred_projection.contains(query_node))
+                        return;
+
                     std::function<void(QueryTreeNodePtr &)> replace_recursive = [&](QueryTreeNodePtr & current) -> void
                     {
                         if (!current) return;
@@ -7734,6 +7739,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
     const bool query_is_group_by_all = query_node_typed.isGroupByAll();
 
+    const IQueryTreeNode * query_node_ptr = query_node.get();
+    SCOPE_EXIT({ queries_with_deferred_projection.erase(query_node_ptr); });
+
     if (!scope.group_by_use_nulls)
     {
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
@@ -7764,6 +7772,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             window_with_unexpanded_matchers = std::move(unexpanded_window);
         }
 
+        queries_with_deferred_projection.insert(query_node_ptr);
+
         if (query_node_typed.isGroupByAll())
         {
             /// GROUP BY ALL keys must be registered as nullable_group_by_keys before the projection is resolved: expand
@@ -7776,6 +7786,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             query_node_typed.getProjectionNode() = std::move(unresolved_projection);
             /// The discarded resolution must not consume _subquery_N projection names.
             subquery_counter = saved_subquery_counter;
+
+            /** The discarded resolution also consumed the snapshots of the named windows, which are keyed by the
+              * window nodes of the discarded projection. Take them again for the restored one, before the `WINDOW`
+              * clause is resolved and rewritten by its own `REPLACE` transformers. The projection has no matchers
+              * left, so this only takes the snapshots. With matchers, the second expansion below takes them anyway.
+              */
+            if (!projection_with_unexpanded_matchers)
+                expandProjectionMatchers(query_node_typed, scope);
         }
     }
 
@@ -7852,7 +7870,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         const auto * previous_query_with_replaced_clauses = query_with_replaced_clauses;
         query_with_replaced_clauses = query_node.get();
         SCOPE_EXIT({ query_with_replaced_clauses = previous_query_with_replaced_clauses; });
+
+        /// The matchers of the projection itself rewrite its following items.
+        queries_with_deferred_projection.erase(query_node_ptr);
         expandProjectionMatchers(query_node_typed, scope);
+        queries_with_deferred_projection.insert(query_node_ptr);
     }
 
     if (query_node_typed.hasHaving())
@@ -7965,6 +7987,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (scope.group_by_use_nulls)
     {
+        queries_with_deferred_projection.erase(query_node_ptr);
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         if (query_node_typed.getProjection().getNodes().empty())
             throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,

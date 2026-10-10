@@ -330,6 +330,12 @@ private:
       */
     const IQueryTreeNode * query_with_replaced_clauses = nullptr;
 
+    /** The queries whose projection is resolved after the other clauses under `group_by_use_nulls`, see `resolveQuery`.
+      * Without the setting the projection is resolved first, so the `REPLACE` transformers of the matchers in
+      * the other clauses do not affect it, and `resolveMatcher` does not rewrite it.
+      */
+    std::unordered_set<const IQueryTreeNode *> queries_with_deferred_projection;
+
     /** The projection items, and the function arguments inside them, that are already passed by `expandProjectionMatchers`.
       * Without `group_by_use_nulls` they are resolved by then, so the `REPLACE` transformers of the following matchers
       * do not affect them, and `resolveMatcher` does not rewrite them.
