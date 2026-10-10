@@ -8510,16 +8510,26 @@ struct SourceReplicaParts
 
 static std::vector<SourceReplicaParts> getPartsOfAllReplicas(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_path)
 {
-    std::vector<SourceReplicaParts> result;
-    for (const auto & replica : zookeeper->getChildren(fs::path(zookeeper_path) / "replicas"))
-    {
-        /// `tryGetChildren` throws on every Keeper error except `ZNONODE`, so a replica is skipped only
-        /// when it was dropped concurrently - never because its parts could not be read.
-        Strings replica_parts;
-        if (zookeeper->tryGetChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts", replica_parts) == Coordination::Error::ZNONODE)
-            continue;
+    Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+    Strings paths;
+    paths.reserve(replicas.size());
+    for (const auto & replica : replicas)
+        paths.push_back(fs::path(zookeeper_path) / "replicas" / replica / "parts");
 
-        result.push_back({replica, std::move(replica_parts)});
+    /// One batched read of the `parts` of all replicas instead of a round trip per replica.
+    auto responses = zookeeper->tryGetChildren(paths);
+
+    std::vector<SourceReplicaParts> result;
+    result.reserve(replicas.size());
+    for (size_t i = 0; i < replicas.size(); ++i)
+    {
+        /// A replica is skipped only when it was dropped concurrently - never because its parts could not be read.
+        if (responses[i].error == Coordination::Error::ZNONODE)
+            continue;
+        if (responses[i].error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
+
+        result.push_back({replicas[i], std::move(responses[i].names)});
     }
     return result;
 }
@@ -8566,6 +8576,12 @@ static void assertNoReplicaHasNewerVersionOfParts(
             chosen_infos.push_back(std::move(*part_info));
     }
 
+    /// The chosen parts are the active parts of one replica, so they do not intersect each other:
+    /// sorted by `min_block`, they are sorted by `max_block` as well, and the ones intersecting a given
+    /// block range are found by a binary search instead of a scan of all of them.
+    std::sort(chosen_infos.begin(), chosen_infos.end(),
+        [](const MergeTreePartInfo & lhs, const MergeTreePartInfo & rhs) { return lhs.min_block < rhs.min_block; });
+
     for (const auto & replica_parts : replicas_parts)
     {
         for (const auto & part_name : replica_parts.parts)
@@ -8574,11 +8590,12 @@ static void assertNoReplicaHasNewerVersionOfParts(
             if (!part_info || part_info->getPartitionId() != partition_id)
                 continue;
 
-            for (const auto & chosen_info : chosen_infos)
-            {
-                if (chosen_info.isDisjoint(*part_info))
-                    continue;
+            auto it = std::partition_point(chosen_infos.begin(), chosen_infos.end(),
+                [&](const MergeTreePartInfo & chosen) { return chosen.max_block < part_info->min_block; });
 
+            for (; it != chosen_infos.end() && it->min_block <= part_info->max_block; ++it)
+            {
+                const auto & chosen_info = *it;
                 Int64 lowest_shared_block = std::max(chosen_info.min_block, part_info->min_block);
                 if (part_info->getDataVersion() > std::max(chosen_info.getDataVersion(), lowest_shared_block))
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
