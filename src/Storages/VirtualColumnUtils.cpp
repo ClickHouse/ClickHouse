@@ -1,4 +1,5 @@
 #include <memory>
+#include <numeric>
 #include <stack>
 #include <unordered_set>
 
@@ -428,15 +429,13 @@ ColumnPtr getFilterByPathAndFileIndexes(
     ColumnPtr filter_column
         = block.getByName(actions->getActionsDAG().getOutputs().at(0)->result_name).column->convertToFullColumnIfConst();
 
-    auto indexes = ColumnUInt64::create();
-    if (!ConstantFilterDescription(*filter_column).always_false)
-    {
-        FilterDescription filter(*filter_column);
-        for (size_t i = 0; i < num_rows; ++i)
-            if ((*filter.data)[i])
-                indexes->insertValue(i);
-    }
-    return indexes;
+    if (ConstantFilterDescription(*filter_column).always_false)
+        return ColumnUInt64::create();
+
+    auto indexes = ColumnUInt64::create(num_rows);
+    std::iota(indexes->getData().begin(), indexes->getData().end(), 0);
+    FilterDescription filter(*filter_column);
+    return indexes->filter(*filter.data, -1);
 }
 
 /// Builds a `Nullable(UInt64)` row lineage column out of the values materialized in the data file,
