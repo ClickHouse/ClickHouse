@@ -581,8 +581,13 @@ private:
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
             {
+                /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
+                new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);
+
                 ActionsDAG::NodeRawConstPtrs merged_outputs;
-                actions_dag.mergeNodes(preprocessor_dag.clone(), &merged_outputs);
+                actions_dag.mergeNodes(
+                    preprocessor->getActionsDAGForColumn(new_children[0]->result_name, new_children[0]->result_type),
+                    &merged_outputs);
 
                 chassert(merged_outputs.size() == 1);
                 new_children[0] = merged_outputs.front();
