@@ -589,9 +589,12 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
             }
         }
         chassert(type);
-        if (field.is_timestamp_ntz)
+        /// A partition column is top-level and never written to a data file, so it takes no writer path.
+        const bool in_data_file = !parent_writer_path.empty()
+            || std::find(partition_columns.begin(), partition_columns.end(), field.name) == partition_columns.end();
+        if (in_data_file && field.is_timestamp_ntz)
             result.timestamp_ntz_paths.insert(field_writer_path);
-        else if (field.type == DB::TypeIndex::DateTime64)
+        else if (in_data_file && field.type == DB::TypeIndex::DateTime64)
             result.timestamp_writer_paths.insert(field_writer_path);
 
         if (!field.physical_name.empty())
@@ -616,6 +619,7 @@ TableSchemaResult getTableSchemaFromSnapshot(
 {
     SchemaVisitorData data(engine);
     SchemaVisitor::visitTableSchema(snapshot, data);
+    SchemaVisitor::visitPartitionColumns(snapshot, data);
     auto result = data.getSchemaResult();
     return {std::move(result.names_and_types), std::move(result.physical_names_map), std::move(result.timestamp_ntz_paths)};
 }

@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import logging
@@ -6960,5 +6961,77 @@ def test_writes_timestamp_ntz_annotation_nested(started_cluster):
     # reported error. Reading it is also what proves the ambiguous path was not annotated after all.
     with pytest.raises(Exception, match="Unable to create Parquet converter"):
         spark.read.format("delta").load(result_file).select("sc").collect()
+
+    instance.query(f"DROP TABLE {table_name}")
+
+
+def test_writes_timestamp_ntz_annotation_partition_column(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_writes_timestamp_ntz_partition")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    # The Delta `timestamp` partition column `p.ts` and the ntz leaf of `p` flatten to the same path,
+    # but a partition column is not written to the data file, so the ntz leaf there keeps its annotation.
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32()),
+            pa.field("p.ts", pa.timestamp("us", tz="UTC")),
+            pa.field("p", pa.struct([pa.field("ts", pa.timestamp("us"))])),
+        ]
+    )
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(
+            [pa.array([], type=field.type) for field in schema], schema=schema
+        ),
+        mode="overwrite",
+        partition_by=["p.ts"],
+    )
+
+    with open(f"{result_file}/_delta_log/00000000000000000000.json") as log:
+        metadata = [json.loads(line) for line in log if "metaData" in line][0]
+    assert metadata["metaData"]["partitionColumns"] == ["p.ts"], metadata
+    log_fields = {
+        field["name"]: field["type"]
+        for field in json.loads(metadata["metaData"]["schemaString"])["fields"]
+    }
+    assert log_fields["p.ts"] == "timestamp", log_fields
+    assert log_fields["p"]["fields"][0]["type"] == "timestamp_ntz", log_fields
+
+    LocalUploader(instance).upload_directory(f"{result_file}/", f"{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, `p.ts` DateTime64(6), p Tuple(ts DateTime64(6))) "
+        f"ENGINE = DeltaLakeLocal('{result_file}') "
+        "SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+    instance.query(
+        f"INSERT INTO {table_name} VALUES "
+        "(1, '2024-06-01 12:00:00', tuple('2024-06-01 12:00:00'))",
+        settings={"session_timezone": "UTC"},
+    )
+
+    # The partition directory name contains a space, which LocalDownloader's shell commands do not quote.
+    files = (
+        instance.exec_in_container(["find", result_file, "-type", "f"]).strip().split("\n")
+    )
+    for path in files:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(
+                base64.b64decode(instance.exec_in_container(["base64", "-w0", path]))
+            )
+    parquet_files = [name for name in files if name.endswith(".parquet")]
+    assert len(parquet_files) == 1, files
+
+    written = pq.read_schema(parquet_files[0])
+    # If the partition column were in the file, the two paths would really collide.
+    assert "p.ts" not in written.names, written
+    assert written.field("p").type.field("ts").type == pa.timestamp("us"), written
+
+    spark = started_cluster.spark_session
+    rows = spark.read.format("delta").load(result_file).select("p").collect()
+    assert len(rows) == 1, rows
+    assert str(rows[0]["p"]["ts"]) == "2024-06-01 12:00:00", rows
 
     instance.query(f"DROP TABLE {table_name}")
