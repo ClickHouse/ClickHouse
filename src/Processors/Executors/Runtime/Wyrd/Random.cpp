@@ -34,6 +34,11 @@ UInt64 randomNumber()
     return generator()();
 }
 
+size_t randomBetween(size_t from, size_t to)
+{
+    return from + randomNumber() % (to - from + 1);
+}
+
 bool randomEventEvery(size_t freq)
 {
     if (freq == 0)

@@ -10,7 +10,6 @@
 #    include <magic_enum.hpp>
 
 #    include <algorithm>
-#    include <atomic>
 #    include <cstdlib>
 #    include <exception>
 #    include <optional>
@@ -62,7 +61,7 @@ struct CapturedFailure
 {
     std::string file;
     int line;
-    std::string message;
+    std::string error_message;
 };
 
 struct FailedRun
@@ -71,13 +70,14 @@ struct FailedRun
     UInt64 seed;
     size_t steps;
     std::string timeline;
+    std::string error_message;
     std::vector<CapturedFailure> failures;
 };
 
 struct RunnerOutcome
 {
     std::vector<SimulationResult> results;
-    std::optional<FailedRun> failure;
+    std::vector<FailedRun> failures;
     std::exception_ptr error;
 };
 
@@ -88,7 +88,6 @@ void runTest(std::function<void()> body, TestParams params)
     const size_t threads = fixed_seed ? 1 : std::max<size_t>(1, std::min(runs, threadsFromEnvironment()));
     const bool timeline_requested = timelineRequested();
 
-    std::atomic<bool> stop{false};
     std::vector<RunnerOutcome> outcomes(threads);
 
     auto run_simulation = [&](size_t i, RunnerOutcome & outcome)
@@ -106,36 +105,31 @@ void runTest(std::function<void()> body, TestParams params)
             second = Simulation(simulation).run(body);
         }
 
+        FailedRun failed{.run = i, .seed = simulation.seed, .steps = first.total_steps, .timeline = {}, .error_message = {}, .failures = {}};
+
         if (first.digest != second.digest)
-        {
-            throw std::runtime_error(fmt::format(
+            failed.error_message = fmt::format(
                 "Simulation with seed {} is not deterministic: digests {} and {}, {} and {} steps",
-                simulation.seed, first.digest, second.digest, first.total_steps, second.total_steps));
-        }
+                simulation.seed, first.digest, second.digest, first.total_steps, second.total_steps);
         else if (first.status != SimulationResult::Status::Ok)
+            failed.error_message = fmt::format(
+                "Simulation with seed {} ended with {} after {} steps. {}",
+                simulation.seed, magic_enum::enum_name(first.status), first.total_steps, first.exception_message);
+
+        for (int index = 0; index < failures.size(); ++index)
         {
-            throw std::runtime_error(fmt::format(
-                "Simulation with seed {} ended with {} after {} steps. {}\nTimeline:\n{}",
-                simulation.seed,
-                magic_enum::enum_name(first.status),
-                first.total_steps,
-                first.exception_message,
-                first.timeline));
+            const auto & failure = failures.GetTestPartResult(index);
+            failed.failures.push_back({.file = failure.file_name() ? failure.file_name() : "", .line = failure.line_number(), .error_message = failure.message()});
         }
 
-        if (failures.size() > 0)
+        if (failed.error_message.empty() && failed.failures.empty())
         {
-            FailedRun & failed = outcome.failure.emplace(FailedRun{.run = i, .seed = simulation.seed, .steps = first.total_steps, .timeline = std::move(first.timeline), .failures = {}});
-            for (int index = 0; index < failures.size(); ++index)
-            {
-                const auto & failure = failures.GetTestPartResult(index);
-                failed.failures.push_back({.file = failure.file_name() ? failure.file_name() : "", .line = failure.line_number(), .message = failure.message()});
-            }
-            stop.store(true);
+            outcome.results.push_back(std::move(first));
             return;
         }
 
-        outcome.results.push_back(std::move(first));
+        failed.timeline = std::move(first.timeline);
+        outcome.failures.push_back(std::move(failed));
     };
 
     auto worker = [&](size_t thread)
@@ -143,13 +137,12 @@ void runTest(std::function<void()> body, TestParams params)
         RunnerOutcome & outcome = outcomes[thread];
         try
         {
-            for (size_t i = thread; i < runs && !stop.load() && !outcome.failure; i += threads)
+            for (size_t i = thread; i < runs; i += threads)
                 run_simulation(i, outcome);
         }
         catch (...)
         {
             outcome.error = std::current_exception();
-            stop.store(true);
         }
     };
 
@@ -164,6 +157,7 @@ void runTest(std::function<void()> body, TestParams params)
     size_t max_steps = 0;
     size_t sum_steps = 0;
     std::set<UInt64> digests;
+    std::vector<const FailedRun *> failed_runs;
     for (const auto & outcome : outcomes)
     {
         for (const auto & result : outcome.results)
@@ -174,23 +168,29 @@ void runTest(std::function<void()> body, TestParams params)
             digests.insert(result.digest);
             ++completed;
         }
+        for (const auto & failure : outcome.failures)
+            failed_runs.push_back(&failure);
     }
     fmt::print(stderr, "Wyrd simulation: runs={} threads={} steps={}({}..{}) distinct_schedules={}\n", completed, threads, sum_steps, min_steps, max_steps, digests.size());
-
-    const auto failed = std::ranges::find_if(outcomes, [](const RunnerOutcome & outcome) { return outcome.failure.has_value(); });
-    if (failed != outcomes.end())
-    {
-        const FailedRun & failure = *failed->failure;
-        for (const auto & [file, line, message] : failure.failures)
-            ADD_FAILURE_AT(file.c_str(), line) << message;
-        fmt::print(stderr, "Wyrd simulation: run {} failed with seed {} after {} steps; replay with WYRD_SEED={}, add WYRD_TIMELINE=1 for the trace\n", failure.run, failure.seed, failure.steps, failure.seed);
-        if (timeline_requested)
-            fmt::print(stderr, "Timeline:\n{}\n", failure.timeline);
-    }
 
     for (const auto & outcome : outcomes)
         if (outcome.error)
             std::rethrow_exception(outcome.error);
+
+    if (failed_runs.empty())
+        return;
+
+    const FailedRun & shortest = **std::ranges::min_element(failed_runs, {}, [](const FailedRun * failure) { return failure->steps; });
+    fmt::print(stderr, "Wyrd simulation: {} of {} runs failed; the shortest is run {} with seed {} after {} steps; replay with WYRD_SEED={} WYRD_TIMELINE=1\n",
+                       failed_runs.size(), runs, shortest.run, shortest.seed, shortest.steps, shortest.seed);
+    if (timeline_requested)
+        fmt::print(stderr, "Timeline:\n{}\n", shortest.timeline);
+
+    for (const auto & [file, line, error_message] : shortest.failures)
+        ADD_FAILURE_AT(file.c_str(), line) << error_message;
+
+    if (!shortest.error_message.empty())
+        throw std::runtime_error(shortest.error_message);
 }
 
 #elif defined(WYRD_ADVERSARY)
