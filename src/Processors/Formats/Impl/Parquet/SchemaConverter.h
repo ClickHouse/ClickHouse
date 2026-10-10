@@ -152,6 +152,7 @@ private:
     bool processSubtreeArrayOuter(TraversalNode & node);
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
+    bool processSubtreeDynamic(TraversalNode & node);
 
     /// Fills PrimitiveColumnInfo::derive_group_defs once the whole traversal is done and every
     /// group's null-map source leaf is known.
