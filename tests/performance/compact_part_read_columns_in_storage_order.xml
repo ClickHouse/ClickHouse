@@ -10,8 +10,8 @@
             index_granularity = 256, min_bytes_for_wide_part = 10737418240, min_bytes_for_full_part_storage = 0
     </create_query>
     <fill_query>SYSTEM STOP MERGES compact_part_read_order</fill_query>
-    <fill_query>INSERT INTO compact_part_read_order SELECT number, number FROM numbers(500000)</fill_query>
-    <fill_query>INSERT INTO compact_part_read_order SELECT number, number % 400000 FROM numbers(500000)</fill_query>
+    <fill_query>INSERT INTO compact_part_read_order SELECT number, number FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO compact_part_read_order SELECT number, number % 80000 FROM numbers(100000)</fill_query>
 
     <query>SELECT v FROM compact_part_read_order FINAL FORMAT Null</query>
     <query>SELECT v, k FROM compact_part_read_order FORMAT Null</query>
