@@ -423,7 +423,6 @@ ColumnPtr getFilterByPathAndFileIndexes(
     }
     block.setColumns(std::move(columns));
 
-    /// One row per path, so a row that passes the filter is the index of its path.
     size_t num_rows = paths.size();
     actions->execute(block, num_rows, /*dry_run=*/ false, /*allow_duplicates_in_input=*/ true);
     ColumnPtr filter_column
