@@ -38,6 +38,7 @@ namespace ProfileEvents
     extern const Event ExternalSortCompressedBytes;
     extern const Event ExternalSortUncompressedBytes;
     extern const Event ExternalSortWritePart;
+    extern const Event ExternalSortMerge;
 }
 
 namespace DB
