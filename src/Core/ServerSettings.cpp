@@ -248,6 +248,8 @@ A value of `0` (default) means unlimited.
     DECLARE(UInt64, max_local_read_bandwidth_for_server, 0, R"(
 The maximum speed of local reads in bytes per second.
 
+The limit applies to the data read from the block devices: reads that are served from the OS page cache are not accounted for, as long as the read method can detect them (which is the case for the default `local_filesystem_read_method = 'pread_threadpool'`, for `pread`, and for the reads of the filesystem cache files).
+
 <Note>
 A value of `0` means unlimited.
 </Note>
@@ -1921,6 +1923,8 @@ At startup the server installs a [`seccomp`](https://man7.org/linux/man-pages/ma
 
 Creating a namespace is refused in every form it takes: `unshare` and `setns` are not allowed at all, a `clone` that asks for a namespace among its flags is refused, and `clone3` - whose arguments live in a structure that a filter cannot read, so that a namespace cannot be told from a thread - is refused as a whole, with `ENOSYS`. That is how a libc discovers that it has to use `clone` instead, so making threads and processes keeps working; `docker` and `systemd` refuse `clone3` the same way in their own policies.
 
+The extended-attribute system calls are refused with `ENOSYS` as well. ClickHouse does not use them, but the NSS modules of the host run inside the server process, and `nss-resolve` of `systemd` probes whether it may tag its socket with an attribute before doing so; `ENOSYS` is the answer it takes for "no" and goes on without the tag, whereas `SIGSYS` in the `trap` mode would terminate the server at the first host name lookup.
+
 Possible values:
 
 - `trap` - the kernel sends `SIGSYS` to the offending thread. ClickHouse treats it as any other fatal signal: the system call number and a stack trace go to the log, and the server terminates.
@@ -1929,7 +1933,7 @@ Possible values:
 - `log` - the system call is allowed, and only recorded. No system call is refused, so this mode enforces no policy at all; use it to check the policy against your workload before turning it on. `PR_SET_NO_NEW_PRIVS` is still set in this mode, because the kernel asks for it before it accepts a filter at all, so a setuid program the server runs does not get to elevate even here.
 - `disabled` - no filter is installed.
 
-The default is `log`, so that the policy enforces nothing until it has been validated against a workload: run the server with it, watch the kernel audit log for a system call the policy does not cover, and only then switch the setting to `trap`, `kill` or `errno`.
+The default is `log`, so that the policy enforces nothing until it has been validated against a workload: run the server with it, watch the kernel audit log for a system call the policy does not cover, and only then switch the setting to `trap`, `kill` or `errno`. The configuration file shipped with the server packages and the Docker image sets it to `trap`.
 
 Where the kernel cannot install a filter with the `log` action - it predates Linux 4.14, it is built without `CONFIG_SECCOMP_FILTER`, or an outer sandbox such as a container runtime refuses the `seccomp` system call - the `log` mode logs a warning with the reason and the server runs without a filter, since there is nothing the filter would have enforced. `PR_SET_NO_NEW_PRIVS` is set all the same. The enforcing modes do not do that: if their filter cannot be installed, the server does not start.
 
@@ -1937,7 +1941,9 @@ In every mode but `disabled` the kernel also records the offending system call i
 
 A filter cannot be removed or relaxed once installed, and it is inherited across both `fork` and `execve`, so it also applies to executable dictionaries and executable user defined functions, to the library and ODBC bridges, and to the OOM canary. A script run by one of those is subject to the same policy, which is worth keeping in mind if it does something unusual.
 
-The policy is only implemented for x86-64 and AArch64, since it is a list of architecture-specific system call numbers. On any other architecture the server logs a warning at startup and runs without a filter, but `PR_SET_NO_NEW_PRIVS`, which does not depend on the architecture, is still set in every mode but `disabled`.
+The policy is only implemented for x86-64 and AArch64, since it is a list of architecture-specific system call numbers. On any other architecture the server logs a warning at startup and runs without a filter, but `PR_SET_NO_NEW_PRIVS`, which does not depend on the architecture, is still set in every mode but `disabled`. seccomp is a facility of the Linux kernel: on other operating systems the server logs a warning at startup for any mode but `disabled` and runs without a filter.
+
+`system.server_settings` reports the mode of the filter in force, not the configured one: `disabled` wherever the server runs without a filter - on an operating system other than Linux, on an architecture without a policy, or in the `log` mode when the kernel cannot install its filter - and the mode set at startup otherwise, even after the configuration is reloaded with another value.
 
 **Example**
 
@@ -3780,18 +3786,21 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"enable_read_through_distributed_cache", {std::to_string(context->getReadThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
             {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
 
+            /// The server-wide throttlers, not `getRemoteReadThrottler()` and friends: those compose the
+            /// reading request's own per-query limit, and (for the remote pair and the distributed-cache
+            /// read) its per-user limit, on top of the server-wide one.
             {"max_remote_read_network_bandwidth_for_server",
-             {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideRemoteReadThrottler() ? std::to_string(context->getServerWideRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
-             {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideRemoteWriteThrottler() ? std::to_string(context->getServerWideRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_local_read_bandwidth_for_server",
-             {context->getLocalReadThrottler() ? std::to_string(context->getLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideLocalReadThrottler() ? std::to_string(context->getServerWideLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_local_write_bandwidth_for_server",
-             {context->getLocalWriteThrottler() ? std::to_string(context->getLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideLocalWriteThrottler() ? std::to_string(context->getServerWideLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_read_bandwidth_for_server",
-             {context->getDistributedCacheReadThrottler() ? std::to_string(context->getDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideDistributedCacheReadThrottler() ? std::to_string(context->getServerWideDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_write_bandwidth_for_server",
-             {context->getDistributedCacheWriteThrottler() ? std::to_string(context->getDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideDistributedCacheWriteThrottler() ? std::to_string(context->getServerWideDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
 #if ENABLE_DISTRIBUTED_CACHE
             {"distributed_cache_write_pool_size",
              {std::to_string(WriteBufferFromDistributedCache::getBackgroundWritePoolSize()), ChangeableWithoutRestart::Yes}},
