@@ -589,7 +589,19 @@ void SettingFieldURI::readBinary(ReadBuffer & in)
 {
     String str;
     readStringBinaryGrowing(str, in);
-    *this = Poco::URI{str};
+    *this = parseURI(str);
+}
+
+Poco::URI SettingFieldURI::parseURI(const String & str)
+{
+    try
+    {
+        return Poco::URI{str};
+    }
+    catch (const Poco::SyntaxException & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse URI: {}", e.displayText());
+    }
 }
 
 
@@ -690,6 +702,62 @@ void SettingFieldNonZeroUInt64::readBinary(ReadBuffer & in)
 }
 
 void SettingFieldNonZeroUInt64::checkValueNonZero() const
+{
+    if (value == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
+}
+
+SettingFieldNonZeroUInt32::SettingFieldNonZeroUInt32(UInt32 x) : SettingFieldUInt32(x)
+{
+    checkValueNonZero();
+}
+
+SettingFieldNonZeroUInt32::SettingFieldNonZeroUInt32(const DB::Field & f) : SettingFieldUInt32(static_cast<UInt32>(0))
+{
+    *this = f;
+    changed = false;
+}
+
+SettingFieldNonZeroUInt32 & SettingFieldNonZeroUInt32::operator=(UInt32 x)
+{
+    SettingFieldUInt32::operator=(x);
+    checkValueNonZero();
+    return *this;
+}
+
+SettingFieldNonZeroUInt32 & SettingFieldNonZeroUInt32::operator=(const DB::Field & f)
+{
+    if (f.getType() == Field::Types::String)
+    {
+        parseFromString(f.safeGet<String>());
+    }
+    else
+    {
+        SettingFieldUInt32::operator=(f);
+        checkValueNonZero();
+    }
+
+    return *this;
+}
+
+void SettingFieldNonZeroUInt32::parseFromString(const String & str)
+{
+    const UInt64 wide_value = parseWithSizeSuffix<UInt64>(str);
+    if (wide_value > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "A setting's value {} is out of range of UInt32 type", wide_value);
+    *this = static_cast<UInt32>(wide_value);
+}
+
+void SettingFieldNonZeroUInt32::readBinary(ReadBuffer & in)
+{
+    UInt64 wide_value = 0;
+    readVarUInt(wide_value, in);
+    if (wide_value > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "A setting's value {} is out of range of UInt32 type", wide_value);
+    *this = static_cast<UInt32>(wide_value);
+}
+
+void SettingFieldNonZeroUInt32::checkValueNonZero() const
 {
     if (value == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
