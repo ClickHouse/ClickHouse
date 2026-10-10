@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 DROP TABLE IF EXISTS t1;
 
 CREATE TABLE t1 (a UInt8) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity=1;
