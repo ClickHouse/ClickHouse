@@ -28,7 +28,8 @@ ATTACH TABLE mv;
 ATTACH TABLE ts;
 
 SELECT count() FROM mv;
-SELECT count() FROM timeSeriesData(currentDatabase(), ts);
+-- Parallel replicas over the non-replicated inner table would count each row once per replica.
+SELECT count() FROM timeSeriesData(currentDatabase(), ts) SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE mv;
 DROP TABLE ts;

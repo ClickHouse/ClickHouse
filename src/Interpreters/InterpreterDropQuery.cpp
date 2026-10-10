@@ -189,6 +189,14 @@ static void loadRowCountTargets(const StoragePtr & table, const ContextPtr & con
             loadRowCountTargets(resolveStorageProxyLoading(target), context, depth + 1);
 }
 
+/// Whether `table` is a table function (`CREATE TABLE t AS url(...)`) that has not been resolved
+/// yet. Resolving it creates the external storage and starts it up.
+static bool isUnresolvedTableFunction(const StoragePtr & table)
+{
+    const auto * proxy = typeid_cast<const StorageTableFunctionProxy *>(table.get());
+    return proxy && !proxy->tryGetNested();
+}
+
 /// `IF EMPTY` must not drop a table whose contents it cannot vouch for. The row count a storage
 /// derives from its metadata is exact whenever it is reported, but many storages cannot report
 /// one, and some deliberately withhold it when their metadata is self-contradictory (see
@@ -219,9 +227,21 @@ bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDr
         && (dynamic_cast<const StorageMaterializedView *>(table.get()) || dynamic_cast<const StorageTimeSeries *>(table.get())))
         return true;
 #if USE_LIBPQXX
+    /// Except in a `MaterializedPostgreSQL` database: the only detach it supports is
+    /// `DETACH ... PERMANENTLY`, which removes the table from replication and drops the nested
+    /// table with its rows (see `DatabaseMaterializedPostgreSQL::detachTablePermanently`).
     if (kind == ASTDropQuery::Kind::Detach && dynamic_cast<const StorageMaterializedPostgreSQL *>(table.get()))
-        return true;
+    {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(table->getStorageID().database_name);
+        if (!typeid_cast<const DatabaseMaterializedPostgreSQL *>(database.get()))
+            return true;
+    }
 #endif
+    /// A table function that has not been resolved yet reports no row count, so it is refused
+    /// anyway. Do not resolve it to ask whether it is a view: that would instantiate the external
+    /// storage and start it up.
+    if (isUnresolvedTableFunction(table))
+        return false;
     if (table->isView())
     {
         const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
@@ -277,20 +297,24 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
-        AccessFlags drop_storage;
-
-        if (table->isView())
-            drop_storage = AccessType::DROP_VIEW;
-        else if (table->isDictionary())
-            drop_storage = AccessType::DROP_DICTIONARY;
-        else
-            drop_storage = AccessType::DROP_TABLE;
-
         if (query.if_empty)
         {
             /// Check the access first: otherwise `IF EMPTY` would tell a user who may not drop
-            /// the table whether it is empty.
-            context_->checkAccess(query.kind == ASTDropQuery::Kind::Truncate ? AccessFlags(AccessType::TRUNCATE) : drop_storage, table_id);
+            /// the table whether it is empty. Telling a view from a table would resolve a table
+            /// function that has not been resolved yet, which `IF EMPTY` refuses anyway, so such a
+            /// table requires both grants instead.
+            AccessFlags required_access;
+            if (query.kind == ASTDropQuery::Kind::Truncate)
+                required_access = AccessType::TRUNCATE;
+            else if (isUnresolvedTableFunction(resolveStorageProxyLoading(table)))
+                required_access = AccessFlags(AccessType::DROP_TABLE) | AccessType::DROP_VIEW;
+            else if (table->isView())
+                required_access = AccessType::DROP_VIEW;
+            else if (table->isDictionary())
+                required_access = AccessType::DROP_DICTIONARY;
+            else
+                required_access = AccessType::DROP_TABLE;
+            context_->checkAccess(required_access, table_id);
             if (!isTableEmpty(table, query.kind))
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
                     "Table {} is not empty or its storage does not know how many rows it has",
@@ -340,6 +364,15 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
+
+        AccessFlags drop_storage;
+
+        if (table->isView())
+            drop_storage = AccessType::DROP_VIEW;
+        else if (table->isDictionary())
+            drop_storage = AccessType::DROP_DICTIONARY;
+        else
+            drop_storage = AccessType::DROP_TABLE;
 
         auto new_query_ptr = query.clone();
         auto & query_to_send = new_query_ptr->as<ASTDropQuery &>();
