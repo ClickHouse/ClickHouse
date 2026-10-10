@@ -374,6 +374,12 @@ public:
         return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
+    void checkCanBeDropped(ContextPtr query_context) const override
+    {
+        if (auto metadata = tryGetMetadata())
+            metadata->checkCanBeDropped(query_context);
+    }
+
     void drop(ContextPtr local_context) override
     {
         if (auto metadata = tryGetMetadata())

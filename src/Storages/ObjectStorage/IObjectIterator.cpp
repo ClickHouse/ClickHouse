@@ -78,7 +78,10 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
 
             /// Must be the formatter the `_path` column is produced with: this filter is
             /// evaluated against that column's values.
-            const auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
+            auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
+
+            if (auto metadata_path = object->getPathInDataLakeMetadata())
+                path = *metadata_path;
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,
@@ -112,7 +115,6 @@ std::string ObjectInfo::getPathOrPathToArchiveIfArchive() const
         return getPathToArchive();
     return getPath();
 }
-
 
 ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     ObjectIterator iterator_,
@@ -148,7 +150,9 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
-                const auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
+                auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
+                if (auto metadata_path = last_object_info->getPathInDataLakeMetadata())
+                    query_condition_cache_key = last_object_info->getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
                     query_condition_cache_key,
@@ -165,24 +169,25 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 }
             }
 
-            auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);
+            auto storage_to_use = last_object_info->getResolvedStorage(object_storage);
+            auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, storage_to_use, getContext(), log);
             size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
             auto file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
             for (const auto & file_bucket : file_bucket_infos)
             {
-                auto copy_object_info = *last_object_info;
+                auto copy_object_info = last_object_info->clone();
                 if (has_cache_entry)
                 {
                     auto filtered = file_bucket->filterByMatchingRowGroups(matching_row_groups);
                     if (!filtered)
                         continue;
-                    copy_object_info.file_bucket_info = std::move(filtered);
+                    copy_object_info->file_bucket_info = std::move(filtered);
                 }
                 else
                 {
-                    copy_object_info.file_bucket_info = file_bucket;
+                    copy_object_info->file_bucket_info = file_bucket;
                 }
-                pending_objects_info.push(std::make_shared<ObjectInfo>(copy_object_info));
+                pending_objects_info.push(std::move(copy_object_info));
             }
         }
     }

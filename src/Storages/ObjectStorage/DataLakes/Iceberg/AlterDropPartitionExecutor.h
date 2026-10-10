@@ -35,6 +35,7 @@ namespace DB
 {
 
 class FileNamesGenerator;
+struct ExternalStorageCache;
 class IcebergMetadata;
 
 namespace Iceberg
@@ -50,6 +51,7 @@ public:
         ObjectStoragePtr object_storage_,
         const PersistentTableComponents & components_,
         const DataLakeStorageSettings & data_lake_settings_,
+        ExternalStorageCache & external_storages_,
         String write_format_,
         LoggerPtr log_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
@@ -120,6 +122,7 @@ private:
     ObjectStoragePtr object_storage;
     const PersistentTableComponents & components;
     const DataLakeStorageSettings & data_lake_settings;
+    ExternalStorageCache & external_storages;
     String write_format;
     LoggerPtr log;
     std::shared_ptr<DataLake::ICatalog> catalog;
