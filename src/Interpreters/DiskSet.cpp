@@ -96,12 +96,15 @@ private:
 };
 
 template <typename Key>
-DiskSetImpl<Key>::DiskSetImpl(TemporaryDataOnDiskScopePtr tmp_data, size_t min_free_disk_space)
+DiskSetImpl<Key>::DiskSetImpl(
+    TemporaryDataOnDiskScopePtr tmp_data, size_t min_free_disk_space, size_t expected_keys, size_t max_bytes_for_bloom_filter)
     : file(std::make_unique<TemporaryDataBuffer>(std::move(tmp_data), min_free_disk_space))
     , encoder(std::in_place)
     , compressible_block_codec(file->getCompressedWriteBuffer().getCodec())
     , incompressible_block_codec(CompressionCodecFactory::instance().get("NONE"))
 {
+    if (max_bytes_for_bloom_filter)
+        filters = DiskSetBlockFilters<Key>::create(expected_keys, BlockFormat::keys_per_unpacked_block, max_bytes_for_bloom_filter);
 }
 
 template <typename Key>
@@ -117,7 +120,7 @@ void DiskSetImpl<Key>::add(std::span<const Key> keys)
 }
 
 template <typename Key>
-WriteBuffer & DiskSetImpl<Key>::startBlock(const Key & first_key, bool compressible)
+WriteBuffer & DiskSetImpl<Key>::startBlock(std::span<const Key> block_keys, bool compressible)
 {
     /// `next` must end the frame of the previous block before `setCodec` picks the codec of this one. The
     /// file writes into the memory of its compressed buffer but keeps its own position there, so only `next`
@@ -125,7 +128,9 @@ WriteBuffer & DiskSetImpl<Key>::startBlock(const Key & first_key, bool compressi
     file->next();
     auto & compressed = file->getCompressedWriteBuffer();
     compressed.setCodec(compressible ? compressible_block_codec : incompressible_block_codec);
-    directory.addBlock(first_key, compressed.getCompressedBytes());
+    directory.addBlock(block_keys.front(), compressed.getCompressedBytes());
+    if (filters)
+        filters->addBlock(block_keys);
     return *file;
 }
 
@@ -142,11 +147,13 @@ void DiskSetImpl<Key>::finishWriting()
     file->finishWriting();
     LOG_TRACE(
         getLogger("DiskSet"),
-        "Created set on disk with {} keys of {} bytes, {} blocks, {} bytes of directory, {} bytes in temporary file {}",
+        "Created set on disk with {} keys of {} bytes, {} blocks, {} bytes of directory, {} bytes of filters, {} bytes in "
+        "temporary file {}",
         rows,
         sizeof(Key),
         directory.size(),
         getTotalByteCount(),
+        filters ? filters->allocatedBytes() : 0,
         file->getStat().compressed_size,
         file->describeFilePath());
 }
@@ -189,40 +196,46 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
     /// Results are scattered back to their original rows, so evaluating `IN` does not reorder the input.
     ::sort(probes.begin(), probes.end(), [](const Probe & lhs, const Probe & rhs) { return lhs.key < rhs.key; });
 
-    /// Each distinct key gets its block. The keys ascend, so the search for each block starts at the block of
-    /// the previous key.
+    /// Each distinct key gets its block, and a lookup in that block unless the filter of the block rules the
+    /// key out. The keys ascend, so the search for each block starts at the block of the previous key.
     struct Lookup
     {
         size_t block;
 
-        /// The probes of the key end here, and they start where the probes of the previous key end.
+        /// The probes of the key are those from `probes_begin` up to `probes_end`.
+        size_t probes_begin;
         size_t probes_end;
     };
 
     VectorWithMemoryTracking<Lookup> lookups;
     size_t needed_blocks = 0;
+    size_t block = 0;
     for (size_t begin = 0; begin < probes.size();)
     {
         size_t end = begin + 1;
         while (end < probes.size() && probes[end].key == probes[begin].key)
             ++end;
 
-        const size_t block = directory.findBlock(probes[begin].key, lookups.empty() ? 0 : lookups.back().block);
-        needed_blocks += lookups.empty() || block != lookups.back().block;
-        lookups.push_back({block, end});
+        block = directory.findBlock(probes[begin].key, block);
+        if (!filters || filters->mayContain(block, probes[begin].key))
+        {
+            needed_blocks += lookups.empty() || block != lookups.back().block;
+            lookups.push_back({block, begin, end});
+        }
         begin = end;
     }
 
+    if (lookups.empty())
+        return;
+
     /// The reader sizes its reads from how many blocks the probes need and how far apart they are.
     BlockReader blocks(*this, needed_blocks, /*range_blocks=*/lookups.back().block - lookups.front().block + 1);
-    size_t begin = 0;
     for (const Lookup & lookup : lookups)
     {
         const auto block_keys = blocks.read(lookup.block);
-        if (std::binary_search(block_keys.begin(), block_keys.end(), probes[begin].key))
-            for (size_t i = begin; i < lookup.probes_end; ++i)
+        if (std::binary_search(block_keys.begin(), block_keys.end(), probes[lookup.probes_begin].key))
+            for (size_t i = lookup.probes_begin; i < lookup.probes_end; ++i)
                 found[probes[i].row] = 1;
-        begin = lookup.probes_end;
     }
 
     /// The rows that repeat the key of the previous row take its answer.

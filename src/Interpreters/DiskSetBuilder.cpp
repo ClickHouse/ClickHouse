@@ -58,10 +58,11 @@ DiskSetBuilder::estimateMemoryToWriteRun(size_t max_bytes_before_external_set, s
 
 /// Each column of keys is sorted and deduplicated on arrival and merged by the external sorter, which keeps
 /// one row per key, in blocks of `max_block_size` rows. The sorter writes a run once it buffers at least
-/// `getMinBytesInRun` bytes and tracked query memory exceeds `max_bytes_before_external_set`. Its final
-/// merge writes the keys into a `DiskSetImpl`. The builder checks the size limits after each merged block and
-/// once more after the set writes its last block. In the `break` mode, it stops the merge at the block that
-/// reaches the limits.
+/// `getMinBytesInRun` bytes and tracked query memory exceeds `max_bytes_before_external_set`. Its final merge
+/// writes the keys into a `DiskSetImpl`. The builder checks the size limits after each merged block and once
+/// more after the set writes its last block. In the `break` mode, it stops the merge at the block that
+/// reaches the limits. The builder also counts the distinct keys as they arrive: the filters of the set are
+/// sized before the merge writes its first key, and the sorter outputs nothing before all keys have arrived.
 template <typename Key>
 class DiskSetBuilderImpl final : public DiskSetBuilder
 {
@@ -72,6 +73,7 @@ public:
         size_t max_bytes_before_external_set,
         size_t max_block_size,
         size_t min_free_disk_space_,
+        size_t max_bytes_for_bloom_filter_,
         QueryStatusPtr process_list_element);
     ~DiskSetBuilderImpl() override;
 
@@ -94,6 +96,7 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     SizeLimits limits;
     size_t min_free_disk_space;
+    size_t max_bytes_for_bloom_filter;
     SharedHeader header;
     SortDescription description;
 
@@ -102,6 +105,9 @@ private:
 
     /// Becomes true when the set reaches its size limits in the `break` overflow mode and keeps no more keys.
     bool truncated = false;
+
+    /// Counts the distinct keys for the filters of the set. It is null when the budget of the filters is 0.
+    std::unique_ptr<typename DiskSetBlockFilters<Key>::DistinctKeyCounter> distinct_key_counter;
 
     /// The set is created with its file when the sorter delivers the first keys.
     std::unique_ptr<DiskSetImpl<Key>> set;
@@ -144,14 +150,19 @@ DiskSetBuilderImpl<Key>::DiskSetBuilderImpl(
     size_t max_bytes_before_external_set,
     size_t max_block_size,
     size_t min_free_disk_space_,
+    size_t max_bytes_for_bloom_filter_,
     QueryStatusPtr process_list_element)
     : tmp_data(std::move(tmp_data_))
     , limits(limits_)
     , min_free_disk_space(min_free_disk_space_)
+    , max_bytes_for_bloom_filter(max_bytes_for_bloom_filter_)
     , header(std::make_shared<const Block>(Block{{ColumnVector<Key>::create(), std::make_shared<DataTypeNumber<Key>>(), "key"}}))
 {
     chassert(max_bytes_before_external_set);
     description.emplace_back("key", 1, 1);
+
+    if (max_bytes_for_bloom_filter)
+        distinct_key_counter = std::make_unique<typename DiskSetBlockFilters<Key>::DistinctKeyCounter>();
 
     /// `add` passes sorted unique chunks, which lets the sorter keep one row per key in its merges.
     auto merge_sort = std::make_shared<MergeSortingTransform>(
@@ -205,6 +216,12 @@ void DiskSetBuilderImpl<Key>::add(ColumnPtr keys)
     /// and the subsequent deduplication keep.
     sortBlockAndDeduplicate(block, description, IColumn::PermutationSortStability::Unstable);
 
+    if (distinct_key_counter)
+    {
+        const auto & values = assert_cast<const ColumnVector<Key> &>(*block.getByPosition(0).column).getData();
+        distinct_key_counter->add({values.data(), values.size()});
+    }
+
     if (!executor)
         executor = std::make_unique<PushingPipelineExecutor>(pipeline);
 
@@ -219,7 +236,8 @@ void DiskSetBuilderImpl<Key>::appendSortedDistinctKeys(const IColumn & keys)
         return;
 
     if (!set)
-        set = std::make_unique<DiskSetImpl<Key>>(tmp_data, min_free_disk_space);
+        set = std::make_unique<DiskSetImpl<Key>>(
+            tmp_data, min_free_disk_space, distinct_key_counter ? distinct_key_counter->getCount() : 0, max_bytes_for_bloom_filter);
 
     set->add({values.data(), values.size()});
     checkLimits();
@@ -271,23 +289,30 @@ std::unique_ptr<DiskSetBuilder> createDiskSetBuilder(
     size_t max_bytes_before_external_set,
     size_t max_block_size,
     size_t min_free_disk_space,
+    size_t max_bytes_for_bloom_filter,
     QueryStatusPtr process_list_element)
 {
     return std::make_unique<DiskSetBuilderImpl<Key>>(
-        std::move(tmp_data), limits, max_bytes_before_external_set, max_block_size, min_free_disk_space, std::move(process_list_element));
+        std::move(tmp_data),
+        limits,
+        max_bytes_before_external_set,
+        max_block_size,
+        min_free_disk_space,
+        max_bytes_for_bloom_filter,
+        std::move(process_list_element));
 }
 
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt8>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt8>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt16>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt16>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt32>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt32>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt64>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt64>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt128>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt128>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
 template std::unique_ptr<DiskSetBuilder>
-createDiskSetBuilder<UInt256>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, QueryStatusPtr);
+createDiskSetBuilder<UInt256>(TemporaryDataOnDiskScopePtr, const SizeLimits &, size_t, size_t, size_t, size_t, QueryStatusPtr);
 
 }

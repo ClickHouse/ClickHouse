@@ -40,6 +40,10 @@ public:
     /// keys, and the size of the payload of packed gaps.
     static constexpr size_t max_block_bytes_with_header = sizeof(UInt8) + 2 * sizeof(UInt32) + block_bytes;
 
+    /// An unpacked block holds this many keys, except the last block. A block of packed gaps holds at least
+    /// twice as many, so every block but the last holds at least this many keys.
+    static constexpr size_t keys_per_unpacked_block = block_bytes / sizeof(Key);
+
     /// Receives the blocks that an `Encoder` writes, in ascending order of their keys. The sink decides how
     /// to store the blocks, so the encoder does not depend on files, frames, or codecs.
     class BlockSink
@@ -47,11 +51,11 @@ public:
     public:
         virtual ~BlockSink() = default;
 
-        /// Starts a block whose smallest key is `first_key`. Returns the buffer to write the bytes of the
-        /// block into until the next block starts. `compressible` tells the sink whether a general-purpose
-        /// codec can shrink the block. The keys of an unpacked block can repeat bytes, but packed gaps are
-        /// already dense.
-        virtual WriteBuffer & startBlock(const Key & first_key, bool compressible) = 0;
+        /// Starts the block of `block_keys`, which ascend. Returns the buffer to write the bytes of the block
+        /// into until the next block starts. `compressible` tells the sink whether a general-purpose codec
+        /// can shrink the block: it can shrink the keys of an unpacked block, which can repeat bytes, but not
+        /// packed gaps, which are already dense.
+        virtual WriteBuffer & startBlock(std::span<const Key> block_keys, bool compressible) = 0;
     };
 
     class Encoder;
@@ -68,8 +72,6 @@ private:
         /// also records the size of the packed payload.
         PackedGaps = 1,
     };
-
-    static constexpr size_t keys_per_unpacked_block = block_bytes / sizeof(Key);
 
     /// A block of packed gaps holds at most `max_keys_per_packed_block` keys, which bounds the work of
     /// decoding it for one probe. It holds at least `min_keys_per_packed_block` keys, unless it is the last

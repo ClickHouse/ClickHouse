@@ -82,6 +82,7 @@ public:
     /// keys keep the order of the keys that the set packs into integers in memory, numbers and `FixedString`
     /// values of at most 32 bytes in total, with `NULL` after the values, so these are the smallest keys.
     /// Other keys, such as `String`, are stored as 128-bit hashes, whose order is arbitrary.
+    /// The memory of the set does not include its Bloom filters, which have a budget of their own.
     /// A set that stays in memory while it is filled is usually built before the rest of the query takes its
     /// memory, so it can also spill while it is used: when `execute` finds query memory above the threshold
     /// and the keys large enough to spill, the keys are written to a `DiskSet` while other lookups keep
