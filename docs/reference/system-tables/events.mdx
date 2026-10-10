@@ -1980,6 +1980,26 @@ Number of files used by external processing (sorting/aggregating/joining)
 
 Amount of data (uncompressed, before compression) written by external processing (sorting/aggregating/joining)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+Number of compressed bytes written for `IN` sets in external memory.
+
+### ExternalSetMerge {#externalsetmerge}
+
+Number of times temporary files were merged for an `IN` set in external memory.
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+Amount of data (uncompressed, before compression) written for `IN` sets in external memory.
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+Number of times a temporary file was written to disk for an `IN` set in external memory.
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 Number of compressed bytes written for sorting in external memory.
@@ -2628,6 +2648,14 @@ Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.
 
 Number of rows emitted by DelayedJoinedBlocksWorkerTransform.
 
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+Number of times a RIGHT or FULL hash join scanned its hash table for non-joined rows.
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.
+
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
 Number of blocks emitted by NonJoinedBlocksTransform.
@@ -3251,6 +3279,10 @@ Number of primary index files loaded.
 ### LoadedPrimaryIndexRows {#loadedprimaryindexrows}
 
 Number of rows of primary key loaded.
+
+### LoadedStatistics {#loadedstatistics}
+
+Number of data parts for which column statistics were loaded
 
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
@@ -4576,6 +4608,10 @@ Time spent on reading from Azure.
 
 Number of exceptions while reading from Azure
 
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+Number of bytes read from file descriptors with the synchronous `pread` that were detected to be served from the OS page cache (this is done only for the reads with a bandwidth throttler).
+
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
 Number of reads (read/pread) from a file descriptor. Does not include sockets.
@@ -4599,6 +4635,10 @@ Time spent initializing connection to S3.
 ### ReadBufferFromS3Microseconds {#readbufferfroms3microseconds}
 
 Time spent on reading from S3.
+
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+Number of requests from S3 disks cut to one buffer fill because the connection group of the disks was at or above `disk_connections_soft_limit`.
 
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
@@ -5251,6 +5291,10 @@ Time elapsed from starting server to listening to sockets in milliseconds
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+Number of `IN` sets that spilled to disk while they were built from their subquery.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -6247,6 +6291,10 @@ Total time spent performing TLS handshakes for incoming (server) connections, in
 ### TLSServerHandshakes {#tlsserverhandshakes}
 
 Number of TLS handshakes completed for incoming (server) connections, across the server protocols that use the Poco TLS implementation: native TCP, HTTPS, MySQL and PostgreSQL. gRPC carries its own TLS stack and is not counted. Session resumption still performs a handshake and is counted here.
+
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+Number of granules skipped while reading because the primary index shows that all their rows lie beyond the running top-K threshold, published by the aggregation (see `enable_group_by_top_k_dynamic_filtering`) or by the sorting (see `use_top_k_dynamic_filtering`).
 
 ### UncompressedCacheHits {#uncompressedcachehits}
 

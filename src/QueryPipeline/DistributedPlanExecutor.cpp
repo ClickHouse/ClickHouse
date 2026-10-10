@@ -279,12 +279,6 @@ public:
         return reader_detached;
     }
 
-    /// Identifies one stream of an exchange, not the whole exchange: it is
-    /// `ExchangeStreamId::toString()`, so the buckets of one exchange have distinct names.
-    const String & getStreamName() const { return name; }
-
-    LoggerPtr getLog() const { return log; }
-
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
     /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
     /// still handed out; once a cancelled queue is empty, throws the cancellation reason.
@@ -439,7 +433,6 @@ private:
             /// data that nobody reads.
             if (exchange->isReaderDetached())
             {
-                LOG_TRACE(exchange->getLog(), "Closing input of exchange stream {}, reader detached", exchange->getStreamName());
                 input.close();
                 return Status::Finished;
             }
@@ -452,6 +445,8 @@ private:
             /// forwarding them would only grow the queue and wake the consumer for nothing.
             if (!chunk.hasRows() && chunk.getChunkInfos().empty())
                 return;
+            /// The consumer's header is deserialized without constants, so a constant column must not cross this exchange.
+            convertToFullIfConst(chunk);
             exchange->appendChunk(std::move(chunk));
         }
 
@@ -486,7 +481,6 @@ private:
             if (status == Status::Finished && !finished && !detach_notified)
             {
                 detach_notified = true;
-                LOG_TRACE(exchange->getLog(), "NoMoreDataNeeded from exchange stream {}, detaching reader", exchange->getStreamName());
                 exchange->detachReader();
             }
             return status;
@@ -952,7 +946,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     String object_storage_path = getTemporaryFilesPath(unique_temp_file_path, context);
     if (config.has(config_prefix))
     {
-        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false);
+        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false, /*run_remote_host_filter_check=*/false);
         return {object_storage, object_storage_path};
     }
     return {nullptr, object_storage_path};
