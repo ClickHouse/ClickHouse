@@ -125,6 +125,54 @@ SELECT 'deleted right side keeps orientation',
 ) WHERE explain ILIKE '%Join:%';
 
 DROP TABLE deleted_04726;
+
+-- `FINAL`, `SAMPLE` and a row policy also drop rows after the ranges are selected, so none of these
+-- right sides is a lower bound either. Each holds far fewer rows than its range count.
+CREATE TABLE final_04726 (id Int32, pad Int32) ENGINE = ReplacingMergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO final_04726 SELECT 0, number FROM numbers(100000) SETTINGS optimize_on_insert = 0;
+
+SELECT 'FINAL right side keeps orientation',
+        countIf(explain ILIKE '%final\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: final\_04726%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM small_04726 JOIN final_04726 FINAL ON small_04726.id = final_04726.id
+    WHERE small_04726.pad = 3
+) WHERE explain ILIKE '%Join:%';
+
+DROP TABLE final_04726;
+
+-- Fixed granules keep the sampled range count (one granule, about 10 sampled rows) above the left bound
+-- of 100 rows at any randomized granularity.
+CREATE TABLE sample_04726 (id Int32, pad Int32) ENGINE = MergeTree ORDER BY intHash32(id) SAMPLE BY intHash32(id)
+    SETTINGS auto_statistics_types = '', index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO sample_04726 SELECT number, number % 7 FROM numbers(100000);
+
+SELECT 'SAMPLE right side keeps orientation',
+        countIf(explain ILIKE '%sample\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: sample\_04726%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM dim_04726 JOIN sample_04726 SAMPLE 1 / 10000 ON dim_04726.id = sample_04726.id
+    WHERE dim_04726.nation_id = 5
+) WHERE explain ILIKE '%Join:%';
+
+DROP TABLE sample_04726;
+
+CREATE TABLE policy_04726 (id Int32, pad Int32) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO policy_04726 SELECT number, number FROM numbers(100000);
+CREATE ROW POLICY policy_04726 ON policy_04726 USING pad = -1 TO ALL;
+
+SELECT 'row policy right side keeps orientation',
+        countIf(explain ILIKE '%policy\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: policy\_04726%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM small_04726 JOIN policy_04726 ON small_04726.id = policy_04726.id
+    WHERE small_04726.pad = 3
+) WHERE explain ILIKE '%Join:%';
+
+DROP ROW POLICY policy_04726 ON policy_04726;
+DROP TABLE policy_04726;
 DROP TABLE small_04726;
 
 -- A relation of exactly one row bounds its own row count from above too, and a composite bound is
@@ -213,6 +261,17 @@ SELECT 'nested sub-join keeps orientation',
     EXPLAIN actions = 1, keep_logical_steps = 1
     SELECT avg(val)
     FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE name = 'nowhere') AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
+    SETTINGS query_plan_optimize_join_order_limit = 2
+) WHERE explain ILIKE '%Join:%';
+
+-- An index range selection proven empty bounds the relation at zero rows across the sub-join boundary too.
+SELECT 'nested exact-empty sub-join keeps orientation',
+        countIf(explain ILIKE '%dim\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE dim_04726.id < 0) AS d
     JOIN fact_04726 ON d.id = fact_04726.id
     SETTINGS query_plan_optimize_join_order_limit = 2
 ) WHERE explain ILIKE '%Join:%';
