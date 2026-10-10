@@ -1,6 +1,6 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/RemovalGroups.h>
 #include <Processors/IProcessor.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 
 namespace DB
 {

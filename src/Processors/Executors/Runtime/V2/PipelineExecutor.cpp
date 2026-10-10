@@ -1,5 +1,5 @@
 #include <Processors/Executors/Runtime/V2/PipelineExecutor.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ProcessList.h>
 #include <QueryPipeline/ReadProgressCallback.h>

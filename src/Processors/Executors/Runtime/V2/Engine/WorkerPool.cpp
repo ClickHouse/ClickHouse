@@ -1,5 +1,5 @@
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
@@ -184,7 +184,7 @@ WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, const ExecutionOptions & o
 
 WorkerPool::~WorkerPool()
 {
-    chassert(std::ranges::none_of(threads, [](const auto & thread) { return thread.has_value(); }));
+    Wyrd::verify(std::ranges::none_of(threads, [](const auto & thread) { return thread.has_value(); }), "The pool is destroyed with worker threads still alive");
 }
 
 void WorkerPool::run()

@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
@@ -20,6 +20,12 @@ namespace ErrorCodes
 
 namespace Runtime::Wyrd
 {
+
+void verify(bool condition, std::string message)
+{
+    if (!condition)
+        abort(std::move(message));
+}
 
 #if defined(WYRD_SIMULATION)
 

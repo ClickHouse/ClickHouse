@@ -1,6 +1,6 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <QueryPipeline/printPipeline.h>

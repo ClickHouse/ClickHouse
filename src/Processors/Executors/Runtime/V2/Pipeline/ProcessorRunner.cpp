@@ -4,7 +4,7 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
-#include <Processors/Executors/Runtime/Wyrd/Facade/Abort.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 #include <Common/Exception.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/OpenTelemetryTraceContext.h>
