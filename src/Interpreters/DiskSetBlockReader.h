@@ -107,7 +107,8 @@ public:
         if (const auto & cached_block = cached_blocks[position])
         {
             ReadBufferFromMemory cached_bytes(cached_block->bytes.data(), cached_block->bytes.size()); /// The decompressed frame
-            current_keys = decoder.decode(cached_bytes, set.directory.getFirstKey(block));
+            const DiskSetBlockHeader cached_header = BlockFormat::Decoder::readHeader(cached_bytes);
+            current_keys = decoder.decode(cached_header, cached_bytes, set.directory.getFirstKey(block));
             return current_keys;
         }
 
@@ -116,6 +117,7 @@ public:
         /// file buffer may already hold.
         in->seek(set.directory.getOffset(block), SEEK_SET);
         compressed->next();
+        const DiskSetBlockHeader header = BlockFormat::Decoder::readHeader(*compressed);
 
         /// The working buffer of the compressed buffer now holds the decompressed bytes of the block. If the
         /// cache admitted the block, the reader keeps a copy for `addReadBlocksToCache`.
@@ -127,7 +129,7 @@ public:
             read_blocks_to_cache.push_back(std::move(read_block));
         }
         ++read_blocks;
-        current_keys = decoder.decode(*compressed, set.directory.getFirstKey(block));
+        current_keys = decoder.decode(header, *compressed, set.directory.getFirstKey(block));
         return current_keys;
     }
 

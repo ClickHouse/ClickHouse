@@ -129,32 +129,41 @@ void DiskSetBlockFormat<Key>::Encoder::writePackedGaps(std::span<const Key> bloc
 }
 
 template <typename Key>
-std::span<const Key> DiskSetBlockFormat<Key>::Decoder::decode(ReadBuffer & in, const Key & first_key)
+DiskSetBlockHeader DiskSetBlockFormat<Key>::Decoder::readHeader(ReadBuffer & in)
 {
     UInt8 layout = 0;
-    UInt32 count = 0;
+    DiskSetBlockHeader header;
     readBinaryLittleEndian(layout, in); /// Whether the keys are packed or stored as they are
-    readBinaryLittleEndian(count, in); /// The number of keys of the block
-    keys.resize(count);
-    if (static_cast<Layout>(layout) == Layout::Unpacked)
+    readBinaryLittleEndian(header.key_count, in);
+    header.packed = static_cast<Layout>(layout) == Layout::PackedGaps;
+    if (header.packed)
     {
-        chassert(count <= keys_per_unpacked_block);
-        in.readStrict(reinterpret_cast<char *>(keys.data()), count * sizeof(Key)); /// The keys as they are
+        chassert(header.key_count <= max_keys_per_packed_block);
+        readBinaryLittleEndian(header.body_bytes, in); /// The size of the packed payload
+        chassert(header.body_bytes <= block_bytes);
     }
     else
     {
-        chassert(static_cast<Layout>(layout) == Layout::PackedGaps && count <= max_keys_per_packed_block);
-        decodePackedGaps(in, first_key);
+        chassert(static_cast<Layout>(layout) == Layout::Unpacked && header.key_count <= keys_per_unpacked_block);
+        header.body_bytes = static_cast<UInt32>(header.key_count * sizeof(Key)); /// The keys as they are
     }
+    return header;
+}
+
+template <typename Key>
+std::span<const Key> DiskSetBlockFormat<Key>::Decoder::decode(const DiskSetBlockHeader & header, ReadBuffer & in, const Key & first_key)
+{
+    keys.resize(header.key_count);
+    if (header.packed)
+        decodePackedGaps(header.body_bytes, in, first_key);
+    else
+        in.readStrict(reinterpret_cast<char *>(keys.data()), header.body_bytes); /// The keys as they are
     return {keys.data(), keys.size()};
 }
 
 template <typename Key>
-void DiskSetBlockFormat<Key>::Decoder::decodePackedGaps(ReadBuffer & in, const Key & first_key)
+void DiskSetBlockFormat<Key>::Decoder::decodePackedGaps(size_t payload_bytes, ReadBuffer & in, const Key & first_key)
 {
-    UInt32 payload_bytes = 0;
-    readBinaryLittleEndian(payload_bytes, in); /// The size of the packed payload
-    chassert(payload_bytes <= block_bytes);
     in.readStrict(reinterpret_cast<char *>(payload.data()), payload_bytes);
 
     offsets.resize(keys.size() - 1); /// One offset per key but the first, which comes from the directory

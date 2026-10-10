@@ -14,6 +14,17 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+/// The header of a block of `DiskSetBlockFormat`, which tells how to decode the body that follows it.
+struct DiskSetBlockHeader
+{
+    /// Whether the body holds the offsets of the keys packed by `PFor`, or the keys as they are.
+    bool packed = false;
+    UInt32 key_count = 0;
+
+    /// The size of the body: the keys of an unpacked block, or the packed payload of a block of packed gaps.
+    UInt32 body_bytes = 0;
+};
+
 /// Defines how a set on disk stores its keys in blocks. The keys are distinct and ascending, and `Key` is an
 /// unsigned integer of 8 to 256 bits.
 ///
@@ -152,14 +163,17 @@ template <typename Key>
 class DiskSetBlockFormat<Key>::Decoder
 {
 public:
-    /// Decodes the block that `in` holds, whose smallest key is `first_key`. Returns its keys, which stay
-    /// valid until the next call.
-    std::span<const Key> decode(ReadBuffer & in, const Key & first_key);
+    /// Reads the header of the block that `in` holds, after which `in` holds the body of the block.
+    static DiskSetBlockHeader readHeader(ReadBuffer & in);
+
+    /// Decodes the body of a block with `header` from `in`. `first_key` is the smallest key of the block.
+    /// Returns its keys, which stay valid until the next call.
+    std::span<const Key> decode(const DiskSetBlockHeader & header, ReadBuffer & in, const Key & first_key);
 
 private:
-    /// Decodes the payload of a block of packed gaps from `in` into `keys`. `decode` has already sized `keys`
-    /// to the number of keys of the block.
-    void decodePackedGaps(ReadBuffer & in, const Key & first_key);
+    /// Decodes the payload of `payload_bytes` bytes of a block of packed gaps from `in` into `keys`. `decode`
+    /// has already sized `keys` to the number of keys of the block.
+    void decodePackedGaps(size_t payload_bytes, ReadBuffer & in, const Key & first_key);
 
     PODArray<Key> keys;
 
