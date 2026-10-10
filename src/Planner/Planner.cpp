@@ -920,6 +920,7 @@ void applyTopKPushdownToPartialAggregation(
             .key_columns = sort_description.size(),
             .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
             .shared_boundary = settings[Setting::group_by_top_k_optimization_shared_boundary],
+            .threshold_tracker = nullptr,
         });
 }
 
