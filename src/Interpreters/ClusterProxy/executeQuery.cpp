@@ -450,6 +450,12 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         else
             new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
     }
+
+    /// `clusterAllReplicas` already reads every replica as a shard of its own, so there is nothing left
+    /// for parallel replicas to split
+    if (context->canUseTaskBasedParallelReplicas() && cluster.replicasAsShards())
+        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+
     /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
     /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
     /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
