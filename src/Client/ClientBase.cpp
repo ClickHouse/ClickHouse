@@ -6501,6 +6501,16 @@ void ClientBase::runInteractive()
             "/"   /// Oracle SQL Plus shortcut
         };
 
+#if USE_CLIENT_AI
+    /// A question for the AI agent that is just a repeat alias (`? /` or `/` in the AI mode of the
+    /// line editor). The line may carry surrounding whitespace and a trailing `;` there.
+    const auto is_repeat_last_input_question = [](const String & question)
+    {
+        const String text = trim(question, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+        return std::ranges::find(repeat_last_input_aliases, text) != repeat_last_input_aliases.end();
+    };
+#endif
+
     String last_input;
 
     do
@@ -6529,7 +6539,15 @@ void ClientBase::runInteractive()
             /// mode, which must keep repeating the last SQL query, not an AI question.
             try
             {
-                processAIChat(input);
+                /// A lone repeat alias is not a question: it repeats the last SQL query, like in
+                /// the SQL mode, instead of costing a provider turn.
+                if (is_repeat_last_input_question(input))
+                {
+                    if (!processQueryText(last_input))
+                        break;
+                }
+                else
+                    processAIChat(input);
             }
             catch (const Exception & e)
             {
@@ -6584,6 +6602,13 @@ void ClientBase::runInteractive()
                 break;
             }
         }
+
+#if USE_CLIENT_AI
+        /// The same for the inline `? /` form: repeat the last SQL query rather than asking the model.
+        if (const String trimmed_input = trim(input, [](char c) { return isWhitespaceASCII(c); });
+            trimmed_input.starts_with("?") && is_repeat_last_input_question(trimmed_input.substr(1)))
+            input = last_input;
+#endif
 
         if (suggest && suggest->getLastError() == ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
         {
