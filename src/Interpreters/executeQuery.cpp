@@ -22,6 +22,7 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -193,7 +194,6 @@ namespace Setting
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_reads_from_query_cache;
-    extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsString framing_output_format;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
@@ -218,7 +218,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
-    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsBool enable_logsql_dialect;
     extern const SettingsString logsql_database;
     extern const SettingsString logsql_table;
     extern const SettingsString logsql_time_column;
@@ -865,6 +865,27 @@ static String httpRequestURLForLogging(const ContextPtr & context)
     return url.substr(0, url.find_first_of("?#"));
 }
 
+String formatQueryForLogging(const String & query, const Settings & settings)
+{
+    const char * pos = query.data();
+    const char * end = pos + query.size();
+    ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+    String parse_error;
+    const ASTPtr ast = tryParseQuery(
+        parser,
+        pos,
+        end,
+        parse_error,
+        /*hilite*/ false,
+        "",
+        /*allow_multi_statements*/ false,
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks],
+        /*skip_insignificant*/ true);
+    return ast ? ast->formatForLogging(settings[Setting::log_queries_cut_to_length]) : "";
+}
+
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
@@ -1486,7 +1507,8 @@ void normalizeAnalyzerSettings(ASTPtr ast)
     }
 }
 
-/// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from the
+/// Remove the resource-limit settings and the stream-like direct-select ban that executeASTFuzzerQueries
+/// pins on the fuzz context, plus `profile` (it would re-apply a whole settings profile over them), from the
 /// query-level SETTINGS carriers of the fuzzed AST. These caps (row/time/memory/result/block-size
 /// limits) keep a single fuzzed query from running away. They are applied to the fuzz context up front, but
 /// executeQueryImpl re-applies the query's own SETTINGS on top of the context
@@ -1509,6 +1531,8 @@ static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
         "max_result_bytes",
         "max_block_size",
         "min_insert_block_size_rows",
+        "stream_like_engine_allow_direct_select",
+        "profile",
     };
 
     removeSettingsFromQuery(ast, limit_settings);
@@ -1734,7 +1758,7 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
     };
 
     auto exception_callback =
-        [start_watch, elem, context, ast, internal, log_as_internal, query_span](bool log_error) mutable
+        [start_watch, elem, context, ast, internal, log_as_internal, query_span](bool log_error, const QueryPipeline &) mutable
     {
         if (auto txn = context->getCurrentTransaction())
             txn->onException();
@@ -3007,7 +3031,7 @@ static BlockIO executeQueryImpl(
                     settings[Setting::max_parser_depth],
                     settings[Setting::max_parser_backtracks],
                     new_end,
-                    settings[Setting::allow_experimental_trino_dialect],
+                    settings[Setting::enable_trino_dialect],
                     settings[Setting::allow_settings_after_format_in_insert],
                     settings[Setting::implicit_select]);
                 out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -3033,7 +3057,7 @@ static BlockIO executeQueryImpl(
                 /// applied only to the JSON-deserialization branch — otherwise a session with
                 /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
                 /// cannot execute `SET dialect = 'clickhouse'` to recover.
-                if (isClickHouseJSONSetEscape(new_begin, new_end, settings[Setting::max_query_size]))
+                if (isClickHouseJSONSetEscape(new_begin, new_end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]))
                 {
                     ParserQuery parser(new_end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
                     out_ast = parseQuery(parser, new_begin, new_end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -4327,6 +4351,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+            /// A direct read of a stream-like table (Kafka, FileLog, ...) consumes its messages, which may belong to another session.
+            fuzz_context->setSetting("stream_like_engine_allow_direct_select", Field(false));
 
             /// Limit resources for each fuzzed query to prevent runaway execution.
             fuzz_context->setSetting("max_execution_time", Field(UInt64(10)));

@@ -8,18 +8,21 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/NATS/NATS_fwd.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSCoreProducer.h>
@@ -36,6 +39,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/StringUtils.h>
@@ -98,6 +102,11 @@ extern const int BAD_ARGUMENTS;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int CANNOT_CONNECT_NATS;
 extern const int QUERY_NOT_ALLOWED;
+}
+
+namespace FailPoints
+{
+extern const char nats_pause_before_building_insert_pipeline[];
 }
 
 namespace
@@ -387,6 +396,11 @@ void StorageNATS::initializeConsumersFunc()
     size_t num_views = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
     if (num_views == 0)
     {
+        /// A direct `SELECT` can hand a consumer back still subscribed after the last view is gone.
+        /// A stopped or paused table must hold no subscription, see `threadFunc`.
+        if (stream_control.isBlocked())
+            unsubscribeHandedBackConsumers();
+
         stream_control.claimCycle(last_seen_refresh_epoch);
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
@@ -466,6 +480,15 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
+            /// A direct `SELECT` that held a consumer while `unsubscribeConsumers` ran hands it back
+            /// still subscribed, with what it buffered while the table was not streaming. Replace
+            /// the subscription the way `unsubscribeConsumers` would have.
+            if (consumer->isSubscribed())
+            {
+                consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+                consumer->unsubscribe();
+            }
+
             consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
@@ -487,10 +510,53 @@ bool StorageNATS::subscribeConsumers()
     return are_consumers_initialized;
 }
 
-bool StorageNATS::consumersNeedResubscribe()
+void StorageNATS::resubscribeStaleConsumers()
 {
     std::lock_guard lock(consumers_mutex);
-    return std::ranges::any_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); });
+    for (auto & consumer : consumers)
+    {
+        if (!consumer->needsResubscribe())
+            continue;
+
+        /// Let the streaming cycles insert what is buffered first: a stale subscription receives
+        /// nothing more, so the queue drains, and the consumer keeps reporting until then.
+        if (!consumer->queueEmpty())
+        {
+            LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
+            continue;
+        }
+
+        LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
+
+        /// `onMsg` can still have appended something, which goes back to the broker.
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
+
+        try
+        {
+            consumer->subscribe();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            /// An unsubscribed consumer no longer reports that it needs to be recovered.
+            consumers_ready.store(false);
+            break;
+        }
+    }
+}
+
+void StorageNATS::unsubscribeHandedBackConsumers()
+{
+    std::lock_guard lock(consumers_mutex);
+    for (auto & consumer : consumers)
+    {
+        if (!consumer->isSubscribed())
+            continue;
+
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
+    }
 }
 
 void StorageNATS::unsubscribeConsumers()
@@ -498,8 +564,8 @@ void StorageNATS::unsubscribeConsumers()
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
     {
-        consumer->unsubscribe(/*finish_queue=*/true);
-        consumer->dropBuffered();
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
     }
 
     consumers_ready.store(false);
@@ -837,13 +903,10 @@ void StorageNATS::threadFunc()
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
 
-    /// A consumer whose subscription the NATS client has closed never receives another message,
-    /// so drop the subscriptions here and let the cycle below subscribe again.
-    if (consumers_ready && consumersNeedResubscribe())
-    {
-        LOG_INFO(log, "A subscription was closed by the NATS server, resubscribing");
-        unsubscribeConsumers();
-    }
+    /// A subscription the NATS client has closed, or one that outlived a reconnect, never receives
+    /// another message, so replace it here, keeping everything the consumer already holds locally.
+    if (consumers_ready)
+        resubscribeStaleConsumers();
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
     const bool is_connected = consumers_connection && consumers_connection->isConnected();
@@ -946,6 +1009,8 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     /// ensure no stale state is reused.
     new_context->makeQueryContext();
 
+    FailPointInjection::pauseFailPoint(FailPoints::nats_pause_before_building_insert_pipeline);
+
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
@@ -955,6 +1020,16 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /* no_destination */ true,
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
+
+    /// A `DROP VIEW` or `DETACH TABLE` after the check in `threadFunc` leaves the interpreter a
+    /// pipeline that discards what it consumes, and acknowledging that would lose the messages.
+    /// Repeat the same readiness check: the dependency metadata survives a plain `DETACH TABLE`,
+    /// and a view with a `Null` target ends in the same discarding sink legitimately.
+    if (!checkDependencies(table_id))
+    {
+        LOG_DEBUG(log, "The last materialized view was dropped or detached while the streaming cycle was being prepared, nothing to stream to");
+        return true;
+    }
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
@@ -990,6 +1065,7 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
         source->setWaitForFlushInterval(
             (*nats_settings)[NATSSetting::nats_wait_for_flush_interval] && max_execution_time.totalMicroseconds() > 0);
+        source->setBackgroundStreaming(true);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -1372,6 +1448,12 @@ void registerStorageNATS(StorageFactory & factory)
     factory.registerStorage(
         "NATS",
         creator_fn,
+        SecretArgumentsSpec{
+            /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
+            .secret_settings = NATS::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+            .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::NATS,
