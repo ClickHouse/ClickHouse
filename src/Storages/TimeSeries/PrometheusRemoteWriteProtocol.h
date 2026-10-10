@@ -8,6 +8,10 @@
 #include <Storages/IStorage_fwd.h>
 #include <prompb/remote.pb.h>
 
+namespace io::prometheus::write::v2
+{
+class Request;
+}
 
 namespace DB
 {
@@ -23,6 +27,7 @@ public:
     void write(
         const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
         const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata);
+    size_t write(const io::prometheus::write::v2::Request & request);
 
 private:
     std::shared_ptr<StorageTimeSeries> time_series_storage;
