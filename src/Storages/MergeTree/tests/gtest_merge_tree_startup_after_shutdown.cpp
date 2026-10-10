@@ -66,7 +66,7 @@ std::shared_ptr<DB::StorageMergeTree> createStorage(DB::ContextMutablePtr contex
     auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
     auto partition_key = metadata.partition_key.expression_list_ast->clone();
     metadata.minmax_count_projection.emplace(
-        ProjectionDescription::getMinMaxCountProjection(columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
+        ProjectionDescription::getMinMaxCountProjection(columns, partition_key, minmax_columns, metadata.primary_key, metadata.sorting_key, &metadata.partition_key, context));
 
     return std::make_shared<StorageMergeTree>(
         storage_id,
