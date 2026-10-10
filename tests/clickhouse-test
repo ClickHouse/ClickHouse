@@ -3181,8 +3181,10 @@ class TestCase:
             self.apply_random_settings_limits(base_settings)
             # `force_primary_key_reverse_order` changes the table definition (and the
             # physical order of data) like a MergeTree setting does, so it is randomized
-            # only when MergeTree settings are.
-            if not allow_random_mt_settings:
+            # only when MergeTree settings are. It also rewrites the stored `CREATE`
+            # query text (including hidden inner tables, e.g. of `TimeSeries`), so it is
+            # not randomized for tests that observe that text.
+            if not allow_random_mt_settings or self.test_observes_create_query_text():
                 base_settings.pop("force_primary_key_reverse_order", None)
 
         base_mt_settings = {}
