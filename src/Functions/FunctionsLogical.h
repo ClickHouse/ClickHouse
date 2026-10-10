@@ -204,7 +204,7 @@ public:
         settings.arguments_are_commutative = true;
         return name == NameAnd::name || name == NameOr::name;
     }
-    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
+    ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool eager_arguments_reordered) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isNameInsensitive() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }

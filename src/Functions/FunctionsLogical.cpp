@@ -765,8 +765,9 @@ static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & nu
   * statistics must be executed only on the rows that passed all the arguments preceding it in the original order.
   * So these arguments stay in place, and split the arguments with statistics into groups, which are sorted by rank
   * inside. Arguments that have not been executed yet go first in their group, to collect their statistics.
+  * Returns whether the order has changed.
   */
-static void orderArgumentsByStatistics(VectorWithMemoryTracking<size_t> & order, const VectorWithMemoryTracking<ShortCircuitArgumentStatistics *> & statistics)
+static bool orderArgumentsByStatistics(VectorWithMemoryTracking<size_t> & order, const VectorWithMemoryTracking<ShortCircuitArgumentStatistics *> & statistics)
 {
     VectorWithMemoryTracking<double> ranks(order.size());
     for (size_t i = 1; i < order.size(); ++i)
@@ -782,12 +783,12 @@ static void orderArgumentsByStatistics(VectorWithMemoryTracking<size_t> & order,
         group_begin = group_end == order.end() ? group_end : group_end + 1;
     }
 
-    if (!std::is_sorted(order.begin(), order.end()))
-        ProfileEvents::increment(ProfileEvents::ShortCircuitArgumentsReordered);
+    return !std::is_sorted(order.begin(), order.end());
 }
 
 template <typename Impl, typename Name>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(
+    ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool eager_arguments_reordered) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
@@ -825,8 +826,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     VectorWithMemoryTracking<size_t> order(arguments.size());
     std::iota(order.begin(), order.end(), 0);
-    if (has_statistics)
-        orderArgumentsByStatistics(order, statistics);
+    bool lazy_arguments_reordered = has_statistics && orderArgumentsByStatistics(order, statistics);
+
+    /// Counted once per block, after the final execution order is known.
+    if (eager_arguments_reordered || lazy_arguments_reordered)
+        ProfileEvents::increment(ProfileEvents::ShortCircuitArgumentsReordered);
 
     MaskInfo mask_info{.has_ones = true, .has_zeros = false};
     /// The number of rows that are still undecided, if it is known.
@@ -907,6 +911,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
             }
         }
 
+        /// Eager (cheap) arguments are executed before all the lazy ones. It changes the order of the query if a lazy
+        /// argument precedes an eager one (see `arguments_are_commutative` in ExpressionActions.cpp).
+        bool eager_arguments_reordered = !not_short_circuit_args.empty() && !short_circuit_args_index.empty()
+            && short_circuit_args_index.front() < last_not_short_circuit_arg_index;
+
         ColumnPtr partial_result = nullptr;
         if (not_short_circuit_args.size() > 1)
         {
@@ -923,7 +932,6 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         {
             /// The first argument is lazy, because it is heavy while another one is cheap (see `arguments_are_commutative`).
             /// Start from the cheap one.
-            ProfileEvents::increment(ProfileEvents::ShortCircuitArgumentsReordered);
             new_args.emplace_back(std::move(arguments[last_not_short_circuit_arg_index]));
             for (const auto & index : short_circuit_args_index)
                 new_args.emplace_back(std::move(arguments[index]));
@@ -931,7 +939,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         else
             new_args.swap(arguments);
 
-        return executeShortCircuit(new_args, result_type);
+        return executeShortCircuit(new_args, result_type, eager_arguments_reordered);
     }
 
     ColumnRawPtrs args_in;
