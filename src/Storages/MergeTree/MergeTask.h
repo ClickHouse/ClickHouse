@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 
@@ -261,6 +262,11 @@ private:
 
         MergeAlgorithm chosen_merge_algorithm{MergeAlgorithm::Undecided};
 
+        /// Union of `with_key_columns` keys across source parts, keyed by Map column name.
+        std::unordered_map<String, MapKeyManifest> map_key_unions;
+        /// Map columns whose key union is large enough to gather one key at a time.
+        NameSet per_key_vertical_map_columns;
+
         std::vector<ProjectionDescriptionRawPtr> projections_to_rebuild{};
         std::vector<ProjectionDescriptionRawPtr> projections_to_merge{};
         std::map<String, MergeTreeData::DataPartsVector> projections_to_merge_parts{};
@@ -390,6 +396,7 @@ private:
         bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
+        void collectMapKeyUnions() const;
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
@@ -429,6 +436,8 @@ private:
 
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
+        /// Exists stream written together with `column_to` for one per-key replay.
+        std::unique_ptr<MergedColumnOnlyOutputStream> column_to_exists{nullptr};
 
         /// Used for prefetching. Right before starting merge of a column we create a pipeline for the next column
         /// and it initiates prefetching of the first range of that column.
@@ -448,6 +457,27 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
+
+        struct PerKeyMapMergeState
+        {
+            /// One replay of `rows_sources` per union key writes that key's value
+            /// stream and its `.exists_` stream. Substream names are appended in
+            /// that order, matching `enumerateKeyStreams`.
+            String map_column_name;
+            DataTypePtr map_type;
+            DataTypePtr value_type;
+            SerializationPtr map_serialization;
+            SerializationPtr value_serialization;
+            MapKeyManifest union_manifest;
+            size_t key_index = 0;
+            /// Progress captured before the first key of this column. Column end
+            /// stores this plus `columnWeight`, so the two streams of one key do
+            /// not add the column weight twice.
+            Float64 progress_at_column_start = 0;
+            std::vector<String> key_substreams;
+        };
+
+        std::optional<PerKeyMapMergeState> per_key_map;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -485,7 +515,13 @@ private:
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
 
+        bool isPerKeyMapGatheringColumn() const;
+        void initPerKeyMapState() const;
+        void preparePerKeyMapKey() const;
+        void finalizePerKeyMapPiece() const;
+        void finishPerKeyMapColumn() const;
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingColumns(const Names & column_names) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;

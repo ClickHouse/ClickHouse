@@ -1,0 +1,12 @@
+late_key
+Wide
+1	['m']	0	10	0	0	0
+2	['m']	0	20	0	0	0
+3	['a','m','z']	1	30	9	1	1
+1
+Horizontal
+lc_merge
+1	['m']		M1		0	0
+2	['m']		M2		0	0
+3	['a','m','z']	A	M3	Z	1	1
+1

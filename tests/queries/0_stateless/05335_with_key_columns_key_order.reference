@@ -1,0 +1,9 @@
+insert	{'a':1,'b':2,'c':3}	['a','b','c']	[1,2,3]
+two parts	1	{'a':1,'b':2,'c':3}
+two parts	2	{'aa':5,'d':4}
+merged	1	{'a':1,'b':2,'c':3}
+merged	2	{'aa':5,'d':4}
+late key	1	{'a':1,'b':2,'c':3}
+late key	2	{'aa':5,'d':4}
+late key	14999	{'z':14989}
+late key	15000	{'0':15000,'z':14990}

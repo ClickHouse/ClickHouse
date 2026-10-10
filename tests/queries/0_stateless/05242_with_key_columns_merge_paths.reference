@@ -1,0 +1,34 @@
+queries
+1	['b','c']	0	2	1	0	1	1
+2	['a']	3	0	0	1	0	0
+except
+0
+full_substreams
+m.key_a
+m.exists_a
+m.key_b
+m.exists_b
+m.key_c
+m.exists_c
+per_key_substreams
+m.key_a
+m.exists_a
+m.key_b
+m.exists_b
+m.key_c
+m.exists_c
+full_manifest
+1
+3
+1	a
+1	b
+1	c
+per_key_manifest
+1
+3
+1	a
+1	b
+1	c
+algorithms
+Horizontal
+Vertical

@@ -1,0 +1,13 @@
+correctness_vs_basic	1
+correctness_vs_buckets	1
+mixed_basic_part_matches	1
+mixed_merged_part_matches	1
+wkc_map_contains_rewritten	1
+wkc_has_rewritten	1
+wkc_not_has_rewritten	1
+wkc_nonconst_keeps_keys	1
+basic_keeps_keys	1
+wkc_contains_fewer_files_than_full	1
+wkc_contains_less_bytes_than_full	1
+wkc_contains_less_bytes_than_cold_value	1
+wkc_contains_reads_exists_stream	1

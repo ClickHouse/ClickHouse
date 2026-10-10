@@ -8,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/LowCardinalityValueIndex.h>
 #include <Core/CompareHelper.h>
 #include <Common/assert_cast.h>
@@ -564,6 +565,27 @@ void extractKeyValueFromMap(
 
     /// Phase 2: extract values at the matched positions.
     extractValuesDispatch(values_column, result, matched_positions);
+}
+
+void extractKeyPresenceFromMap(
+    const IColumn & nested_column,
+    const IColumn & key,
+    IColumn & result,
+    size_t start,
+    size_t end)
+{
+    const auto & array_column = assert_cast<const ColumnArray &>(nested_column);
+    const auto & tuple_column = assert_cast<const ColumnTuple &>(array_column.getData());
+    const auto & offsets = array_column.getOffsets();
+    const auto & keys_column = tuple_column.getColumn(0);
+
+    PaddedPODArray<size_t> matched_positions;
+    findKeyPositionsDispatch(keys_column, offsets, key, start, end, matched_positions);
+
+    auto & result_data = assert_cast<ColumnUInt8 &>(result).getData();
+    result_data.reserve(result_data.size() + matched_positions.size());
+    for (size_t pos : matched_positions)
+        result_data.push_back(pos != KEY_NOT_FOUND ? static_cast<UInt8>(1) : static_cast<UInt8>(0));
 }
 
 namespace

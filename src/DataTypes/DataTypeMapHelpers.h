@@ -23,6 +23,15 @@ void extractKeyValueFromMap(
     size_t start,
     size_t end);
 
+/// For each row in [start, end), writes `1` into `result` when `key` occurs in that row's map, otherwise `0`.
+/// `result` is `ColumnUInt8`. `nested_column` is `Array(Tuple(key, value))`.
+void extractKeyPresenceFromMap(
+    const IColumn & nested_column,
+    const IColumn & key,
+    IColumn & result,
+    size_t start,
+    size_t end);
+
 /// Whether the name has the `map.key_<serialized_key>` shape used for a single Map key subcolumn.
 bool looksLikeMapSubcolumnName(const String & column_name);
 
