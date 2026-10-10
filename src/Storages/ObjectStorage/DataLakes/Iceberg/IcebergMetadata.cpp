@@ -234,8 +234,15 @@ void IcebergMetadata::setExplicitMetadataFilePath(const String & path)
 
 bool IcebergMetadata::isMetadataFileOfThisTable(const String & path, ContextPtr local_context) const
 {
-    if (path.empty() || !persistent_components.table_uuid)
+    if (path.empty())
         return false;
+    if (!persistent_components.table_uuid)
+    {
+        /// Without a table uuid only an unchanged metadata file proves the same table, and a recreated table can reuse a `v<N>` name.
+        const auto current_path = explicit_metadata_file_path.get();
+        return path == (current_path ? *current_path : data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value)
+            && !isVersionNumberedCommitScheme(std::filesystem::path(path).filename());
+    }
     DataLakeStorageSettings lookup_settings = data_lake_settings;
     lookup_settings[DataLakeStorageSetting::iceberg_metadata_file_path] = path;
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(

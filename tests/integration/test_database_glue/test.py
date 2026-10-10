@@ -2180,6 +2180,15 @@ def test_recreated_table_with_compaction_enabled(started_cluster):
     node.query(f"DROP DATABASE {compaction_db}")
 
 
+def opened_storages(node, table):
+    query_id = uuid.uuid4().hex
+    node.query(f"SELECT * FROM {table} FORMAT Null", query_id=query_id)
+    node.query("SYSTEM FLUSH LOGS query_log")
+    return node.query(
+        f"SELECT length(used_storages) FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    )
+
+
 def test_recreated_clickhouse_table_with_compaction_enabled(started_cluster):
     """
     A table created and written by ClickHouse, dropped and recreated in Glue under the same name and location with
@@ -2210,16 +2219,8 @@ def test_recreated_clickhouse_table_with_compaction_enabled(started_cluster):
     # The compaction database keeps the table it opened, so an unchanged read through it opens no storage, while each
     # read through the plain database opens one. Request counts cannot show this: a version-named metadata file is
     # read again on every lookup.
-    def opened_storages(db):
-        query_id = uuid.uuid4().hex
-        node.query(f"SELECT * FROM {db}.`{identifier}` FORMAT Null", query_id=query_id)
-        node.query("SYSTEM FLUSH LOGS query_log")
-        return node.query(
-            f"SELECT length(used_storages) FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        )
-
-    assert opened_storages(compaction_db) == "0\n"
-    assert opened_storages(CATALOG_NAME) == "1\n"
+    assert opened_storages(node, f"{compaction_db}.`{identifier}`") == "0\n"
+    assert opened_storages(node, f"{CATALOG_NAME}.`{identifier}`") == "1\n"
 
     # Drop, delete the files so that the location can be used again, then recreate it with another schema and write
     # as many versions as the dropped table had.
@@ -2234,6 +2235,74 @@ def test_recreated_clickhouse_table_with_compaction_enabled(started_cluster):
     s3.Bucket("warehouse-glue").objects.filter(Prefix=f"{table_name}/").delete()
     create_clickhouse_glue_table(started_cluster, node, namespace, table_name, "(b String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{identifier}` VALUES ('x'), ('y')", settings=write_settings)
+    check("x\ny\n")
+
+    node.query(f"DROP DATABASE {compaction_db}")
+
+
+def test_table_without_uuid_with_compaction_enabled(started_cluster):
+    """
+    A format-version 1 table whose metadata has no `table-uuid` is kept by a database with
+    `allow_experimental_iceberg_compaction` while Glue points at the same metadata file, and is read as the new table
+    after a drop and recreate under the same name and location.
+    """
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_table_without_uuid_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    identifier = f"{namespace}.table"
+    location = f"s3://warehouse-glue/{test_ref}"
+    compaction_db = f"{CATALOG_NAME}_compaction"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=minio_access_key,
+        aws_secret_access_key=minio_secret_key,
+        region_name="us-east-1",
+    )
+
+    def create_table_without_uuid(field, values, metadata_file_name):
+        table = catalog.create_table(identifier, schema=Schema(field), location=location, properties={"format-version": "1"})
+        table.append(values)
+        metadata = json.loads(
+            s3.get_object(Bucket="warehouse-glue", Key=table.metadata_location.removeprefix("s3://warehouse-glue/"))["Body"].read()
+        )
+        del metadata["table-uuid"]
+        key = f"{test_ref}/metadata/{metadata_file_name}"
+        s3.put_object(Bucket="warehouse-glue", Key=key, Body=json.dumps(metadata))
+        catalog.drop_table(identifier)
+        catalog.register_table(identifier, f"s3://warehouse-glue/{key}")
+
+    double_table = (NestedField(1, "a", DoubleType(), required=False), pa.table({"a": pa.array([1.5, 2.5], type=pa.float64())}))
+    string_table = (NestedField(1, "b", StringType(), required=False), pa.table({"b": pa.array(["x", "y"], type=pa.string())}))
+
+    create_table_without_uuid(*double_table, f"00002-{uuid.uuid4()}.metadata.json")
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_database(
+        started_cluster, node, compaction_db, additional_settings={"allow_experimental_iceberg_compaction": 1}
+    )
+
+    def check(expected):
+        for db in [CATALOG_NAME, compaction_db]:
+            assert node.query(f"SELECT * FROM {db}.`{identifier}` ORDER BY ALL") == expected, db
+
+    check("1.5\n2.5\n")
+    assert opened_storages(node, f"{compaction_db}.`{identifier}`") == "0\n"
+    assert opened_storages(node, f"{CATALOG_NAME}.`{identifier}`") == "1\n"
+
+    # Same name and location, another schema under the same schema-id.
+    catalog.drop_table(identifier)
+    create_table_without_uuid(*string_table, f"00002-{uuid.uuid4()}.metadata.json")
+    check("x\ny\n")
+
+    # Also when the new table's metadata file has the same version-only name as the old one's.
+    catalog.drop_table(identifier)
+    create_table_without_uuid(*double_table, "v1.metadata.json")
+    check("1.5\n2.5\n")
+    catalog.drop_table(identifier)
+    create_table_without_uuid(*string_table, "v1.metadata.json")
     check("x\ny\n")
 
     node.query(f"DROP DATABASE {compaction_db}")
