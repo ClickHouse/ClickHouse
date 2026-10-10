@@ -337,12 +337,16 @@ public:
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 
-    /// Check if a skip index can be used when there are lightweight updates.
-    /// Returns an error message if the index depends on a column that will be updated on the fly.
+    /// Returns an error if the index depends on a column updated on the fly. A value update
+    /// (@value_updated_columns: ALTER UPDATE / patches) always makes it stale. A value-preserving type
+    /// change is tolerated when @part records the granules were built against the current read type.
+    /// @part is optional: some callers aggregate updated columns across parts and decide once.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
-        const NameSet & all_updated_columns);
+        const NameSet & all_updated_columns,
+        const NameSet & value_updated_columns,
+        const IMergeTreeDataPart * part = nullptr);
 
 
 };

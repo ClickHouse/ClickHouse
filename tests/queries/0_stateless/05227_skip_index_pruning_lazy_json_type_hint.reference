@@ -1,0 +1,23 @@
+-- fresh index over an unmaterialized lazy hint (wide part)
+1
+0
+1
+1
+-- parent type changed, indexed subcolumn unchanged
+1
+1
+-- compact part
+1
+1
+-- top-k over an unmaterialized lazy hint
+0
+1
+-- pending value update: no override
+1
+1
+-- pending value update: with override
+prunes before update	1
+does not prune after update	0
+-- normal table still prunes
+1
+1

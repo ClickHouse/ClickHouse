@@ -241,7 +241,11 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
         if (auto alter = command.ast(); alter && alter->update_assignments)
         {
             for (const auto & child : alter->update_assignments->children)
-                all_updated_columns.insert(child->as<ASTAssignment &>().column_name);
+            {
+                const auto & column_name = child->as<ASTAssignment &>().column_name;
+                all_updated_columns.insert(column_name);
+                value_updated_columns.insert(column_name);
+            }
         }
 
         mutation_commands.push_back(command);
@@ -265,6 +269,7 @@ void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
             updated_column_name = patch_conversions->getColumnNewName(column.name);
 
         all_updated_columns.insert(updated_column_name);
+        value_updated_columns.insert(updated_column_name);
         columns_updated_in_patches.insert(updated_column_name);
     }
 
