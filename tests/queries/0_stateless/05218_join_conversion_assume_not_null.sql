@@ -12,6 +12,8 @@ SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_merge_filter_into_join_condition = 0; -- absorbing WHERE into ON prevents the conversion
 SET enable_parallel_replicas = 0;
+SET join_use_nulls = 0; -- the arms below expect defaults, not NULLs, in a not-matched row
+SET join_algorithm = 'hash'; -- not every algorithm can run the SEMI join planned below
 
 DROP TABLE IF EXISTS t_ann_left;
 DROP TABLE IF EXISTS t_ann_right;
