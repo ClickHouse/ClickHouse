@@ -175,13 +175,15 @@ echo "11 table still reloadable $(reloaded_count "$ORD1" t11)"
 
 # 12. If restoring the handle also fails, the table stays attached under the old name with its data
 # intact on disk but no usable handle. Reads must refuse instead of reporting zero rows, which is
-# the very symptom this fix removes. The failpoint is REGULAR because both the forward reopen and
-# the rollback reopen have to fail for that state to be reached, so the test disables it explicitly.
+# the very symptom this fix removes, and OPTIMIZE must refuse instead of reporting success. The
+# failpoint is REGULAR because both the forward reopen and the rollback reopen have to fail for
+# that state to be reached, so the test disables it explicitly.
 make_table "$ORD1" t12 3 "EmbeddedRocksDB"
 $CLIENT -q "SYSTEM ENABLE FAILPOINT rocksdb_rename_fail_reopen"
 $CLIENT -q "RENAME TABLE $ORD1.t12 TO $ORD1.t12_target" 2>&1 | grep -c "FAULT_INJECTED" | sed 's/^/12 rename failed /'
 echo "12 full scan refuses $($CLIENT -q "SELECT * FROM $ORD1.t12" 2>&1 | grep -c "ROCKSDB_ERROR")"
 echo "12 key lookup refuses $($CLIENT -q "SELECT * FROM $ORD1.t12 WHERE k = 1" 2>&1 | grep -c "ROCKSDB_ERROR")"
+echo "12 optimize refuses $($CLIENT -q "OPTIMIZE TABLE $ORD1.t12" 2>&1 | grep -c "ROCKSDB_ERROR")"
 $CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_fail_reopen"
 # The data was never moved, so a reload recovers the table completely.
 echo "12 reloaded $(reloaded_count "$ORD1" t12)"

@@ -22,6 +22,7 @@
 12 rename failed 1
 12 full scan refuses 1
 12 key lookup refuses 1
+12 optimize refuses 1
 12 reloaded 3
 13 concurrent read excluded 1
 13 attach from count 5

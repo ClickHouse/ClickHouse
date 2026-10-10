@@ -174,5 +174,6 @@ private:
     void initDB() TSA_NO_THREAD_SAFETY_ANALYSIS;
     /// initDB() plus a fault-injection point that only rename() can trip.
     void initDBForRename() TSA_NO_THREAD_SAFETY_ANALYSIS;
+    void throwIfHandleUnusable() const TSA_REQUIRES_SHARED(rocksdb_ptr_mx);
 };
 }

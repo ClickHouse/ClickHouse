@@ -331,11 +331,7 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
 {
     std::lock_guard lock(rocksdb_ptr_mx);
     /// rocksdb_dir may differ from the metadata path, which is what a reload opens.
-    if (handle_unusable)
-        throw Exception(
-            ErrorCodes::ROCKSDB_ERROR,
-            "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
-            getStorageID().getNameForLogs(), rocksdb_dir);
+    throwIfHandleUnusable();
 
     /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
     /// the following initDB() threw (e.g. a read_only table whose data was wiped).
@@ -357,6 +353,15 @@ void StorageEmbeddedRocksDB::initDBForRename()
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while reopening RocksDB after a rename");
     });
     initDB();
+}
+
+void StorageEmbeddedRocksDB::throwIfHandleUnusable() const
+{
+    if (handle_unusable)
+        throw Exception(
+            ErrorCodes::ROCKSDB_ERROR,
+            "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+            getStorageID().getNameForLogs(), rocksdb_dir);
 }
 
 void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
@@ -578,7 +583,10 @@ bool StorageEmbeddedRocksDB::optimize(
 
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
+    {
+        throwIfHandleUnusable();
         return true;
+    }
     rocksdb::CompactRangeOptions compact_options;
     auto status = rocksdb_ptr->CompactRange(compact_options, nullptr, nullptr);
     if (!status.ok())
@@ -1267,11 +1275,7 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
             SharedLockGuard lock(storage.rocksdb_ptr_mx);
             if (!storage.rocksdb_ptr)
             {
-                if (storage.handle_unusable)
-                    throw Exception(
-                        ErrorCodes::ROCKSDB_ERROR,
-                        "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
-                        storage.getStorageID().getNameForLogs(), storage.rocksdb_dir);
+                storage.throwIfHandleUnusable();
                 pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
                 return;
             }
@@ -1470,11 +1474,7 @@ StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
     {
-        if (handle_unusable)
-            throw Exception(
-                ErrorCodes::ROCKSDB_ERROR,
-                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
-                getStorageID().getNameForLogs(), rocksdb_dir);
+        throwIfHandleUnusable();
         return {};
     }
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
@@ -1597,11 +1597,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
     {
-        if (handle_unusable)
-            throw Exception(
-                ErrorCodes::ROCKSDB_ERROR,
-                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
-                getStorageID().getNameForLogs(), rocksdb_dir);
+        throwIfHandleUnusable();
         return {};
     }
     UInt64 estimated_rows = 0;
@@ -1615,11 +1611,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
     {
-        if (handle_unusable)
-            throw Exception(
-                ErrorCodes::ROCKSDB_ERROR,
-                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
-                getStorageID().getNameForLogs(), rocksdb_dir);
+        throwIfHandleUnusable();
         return {};
     }
     UInt64 estimated_bytes = 0;
