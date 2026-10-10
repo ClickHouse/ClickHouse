@@ -780,9 +780,9 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condi
     canonical data is the object files, not MAIN_BINARY. May legitimately be
     absent while master catches up with profiling the warmup build.
 
-    As in `find_baseline`, the `binary_sizes` row is the completion marker: it
-    is uploaded after the time trace, so a warmup commit selected here also has
-    the per-TU compile times the drill-down reads.
+    As in `find_baseline`, an object-file `binary_sizes` row is the completion
+    marker: it is uploaded after the time trace, so a warmup commit selected
+    here also has the per-TU compile times the drill-down reads.
     """
     candidates = [sha for sha in master_shas if sha != pr_sha][:100]
     if not candidates:
@@ -794,6 +794,7 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condi
             AND {repo_condition(repo)}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
+            AND {OBJECT_FILTER}
             AND commit_sha IN ({in_list(candidates)})"""
     )
     with_data = {row["commit_sha"] for row in rows}
