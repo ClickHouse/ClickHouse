@@ -712,6 +712,9 @@
     M(1019, QUERY_SLOT_ACQUISITION_TIMEOUT) \
     M(1020, MEMORY_RESERVATION_ACQUISITION_TIMEOUT) \
     M(1021, AZURE_OBJECT_CHANGED_DURING_READ) \
+    M(1022, SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED) \
+    M(1023, XGBOOST_ERROR) \
+    M(1024, BUZZHOUSE_ORACLE) \
     /* Error codes do not have to be contiguous, they only have to be unique - this is checked by a `static_assert` below. */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES

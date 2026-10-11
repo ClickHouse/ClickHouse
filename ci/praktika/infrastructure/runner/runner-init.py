@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 77
+    version: int = 78
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -224,6 +224,8 @@ class Runner:
         if config.init_environment == Environment.MACOS:
             # Drop swap files and other accumulated state; the random offset staggers reboots across the fleet.
             config.max_life = 3600 * 24 * 3 + 900 * random.randint(0, 24)
+            # 20 GiB in KiB; a Fast test job uses several GiB of the rootfs.
+            config.free_blocks_threshold = 20 * 1024 * 1024
 
         log(f"max jobs: {config.max_jobs}")
         log(f"max chill: {config.max_chill}")
@@ -242,6 +244,10 @@ class Runner:
         if self.total_errors > config.max_total_errors:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
+
+        # Checked before every job on all runners, including macOS: a host that
+        # boots still full has to refuse the next job, not just the one after it.
+        Runner.check_free_disk_space()
 
         if config.init_environment == Environment.MACOS:
             self._exit_if_init_script_upgraded()
@@ -449,23 +455,27 @@ class Runner:
             return
 
     @staticmethod
-    def check_post_run() -> None:
-        if config.init_environment == Environment.MACOS:
-            return
-        result = subprocess.run(["df", "/"], capture_output=True, text=True, check=True)
+    def check_free_disk_space() -> None:
+        usage = shutil.disk_usage("/")
+        free_blocks = usage.free // 1024
+        free_percent = usage.free * 100 // usage.total
         if config.verbose:
-            log(f"df / output:\n{result.stdout}", "post-run")
-        last = result.stdout.splitlines()[-1].split()
-
-        free_blocks = int(last[3])
-        free_percent = int(last[3]) * 100 // int(last[1])
+            log(f"rootfs: {free_blocks} KiB free, {free_percent}%", "disk-space")
 
         if free_blocks < config.free_blocks_threshold:
-            raise RuntimeError(f"Out of disk space: {free_blocks} blocks on rootfs")
+            raise RuntimeError(f"Out of disk space: {free_blocks} KiB free on rootfs")
         if free_percent < config.free_blocks_threshold_percent:
             raise RuntimeError(
                 f"Out of disk space: {free_percent}% of free space on rootfs"
             )
+
+    @staticmethod
+    def check_post_run() -> None:
+        Runner.check_free_disk_space()
+
+        # Docker is not installed on the macOS runners
+        if config.init_environment == Environment.MACOS:
+            return
 
         run_bash(
             """

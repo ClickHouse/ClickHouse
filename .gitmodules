@@ -93,7 +93,7 @@
 	url = https://github.com/ClickHouse/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
-	url = https://github.com/ClickHouse/flatbuffers
+	url = https://github.com/google/flatbuffers
 [submodule "contrib/replxx"]
 	path = contrib/replxx
 	url = https://github.com/ClickHouse/replxx
@@ -332,7 +332,7 @@
 	url = https://github.com/ClickHouse/mongo-cxx-driver.git
 [submodule "contrib/mongo-c-driver"]
 	path = contrib/mongo-c-driver
-	url = https://github.com/ClickHouse/mongo-c-driver.git
+	url = https://github.com/ClickHouse/mongo-c-driver
 [submodule "contrib/sz3"]
 	path = contrib/sz3
 	url = https://github.com/ClickHouse/SZ3.git
@@ -351,6 +351,9 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
+[submodule "contrib/xgboost"]
+	path = contrib/xgboost
+	url = https://github.com/ClickHouse/xgboost
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
@@ -381,6 +384,9 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/heks"]
+	path = contrib/heks
+	url = https://github.com/ClickHouse/heks.git
 [submodule "contrib/musl"]
 	path = contrib/musl
 	url = https://github.com/ClickHouse/musl
@@ -414,6 +420,9 @@
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/hellobertrand/zxc
+[submodule "contrib/dmlc-core"]
+	path = contrib/dmlc-core
+	url = https://github.com/dmlc/dmlc-core
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext
