@@ -1,5 +1,9 @@
 #pragma once
 
+#include <functional>
+#include <optional>
+#include <string_view>
+
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/IThrottler.h>
 
@@ -22,13 +26,12 @@ public:
         bool use_adaptive_buffer_size_ = false,
         size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
 
+    ~WriteBufferFromFileDescriptor() override;
+
     /** Could be used before initialization if needed 'fd' was not passed to constructor.
       * It's not possible to change 'fd' during work.
       */
-    void setFD(int fd_)
-    {
-        fd = fd_;
-    }
+    void setFD(int fd_);
 
     int getFD() const
     {
@@ -47,6 +50,50 @@ public:
 
     off_t size() const;
 
+    /// If set, the callback is consulted while writing the buffer: when it returns true, the
+    /// buffered data is discarded instead of being written. To keep it responsive even when the
+    /// sink blocks, writes to a descriptor that can block (a pipe, socket or terminal) are then
+    /// done by waiting for writability with a timeout (checking the callback in between) and in
+    /// a way that cannot sleep indefinitely in a single write() (see nextImpl). This is used by
+    /// the client to abort the output of a result set promptly on Ctrl+C even while a write to a
+    /// slow sink (e.g. a slow terminal) would otherwise block. Passing an empty hook removes it.
+    ///
+    /// The optional second callback separates "give up on a sink that is not draining" from
+    /// "discard the output": while it returns true, the responsive path stops waiting for a sink
+    /// with no room and returns instead of sleeping until the sink accepts the data, but data is
+    /// still written as long as the sink takes it. The client uses it for the first Ctrl+C of a
+    /// `partial_result_on_first_cancel` query, which must break out of a stuck write without
+    /// discarding the partial result that follows. When it is empty, the cancellation hook alone
+    /// governs both, which is the behavior of a query that stops on the first signal.
+    void setCancellationHook(std::function<bool()> cancellation_hook_, std::function<bool()> interruption_hook_ = {});
+
+    /// Best-effort direct write of a small out-of-band message (e.g. an interactive diagnostic
+    /// printed while cancelling a query), bypassing both the internal buffer and the cancellation
+    /// hook. It never blocks longer than the given budget: if the sink stays unwritable (e.g. a
+    /// terminal that stopped draining), the rest of the message is dropped - nothing is reading
+    /// that sink anyway. It does not touch the internal buffer state, so it is safe to call while
+    /// another thread writes through the buffer, but the message may then interleave with that
+    /// output.
+    void writeBestEffort(std::string_view data, UInt64 timeout_ms);
+
+    /// While a budget is set, every flush of the internal buffer is written with the same bounded,
+    /// never-throwing discipline as writeBestEffort: whatever the sink does not accept within the
+    /// budget is dropped. It takes precedence over the cancellation hook, which would discard the
+    /// data outright once cancellation is requested. Used for writes that are still wanted while
+    /// cancellation may be fighting a stuck sink - e.g. clearing the progress indication on
+    /// Ctrl+C, when the terminal may be exactly what is stuck. Passing std::nullopt removes the
+    /// budget.
+    void setBestEffortFlushBudget(std::optional<UInt64> timeout_ms)
+    {
+        best_effort_flush_budget_ms = timeout_ms;
+    }
+
+    /// The currently installed budget, so that a nested scope can restore it instead of dropping it.
+    std::optional<UInt64> getBestEffortFlushBudget() const
+    {
+        return best_effort_flush_budget_ms;
+    }
+
 protected:
     void nextImpl() override;
 
@@ -55,6 +102,47 @@ protected:
 
     /// If file has name contains filename, otherwise contains string "(fd=...)"
     std::string file_name;
+
+    /// See setCancellationHook.
+    std::function<bool()> cancellation_hook;
+    std::function<bool()> interruption_hook;
+
+    /// Whether the responsive path should stop waiting for a sink that has no room. Falls back to
+    /// the cancellation hook when no separate interruption hook is installed.
+    bool interrupted() const { return interruption_hook ? interruption_hook() : cancellation_hook(); }
+
+    /// Classifies the sink (cancellation_fd_can_block, cancellation_fd_is_socket) and opens the
+    /// private non-blocking descriptor for a terminal (nonblocking_write_fd). Done once per
+    /// descriptor - when the cancellation hook is installed or on the first writeBestEffort,
+    /// whichever comes first - so writeBestEffort honors its budget even on a buffer that never
+    /// had a hook (a blocking tty write() after POLLOUT could otherwise sleep past it).
+    void initializeResponsiveWriteState();
+
+    /// Whether initializeResponsiveWriteState has run for the current descriptor.
+    bool responsive_write_state_initialized = false;
+
+    /// Whether a write to this descriptor can block (true for pipes, sockets and terminals; false
+    /// for regular files, which never block on write). Computed by
+    /// initializeResponsiveWriteState; only consulted on the responsive and best-effort paths.
+    bool cancellation_fd_can_block = false;
+
+    /// Whether the descriptor is a socket. The responsive path then uses send(..., MSG_DONTWAIT),
+    /// which is non-blocking per call without touching the open file description flags.
+    bool cancellation_fd_is_socket = false;
+
+    /// A private non-blocking descriptor for the same terminal, used by the responsive write path
+    /// when the sink is a tty. O_NONBLOCK cannot simply be set on `fd`: the flag is a property of
+    /// the open file description, which a terminal fd shares with fd 2 and the parent shell, so
+    /// toggling it there leaks to unrelated writers (that broke the progress rendering once - see
+    /// 3f8b12c2736). Re-opening the terminal by its path - recovered via /proc/self/fd (Linux),
+    /// fcntl(F_GETPATH) (Darwin) or ttyname_r() (elsewhere, e.g. FreeBSD) - yields an independent
+    /// open file description, so O_NONBLOCK on it affects nobody else. -1 when unavailable (not a
+    /// terminal, or the re-open failed) - the responsive path then falls back to poll() + a
+    /// blocking write capped at PIPE_BUF.
+    int nonblocking_write_fd = -1;
+
+    /// See setBestEffortFlushBudget.
+    std::optional<UInt64> best_effort_flush_budget_ms;
 
     void finalizeImpl() override;
 };
