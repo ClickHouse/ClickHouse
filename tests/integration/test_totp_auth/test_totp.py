@@ -7,6 +7,7 @@ import struct
 import time
 import xml.etree.ElementTree as ET
 
+import pymysql
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -22,10 +23,15 @@ USERS_CONFIG = os.path.join(SCRIPT_DIR, "config/users.xml")
 INTERACTIVE_USERS = [f"totuser_interactive_{i}" for i in range(3)]
 NO_PASSWORD_USERS = [f"totuser_no_password_{i}" for i in range(2)]
 EMPTY_PASSWORD_USERS = [f"totuser_empty_password_{i}" for i in range(2)]
+MYSQL_USERS = {
+    "totuser_mysql_plaintext": "aa+bb",
+    "totuser_mysql_double_sha1": "abacaba",
+}
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=["config/mysql.xml"],
     user_configs=["config/users.xml"],
     stay_alive=True,
 )
@@ -202,6 +208,99 @@ def test_interactive_totp_authentication(started_cluster):
         command=f"{client_command(user0)} --password wrongpwd+{get_otp(user0)}"
     ) as c:
         c.expect(expected_error)
+
+
+def mysql_connect(user, password):
+    return pymysql.connections.Connection(
+        host=node.ip_address,
+        user=user,
+        password=password,
+        database="default",
+        port=9004,
+    )
+
+
+def test_mysql_protocol_requires_totp(started_cluster):
+    """The MySQL protocol must enforce TOTP: the `mysql_native_password` auth response is a hash
+    of the password alone and cannot carry a one-time password, so the server switches such
+    users to the `sha256_password` plugin and the client appends the TOTP to the password.
+    """
+
+    for user, password in MYSQL_USERS.items():
+        # The correct password alone must not authenticate: the second factor is required.
+        # The message is intentionally generic; only the error code tells the reason.
+        with pytest.raises(pymysql.err.MySQLError) as exc_info:
+            mysql_connect(user, password)
+        assert exc_info.value.args[0] == 767  # REQUIRED_SECOND_FACTOR
+
+        # A wrong one-time password must not authenticate.
+        with pytest.raises(pymysql.err.MySQLError, match="Authentication failed"):
+            mysql_connect(user, password + "+000000000")
+
+        conn = mysql_connect(user, f"{password}+{get_otp(user)}")
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT currentUser()")
+            assert cursor.fetchall() == ((user,),)
+        finally:
+            conn.close()
+
+
+def test_mysql_protocol_fail_close_on_unverifiable_methods(started_cluster):
+    """`IAccessStorage::authenticateImpl` fails close for ambiguous credentials: when the same
+    password is accepted by several methods, the session expires at the earliest of their
+    `VALID UNTIL` and is limited to the intersection of their `GRANTS`. The `mysql_native_password`
+    auth response can only be re-checked against `plaintext_password` and `double_sha1_password`
+    methods, so a `scram_sha256_password` or `bcrypt_password` method that narrows the session
+    would silently drop out of that combination. Such users are switched to the `sha256_password`
+    plugin, which transmits the actual password, so every method takes part in the check.
+    """
+
+    for user, other_method in (
+        ("mysql_double_sha1_and_scram", "scram_sha256_password"),
+        ("mysql_double_sha1_and_bcrypt", "bcrypt_password"),
+    ):
+        node.query(
+            f"CREATE USER {user} IDENTIFIED WITH double_sha1_password BY 'pw', "
+            f"{other_method} BY 'pw' VALID UNTIL '2000-01-01 00:00:00'"
+        )
+        try:
+            # The native protocol rejects the shared password as expired ...
+            assert "AUTHENTICATION_FAILED" in node.query_and_get_error(
+                "SELECT 1", user=user, password="pw"
+            )
+            # ... and so must the MySQL protocol.
+            with pytest.raises(pymysql.err.MySQLError, match="Authentication failed"):
+                mysql_connect(user, "pw")
+
+            # Without the narrowing method the user is served by `mysql_native_password` again.
+            node.query(
+                f"ALTER USER {user} IDENTIFIED WITH double_sha1_password BY 'pw'"
+            )
+            conn = mysql_connect(user, "pw")
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT currentUser()")
+                assert cursor.fetchall() == ((user,),)
+            finally:
+                conn.close()
+        finally:
+            node.query(f"DROP USER IF EXISTS {user}")
+
+    # A user with only such a method could not log in over MySQL at all before: now `sha256_password` serves it.
+    node.query(
+        "CREATE USER mysql_scram_only IDENTIFIED WITH scram_sha256_password BY 'pw'"
+    )
+    try:
+        conn = mysql_connect("mysql_scram_only", "pw")
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT currentUser()")
+            assert cursor.fetchall() == (("mysql_scram_only",),)
+        finally:
+            conn.close()
+    finally:
+        node.query("DROP USER IF EXISTS mysql_scram_only")
 
 
 def test_one_time_only_no_password(started_cluster):
