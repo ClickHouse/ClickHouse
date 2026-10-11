@@ -920,6 +920,10 @@ The server successfully detected this situation and will download merged part fr
 
 Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.
 
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+Number of tables a database handed out through its table iterator - to `SHOW TABLES`, the system tables that list tables and everything else that walks a database. A condition on the table name in a query over such a system table narrows the enumeration, and this counter shows by how much.
+
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
 Number of rows processed by default implementation for nulls in function execution
@@ -1980,6 +1984,26 @@ Number of files used by external processing (sorting/aggregating/joining)
 
 Amount of data (uncompressed, before compression) written by external processing (sorting/aggregating/joining)
 
+### ExternalSetCompressedBytes {#externalsetcompressedbytes}
+
+Number of compressed bytes written for `IN` sets in external memory.
+
+### ExternalSetMerge {#externalsetmerge}
+
+Number of times temporary files were merged for an `IN` set in external memory.
+
+### ExternalSetReadBlocks {#externalsetreadblocks}
+
+Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.
+
+### ExternalSetUncompressedBytes {#externalsetuncompressedbytes}
+
+Amount of data (uncompressed, before compression) written for `IN` sets in external memory.
+
+### ExternalSetWritePart {#externalsetwritepart}
+
+Number of times a temporary file was written to disk for an `IN` set in external memory.
+
 ### ExternalSortCompressedBytes {#externalsortcompressedbytes}
 
 Number of compressed bytes written for sorting in external memory.
@@ -2627,6 +2651,14 @@ Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.
 ### JoinDelayedJoinedTransformRowCount {#joindelayedjoinedtransformrowcount}
 
 Number of rows emitted by DelayedJoinedBlocksWorkerTransform.
+
+### JoinNonJoinedHashTableScans {#joinnonjoinedhashtablescans}
+
+Number of times a RIGHT or FULL hash join scanned its hash table for non-joined rows.
+
+### JoinNonJoinedHashTableScansSkipped {#joinnonjoinedhashtablescansskipped}
+
+Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.
 
 ### JoinNonJoinedTransformBlockCount {#joinnonjoinedtransformblockcount}
 
@@ -4608,6 +4640,10 @@ Time spent initializing connection to S3.
 
 Time spent on reading from S3.
 
+### ReadBufferFromS3RequestsCut {#readbufferfroms3requestscut}
+
+Number of requests from S3 disks cut to one buffer fill because the connection group of the disks was at or above `disk_connections_soft_limit`.
+
 ### ReadBufferFromS3RequestsErrors {#readbufferfroms3requestserrors}
 
 Number of exceptions while reading from S3.
@@ -4948,6 +4984,10 @@ Number of granules examined for read time pruning by JOIN Runtime Filters
 
 Number of granules pruned at read time by JOIN Runtime Filters
 
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+Number of reads set up to prune granules with a JOIN runtime filter at read time. Counted when the read reaches its pipeline carrying the descriptors and has a primary key or skip index to prune them with, whether or not a granule is later examined, so it shows that the descriptors survived every rebuild of the read step.
+
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 
 Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
@@ -5259,6 +5299,10 @@ Time elapsed from starting server to listening to sockets in milliseconds
 ### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
 
 Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.
+
+### SetsSpilledToDisk {#setsspilledtodisk}
+
+Number of `IN` sets that spilled to disk while they were built from their subquery.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
