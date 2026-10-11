@@ -5,7 +5,6 @@
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
-#include <Common/logger_useful.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -252,8 +251,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
     LoadingStrictnessLevel mode,
-    bool attach_short_syntax,
-    bool is_replayed_definition)
+    bool attach_short_syntax)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -283,45 +281,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// happen before fillProjectionDescription[ByQuery] because the latter reconstructs settings
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
-    /// The pre-override settings, kept as the baseline the sanitization below restores from.
-    const bool is_fresh_definition = isFreshTableDefinition(mode, attach_short_syntax) && !is_replayed_definition;
-    const bool is_metadata_load = !is_fresh_definition;
-    std::shared_ptr<const MergeTreeSettings> baseline_settings;
-    if (is_metadata_load)
-        baseline_settings = std::make_shared<MergeTreeSettings>(*merge_tree_settings);
     if (projection_definition->with_settings)
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
-
-    if (is_metadata_load)
-    {
-        /// On the metadata-load path (short-syntax ATTACH / SECONDARY_CREATE / RESTORE) the projection
-        /// settings allow-list and `sanityCheck` below are skipped, so a projection can carry untyped
-        /// compression-codec settings (e.g. `WITH SETTINGS (marks_compression_codec = 'PCO')`) that
-        /// CREATE would reject. Left untouched they would only fail later, when the first projection
-        /// materialization or merge re-resolves the stored codec string without a column type. Reset
-        /// them here — restoring the pre-override value, mirroring the base-table sanitization in
-        /// `registerStorageMergeTree` — and drop them from the stored `definition_ast` too so the fix is
-        /// durable (the AST is re-parsed on every load and by `ALTER`s that recalculate projections).
-        if (auto resets = merge_tree_settings->sanitizeCompressionCodecSettings(*baseline_settings); !resets.empty())
-        {
-            for (const auto & reset : resets)
-                LOG_WARNING(getLogger("ProjectionDescription"), "Projection {}: {}", result.name, reset.note);
-
-            auto & cloned_definition = result.definition_ast->as<ASTProjectionDeclaration &>();
-            if (cloned_definition.with_settings)
-            {
-                std::unordered_set<std::string_view> reset_names;
-                for (const auto & reset : resets)
-                    reset_names.insert(reset.setting_name);
-
-                auto & ast_changes = cloned_definition.with_settings->changes;
-                std::erase_if(ast_changes, [&](const SettingChange & change) { return reset_names.contains(change.name); });
-                if (ast_changes.empty())
-                    cloned_definition.reset(cloned_definition.with_settings);
-            }
-        }
-    }
-
     result.settings_changes = merge_tree_settings->changes();
 
     /// Track whether the effective settings include index_granularity or index_granularity_bytes overrides
@@ -346,7 +307,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     }
 
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
-    if (is_fresh_definition)
+    if (isFreshTableDefinition(mode, attach_short_syntax))
     {
         /// `arrayJoin` is the one function that changes the number of rows, while a projection part is
         /// written alongside the parent part row by row: `ProjectionDataSink` rejects a block with more

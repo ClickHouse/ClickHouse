@@ -280,10 +280,10 @@ bool CompressionCodecMultiple::isCompression() const
     return false;
 }
 
-bool CompressionCodecMultiple::requiresColumnTypeToCompress() const
+bool CompressionCodecMultiple::isEncryption() const
 {
     for (const auto & codec : getCodecs())
-        if (codec->requiresColumnTypeToCompress())
+        if (codec->isEncryption())
             return true;
     return false;
 }
@@ -296,13 +296,6 @@ bool CompressionCodecMultiple::isLossyCompression() const
     return false;
 }
 
-bool CompressionCodecMultiple::isEncryption() const
-{
-    for (const auto & codec : getCodecs())
-        if (codec->isEncryption())
-            return true;
-    return false;
-}
 
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {

@@ -36,11 +36,8 @@ protected:
 
     bool isCompression() const override;
     bool isGenericCompression() const override { return false; }
-    /// Propagate from wrapped codecs so a chain such as `PCO, ZSTD` is still recognised as
-    /// column-type-requiring / lossy by callers that inspect the outer codec object.
-    bool requiresColumnTypeToCompress() const override;
-    bool isLossyCompression() const override;
     bool isEncryption() const override;
+    bool isLossyCompression() const override;
 
     String getDescription() const override { return "Apply multiple codecs consecutively defined by user."; }
 

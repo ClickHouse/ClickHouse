@@ -45,85 +45,6 @@ extern const SettingsBool allow_suspicious_codecs;
 }
 
 
-Strings CompressionCodecFactory::getCodecFamilyNamesOfChain(const String & compression_codec)
-{
-    Strings result;
-    if (compression_codec.empty())
-        return result;
-
-    ParserCodec codec_parser;
-    auto ast = parseQuery(
-        codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    const auto * func = ast->as<ASTFunction>();
-    if (!func || !func->arguments)
-        return result;
-
-    for (const auto & inner_codec_ast : func->arguments->children)
-    {
-        if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
-            result.push_back(family_name->name());
-        else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
-            result.push_back(ast_func->name);
-    }
-
-    return result;
-}
-
-bool CompressionCodecFactory::isCodecFamilyGated(const String & family_name)
-{
-    /// `Default` is an alias for the server default codec, which is never gated.
-    if (equalsCaseInsensitive(family_name, DEFAULT_CODEC_NAME))
-        return false;
-
-    return getGateTier(getGateSettingName(family_name)).has_value();
-}
-
-bool CompressionCodecFactory::isCodecStringGated(const String & compression_codec)
-{
-    /// This runs where no codec is being resolved yet (e.g. while a query plan is serialized, for a query
-    /// that may never spill), so it must classify rather than throw: a codec string that cannot be parsed
-    /// at all fails later with its own precise message wherever it is actually used.
-    try
-    {
-        for (const auto & family_name : getCodecFamilyNamesOfChain(compression_codec))
-            if (isCodecFamilyGated(family_name))
-                return true;
-    }
-    catch (const Exception &)
-    {
-        return false;
-    }
-
-    return false;
-}
-
-bool CompressionCodecFactory::areCodecGatesSatisfied(const String & compression_codec, const Settings & settings)
-{
-    /// Classifies rather than throws, for the same reason as `isCodecStringGated`.
-    try
-    {
-        for (const auto & family_name : getCodecFamilyNamesOfChain(compression_codec))
-        {
-            /// `Default` is an alias for the server default codec, which is never gated.
-            if (equalsCaseInsensitive(family_name, DEFAULT_CODEC_NAME))
-                continue;
-
-            const String gate_setting_name = getGateSettingName(family_name);
-            if (!getGateTier(gate_setting_name))
-                continue;
-
-            if (!settings.get(gate_setting_name).safeGet<bool>())
-                return false;
-        }
-    }
-    catch (const Exception &)
-    {
-        return true;
-    }
-
-    return true;
-}
-
 void CompressionCodecFactory::checkCodecIsNotColumnLevelOnly(const String & family_name) const
 {
     if (equalsCaseInsensitive(family_name, DEFAULT_CODEC_NAME) || isDeclarativeCodec(family_name))
@@ -243,8 +164,7 @@ bool typeContainsMap(const DataTypePtr & type)
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     const ASTPtr & ast, const DataTypePtr & column_type, const CodecValidationSettings & validation_settings) const
 {
-    const bool sanity_check = validation_settings.settings && !validation_settings.skip_sanity_check
-        && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
+    const bool sanity_check = validation_settings.settings && !(*validation_settings.settings)[Setting::allow_suspicious_codecs];
     return validateCodecAndGetPreprocessedASTImpl(ast, column_type, validation_settings.settings, sanity_check);
 }
 
@@ -399,8 +319,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         codec_family_name);
 
                 /// A codec that needs the column type to compress (e.g. `PCO`) cannot be used where the codec is
-                /// resolved without a column type: `TTL ... RECOMPRESS` (and any other caller that validates with
-                /// a null `column_type`). Column codecs in CREATE/ALTER pass a real type and are unaffected.
+                /// resolved without one: the marks, primary key, default and TTL recompression codecs.
                 if (!column_type && result_codec->requiresColumnTypeToCompress())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} requires the column type to compress and can only be specified for a column",

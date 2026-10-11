@@ -1,7 +1,6 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <algorithm>
 #include <cstdint>
-#include <mutex>
 #include <ranges>
 #include <stack>
 #include <string_view>
@@ -103,19 +102,6 @@ struct JoinExpressionActions::Data : boost::noncopyable
 
     ActionsDAG actions_dag;
     NodeToSourceMapping expression_sources;
-
-    /// `expression_sources` is a memo: the source relations of a derived node are computed on first
-    /// use (`getExpressionSourcesImpl`) and kept. The shape predicates of `JoinOperator` consult it
-    /// from `JoinStepLogical::serializeSettings`, i.e. while the plan is already shared - a plan is
-    /// serialized on the per-connection thread that sends it (`MultiplexedConnections::sendQueryPlan`),
-    /// and the same `Data` can be reached from a plan that is being lowered to a pipeline at the same
-    /// time. Two such walks memoizing at once rehash the map concurrently and free its bucket array
-    /// twice, which shows up as an ASan `new-delete-type-mismatch` on an unrelated allocation that has
-    /// meanwhile reused the memory. Guard every access to the map with this mutex.
-    ///
-    /// A reference into the map stays valid once the lock is released: `std::unordered_map` is
-    /// node-based, so a rehash moves only the bucket array, never the elements.
-    mutable std::mutex expression_sources_mutex;
 };
 
 JoinExpressionActions::JoinExpressionActions()
@@ -180,11 +166,7 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
 using NodeRawPtr = JoinExpressionActions::NodeRawPtr;
 
-/// Fills in the source relations of `action` and of every node below it, and returns the entry for
-/// `action`. The memo's mutex must already be held; `JoinExpressionActions::Data` is a private type, so
-/// the memo and its mutex are passed separately.
-static const BitSet & getExpressionSourcesLocked(
-    std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+static const BitSet & getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
 {
     const auto * node = action.getNode();
     if (auto it = expression_sources.find(node); it != expression_sources.end())
@@ -227,24 +209,6 @@ static const BitSet & getExpressionSourcesLocked(
     return expression_sources.at(node);
 }
 
-/// A copy, taken under the mutex, for every caller that can run while the plan is shared.
-static BitSet getExpressionSourcesCopy(
-    std::mutex & expression_sources_mutex, std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
-{
-    std::lock_guard lock(expression_sources_mutex);
-    return getExpressionSourcesLocked(expression_sources, action);
-}
-
-/// A reference into the memo, for the planner, which owns the expression data single-threaded. The
-/// reference outlives the lock, which is safe for the memo's structure (a node-based `unordered_map` does
-/// not move its values on a rehash) but not against a concurrent `setSourceRelations`.
-static const BitSet & getExpressionSourcesRef(
-    std::mutex & expression_sources_mutex, std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
-{
-    std::lock_guard lock(expression_sources_mutex);
-    return getExpressionSourcesLocked(expression_sources, action);
-}
-
 std::shared_ptr<ActionsDAG> JoinExpressionActions::getActionsDAG() const
 {
     return std::shared_ptr<ActionsDAG>(data, &data->actions_dag);
@@ -252,29 +216,23 @@ std::shared_ptr<ActionsDAG> JoinExpressionActions::getActionsDAG() const
 
 void JoinExpressionActions::resetNodeSources(NodeToSourceMapping expression_sources)
 {
-    std::lock_guard lock(data->expression_sources_mutex);
     data->expression_sources = std::move(expression_sources);
 }
 
 void JoinExpressionActions::setNodeSources(const NodeToSourceMapping & expression_sources)
 {
-    std::lock_guard lock(data->expression_sources_mutex);
     data->expression_sources.insert(expression_sources.begin(), expression_sources.end());
 }
 
 std::pair<ActionsDAG, JoinExpressionActions::NodeToSourceMapping> JoinExpressionActions::detachActionsDAG()
 {
     auto actions_dag = std::move(data->actions_dag);
-    Data::NodeToSourceMapping expression_sources;
-    {
-        std::lock_guard lock(data->expression_sources_mutex);
-        expression_sources = std::move(data->expression_sources);
-    }
+    auto expression_sources = std::move(data->expression_sources);
     data = std::make_shared<Data>(ActionsDAG(), Data::NodeToSourceMapping());
     return std::make_pair(std::move(actions_dag), std::move(expression_sources));
 }
 
-JoinActionRef::JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionActions::Data> data_)
+JoinActionRef::JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActions::Data> data_)
     : node_ptr(node_)
     , data(data_)
 {
@@ -282,9 +240,10 @@ JoinActionRef::JoinActionRef(NodeRawPtr node_, std::shared_ptr<JoinExpressionAct
     /// TODO: once we have map with sources initialized in advance we may do lookup there instead
     if (node_ptr)
     {
-        if (!data)
+        auto data_ptr = data.lock();
+        if (!data_ptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create JoinActionRef nullptr data");
-        auto raw_nodes = data->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
+        auto raw_nodes = data_ptr->actions_dag.getNodes() | std::views::transform([](const ActionsDAG::Node & node) { return &node; });
         if (!std::ranges::contains(raw_nodes, node_ptr))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Cannot create JoinActionRef for node {} not in actions DAG: [{}] <- {}",
@@ -306,7 +265,7 @@ const ActionsDAG::Node * JoinActionRef::getNode() const
 {
     if (!node_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get node for nullptr");
-    if (!data)
+    if (data.expired())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pointer to actions DAG is expired");
     return node_ptr;
 }
@@ -333,10 +292,7 @@ String JoinActionRef::dump() const
         return "";
     const auto * node = getNode();
 
-    auto data_ptr = getData();
-    /// A diagnostic can be formatted from any thread, so take the copy rather than the planner reference.
-    const auto source_relations = getExpressionSourcesCopy(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
-    return fmt::format("{}: {{{}}}", node->result_name, fmt::join(source_relations, ", "));
+    return fmt::format("{}: {{{}}}", node->result_name, fmt::join(getSourceRelations(), ", "));
 }
 
 JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool is_input, bool throw_if_not_found) const
@@ -354,10 +310,7 @@ JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool i
 JoinActionRef JoinExpressionActions::addInput(const String & column_name, const DataTypePtr & type, size_t source_relation)
 {
     const auto * actions_dag_node = &data->actions_dag.addInput(column_name, type);
-    {
-        std::lock_guard lock(data->expression_sources_mutex);
-        data->expression_sources[actions_dag_node].set(source_relation);
-    }
+    data->expression_sources[actions_dag_node].set(source_relation);
     return JoinActionRef(actions_dag_node, data);
 }
 
@@ -371,7 +324,6 @@ void JoinExpressionActions::swapExpressionSources()
     if (!data)
         return;
 
-    std::lock_guard lock(data->expression_sources_mutex);
     for (auto & source : data->expression_sources)
     {
         /// Check that there are not more than 2 sources
@@ -395,7 +347,6 @@ JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & nod
 {
     auto actions_dag = getActionsDAG()->clone(node_map);
     JoinExpressionActions::Data::NodeToSourceMapping new_expression_sources;
-    std::lock_guard lock(data->expression_sources_mutex);
     for (const auto & [node, source] : data->expression_sources)
     {
         auto it = node_map.find(node);
@@ -410,8 +361,7 @@ JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & nod
 
 const BitSet & JoinActionRef::getSourceRelations() const
 {
-    auto data_ptr = getData();
-    return getExpressionSourcesRef(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
+    return getExpressionSourcesImpl(getData()->expression_sources, *this);
 }
 
 void JoinActionRef::setSourceRelations(const BitSet & source_relations) const
@@ -422,7 +372,6 @@ void JoinActionRef::setSourceRelations(const BitSet & source_relations) const
     std::stack<const ActionsDAG::Node *> stack;
     stack.push(node);
 
-    std::lock_guard lock(data_ptr->expression_sources_mutex);
     auto & expression_sources = data_ptr->expression_sources;
     while (!stack.empty())
     {
@@ -476,22 +425,19 @@ bool JoinActionRef::isFunction(JoinConditionOperator op) const
 
 bool JoinActionRef::fromLeft() const
 {
-    auto data_ptr = getData();
-    auto src_rels = getExpressionSourcesCopy(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
+    auto src_rels = getExpressionSourcesImpl(getData()->expression_sources, *this);
     return src_rels.count() == 1 && src_rels.test(0);
 }
 
 bool JoinActionRef::fromRight() const
 {
-    auto data_ptr = getData();
-    auto src_rels = getExpressionSourcesCopy(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this);
+    auto src_rels = getExpressionSourcesImpl(getData()->expression_sources, *this);
     return src_rels.count() == 1 && src_rels.test(1);
 }
 
 bool JoinActionRef::fromNone() const
 {
-    auto data_ptr = getData();
-    return getExpressionSourcesCopy(data_ptr->expression_sources_mutex, data_ptr->expression_sources, *this).none();
+    return getSourceRelations().none();
 }
 
 bool JoinActionRef::isFromSameActions(const JoinActionRef & other) const
@@ -539,9 +485,10 @@ JoinActionRef JoinActionRef::resolveAliases() const
 
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const
 {
-    if (!data)
+    auto data_ptr = data.lock();
+    if (!data_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get data for JoinActionRef");
-    return data;
+    return data_ptr;
 }
 
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData(const std::vector<JoinActionRef> & actions)

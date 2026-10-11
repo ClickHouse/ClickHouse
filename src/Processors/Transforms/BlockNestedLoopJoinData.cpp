@@ -164,8 +164,7 @@ BlockNestedLoopStoreSettings withJoinTemporaryDataScope(BlockNestedLoopStoreSett
             .spilled_to_disk_operator = "join",
         },
         settings.temporary_files_buffer_size,
-        settings.temporary_files_codec,
-        settings.spill_codec_authorized);
+        settings.temporary_files_codec);
     return settings;
 }
 

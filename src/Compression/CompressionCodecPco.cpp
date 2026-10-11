@@ -236,12 +236,9 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
     if (source_size < 2)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress PCO-encoded data: header too small");
 
-    /// Block layout written by `doCompressData` (documented in `docs/en/interfaces/specs/NativeFormat.md`):
-    /// `[1 byte: W|flags][1 byte: B][B raw leading bytes][payload]`, where `W` is the element width,
-    /// the `0x80` flag marks a stored payload, and `B = uncompressed_size mod W`. The `PCO` method byte
-    /// `0xa0` is dispatched by the shared `CompressedReadBuffer` and can therefore reach this decoder
-    /// from unchecked external framed input (notably the HTTP `decompress=1` path), so validate the
-    /// stored header fields strictly and fail closed.
+    /// Block layout written by `doCompressData`: `[1 byte: W|flags][1 byte: B][B raw leading bytes][payload]`,
+    /// where `W` is the element width, the `0x80` flag marks a stored payload, and `B = uncompressed_size mod W`.
+    /// The input can come from untrusted framed data (the HTTP `decompress=1` path), so validate the header strictly.
     UInt8 first_byte = static_cast<UInt8>(source[0]);
     bool stored = (first_byte & CompressionCodecPco::STORED_FLAG) != 0;
     UInt8 width = first_byte & ~CompressionCodecPco::STORED_FLAG;
@@ -343,41 +340,6 @@ void registerCodecPco(CompressionCodecFactory & factory)
         }
 
         return std::make_shared<CompressionCodecPco>(data_bytes_size, pco_type_byte, level);
-    };
-    factory.registerCompressionCodecWithType("PCO", method_code, codec_builder);
-}
-
-}
-
-#else
-
-#include <Compression/CompressionFactory.h>
-#include <Compression/CompressionInfo.h>
-#include <Compression/registerCompressionCodecs.h>
-#include <Common/Exception.h>
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
-/// pco (pcodec) is not available in this build (Rust disabled). The family is still registered, so that the
-/// `enable_pco_codec` setting and the `PCO` documentation point at a codec that reports why it cannot be used,
-/// instead of at `UNKNOWN_CODEC`. The creator throws for every request, including the one `system.codecs` and
-/// `system.documentation` make to describe the family, so `PCO` is absent from them in such a build.
-/// Reading is refused too: `CompressedReadBuffer` resolves method byte `0xa0` through this creator, so `PCO`
-/// data written by a build with pcodec is unreadable here. Decoding needs the library, so there is no fallback.
-void registerCodecPco(CompressionCodecFactory & factory)
-{
-    auto method_code = static_cast<UInt8>(CompressionMethodByte::PCO);
-    auto codec_builder = [](const ASTPtr &, const IDataType *) -> CompressionCodecPtr
-    {
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "The codec 'PCO' is disabled because ClickHouse was built without Rust support (the pcodec library)");
     };
     factory.registerCompressionCodecWithType("PCO", method_code, codec_builder);
 }

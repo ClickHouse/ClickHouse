@@ -60,6 +60,11 @@ Int64 getCurrentThreadMemoryUsage()
     return thread.memory_tracker.get() + thread.untracked_memory.load();
 }
 
+CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_codec)
+{
+    return CompressionCodecFactory::instance().get(marks_compression_codec);
+}
+
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
 makeOutputStreams(
     const MergeTreeIndexSubstreams & index_substreams,
@@ -69,7 +74,7 @@ makeOutputStreams(
     const String & marks_file_extension,
     const MergeTreeWriterSettings & settings)
 {
-    auto marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
+    auto marks_compression_codec = makeMarksCompressionCodec(settings.marks_compression_codec);
     MergeTreeIndexOutputStreams streams;
     std::vector<std::unique_ptr<MergeTreeIndexWriterStream>> streams_holders;
 
