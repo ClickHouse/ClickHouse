@@ -415,8 +415,11 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
                 auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                /// Before the snapshot: on a lazily loaded table this loads the nested storage, and only
+                /// then does the snapshot carry the sorting key, partition key and projections that
+                /// `MutationsInterpreter` validates against, instead of the stand-in's columns-only metadata.
                 table->checkMutationIsPossible(*mutation_commands, settings);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 /// Checked ahead of the full validation below, which repeats it, so that a
                 /// nondeterministic mutation is reported as such even when the predicate also
                 /// fails to analyze.
