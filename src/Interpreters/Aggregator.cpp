@@ -186,7 +186,8 @@ void initDataVariantsWithSizeHint(
 void updateStatistics(
     const DB::ManyAggregatedDataVariants & data_variants,
     DB::AdaptiveAggregationSession * adaptive_session,
-    const DB::StatsCollectingParams & params)
+    const DB::StatsCollectingParams & params,
+    size_t linked_top_k)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -201,6 +202,11 @@ void updateStatistics(
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
+
+    /// A read linked to the top-K heap drops the rows beyond its boundary, which is published only once a heap holds
+    /// `k` keys, so from `k` keys on the tables may hold only the top groups.
+    if (linked_top_k && sum_of_sizes >= linked_top_k)
+        return;
 
     /// A run that staged enough records to trust the thaw sampler records the measured verdict;
     /// any other run carries the stored verdict over, so that runs without an adaptive
@@ -5186,7 +5192,11 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
 
     LOG_TRACE(log, "Merging aggregated data");
 
-    updateStatistics(data_variants, adaptive_session, params.stats_collecting_params);
+    updateStatistics(
+        data_variants,
+        adaptive_session,
+        params.stats_collecting_params,
+        params.top_k && params.top_k->threshold_tracker ? params.top_k->k : 0);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());

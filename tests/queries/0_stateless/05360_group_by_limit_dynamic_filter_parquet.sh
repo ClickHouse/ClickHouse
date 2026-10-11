@@ -2,6 +2,7 @@
 # Tags: no-fasttest, no-parallel-replicas
 # - no-fasttest: Parquet and S3
 # - no-parallel-replicas: reads the profile events of the local read
+# Random settings limits: use_skip_indexes_on_data_read=(1, 1)
 
 # The top-K heap of GROUP BY ... LIMIT filters the rows of a Parquet read and skips its row groups by the heap
 # boundary (enable_group_by_top_k_dynamic_filtering). Every result below is the one without the boundary.
@@ -14,8 +15,7 @@ DIR="${CLICKHOUSE_DATABASE}_05360"
 mkdir -p "${USER_FILES_PATH:?}/${DIR}"
 trap 'rm -rf "${USER_FILES_PATH:?}/${DIR}"' EXIT
 
-# One reading thread, so that the first row groups read set the boundary for the others. No hash table statistics,
-# with which a later run of a query may skip the top-K heap.
+# One reading thread, so that the first row groups read set the boundary for the others.
 SET_ALL="
 SET enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1;
 SET query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 1;
@@ -24,7 +24,6 @@ SET use_top_k_dynamic_filtering_for_variable_length_types = 0, use_query_conditi
 SET optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
 SET allow_suspicious_types_in_group_by = 1, allow_suspicious_types_in_order_by = 1;
 SET max_threads = 1, max_parsing_threads = 1;
-SET collect_hash_table_stats_during_aggregation = 0;
 SET engine_file_truncate_on_insert = 1, s3_truncate_on_insert = 1;
 "
 
@@ -90,6 +89,12 @@ INSERT INTO FUNCTION file('${DIR}/count_1.parquet', Parquet) SELECT number AS k 
 SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
 INSERT INTO FUNCTION file('${DIR}/count_2.parquet', Parquet) SELECT 10000 + number AS k FROM numbers(10000)
 SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+-- Row group or granule i holds a = i, in which b has 10 values.
+INSERT INTO FUNCTION file('${DIR}/stats.parquet', Parquet) SELECT intDiv(number, 100) AS a, number % 10 AS b, number % 2 AS c FROM numbers(10000)
+SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
+CREATE TABLE t_05360_stats (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+INSERT INTO t_05360_stats SELECT intDiv(number, 100), number % 10, number % 2 FROM numbers(100000);
 
 CREATE TABLE t_05360_random (a UInt64, c UInt64) ENGINE = File(Parquet, '${DIR}/random.parquet');
 CREATE TABLE t_05360_tuple (s Tuple(a UInt64, b Nullable(UInt64))) ENGINE = File(Parquet, '${DIR}/tuple.parquet');
@@ -166,6 +171,16 @@ SELECT k, count() FROM s3(s3_conn, filename = '${DIR}_count_{1,2}.parquet', form
 SELECT replaceOne(_file, '${DIR}', '') AS f, count() FROM s3(s3_conn, filename = '${DIR}_count_{1,2}.parquet', format = Parquet)
 GROUP BY f ORDER BY f;
 
+SELECT 'a rerun keeps the boundary';
+SELECT 'h1', groupArray((a, b, x)) FROM (SELECT a, b, count() AS x FROM file('${DIR}/stats.parquet') GROUP BY a, b LIMIT 10)
+SETTINGS log_comment = '05360_stats_pq_1', collect_hash_table_stats_during_aggregation = 1;
+SELECT 'h1', groupArray((a, b, x)) FROM (SELECT a, b, count() AS x FROM file('${DIR}/stats.parquet') GROUP BY a, b LIMIT 10)
+SETTINGS log_comment = '05360_stats_pq_2', collect_hash_table_stats_during_aggregation = 1;
+SELECT 'h2', groupArray((a, b, x)) FROM (SELECT a, b, count() AS x FROM t_05360_stats GROUP BY a, b LIMIT 10)
+SETTINGS log_comment = '05360_stats_mt_1', max_block_size = 100, optimize_aggregation_in_order = 0, collect_hash_table_stats_during_aggregation = 1;
+SELECT 'h2', groupArray((a, b, x)) FROM (SELECT a, b, count() AS x FROM t_05360_stats GROUP BY a, b LIMIT 10)
+SETTINGS log_comment = '05360_stats_mt_2', max_block_size = 100, optimize_aggregation_in_order = 0, collect_hash_table_stats_during_aggregation = 1;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['ParquetRowsFilterExpression'] > 0, ProfileEvents['ParquetTopKSkippedRowGroups'] > 0,
     ProfileEvents['SelectedRows'] < 100000
@@ -181,7 +196,12 @@ SELECT log_comment,
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05360_low', '05360_low_order') AND type = 'QueryFinish'
 ORDER BY log_comment;
+SELECT log_comment, ProfileEvents['SelectedRows'] < if(log_comment LIKE '05360_stats_pq_%', 10000, 100000)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment LIKE '05360_stats_%' AND type = 'QueryFinish'
+ORDER BY log_comment;
 
+DROP TABLE t_05360_stats;
 DROP TABLE t_05360_random;
 DROP TABLE t_05360_tuple;
 DROP TABLE t_05360_cache;
