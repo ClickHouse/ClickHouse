@@ -111,6 +111,7 @@ public:
     std::string getDescription() const override;
 
     bool hasSearchPatterns() const;
+    UInt128 getSearchPatternsHash() const { return search_patterns_hash; }
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
@@ -200,11 +201,19 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
+    /// `m['key'] IN (...)`: one pair token per set element, searched as one `Any` query.
+    bool traverseMapElementKeyValueSetNode(
+        const RPNBuilderTreeNode & lhs,
+        const RPNBuilderTreeNode & rhs,
+        const String & function_name,
+        RPNElement & out) const;
+
     /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
     bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
-    VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
-    VectorWithMemoryTracking<String> stringToTokens(std::string_view raw) const;
+    /// `compact` is valid only for `All` queries; `Any` queries must keep covered tokens.
+    VectorWithMemoryTracking<String> stringToTokens(const Field & field, bool compact) const;
+    VectorWithMemoryTracking<String> stringToTokens(std::string_view raw, bool compact) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
 
@@ -245,6 +254,8 @@ private:
     std::vector<String> all_search_tokens;
     /// Search queries from all RPN elements
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
+    /// Stable hash of the set of search queries containing patterns.
+    UInt128 search_patterns_hash{};
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.

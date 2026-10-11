@@ -83,6 +83,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -333,6 +334,23 @@ IsStorageTouched isStorageTouchedByMutations(
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
     /// It's actually not a progress callback, but a cancellation check.
     io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
+    /// Read progress is reported only by sources, so also poll the check while the pipeline works without reading.
+    executor.setCancelCallback(
+        [&executor, &check_operation_is_not_cancelled]
+        {
+            try
+            {
+                check_operation_is_not_cancelled(Progress{});
+            }
+            catch (...)
+            {
+                /// Stop and join the pipeline here: `cancel` rethrows the pipeline's pending exception, which the destructor would log.
+                executor.cancel();
+                throw;
+            }
+            return false;
+        },
+        std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
@@ -644,6 +662,7 @@ static void validateUpdateColumns(
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, false);
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
+    NameSet key_storage_columns = source.getMergeTreeData() ? metadata_snapshot->getStorageColumnsRequiredForKeys() : NameSet{};
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
@@ -660,7 +679,7 @@ static void validateUpdateColumns(
         {
             for (const auto & materialized : materialized_it->second)
             {
-                if (key_columns.contains(materialized))
+                if (key_columns.contains(materialized) || key_storage_columns.contains(materialized))
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                                     "Updated column {} affects MATERIALIZED column {}, which is a key column. "
