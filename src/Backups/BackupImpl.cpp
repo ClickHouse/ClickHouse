@@ -317,7 +317,13 @@ void BackupImpl::open()
                 /// away cannot make that ownership any more certain, and it can fail on its own: that would
                 /// abort an uncontended backup and leave behind a lock nothing can remove, because removal
                 /// needs a readable lock too.
-                if (!lock_file_verified_on_create)
+                ///
+                /// An archive is the exception: `openArchive` below truncates the archive file right away, before
+                /// any checked write. The lock being ours when it was created does not keep it ours: a `File(...)`
+                /// destination is reachable through `Disk(...)` too, whose writer overwrites `.lock` in rewrite
+                /// mode. So check the lock again before touching the archive, or a backup that has lost its lock
+                /// can truncate the archive of the one that took it.
+                if (!lock_file_verified_on_create || use_archive)
                 {
                     fiu_do_on(FailPoints::backup_fail_lock_file_check_after_creation,
                     {
