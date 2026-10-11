@@ -555,7 +555,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
     factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, {.description = R"DOC(Returns the value of the event that directly follows a matched chain of events, according to the specified direction and base point.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, properties });
 }
 
