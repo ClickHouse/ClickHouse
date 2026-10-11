@@ -106,6 +106,11 @@ public:
     /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
     virtual bool canSkipAnyMark() const { return false; }
 
+    /// Like `canSkipAnyMark`, but leaving out the marks skipped only because every row of the mark lies beyond a
+    /// running top-K threshold (by the primary key). The `__topKFilter` in PREWHERE drops the rows of such a mark
+    /// anyway, so the mark can still be attributed to a PREWHERE that holds this filter.
+    virtual bool canSkipAnyMarkBesidesTopKPrimaryKey() const { return canSkipAnyMark(); }
+
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
     /// The mark ranges the reader reads until the next call; null = the whole part.
@@ -138,6 +143,11 @@ protected:
 
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
+
+    /// Returns the string value filter to apply during deserialization of the column, or nullptr.
+    /// Takes the column as it is named in the part (an element of `columns_to_read`).
+    /// See `MergeTreeReaderSettings::string_value_filters`.
+    StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
@@ -244,6 +254,10 @@ private:
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
+
+    /// String value filters from `settings.string_value_filters` for the columns that pass all
+    /// the applicability checks, keyed by the column name in the part. Filled in the constructor.
+    std::unordered_map<String, StringValueFilterPtr> string_value_filters_by_part_column_name;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
