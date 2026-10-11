@@ -141,7 +141,7 @@
     ENGINE = Memory
     </create_query>
 
-    <fill_query>INSERT INTO json_type_skip_regexp_src SELECT materialize('{}') FROM numbers(2000) SETTINGS max_block_size = 100, max_insert_block_size = 100, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO json_type_skip_regexp_src SELECT materialize('{{}}') FROM numbers(2000) SETTINGS max_block_size = 100, max_insert_block_size = 100, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0</fill_query>
     <fill_query>INSERT INTO FUNCTION file(json_type_skip_regexp.native, Native) SELECT * FROM json_type_skip_regexp_src SETTINGS max_block_size = 100, engine_file_truncate_on_insert = 1</fill_query>
 
     <create_query>
@@ -163,7 +163,7 @@
     ENGINE = Memory
     </create_query>
 
-    <fill_query>INSERT INTO json_type_skip_regexp_control_src SELECT materialize('{}') FROM numbers(2000) SETTINGS max_block_size = 100, max_insert_block_size = 100, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0</fill_query>
+    <fill_query>INSERT INTO json_type_skip_regexp_control_src SELECT materialize('{{}}') FROM numbers(2000) SETTINGS max_block_size = 100, max_insert_block_size = 100, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0</fill_query>
     <fill_query>INSERT INTO FUNCTION file(json_type_skip_regexp_control.native, Native) SELECT * FROM json_type_skip_regexp_control_src SETTINGS max_block_size = 100, engine_file_truncate_on_insert = 1</fill_query>
 
     <query>SELECT count() FROM file(json_type_skip_regexp.native, Native) FORMAT Null</query>
