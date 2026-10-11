@@ -1038,13 +1038,6 @@ void logQueryException(
 
     incrementFailedQueryProfileEvents(query_ast, context->getClientInfo(), internal);
 
-    /// The resources the failed query consumed, including the failure itself (`FailedQuery` and
-    /// friends), count against the quotas over profile events. Like the predefined `errors`
-    /// counter, only the outer query of an internal one is charged (see `chargesQuotaProfileEvents`).
-    /// A query exempt from quotas (see `IInterpreter::ignoreQuota`) is not charged.
-    if (charge_quota_profile_events && chargesQuotaProfileEvents(query_ast, internal))
-        usedQuotaProfileEvents(context->getQuota(), process_list_elem, elem.normalized_query_hash);
-
     QueryStatusInfoPtr info;
     if (process_list_elem)
     {
@@ -1055,6 +1048,15 @@ void logQueryException(
     {
         elem.query_duration_ms = start_watch.elapsedMilliseconds();
     }
+
+    /// The resources the failed query consumed, including the failure itself (`FailedQuery` and
+    /// friends), count against the quotas over profile events. Like the predefined `errors`
+    /// counter, only the outer query of an internal one is charged (see `chargesQuotaProfileEvents`).
+    /// A query exempt from quotas (see `IInterpreter::ignoreQuota`) is not charged. This goes after
+    /// `addStatusInfoToQueryLogElement`, which increments the time-based events (`QueryTimeMicroseconds`
+    /// and friends), so that they are charged as on the success path.
+    if (charge_quota_profile_events && chargesQuotaProfileEvents(query_ast, internal))
+        usedQuotaProfileEvents(context->getQuota(), process_list_elem, elem.normalized_query_hash);
     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
     elem.query_result_cache_usage = QueryResultCacheUsage::None;
@@ -1187,6 +1189,14 @@ void logExceptionBeforeStart(
 
     QueryStatusPtr process_list_elem = context->getProcessListElementSafe();
 
+    QueryStatusInfoPtr info;
+    if (process_list_elem)
+    {
+        info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
+        addStatusInfoToQueryLogElement(elem, *info, ast, context, query_end_time);
+    }
+
+    /// After `addStatusInfoToQueryLogElement`, so that the time-based events it increments are charged too.
     if (charge_quota && chargesQuotaProfileEvents(ast, internal))
     {
         if (process_list_elem)
@@ -1196,13 +1206,6 @@ void logExceptionBeforeStart(
             auto failed_query_snapshot = failed_query_counters.getPartiallyAtomicSnapshot();
             quota->usedProfileEvents(normalized_query_hash, {&failed_query_snapshot}, /* check_exceeded = */ false);
         }
-    }
-
-    QueryStatusInfoPtr info;
-    if (process_list_elem)
-    {
-        info = std::make_shared<QueryStatusInfo>(process_list_elem->getInfo(true, settings[Setting::log_profile_events], false));
-        addStatusInfoToQueryLogElement(elem, *info, ast, context, query_end_time);
     }
     logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
