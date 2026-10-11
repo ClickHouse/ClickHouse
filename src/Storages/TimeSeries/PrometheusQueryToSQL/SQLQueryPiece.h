@@ -16,13 +16,11 @@ enum class StoreMethod
     /// Can be used with any types.
     EMPTY,
 
-    /// A const scalar value stored in `SQLQueryPiece::scalar_value`.
-    /// CONST_SCALAR is produced by a float literal in a prometheus query.
+    /// A const scalar value stored in `SQLQueryPiece::scalar_value`; produced by a float literal.
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     CONST_SCALAR,
 
-    /// A const string value stored in `SQLQueryPiece::string_value`.
-    /// CONST_STRING is produced by a string literal in a prometheus query.
+    /// A const string value stored in `SQLQueryPiece::string_value`; produced by a string literal.
     /// Can be used only with type ResultType::STRING.
     CONST_STRING,
 
@@ -54,13 +52,19 @@ enum class StoreMethod
     /// RAW_DATA is produced by selectors in a prometheus query.
     /// Can be used only with type ResultType::RANGE_VECTOR.
     RAW_DATA,
+
+    /// 15 columns: `group`, `timestamp`, `value`, 11 histogram payload columns (getTimeSeriesHistogramPayloadColumns), `is_histogram`.
+    /// A row is a float sample (default payload) or a histogram sample (dummy `value`). Can be used only with ResultType::RANGE_VECTOR.
+    HISTOGRAM_RAW_DATA,
+
+    /// Columns `group` (UInt64), `values`, `histogram_values`, `sample_kinds`: three equal-length arrays aligned to one time grid.
+    /// `sample_kinds` = per-step winning kind (NULL, 0=float, 1=histogram; ties keep the histogram) masking the two arms.
+    HISTOGRAM_GRID,
 };
 
 
-/// Represents a part of a prometheus query prepared to execute as an SQL query.
-/// To execute a prometheus query we build such SQLQueryPieces for the nodes
-/// of the corresponding PrometheusQueryTree, we get an SQLQueryPiece for the root node,
-/// and then we convert it to SQL by calling the function finalizeSQL().
+/// Represents a part of a prometheus query prepared to execute as an SQL query: we build SQLQueryPieces
+/// for the nodes of the PrometheusQueryTree and convert the root piece to SQL by calling finalizeSQL.
 struct SQLQueryPiece
 {
     SQLQueryPiece(const Node * node_, ResultType type_, StoreMethod store_method_)
@@ -74,10 +78,10 @@ struct SQLQueryPiece
     bool metric_name_dropped = false;
 
     /// `start_time`, `end_time`, `step` are used only if `store_method` is one of
-    /// [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID].
+    /// [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID, HISTOGRAM_GRID].
     /// They use the scale `ConverterContext::result_timestamp_scale`.
     /// If `store_method` is CONST_STRING then `start_time` is always equal to `end_time`.
-    /// If `store_method` is RAW_DATA then these fields are not used.
+    /// If `store_method` is RAW_DATA or HISTOGRAM_RAW_DATA then these fields are not used.
     TimestampType start_time = {};
     TimestampType end_time = {};
     DurationType step = {};
@@ -88,12 +92,15 @@ struct SQLQueryPiece
     /// `string_value` is used only if `store_method` is CONST_STRING.
     String string_value;
 
-    /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA].
+    /// `select_query` is used only if `store_method` is one of
+    /// [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA, HISTOGRAM_RAW_DATA, HISTOGRAM_GRID].
     /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (Float64) with a single row.
     /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(Float64)) with a single row.
     /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(Float64))).
     /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp`, `value`
     /// (see the comment for StoreMethod::RAW_DATA for their types).
+    /// If `store_method` is HISTOGRAM_RAW_DATA or HISTOGRAM_GRID then the SELECT query outputs the columns documented
+    /// for them in StoreMethod.
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
 };

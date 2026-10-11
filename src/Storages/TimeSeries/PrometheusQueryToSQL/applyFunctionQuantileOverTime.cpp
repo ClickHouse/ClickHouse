@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropHistogramValues.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -110,6 +111,8 @@ QuantileLevel getQuantileLevel(SQLQueryPiece & scalar_argument, ConverterContext
         case StoreMethod::CONST_STRING:
         case StoreMethod::VECTOR_GRID:
         case StoreMethod::RAW_DATA:
+        case StoreMethod::HISTOGRAM_RAW_DATA:
+        case StoreMethod::HISTOGRAM_GRID:
         {
             /// Can't get in here because these store methods are incompatible with a scalar (see checkArgumentTypes()).
             throwUnexpectedStoreMethod(scalar_argument, context);
@@ -151,6 +154,9 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     QuantileLevel quantile_level = getQuantileLevel(arguments[0], context);
     if (!quantile_level.ast)
         return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+
+    /// This function is defined on float samples only, so the native-histogram samples are ignored (Prometheus semantics).
+    range_argument = dropHistogramSamples(std::move(range_argument), context);
 
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(range_argument, context);
 
