@@ -155,6 +155,8 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
+    void copyNamedWindowSnapshots(const QueryTreeNodePtr & original_node, const QueryTreeNodePtr & cloned_node);
+
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
@@ -171,7 +173,7 @@ private:
 
     void expandOrderByAll(QueryNode & query_tree_node_typed, const Settings & settings);
 
-    static void expandLimitByAll(QueryNode & query_tree_node_typed);
+    void expandLimitByAll(QueryNode & query_tree_node_typed);
 
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
@@ -246,6 +248,12 @@ private:
 
     ProjectionNames resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
+    bool expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
+
+    bool expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
+
+    bool expandProjectionMatchers(QueryNode & query_node, IdentifierResolveScope & scope);
+
     ProjectionName resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
 
     ProjectionNames resolveLambda(const QueryTreeNodePtr & lambda_node,
@@ -317,6 +325,29 @@ private:
 
     /// Window definitions that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
+
+    /** The query whose projection matchers are expanded for the second time under `group_by_use_nulls`,
+      * see `resolveQuery`. Its other clauses were already rewritten by the `REPLACE` transformers,
+      * so `resolveMatcher` rewrites only the projection.
+      */
+    const IQueryTreeNode * query_with_replaced_clauses = nullptr;
+
+    /** The queries whose projection is resolved after the other clauses under `group_by_use_nulls`, see `resolveQuery`.
+      * Without the setting the projection is resolved first, so the `REPLACE` transformers of the matchers in
+      * the other clauses do not affect it, and `resolveMatcher` does not rewrite it.
+      */
+    std::unordered_set<const IQueryTreeNode *> queries_with_deferred_projection;
+
+    /** The projection items, and the function arguments inside them, that are already passed by `expandProjectionMatchers`.
+      * Without `group_by_use_nulls` they are resolved by then, so the `REPLACE` transformers of the following matchers
+      * do not affect them, and `resolveMatcher` does not rewrite them.
+      */
+    std::unordered_set<const IQueryTreeNode *> projection_nodes_before_matcher;
+
+    /** The definitions of the named windows, as of the time the window function referencing them is passed by `expandProjectionMatchers`.
+      * The key is the window node of the function, see `expandMatchersInsideProjectionExpression` and `resolveWindow`.
+      */
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> named_window_snapshots;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
 
