@@ -58,6 +58,14 @@ ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, 
 
 }
 
+NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
+{
+    NamesAndTypesList res;
+    for (const auto & column : columns)
+        res.emplace_back(column.name, column.type);
+    return res;
+}
+
 String MergeTreeReadTaskColumns::dump() const
 {
     WriteBufferFromOwnString s;
@@ -284,11 +292,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
             ? nullptr
             : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info);
+
         if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
-                index_read_task->index,
+                *index_read_task,
                 pre_columns_per_step,
                 read_info->read_hints.index_granules));
         }
