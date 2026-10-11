@@ -257,7 +257,8 @@ ColumnsWithTypeAndName createBlockFromCollection(
                         lhs_tuple_element_types[i],
                         params.forbid_unknown_enum_values);
 
-                    /// `convertColumnToTypeOrNull` reports a NULL that the field cannot hold as not representable.
+                    /// `convertColumnToTypeCheckEnum` reports a value that the field cannot hold,
+                    /// including a NULL in a non-nullable field, as not representable.
                     if (!converted)
                     {
                         skip_tuple_value = true;
