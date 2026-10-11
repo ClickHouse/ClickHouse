@@ -20,7 +20,7 @@ namespace DB
 // Represents a slot for a query execution. Every query that participates in workload scheduling should request one from
 // the resource scheduler before query execution and hold it until query is finished.
 // A query slot is a space-shared allocation of size one: it is admitted (possibly after waiting in the queue),
-// held while the query runs and released on destruction. Query slots are never evicted.
+// held while the query runs and released on destruction (when the query execution finishes). Query slots are never evicted.
 // Specified link should point to an allocation queue of some workload within the resource created with:
 //   CREATE RESOURCE query (QUERY)
 class QuerySlot final : public ResourceAllocation
