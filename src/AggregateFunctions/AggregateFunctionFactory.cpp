@@ -308,6 +308,11 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     /// is not float-promoting) is treated as not float-promoting -- kept fail-closed on purpose.
     auto properties = tryGetProperties(name, action);
     bool is_float_promoting = properties.has_value() && properties->is_float_promoting;
+    /// The sample label of a two-sample test selects a sample, so it must not be adapted through the lossy Float64
+    /// fallback either. See AggregateFunctionProperties::has_sample_label_argument.
+    std::optional<size_t> sample_label_argument;
+    if (properties.has_value() && properties->has_sample_label_argument)
+        sample_label_argument = 1;
 
     /// The lossy promotion itself is opt-in: it applies only under the same `allow_lossy_numeric_supertype`
     /// setting that lets if/multiIf/coalesce/ifNull/array/map resolve such numeric mixes to Float64 at type
@@ -369,11 +374,13 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
         /// even under the setting: a lossy Float64 cast would silently return wrong results for them (two distinct
         /// integers above 2^53 collapse to the same Float64), so they keep reporting the original error when there
         /// is no lossless common supertype. See AggregateFunctionProperties::is_float_promoting. The same applies
-        /// to the exact comparison key of the `-ArgMin` / `-ArgMax` combinators, so it is excluded here as well.
+        /// to the exact comparison key of the `-ArgMin` / `-ArgMax` combinators and to the sample label of a two-sample
+        /// test, so they are excluded here as well.
         if (!supertype
             && allow_lossy_numeric_supertype
             && is_float_promoting
-            && i != argminmax_key_argument)
+            && i != argminmax_key_argument
+            && i != sample_label_argument)
             supertype = tryGetLossyNumericSupertype(variants);
         /// The supertype must be wrappable in Nullable: the adapter relies on Nullable to carry the implicit NULLs
         /// of the Variant (which the aggregation then skips). This is not possible when there is no common supertype,

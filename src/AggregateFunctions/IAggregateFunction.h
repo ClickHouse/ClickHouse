@@ -1172,6 +1172,18 @@ struct AggregateFunctionProperties
       */
     bool is_float_promoting = false;
 
+    /** The function is a two-sample test whose second argument is the sample label rather than a value the test
+      * computes over: `studentTTest(sample_data, sample_index)`, `welchTTest`, `meanZTest`, `mannWhitneyUTest`,
+      * `kolmogorovSmirnovTest`. The label is read with `getUInt` and selects sample `0` or `1`, so a lossy
+      * `Float64` cast of a `Variant` label (e.g. `Variant(UInt8, Decimal32(1))`, which has no lossless common
+      * supertype) would silently move rows between the samples. The `Float64` fallback of `is_float_promoting` is
+      * therefore never applied to that argument, exactly as for the comparison key of `-ArgMin` / `-ArgMax`; its
+      * lossless-supertype adaptation stays allowed. The combinators keep the label at position `1` among the
+      * top-level arguments: they either keep the nested argument positions (`-Array`, `-ForEach`, `-OrNull`) or
+      * append their own arguments after them (`-If`, `-ArgMin` / `-ArgMax`, `-Resample`).
+      */
+    bool has_sample_label_argument = false;
+
     /** The function's result contract depends on which of its input values are distinct from each other:
       * `singleValueOrNull` returns the value only when there is exactly one distinct non-NULL value (it also
       * implements the `x = ALL (SELECT ...)` rewrite, see ExpressionListParsers.cpp). Two `Variant` values with

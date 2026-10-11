@@ -226,7 +226,7 @@ SELECT meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index) FROM mean_ztest;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("meanZTest", {createAggregateFunctionMeanZTest, documentation, {.is_float_promoting = true}});
+    factory.registerFunction("meanZTest", {createAggregateFunctionMeanZTest, documentation, {.is_float_promoting = true, .has_sample_label_argument = true}});
 }
 
 }
