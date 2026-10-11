@@ -614,14 +614,16 @@ bool WorkloadEntityStorageBase::validateAndStoreEntity(
         }
 
         // References are resolved within own and inherited entities, inherited first, so entities of outer layers
-        // cannot be referenced. A restore recreates entities one by one and treats references like a load of persisted
-        // data: a missing or wrong-kind target or a parent cycle hides the workload instead of failing the restore
-        // (references of the whole backup are checked before anything is created, see `restoreEntities`).
+        // cannot be referenced. A restore into non-replicated storage recreates entities one by one and treats
+        // references like a load of persisted data: a missing or wrong-kind target or a parent cycle hides the workload
+        // instead of failing the restore, as references of the whole backup are checked before anything is created
+        // (see `restoreEntities`). Replicated storage has no such pre-check, so it validates every reference here.
+        const bool lenient_references = restore && !isReplicated();
         forEachReference(create_entity_query,
-            [this, workload, restore] (const String & target, const String & source, ReferenceType type)
+            [this, workload, lenient_references] (const String & target, const String & source, ReferenceType type)
             {
                 ASTPtr target_entity = findKnownEntity(target, own_entities);
-                if (restore)
+                if (lenient_references)
                 {
                     if (type == ReferenceType::ForResource && typeid_cast<ASTCreateResourceQuery *>(target_entity.get()))
                     {

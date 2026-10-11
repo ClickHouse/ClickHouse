@@ -178,6 +178,9 @@ public:
 
     std::string_view getName() const override { return name; }
 
+    bool isReplicated() const override { return replicated; }
+    void setReplicated(bool value) { replicated = value; }
+
     void loadEntities(const Poco::Util::AbstractConfiguration & config) override
     {
         WorkloadEntityStorageBase::loadEntities(config);
@@ -255,6 +258,7 @@ private:
 
     const String name;
     const bool allows_parents_from_outer_layers;
+    bool replicated = false;
 };
 
 /// The storage chain of the server: implicit (outermost) -> SQL -> configuration (innermost).
@@ -3002,6 +3006,21 @@ TEST(SchedulerWorkloadResourceManager, RestoreRecreatesHiddenEntities)
     // A reference to an entity that exists in no layer still fails the restore
     EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD orphan IN missing"), DB::Exception);
     EXPECT_FALSE(t.storage.has("orphan"));
+}
+
+// Replicated storage has no pre-check of the whole backup, so a restore validates every reference as it goes
+TEST(SchedulerWorkloadResourceManager, ReplicatedRestoreValidatesReferences)
+{
+    ResourceTest t;
+    t.sql_storage->setReplicated(true);
+    t.query("CREATE WORKLOAD cpu");
+    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD orphan IN missing"), DB::Exception);
+    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD w SETTINGS max_memory = 1 FOR cpu"), DB::Exception);
+    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD w SETTINGS max_memory = 1 FOR absent"), DB::Exception);
+    EXPECT_FALSE(t.storage.has("orphan"));
+    EXPECT_FALSE(t.storage.has("w"));
+    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated("CREATE RESOURCE mem (MEMORY RESERVATION); CREATE WORKLOAD w SETTINGS max_memory = 1 FOR mem"));
+    EXPECT_TRUE(t.storage.has("w"));
 }
 
 // Workloads on a parent cycle, hidden in persisted data and backed up, are restored hidden again

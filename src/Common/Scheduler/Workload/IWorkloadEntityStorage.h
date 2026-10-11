@@ -130,8 +130,9 @@ class RestorerFromBackup;
  * layer. Unlike SQL statements, it resolves overlap with inherited entities of the same kind and conflicts
  * between own entities by hiding, so such an entity that was hidden when it was backed up is restored
  * hidden. An entity of another kind than the inherited entity of the same name fails the restore, as does a
- * reference to a missing entity or to an entity of the wrong kind (on a non-replicated storage, before
- * anything is created).
+ * reference to a missing entity or to an entity of the wrong kind. Non-replicated storage checks references of
+ * the whole backup before anything is created, then hides workloads on a parent cycle like a load does.
+ * Replicated storage checks every reference as it recreates the entities one by one, like SQL statements.
  *
  * Source. `getEntitySource` returns the name of the layer that owns a visible entity, e.g. `implicit`,
  * `keeper`, `disk` or `configuration`. It is shown in the `source` column of `system.workloads` and
