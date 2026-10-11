@@ -104,7 +104,8 @@ std::optional<std::string> getBlobKeyIfExists(const FsSnapshot & snapshot, const
     return getBlobKey(*directory, path.filename(), it->second);
 }
 
-/// The keys of the blobs shared by more than one file among the files at or under the given paths.
+/// The keys of the blobs shared by more than one file among the files at or under the given paths, where a transaction
+/// may remove links (see `link_removal_paths`).
 ///
 /// Transactions on different paths run concurrently, so two of them may remove different links to the same blob, each
 /// seeing the other link left. The blob would then lose its last link only when the second one is published, with no
@@ -1193,7 +1194,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
         ///    requests to the object storage, which may take a long time.
         const auto path_locks = metadata_storage.path_locks.lock(affected_paths);
         const auto blob_locks = metadata_storage.blob_locks.lock(
-            collectSharedBlobKeys(*metadata_storage.fs.takeReadOnlySnapshot(), affected_paths));
+            collectSharedBlobKeys(*metadata_storage.fs.takeReadOnlySnapshot(), link_removal_paths));
 
         /// 2. Setup up-to-date fs into snapshot being used during commit, and start recording the changes made to it.
         commit_snapshot->resetToRoot(metadata_storage.fs.takeReadOnlySnapshot()->getRoot());
@@ -1222,9 +1223,21 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedPath
         affected_paths.push_back(std::move(normalized_path));
 }
 
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::addRemovedDirectoryPath(const std::string & path)
+{
+    addAffectedPath(path);
+
+    if (auto normalized_path = normalizePath(path).string(); !normalized_path.empty())
+        link_removal_paths.push_back(std::move(normalized_path));
+}
+
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::addAffectedFilePath(const std::string & path)
 {
     addAffectedPath(path);
+
+    /// Writing, unlinking or moving a file may remove a link to its blob (or to the blob of the file it replaces).
+    if (auto normalized_file_path = normalizePath(path).string(); !normalized_file_path.empty())
+        link_removal_paths.push_back(std::move(normalized_file_path));
 
     /// An operation on a file of a directory in the explicit form rewrites the whole `prefix.path` of the directory, which
     /// lists all of its files, so it must exclude the operations on the other files of the directory: otherwise one of
@@ -1393,7 +1406,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(cons
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    addAffectedPath(path);
+    addRemovedDirectoryPath(path);
     if (!normalizePath(path).empty())
         uncommitted_state.removeDirectory(path);
 
@@ -1407,7 +1420,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
 {
-    addAffectedPath(path);
+    addRemovedDirectoryPath(path);
     if (!normalizePath(path).empty())
         uncommitted_state.removeDirectory(path);
 

@@ -165,8 +165,14 @@ protected:
 
     /// Normalized paths of the files and directories the operations modify; locked for the duration of the commit.
     std::vector<std::string> affected_paths;
+    /// Normalized paths of the files and directory subtrees where the operations may remove a link to a blob.
+    /// A subset of `affected_paths`: it does not include the directories locked only to serialize the rewrites
+    /// of their `prefix.path`, which do not remove links. The shared blobs under these paths are locked as well.
+    std::vector<std::string> link_removal_paths;
 
     void addAffectedPath(const std::string & path);
+    /// The same for a directory whose subtree the operation removes.
+    void addRemovedDirectoryPath(const std::string & path);
     /// The same for a file, and also for its directory if the operation may rewrite the `prefix.path` of the directory.
     void addAffectedFilePath(const std::string & path);
 
