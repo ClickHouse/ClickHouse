@@ -32,6 +32,7 @@
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
+#include <base/scope_guard.h>
 #include <filesystem>
 #include <mutex>
 #include <boost/algorithm/string.hpp>
@@ -108,6 +109,31 @@ namespace
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
+
+    /// Drops the inner tables that a failed `CREATE` of a `TimeSeries` table has already created. A table that cannot be
+    /// dropped is only logged, so that the error of the `CREATE` is the one reported.
+    void dropInnerTablesOfFailedCreate(
+        const std::vector<StorageID> & inner_table_ids, const StorageID & table_id, const ContextPtr & local_context)
+    {
+        for (const auto & inner_table_id : inner_table_ids)
+        {
+            try
+            {
+                /// DDLGuards must be locked in order of increasing table name, as in `dropInnerTableIfAny`.
+                bool may_lock_ddl_guard = table_id.getQualifiedName() < inner_table_id.getQualifiedName();
+                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, local_context->getGlobalContext(), local_context,
+                                                       inner_table_id, /* sync= */ false, /* ignore_sync_setting= */ true,
+                                                       may_lock_ddl_guard);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    getLogger("StorageTimeSeries"),
+                    fmt::format("Cannot drop the inner table {} of TimeSeries table {}, whose creation failed",
+                                inner_table_id.getNameForLogs(), table_id.getNameForLogs()));
+            }
+        }
+    }
 }
 
 
@@ -150,7 +176,8 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     const ASTCreateQuery & create_query,
     const StorageID & table_id,
     const ContextPtr & local_context,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    std::vector<StorageID> & created_inner_tables)
 {
     if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::enable_time_series_table])
     {
@@ -180,8 +207,10 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
                 create_query.getTargetInnerEngine(target.kind)
                     ? create_query.getTargetInnerEngine(target.kind)->ptr()
                     : ASTPtr{});
-            createTimeSeriesInnerTable(
-                target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, getTimeSeriesSettingVersion(create_query), local_context);
+            UInt64 version = getTimeSeriesSettingVersion(create_query);
+            createTimeSeriesInnerTable(target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, version, local_context);
+            created_inner_tables.emplace_back(
+                table_id.database_name, getTimeSeriesInnerTableName(target.kind, table_id, version), target.table_id.uuid);
         }
     }
 
@@ -213,6 +242,15 @@ StorageTimeSeries::StorageTimeSeries(
     /// A new table with an unsupported version is rejected by `checkTimeSeriesSettings` during the normalization below.
     bool is_version_supported = isTimeSeriesVersionSupported(version);
 
+    /// The inner tables created below. If the constructor fails, they are dropped again, so that a failed `CREATE`
+    /// leaves none of them behind.
+    std::vector<StorageID> created_inner_tables;
+    bool constructed = false;
+    SCOPE_EXIT({
+        if (!constructed)
+            dropInnerTablesOfFailedCreate(created_inner_tables, table_id, local_context);
+    });
+
     /// An unsupported version is tolerated only for ATTACH.
     if (!is_version_supported && (mode >= LoadingStrictnessLevel::ATTACH))
     {
@@ -224,7 +262,7 @@ StorageTimeSeries::StorageTimeSeries(
     else
     {
         auto normalized_create_query = makeNormalizedCreateQuery(query, local_context, mode, is_restore_from_backup);
-        targets = buildTargets(*normalized_create_query, table_id, local_context, mode);
+        targets = buildTargets(*normalized_create_query, table_id, local_context, mode, created_inner_tables);
 
         /// Load TimeSeries settings from the `SETTINGS` clause.
         if (normalized_create_query->storage)
@@ -253,6 +291,7 @@ StorageTimeSeries::StorageTimeSeries(
         storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+    constructed = true;
 }
 
 
