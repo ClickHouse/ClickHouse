@@ -17,7 +17,6 @@
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CurrentThread.h>
@@ -261,10 +260,10 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases of different engines is not supported");
     }
 
-    std::string message;
-    if (exchange && !supportsAtomicRename(&message))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported because exchanging files is not supported by the OS ({})", message);
-
+    /// Whether the metadata files can be exchanged is a per-disk property, not an OS one, so
+    /// the decision is delegated to `IDisk::renameExchange`: `DiskLocal` and
+    /// `DiskObjectStorage` fall back to a non-atomic swap when the filesystem cannot do an
+    /// atomic exchange, other disks throw a clear per-disk `NOT_IMPLEMENTED`.
     createDirectories();
     waitDatabaseStarted();
 
@@ -389,7 +388,11 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     else
         db_disk->moveFile(old_metadata_path, new_metadata_path);
 
-    /// After metadata was successfully moved, the following methods should not throw (if they do, it's a logical error)
+    /// After metadata was successfully moved, the following methods should not throw (if they do,
+    /// it's a logical error). The exchange above is a single atomic syscall where the filesystem
+    /// supports it, and a non-atomic swap that rolls back on failure otherwise (see
+    /// DiskLocal::renameExchange), so reaching this point always means the swap fully applied --
+    /// a mid-sequence failure throws with the metadata left unchanged rather than half-swapped.
     table_data_path = detach(*this, table_name, table->storesDataOnDisk());
     if (exchange)
         other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
