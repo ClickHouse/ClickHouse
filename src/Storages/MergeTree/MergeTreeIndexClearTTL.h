@@ -11,6 +11,7 @@ namespace DB
 {
 
 class IMergeTreeDataPart;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 
 /// The skip indexes whose `CLEAR INDEX` rule has expired for every row covered by `ttl_infos`,
@@ -27,5 +28,8 @@ struct ExpiredIndexFiles
 /// The files of the part's expired skip indexes, and whether any of them is in `skp_idx.packed`.
 ExpiredIndexFiles getExpiredIndexFiles(
     const IMergeTreeDataPart & part, const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot, time_t current_time);
+
+/// Whether a `TTLClearIndex` merge can hardlink the part's files on this replica rather than copy them.
+bool canHardlinkFilesForIndexClear(const MergeTreeDataPartPtr & part);
 
 }
