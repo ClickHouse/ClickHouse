@@ -46,11 +46,11 @@ DiskSetBuilder::estimateMemoryToWriteRun(size_t max_bytes_before_external_set, s
 
 /// The builder adds each column of keys to a `DiskSetKeySorter`, which writes runs of sorted distinct keys to
 /// temporary files while tracked query memory exceeds `max_bytes_before_external_set`, and merges them into a
-/// `DiskSetImpl` in batches of `max_block_size` keys. The builder checks the size limits after each batch and
-/// once more after the set writes its last block. In the `break` mode, it stops the merge at the batch that
-/// reaches the limits. The builder also counts the distinct keys as they arrive. The sorter passes on no keys
-/// until all have arrived, so the builder creates the set with filters sized for them before the merge, and
-/// the merge counts the memory of the filters towards the spill threshold.
+/// `DiskSetImpl` in batches of `max_block_size` keys. The builder checks the size limits after each batch. In
+/// the `break` mode, it stops the merge at the batch that reaches the limits. The builder also counts the
+/// distinct keys as they arrive. The sorter passes on no keys until all have arrived, so the builder creates
+/// the set with filters sized for them before the merge, and the merge counts the memory of the filters
+/// towards the spill threshold.
 template <typename Key>
 class DiskSetBuilderImpl final : public DiskSetBuilder
 {
@@ -176,12 +176,6 @@ std::unique_ptr<DiskSet> DiskSetBuilderImpl<Key>::finish()
         return true;
     });
     set->finishWriting();
-
-    /// `finishWriting` writes the last block, which can take the directory past the limits. A set that the
-    /// merge truncated keeps no more keys, so it needs no second check.
-    if (!truncated)
-        checkLimits();
-
     return std::move(set);
 }
 
