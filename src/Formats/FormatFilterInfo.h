@@ -138,6 +138,7 @@ struct FormatFilterInfo
     /// to a `field_id` requires this mapper, not the per-file one.
     ColumnMapperPtr current_schema_column_mapper;
 
+    /// The query condition cache key of `filter_actions_dag` (see `computeConditionHash`).
     std::optional<size_t> condition_hash;
 
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
@@ -157,11 +158,19 @@ private:
     std::exception_ptr init_exception;
 
 public:
+    /// True if the format may skip rows of the file.
     bool hasFilter() const;
 
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
+
+    /// The query condition cache key of the rows `filter_actions_dag` and `prewhere_info` keep, if
+    /// the condition is deterministic and covers `prewhere_info`.
+    static std::optional<size_t> computeConditionHash(
+        const ActionsDAG & filter_actions_dag,
+        const PrewhereInfoPtr & prewhere_info,
+        const ContextPtr & context);
 
     /// Returns `base` extended with columns required by PREWHERE / row-level filter.
     /// Hint: pass `base` with `std::move` to avoid copying
