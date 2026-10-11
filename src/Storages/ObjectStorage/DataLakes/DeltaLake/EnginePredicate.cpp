@@ -8,11 +8,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatFactory.h>
-#include <Functions/CastOverloadResolver.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Functions/IFunction.h>
 #include <Functions/ComparisonNames.h>
 #include <IO/WriteHelpers.h>
@@ -87,10 +90,15 @@ namespace
         ComparisonVisitor direct;
         /// Reads the comparison with its operands swapped (`literal OP column`).
         ComparisonVisitor mirrored;
+        /// For a literal strictly between a column value and the next one, the comparison against that value; null for `=` / `!=`.
+        ComparisonVisitor direct_inexact = nullptr;
+        ComparisonVisitor mirrored_inexact = nullptr;
 
-        ComparisonVisitor forOperands(bool swapped) const
+        ComparisonVisitor forOperands(bool swapped, bool exact) const
         {
-            return swapped ? mirrored : direct;
+            if (exact)
+                return swapped ? mirrored : direct;
+            return swapped ? mirrored_inexact : direct_inexact;
         }
     };
 
@@ -101,14 +109,94 @@ namespace
         if (name == DB::NameNotEquals::name)
             return ComparisonVisitors{&ffi::visit_predicate_ne, &ffi::visit_predicate_ne};
         if (name == DB::NameLess::name)
-            return ComparisonVisitors{&ffi::visit_predicate_lt, &ffi::visit_predicate_gt};
+            return ComparisonVisitors{
+                &ffi::visit_predicate_lt, &ffi::visit_predicate_gt, &ffi::visit_predicate_le, &ffi::visit_predicate_gt};
         if (name == DB::NameLessOrEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_le, &ffi::visit_predicate_ge};
+            return ComparisonVisitors{
+                &ffi::visit_predicate_le, &ffi::visit_predicate_ge, &ffi::visit_predicate_le, &ffi::visit_predicate_gt};
         if (name == DB::NameGreater::name)
-            return ComparisonVisitors{&ffi::visit_predicate_gt, &ffi::visit_predicate_lt};
+            return ComparisonVisitors{
+                &ffi::visit_predicate_gt, &ffi::visit_predicate_lt, &ffi::visit_predicate_gt, &ffi::visit_predicate_le};
         if (name == DB::NameGreaterOrEquals::name)
-            return ComparisonVisitors{&ffi::visit_predicate_ge, &ffi::visit_predicate_le};
+            return ComparisonVisitors{
+                &ffi::visit_predicate_ge, &ffi::visit_predicate_le, &ffi::visit_predicate_gt, &ffi::visit_predicate_le};
         return std::nullopt;
+    }
+
+    struct ConvertedLiteral
+    {
+        DB::Field value;
+        bool exact;
+    };
+
+    /// Converts a literal to `column_type` the way a comparison with such a column compares it.
+    /// An inexact result lies strictly between `value` and the next value of the type.
+    std::optional<ConvertedLiteral> convertLiteralToType(
+        const DB::DataTypePtr & column_type,
+        const DB::ActionsDAG::Node & literal_node,
+        const DB::FormatSettings & format_settings)
+    {
+        const auto type = DB::removeLowCardinalityAndNullable(column_type);
+        const auto literal_type = DB::removeLowCardinalityAndNullable(literal_node.result_type);
+        const auto literal = literal_node.column->getField();
+        if (literal.isNull())
+            return std::nullopt;
+
+        /// `Bool` equals `UInt8`.
+        if (literal_type->equals(*type) && isBool(literal_type) == isBool(type))
+            return ConvertedLiteral{literal, true};
+
+        /// Strings of different types compare zero-padded, and no other literal compares with a string.
+        if (isStringOrFixedString(type))
+            return std::nullopt;
+
+        DB::Field value;
+        if (isStringOrFixedString(literal_type))
+        {
+            value = DB::tryConvertFieldToType(literal, *type, literal_type.get(), format_settings);
+        }
+        else if (isDateOrDate32(type) && isDateOrDate32OrDateTimeOrDateTime64(literal_type))
+        {
+            /// Compared in the common type, whose time zone can differ from the literal's.
+            const auto common = DB::tryGetLeastSupertype(DB::DataTypes{type, literal_type});
+            /// A `Date` compared in a `DateTime` is out of order outside the `DateTime` range.
+            if (!common || isDateTime(common))
+                return std::nullopt;
+            const auto instant = DB::tryConvertFieldToType(literal, *common, literal_type.get(), format_settings, /*strict=*/ true);
+            const auto day = DB::tryConvertFieldToType(instant, *type, common.get(), format_settings, /*strict=*/ true);
+            const auto day_start = DB::tryConvertFieldToType(day, *common, type.get(), format_settings, /*strict=*/ true);
+            if (instant.isNull() || day.isNull() || day_start.isNull() || !DB::accurateLessOrEqual(day_start, instant))
+                return std::nullopt;
+            /// Days outside the `DateTime64` range compare as its bounds, so an instant at a bound can equal several days.
+            if (isDateTime64(common))
+            {
+                const auto scale_multiplier = DB::DecimalUtils::scaleMultiplier<DB::DateTime64::NativeType>(
+                    assert_cast<const DB::DataTypeDateTime64 &>(*common).getScale());
+                const Int64 ticks = instant.safeGet<DB::DecimalField<DB::DateTime64>>().getValue().value;
+                if (ticks <= DB::minTicksForDateTime64(scale_multiplier) || ticks >= DB::maxTicksForDateTime64(scale_multiplier))
+                    return std::nullopt;
+            }
+            if (!DB::accurateEquals(day_start, instant))
+                return ConvertedLiteral{day, false};
+            /// A skipped day starts at the same instant as the next one.
+            const Int64 day_number = day.safeGet<Int64>();
+            if (day_number > (isDate(type) ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM))
+            {
+                const auto previous_start = DB::tryConvertFieldToType(
+                    DB::Field(day_number - 1), *common, type.get(), format_settings, /*strict=*/ true);
+                if (previous_start.isNull() || !DB::accurateLess(previous_start, day_start))
+                    return std::nullopt;
+            }
+            return ConvertedLiteral{day, true};
+        }
+        else
+        {
+            value = DB::tryConvertFieldToTypeExact(literal, *type, literal_type.get());
+        }
+
+        if (value.isNull())
+            return std::nullopt;
+        return ConvertedLiteral{value, true};
     }
 
     struct DateComparison
@@ -156,28 +244,18 @@ namespace
         if (column->result_type->isNullable() && !conversion->result_type->isNullable())
             return std::nullopt;
 
-        /// Mixed temporal comparisons use a common type; a `Date`/`Date32` literal converts exactly or not at all (rejected below), anything else stays untranslated.
-        const auto literal_type = getTypeOrNestedType(literal);
-        if (!literal_type->equals(*result_type) && !isString(literal_type)
-            && !DB::isDateOrDate32(literal_type->getTypeId()))
+        const auto converted = convertLiteralToType(result_type, *literal, format_settings);
+        if (!converted)
             return std::nullopt;
-
-        /// Convert the literal exactly as the real comparison does: under the query's format settings
-        /// (notably `date_time_overflow_behavior`), not the default `ignore`. `FunctionComparison`'s
-        /// `executeWithConstString` converts the constant string with `params.format_settings`, so a
-        /// bare `tryConvertFieldToType` here would translate e.g.
-        /// `toDate(d) = '1969-12-31' SETTINGS date_time_overflow_behavior='throw'` as if the literal
-        /// had been clamped, and could prune away the exception the comparison must raise. Under
-        /// `throw` an out-of-range literal makes this return null, so the file stays unpruned.
-        const auto value = DB::tryConvertFieldToType(literal->column->getField(), *result_type, literal_type.get(), format_settings);
-        if (value.isNull())
+        const auto visitor = visitors.forOperands(swapped, converted->exact);
+        if (!visitor)
             return std::nullopt;
 
         return DateComparison{
             column,
-            static_cast<Int32>(value.safeGet<Int32>()),
+            static_cast<Int32>(converted->value.safeGet<Int32>()),
             result_type->getTypeId() == DB::TypeIndex::Date,
-            visitors.forOperands(swapped)};
+            visitor};
     }
 }
 
@@ -377,8 +455,11 @@ static uintptr_t visitLiteralValue(
         {
             if (isBool(data_type))
             {
-                bool result = value.safeGet<UInt8>();
-                return ffi::visit_expression_literal_bool(state, result); /// Accepts bool
+                /// A `Bool` byte above 1 compares as a number, which a kernel boolean cannot express.
+                const auto result = value.safeGet<UInt64>();
+                if (result > 1)
+                    return EngineIterator::VISITOR_FAILED_OR_UNSUPPORTED;
+                return ffi::visit_expression_literal_bool(state, result == 1); /// Accepts bool
             }
             else
             {
@@ -640,34 +721,14 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                 if (literal_node && column_node)
                 {
-                    /// If literal node has a different type from column's,
-                    /// cast it to column's type.
-                    if (!column_node->result_type->equals(*literal_node->result_type))
-                    {
-                        auto column_name = column_node->result_type->getName();
-                        auto column_type = std::make_shared<DB::DataTypeString>();
-                        auto column = assert_cast<const DB::ColumnConst &>(*column_type->createColumnConst(0, column_name)).getPtr();
-
-                        /// TODO: get rid of const_cast.
-                        DB::ActionsDAG & dag = const_cast<DB::ActionsDAG &>(iterator_data.predicate.getFilterDAG());
-
-                        const auto * right_arg = &dag.addColumn(std::move(column), std::move(column_type), std::move(column_name));
-                        const auto * left_arg = literal_node;
-
-                        DB::CastDiagnostic diagnostic = {literal_node->result_name, column_node->result_name};
-                        DB::ColumnWithTypeAndName left_column{nullptr, literal_node->result_type, {}};
-                        auto func_base_cast = DB::createInternalCast(
-                            /* from */std::move(left_column),
-                            /* to */column_node->result_type,
-                            DB::CastType::nonAccurate,
-                            std::move(diagnostic),
-                            iterator_data.predicate.getContext());
-
-                        DB::ActionsDAG::NodeRawConstPtrs children = { left_arg, right_arg };
-                        literal_node = &dag.addFunction(func_base_cast, std::move(children), {});
-
-                        print_node_info(literal_node);
-                    }
+                    const auto column_type = getTypeOrNestedType(column_node);
+                    const auto literal = convertLiteralToType(
+                        column_type, *literal_node, iterator_data.predicate.getFormatSettings());
+                    if (!literal)
+                        return VISITOR_FAILED_OR_UNSUPPORTED;
+                    const auto visitor = visitors->forOperands(isConstNode(node->children[0]), literal->exact);
+                    if (!visitor)
+                        return VISITOR_FAILED_OR_UNSUPPORTED;
 
                     const auto column_name = KernelUtils::toDeltaString(column_node->result_name);
                     uintptr_t column = KernelUtils::unwrapResult(
@@ -677,12 +738,10 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     const auto comparison_type_index = getTypeIndex(column_node);
 
-                    DB::Field value = literal_node->column->getField();
-
                     uintptr_t constant = visitLiteralValue(
-                        value,
+                        literal->value,
                         comparison_type_index,
-                        getTypeOrNestedType(column_node),
+                        column_type,
                         iterator_data.state);
 
                     if (!constant || constant == VISITOR_FAILED_OR_UNSUPPORTED)
@@ -691,7 +750,6 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                         return VISITOR_FAILED_OR_UNSUPPORTED;
                     }
 
-                    auto visitor = visitors->forOperands(isConstNode(node->children[0]));
                     return visitor(iterator_data.state, column, constant);
                 }
 
