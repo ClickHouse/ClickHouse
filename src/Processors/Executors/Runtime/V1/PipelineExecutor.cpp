@@ -401,9 +401,18 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     cancel(IProcessor::CancelReason::Exception);
                 }
 
+                /// The queues are drained by `pushTasks` but keep their capacity; release it if they have grown too large.
+                bool release_queues = queue.size() + async_queue.size() > ExecutingGraph::UpdateNodeBuffers::max_kept_capacity;
+
                 /// Push other tasks to global queue.
                 if (updated)
                     spawn_count = tasks.pushTasks(queue, async_queue, context);
+
+                if (release_queues)
+                {
+                    queue = Queue();
+                    async_queue = Queue();
+                }
             }
 
 #ifndef NDEBUG

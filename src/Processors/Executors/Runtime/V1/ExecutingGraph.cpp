@@ -360,6 +360,27 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
     }
 }
 
+namespace
+{
+
+template <typename Container>
+void resetBuffer(Container & container)
+{
+    if (container.capacity() > ExecutingGraph::UpdateNodeBuffers::max_kept_capacity)
+        Container().swap(container);
+    else
+        container.clear();
+}
+
+}
+
+void ExecutingGraph::UpdateNodeBuffers::reset()
+{
+    resetBuffer(updated_edges);
+    resetBuffer(updated_processors);
+    resetBuffer(pending_expansion);
+}
+
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers)
 {
     Processors delayed_destruction;
@@ -368,9 +389,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial
     auto & pending_expansion = buffers.pending_expansion;
 
     /// The buffers may be left non-empty by a previous call that exited early or threw.
-    updated_edges.clear();
-    updated_processors.clear();
-    pending_expansion.clear();
+    buffers.reset();
 
     std::shared_lock read_lock(nodes_mutex);
 

@@ -140,6 +140,13 @@ public:
         DevectorWithMemoryTracking<Edge *> updated_edges;
         DevectorWithMemoryTracking<Node *> updated_processors;
         VectorWithMemoryTracking<Node *> pending_expansion;
+
+        /// A buffer that has grown larger than this number of elements is released instead of being kept,
+        /// so that a single wide wave of updates does not hold its memory until the end of the execution.
+        static constexpr size_t max_kept_capacity = 1024;
+
+        /// Empty the buffers before the next use.
+        void reset();
     };
 
     /// Update `initial` processor (call IProcessor::prepare).
