@@ -3008,6 +3008,25 @@ TEST(SchedulerWorkloadResourceManager, RestoreRecreatesHiddenEntities)
     EXPECT_FALSE(t.storage.has("orphan"));
 }
 
+// A configuration workload cannot have the implicit `default` as its parent: only an outer layer can provide a parent
+// the configuration does not have, and the SQL layer between them never provides an implicit entity
+TEST(SchedulerWorkloadResourceManager, ConfigWorkloadCannotHaveImplicitDefaultParent)
+{
+    ResourceTest t;
+    ImplicitWorkloadEntitiesConfig config;
+    config.implicit_default_workload = true;
+    t.setImplicitEntities(config);
+    t.loadConfig("CREATE WORKLOAD child IN default");
+    EXPECT_EQ(t.storage.getEntitySource("default"), "implicit");
+    EXPECT_FALSE(t.storage.has("child"));
+
+    // An explicit `default` can be a parent
+    t.query("CREATE WORKLOAD default");
+    EXPECT_TRUE(t.storage.has("child"));
+    t.loadConfig("");
+    t.query("DROP WORKLOAD default");
+}
+
 // Replicated storage has no pre-check of the whole backup, so a restore validates every reference as it goes
 TEST(SchedulerWorkloadResourceManager, ReplicatedRestoreValidatesReferences)
 {
