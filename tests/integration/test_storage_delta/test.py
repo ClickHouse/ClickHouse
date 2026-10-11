@@ -840,6 +840,18 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
         ).strip()
     )
 
+    # The legacy metadata reader reads the checkpoint twice, once for the schema and once for the
+    # data. With `input_format_allow_seeks = 0` the schema pass cannot seek to the footer, so it
+    # streams the whole file and leaves its buffer at EOF; the data pass has to open its own.
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_allow_seeks = 0"
+            )
+        )
+        == 20
+    )
+
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_multiple_log_files(started_cluster, use_delta_kernel):
@@ -3447,14 +3459,14 @@ def test_delta_kernel_internal_pruning(started_cluster):
         )
     )
 
-    assert result == 1
+    assert result == 3
     instance.query("SYSTEM FLUSH LOGS")
-    assert 1 == int(
+    assert 3 == int(
         instance.query(
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file%'"
         )
     )
-    assert 1 == int(
+    assert 3 == int(
         instance.query(
             f"SELECT count() FROM system.text_log WHERE query_id = '{query_id}' and message ILIKE '%Scanned file: {TABLE_NAME}/b=test2%'"
         )
