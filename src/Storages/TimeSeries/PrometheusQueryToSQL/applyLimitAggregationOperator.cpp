@@ -133,15 +133,16 @@ namespace
         /// The aggregate function selecting which series to keep at each time step (see Step 1 below).
         const char * aggregate_function_name;
 
-        /// Whether `timeSeriesGroupToSamplingKey(group)` should be passed to the aggregate function to provide deterministic "pseudo-random" sampling for `limitk`.
+        /// `timeSeriesGroupToSamplingKey(group)` is the selection order for `limitk` and the tie-break for
+        /// `topk` and `bottomk`; without it a tie would be decided by the order the rows were read in.
         bool use_sampling_keys = false;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"topk", {"timeSeriesTopKMasks", /* use_sampling_keys = */ false}},
-            {"bottomk", {"timeSeriesBottomKMasks", /* use_sampling_keys = */ false}},
+            {"topk", {"timeSeriesTopKMasks", /* use_sampling_keys = */ true}},
+            {"bottomk", {"timeSeriesBottomKMasks", /* use_sampling_keys = */ true}},
             {"limitk", {"timeSeriesLimitKMasks", /* use_sampling_keys = */ true}},
         };
 
@@ -195,7 +196,7 @@ SQLQueryPiece applyLimitAggregationOperator(
     ///   FROM <vector_grid>
     ///   [GROUP BY <by_tags_expr>]
     ///
-    /// `selected_groups` is Array(Tuple(key UInt64, steps_mask Array(UInt8))); the sampling key (added for limitk) ranks series by a hash of their tags regardless of row read order.
+    /// `selected_groups` is Array(Tuple(key UInt64, steps_mask Array(UInt8))); the sampling key ranks series by a hash of their tags regardless of row read order, which is the selection order for limitk and the tie-break for topk and bottomk.
     ASTPtr step1_query;
     {
         SelectQueryBuilder builder;
