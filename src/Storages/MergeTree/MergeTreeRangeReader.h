@@ -128,8 +128,8 @@ private:
 
 class FilterWithCachedCount
 {
-    ConstantFilterDescription const_description;  /// TODO: ConstantFilterDescription only checks always true/false for const columns
-                                                  /// think how to handle when the column in not const but has all 0s or all 1s
+    ConstantFilterDescription const_description;  /// Recognizes const columns and LowCardinality columns holding a single
+                                                  /// value. TODO: a full column of all 0s or all 1s is still not recognized.
     ColumnPtr column = nullptr;
     const IColumn::Filter * data = nullptr;
     mutable size_t cached_count_bytes = -1;
