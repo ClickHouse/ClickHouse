@@ -173,6 +173,12 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Co
     }
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
+
+    /// Skip updates with nothing to show in X-ClickHouse-Progress: the async insert accepted_* counters
+    /// are reported only in the summary. Note that elapsed_ns and memory_usage are not part of `empty`.
+    if (progress.empty() && !progress.elapsed_ns && !progress.memory_usage)
+        return;
+
     if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))
     {
         accumulated_progress.incrementElapsedNs(progress_watch.elapsed());

@@ -24,6 +24,10 @@ struct ProgressValues
     UInt64 written_rows = 0;
     UInt64 written_bytes = 0;
 
+    /// Async INSERT buffer metrics (summary-only, not in native protocol).
+    UInt64 accepted_rows = 0;
+    UInt64 accepted_bytes = 0;
+
     UInt64 result_rows = 0;
     UInt64 result_bytes = 0;
 
@@ -93,6 +97,10 @@ struct Progress
 
     std::atomic<UInt64> written_rows {0};
     std::atomic<UInt64> written_bytes {0};
+
+    /// See ProgressValues::accepted_rows.
+    std::atomic<UInt64> accepted_rows {0};
+    std::atomic<UInt64> accepted_bytes {0};
 
     std::atomic<UInt64> result_rows {0};
     std::atomic<UInt64> result_bytes {0};
