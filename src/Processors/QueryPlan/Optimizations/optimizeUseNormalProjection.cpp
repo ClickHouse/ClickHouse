@@ -611,6 +611,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             reader,
+            reading->getMutationsSnapshot(),
             empty_mutations_snapshot,
             required_columns,
             metadata,
@@ -772,11 +773,12 @@ UseProjectionsResult optimizeUseNormalProjections(
         }
     }
 
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+    /// The parent read keeps all its parts until the projection read is wired in below, so that a rejection reads them all.
+    const auto & parent_parts_with_ranges = parent_reading_select_result->parts_with_ranges;
+    bool has_parent_parts = std::any_of(parent_parts_with_ranges.begin(), parent_parts_with_ranges.end(),
+        [&](const auto & part) { return best_candidate->parent_parts.contains(part.data_part.get()); });
 
     /// Only the initiator should read the projection to avoid potential data duplication.
-    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
     bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
         && has_parent_parts;
     /// True when the projection read is replaced by a prepared source that does not announce the
@@ -810,15 +812,6 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
-    if (!query_info.is_internal && context->hasQueryContext())
-    {
-        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
-        {
-            .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = best_candidate->projection->name,
-        });
-    }
-
     projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -832,7 +825,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         next_node = &expr_or_filter_node;
     }
 
-    if (parent_reading_select_result->parts_with_ranges.empty())
+    if (!has_parent_parts)
     {
         /// All parts are taken from projection
         iter->node->children[iter->next_child - 1] = next_node;
@@ -866,6 +859,18 @@ UseProjectionsResult optimizeUseNormalProjections(
         union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
         union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;
+    }
+
+    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
+
+    if (!query_info.is_internal && context->hasQueryContext())
+    {
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        });
     }
 
     /// Here we remove last steps from stack to be able to optimize again.
