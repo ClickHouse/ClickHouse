@@ -55,7 +55,7 @@ struct SortingProperty
 /// `optimizeDistinctInOrder`. The latter sets `prefer_multiple_streams` on the underlying
 /// `ReadFromMergeTree` itself. When distinct order is applied from sorting properties instead, the
 /// reading step does not get that signal, so we propagate it here by descending through
-/// order-preserving steps to the reading step.
+/// order-preserving steps (and into every branch of a `UnionStep`) to the reading steps.
 void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
 {
     while (node)
@@ -85,6 +85,16 @@ void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
         {
             node = node->children.front();
             continue;
+        }
+
+        /// Each branch of a `UnionStep` has its own reading step, and `optimizeReadInOrder` reads every
+        /// branch in order, so each of them may choose `PrefetchingConcatProcessor` - forward the opt-out
+        /// to all branches.
+        if (typeid_cast<UnionStep *>(step))
+        {
+            for (auto * child : node->children)
+                preferMultipleStreamsForReadingBelow(child);
+            return;
         }
 
         if (node->children.size() != 1)
