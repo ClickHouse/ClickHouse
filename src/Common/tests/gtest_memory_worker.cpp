@@ -69,11 +69,24 @@ struct DirtyDecayDisabler
         setForAllArenas(previous_decay_ms);
     }
 
-    static void setForAllArenas(ssize_t decay_ms)
+    /// Best-effort, like `MemoryWorker::setDirtyDecayForAllArenas`: some arenas may be inaccessible. It also runs
+    /// from the destructor, where an exception would terminate the whole test binary. If the decay is not disabled
+    /// for some arena, the test checks below that the freed pages are still resident fail with a clear message.
+    static void setForAllArenas(ssize_t decay_ms) noexcept
     {
-        const unsigned narenas = DB::Jemalloc::getValue<unsigned>("arenas.narenas");
+        unsigned narenas = 0;
+        if (!DB::Jemalloc::tryGetValue("arenas.narenas", narenas))
+            return;
         for (unsigned i = 0; i < narenas; ++i)
-            DB::Jemalloc::setValue<ssize_t>(fmt::format("arena.{}.dirty_decay_ms", i).c_str(), decay_ms);
+        {
+            try
+            {
+                DB::Jemalloc::setValue<ssize_t>(fmt::format("arena.{}.dirty_decay_ms", i).c_str(), decay_ms);
+            }
+            catch (...) // Ok: some arenas might not exist or be accessible, skip them
+            {
+            }
+        }
     }
 };
 
@@ -113,6 +126,11 @@ void testNegativeTrackerIsCorrectedToAllocatedNotResident(DB::MemoryWorker::Memo
     }
     ASSERT_GT(allocated_at_peak, static_cast<Int64>(chunks * chunk_size));
 
+    /// Keep some memory live, so that a correction far below the live allocations (e.g. to zero) is detectable.
+    constexpr size_t live_size = 128 * MEBIBYTE;
+    const std::unique_ptr<char[]> live_memory(new char[live_size]);
+    memset(live_memory.get(), 1, live_size);
+
     /// Drive the tracker negative in the same way as late frees of memory it never saw allocated.
     const Int64 negative_shift = std::max<Int64>(total_memory_tracker.get(), 0) + 64 * MEBIBYTE;
     adjustTotalMemoryTrackerOnly(-negative_shift);
@@ -146,10 +164,14 @@ void testNegativeTrackerIsCorrectedToAllocatedNotResident(DB::MemoryWorker::Memo
         << "allocated at peak: " << allocated_at_peak << ", allocated: " << stats.allocated;
 
     ASSERT_GE(corrected, 0);
+    ASSERT_GT(stats.allocated, static_cast<Int64>(live_size));
     /// Correcting to the resident memory would land at least `gap` above the live allocations, and correcting to
     /// a stale `stats.allocated` snapshot would land at least `allocated_at_peak - stats.allocated` above them.
     EXPECT_LT(corrected, stats.allocated + 64 * MEBIBYTE)
         << "resident: " << stats.resident << ", allocated: " << stats.allocated << ", allocated at peak: " << allocated_at_peak;
+    /// And it must not land far below them either, e.g. clamped to zero like in builds without jemalloc.
+    EXPECT_GT(corrected, stats.allocated - 64 * MEBIBYTE)
+        << "resident: " << stats.resident << ", allocated: " << stats.allocated;
 }
 
 }
