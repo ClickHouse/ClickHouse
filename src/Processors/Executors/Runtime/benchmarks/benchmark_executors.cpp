@@ -4,6 +4,7 @@
 #include <Functions/registerFunctions.h>
 #include <Interpreters/Context.h>
 #include <Common/ThreadPool.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <benchmark/benchmark.h>
 #include <fmt/format.h>
@@ -11,7 +12,6 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include <sys/resource.h>
 
@@ -105,7 +105,7 @@ void runShape(benchmark::State & state, Executor executor, const Build & build)
         reportMetrics(state, metrics);
 }
 
-const std::vector<Shape> shapes
+const VectorWithMemoryTracking<Shape> shapes
 {
     {"Chain", [](ContextPtr context, size_t) { return chain(context, Load{}); }},
     {"FanOut", [](ContextPtr context, size_t threads) { return fanOut(context, threads, Load{}); }},
@@ -121,7 +121,7 @@ const std::vector<Shape> shapes
     {"ManyPartsInOrder", [](ContextPtr context, size_t threads) { return manyPartsInOrder(context, 1000, threads, Load{.rows_per_chunk = 8192}); }},
 };
 
-const std::vector<std::pair<std::string, Executor>> executors
+const VectorWithMemoryTracking<std::pair<std::string, Executor>> executors
 {
     {"v1", Executor::V1},
     {"v2", Executor::V2},

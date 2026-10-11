@@ -8,13 +8,13 @@
 namespace DB::Runtime::V2
 {
 
-void chain(const std::vector<ProcessorPtr> & stages)
+void chain(const VectorWithMemoryTracking<ProcessorPtr> & stages)
 {
     for (size_t index = 1; index < stages.size(); ++index)
         connect(stages[index - 1]->getOutputs().front(), stages[index]->getInputs().front());
 }
 
-ProcessorPtr fanIn(const std::vector<ProcessorPtr> & sources, const ProcessorPtr & sink)
+ProcessorPtr fanIn(const VectorWithMemoryTracking<ProcessorPtr> & sources, const ProcessorPtr & sink)
 {
     auto resize = std::make_shared<ResizeProcessor>(makeHeader(), sources.size(), 1);
 
@@ -25,7 +25,7 @@ ProcessorPtr fanIn(const std::vector<ProcessorPtr> & sources, const ProcessorPtr
     return resize;
 }
 
-ProcessorPtr fanOut(const ProcessorPtr & source, const std::vector<ProcessorPtr> & sinks)
+ProcessorPtr fanOut(const ProcessorPtr & source, const VectorWithMemoryTracking<ProcessorPtr> & sinks)
 {
     auto resize = std::make_shared<ResizeProcessor>(makeHeader(), 1, sinks.size());
 

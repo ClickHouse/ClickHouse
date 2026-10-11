@@ -3,6 +3,7 @@
 #include <Processors/Executors/Runtime/V2/tests/Toolkit/Topology.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <stdexcept>
@@ -21,7 +22,7 @@ WYRD_TEST(ScriptedPipeline, ChainDeliversEveryChunkInOrder, .runs = 1000, .simul
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
     Metrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline({source, transform, sink}, threads));
-    EXPECT_EQ(received(*sink), (std::vector<UInt64>{1, 2, 3}));
+    EXPECT_EQ(received(*sink), (VectorWithMemoryTracking<UInt64>{1, 2, 3}));
 
     if (threads == 1)
     {
@@ -53,7 +54,7 @@ WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation 
 
     auto values = received(*sink);
     std::ranges::sort(values);
-    EXPECT_EQ(values, (std::vector<UInt64>{1, 2}));
+    EXPECT_EQ(values, (VectorWithMemoryTracking<UInt64>{1, 2}));
 
     if (threads == 1)
     {
@@ -77,7 +78,7 @@ WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulat
     auto rest = received(*second);
     values.insert(values.end(), rest.begin(), rest.end());
     std::ranges::sort(values);
-    EXPECT_EQ(values, (std::vector<UInt64>{1, 2, 3}));
+    EXPECT_EQ(values, (VectorWithMemoryTracking<UInt64>{1, 2, 3}));
 
     if (threads == 1)
     {

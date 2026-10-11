@@ -9,9 +9,9 @@
 #include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
+#include <Common/SetWithMemoryTracking.h>
 
 #include <mutex>
-#include <set>
 #include <stdexcept>
 
 using namespace DB::Runtime::Wyrd;
@@ -43,7 +43,7 @@ WYRD_TEST(Wyrd, SimulationSameSeedGivesTheSameRun, .runs = 1, .seed = 1)
 
 TEST(Wyrd, SimulationDifferentSeedsGiveDifferentSchedules)
 {
-    std::set<UInt64> digests;
+    DB::SetWithMemoryTracking<UInt64> digests;
     for (UInt64 seed = 1; seed <= 16; ++seed)
     {
         SimulationParams params;

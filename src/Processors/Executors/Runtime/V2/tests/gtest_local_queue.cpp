@@ -5,11 +5,12 @@
 #include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <array>
 #include <span>
-#include <vector>
 
+using namespace DB;
 using namespace DB::Runtime;
 using namespace DB::Runtime::V2;
 
@@ -26,7 +27,7 @@ bool pushOne(LocalQueue & ring, ExecutingProcessor & record)
 
 WYRD_TEST(LocalQueue, OwnerTakesNewestAndThiefTakesOldest)
 {
-    std::vector<ExecutingProcessor> records(3);
+    VectorWithMemoryTracking<ExecutingProcessor> records(3);
     LocalQueue ring("ring");
     for (auto & record : records)
         EXPECT_TRUE(pushOne(ring, record));
@@ -44,7 +45,7 @@ WYRD_TEST(LocalQueue, OwnerTakesNewestAndThiefTakesOldest)
 
 WYRD_TEST(LocalQueue, StealTakesHalfRoundedUpWithinSpan)
 {
-    std::vector<ExecutingProcessor> records(5);
+    VectorWithMemoryTracking<ExecutingProcessor> records(5);
     LocalQueue ring("ring");
     for (auto & record : records)
         EXPECT_TRUE(pushOne(ring, record));
@@ -65,7 +66,7 @@ WYRD_TEST(LocalQueue, StealTakesHalfRoundedUpWithinSpan)
 
 WYRD_TEST(LocalQueue, FullRingRefusesPushUntilSteal)
 {
-    std::vector<ExecutingProcessor> records(LocalQueue::capacity + 1);
+    VectorWithMemoryTracking<ExecutingProcessor> records(LocalQueue::capacity + 1);
     LocalQueue ring("ring");
     for (UInt32 index = 0; index < LocalQueue::capacity; ++index)
         EXPECT_TRUE(pushOne(ring, records[index]));
@@ -85,8 +86,8 @@ WYRD_TEST(LocalQueue, EveryPushedEntryIsTakenExactlyOnce, .runs = 10000, .simula
     const size_t batch = Wyrd::randomNumberBetween(1, largest_batch);
     const double owner_pop_probability = Wyrd::randomReal(0.1, 0.5);
 
-    std::vector<ExecutingProcessor> records(total);
-    std::vector<Wyrd::Atomic<UInt32>> taken(total);
+    VectorWithMemoryTracking<ExecutingProcessor> records(total);
+    VectorWithMemoryTracking<Wyrd::Atomic<UInt32>> taken(total);
     auto take = [&](ExecutingProcessor * record) { taken[record - records.data()].fetch_add(1); };
 
     LocalQueue ring("ring");

@@ -21,6 +21,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <numeric>
@@ -73,7 +74,7 @@ QueryPlan readNumbers(size_t streams, Load load, size_t width = 0)
     return plan;
 }
 
-void addFunction(QueryPlan & plan, ContextPtr context, const std::vector<String> & functions, const String & input_name, const String & output_name)
+void addFunction(QueryPlan & plan, ContextPtr context, const VectorWithMemoryTracking<String> & functions, const String & input_name, const String & output_name)
 {
     ActionsDAG dag(plan.getCurrentHeader()->getNamesAndTypesList());
     const ActionsDAG::Node * node = &dag.findInOutputs(input_name);

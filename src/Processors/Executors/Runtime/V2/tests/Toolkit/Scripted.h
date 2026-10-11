@@ -2,9 +2,9 @@
 
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
-#include <vector>
 
 namespace DB::Runtime::V2
 {
@@ -28,7 +28,7 @@ struct Action
 
 Action work(std::function<void(IProcessor &)> on_work);
 Action emit(UInt64 value);
-std::vector<Action> emits(UInt64 first_value, size_t count);
+VectorWithMemoryTracking<Action> emits(UInt64 first_value, size_t count);
 
 Action async(std::function<int(IProcessor &)> on_async);
 Action fd(int descriptor);
@@ -45,10 +45,10 @@ Action stop();
 SharedHeader makeHeader();
 Chunk makeChunk(UInt64 value);
 
-ProcessorPtr makeSource(String name, std::vector<Action> actions);
-ProcessorPtr makeTransform(String name, std::vector<Action> actions);
-ProcessorPtr makeSink(String name, std::vector<Action> actions);
+ProcessorPtr makeSource(String name, VectorWithMemoryTracking<Action> actions);
+ProcessorPtr makeTransform(String name, VectorWithMemoryTracking<Action> actions);
+ProcessorPtr makeSink(String name, VectorWithMemoryTracking<Action> actions);
 
-std::vector<UInt64> received(const IProcessor & sink);
+VectorWithMemoryTracking<UInt64> received(const IProcessor & sink);
 
 }

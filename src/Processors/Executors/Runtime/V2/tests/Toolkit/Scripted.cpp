@@ -4,9 +4,9 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Port.h>
+#include <Common/DequeWithMemoryTracking.h>
 
 #include <algorithm>
-#include <deque>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -43,7 +43,7 @@ class Scripted : public IProcessor
     friend Action V2::emit(UInt64 value);
     friend Action V2::addInput(ProcessorPtr new_input);
     friend Action V2::addOutput(ProcessorPtr new_output);
-    friend std::vector<UInt64> V2::received(const IProcessor & sink);
+    friend VectorWithMemoryTracking<UInt64> V2::received(const IProcessor & sink);
 
     Status finishAll()
     {
@@ -56,7 +56,7 @@ class Scripted : public IProcessor
     }
 
 public:
-    Scripted(String name_, size_t inputs_count, size_t outputs_count, std::vector<Action> actions_)
+    Scripted(String name_, size_t inputs_count, size_t outputs_count, VectorWithMemoryTracking<Action> actions_)
         : IProcessor(makeInputs(inputs_count), makeOutputs(outputs_count))
         , name(std::move(name_))
         , actions(std::make_move_iterator(actions_.begin()), std::make_move_iterator(actions_.end()))
@@ -166,10 +166,10 @@ public:
 
 private:
     const String name;
-    std::deque<Action> actions;
+    DequeWithMemoryTracking<Action> actions;
     std::optional<Chunk> current;
     std::optional<Chunk> pending;
-    std::vector<UInt64> received_values;
+    VectorWithMemoryTracking<UInt64> received_values;
     Wyrd::ExclusiveScope scope;
 };
 
@@ -187,9 +187,9 @@ Action emit(UInt64 value)
     return work([value](IProcessor & processor) { dynamic_cast<Scripted &>(processor).current = makeChunk(value); });
 }
 
-std::vector<Action> emits(UInt64 first_value, size_t count)
+VectorWithMemoryTracking<Action> emits(UInt64 first_value, size_t count)
 {
-    std::vector<Action> actions;
+    VectorWithMemoryTracking<Action> actions;
     for (size_t index = 0; index < count; ++index)
         actions.push_back(emit(first_value + index));
     return actions;
@@ -265,22 +265,22 @@ Chunk makeChunk(UInt64 value)
     return Chunk(std::move(columns), 1);
 }
 
-ProcessorPtr makeSource(String name, std::vector<Action> actions)
+ProcessorPtr makeSource(String name, VectorWithMemoryTracking<Action> actions)
 {
     return std::make_shared<Scripted>(std::move(name), 0, 1, std::move(actions));
 }
 
-ProcessorPtr makeTransform(String name, std::vector<Action> actions)
+ProcessorPtr makeTransform(String name, VectorWithMemoryTracking<Action> actions)
 {
     return std::make_shared<Scripted>(std::move(name), 1, 1, std::move(actions));
 }
 
-ProcessorPtr makeSink(String name, std::vector<Action> actions)
+ProcessorPtr makeSink(String name, VectorWithMemoryTracking<Action> actions)
 {
     return std::make_shared<Scripted>(std::move(name), 1, 0, std::move(actions));
 }
 
-std::vector<UInt64> received(const IProcessor & sink)
+VectorWithMemoryTracking<UInt64> received(const IProcessor & sink)
 {
     return dynamic_cast<const Scripted &>(sink).received_values;
 }

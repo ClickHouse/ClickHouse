@@ -5,9 +5,9 @@
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Gate.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
-#include <vector>
 
 using namespace DB;
 using namespace DB::Runtime;
@@ -16,9 +16,9 @@ using namespace DB::Runtime::V2;
 namespace
 {
 
-std::vector<Action> emitsAfterIdleWork(UInt64 first_value, size_t chunks, size_t max_idle_work)
+VectorWithMemoryTracking<Action> emitsAfterIdleWork(UInt64 first_value, size_t chunks, size_t max_idle_work)
 {
-    std::vector<Action> actions;
+    VectorWithMemoryTracking<Action> actions;
     for (size_t chunk = 0; chunk < chunks; ++chunk)
     {
         const size_t idle_work = Wyrd::randomNumberBetween(0, max_idle_work);
@@ -29,7 +29,7 @@ std::vector<Action> emitsAfterIdleWork(UInt64 first_value, size_t chunks, size_t
     return actions;
 }
 
-std::vector<UInt64> sorted(std::vector<UInt64> values)
+VectorWithMemoryTracking<UInt64> sorted(VectorWithMemoryTracking<UInt64> values)
 {
     std::ranges::sort(values);
     return values;
@@ -43,8 +43,8 @@ WYRD_TEST(Parking, BurstsAndPausesFinishEveryChunk, .runs = 1000, .simulation = 
     const size_t threads = Wyrd::randomNumberBetween(1, 4);
     const size_t max_idle_work = Wyrd::randomNumberBetween(0, 6);
 
-    std::vector<ProcessorPtr> sources;
-    std::vector<UInt64> expected;
+    VectorWithMemoryTracking<ProcessorPtr> sources;
+    VectorWithMemoryTracking<UInt64> expected;
     for (size_t index = 0; index < sources_count; ++index)
     {
         const size_t chunks = Wyrd::randomNumberBetween(1, 5);
@@ -86,7 +86,7 @@ WYRD_TEST(Parking, WorkReleasedWhileOthersSleepWakesThem, .runs = 1000, .simulat
     EXPECT_NO_THROW(runPipeline({held, transform, sink}, threads));
     opener.join();
 
-    EXPECT_EQ(received(*sink), (std::vector<UInt64>{1, 2, 3}));
+    EXPECT_EQ(received(*sink), (VectorWithMemoryTracking<UInt64>{1, 2, 3}));
 }
 
 WYRD_TEST(Parking, IdleWorkersAreStoppedAtTheEnd, .runs = 1000)
@@ -97,7 +97,7 @@ WYRD_TEST(Parking, IdleWorkersAreStoppedAtTheEnd, .runs = 1000)
 
     Metrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline({source, sink}, 4));
-    EXPECT_EQ(received(*sink), (std::vector<UInt64>{1}));
+    EXPECT_EQ(received(*sink), (VectorWithMemoryTracking<UInt64>{1}));
 
     EXPECT_EQ(metrics.steal_picks, 0u);
     EXPECT_EQ(metrics.parks, 0u);
