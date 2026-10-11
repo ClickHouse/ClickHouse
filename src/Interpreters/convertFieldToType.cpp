@@ -21,6 +21,8 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
@@ -449,6 +451,28 @@ std::optional<Int64> dateTime64TicksFromField(const Field & src, Int64 scale_mul
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected field type {} for a DateTime64 / Time64 constant", src.getTypeName());
     }
+}
+
+/// Only `to_type` is unwrapped by `convertFieldToType`, so the source type hint can still be wrapped
+/// into `Nullable` or `LowCardinality`, which do not change the `Field` representation of the value.
+bool typeContainsUUID2(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & t) { return WhichDataType(t).isUUID2(); });
+}
+
+const IDataType * removeNullableAndLowCardinalityFromHint(const IDataType * from_type_hint)
+{
+    const IDataType * unwrapped_hint = from_type_hint;
+    while (unwrapped_hint)
+    {
+        if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
+            unwrapped_hint = nullable_hint->getNestedType().get();
+        else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
+            unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
+        else
+            break;
+    }
+    return unwrapped_hint;
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
@@ -965,9 +989,18 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return static_cast<IPv4>(convertNumericType<UInt32>(src, type, strict, convert_inexact_floats).safeGet<UInt32>());
         }
     }
-    else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
+    else if ((which_type.isUUID() || which_type.isUUID2()) && src.getType() == Field::Types::UUID)
     {
-        /// Already in needed type.
+        /// `UUID` and `UUID2` share the `Field` representation (`Field::Types::UUID`), but they store the value in
+        /// different layouts that differ only by swapping the two 64-bit halves: `UUID` keeps the historical layout,
+        /// while `UUID2` keeps the big-endian, correctly-sorting one. When the source constant came from the other
+        /// type - which we can tell only from `from_type_hint` - swap the halves so the value matches the destination
+        /// encoding; otherwise (same type, or no hint) it is expected to be already in the needed layout.
+        WhichDataType which_unwrapped_from_type;
+        if (const auto * unwrapped_hint = removeNullableAndLowCardinalityFromHint(from_type_hint))
+            which_unwrapped_from_type = WhichDataType(*unwrapped_hint);
+        if ((which_type.isUUID() && which_unwrapped_from_type.isUUID2()) || (which_type.isUUID2() && which_unwrapped_from_type.isUUID()))
+            return UUIDHelpers::swapHalves(src.safeGet<UUID>());
         return src;
     }
     else if (which_type.isIPv6())
@@ -1003,17 +1036,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         /// An Enum arrives as its underlying number, but `CAST(enum AS String)` uses the name.
-        /// Only `to_type` is unwrapped by the caller, so unwrap the hint here.
-        const IDataType * unwrapped_hint = from_type_hint;
-        while (unwrapped_hint)
-        {
-            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(unwrapped_hint))
-                unwrapped_hint = nullable_hint->getNestedType().get();
-            else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(unwrapped_hint))
-                unwrapped_hint = low_cardinality_hint->getDictionaryType().get();
-            else
-                break;
-        }
+        const IDataType * unwrapped_hint = removeNullableAndLowCardinalityFromHint(from_type_hint);
 
         /// Re-enter so that a `FixedString` target still zero-pads the name to its width.
         if (const auto * enum_from_type = dynamic_cast<const IDataTypeEnum *>(unwrapped_hint))
@@ -1029,12 +1052,31 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const Array & src_arr = src.safeGet<Array>();
             size_t src_arr_size = src_arr.size();
 
+            /// The source type of the elements matters for layout-changing conversions (e.g. `UUID` -> `UUID2`,
+            /// which share the `Field` representation but differ in the order of the two 64-bit halves), so thread
+            /// it into the recursion. The hint can also be a `Tuple` when a caller flattened a tuple constant into
+            /// an array (e.g. the list from `IN (...)` pushed down to external storages).
+            const IDataType * element_from_hint = nullptr;
+            const DataTypeTuple * tuple_from_hint = nullptr;
+            const IDataType * unwrapped_hint = removeNullableAndLowCardinalityFromHint(from_type_hint);
+            if (const auto * array_from_hint = typeid_cast<const DataTypeArray *>(unwrapped_hint))
+                element_from_hint = array_from_hint->getNestedType().get();
+            else if (const auto * maybe_tuple_hint = typeid_cast<const DataTypeTuple *>(unwrapped_hint);
+                     maybe_tuple_hint && maybe_tuple_hint->getElements().size() == src_arr_size)
+                tuple_from_hint = maybe_tuple_hint;
+
             const auto & element_type = *(type_array->getNestedType());
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(
+                    src_arr[i],
+                    element_type,
+                    tuple_from_hint ? tuple_from_hint->getElements()[i].get() : element_from_hint,
+                    format_settings,
+                    strict,
+                    convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -1061,12 +1103,23 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     dst_tuple_size,
                     src_tuple_size);
 
+            /// As for arrays above, thread the per-element source types into the recursion.
+            const auto * tuple_from_hint = typeid_cast<const DataTypeTuple *>(removeNullableAndLowCardinalityFromHint(from_type_hint));
+            if (tuple_from_hint && tuple_from_hint->getElements().size() != src_tuple_size)
+                tuple_from_hint = nullptr;
+
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(
+                    src_tuple[i],
+                    element_type,
+                    tuple_from_hint ? tuple_from_hint->getElements()[i].get() : nullptr,
+                    format_settings,
+                    strict,
+                    convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -1242,6 +1295,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
+            /// As for arrays above, thread the source key/value types into the recursion.
+            const IDataType * key_from_hint = nullptr;
+            const IDataType * value_from_hint = nullptr;
+            if (const auto * map_from_hint = typeid_cast<const DataTypeMap *>(removeNullableAndLowCardinalityFromHint(from_type_hint)))
+            {
+                key_from_hint = map_from_hint->getKeyType().get();
+                value_from_hint = map_from_hint->getValueType().get();
+            }
+
             const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
@@ -1258,12 +1320,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, key_from_hint, format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, value_from_hint, format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
@@ -1289,6 +1351,42 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         if (src.isNull())
             return src;
+
+        /// `UUID` and `UUID2` share the `Field` representation (`Field::Types::UUID`), so `ColumnVariant::tryInsert`
+        /// stores such a value (possibly nested into an array, a tuple or a map) into the first alternative that accepts
+        /// it, regardless of the source type. Convert the value for exactly that alternative, so that its layout matches
+        /// the alternative. If the source type is itself another alternative of the `Variant`, the value cannot reach
+        /// it through a `Field`, so throw instead of silently changing its type.
+        if (from_type_hint && (typeContainsUUID2(type) || typeContainsUUID2(*from_type_hint)))
+        {
+            auto hint_discriminator = type_variant->tryGetVariantDiscriminator(from_type_hint->getName());
+            if (!hint_discriminator)
+            {
+                /// A non-NULL value of `Nullable(T)` or `LowCardinality(T)` is a value of `T`, which may be an alternative.
+                const IDataType * nested_hint = from_type_hint;
+                if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(nested_hint))
+                    nested_hint = low_cardinality_hint->getDictionaryType().get();
+                if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(nested_hint))
+                    nested_hint = nullable_hint->getNestedType().get();
+                if (nested_hint != from_type_hint)
+                    hint_discriminator = type_variant->tryGetVariantDiscriminator(nested_hint->getName());
+            }
+
+            const auto & variants = type_variant->getVariants();
+            for (size_t i = 0; i < variants.size(); ++i)
+            {
+                auto variant_column = variants[i]->createColumn();
+                if (!variant_column->tryInsert(src))
+                    continue;
+
+                if (hint_discriminator && *hint_discriminator != i)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "Cannot convert a constant of type {} to {}: it would be stored as {}, because {} and {} share the value representation",
+                        from_type_hint->getName(), type.getName(), variants[i]->getName(), variants[i]->getName(), from_type_hint->getName());
+
+                return convertFieldToType(src, *variants[i], from_type_hint, format_settings, strict, convert_inexact_floats);
+            }
+        }
 
         /// If we have type hint and Variant contains such type, no need to convert field.
         if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
@@ -1340,7 +1438,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (isDynamic(type))
     {
-        /// We can insert any field to Dynamic column.
+        /// We can insert any field to Dynamic column. But `ColumnDynamic` infers the type of a new variant from the
+        /// `Field` itself, and a `Field::Types::UUID` is inferred as `UUID`, while `UUID2` keeps the value in another
+        /// layout. So convert a value that came from `UUID2` to the inferred type, keeping the value.
+        if (from_type_hint && !src.isNull() && typeContainsUUID2(*from_type_hint))
+        {
+            auto inferred_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), src);
+            return convertFieldToType(src, *inferred_type, from_type_hint, format_settings, strict, convert_inexact_floats);
+        }
         return src;
     }
     else if (isObject(type))

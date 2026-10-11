@@ -10,6 +10,7 @@
 #include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -24,10 +25,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
@@ -37,6 +40,7 @@
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
+#include <Processors/Formats/Impl/AvroRowOutputFormat.h>
 #include <base/EnumReflection.h>
 #include <Compiler.hh>
 #include <DataFile.hh>
@@ -305,15 +309,18 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
     {
         case avro::AVRO_STRING: [[fallthrough]];
         case avro::AVRO_BYTES:
-            if (target.isUUID())
+            if (target.isUUID() || target.isUUID2())
             {
-                return [tmp = std::string()](IColumn & column, avro::Decoder & decoder) mutable
+                return [tmp = std::string(), is_uuid2 = target.isUUID2()](IColumn & column, avro::Decoder & decoder) mutable
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
                         throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
 
-                    const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.length()});
+                    UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.length()});
+                    /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+                    if (is_uuid2)
+                        uuid = UUIDHelpers::swapHalves(uuid);
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
                     return true;
                 };
@@ -672,9 +679,44 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         continue;
                     }
                     const auto variant = AvroSchemaReader::avroNodeToDataType(avro_node);
-                    nested_deserializers.emplace_back(createDeserializeFn(avro_node, variant));
 
-                    auto corresponding_discriminator = variant_type.tryGetVariantDiscriminator(variant->getName());
+                    /// The type of a branch is inferred without the `UUID2` paths of the file, so an Avro `uuid` is
+                    /// always `UUID`, and a destination alternative that has `UUID2` in its place is compatible too.
+                    /// Prefer an alternative that is not taken by a previous branch, so that the branches of
+                    /// `Variant(Tuple(x UUID), Tuple(x UUID2))`, which have the same inferred type, go to different
+                    /// alternatives in the order the writer emitted them, and an exact match over a `UUID2` one.
+                    std::optional<ColumnVariant::Discriminator> exact_discriminator;
+                    std::vector<ColumnVariant::Discriminator> compatible_discriminators;
+                    for (size_t d = 0; d < nested_types.size(); ++d)
+                    {
+                        if (variant->equals(*nested_types[d]))
+                        {
+                            exact_discriminator = static_cast<ColumnVariant::Discriminator>(d);
+                            continue;
+                        }
+                        auto replaced = replaceNestedTypesInPair(variant, nested_types[d], [](const DataTypePtr & left, const DataTypePtr & right) -> DataTypePtr
+                        {
+                            if (left->equals(*right))
+                                return left;
+                            if (isUUID(left) && isUUID2(right))
+                                return right;
+                            return nullptr;
+                        });
+                        if (replaced && replaced->equals(*nested_types[d]))
+                            compatible_discriminators.push_back(static_cast<ColumnVariant::Discriminator>(d));
+                    }
+
+                    std::optional<ColumnVariant::Discriminator> corresponding_discriminator;
+                    if (exact_discriminator && !used_discriminators.contains(*exact_discriminator))
+                        corresponding_discriminator = exact_discriminator;
+                    for (auto d : compatible_discriminators)
+                        if (!corresponding_discriminator && !used_discriminators.contains(d))
+                            corresponding_discriminator = d;
+                    if (!corresponding_discriminator)
+                        corresponding_discriminator = exact_discriminator;
+                    if (!corresponding_discriminator && !compatible_discriminators.empty())
+                        corresponding_discriminator = compatible_discriminators.front();
+
                     if (!corresponding_discriminator)
                         throw Exception(
                             ErrorCodes::ILLEGAL_COLUMN,
@@ -683,6 +725,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                             variant_type.getName(),
                             variant->getName());
 
+                    nested_deserializers.emplace_back(createDeserializeFn(avro_node, nested_types[*corresponding_discriminator]));
                     used_discriminators.insert(corresponding_discriminator.value());
                     union_index_to_global_discriminator.insert_or_assign(i, std::move(corresponding_discriminator.value()));
                 }
@@ -812,15 +855,18 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return true;
                 };
             }
-            if (target.isUUID())
+            if (target.isUUID() || target.isUUID2())
             {
-                return [tmp = std::vector<uint8_t>(), fixed_size](IColumn & column, avro::Decoder & decoder) mutable
+                return [tmp = std::vector<uint8_t>(), fixed_size, is_uuid2 = target.isUUID2()](IColumn & column, avro::Decoder & decoder) mutable
                 {
                     decoder.decodeFixed(fixed_size, tmp);
                     if (tmp.size() != 36)
                         throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from type Fixed, because it's size ({}) is not equal to the size of UUID (36)", fixed_size);
 
-                    const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()});
+                    UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()});
+                    /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+                    if (is_uuid2)
+                        uuid = UUIDHelpers::swapHalves(uuid);
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
                     return true;
                 };
@@ -1406,6 +1452,7 @@ AvroSchemaReader::AvroSchemaReader(ReadBuffer & in_, bool confluent_, const Form
 NamesAndTypesList AvroSchemaReader::readSchema()
 {
     avro::NodePtr root_node;
+    std::unordered_set<String> uuid2_paths;
     if (confluent)
     {
         UInt32 schema_id = readConfluentSchemaId(in);
@@ -1419,6 +1466,24 @@ NamesAndTypesList AvroSchemaReader::readSchema()
         auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
             std::make_unique<AvroInputStreamReadBufferAdapter>(in), MAX_AVRO_SCHEMA_DEPTH);
         root_node = file_reader_ptr->dataSchema().root();
+
+        const auto & metadata = file_reader_ptr->metadata();
+        if (auto it = metadata.find(AVRO_UUID2_PATHS_METADATA_KEY); it != metadata.end())
+        {
+            ReadBufferFromMemory buf(reinterpret_cast<const char *>(it->second.data()), it->second.size());
+            assertChar('[', buf);
+            if (!checkChar(']', buf))
+            {
+                do
+                {
+                    String uuid2_path;
+                    readJSONString(uuid2_path, buf, format_settings.json);
+                    uuid2_paths.insert(std::move(uuid2_path));
+                } while (checkChar(',', buf));
+                assertChar(']', buf);
+            }
+            assertEOF(buf);
+        }
     }
 
     if (root_node->type() != avro::Type::AVRO_RECORD)
@@ -1426,7 +1491,14 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
     NamesAndTypesList names_and_types;
     for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
-        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i), format_settings.schema_inference_allow_nullable_tuple_type));
+    {
+        checkStackSize();
+        std::unordered_set<std::string> seen_names;
+        names_and_types.emplace_back(
+            root_node->nameAt(i),
+            avroNodeToDataTypeImpl(
+                root_node->leafAt(i), seen_names, format_settings.schema_inference_allow_nullable_tuple_type, uuid2_paths, root_node->nameAt(i)));
+    }
 
     return names_and_types;
 }
@@ -1434,12 +1506,30 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
     std::unordered_set<std::string> seen_names;
-    return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
+    return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type, /*uuid2_paths=*/{}, /*path=*/{});
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
+DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(
+    const avro::NodePtr & node,
+    std::unordered_set<std::string> & seen_names,
+    bool allow_nullable_tuple_type,
+    const std::unordered_set<String> & uuid2_paths,
+    const String & path)
 {
     checkStackSize();
+
+    /// Recurse into a nested node at the same path (`Nullable` unions) or at a child path (array elements, map values,
+    /// record fields, `Variant` alternatives).
+    auto infer = [&](const avro::NodePtr & nested_node, const String & nested_path)
+    {
+        return avroNodeToDataTypeImpl(nested_node, seen_names, allow_nullable_tuple_type, uuid2_paths, nested_path);
+    };
+    auto make_uuid = [&]() -> DataTypePtr
+    {
+        if (uuid2_paths.contains(path))
+            return std::make_shared<DataTypeUUID2>();
+        return std::make_shared<DataTypeUUID>();
+    };
 
     switch (node->type())
     {
@@ -1471,7 +1561,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
         {
             auto logical_type = node->logicalType();
             if (logical_type.type() == avro::LogicalType::UUID)
-                return std::make_shared<DataTypeUUID>();
+                return make_uuid();
 
             if (logical_type.type() == avro::LogicalType::DECIMAL)
                 return createDecimal<DataTypeDecimal>(logical_type.precision(), logical_type.scale());
@@ -1501,7 +1591,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
         {
             auto logical_type = node->logicalType();
             if (logical_type.type() == avro::LogicalType::UUID)
-                return std::make_shared<DataTypeUUID>();
+                return make_uuid();
 
             if (logical_type.type() == avro::LogicalType::DECIMAL)
                 return createDecimal<DataTypeDecimal>(logical_type.precision(), logical_type.scale());
@@ -1509,7 +1599,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeFixedString>(node->fixedSize());
         }
         case avro::Type::AVRO_ARRAY:
-            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type));
+            return std::make_shared<DataTypeArray>(infer(node->leafAt(0), Nested::concatenateName(path, "element")));
         case avro::Type::AVRO_NULL:
             return std::make_shared<DataTypeNothing>();
         case avro::Type::AVRO_UNION:
@@ -1517,7 +1607,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             // Treat union[T] as just T
             if (node->leaves() == 1)
             {
-                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type);
+                return infer(node->leafAt(0), path);
             }
 
             // Treat union[T, NULL] and union[NULL, T] as Nullable(T)
@@ -1526,7 +1616,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
-                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names, allow_nullable_tuple_type);
+                auto nested_type = infer(node->leafAt(nested_leaf_index), path);
                 if (isTuple(nested_type) && !allow_nullable_tuple_type)
                     return nested_type;
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
@@ -1538,20 +1628,25 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             DataTypes nested_types;
             nested_types.reserve(avro_union_size);
 
+            size_t non_null_size = 0;
+            for (int i = 0; i != avro_union_size; ++i)
+                if (node->leafAt(i)->type() != avro::Type::AVRO_NULL)
+                    ++non_null_size;
+
             for (int i = 0; i != avro_union_size; ++i)
             {
                 // We skip the null union type in Variant, since it is encoded using the null discriminator (implicitly all Variants can "contain null").
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names, allow_nullable_tuple_type));
+                nested_types.push_back(infer(avro_node, getAvroVariantAlternativePath(path, non_null_size, i)));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
         case avro::Type::AVRO_SYMBOLIC:
         {
             auto resolved = avro::resolveSymbol(node);
-            return avroNodeToDataTypeImpl(resolved, seen_names, allow_nullable_tuple_type);
+            return infer(resolved, path);
         }
         case avro::Type::AVRO_RECORD:
         {
@@ -1566,7 +1661,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             nested_names.reserve(node->leaves());
             for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
             {
-                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names, allow_nullable_tuple_type));
+                nested_types.push_back(infer(node->leafAt(i), Nested::concatenateName(path, node->nameAt(i))));
                 nested_names.push_back(node->nameAt(i));
             }
 
@@ -1574,7 +1669,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeTuple>(nested_types, nested_names);
         }
         case avro::Type::AVRO_MAP:
-            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type), avroNodeToDataTypeImpl(node->leafAt(1), seen_names, allow_nullable_tuple_type));
+            return std::make_shared<DataTypeMap>(infer(node->leafAt(0), Nested::concatenateName(path, "key")), infer(node->leafAt(1), Nested::concatenateName(path, "value")));
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
     }

@@ -229,7 +229,14 @@ public:
     /// that CREATE TABLE rejects.
     static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
+    /// `uuid2_paths` are the dotted paths of the values written from `UUID2` (see `AVRO_UUID2_PATHS_METADATA_KEY`);
+    /// a `uuid` logical type at such a path is inferred as `UUID2` instead of `UUID`.
+    static DataTypePtr avroNodeToDataTypeImpl(
+        const avro::NodePtr & node,
+        std::unordered_set<std::string> & seen_names,
+        bool allow_nullable_tuple_type,
+        const std::unordered_set<String> & uuid2_paths,
+        const String & path);
 
     bool confluent;
     const FormatSettings format_settings;

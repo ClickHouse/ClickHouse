@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
@@ -402,7 +403,15 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
     const auto & key_type = data_type_map.getKeyType();
 
+    /// `UUID` and `UUID2` share the physical representation but keep the two 64-bit halves in the
+    /// opposite order. A plain `Field`-level insert below would copy the raw representation as-is,
+    /// so a key constant of the "other" UUID flavor would serialize to the wrong subcolumn name.
     Field key_value = second_argument_constant_node->getValue();
+    const auto key_type_decayed = removeNullable(removeLowCardinality(key_type));
+    const auto constant_type_decayed = removeNullable(removeLowCardinality(second_argument_constant_node->getResultType()));
+    if ((isUUID(key_type_decayed) && isUUID2(constant_type_decayed)) || (isUUID2(key_type_decayed) && isUUID(constant_type_decayed)))
+        key_value = convertFieldToType(key_value, *key_type_decayed, constant_type_decayed.get());
+
     if (isEnum(key_type))
     {
         /// A map with Enum keys can be indexed either by the name of the enum value or by its numeric value.
