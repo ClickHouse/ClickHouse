@@ -1988,8 +1988,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
-            /// The database is resolved again here, so it can be Replicated even when it was not at
-            /// the earlier check.
             rejectShortAttachViewOutsideOneNode(create);
 
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable(), database.get());
