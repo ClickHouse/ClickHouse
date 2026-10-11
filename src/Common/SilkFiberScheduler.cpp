@@ -9,10 +9,6 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ThreadStatus.h>
 
-#if defined(SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-#    include <Common/SilkThreadLocalStorageSanitizer.h>
-#endif
-
 #include <silk/fibers/fiber.h>
 #include <silk/fibers/future.h>
 #include <silk/util/init.h>
@@ -50,9 +46,6 @@ struct FiberContext
 
     static int main(FiberContext * self) noexcept
     {
-#if defined(SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-        silk_thread_local_storage_sanitizer_fiber_init_hook();
-#endif
         inside_silk_fiber = true;
         try
         {
