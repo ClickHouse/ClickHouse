@@ -119,6 +119,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/misc.h>
 #include <Dictionaries/IDictionary.h>
@@ -3194,6 +3195,40 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 return;
     }
 
+    /// Existence preflight for dictionaries. `FunctionDictHelper::getDictionary` loads the dictionary
+    /// before it checks the access, so a missing dictionary, or one whose loading fails, fails the query
+    /// only after the hook would have reattached its tables. Require every named dictionary to be loaded
+    /// already — inspecting the loader's current status never triggers loading — and skip the hook
+    /// otherwise: a dictionary that is not loaded yet only loses the randomization for this query.
+    /// The lookup mirrors `ExternalDictionariesLoader::resolveDictionaryName`: a dictionary from the
+    /// configuration is keyed by its name, a DDL dictionary in an `Atomic` database by its UUID.
+    if (!data.dictionaries.empty())
+    {
+        /// The name resolution is not a use of the dictionary by the query, so keep it out of the
+        /// query's record of used objects.
+        Context::SuppressQueryFactoriesInfoScope suppress_query_factories_info;
+        const auto & loader = context->getExternalDictionariesLoader();
+        for (const auto & dictionary : data.dictionaries)
+        {
+            String key = dictionary.getFullName();
+            if (!loader.has(key))
+            {
+                const StorageID dictionary_id(dictionary.database.empty() ? context->getCurrentDatabase() : dictionary.database, dictionary.table);
+                const auto database = DatabaseCatalog::instance().tryGetDatabase(dictionary_id.getDatabaseName());
+                if (!database || !database->supportsDetachingTables())
+                    return;
+                const auto storage = database->tryGetTable(dictionary_id.getTableName(), context);
+                if (!storage || !storage->isDictionary())
+                    return;
+                key = database->getUUID() == UUIDHelpers::Nil ? dictionary_id.getFullNameNotQuoted() : toString(storage->getStorageID().uuid);
+            }
+
+            const auto status = loader.getCurrentStatus(key);
+            if (status != ExternalLoaderStatus::LOADED && status != ExternalLoaderStatus::LOADED_AND_RELOADING)
+                return;
+        }
+    }
+
     for (const auto & collected : data.tables)
     {
         /// The outer query can already be cancelled while it is still pending — killed by `KILL QUERY`,
@@ -3238,6 +3273,16 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// concurrently after this check can still be lost. That matches manual `DETACH` semantics and is
         /// acceptable for this testing-only hook.
         auto table = catalog.tryGetTable(table_id, context);
+
+        /// With `lazy_load_tables`, the catalog holds a `StorageTableProxy` until the table is first used.
+        /// Most of the checks below (`supportsReplication`, ...) forward to `StorageProxy::getNested`, which
+        /// creates and starts up the real storage — a side effect that even a metadata-only query such as
+        /// `EXISTS TABLE` never implies. Skip such a table until something else has loaded it; once loaded,
+        /// the proxy forwards to the existing storage without starting it again.
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get());
+            proxy && proxy->isLazyStandIn() && !proxy->tryGetNested())
+            continue;
+
         if (!table
             || !table->storesDataOnDisk()
             || context->getActionLocksManager()->hasAny(table))
@@ -3480,6 +3525,13 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 /// hook to reattach, and the randomization is skipped for that table.
                 continue;
             }
+
+            /// The exclusive lock does not cover a concurrent DDL (`ALTER`, `DROP`, `DETACH`, ...) that holds
+            /// the table's `DDLGuard`: the internal `DETACH` below acquires the same guard and waits for it
+            /// with no deadline, which would park this query behind the other one. Probe the guard the same
+            /// way and release it right away — the `DETACH` takes it again, and the guard is not reentrant.
+            if (!DatabaseCatalog::instance().tryGetDDLGuardForStorage(table, busy_probe_timeout))
+                continue;
         }
 
         table.reset();

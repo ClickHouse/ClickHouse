@@ -12,6 +12,7 @@
 #   `05104_reattach_tables_dynamic_disk` - a table that builds its own disk with the `disk` function
 #   `05258_reattach_tables_function_objects` - objects named by `joinGet` and the `dictGet` family
 #   `05339_reattach_tables_quota_query_cache` - the quota and the query result cache
+#   `05366_reattach_tables_dictionary_lazy_table` - dictionaries that are not loaded, lazily loaded tables
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
