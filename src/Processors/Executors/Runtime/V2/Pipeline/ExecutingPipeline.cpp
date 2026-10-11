@@ -10,6 +10,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <map>
 #include <unordered_set>
 
 namespace DB
@@ -77,6 +78,20 @@ void checkConnectedOnlyInsideGroup(const Processors & group)
     }
 }
 
+void countSiblings(const Processors & processors, const Processors & counted, Records & records)
+{
+    std::map<std::pair<const IQueryPlanStep *, size_t>, size_t> instances;
+    for (const auto & processor : processors)
+        if (processor->getQueryPlanStep())
+            ++instances[{processor->getQueryPlanStep(), processor->getQueryPlanStepGroup()}];
+
+    for (const auto & processor : counted)
+    {
+        const auto * step = processor->getQueryPlanStep();
+        records.at(processor.get()).siblings = step ? instances[{step, processor->getQueryPlanStepGroup()}] : 1;
+    }
+}
+
 ExecutingProcessor & addRecord(Records & records, IProcessor * processor)
 {
     auto [it, inserted] = records.try_emplace(processor);
@@ -130,6 +145,7 @@ ExecutingPipeline::ExecutingPipeline(std::shared_ptr<Processors> processors_)
 
     for (const auto & processor : *processors)
         addRecord(records, processor.get());
+    countSiblings(*processors, *processors, records);
 
     for (const auto & processor : *processors)
         connectPorts(records, records.at(processor.get()));
@@ -169,6 +185,7 @@ std::vector<ExecutingProcessor *> ExecutingPipeline::update(ExecutingProcessor &
         updated.push_back(&addRecord(records, processor.get()));
 
     processors->insert(processors->end(), to_add.begin(), to_add.end());
+    countSiblings(*processors, to_add, records);
 
     const auto reason = cancel_reason.load();
     if (reason != IProcessor::CancelReason::NotCancelled)

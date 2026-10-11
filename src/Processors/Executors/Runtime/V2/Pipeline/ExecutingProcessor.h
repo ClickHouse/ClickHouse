@@ -38,6 +38,8 @@ struct ExecutingProcessor
     RoundUpdates round_updates;
     UpdateInbox incoming_updates;
     std::optional<IProcessor::Status> last_status;
+    UInt64 work_ns = 0;
+    size_t siblings = 1;
 };
 
 }
