@@ -12,7 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/pathToString.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>

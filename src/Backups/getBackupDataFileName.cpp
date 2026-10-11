@@ -6,7 +6,7 @@
 #include <Common/Exception.h>
 
 #include <base/defines.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 namespace DB
 {
