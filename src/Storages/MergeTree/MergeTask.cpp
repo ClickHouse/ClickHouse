@@ -681,10 +681,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// `alter_conversions` below, so the expired-columns check observes the same mutations.
     auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
 
+    Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
+    for (const auto & patch : patch_parts)
+        min_patch_metadata_version = std::min<Int64>(min_patch_metadata_version, patch->getMetadataVersion());
+
     MergeTreeData::IMutationsSnapshot::Params params
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_patch_metadata_version = min_patch_metadata_version,
         .min_part_data_versions = nullptr,
         .max_mutation_versions = nullptr,
         .need_data_mutations = false,
@@ -829,6 +834,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                      || columns_present_in_patch_parts.contains(rename.rename_from))
                     && !storage_column_names.contains(rename.rename_from))
                     renamed_column_targets.emplace(rename.rename_to);
+            }
+
+            /// A patch may still need a rename that every base part has already passed.
+            for (const auto & patch : conversions->getAllPatches())
+            {
+                for (const auto & rename : patch.part->getAlterConversions()->getRenameMap())
+                {
+                    if (columns_present_in_patch_parts.contains(rename.rename_from) && !storage_column_names.contains(rename.rename_from))
+                        renamed_column_targets.emplace(rename.rename_to);
+                }
             }
         }
 

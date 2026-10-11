@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <boost/functional/hash.hpp>
 
 #include <limits>
 #include <optional>
@@ -102,47 +103,17 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
     if (!plan.remove_filter_column && std::ranges::binary_search(unneeded_dag_indices, filter_col_pre_erase_pos))
         plan.remove_filter_column = true;
 
-    /// The filter column is dropped, so its `materialize` wrapper is no longer observable, and
-    /// `applyToOutputs` folds it away. That changes what survives the pruning, so the rest of
-    /// this looks at the DAG as it is going to be. This includes filters that were already marked for
-    /// removal by `ReadFromMergeTree`. The fold only looks through `materialize` and aliases, so without a
-    /// `materialize` in the predicate there is nothing to fold.
-    std::optional<ActionsDAG> folded_dag;
-    if (plan.remove_filter_column)
-    {
-        const auto predicate_nodes = findReachableNodes({old_outputs[filter_col_pre_erase_pos]});
-        const bool has_materialize = std::ranges::any_of(predicate_nodes, [](const auto * node)
-        {
-            return node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "materialize";
-        });
-
-        if (has_materialize)
-        {
-            folded_dag = dag.clone();
-            folded_dag->foldFilterPredicateThroughMaterialize(filter_col_pre_erase_pos);
-            /// The fold only ever replaces the filter output by a constant. The predicate has a `materialize`
-            /// below it, so it was not a constant before.
-            chassert(old_outputs[filter_col_pre_erase_pos]->type != ActionsDAG::ActionType::COLUMN);
-            plan.fold_filter_predicate = folded_dag->getOutputs()[filter_col_pre_erase_pos]->type == ActionsDAG::ActionType::COLUMN;
-            if (!plan.fold_filter_predicate)
-                folded_dag.reset();
-        }
-    }
-    const auto & analyzed_dag = folded_dag ? *folded_dag : dag;
-    const auto & analyzed_outputs = analyzed_dag.getOutputs();
-
     /// The filter column is needed to filter, whether or not anyone reads it.
     std::erase(unneeded_dag_indices, filter_col_pre_erase_pos);
     plan.unneeded_dag_positions = std::move(unneeded_dag_indices);
 
-    plan.filter_output_position = filter_col_pre_erase_pos;
     plan.changes_output_header = !plan.unneeded_dag_positions.empty() || remove_filter_column != plan.remove_filter_column;
 
     /// What removeUnusedActions would keep once the outputs are pruned. It folds constants before it
     /// collects the nodes to keep, and folding clears the children of a folded node, so stop at such a
     /// node to see the same set. ARRAY_JOIN is always a root there.
-    auto roots = plan.neededDAGOutputs(analyzed_outputs);
-    for (const auto & node : analyzed_dag.getNodes())
+    auto roots = plan.neededDAGOutputs(old_outputs);
+    for (const auto & node : dag.getNodes())
         if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
             roots.push_back(&node);
 
@@ -150,8 +121,7 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
     const auto surviving_nodes = findReachableNodes(roots, is_folded_constant);
 
     /// One entry per column of the input header: the input reading it, or nothing when it passes by.
-    /// A clone keeps the inputs in their order, so the folded DAG reads the same header positions.
-    const auto header_columns = mapHeaderColumnsToInputs(analyzed_dag.getInputs(), input_header);
+    const auto header_columns = mapHeaderColumnsToInputs(dag.getInputs(), input_header);
     plan.input_columns.resize(header_columns.size());
 
     /// The pass-through columns follow the DAG outputs in the pre-erase header, in their order, so one walk over
@@ -169,7 +139,7 @@ FilterStep::UnneededColumnsPlan FilterStep::analyzeUnneededColumns(
         {
             /// Every input reads a header position of its own, so the column it reads is needed exactly when
             /// the input survives.
-            const auto * input = analyzed_dag.getInputs()[header_columns.read_by[position]];
+            const auto * input = dag.getInputs()[header_columns.read_by[position]];
             plan.input_columns[position] = surviving_nodes.contains(input) ? InputColumnUsage::ReadNeeded : InputColumnUsage::ReadDropped;
             continue;
         }
@@ -236,15 +206,12 @@ FilterDAGOutputPruningResult FilterStep::UnneededColumnsPlan::toResult(bool remo
 {
     FilterDAGOutputPruningResult result;
     result.unneeded_input_positions = unneededInputPositions();
-    result.changed = changes_output_header || fold_filter_predicate || removed_any_action || !result.unneeded_input_positions.empty();
+    result.changed = changes_output_header || removed_any_action || !result.unneeded_input_positions.empty();
     return result;
 }
 
 void FilterStep::UnneededColumnsPlan::applyToOutputs(ActionsDAG & dag, bool & remove_filter_column_) const
 {
-    if (fold_filter_predicate)
-        dag.foldFilterPredicateThroughMaterialize(filter_output_position);
-
     dag.getOutputs() = neededDAGOutputs(dag.getOutputs());
     remove_filter_column_ = remove_filter_column;
 }
@@ -359,12 +326,13 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
-    /// The filter column is dropped from the output, so only the predicate's value is observable and it
-    /// is safe to fold a `materialize`-wrapped constant away (#78166). Doing it here covers every way a
-    /// dropped-filter step comes to be - in particular the fresh steps `tryPushDownFilter` creates, which
-    /// neither `tryMergeExpressions` nor `pruneDAGOutputsByPosition` ever sees.
-    if (remove_filter_column)
-        actions_dag.foldFilterPredicateThroughMaterialize(filter_column_name);
+    /// Fold a `materialize`-wrapped constant predicate away (#78166), such as the one `tryMergeExpressions` drags
+    /// in from the branches of a `UNION`. Only the value of the predicate decides which rows pass, so the filter
+    /// reads a constant; a kept filter column stays an output as it was, and removing unused columns drops it once
+    /// nobody reads it. Doing it here covers every way a filter step comes to be, in particular the fresh steps
+    /// `tryPushDownFilter` creates. The output header does not change: a kept column stays, and the constant is
+    /// removed.
+    actions_dag.foldFilterPredicateThroughMaterialize(filter_column_name, remove_filter_column, *input_header_);
 
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
@@ -509,6 +477,17 @@ void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, cons
     condition = {condition_hash_, condition_};
 }
 
+void FilterStep::saltConditionForQueryConditionCache(UInt64 salt)
+{
+    if (!condition)
+        return;
+
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on every platform, same as in `updateQueryConditionCache`.
+    size_t condition_hash = condition->first;
+    boost::hash_combine(condition_hash, salt);
+    condition->first = condition_hash;
+}
+
 bool FilterStep::canUseType(const DataTypePtr & filter_type)
 {
     return FilterTransform::canUseType(filter_type);
@@ -580,7 +559,7 @@ FilterStep::removeUnusedColumns(const std::vector<size_t> & unneeded_output_posi
     result.dropped_output_positions = plan.dropped_output_positions;
 
     const bool dag_changed = alignInputsWithPrunedChild(actions_dag, plan.input_columns, *input_header, pruned);
-    result.step_changed = plan.changes_output_header || plan.fold_filter_predicate || dag_changed
+    result.step_changed = plan.changes_output_header || dag_changed
         || !blocksHaveEqualStructure(*input_header, *pruned.header);
 
     if (result.step_changed)

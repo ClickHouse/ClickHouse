@@ -65,6 +65,8 @@ struct DataFileEntryLineage
     std::optional<Int64> file_sequence_number;
 };
 
+Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,

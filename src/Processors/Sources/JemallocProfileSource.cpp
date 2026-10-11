@@ -18,7 +18,7 @@
 #    include <IO/WriteHelpers.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <QueryPipeline/QueryPipeline.h>
-#    include <base/hex.h>
+#    include <Common/Hex.h>
 #    include <Common/FramePointers.h>
 #    include <Common/MemoryTrackerSwitcher.h>
 #    include <Common/StackTrace.h>
