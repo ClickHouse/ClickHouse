@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_SOCKET;
     extern const int CANNOT_WRITE_TO_SOCKET;
     extern const int UNEXPECTED_END_OF_FILE;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 }
 
 
@@ -27,6 +28,15 @@ static bool isConnectionError(int code)
 {
     return code == ErrorCodes::SOCKET_TIMEOUT || code == ErrorCodes::NETWORK_ERROR || code == ErrorCodes::CANNOT_READ_FROM_SOCKET
         || code == ErrorCodes::CANNOT_WRITE_TO_SOCKET || code == ErrorCodes::UNEXPECTED_END_OF_FILE;
+}
+
+/// An error in the value of a single row that allows to skip this row (`input_format_allow_errors_num`,
+/// `input_format_allow_errors_ratio`) and to report its position. Besides parse errors, this is a `null`
+/// for a non-`Nullable` column with `input_format_null_as_default = 0` (e.g. a JSON number).
+/// It is not added to `isParseError`, because that one also decides the fallbacks of `tryDeserialize*` and `Values`.
+static bool isRowValueError(int code)
+{
+    return isParseError(code) || code == ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
 }
 
 IRowInputFormat::IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_)
@@ -190,11 +200,11 @@ Chunk IRowInputFormat::read()
 
                 /// Logic for possible skipping of errors.
 
-                /// Skip a bad row only for a genuine parse error that was not thrown from the
+                /// Skip a bad row only for a genuine row value error that was not thrown from the
                 /// buffer itself. A throwing read self-cancels the buffer (ReadBuffer::next()'s
                 /// catch handler), and syncAfterError() reads from it again
                 /// (skipToNextLineOrEOF/ignore/eof -> next()), tripping chassert(!isCanceled()).
-                if (!isParseError(e.code()) || getReadBuffer().isCanceled())
+                if (!isRowValueError(e.code()) || getReadBuffer().isCanceled())
                     throw;
 
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
@@ -248,10 +258,10 @@ Chunk IRowInputFormat::read()
         }
         else
         {
-            /// Collect verbose diagnostics only for a genuine parse error that was not thrown
+            /// Collect verbose diagnostics only for a genuine row value error that was not thrown
             /// from the buffer itself. A throwing read self-cancels the buffer, and
             /// getDiagnosticInfo() reads from it (eof() -> next()), tripping chassert(!isCanceled()).
-            if (!isParseError(e.code()) || getReadBuffer().isCanceled())
+            if (!isRowValueError(e.code()) || getReadBuffer().isCanceled())
                 throw;
 
             String verbose_diagnostic;
