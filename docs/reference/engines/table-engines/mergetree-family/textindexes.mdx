@@ -758,6 +758,10 @@ Example for the text index with `splitByNonAlpha` tokenizer:
 SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
 ```
 
+With the `splitByNonAlpha` or `array` tokenizer and [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) enabled, a `multiSearchAny` or `multiSearchAnyUTF8` call with a single needle, for example `multiSearchAny(comment, ['upport'])`, is evaluated as `comment LIKE '%upport%'` by the [dictionary scan](#like-ilike-queries-perf), so a needle inside a word can use the index too.
+The case-insensitive variants `multiSearchAnyCaseInsensitive` and `multiSearchAnyCaseInsensitiveUTF8` use the index only this way, as `comment ILIKE '%needle%'`.
+Calls with several needles keep the evaluation described above; for them, the case-insensitive variants and the `array` tokenizer do not use the index.
+
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
 Similar to `LIKE`, functions [startsWith](/reference/functions/regular-functions/string-functions#startsWith) and [endsWith](/reference/functions/regular-functions/string-functions#endsWith) can only use a text index, if complete tokens can be extracted from the search term.
@@ -1474,7 +1478,7 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
+This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`, and the functions `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` and `multiSearchAnyCaseInsensitiveUTF8` with one needle.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
 
 For `ilike`, the search falls back to full-table scan in two special cases, for both the `splitByNonAlpha` and the `array` tokenizer:
