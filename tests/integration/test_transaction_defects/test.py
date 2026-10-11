@@ -77,6 +77,10 @@ CREATION_CSN_LOG = "creation_csn is not set"
 # (`StorageMergeTree::getDataPartsToMutate`), so this reason is the mutation defect itself rather
 # than a server that happens to be slow.
 VERSION_NOT_VISIBLE = "Not visible by transaction version"
+# `version_metadata_store_creation_csn_fail` fires inside `~MergeTreeData::Transaction`, which
+# logs the exception and swallows it. The statement already reported the first injected failure,
+# so this line is the only thing that says the rollback's own mark failed too.
+ROLLBACK_MARK_LOG = "Injected failure of the creation_csn store"
 
 FAILPOINTS = [
     "non_transactional_removal_store_fail_after_first_part",
@@ -531,11 +535,68 @@ def require_injected_failure(error):
     The failpoint fires once, on the first removal batch of two or more parts to reach it. A merge
     or another statement can take it first, and then the statement under test either succeeds or
     fails for an unrelated reason -- neither of which says anything about the defect.
+
+    The message names the part the store was about to write, so it also says which call site fired.
     """
     require(
         error and "CANNOT_WRITE_TO_FILE" in error,
         f"the injected store error did not reach the statement: {error!r}",
     )
+    logging.info("injected store error: %s", one_line(error))
+
+
+def one_line(text, limit=300):
+    """`text` with its newlines collapsed, so one log line carries all of it."""
+    return " ".join(text.split())[:limit] if text else text
+
+
+def require_rollback_mark_failed(baseline):
+    """The rollback's own `creation_csn` mark must have failed too.
+
+    `require_injected_failure` cannot tell the two injections apart: both raise
+    `CANNOT_WRITE_TO_FILE`, and the statement reports only the first. Without this, the
+    reproduction still passes its precondition when only the removal store failed, which is the
+    single-fault test next door.
+
+    The rollback runs in `~MergeTreeData::Transaction`, after the client already has the error,
+    hence the wait.
+    """
+    require(
+        poll(lambda _: log_hits(ROLLBACK_MARK_LOG) > baseline, HANG_TIMEOUT),
+        "the rollback's own creation_csn mark did not fail, so this is the single-fault path",
+    )
+
+
+def reload_state(table):
+    """The parts, and what the loader would find on disk for them.
+
+    The reload reproductions turn on one thing: the rollback of a failed non-transactional removal
+    marks `creation_csn = RolledBackCSN` in memory only, because `VersionMetadataOnDisk` defers the
+    store of a part that was never in a transaction. The empty covering parts keep their final
+    directory names and no `txn_version.txt`, so the loader reads them as prehistoric. pytest prints
+    this when a strict xfail passes, so a run that does not reproduce says which of those it lost.
+    """
+    parts = q(
+        "SELECT groupArray((name, active, visible, creation_csn, removal_csn)) FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}'"
+    ).strip()
+    detached = q(
+        "SELECT groupArray((name, reason)) FROM system.detached_parts "
+        f"WHERE database = currentDatabase() AND table = '{table}'"
+    ).strip()
+    path = q(
+        f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
+    ).strip()
+    dirs = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"cd {path} && echo \"dirs: $(ls -d */ | tr '\\n' ' ')txn_version files: "
+            f"$(find . -maxdepth 2 -name 'txn_version*' | tr '\\n' ' ')\"",
+        ],
+        user="root",
+    ).strip()
+    return f"parts {parts} | detached {detached} | {dirs}"
 
 
 def require_rows(table, expected):
@@ -933,8 +994,10 @@ def test_failed_drop_partition_survives_reload(start_cluster):
         require_injected_failure(error)
         require_rows("t_drop_reload", "2\t3")
 
+        logging.info("before the reload: %s", reload_state("t_drop_reload"))
         q("DETACH TABLE t_drop_reload")
         q("ATTACH TABLE t_drop_reload")
+        logging.info("after the reload: %s", reload_state("t_drop_reload"))
         assert q("SELECT count(), sum(n) FROM t_drop_reload").strip() == "2\t3"
 
 
@@ -953,8 +1016,10 @@ def test_failed_truncate_survives_reload(start_cluster):
         require_injected_failure(error)
         require_rows("t_truncate_reload", "2\t3")
 
+        logging.info("before the reload: %s", reload_state("t_truncate_reload"))
         q("DETACH TABLE t_truncate_reload")
         q("ATTACH TABLE t_truncate_reload")
+        logging.info("after the reload: %s", reload_state("t_truncate_reload"))
         assert q("SELECT count(), sum(n) FROM t_truncate_reload").strip() == "2\t3"
 
 
@@ -1002,6 +1067,7 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
     two_parts("t_rollback_mark")
     with merges_stopped():
         require_parts("t_rollback_mark", 2)
+        marks_failed = log_hits(ROLLBACK_MARK_LOG)
         with failpoints(
             "non_transactional_removal_store_fail_after_first_part",
             "version_metadata_store_creation_csn_fail",
@@ -1011,10 +1077,13 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
                 settings={"send_logs_level": "none"},
             )
         require_injected_failure(error)
+        require_rollback_mark_failed(marks_failed)
         require_rows("t_rollback_mark", "2\t3")
 
+        logging.info("before the reload: %s", reload_state("t_rollback_mark"))
         q("DETACH TABLE t_rollback_mark")
         q("ATTACH TABLE t_rollback_mark")
+        logging.info("after the reload: %s", reload_state("t_rollback_mark"))
         assert q("SELECT count(), sum(n) FROM t_rollback_mark").strip() == "2\t3"
 
 
