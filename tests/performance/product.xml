@@ -1,0 +1,14 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Compare the row aggregate with the existing array workaround over the same input. -->
+    <query>SELECT product(if(number % 2 = 0, 0.999999, 1.000001)) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT arrayProduct(groupArray(if(number % 2 = 0, 0.999999, 1.000001))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT productIf(if(number % 2 = 0, 0.999999, 1.000001), number % 3 = 0) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT productIf(if(number % 10 = 0, NULL, 1.0), number % 2 = 0) FROM numbers(10000000) FORMAT Null</query>
+
+    <!-- Exercise aggregate-state size and cache pressure with many groups. -->
+    <query>SELECT product(if(number % 2 = 0, 0.999999, 1.000001)) FROM numbers(10000000) GROUP BY number % 1000000 FORMAT Null</query>
+</test>
