@@ -10,13 +10,15 @@
 # (04611/04612/04613) all use string dictionaries; this one exercises the fixed-size decode path and
 # the shared value-set reservation for a non-string dictionary. It checks that the fixed-size
 # dictionary filter prunes under a generous budget and stays correct (full-scan fallback) as the
-# budget tightens.
+# budget tightens. The queries test 301 constants, enough that the dictionary values are hashed: for
+# fewer constants the stored integers are compared directly and no value set is built.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
+ABSENT=$(seq -s ', ' 1000001 1000300)
 
 # 2 row groups of 20000 rows. Every row has a distinct Int32 `category`, so each row group's dictionary
 # holds 20000 entries; the two value sets are disjoint (different row-group offset). The value 5 exists
@@ -41,13 +43,13 @@ run() {
 }
 
 echo "generous memory budget: the fixed-size dictionary filter prunes row group 1, only 20000 rows are read"
-run 4000000000 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
+run 4000000000 "select count() from file('${DATA_FILE}', Parquet) where category in (5, ${ABSENT})"
 
 echo "tight memory budget below the decoded dictionary size: pruning is skipped, all 40000 rows are read"
-run 100000 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
+run 100000 "select count() from file('${DATA_FILE}', Parquet) where category in (5, ${ABSENT})"
 
 echo "extreme memory budget (1 byte): pruning is skipped, result is still correct"
-run 1 "select count() from file('${DATA_FILE}', Parquet) where category = 5"
+run 1 "select count() from file('${DATA_FILE}', Parquet) where category in (5, ${ABSENT})"
 
 echo "results are identical regardless of the memory budget, including across row groups"
 diff \
