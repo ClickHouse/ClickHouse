@@ -44,9 +44,9 @@
     <query>SELECT count() FROM numbers_mt(10000000) WHERE cityHash64(number) IN (SELECT cityHash64(number * 2) FROM numbers(5000000)) SETTINGS max_block_size = 1024</query>
     <!-- The set holds hashes, and 1000 keys repeat in random order. -->
     <query>SELECT count() FROM numbers_mt(100000000) WHERE cityHash64(number % 1000) IN (SELECT cityHash64(number * 2) FROM numbers(5000000))</query>
-    <!-- The set holds packed numbers, and the keys come in runs of 10 in key order, so each run takes one
+    <!-- The set holds hashes, and the keys come in runs of 10 in random order, so each run takes one
          lookup. -->
-    <query>SELECT count() FROM numbers_mt(10000000) WHERE intDiv(number, 10) IN (SELECT number * 2 FROM numbers(5000000))</query>
+    <query>SELECT count() FROM numbers_mt(50000000) WHERE cityHash64(intDiv(number, 10)) IN (SELECT cityHash64(number * 2) FROM numbers(5000000))</query>
     <!-- The set holds hashes, and the lookups are of keys that it does not have. -->
     <query>SELECT count() FROM numbers_mt(30000000) WHERE cityHash64(number * 2 + 1) IN (SELECT cityHash64(number * 2) FROM numbers(5000000))</query>
     <!-- The set holds `String` keys and the lookups come in random order, so each chunk needs most of the
