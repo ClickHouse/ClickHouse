@@ -107,8 +107,7 @@ bool Set::isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t ro
     const UInt64 available_memory = threshold - std::min<UInt64>(threshold, query_memory_usage);
 
     /// Spilling needs memory while the table still exists.
-    const size_t spill_memory = DiskSetBuilder::estimateMemoryToWriteRun(
-        threshold, spill_settings.max_block_size, getDiskSetKeyBytes(), spill_settings.tmp_data->getSettings().buffer_size);
+    const size_t spill_memory = estimateMemoryToSpill();
     if (spill_memory > available_memory)
         return true;
 
@@ -208,9 +207,16 @@ void Set::logSpill(std::string_view stage, std::string_view reason) const
         formatReadableSizeWithBinarySuffix(spill_settings.max_bytes_before_external_set));
 }
 
-size_t Set::getDiskSetKeyBytes() const
+size_t Set::estimateMemoryToSpill() const
 {
-    return data->callOnMethod([]<typename Method>(const Method &) { return sizeof(DiskSetKey<Method>); });
+    const size_t buffer_size = spill_settings.tmp_data->getSettings().buffer_size;
+    return data->callOnMethod(
+        [&]<typename Method>(const Method &)
+        {
+            return estimateMemoryToComputeDiskSetKeysOfTable<Method>(spill_settings.max_block_size)
+                + DiskSetBuilder::estimateMemoryToWriteRun(
+                    spill_settings.max_bytes_before_external_set, spill_settings.max_block_size, sizeof(DiskSetKey<Method>), buffer_size);
+        });
 }
 
 template <typename Method>

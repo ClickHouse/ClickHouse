@@ -304,7 +304,9 @@ private:
     /// Logs that the set switches to disk, at which `stage` ("while it is built" or "while it is used") and why.
     void logSpill(std::string_view stage, std::string_view reason) const;
 
-    size_t getDiskSetKeyBytes() const;
+    /// Returns the memory that spilling takes while the table still exists: converting each batch of its keys
+    /// to disk keys, and the builder that takes them until it writes its first run.
+    size_t estimateMemoryToSpill() const;
 
     /// Creates a `DiskSetBuilder` with the spill settings of the set and adds the keys of the table to it.
     template <typename Method>

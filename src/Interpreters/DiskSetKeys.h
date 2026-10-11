@@ -88,10 +88,11 @@ ColumnPtr computeDiskSetKeys(const ColumnRawPtrs & key_columns, const Sizes & ke
 /// Computes the disk keys of the RHS keys in the table of `method`, when the set spills, and passes them to
 /// `consume` in batches of at most `max_rows` keys. The tables of the methods with fixed-size keys keep the
 /// RHS keys packed as in memory, which are read back into columns of `key_types` and converted as LHS values
-/// are, so that equal values get equal disk keys. These columns take at most `max_rows` times the width of a
-/// key. The table of the `hashed` method keeps the disk keys themselves, and the strings of `key_string` and
-/// `key_fixed_string` are converted in place: copying them out of the arena would take memory in proportion
-/// to their length, while the set spills because memory is short.
+/// are, so that equal values get equal disk keys. These columns take at most twice the width of a key per
+/// row: each column takes at least a byte of the packed key, and its null map one more byte. The table of the
+/// `hashed` method keeps the disk keys themselves, and the strings of `key_string` and `key_fixed_string` are
+/// converted in place: copying them out of the arena would take memory in proportion to their length, while
+/// the set spills because memory is short.
 template <typename Method, typename Consume>
 void computeDiskSetKeysOfTable(
     const Method & method, const DataTypes & key_types, const Sizes & key_sizes, size_t max_rows, Consume && consume)
@@ -126,6 +127,17 @@ void computeDiskSetKeysOfTable(
         if (!keys->empty())
             consume(std::move(keys));
     }
+}
+
+/// Returns the memory that `computeDiskSetKeysOfTable` holds besides the table for a batch of `max_rows`
+/// keys: the column of their disk keys and, for fixed-size keys, the columns read back from the table, which
+/// take at most twice as much.
+template <typename Method>
+size_t estimateMemoryToComputeDiskSetKeysOfTable(size_t max_rows)
+{
+    const size_t disk_keys_bytes = max_rows * sizeof(DiskSetKey<Method>);
+    const size_t read_back_bytes = set_method_has_fixed_size_keys<Method> ? 2 * disk_keys_bytes : 0;
+    return disk_keys_bytes + read_back_bytes;
 }
 
 }
