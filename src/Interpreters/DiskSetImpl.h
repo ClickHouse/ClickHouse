@@ -39,6 +39,10 @@ public:
         size_t max_bytes_for_bloom_filter,
         size_t max_bytes_for_cache);
 
+    /// Returns about the memory that a set of `keys` keys keeps besides its cache: its directory, and the
+    /// Bloom filters that the constructor creates for `keys` expected keys with `max_bytes_for_bloom_filter`.
+    static size_t estimateMemory(size_t keys, size_t max_bytes_for_bloom_filter);
+
     /// Adds `keys`, which ascend and are greater than the keys added before.
     void add(std::span<const Key> keys);
 
@@ -114,6 +118,9 @@ private:
 
         size_t size() const { return entries.size(); }
         size_t allocatedBytes() const { return entries.capacity() * sizeof(Entry); }
+
+        /// Returns about the memory of a directory of `blocks` blocks.
+        static size_t estimateBytes(size_t blocks) { return blocks * sizeof(Entry); }
 
     private:
         struct Entry

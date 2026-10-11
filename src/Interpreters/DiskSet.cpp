@@ -29,6 +29,20 @@ DiskSetImpl<Key>::DiskSetImpl(
 }
 
 template <typename Key>
+size_t DiskSetImpl<Key>::estimateMemory(size_t keys, size_t max_bytes_for_bloom_filter)
+{
+    /// A set without keys has no file, so it has no directory and no filters either.
+    if (!keys)
+        return 0;
+
+    /// Every block but the last holds at least the keys of an unpacked block.
+    size_t bytes = Directory::estimateBytes(keys / BlockFormat::keys_per_unpacked_block + 1);
+    if (max_bytes_for_bloom_filter)
+        bytes += DiskSetBlockFilters<Key>::estimateBytes(keys, BlockFormat::keys_per_unpacked_block, max_bytes_for_bloom_filter);
+    return bytes;
+}
+
+template <typename Key>
 TemporaryDataOnDiskScopePtr DiskSetImpl<Key>::createFileScope(const TemporaryDataOnDiskScopePtr & tmp_data)
 {
     const auto & settings = tmp_data->getSettings();
@@ -175,11 +189,24 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
             found[row] = found[row - 1];
 }
 
+template <typename Key>
+size_t estimateDiskSetMemory(size_t keys, size_t max_bytes_for_bloom_filter)
+{
+    return DiskSetImpl<Key>::estimateMemory(keys, max_bytes_for_bloom_filter);
+}
+
 template class DiskSetImpl<UInt8>;
 template class DiskSetImpl<UInt16>;
 template class DiskSetImpl<UInt32>;
 template class DiskSetImpl<UInt64>;
 template class DiskSetImpl<UInt128>;
 template class DiskSetImpl<UInt256>;
+
+template size_t estimateDiskSetMemory<UInt8>(size_t, size_t);
+template size_t estimateDiskSetMemory<UInt16>(size_t, size_t);
+template size_t estimateDiskSetMemory<UInt32>(size_t, size_t);
+template size_t estimateDiskSetMemory<UInt64>(size_t, size_t);
+template size_t estimateDiskSetMemory<UInt128>(size_t, size_t);
+template size_t estimateDiskSetMemory<UInt256>(size_t, size_t);
 
 }
