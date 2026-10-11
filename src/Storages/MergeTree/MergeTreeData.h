@@ -605,6 +605,8 @@ public:
         {
             Int64 metadata_version = -1;
             Int64 min_part_metadata_version = -1;
+            /// The lowest metadata version of the patch parts the snapshot is applied with.
+            Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
             PartitionIdToMinBlockPtr min_part_data_versions = nullptr;
             PartitionIdToMaxBlockPtr max_mutation_versions = nullptr;
             bool need_data_mutations = false;
@@ -626,7 +628,8 @@ public:
         virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
-        virtual NameSet getAllUpdatedColumns() const = 0;
+        /// Columns changed on the fly by patches, data mutations and alter mutations of the whole snapshot.
+        virtual NameSet getColumnsChangedOnFly() const = 0;
 
         virtual bool hasPatchParts() const = 0;
         virtual bool hasDataMutations() const = 0;
@@ -658,6 +661,8 @@ public:
     protected:
         NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
+        /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
+        void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -922,7 +927,7 @@ public:
     /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
     /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
     /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
-    /// `MOVE PARTITION TO TABLE` and `CREATE TEMPORARY TABLE ... CLONE AS`.
+    /// `MOVE PARTITION TO TABLE`, `CREATE TEMPORARY TABLE ... CLONE AS` and `RESTORE`.
     void throwIfTemporaryTableSizeLimitsExceededForReplacement(
         const ContextPtr & query_context,
         const DataPartsLock & parts_lock,
@@ -1462,6 +1467,11 @@ public:
         , const EnabledMaskingPoliciesPtr & enabled_masking_policies
 #endif
         );
+
+#if CLICKHOUSE_CLOUD
+    /// Commands that apply the enabled masking policies on the fly.
+    static MutationCommands getMaskingPolicyCommands(const StorageID & storage_id, const EnabledMaskingPoliciesPtr & enabled_masking_policies);
+#endif
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
@@ -2113,7 +2123,7 @@ protected:
     MutableDataPartPtr loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const;
 
     /// Attaches restored parts to the storage.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
+    virtual void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 

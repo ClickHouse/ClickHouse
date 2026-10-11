@@ -144,8 +144,7 @@ void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
     }
     else
     {
-        ostr << (temporary ? "TEMPORARY " : "") <<
-             (dictionaries ? "DICTIONARIES" : "TABLES");
+        ostr << (temporary ? "TEMPORARY " : "") << (dictionaries ? "DICTIONARIES" : "TABLES");
 
         if (from)
         {
