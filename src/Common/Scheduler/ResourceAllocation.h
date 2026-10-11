@@ -24,9 +24,14 @@ class AllocationQueue;
 class ResourceAllocation : public boost::noncopyable
 {
 public:
-    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {})
-        : queue(queue_), id(id_), increase(*this), decrease(*this)
-    {}
+    struct MemoryPressurePolicy
+    {
+        bool protect_from_eviction = false;
+        UInt64 recovery_reserved_bytes = 0;
+    };
+
+    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {});
+    ResourceAllocation(IAllocationQueue & queue_, const String & id_, MemoryPressurePolicy memory_pressure_policy_);
 
     virtual ~ResourceAllocation();
 
@@ -47,10 +52,14 @@ public:
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
 
+    bool isProtectedFromEviction() const { return memory_pressure_policy.protect_from_eviction; }
+    UInt64 getRecoveryReservedBytes() const { return memory_pressure_policy.recovery_reserved_bytes; }
+
 private:
     friend class AllocationQueue;
 
     ResourceCost allocated = 0; /// Currently allocated.
+    const MemoryPressurePolicy memory_pressure_policy;
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
 
     IncreaseRequest increase;

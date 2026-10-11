@@ -33,9 +33,41 @@ namespace ErrorCodes
     extern const int MEMORY_RESERVATION_ACQUISITION_TIMEOUT;
 }
 
-MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_,
-                                     std::chrono::steady_clock::time_point admission_deadline_)
-    : ResourceAllocation(*link.allocation_queue, id_)
+MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_)
+    : MemoryReservation(link, id_, reserved_size_, std::chrono::steady_clock::time_point::max(), MemoryPressurePolicy{})
+{
+}
+
+MemoryReservation::MemoryReservation(
+    ResourceLink link,
+    const String & id_,
+    ResourceCost reserved_size_,
+    MemoryPressurePolicy memory_pressure_policy_)
+    : MemoryReservation(
+        link,
+        id_,
+        reserved_size_,
+        std::chrono::steady_clock::time_point::max(),
+        memory_pressure_policy_)
+{
+}
+
+MemoryReservation::MemoryReservation(
+    ResourceLink link,
+    const String & id_,
+    ResourceCost reserved_size_,
+    std::chrono::steady_clock::time_point admission_deadline_)
+    : MemoryReservation(link, id_, reserved_size_, admission_deadline_, MemoryPressurePolicy{})
+{
+}
+
+MemoryReservation::MemoryReservation(
+    ResourceLink link,
+    const String & id_,
+    ResourceCost reserved_size_,
+    std::chrono::steady_clock::time_point admission_deadline_,
+    MemoryPressurePolicy memory_pressure_policy_)
+    : ResourceAllocation(*link.allocation_queue, id_, memory_pressure_policy_)
     , reserved_size(reserved_size_)
     , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)
     , demand_increment(CurrentMetrics::MemoryReservationDemand, 0)

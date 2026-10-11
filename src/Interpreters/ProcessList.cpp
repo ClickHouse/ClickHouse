@@ -1,4 +1,5 @@
 #include <Interpreters/ProcessList.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
@@ -65,6 +66,12 @@ namespace Setting
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 reserve_memory;
     extern const SettingsMilliseconds workload_admission_timeout_ms;
+    extern const SettingsBool memory_reservation_protect_from_eviction;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 memory_reservation_recovery_reserved_bytes;
 }
 
 namespace ErrorCodes
@@ -174,7 +181,18 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
+                ResourceAllocation::MemoryPressurePolicy memory_pressure_policy;
+                memory_pressure_policy.protect_from_eviction
+                    = settings[Setting::memory_reservation_protect_from_eviction];
+                memory_pressure_policy.recovery_reserved_bytes
+                    = query_context->getServerSettings()[ServerSetting::memory_reservation_recovery_reserved_bytes];
+
+                memory_reservation = std::make_unique<MemoryReservation>(
+                    link,
+                    client_info.current_query_id,
+                    settings[Setting::reserve_memory],
+                    admission_deadline,
+                    memory_pressure_policy);
             }
         }
     }
