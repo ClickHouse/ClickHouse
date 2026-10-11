@@ -280,7 +280,7 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
     }
 
     /// Replaces entities of the configuration layer
-    void loadConfig(const String & sql)
+    void loadConfig(const String & sql) const
     {
         config_storage->loadFromString(sql);
     }
