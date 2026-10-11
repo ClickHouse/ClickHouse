@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
+# Tag no-replicated-database: named collections are server-global and not replicated, so the other replicas cannot apply a `CREATE TABLE` that uses one.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/105644
 # Data lake engines (`Iceberg`, `DeltaLake`, `Hudi`, `Paimon`) must reject the
@@ -263,9 +264,7 @@ ${CLICKHOUSE_CLIENT} --query "
 " 2>&1 | grep -c "not supported by data lake engines" || true
 
 # The `HDFS` collection parser carries the same assignment and is left uncovered
-# here: no stateless test drives `IcebergHDFS`, and the `use-hdfs` tag that would
-# admit one applies to the whole file, so every case above would stop running in
-# Cloud.
+# here: no stateless test drives `IcebergHDFS`.
 
 # Cleanup.
 for table in "${TABLES[@]}"; do
