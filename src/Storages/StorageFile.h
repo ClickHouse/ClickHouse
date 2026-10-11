@@ -505,7 +505,7 @@ public:
     LazyFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
 private:
-    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
 
     /// For `ORDER BY <column> LIMIT n` over several Parquet files: hands out first the files whose statistics
     /// hold the best values of the sort column, so that the top-K threshold tightens on the first files read.

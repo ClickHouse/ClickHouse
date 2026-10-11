@@ -363,7 +363,7 @@ private:
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
@@ -494,7 +494,7 @@ private:
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getAllUpdatedColumns() const override;
+        NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy
