@@ -633,25 +633,24 @@ static bool isFloatZero(const DataTypePtr & type, const Field & field)
 
 static Field otherFloatZero(const Field & zero)
 {
-    return std::signbit(zero.safeGet<Float64>()) ? Field(0.0) : Field(-0.0);
+    return Field(-zero.safeGet<Float64>());
 }
 
 /// The hash of `field`, and for a float zero also the hash of the other zero. A predicate with several
 /// hashes matches a granule that may hold any of them, except for `FUNCTION_HAS_ALL`.
 static ColumnPtr hashWithFieldAndOtherZero(const DataTypePtr & type, const Field & field)
 {
-    ColumnPtr hash = BloomFilterHash::hashWithField(type.get(), field);
     if (!isFloatZero(type, field))
-        return hash;
+        return BloomFilterHash::hashWithField(type.get(), field);
 
     auto hashes = ColumnUInt64::create();
-    hashes->insertValue(hash->getUInt(0));
-    hashes->insertValue(BloomFilterHash::hashWithField(type.get(), otherFloatZero(field))->getUInt(0));
+    hashes->insertValue(BloomFilterHash::getFieldHash(type.get(), field));
+    hashes->insertValue(BloomFilterHash::getFieldHash(type.get(), otherFloatZero(field)));
     return hashes;
 }
 
-/// The hashes of the values in `column`, and for each float zero also the hash of the other zero.
-/// Sets `has_float_zero` if there is one, which `FUNCTION_HAS_ALL` cannot express.
+/// The hashes of the values in `column`, and the hash of a zero whose sign is missing when the other zero is
+/// there. Sets `has_float_zero` if there is a zero, which `FUNCTION_HAS_ALL` cannot express.
 static ColumnPtr hashWithColumnAndOtherZeros(const DataTypePtr & type, const ColumnPtr & column, bool & has_float_zero)
 {
     has_float_zero = false;
@@ -659,26 +658,32 @@ static ColumnPtr hashWithColumnAndOtherZeros(const DataTypePtr & type, const Col
     if (!isFloat(removeLowCardinalityAndNullable(type)))
         return hashes;
 
-    MutableColumnPtr result;
+    bool has_positive_zero = false;
+    bool has_negative_zero = false;
     for (size_t i = 0; i < column->size(); ++i)
     {
         Field value = (*column)[i];
         if (!isFloatZero(type, value))
             continue;
 
-        if (!result)
-            result = IColumn::mutate(hashes->convertToFullColumnIfConst());
-        has_float_zero = true;
-        assert_cast<ColumnUInt64 &>(*result).insertValue(BloomFilterHash::hashWithField(type.get(), otherFloatZero(value))->getUInt(0));
+        if (std::signbit(value.safeGet<Float64>()))
+            has_negative_zero = true;
+        else
+            has_positive_zero = true;
     }
 
-    if (result)
-        return result;
-    return hashes;
+    has_float_zero = has_positive_zero || has_negative_zero;
+    if (!has_float_zero || (has_positive_zero && has_negative_zero))
+        return hashes;
+
+    auto result = IColumn::mutate(std::move(hashes));
+    assert_cast<ColumnUInt64 &>(*result).insertValue(BloomFilterHash::getFieldHash(type.get(), Field(has_positive_zero ? -0.0 : 0.0)));
+    return result;
 }
 
 /// True when converting the constant to the element type yields the exact bytes the index holds, so
-/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
+/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart, and the
+/// `IN` path casts the whole set to the element type. The `equals` path allows floats, see below.
 static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
 {
     if (!value_type)
@@ -691,6 +696,21 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
         return false;
 
     return (isInteger(value) && isInteger(element)) || value->equals(*element);
+}
+
+/// `bloomFilterHashDomainMatches` for `arrayJoin(col) = constant`, which also allows a float element with an
+/// integer or float constant. `convertFieldToType` converts such a constant to the float exactly or returns
+/// Null, and the caller looks up both zeros with `hashWithFieldAndOtherZero`.
+static bool bloomFilterHashDomainMatchesForEquals(const DataTypePtr & value_type, const DataTypePtr & nested_type)
+{
+    if (!value_type)
+        return false;
+
+    auto value = removeLowCardinalityAndNullable(value_type);
+    if (isFloat(removeLowCardinalityAndNullable(nested_type)))
+        return isInteger(value) || isFloat(value);
+
+    return bloomFilterHashDomainMatches(value_type, nested_type);
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
@@ -1148,7 +1168,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             {
                 size_t position = header.getPositionByName(array_column_name);
                 const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
-                if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
+                if (array_type && bloomFilterHashDomainMatchesForEquals(value_type, array_type->getNestedType()))
                 {
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
                     if (!validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
@@ -1162,7 +1182,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                         return false;
 
                     out.function = RPNElement::FUNCTION_HAS;
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
                     return true;
                 }
             }
@@ -1227,14 +1247,33 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             bool has_float_zero = false;
             ColumnPtr hashes = hashWithColumnAndOtherZeros(actual_type, column, has_float_zero);
 
-            /// `hasAll` needs one of the two zeros in the granule, while `FUNCTION_HAS_ALL` needs every hash.
             if (function_name == "hasAll" && has_float_zero)
-                return false;
-
-            out.function = function_name == "hasAny" ?
-                RPNElement::FUNCTION_HAS_ANY :
-                RPNElement::FUNCTION_HAS_ALL;
-            out.predicate.emplace_back(std::make_pair(position, std::move(hashes)));
+            {
+                /// `hasAll` needs one of the two zeros in the granule, while `FUNCTION_HAS_ALL` needs every hash.
+                /// A granule matches only if each predicate entry matches, and under `FUNCTION_HAS_ANY` an entry
+                /// matches if any of its hashes does. So one entry per element, with both hashes for a zero, is
+                /// exactly `hasAll`. Every zero element gets the same entry, so it is added once.
+                out.function = RPNElement::FUNCTION_HAS_ANY;
+                bool has_zero_entry = false;
+                for (size_t i = 0; i < column->size(); ++i)
+                {
+                    Field value = (*column)[i];
+                    if (isFloatZero(actual_type, value))
+                    {
+                        if (has_zero_entry)
+                            continue;
+                        has_zero_entry = true;
+                    }
+                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, value)));
+                }
+            }
+            else
+            {
+                out.function = function_name == "hasAny" ?
+                    RPNElement::FUNCTION_HAS_ANY :
+                    RPNElement::FUNCTION_HAS_ALL;
+                out.predicate.emplace_back(std::make_pair(position, std::move(hashes)));
+            }
         }
         else
         {
