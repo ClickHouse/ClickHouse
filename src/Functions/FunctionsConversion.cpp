@@ -1131,8 +1131,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                     if (source_positions[i])
                     {
                         const size_t source_position = *source_positions[i];
-                        auto src_col = column_tuple.getColumns()[source_position]->convertToFullColumnIfLowCardinality();
-                        if (auto source_null_map_col = getSourceNullMap(*src_col))
+                        if (auto source_null_map_col = getSourceNullMap(*column_tuple.getColumns()[source_position]))
                         {
                             const auto & source_null_map = assert_cast<const ColumnUInt8 &>(*source_null_map_col).getData();
                             for (size_t row = 0; row < input_rows_count; ++row)
@@ -1146,8 +1145,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                     /// `Dynamic`, and `Variant` columns. Only additional NULLs invalidate the tuple.
                     const auto & result_null_map = nullable_col->getNullMapData();
                     const size_t source_position = *source_positions[i];
-                    auto src_col = column_tuple.getColumns()[source_position]->convertToFullColumnIfLowCardinality();
-                    auto source_null_map_col = getSourceNullMap(*src_col);
+                    auto source_null_map_col = getSourceNullMap(*column_tuple.getColumns()[source_position]);
 
                     if (source_null_map_col)
                     {

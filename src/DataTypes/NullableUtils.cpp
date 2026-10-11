@@ -90,6 +90,16 @@ ColumnPtr getSourceNullMap(const IColumn & column)
         return column_dynamic->getVariantColumn().createNullMap();
     if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(&column))
         return column_variant->createNullMap();
+    if (const auto * column_low_cardinality = checkAndGetColumn<ColumnLowCardinality>(&column);
+        column_low_cardinality && column_low_cardinality->nestedIsNullable())
+    {
+        const size_t null_index = column_low_cardinality->getDictionary().getNullValueIndex();
+        auto null_map = ColumnUInt8::create(column_low_cardinality->size());
+        auto & null_map_data = null_map->getData();
+        for (size_t row = 0; row < null_map_data.size(); ++row)
+            null_map_data[row] = column_low_cardinality->getIndexAt(row) == null_index;
+        return null_map;
+    }
     return nullptr;
 }
 

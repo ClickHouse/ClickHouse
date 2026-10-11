@@ -13,8 +13,9 @@ namespace DB
 ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs);
 
 /// The row-wise null map of a column that can hold NULLs (`ColumnUInt8`, 1 = the value is NULL), or a null
-/// pointer for a column that cannot. `Variant` and `Dynamic` encode NULLs with the `NULL` discriminator rather
-/// than a separate null map, so theirs is reconstructed with `createNullMap`.
+/// pointer for a column that cannot. `Variant` and `Dynamic` encode NULLs with the `NULL` discriminator, and
+/// `LowCardinality` with the index of the NULL in its dictionary, rather than a separate null map, so theirs
+/// is reconstructed.
 ColumnPtr getSourceNullMap(const IColumn & column);
 
 /** Replace `Nullable` key columns with their nested columns and combine their outer null maps.
