@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -981,6 +982,27 @@ void addImplicitStatistics(ColumnsDescription & columns, const String & statisti
                 { column_desc.statistics.merge(stats_desc, column.name, column.type, /*if_not_exists=*/true); });
         }
     }
+}
+
+NameSet parseExcludeStatisticsColumns(const String & value, std::string_view setting_name)
+{
+    try
+    {
+        return parseColumnNameList(value);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("(in the value of setting '{}')", setting_name);
+        throw;
+    }
+}
+
+ColumnsStatistics collectStatisticsToMaterialize(const ColumnsDescription & columns, const NameSet & exclude_columns)
+{
+    ColumnsStatistics statistics(columns);
+    for (const auto & column_name : exclude_columns)
+        statistics.erase(column_name);
+    return statistics;
 }
 
 bool canStatisticsTrackMinMax(const DataTypePtr & data_type)

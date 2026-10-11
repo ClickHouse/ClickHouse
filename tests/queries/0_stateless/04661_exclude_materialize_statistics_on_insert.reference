@@ -1,0 +1,32 @@
+Rows inserted with an invalid list	0
+Rows inserted into a table without statistics	10
+Column b is excluded on INSERT, so only a and `c,ol` have statistics
+a	1
+b	0
+c,ol	1
+After OPTIMIZE FINAL, merge materializes statistics for all columns including b
+a	1
+b	1
+c,ol	1
+MATERIALIZE STATISTICS builds excluded columns despite the insert exclude setting
+a	1
+b	1
+c,ol	1
+Query-level setting overrides session setting: `c,ol` excluded, b included
+a	1
+b	1
+c,ol	0
+Both b and `c,ol` are excluded on INSERT
+a	1
+b	0
+c,ol	0
+After OPTIMIZE FINAL, merge materializes statistics for all columns
+a	1
+b	1
+c,ol	1
+The materialized view target is affected as well
+dst	a	1
+dst	b	0
+tab	a	1
+tab	b	0
+tab	c,ol	1
