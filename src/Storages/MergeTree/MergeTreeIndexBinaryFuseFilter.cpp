@@ -4,10 +4,13 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -16,6 +19,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilter.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/BinaryFuseFilter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -34,6 +38,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool validate_enum_literals_in_operators;
+}
 
 namespace ErrorCodes
 {
@@ -256,6 +265,7 @@ MergeTreeIndexConditionBinaryFuseFilter::MergeTreeIndexConditionBinaryFuseFilter
     , header(header_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , json_argument_types(std::move(json_argument_types_))
+    , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     if (!predicate)
     {
@@ -542,6 +552,12 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
+
+        /// A NULL of a set built for `toNullable(key)` does not cast to the key type and matches no stored value.
+        const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
+        if (nullable_column && !index_type->isNullable() && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+            return false;
+
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
 
         /// An `Array` index holds one hash per element, so a set array is looked up by its elements
@@ -969,6 +985,14 @@ bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
 
                 if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
                     return false;
+            }
+
+            /// With validation off, `equals` against a name the enum lacks is constant false for every row,
+            /// so the conversion below must not throw; `KeyCondition` folds the same way.
+            if (function_name == "equals" && !validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
+            {
+                out.function = RPNElement::ALWAYS_FALSE;
+                return true;
             }
 
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
