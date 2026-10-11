@@ -1,0 +1,105 @@
+multiSearchAny	[1]
+multiSearchAny, no index	[1]
+multiSearchAnyUTF8	[1]
+multiSearchAnyUTF8, no index	[1]
+multiSearchAnyCaseInsensitive	[2]
+multiSearchAnyCaseInsensitive, no index	[2]
+multiSearchAnyCaseInsensitiveUTF8	[7]
+multiSearchAnyCaseInsensitiveUTF8, no index	[7]
+elvin	[6,9]
+elvin, no index	[6,9]
+stanbul	[7]
+stanbul, no index	[7]
+istanbul	[]
+istanbul, no index	[]
+unrise	[8,10]
+unrise, no index	[8,10]
+sunrise	[10]
+sunrise, no index	[10]
+KELV	[9]
+KELV, no index	[9]
+no needles	[]
+no needles, no index	[]
+multiSearchAny, 2 needles	[1,2]
+multiSearchAny, 2 needles, no index	[1,2]
+multiSearchAnyCaseInsensitive, 2 needles	[2,3]
+multiSearchAnyCaseInsensitive, 2 needles, no index	[2,3]
+not	[2,3,4,5,6,7,8,9,10,11,12,13]
+not, no index	[2,3,4,5,6,7,8,9,10,11,12,13]
+or	[1,3]
+or, no index	[1,3]
+select list	1
+select list, no index	1
+short needle	[1,11,12]
+short needle, no index	[1,11,12]
+separator	[11]
+separator, no index	[11]
+wildcard	[12]
+wildcard, no index	[12]
+scan off	[1]
+scan off, no index	[1]
+scan off, case-insensitive	[2]
+scan off, case-insensitive, no index	[2]
+scan off	0	1
+like chain	[1,2,3]
+like chain, not rewritten	[1,2,3]
+The call is answered by the index alone, so it is not evaluated
+multiSearchAny	1	0
+multiSearchAnyCaseInsensitiveUTF8	1	0
+like chain	0	1
+Other column types
+LowCardinality	[1]
+LowCardinality, no index	[1]
+Nullable	[1]
+Nullable, no index	[1]
+Nullable, not	[2,3,5,6,7,9,10,11,13]
+Nullable, not, no index	[2,3,5,6,7,9,10,11,13]
+LowCardinality(Nullable)	[1]
+LowCardinality(Nullable), no index	[1]
+LowCardinality(Nullable), not	[2,3,5,6,7,9,10,11,13]
+LowCardinality(Nullable), not, no index	[2,3,5,6,7,9,10,11,13]
+array, multiSearchAny	[1]
+array, multiSearchAny, no index	[1]
+array, underscore	[3]
+array, underscore, no index	[3]
+array, separator	[5]
+array, separator, no index	[5]
+array, multiSearchAnyCaseInsensitive	[8]
+array, multiSearchAnyCaseInsensitive, no index	[8]
+array, multiSearchAny	1	0
+lower, multiSearchAnyCaseInsensitive	[2]
+lower, multiSearchAnyCaseInsensitive, no index	[2]
+lower, multiSearchAny	[2]
+lower, multiSearchAny, no index	[2]
+Fallbacks
+overflow	1000
+overflow, no index	1000
+no index in part	[1,3]
+no index in part, no index	[1,3]
+ss_array_msa	1
+ss_array_msa_ci	1
+ss_array_msa_separator	1
+ss_array_msa_underscore	1
+ss_fold_elvin	1
+ss_fold_istanbul	1
+ss_fold_kelv	0
+ss_fold_stanbul	1
+ss_fold_sunrise	1
+ss_fold_unrise	1
+ss_lc	1
+ss_lc_nullable	0
+ss_lower	0
+ss_lower_ci	1
+ss_msa	1
+ss_msa_2	0
+ss_msa_ci	1
+ss_msa_ci_2	0
+ss_msa_ci_utf8	1
+ss_msa_utf8	1
+ss_nullable	0
+ss_scan_off	0
+ss_scan_off_ci	0
+ss_separator	0
+ss_short	0
+ss_wildcard	0
+overflow, the scan gave up	1

@@ -24,8 +24,10 @@ SYSTEM DROP COLUMNS CACHE;
 
 -- The first read populates the cache. It really is split into several blocks (checked
 -- through `blockNumber`), so the deferred write has to survive the continuation reads.
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
+-- and its `ProfileEvents` never reach the row of this query checked below.
 SELECT uniqExact(blockNumber()) > 1, sum(id), uniqExact(s) FROM t_cc_multi_block
-SETTINGS max_block_size = 65536, preferred_block_size_bytes = 1000000;
+SETTINGS max_block_size = 65536, preferred_block_size_bytes = 1000000, enable_parallel_replicas = 0;
 
 -- Every read column of the part is cached as a whole. The part may be read as one task or as
 -- several (remote disks size tasks differently), so the entries are checked for their coverage
@@ -38,12 +40,12 @@ ORDER BY column;
 
 -- The repeated read with the same block limits is served from the cache.
 SELECT uniqExact(blockNumber()) > 1, sum(id), uniqExact(s) FROM t_cc_multi_block
-SETTINGS max_block_size = 65536, preferred_block_size_bytes = 1000000;
+SETTINGS max_block_size = 65536, preferred_block_size_bytes = 1000000, enable_parallel_replicas = 0;
 
 -- So is a read of the same range with other block limits: the entries do not depend on
 -- how the range was split into blocks when it was written.
 SELECT uniqExact(blockNumber()) > 1, sum(id), uniqExact(s) FROM t_cc_multi_block
-SETTINGS max_block_size = 10000, preferred_block_size_bytes = 0;
+SETTINGS max_block_size = 10000, preferred_block_size_bytes = 0, enable_parallel_replicas = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

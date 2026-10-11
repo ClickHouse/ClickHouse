@@ -20,6 +20,7 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 
 namespace DB
 {
@@ -178,7 +179,11 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*comp
         || nulls_action != rhs_typed.nulls_action)
         return false;
 
-    /// is_operator is ignored here because it affects only AST formatting
+    /// is_operator is ignored here because it affects only AST formatting, except for the function
+    /// composition operator `f | g`: the operator and an ordinary call to a function of the same
+    /// name are different expressions.
+    if (function_name == function_composition_name && is_operator != rhs_typed.is_operator)
+        return false;
 
     if (isResolved() != rhs_typed.isResolved())
         return false;
@@ -207,7 +212,10 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*c
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
-    /// is_operator is ignored here because it affects only AST formatting
+    /// is_operator is ignored here because it affects only AST formatting, except for the function
+    /// composition operator, see `isEqualImpl`.
+    if (function_name == function_composition_name)
+        hash_state.update(is_operator);
 
     if (!isResolved())
         return;
