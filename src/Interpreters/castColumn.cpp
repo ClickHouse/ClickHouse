@@ -334,41 +334,7 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
     if (!datetime)
         return {};
 
-    const auto & datetime_column = assert_cast<const ColumnDecimal<DateTime64> &>(*column);
-
-    ColumnPtr float_loss_map;
-    if (callOnBasicType<void, false, true, false, false>(to_type->getTypeId(), [&](const auto & types)
-        {
-            using FloatType = typename std::decay_t<decltype(types)>::RightType;
-            float_loss_map = getDateTime64ToFloatLossMap<FloatType>(datetime_column);
-            return true;
-        }))
-        return float_loss_map;
-
-    UInt32 target_scale = 0;
-    const WhichDataType target(to_type);
-    if (target.isDateTime64() || target.isTime64() || target.isDecimal())
-        target_scale = getDecimalScale(*to_type);
-    else if (!target.isDateOrDate32() && !target.isDateTime() && !target.isTime() && !target.isInteger())
-        return {};
-
-    const UInt32 source_scale = datetime->getScale();
-    if (target_scale >= source_scale && !target.isDateTime())
-        return {};
-
-    const Int64 divisor = DecimalUtils::scaleMultiplier<Int64>(source_scale > target_scale ? source_scale - target_scale : 0);
-    const Int64 source_multiplier = datetime->getScaleMultiplier().value;
-    const auto & values = datetime_column.getData();
-    auto result = ColumnUInt8::create(values.size(), UInt8(0));
-    auto & loss_map = result->getData();
-    for (size_t row = 0; row < values.size(); ++row)
-    {
-        const Int64 value = values[row];
-        const Int64 seconds = value / source_multiplier;
-        loss_map[row] = value % divisor != 0
-            || (target.isDateTime() && (value < 0 || seconds > std::numeric_limits<UInt32>::max()));
-    }
-    return result;
+    return getDateTime64ToScalarLossMap(assert_cast<const ColumnDecimal<DateTime64> &>(*column), *datetime, to_type);
 }
 
 }
