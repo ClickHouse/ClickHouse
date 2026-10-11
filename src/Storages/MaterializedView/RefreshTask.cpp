@@ -1573,14 +1573,19 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             if (auto select_ast = view_metadata->select.select_query)
                 watermark.source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
 
-            /// The watermark this replica remembers in memory, or - after a server restart, or when the
-            /// previous refresh ran on another replica - the one persisted in the coordination state.
-            /// The persisted one counts only if the view definition has not changed since it was
-            /// written: an `ALTER ... MODIFY QUERY`, `MODIFY REFRESH`, or `MODIFY SQL SECURITY` makes
-            /// the old source hash meaningless for the new definition, and this way every replica
-            /// ignores it without needing a separate Keeper write.
+            /// The watermark of the last refresh that rebuilt the view. With coordination it is the one
+            /// persisted in the coordination state: every replica writes it there on its own successful
+            /// refresh, so it is the newest one, while the in-memory copy of this replica lags behind
+            /// after another replica refreshed (preferring it would make a replica that last rebuilt at
+            /// `H0` treat an unchanged `H1` as changed, and an `APPEND` view would append duplicate
+            /// rows). Without coordination it is the one this replica remembers in memory, or - after a
+            /// server restart - the persisted one.
+            /// A watermark counts only if the view definition has not changed since it was written: an
+            /// `ALTER ... MODIFY QUERY`, `MODIFY REFRESH`, or `MODIFY SQL SECURITY` makes the old source
+            /// hash meaningless for the new definition, and this way every replica ignores it without
+            /// needing a separate Keeper write.
             std::optional<UInt128> previous_source_hash;
-            if (last_refresh_definition_hash == watermark.definition_hash)
+            if (!coordination.coordinated && last_refresh_definition_hash == watermark.definition_hash)
                 previous_source_hash = watermark.local_source_hash;
             if (!previous_source_hash.has_value() && watermark.persisted_definition_hash == watermark.definition_hash)
                 previous_source_hash = watermark.persisted_source_hash;
