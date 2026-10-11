@@ -25,7 +25,9 @@ ${CLICKHOUSE_CLIENT} --query "
 # Backdate the file so its version token has settled and the cache engages.
 touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}/data.parquet"
 
-${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary 1 --query "CREATE DATABASE ${DB} ENGINE = Ordinary"
+# `--send_logs_level=fatal` keeps the `Ordinary` engine deprecation warning (emitted once per server
+# lifetime, on the first CREATE of an `Ordinary` database) out of the test's stderr.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_deprecated_database_ordinary 1 --query "CREATE DATABASE ${DB} ENGINE = Ordinary"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${DB}.t_allow (b UInt64, c UInt64) ENGINE = File(Parquet, '${DATA_DIR}/data.parquet')
     SETTINGS input_format_parquet_allow_missing_columns = 1"
