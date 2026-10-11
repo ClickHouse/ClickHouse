@@ -1,0 +1,55 @@
+<test>
+    <create_query>
+        CREATE TABLE cache_dictionary_source_table
+        (
+            id UInt64,
+            value_int UInt64,
+            value_string String
+        ) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 128;
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY cache_dictionary_warm
+        (
+            id UInt64,
+            value_int UInt64,
+            value_string String
+        )
+        PRIMARY KEY id
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'cache_dictionary_source_table'))
+        LAYOUT(CACHE(SIZE_IN_CELLS 4194304))
+        LIFETIME(MIN 100000 MAX 200000);
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY cache_dictionary_expiring
+        (
+            id UInt64,
+            value_int UInt64,
+            value_string String
+        )
+        PRIMARY KEY id
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'cache_dictionary_source_table'))
+        LAYOUT(CACHE(SIZE_IN_CELLS 4194304 ALLOW_READ_EXPIRED_KEYS 0))
+        LIFETIME(MIN 1 MAX 2);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO cache_dictionary_source_table
+        SELECT number, number, toString(number)
+        FROM numbers(2000000);
+    </fill_query>
+
+    <fill_query>SELECT sum(dictGetUInt64('cache_dictionary_warm', 'value_int', number)) FROM numbers(2000000)</fill_query>
+
+    <!-- All keys are in the cache: the read path only. -->
+    <query>SELECT sum(dictGetUInt64('cache_dictionary_warm', 'value_int', number)) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT count() FROM numbers(2000000) WHERE dictGetString('cache_dictionary_warm', 'value_string', number) = '1' FORMAT Null</query>
+
+    <!-- Keys expire during the test, so blocks create update units and wait for them. -->
+    <query>SELECT sum(dictGetUInt64('cache_dictionary_expiring', 'value_int', (number * 7919) % 2000000)) FROM numbers(1000000) SETTINGS max_threads = 16 FORMAT Null</query>
+
+    <drop_query>DROP DICTIONARY IF EXISTS cache_dictionary_warm</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS cache_dictionary_expiring</drop_query>
+    <drop_query>DROP TABLE IF EXISTS cache_dictionary_source_table</drop_query>
+</test>
