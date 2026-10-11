@@ -14,6 +14,7 @@ namespace DB
     using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
     class ActionsDAG;
+    class Pipe;
 
     struct ReadFromFormatInfo
     {
@@ -127,4 +128,11 @@ namespace DB
     /// *Cluster read steps and drives pipes.reserve()/pipe.resize(); unbounded it can overflow the pipe
     /// vector (std::length_error) or exhaust memory.
     size_t clampClusterFunctionNumStreams(UInt64 num_streams);
+
+    /// Spreads the output of a read whose streams take whole files over `resize_to` threads: a pipe with
+    /// fewer streams is resized; otherwise, unless `keep_streams`, a stream that has run out of files takes
+    /// chunks of the other streams (`AffinityResizeProcessor`). With many streams the streams are split into
+    /// groups of at least `min_streams_per_group` streams (as `Pipe::resize` splits `Resize`), and a stream takes
+    /// chunks only of the streams of its group.
+    void resizeOutputAfterReading(Pipe & pipe, size_t resize_to, bool keep_streams, size_t min_streams_per_group);
 }
