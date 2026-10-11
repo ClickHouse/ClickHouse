@@ -9379,6 +9379,10 @@ Enables throwing an exception if there was an error when analyzing scan predicat
 Enables delta-kernel internal data pruning.
 )", 0, \
         {"25.8", true, true, "New setting"}) \
+    DECLARE(UInt64, delta_lake_data_files_prefetch_count, 8, R"(
+The number of data files of a `DeltaLake` table for which the deletion vector and the object metadata are fetched in advance, while previous files are being read. Value 0 disables prefetching.
+)", 0, \
+        {"26.10", 8, 8, "New setting."}) \
     DECLARE(NonZeroUInt64, delta_lake_insert_max_rows_in_data_file, 1000000, R"(
 Defines a rows limit for a single inserted data file in delta lake.
 )", 0, \

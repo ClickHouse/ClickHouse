@@ -21,8 +21,10 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -49,6 +51,7 @@ namespace DB::Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
     extern const SettingsBool delta_lake_enable_engine_predicate;
+    extern const SettingsUInt64 delta_lake_data_files_prefetch_count;
 }
 
 namespace ProfileEvents
@@ -100,6 +103,7 @@ public:
         const DB::ActionsDAG * filter_,
         DB::IDataLakeMetadata::FileProgressCallback callback_,
         size_t list_batch_size_,
+        size_t prefetch_count_,
         bool enable_expression_visitor_logging_,
         bool throw_on_engine_predicate_error_,
         bool enable_engine_predicate_,
@@ -116,6 +120,7 @@ public:
         , object_storage(object_storage_)
         , callback(callback_)
         , list_batch_size(list_batch_size_)
+        , prefetch_count(prefetch_count_)
         , log(log_)
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
         , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
@@ -160,6 +165,12 @@ public:
 
     ~Iterator() override
     {
+        {
+            std::lock_guard lock(prefetch_mutex);
+            for (auto & future : prefetched_files)
+                future.wait();
+        }
+
         shutdown.store(true);
         schedule_next_batch_cv.notify_one();
         if (thread.joinable())
@@ -371,51 +382,43 @@ public:
     {
         while (true)
         {
-            std::optional<ScannedDataFile> scan_item;
+            DB::ObjectInfoPtr object;
+            if (prefetch_count == 0)
             {
-                std::unique_lock lock(next_mutex);
-
-                if (!iterator_finished && data_files.empty() && !shutdown)
-                {
-                    LOG_TEST(log, "Waiting for next data file");
-                    schedule_next_batch_cv.notify_one();
-                    data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished || shutdown.load(); });
-                }
-
-                if (engine_predicate_exception && throw_on_engine_predicate_error)
-                    std::rethrow_exception(engine_predicate_exception);
-
-                if (scan_exception)
-                    std::rethrow_exception(scan_exception);
-
-                if (data_files.empty() || shutdown)
-                {
-                    LOG_TEST(log, "Data files: {}", data_files.size());
+                auto scan_item = popScannedDataFile(/* wait */ true);
+                if (!scan_item)
                     return nullptr;
-                }
-
-                LOG_TEST(log, "Current data files: {}", data_files.size());
-
-                scan_item = std::move(data_files.front());
-                data_files.pop_front();
+                object = prepareDataFile(std::move(*scan_item));
             }
-
-            schedule_next_batch_cv.notify_one();
-
-            auto object = std::move(scan_item->object);
-
-            /// Needed for partition values.
-            parseTransformHandle(*scan_item, object);
-            if (pruner.has_value() && pruner->canBePruned(*object))
+            else
             {
-                ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
+                std::future<DB::ObjectInfoPtr> future;
+                {
+                    std::lock_guard lock(prefetch_mutex);
+                    if (prefetched_files.empty())
+                    {
+                        auto scan_item = popScannedDataFile(/* wait */ true);
+                        if (!scan_item)
+                            return nullptr;
+                        schedulePrefetch(std::move(*scan_item));
+                    }
 
-                LOG_TEST(log, "Skipping file {} according to partition pruning", object->getPath());
-                continue;
+                    while (prefetched_files.size() <= prefetch_count)
+                    {
+                        auto scan_item = popScannedDataFile(/* wait */ false);
+                        if (!scan_item)
+                            break;
+                        schedulePrefetch(std::move(*scan_item));
+                    }
+
+                    future = std::move(prefetched_files.front());
+                    prefetched_files.pop_front();
+                }
+                object = future.get();
             }
 
-            parseDVHandle(*scan_item, object);
-            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
+            if (!object)
+                continue;
 
             if (callback)
             {
@@ -424,6 +427,68 @@ public:
             }
             return object;
         }
+    }
+
+    std::optional<ScannedDataFile> popScannedDataFile(bool wait)
+    {
+        std::optional<ScannedDataFile> scan_item;
+        {
+            std::unique_lock lock(next_mutex);
+
+            if (wait && !iterator_finished && data_files.empty() && !shutdown)
+            {
+                LOG_TEST(log, "Waiting for next data file");
+                schedule_next_batch_cv.notify_one();
+                data_files_cv.wait(lock, [&]() { return !data_files.empty() || iterator_finished || shutdown.load(); });
+            }
+
+            if (engine_predicate_exception && throw_on_engine_predicate_error)
+                std::rethrow_exception(engine_predicate_exception);
+
+            if (scan_exception)
+                std::rethrow_exception(scan_exception);
+
+            if (data_files.empty() || shutdown)
+            {
+                LOG_TEST(log, "Data files: {}", data_files.size());
+                return std::nullopt;
+            }
+
+            LOG_TEST(log, "Current data files: {}", data_files.size());
+
+            scan_item = std::move(data_files.front());
+            data_files.pop_front();
+        }
+
+        schedule_next_batch_cv.notify_one();
+        return scan_item;
+    }
+
+    void schedulePrefetch(ScannedDataFile && scan_item)
+    {
+        prefetched_files.push_back(DB::scheduleFromThreadPoolUnsafe<DB::ObjectInfoPtr>(
+            [this, item = std::move(scan_item)]() mutable { return prepareDataFile(std::move(item)); },
+            DB::getIOThreadPool().get(),
+            DB::ThreadName::DATALAKE_TABLE_SNAPSHOT));
+    }
+
+    DB::ObjectInfoPtr prepareDataFile(ScannedDataFile && scan_item)
+    {
+        auto object = std::move(scan_item.object);
+
+        /// Needed for partition values.
+        parseTransformHandle(scan_item, object);
+        if (pruner.has_value() && pruner->canBePruned(*object))
+        {
+            ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
+
+            LOG_TEST(log, "Skipping file {} according to partition pruning", object->getPath());
+            return nullptr;
+        }
+
+        parseDVHandle(scan_item, object);
+        object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
+        return object;
     }
 
     void parseTransformHandle(ScannedDataFile & scan_item, DB::ObjectInfoPtr & object)
@@ -642,6 +707,7 @@ private:
     const DB::ObjectStoragePtr object_storage;
     const DB::IDataLakeMetadata::FileProgressCallback callback;
     const size_t list_batch_size;
+    const size_t prefetch_count;
     const LoggerPtr log;
     const bool enable_expression_visitor_logging;
     const bool throw_on_engine_predicate_error;
@@ -670,6 +736,9 @@ private:
 
     std::deque<ScannedDataFile> data_files;
     std::mutex next_mutex;
+
+    std::deque<std::future<DB::ObjectInfoPtr>> prefetched_files;
+    std::mutex prefetch_mutex;
 
     /// A thread for async data scanning.
     ThreadFromGlobalPool thread;
@@ -998,6 +1067,7 @@ DB::ObjectIterator TableSnapshot::iterate(
         filter_dag,
         callback,
         list_batch_size,
+        settings[DB::Setting::delta_lake_data_files_prefetch_count],
         settings[DB::Setting::delta_lake_enable_expression_visitor_logging],
         settings[DB::Setting::delta_lake_throw_on_engine_predicate_error],
         settings[DB::Setting::delta_lake_enable_engine_predicate],
