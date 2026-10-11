@@ -16,6 +16,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <QueryPipeline/BlockIO.h>
@@ -182,6 +183,19 @@ void checkQueryIsSelect(const String & query, const char * description, const ch
 
 }
 
+ContextMutablePtr ClickHouseDictionarySource::createQueryContext() const
+{
+    /// Copy context because results of scalar subqueries potentially could be cached
+    auto context_copy = Context::createCopy(context);
+    context_copy->makeQueryContext();
+
+    /// `context` keeps the roles the user had when the source was created; use the current default roles, like a new session.
+    if (configuration.is_local)
+        context_copy->setCurrentRolesDefault();
+
+    return context_copy;
+}
+
 BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 {
     BlockIO io;
@@ -189,9 +203,7 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
     /// Sample block should not contain first row default values
     auto empty_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
 
-    /// Copy context because results of scalar subqueries potentially could be cached
-    auto context_copy = Context::createCopy(context);
-    context_copy->makeQueryContext();
+    auto context_copy = createQueryContext();
 
     checkQueryIsSelect(query, "Query for ClickHouse dictionary", "Only SELECT query can be used as a dictionary source");
 
@@ -221,9 +233,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     checkQueryIsSelect(request, "Invalidate query for ClickHouse dictionary", "Only SELECT query can be used as a dictionary invalidate query");
 
-    /// Copy context because results of scalar subqueries potentially could be cached
-    auto context_copy = Context::createCopy(context);
-    context_copy->makeQueryContext();
+    auto context_copy = createQueryContext();
     context_copy->setCurrentQueryId("");
 
     if (configuration.is_local)
@@ -293,7 +303,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .port = port,
-                .is_local = isLocalAddress({host, port}, default_port),
+                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
                 .secure = secure,
             });
         }
@@ -319,7 +329,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .update_field = config.getString(settings_config_prefix + ".update_field", ""),
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
                 .port = port,
-                .is_local = isLocalAddress({host, port}, default_port),
+                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
                 .secure = secure,
             });
         }
@@ -355,7 +365,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
     };
 
-    factory.registerSource("clickhouse", create_table_source, Documentation{
+    factory.registerSource("clickhouse", create_table_source, SecretArgumentsSpec{.secret_keys = {"password"}}, Documentation{
         .description = R"DOCS_MD(
 # ClickHouse dictionary source
 
@@ -368,8 +378,8 @@ Example of settings:
 SOURCE(CLICKHOUSE(
     host 'example01-01-1'
     port 9000
-    user 'default'
-    password ''
+    user 'dict_reader'
+    password 'dict_reader_password'
     db 'default'
     table 'ids'
     where 'id=10'
@@ -386,8 +396,8 @@ SOURCE(CLICKHOUSE(
     <clickhouse>
         <host>example01-01-1</host>
         <port>9000</port>
-        <user>default</user>
-        <password></password>
+        <user>dict_reader</user>
+        <password>dict_reader_password</password>
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
@@ -419,8 +429,12 @@ Setting fields:
 <Note>
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 </Note>
+
+<Note>
+In ClickHouse Cloud, when a user other than `default` creates the dictionary, the source must specify both `user` and `password`, and `user` cannot be `default`. Otherwise `CREATE DICTIONARY` fails with a `BAD_ARGUMENTS` error. Use a dedicated user that has `SELECT` on the source table.
+</Note>
 )DOCS_MD",
-        .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'default' password '' db 'db' table 'table'))",
+        .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'user' password 'password' db 'db' table 'table'))",
         .related = {"mysql", "postgresql"}});
 }
 

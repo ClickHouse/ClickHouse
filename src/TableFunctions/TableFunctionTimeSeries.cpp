@@ -135,7 +135,7 @@ SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
 <Note>
 The function `timeSeriesSamples` has an alias `timeSeriesData` which is kept for backwards compatibility.
 </Note>
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
     factory.registerAlias("timeSeriesData", "timeSeriesSamples");
 
@@ -161,7 +161,7 @@ SELECT * FROM timeSeriesTags(db_name.time_series_table);
 SELECT * FROM timeSeriesTags('db_name.time_series_table');
 SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
@@ -189,7 +189,7 @@ SELECT * FROM timeSeriesMetricFamilies('db_name', 'time_series_table');
 <Note>
 The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which is kept for backwards compatibility.
 </Note>
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
     factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
 
@@ -231,7 +231,7 @@ There is no specific order for returned data.
 ```sql
 SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {.description = R"DOCS_MD(
@@ -279,18 +279,20 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
-| Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `first_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `predict_linear` |
+| Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max`, `min_of`, `max_of` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `pi`, `absent` |
+| Other | `time`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
-**Note**: `ts_of_min_over_time` and `ts_of_max_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
+
+**Note**: `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -304,16 +306,12 @@ Unary operators `+` and `-`.
 
 `sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
-### Not yet supported {#not-yet-supported}
-
-- Range functions `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
-
 ## Example {#example}
 
 ```sql
 SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now())
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ true>>(
         {.description = R"DOCS_MD(
 Evaluates a prometheus query using data from a TimeSeries table over a range of evaluation times.
@@ -362,18 +360,20 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `predict_linear` |
-| Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `first_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`, `deriv`, `changes`, `resets`, `present_over_time`, `absent_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `predict_linear` |
+| Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max`, `min_of`, `max_of` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `pi`, `absent` |
+| Other | `time`, `pi`, `absent`, `timestamp` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
-**Note**: `ts_of_min_over_time` and `ts_of_max_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
+**Note**: `min_of(a, b)` and `max_of(a, b)` return the smaller or larger of two scalar values. Both arguments must be scalars.
+
+**Note**: `min_of`, `max_of`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `first_over_time`, `ts_of_first_over_time` and `mad_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -387,16 +387,12 @@ Unary operators `+` and `-`.
 
 `sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
-### Not yet supported {#not-yet-supported}
-
-- Range functions `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
-
 ## Example {#example}
 
 ```sql
 SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 }
 
 }
