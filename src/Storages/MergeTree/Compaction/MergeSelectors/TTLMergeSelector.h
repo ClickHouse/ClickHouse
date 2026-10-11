@@ -125,4 +125,15 @@ private:
     bool canConsiderPart(const PartProperties & part) const override;
 };
 
+/// Select single parts whose expired skip index files can be deleted. Expects unlimited merge constraints.
+class TTLIndexClearMergeSelector : public ITTLMergeSelector
+{
+public:
+    explicit TTLIndexClearMergeSelector(time_t current_time_);
+
+private:
+    time_t getTTLForPart(const PartProperties & part) const override;
+    bool canConsiderPart(const PartProperties & part) const override;
+};
+
 }
