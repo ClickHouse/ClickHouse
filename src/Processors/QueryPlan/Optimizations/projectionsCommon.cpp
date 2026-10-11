@@ -364,9 +364,48 @@ static bool projectionPartHasRequiredColumns(
     return true;
 }
 
+/// Pending metadata mutations (`RENAME COLUMN` / `DROP COLUMN`) are applied at read time by the
+/// `AlterConversions` of the parent part only; a projection part is read without them. So until such a
+/// mutation rewrites the part, its projection part may still carry a column the metadata no longer has
+/// under that name: after `DROP COLUMN c, ADD COLUMN c` the projection would return the old values of
+/// `c` instead of the new column's default. Such a part is read from the parent part instead.
+/// Only the mutations touching a column the projection holds or the read needs (for `RENAME COLUMN`,
+/// both the old and the new name) matter: a pending drop of an unrelated column keeps the projection usable.
+static bool partHasPendingMetadataMutationsOnColumns(
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const MergeTreeData::DataPartPtr & part,
+    const ProjectionDescription & projection,
+    const Names & required_column_names)
+{
+    if (!mutations_snapshot->hasMetadataMutations())
+        return false;
+
+    auto is_affected = [&](const String & name)
+    {
+        if (name.empty())
+            return false;
+        return std::find(projection.required_columns.begin(), projection.required_columns.end(), name) != projection.required_columns.end()
+            || projection.sample_block.has(name)
+            || std::find(required_column_names.begin(), required_column_names.end(), name) != required_column_names.end();
+    };
+
+    /// Only the mutations newer than the part apply to it: the snapshot may also hold finished ones.
+    for (const auto & command : mutations_snapshot->getOnFlyMutationCommandsForPart(part))
+    {
+        if (!AlterConversions::isSupportedMetadataMutation(command.type))
+            continue;
+
+        if (is_affected(command.column_name) || is_affected(command.rename_to))
+            return true;
+    }
+
+    return false;
+}
+
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
+    const MergeTreeData::MutationsSnapshotPtr & parent_mutations_snapshot,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
     const StorageMetadataPtr & parent_metadata,
@@ -385,7 +424,9 @@ bool analyzeProjectionCandidate(
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end() && !it->second->is_broken
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names))
+                *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names)
+            && !partHasPendingMetadataMutationsOnColumns(
+                parent_mutations_snapshot, part_with_ranges.data_part, *candidate.projection, required_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
                 it->second,
@@ -476,7 +517,9 @@ void filterPartsAndCollectProjectionCandidates(
         auto it = created_projections.find(projection.name);
         if (it != created_projections.end() && !it->second->is_broken
             && projectionPartHasRequiredColumns(
-                *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns))
+                *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns)
+            && !partHasPendingMetadataMutationsOnColumns(
+                reading.getMutationsSnapshot(), part_with_ranges.data_part, projection, filter_required_columns))
         {
             RangesInDataPart projection_part(
                 it->second,
