@@ -20,6 +20,14 @@ namespace DB
 class IStreamingStorage;
 struct ObjectMetadata;
 
+/// Whether `after_processing` acts on the exact ingested generation (`ETag`) of every file, so the read is pinned to it
+/// independently of `s3_validate_etag_on_read`; otherwise a newer generation would be moved or deleted by path unread.
+bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing);
+
+/// Pins the read of `object_info` to the generation (`etag`) reported by the listing, not a later `HEAD`, so the read and the
+/// post-processing see the same generation. Returns `false` if the listing has no `ETag`; the file must then be refused.
+bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info);
+
 class ObjectStorageQueueSource final : public ISource, WithContext
 {
 public:
@@ -301,6 +309,11 @@ private:
         /// The object's own last-modified time, if object storage reported one.
         /// Used to update the "newest object committed" pipeline-lag watermark.
         time_t last_modified = 0;
+        /// The generation (size and `ETag`) the reader was opened on; `after_processing` is pinned to exactly it.
+        uint64_t bytes_size = StoredObject::UnknownSize;
+        String etag;
+        /// S3 object version ID if known from read/listing.
+        String version_id;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;

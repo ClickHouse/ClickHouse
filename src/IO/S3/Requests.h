@@ -29,6 +29,7 @@
 #include <aws/s3/model/ChecksumAlgorithm.h>
 #include <aws/s3/model/CompletedPart.h>
 #include <aws/core/utils/HashingUtils.h>
+#include <aws/core/utils/StringUtils.h>
 
 #include <base/defines.h>
 #include <Common/Exception.h>
@@ -209,7 +210,28 @@ protected:
     RequestChecksum::Algorithm upload_checksum_algorithm = RequestChecksum::Algorithm::MD5;
 };
 
-using CopyObjectRequest = ExtendedRequest<Model::CopyObjectRequest>;
+/// A copy of one version of the source. The SDK URL-encodes the whole copy source, `?` included,
+/// so the version is added to the header after that.
+template <typename BaseRequest>
+class CopyRequest : public ExtendedRequest<BaseRequest>
+{
+public:
+    void setCopySourceVersionId(const Aws::String & version_id) { copy_source_version_id = version_id; }
+
+    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override
+    {
+        auto headers = BaseRequest::GetRequestSpecificHeaders();
+        auto it = headers.find("x-amz-copy-source");
+        if (it != headers.end() && !copy_source_version_id.empty())
+            it->second += "?versionId=" + Aws::Utils::StringUtils::URLEncode(copy_source_version_id.c_str());
+        return headers;
+    }
+
+private:
+    Aws::String copy_source_version_id;
+};
+
+using CopyObjectRequest = CopyRequest<Model::CopyObjectRequest>;
 
 class HeadObjectRequest: public ExtendedRequest<Model::HeadObjectRequest>
 {
@@ -264,7 +286,7 @@ public:
 
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;
 using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadRequest>;
-using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
+using UploadPartCopyRequest = CopyRequest<Model::UploadPartCopyRequest>;
 using PutObjectTaggingRequest = ExtendedRequest<Model::PutObjectTaggingRequest>;
 
 class DeleteObjectRequest : public ExtendedRequest<Model::DeleteObjectRequest>

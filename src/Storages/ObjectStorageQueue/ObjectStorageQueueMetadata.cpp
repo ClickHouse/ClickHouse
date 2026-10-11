@@ -183,6 +183,13 @@ ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
     shutdown();
 }
 
+std::string ObjectStorageQueueMetadata::getKeeperIdentity() const
+{
+    if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
+        return zookeeper_path;
+    return zookeeper_name + ":" + zookeeper_path.string();
+}
+
 ZooKeeperWithFaultInjection::Ptr ObjectStorageQueueMetadata::getZooKeeper(LoggerPtr log, const String & zookeeper_name)
 {
     auto context = Context::getGlobalContextInstance();
