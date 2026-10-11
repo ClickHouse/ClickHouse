@@ -495,7 +495,6 @@ void ThreadStatus::detachFromGroup()
     performance_counters.setParent(&ProfileEvents::global_counters);
 
     /// Freed while the tracker still points at the query, so that e.g. the query text for logs is not left charged to it.
-    clearQueryId();
     query_context.reset();
     local_data = {};
     fatal_error_callback = {};
@@ -529,6 +528,9 @@ void ThreadStatus::detachFromGroup()
     }
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
+
+    /// Last: memory and jemalloc samples taken above still belong to the query.
+    clearQueryId();
 }
 
 void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
