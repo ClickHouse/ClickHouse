@@ -52,7 +52,7 @@ private:
     friend class DB::EnumeratorCheckerWithCosts;
 
     std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
@@ -79,7 +79,7 @@ private:
     }
 
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    SelectivityEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -132,7 +132,7 @@ private:
 };
 
 std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
     JoinStrictness strictness) const
 {
     return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind, strictness);
@@ -473,10 +473,10 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
     return out;
 }
 
-double DPSubJoinOrderOptimizer::computeSelectivityMask(
+SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
     const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
-    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
 
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
@@ -493,7 +493,8 @@ double DPSubJoinOrderOptimizer::computeSelectivityMask(
                 continue;
             dpsub_data.class_visited[class_idx] = generation;
 
-            size_t max_ndv = 0;
+            UInt64 max_ndv = 0;
+            UInt64 max_ndv_upper_bound = 0;
             bool has_left = false;
             bool has_right = false;
             for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
@@ -503,22 +504,21 @@ double DPSubJoinOrderOptimizer::computeSelectivityMask(
                     continue;
                 const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
                 if (left_mask & relation_bit)
-                {
                     has_left = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-                }
                 else if (right_mask & relation_bit)
-                {
                     has_right = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-                }
+                else
+                    continue;
+                auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
+                max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
+                max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
             }
-            if (has_left && has_right && max_ndv > 0)
-                selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+            if (has_left && has_right)
+                applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
         }
     }
 
-    return selectivity;
+    return estimate;
 }
 
 template <typename DPTable, std::unsigned_integral TUInt>
