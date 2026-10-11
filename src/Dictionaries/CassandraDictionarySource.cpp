@@ -118,7 +118,7 @@ Setting fields:
 | `consistency` | Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`. |
 | `where` | Optional selection criteria. |
 | `max_threads` | The maximum number of idle connections to keep open for loading data, for example, from multiple partitions in compose key dictionaries. Default value is `8`. |
-| `query` | The custom query. Optional. |
+| `query` | The custom query. Optional. For dictionaries with complex keys and the `cache` or `direct` layouts, it must contain the `{condition}` placeholder, which is replaced with the condition on the requested keys, because CQL does not support subqueries. |
 
 <Note>
 The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
@@ -138,6 +138,7 @@ The `column_family` or `where` fields cannot be used together with the `query` f
 
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
+#include <Databases/removeWhereConditionPlaceholder.h>
 #include <Dictionaries/CassandraSource.h>
 
 namespace DB
@@ -146,6 +147,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 CassandraDictionarySource::Configuration::Configuration(
@@ -286,6 +288,12 @@ BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const V
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
+
+    /// Without the placeholder, `ExternalQueryBuilder` wraps the custom query in a subquery, which is not supported by CQL.
+    if (!configuration.query.empty() && !configuration.query.contains(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Loading keys from a Cassandra dictionary source with a custom query requires the {} placeholder in the query",
+            CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
 
     /// TODO is there a better way to load data by complex keys?
     UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<size_t>> partitions;
