@@ -130,6 +130,16 @@ void MergeTreeSink::onFinish()
         return;
 
     finishDelayedChunk();
+    fsyncCommittedParts();
+}
+
+void MergeTreeSink::fsyncCommittedParts()
+{
+    if (committed_parts.empty())
+        return;
+
+    storage.fsyncPartsAfterInsert(committed_parts);
+    committed_parts.clear();
 }
 
 void MergeTreeSink::consume(Chunk & chunk)
@@ -281,7 +291,13 @@ void MergeTreeSink::consume(Chunk & chunk)
     /// part immediately to make its rows visible without waiting for the next consume()
     /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
+    {
         finishDelayedChunk();
+        /// Such an INSERT can stay open indefinitely, so it cannot postpone the fsync of what it
+        /// has already committed until onFinish(): make each flushed block durable as it goes.
+        /// This also keeps the pending list from growing without a bound.
+        fsyncCommittedParts();
+    }
 
     if (synchronously_commit_part_for_dependent_views)
         finishDelayedChunk();
@@ -318,6 +334,8 @@ void MergeTreeSink::finishDelayedChunk()
 
             if (conflicts.empty())
             {
+                if (partition.temp_part->needs_fsync_on_finish)
+                    committed_parts.push_back(part->info);
                 partition.temp_part->prewarmCaches();
 
                 profile_events_scope.reset();

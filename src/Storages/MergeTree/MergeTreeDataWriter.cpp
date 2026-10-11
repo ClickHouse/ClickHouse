@@ -96,6 +96,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool fsync_after_insert;
+    extern const MergeTreeSettingsBool fsync_after_insert_each_part;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
@@ -1124,11 +1125,22 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
+    /// With fsync_after_insert_each_part = 0 the part is not synced as it is written: the INSERT
+    /// syncs all the parts it wrote in one batch when it finishes, see
+    /// MergeTreeData::fsyncPartsAfterInsert(). That needs a disk which can sync a file after it
+    /// was finalized; on other disks the part is still synced as it is written.
+    const bool fsync_after_insert = (*data_settings)[MergeTreeSetting::fsync_after_insert];
+    const bool sync_this_part = fsync_after_insert
+        && ((*data_settings)[MergeTreeSetting::fsync_after_insert_each_part] || !data_part_storage->supportsSyncFiles());
+    temp_part->needs_fsync_on_finish = fsync_after_insert && !sync_this_part;
+
     /// Write the `unique_key_index.sst` in one step: `writeDenseIndexOnInsert`
     /// records its checksum in `gathered_data.checksums` (so it is covered by
     /// `CHECK TABLE`, part-size accounting, backup and fetches) and finalizes +
     /// optionally fsyncs the file inline - before `checksums.txt` is written,
     /// so a crash cannot leave the checksum durable while the SST is not.
+    /// In the batched mode the SST is synced at the end of the INSERT together
+    /// with the other files of the part, before the INSERT is acknowledged.
     if (metadata_snapshot->hasUniqueKey())
     {
         SSTIndexWriter::writeDenseIndexOnInsert(
@@ -1138,7 +1150,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
             gathered_data.checksums,
-            (*data_settings)[MergeTreeSetting::fsync_after_insert],
+            sync_this_part,
             context);
     }
 
@@ -1162,7 +1174,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(
+                        data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false, sync_this_part, context);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1189,7 +1202,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         gathered_data,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert]);
+        sync_this_part);
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -1212,6 +1225,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeIndices indices,
     bool merge_is_needed,
     bool try_adaptive_codec,
+    bool sync,
     bool use_selected_codec)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
@@ -1363,7 +1377,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
-    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
+    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync);
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
@@ -1381,6 +1395,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     IMergeTreeDataPart * parent_part,
     CompressionCodecPtr compression_codec,
     bool merge_is_needed,
+    bool sync,
     ContextPtr context)
 {
     const auto & query_settings = context->getSettingsRef();
@@ -1401,7 +1416,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         std::move(compression_codec),
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        sync);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1437,6 +1453,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         std::move(indices),
         /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ !is_explicit_recompression,
+        /*sync=*/ false,
         use_selected_codec);
 
     new_part->part->temp_projection_block_number = block_num;
