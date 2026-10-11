@@ -364,10 +364,25 @@ public:
             /// segment keep pointing at the same offsets. Bumping the epoch makes a concurrent merge that copied
             /// the previous contents of this object discard its result.
             ++rewrite_epoch;
+
+            /// Keep the new writer local until the carry-over succeeds. If the copy fails, the writer is left
+            /// without an open segment (`appendRecord` refuses to write then), so a failed rewrite cannot be
+            /// resumed after a truncated copy of the old segment and published under the live path.
+            current_file_description = nullptr;
+            last_index_written.reset();
+            auto new_write_buffer = disk->writeFile(getInProgressPath(file_description->path));
+            try
+            {
+                auto reader = disk->readFile(file_description->path, getReadSettings());
+                copyData(*reader, *new_write_buffer);
+            }
+            catch (...)
+            {
+                new_write_buffer->cancel();
+                throw;
+            }
             current_file_description = std::move(file_description);
-            write_buffer = disk->writeFile(getInProgressPath(current_file_description->path));
-            auto reader = disk->readFile(current_file_description->path, getReadSettings());
-            copyData(*reader, *write_buffer);
+            write_buffer = std::move(new_write_buffer);
         }
         else
         {
@@ -398,6 +413,12 @@ public:
 
     bool appendRecord(ChangelogRecord && record) override
     {
+        if (!write_buffer)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot append log entry {} to the S3 changelog: no segment is open (a previous rewrite failed)",
+                record.header.index);
+
         LOG_TRACE(log, "Writing to s3 buffer before {}", write_buffer->count());
 
         auto current_position{write_buffer->count()};
@@ -577,16 +598,25 @@ private:
                 /// A compressed changelog (carried over from `old_log_storage_disk`) is never merged: its recorded
                 /// positions are offsets into the decompressed stream, so the relink would point into the wrong
                 /// bytes of the merged object, and the raw concatenation could not be decoded on restart.
+                /// A changelog broken at end is never merged either: its physical tail is corrupt, and its name
+                /// covers indices that the following segments (started after its readable prefix) also contain.
+                const auto is_never_merged = [](const ChangelogFileDescriptionPtr & changelog)
+                {
+                    return changelog->is_compressed || changelog->broken_at_end;
+                };
+
                 const auto can_be_merged = [&](const ChangelogFileDescriptionPtr & changelog)
                 {
-                    return !changelog->is_compressed && changelog->to_log_index - changelog->from_log_index + 1 < log_file_settings.rotate_interval;
+                    return !is_never_merged(changelog) && changelog->to_log_index - changelog->from_log_index + 1 < log_file_settings.rotate_interval;
                 };
 
                 /// Skip the segments that are never merged, so they do not hold back the ones after them.
                 auto it = existing_changelogs.upper_bound(last_merged_index);
                 while (it != existing_changelogs.end() && !is_open_for_write(it->second) && !can_be_merged(it->second))
                 {
-                    last_merged_index = it->second->to_log_index;
+                    /// The name of a broken segment overlaps the segments after it, so advance only past its start:
+                    /// advancing to its `to_log_index` would skip the following segments forever.
+                    last_merged_index = it->second->broken_at_end ? it->second->from_log_index : it->second->to_log_index;
                     ++it;
                 }
 
@@ -612,7 +642,7 @@ private:
 
                     /// `rotate_interval` caps the number of entries in a merged object, so check the candidate
                     /// before taking it rather than after it has already pushed the range past the cap.
-                    if (next_changelog->is_compressed || next_changelog->to_log_index - current_from_index + 1 > log_file_settings.rotate_interval)
+                    if (is_never_merged(next_changelog) || next_changelog->to_log_index - current_from_index + 1 > log_file_settings.rotate_interval)
                     {
                         range_is_final = true;
                         break;
@@ -5130,7 +5160,11 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)
 
         LOG_WARNING(log, "Removing changelog {}", changelog_description->path);
         const std::filesystem::path & path = changelog_description->path;
-        const auto new_path = timestamp_folder / path.filename();
+        /// A changelog with the same name may already have been detached into the same timestamp folder within
+        /// the same second (e.g. when the log is reloaded repeatedly), so pick a free name.
+        auto new_path = fs::path(timestamp_folder) / path.filename();
+        for (size_t suffix = 1; disk->existsFile(new_path.generic_string()); ++suffix)
+            new_path = fs::path(timestamp_folder) / fmt::format("{}.{}", path.filename().generic_string(), suffix);
 
         auto changelog_disk = changelog_description->disk;
         if (changelog_disk == disk)
