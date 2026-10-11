@@ -35,7 +35,26 @@ struct CoordinationSettings
     CoordinationSettings(const CoordinationSettings & settings);
     ~CoordinationSettings();
 
+    /// Loads settings from `config_elem`, e.g. `keeper_server.coordination_settings`.
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+
+    /// Same, then applies the overrides for the server with the given id from `per_server_config_elem`,
+    /// e.g. `keeper_server.per_server_coordination_settings`, which has the following structure:
+    ///   <per_server_coordination_settings>
+    ///       <server-3>
+    ///           <use_lsmt_storage>true</use_lsmt_storage>
+    ///       </server-3>
+    ///   </per_server_coordination_settings>
+    /// (The server id is part of the element name, so that config files are merged per server,
+    /// like disks in `storage_configuration`. A bare number is not a valid element name, hence the prefix.)
+    /// Allows keeping the config identical on all servers while some settings differ between them.
+    /// Setting names are validated for all servers, values are parsed only for this server.
+    void loadFromConfig(
+        const String & config_elem,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & per_server_config_elem,
+        int server_id);
+
     void dump(WriteBufferFromOwnString & buf) const;
     void updateHotReloadableSettings(const CoordinationSettings & new_settings);
 

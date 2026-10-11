@@ -1,0 +1,14 @@
+<clickhouse>
+    <keeper_server>
+        <!-- Identical on all servers: overrides apply only to the server whose id matches. -->
+        <per_server_coordination_settings>
+            <server-1>
+                <use_lsmt_storage>true</use_lsmt_storage>
+                <max_request_size>1000</max_request_size>
+            </server-1>
+            <server-3>
+                <use_lsmt_storage>true</use_lsmt_storage>
+            </server-3>
+        </per_server_coordination_settings>
+    </keeper_server>
+</clickhouse>
