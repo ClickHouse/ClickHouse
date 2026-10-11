@@ -2,10 +2,10 @@
 
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <optional>
-#include <vector>
 
 namespace DB
 {
@@ -48,8 +48,8 @@ private:
     WorkerPool & pool;
 
     mutable Wyrd::Mutex mutex;
-    std::vector<bool> is_registered;
-    std::vector<size_t> sleeping_workers;
+    VectorWithMemoryTracking<bool> is_registered;
+    VectorWithMemoryTracking<size_t> sleeping_workers;
 
     Wyrd::Atomic<Int32> registered_workers = 0;
     Wyrd::Atomic<Int32> sleepers_count = 0;

@@ -8,11 +8,11 @@
 #include <Common/Epoll.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/WakeupFd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <memory>
 #include <mutex>
 #include <span>
-#include <unordered_map>
 
 namespace DB
 {
@@ -46,7 +46,7 @@ private:
     /// Registered descriptors. The mutex is not held while waiting in epoll.
     mutable Wyrd::Mutex mutex;
     Epoll epoll;
-    std::unordered_map<ExecutingProcessor *, int> fds;
+    UnorderedMapWithMemoryTracking<ExecutingProcessor *, int> fds;
     Wyrd::Atomic<size_t> pending_count = 0;
 
     /// In-flight timers

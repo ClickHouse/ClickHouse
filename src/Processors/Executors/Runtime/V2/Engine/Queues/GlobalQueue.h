@@ -2,9 +2,7 @@
 
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
-#include <Common/AllocatorWithMemoryTracking.h>
-
-#include <boost/container/devector.hpp>
+#include <Common/DevectorWithMemoryTracking.h>
 
 #include <span>
 
@@ -27,7 +25,7 @@ public:
 
 private:
     Wyrd::Mutex mutex;
-    boost::container::devector<ExecutingProcessor *, AllocatorWithMemoryTracking<ExecutingProcessor *>> entries;
+    DevectorWithMemoryTracking<ExecutingProcessor *> entries;
     Wyrd::Atomic<size_t> count = 0;
 };
 

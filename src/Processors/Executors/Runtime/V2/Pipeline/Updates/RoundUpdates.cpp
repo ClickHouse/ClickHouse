@@ -8,7 +8,7 @@ namespace Runtime::V2
 {
 
 template <class PortT>
-void RoundUpdates::drain(std::vector<PortT *> & ports, std::vector<PortT *> & ports_out)
+void RoundUpdates::drain(VectorWithMemoryTracking<PortT *> & ports, VectorWithMemoryTracking<PortT *> & ports_out)
 {
     ports_out.clear();
     ports_out.swap(ports);

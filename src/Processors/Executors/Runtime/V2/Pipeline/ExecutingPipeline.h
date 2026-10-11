@@ -5,10 +5,10 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/IProcessor.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
-#include <unordered_map>
-#include <vector>
 
 namespace DB
 {
@@ -23,11 +23,11 @@ class ExecutingPipeline
 public:
     explicit ExecutingPipeline(std::shared_ptr<Processors> processors_);
 
-    std::vector<ExecutingProcessor *> sinks();
-    std::vector<ExecutingProcessor *> update(ExecutingProcessor & requester, const Processors & to_add, const Processors & to_reconnect);
+    VectorWithMemoryTracking<ExecutingProcessor *> sinks();
+    VectorWithMemoryTracking<ExecutingProcessor *> update(ExecutingProcessor & requester, const Processors & to_add, const Processors & to_reconnect);
 
     void submitForRemoval(const Processors & group);
-    void recordAsFinished(const std::vector<IProcessor *> & finished);
+    void recordAsFinished(const VectorWithMemoryTracking<IProcessor *> & finished);
     bool hasReadyForRemoval() const;
     void removeReady();
 
@@ -45,7 +45,7 @@ public:
 private:
     mutable Wyrd::Mutex mutex;
     std::shared_ptr<Processors> processors;
-    std::unordered_map<const IProcessor *, ExecutingProcessor> records;
+    UnorderedMapWithMemoryTracking<const IProcessor *, ExecutingProcessor> records;
     RemovalGroups removals;
     Wyrd::Atomic<IProcessor::CancelReason> cancel_reason = IProcessor::CancelReason::NotCancelled;
 };

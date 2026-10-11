@@ -1,10 +1,11 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/Async/Poller.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 #include <Common/Exception.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <algorithm>
 #include <chrono>
-#include <map>
 #include <optional>
 
 namespace DB
@@ -23,7 +24,7 @@ namespace Runtime::V2
 class Poller::Deadlines
 {
     using Clock = std::chrono::steady_clock;
-    using Queue = std::multimap<Clock::time_point, ExecutingProcessor *>;
+    using Queue = MultiMapWithMemoryTracking<Clock::time_point, ExecutingProcessor *>;
 
 public:
     void arm(ExecutingProcessor * processor, int64_t timeout_ms)
@@ -67,7 +68,7 @@ public:
 
 private:
     Queue queue;
-    std::unordered_map<ExecutingProcessor *, Queue::iterator> index;
+    UnorderedMapWithMemoryTracking<ExecutingProcessor *, Queue::iterator> index;
 };
 
 void Poller::unregister(ExecutingProcessor * processor)

@@ -5,10 +5,10 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/QueryPlan/Profiling/Execution/WorkInterval.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <mutex>
 #include <optional>
-#include <vector>
 
 namespace DB
 {
@@ -35,9 +35,9 @@ public:
     ProcessorRunner(ExecutingPipeline & pipeline_, const ExecutionOptions & options_, size_t worker_id_);
 
     void run(ExecutingProcessor & picked);
-    const std::vector<ExecutingProcessor *> & getRunnable() const;
-    const std::vector<PollRequest> & getPollRequests() const;
-    const std::vector<IProcessor *> & getFinishedProcessors() const;
+    const VectorWithMemoryTracking<ExecutingProcessor *> & getRunnable() const;
+    const VectorWithMemoryTracking<PollRequest> & getPollRequests() const;
+    const VectorWithMemoryTracking<IProcessor *> & getFinishedProcessors() const;
     WorkIntervals extractWorkIntervals();
 
 private:
@@ -48,11 +48,11 @@ private:
     WorkIntervals work_intervals;
 
     /// Graph prepare temporary data.
-    std::vector<ExecutingProcessor *> runnable;
-    std::vector<PollRequest> poll_requests;
-    std::vector<IProcessor *> finished_processors;
-    std::vector<InputPort *> pending_inputs;
-    std::vector<OutputPort *> pending_outputs;
+    VectorWithMemoryTracking<ExecutingProcessor *> runnable;
+    VectorWithMemoryTracking<PollRequest> poll_requests;
+    VectorWithMemoryTracking<IProcessor *> finished_processors;
+    VectorWithMemoryTracking<InputPort *> pending_inputs;
+    VectorWithMemoryTracking<OutputPort *> pending_outputs;
 
     /// Single processor prepare temporary data.
     IProcessor::UpdatedInputPorts hint_inputs;

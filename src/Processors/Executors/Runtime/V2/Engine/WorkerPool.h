@@ -10,13 +10,13 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/ISlotControl.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <atomic>
-#include <deque>
 #include <exception>
 #include <optional>
-#include <vector>
 
 namespace DB
 {
@@ -58,7 +58,7 @@ private:
     const size_t max_threads;
 
     /// Scheduling state
-    std::deque<Worker> workers;
+    DequeWithMemoryTracking<Worker> workers;
     WorkersCoordinator coordinator;
     GlobalQueue global_tasks;
     Poller poller;
@@ -69,7 +69,7 @@ private:
     AcquiredSlotPtr single_slot;
 
     /// Worker threads
-    std::vector<std::optional<Wyrd::Thread>> threads;
+    VectorWithMemoryTracking<std::optional<Wyrd::Thread>> threads;
     Wyrd::Mutex spawn_mutex;
     Wyrd::Atomic<size_t> workers_count = 0;
 

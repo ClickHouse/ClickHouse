@@ -18,7 +18,7 @@ UpdateInbox::UpdateInbox()
 }
 
 template <class PortT>
-void UpdateInbox::drain(UpdateInboxEntry *& head, std::vector<PortT *> & ports_out)
+void UpdateInbox::drain(UpdateInboxEntry *& head, VectorWithMemoryTracking<PortT *> & ports_out)
 {
     ports_out.clear();
 

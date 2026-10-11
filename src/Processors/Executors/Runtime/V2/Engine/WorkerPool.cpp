@@ -82,7 +82,7 @@ SlotAllocationPtr WorkerPool::allocateCPU(bool concurrency_control, SlotCount in
 
 void WorkerPool::initializeExecution()
 {
-    std::vector<ExecutingProcessor *> roots = pipeline.sinks();
+    auto roots = pipeline.sinks();
     for (auto * root : roots)
         root->status.store(ExecutingProcessor::Status::Prepare);
     global_tasks.pushManyFifo(roots);

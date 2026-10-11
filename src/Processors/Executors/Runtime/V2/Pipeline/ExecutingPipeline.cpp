@@ -6,12 +6,13 @@
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <fmt/format.h>
 
 #include <algorithm>
-#include <map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -22,7 +23,7 @@ namespace Runtime::V2
 namespace
 {
 
-using Records = std::unordered_map<const IProcessor *, ExecutingProcessor>;
+using Records = UnorderedMapWithMemoryTracking<const IProcessor *, ExecutingProcessor>;
 
 String describeProcessor(const IProcessor * processor)
 {
@@ -53,7 +54,7 @@ void checkNeighboursHaveChannels(ExecutingProcessor & executing)
 
 void checkConnectedOnlyInsideGroup(const Processors & group)
 {
-    std::unordered_set<const IProcessor *> members;
+    UnorderedSetWithMemoryTracking<const IProcessor *> members;
     for (const auto & processor : group)
         members.insert(processor.get());
 
@@ -80,7 +81,7 @@ void checkConnectedOnlyInsideGroup(const Processors & group)
 
 void countSiblings(const Processors & processors, const Processors & counted, Records & records)
 {
-    std::map<std::pair<const IQueryPlanStep *, size_t>, size_t> instances;
+    MapWithMemoryTracking<std::pair<const IQueryPlanStep *, size_t>, size_t> instances;
     for (const auto & processor : processors)
         if (processor->getQueryPlanStep())
             ++instances[{processor->getQueryPlanStep(), processor->getQueryPlanStepGroup()}];
@@ -151,11 +152,11 @@ ExecutingPipeline::ExecutingPipeline(std::shared_ptr<Processors> processors_)
         connectPorts(records, records.at(processor.get()));
 }
 
-std::vector<ExecutingProcessor *> ExecutingPipeline::sinks()
+VectorWithMemoryTracking<ExecutingProcessor *> ExecutingPipeline::sinks()
 {
     std::lock_guard lock(mutex);
 
-    std::vector<ExecutingProcessor *> result;
+    VectorWithMemoryTracking<ExecutingProcessor *> result;
     for (const auto & processor : *processors)
     {
         const bool has_connected_output = std::ranges::any_of(processor->getOutputs(), [](const OutputPort & output) { return output.isConnected(); });
@@ -167,11 +168,11 @@ std::vector<ExecutingProcessor *> ExecutingPipeline::sinks()
     return result;
 }
 
-std::vector<ExecutingProcessor *> ExecutingPipeline::update(ExecutingProcessor & requester, const Processors & to_add, const Processors & to_reconnect)
+VectorWithMemoryTracking<ExecutingProcessor *> ExecutingPipeline::update(ExecutingProcessor & requester, const Processors & to_add, const Processors & to_reconnect)
 {
     std::lock_guard lock(mutex);
 
-    std::vector<ExecutingProcessor *> updated;
+    VectorWithMemoryTracking<ExecutingProcessor *> updated;
     for (const auto & processor : to_reconnect)
     {
         auto it = records.find(processor.get());
@@ -208,7 +209,7 @@ void ExecutingPipeline::submitForRemoval(const Processors & group)
     removals.submitForRemoval(group);
 }
 
-void ExecutingPipeline::recordAsFinished(const std::vector<IProcessor *> & finished)
+void ExecutingPipeline::recordAsFinished(const VectorWithMemoryTracking<IProcessor *> & finished)
 {
     removals.markFinished(finished);
 }
@@ -310,7 +311,7 @@ String ExecutingPipeline::dump() const
 {
     std::lock_guard lock(mutex);
 
-    std::vector<std::optional<IProcessor::Status>> statuses;
+    VectorWithMemoryTracking<std::optional<IProcessor::Status>> statuses;
     statuses.reserve(processors->size());
 
     for (const auto & processor : *processors)

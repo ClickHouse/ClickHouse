@@ -3,10 +3,10 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/IProcessor.h>
-
-#include <list>
-#include <unordered_map>
-#include <unordered_set>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -26,7 +26,7 @@ public:
     RemovalGroups();
 
     void submitForRemoval(const Processors & processors);
-    void markFinished(const std::vector<IProcessor *> & processors);
+    void markFinished(const VectorWithMemoryTracking<IProcessor *> & processors);
 
     bool hasReadyForRemoval() const;
     Processors takeReadyForRemoval();
@@ -34,9 +34,9 @@ public:
 
 private:
     mutable Wyrd::Mutex mutex;
-    std::list<Group> groups;
-    std::unordered_map<const IProcessor *, Group *> pending_finish_groups;
-    std::unordered_set<const IProcessor *> finished_processors;
+    ListWithMemoryTracking<Group> groups;
+    UnorderedMapWithMemoryTracking<const IProcessor *, Group *> pending_finish_groups;
+    UnorderedSetWithMemoryTracking<const IProcessor *> finished_processors;
     Wyrd::Atomic<size_t> ready_groups{0};
     Wyrd::Atomic<size_t> finished_total{0};
 };

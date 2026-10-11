@@ -27,7 +27,7 @@ namespace ErrorCodes
 namespace Runtime::V2
 {
 
-static void sortRunnable(std::vector<ExecutingProcessor *> & runnable, const ExecutingProcessor & picked)
+static void sortRunnable(VectorWithMemoryTracking<ExecutingProcessor *> & runnable, const ExecutingProcessor & picked)
 {
     const auto works = [](const ExecutingProcessor * record)
     {
@@ -330,17 +330,17 @@ void ProcessorRunner::run(ExecutingProcessor & picked)
     sortRunnable(runnable, picked);
 }
 
-const std::vector<ExecutingProcessor *> & ProcessorRunner::getRunnable() const
+const VectorWithMemoryTracking<ExecutingProcessor *> & ProcessorRunner::getRunnable() const
 {
     return runnable;
 }
 
-const std::vector<PollRequest> & ProcessorRunner::getPollRequests() const
+const VectorWithMemoryTracking<PollRequest> & ProcessorRunner::getPollRequests() const
 {
     return poll_requests;
 }
 
-const std::vector<IProcessor *> & ProcessorRunner::getFinishedProcessors() const
+const VectorWithMemoryTracking<IProcessor *> & ProcessorRunner::getFinishedProcessors() const
 {
     return finished_processors;
 }

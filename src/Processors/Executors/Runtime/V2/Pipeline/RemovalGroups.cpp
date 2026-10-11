@@ -37,7 +37,7 @@ void RemovalGroups::submitForRemoval(const Processors & processors)
         ready_groups.fetch_add(1);
 }
 
-void RemovalGroups::markFinished(const std::vector<IProcessor *> & processors)
+void RemovalGroups::markFinished(const VectorWithMemoryTracking<IProcessor *> & processors)
 {
     if (processors.empty())
         return;
