@@ -186,6 +186,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 }
 
 #if USE_AWS_S3
+/// A queue table that does not state its Keeper path builds it from the server's `s3queue_default_zookeeper_path`
+/// and the table.
+static bool isQueueSettingTakenFromElsewhere(std::string_view name)
+{
+    return name == "keeper_path";
+}
+
 void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
@@ -203,6 +210,8 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<ObjectStorageQueueSettings>,
+            .is_inherited_setting_fn = isQueueSettingTakenFromElsewhere,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -808,6 +817,8 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<ObjectStorageQueueSettings>,
+            .is_inherited_setting_fn = isQueueSettingTakenFromElsewhere,
         },
         Documentation{
             .description = R"DOCS_MD(

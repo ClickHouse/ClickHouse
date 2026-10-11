@@ -7,6 +7,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 
@@ -91,6 +92,8 @@ bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
 {
     return MaterializedPostgreSQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MaterializedPostgreSQLSettings)
 }
 
 #endif
