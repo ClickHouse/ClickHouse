@@ -58,13 +58,12 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (ReadFromMergeTree::filterDependsOnNonDeterministicVirtuals(read_from_merge_tree->getStorageMetadata()->virtuals, query_info))
         return;
 
-    /// PREWHERE runs before the tagged filter sees a row, so a granule that filter empties may still
-    /// hold rows only PREWHERE removed. Sound while the PREWHERE condition is in `filter_actions_dag`
-    /// (the hash covers it) or is `__topKFilter` (key salted with the TopK plan); a runtime filter is neither.
+    /// Rows PREWHERE drops never reach the tagged filter, so each PREWHERE conjunct must be a conjunct of the
+    /// hashed condition, or `__topKFilter`, whose TopK plan salts the key.
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
     {
         const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-        if (!prewhere_node || !isDeterministicAllowingTopKFilter(prewhere_node))
+        if (!prewhere_node || !VirtualColumnUtils::isCoveredByFilter(*prewhere_node, *filter_actions_dag, /*allow_top_k_filter=*/ true))
             return;
     }
 
