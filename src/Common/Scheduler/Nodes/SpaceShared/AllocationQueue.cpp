@@ -128,6 +128,24 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
     // freed object.
     if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
         return;
+    // A cancellation of this allocation is not processed yet: turn it into a full removal
+    allocation.cancel_only_if_pending = false;
+    if (allocation.removing_hook.is_linked())
+        return;
+    removing_allocations.push_back(allocation);
+    if (&allocation == &*removing_allocations.begin())
+        scheduleActivation();
+}
+
+void AllocationQueue::cancelPendingAllocation(ResourceAllocation & allocation)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+    // Not pending: it has been admitted (`increaseApproved` was called under this mutex) or failed.
+    if (!allocation.pending_hook.is_linked() || allocation.removing_hook.is_linked())
+        return;
+    allocation.cancel_only_if_pending = true;
     removing_allocations.push_back(allocation);
     if (&allocation == &*removing_allocations.begin())
         scheduleActivation();
@@ -333,12 +351,15 @@ void AllocationQueue::processActivation()
         {
             ResourceAllocation & allocation = removing_allocations.front();
             removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
+            bool only_if_pending = std::exchange(allocation.cancel_only_if_pending, false);
             if (allocation.pending_hook.is_linked()) // Allocation is still pending - cancel it
             {
                 pending_allocations.erase(pending_allocations.iterator_to(allocation));
                 pending_allocations_size -= allocation.increase.size;
                 allocation.allocationFailed(cancel_error);
             }
+            else if (only_if_pending) // Admitted before the cancellation was processed - keep it
+                continue;
             else // Running allocation - cancel pending increase (if any) and prepare decrease to zero
             {
                 // Cancel pending increase (safe: we are on the scheduler thread)

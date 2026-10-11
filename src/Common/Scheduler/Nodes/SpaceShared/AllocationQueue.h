@@ -30,6 +30,7 @@ public:
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
     void removeAllocation(ResourceAllocation & allocation) override;
+    void cancelPendingAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
     void approveIncrease() override;

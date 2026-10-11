@@ -4319,6 +4319,39 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionTimeout)
     EXPECT_EQ(static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first, 0); // The timed out allocation is canceled
 }
 
+TEST(SchedulerWorkloadResourceManager, QuerySlotTimeoutRacingWithGrant)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE query (QUERY)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("query");
+
+    // An already expired deadline with a free slot: the timeout races with the grant. Either the slot is admitted
+    // and kept, or the query times out with the allocation canceled. A slot is never leaked or released behind
+    // the owner's back, so the hierarchy is empty after every attempt.
+    size_t admitted = 0;
+    size_t timed_out = 0;
+    for (int i = 0; i < 300; ++i)
+    {
+        try
+        {
+            QuerySlot slot(link, std::chrono::steady_clock::now(), "racer");
+            ++admitted;
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::QUERY_SLOT_ACQUISITION_TIMEOUT);
+            ++timed_out;
+        }
+        // The next query is admitted at once, so the previous attempt left nothing behind
+        QuerySlot next(link, std::chrono::steady_clock::now() + std::chrono::seconds(10), "next");
+    }
+    EXPECT_EQ(admitted + timed_out, 300);
+}
+
 TEST(SchedulerWorkloadResourceManager, QuerySlotMaxWaitingQueries)
 {
     ResourceTest t;

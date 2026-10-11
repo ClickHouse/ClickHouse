@@ -36,25 +36,38 @@ QuerySlot::QuerySlot(ResourceLink link_, std::chrono::steady_clock::time_point a
     queue.insertAllocation(*this, 1);
 
     bool timed_out = false;
+    bool admitted = false;
+    std::exception_ptr reason;
     {
         CurrentMetrics::Increment scheduled(CurrentMetrics::ConcurrentQueryScheduled);
         auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrentQueryWaitMicroseconds);
         std::unique_lock lock{mutex};
         // An infinite deadline (`time_point::max()`) means no timeout: wait_until never fires on time and
         // blocks until the slot is granted or the allocation fails, exactly like an untimed wait.
-        timed_out = !cv.wait_until(lock, admission_deadline_, [this] { return granted || fail_reason; });
+        if (!cv.wait_until(lock, admission_deadline_, [this] { return granted || fail_reason; }))
+        {
+            // Cancel the allocation only if it is still pending: the slot may be granted concurrently, and a
+            // granted slot is kept. `cancelPendingAllocation` takes the queue mutex, so it must be called without
+            // holding `mutex` (lock order: queue mutex -> this mutex, see the callbacks).
+            lock.unlock();
+            queue.cancelPendingAllocation(*this);
+            lock.lock();
+            cv.wait(lock, [this] { return granted || fail_reason; });
+            timed_out = !granted;
+        }
+        admitted = granted;
+        reason = fail_reason;
+        chassert(admitted || removed);
     }
 
-    if (timed_out || fail_reason)
+    if (!admitted)
     {
-        // The allocation is linked into the scheduler unless it has failed. Throwing straight from the
-        // constructor would skip the destructor, so unlink first, then report the failure.
-        detachFromQueue();
+        // A failed allocation is already removed by the scheduler, so it is safe to throw from the constructor.
         if (timed_out)
             throw Exception(ErrorCodes::QUERY_SLOT_ACQUISITION_TIMEOUT,
                 "Timed out waiting to acquire a query slot for workload scheduling (exceeded workload_admission_timeout_ms)");
         throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Unable to obtain a query slot: {}",
-            getExceptionMessage(fail_reason, /* with_stacktrace = */ false));
+            getExceptionMessage(reason, /* with_stacktrace = */ false));
     }
 
     ProfileEvents::increment(ProfileEvents::ConcurrentQuerySlotsAcquired);
