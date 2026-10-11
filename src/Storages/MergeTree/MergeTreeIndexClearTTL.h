@@ -12,6 +12,7 @@ namespace DB
 
 class IMergeTreeDataPart;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+struct FutureMergedMutatedPart;
 struct StorageInMemoryMetadata;
 
 /// The skip indexes whose `CLEAR INDEX` rule has expired for every row covered by `ttl_infos`,
@@ -39,5 +40,10 @@ bool canHardlinkFilesForIndexClear(const MergeTreeDataPartPtr & part);
 /// Disk space a `TTLClearIndex` merge of the part writes on this replica. A merge that copies the part's files
 /// writes the whole part. Otherwise the estimate is the size of `skp_idx.packed`, which the merge may rewrite. The other files it writes are small.
 UInt64 estimateDiskSpaceForIndexClear(const MergeTreeDataPartPtr & part);
+
+/// Whether a planned `TTLClearIndex` merge has the shape its result relies on. That shape is one source
+/// part, no patch parts, and the source's data version, format and UUID. The planned part's values come
+/// from the replication log entry, so a replica whose source part differs fails the check.
+bool futurePartMatchesSourcePart(const FutureMergedMutatedPart & future_part);
 
 }

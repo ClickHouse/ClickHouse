@@ -60,6 +60,7 @@ bool ReplicatedMergeTreeMergeStrategyPicker::shouldMergeOnSingleReplica(const Re
     return (
         threshold > 0       /// feature turned on
         && entry.type == ReplicatedMergeTreeLogEntry::MERGE_PARTS /// it is a merge log entry
+        && entry.merge_type != MergeType::TTLClearIndex           /// a `TTLClearIndex` merge is cheaper than a fetch
         && entry.create_time + threshold > time(nullptr)          /// not too much time waited
     );
 }
