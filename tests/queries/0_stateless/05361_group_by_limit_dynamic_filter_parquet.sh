@@ -217,3 +217,13 @@ DROP TABLE t_05361_tuple_nullable;
 DROP TABLE t_05361_cache;
 DROP TABLE t_05361_steps;
 EOF
+
+# A GeoParquet read with spatial pruning has statistics-only columns besides the ones it returns.
+$CLICKHOUSE_LOCAL -q "
+SELECT id, count() FROM file('$CUR_DIR/data_parquet/04059_geo_spatial_pruning.parquet', Parquet)
+WHERE pointInPolygon(geometry, [(-99., 30.), (-96., 30.), (-96., 33.), (-99., 33.), (-99., 30.)])
+GROUP BY id ORDER BY id LIMIT 1
+SETTINGS enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1,
+    query_plan_max_limit_for_top_k_optimization = 0, max_rows_to_group_by = 0,
+    optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+    input_format_parquet_spatial_filter_push_down = 1, max_threads = 1, max_parsing_threads = 1"

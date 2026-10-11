@@ -1635,10 +1635,6 @@ void Reader::preparePrewhere()
 
     if (has_top_k_step && format_filter_info->top_k_filter->stop_when_unprofitable)
     {
-        /// Without other steps, the main step of a subgroup that skips the threshold step reads its columns into
-        /// `sample_block`.
-        if (steps.size() == 1)
-            chassert(extended_sample_block.columns() == sample_block->columns());
         top_k_step_may_stop = true;
         for (const auto & pc : primitive_columns)
             if (pc.first_step_to_calculate != 1 && pc.first_step_to_calculate != SIZE_MAX)
