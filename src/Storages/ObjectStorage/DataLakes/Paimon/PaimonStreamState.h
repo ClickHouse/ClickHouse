@@ -61,8 +61,7 @@ private:
 
 using PaimonProcessingLockPtr = std::unique_ptr<PaimonProcessingLock>;
 
-/// Tells apart two Paimon snapshots with the same id: a rewound warehouse reuses ids, while
-/// manifest list names carry a per-writer UUID.
+/// Tells apart two Paimon snapshots with the same id: manifest list names carry a per-writer UUID.
 struct PaimonSnapshotIdentity
 {
     Int64 time_millis = 0;
@@ -95,8 +94,7 @@ struct PaimonCommittedSnapshot
 /// Keeper path structure:
 ///   {keeper_path}/
 ///   ├── committed_snapshot      # Last consumed snapshot ID (advanced at read time)
-///   ├── committed_snapshot_identity  # Which snapshot committed_snapshot points at, valid
-///   │                                # while both nodes have the same mzxid
+///   ├── committed_snapshot_identity  # Snapshot committed_snapshot points at, valid while both have the same mzxid
 ///   ├── processing_lock         # Ephemeral lock to prevent concurrent incremental reads.
 ///   │                           # Its value is an ownership token:
 ///   │                           # {replica_name}/{server_uuid}/{keeper_session_id}
@@ -107,8 +105,7 @@ struct PaimonCommittedSnapshot
 /// The workflow is:
 /// 1. Acquire processing_lock (ephemeral). If it exists, fail: another read is in progress.
 /// 2. Read committed_snapshot from Keeper
-/// 3. Find all snapshots > committed_snapshot; a bound identity must match the warehouse's
-///    snapshot at the committed id
+/// 3. Find all snapshots > committed_snapshot; a bound identity must match the snapshot at that id
 /// 4. Collect data files and advance committed_snapshot, fenced by the lock and
 ///    conditioned on committed_snapshot being unchanged since step 2
 /// 5. Release processing_lock (only if we still own it)

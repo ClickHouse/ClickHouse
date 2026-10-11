@@ -191,8 +191,6 @@ PaimonCommittedSnapshot PaimonStreamState::readCommittedSnapshot(const PaimonPro
     result.snapshot_id = parse<Int64>(committed.data);
     result.version = committed.stat.version;
 
-    /// Any other write to the watermark, such as an operator's `set`, changes its mzxid and
-    /// leaves the identity describing a value the watermark no longer has.
     if (result.identity_node_exists && responses[1].stat.mzxid == committed.stat.mzxid)
     {
         try
@@ -407,7 +405,6 @@ void PaimonStreamState::setCommittedSnapshot(
     else
         ops.emplace_back(zkutil::makeCreateRequest(committed_path, toString(snapshot_id), zkutil::CreateMode::Persistent));
 
-    /// Without an identity nothing is written: the new mzxid of the watermark unbinds the old one.
     if (snapshot_identity)
     {
         const auto identity_path = fs_keeper_path / COMMITTED_SNAPSHOT_IDENTITY_NODE;

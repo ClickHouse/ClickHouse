@@ -155,8 +155,7 @@ private:
         std::optional<Int64> & last_consumed_snapshot_id,
         std::optional<PaimonSnapshotIdentity> & last_consumed_identity) const;
 
-    /// Throws INVALID_STATE if the warehouse's snapshot `snapshot_id` is not the one the
-    /// cursor consumed, i.e. the writer reused the id after a rewind.
+    /// Throws INVALID_STATE if the warehouse's snapshot `snapshot_id` is not the one the cursor consumed.
     void checkCursorSnapshotUnchanged(Int64 snapshot_id, const PaimonSnapshotIdentity & consumed) const;
 
     /// Collect data files for a specific snapshot delta (session-level targeted read)
