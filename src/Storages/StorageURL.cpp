@@ -2139,7 +2139,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+        info.getFormatFilter(filter_actions_dag), context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)

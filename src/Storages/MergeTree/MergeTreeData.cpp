@@ -175,7 +175,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
@@ -15064,7 +15064,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},
         /*written_offset_substreams=*/nullptr,
-        /*try_adaptive_codec=*/ false); /// Empty 0-row part (also reached by mutations): no data is written, so the flag has no effect.
+        /*try_adaptive_codec=*/ false, /// Empty 0-row part (also reached by mutations): no data is written, so the flag has no effect.
+        /// Zero rows, so no marks to share; checking here would also block DROP PARTITION and TRUNCATE on a colliding table.
+        /*stream_base_manifest=*/ nullptr);
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 
