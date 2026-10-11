@@ -103,6 +103,11 @@ private:
     template <typename T>
     std::set<std::pair<String, String>> fetchPublishedTablePairs(T & tx) const;
 
+    /// The same for the publication `name`, which may differ from publication_name (for example, a legacy
+    /// publication considered for adoption before publication_name is switched to it).
+    template <typename T>
+    std::set<std::pair<String, String>> fetchPublishedTablePairs(T & tx, const String & name) const;
+
     /// An existing publication may only be adopted or resumed through when its definition matches what
     /// ClickHouse creates: all four operation types published (pubinsert, pubupdate, pubdelete,
     /// pubtruncate - CREATE PUBLICATION's defaults), no all-tables membership, and, on PostgreSQL 15 and

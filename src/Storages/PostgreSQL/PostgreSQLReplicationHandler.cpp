@@ -2484,8 +2484,14 @@ std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::
 template <typename T>
 std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(T & tx) const
 {
+    return fetchPublishedTablePairs(tx, publication_name);
+}
+
+template <typename T>
+std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(T & tx, const String & name) const
+{
     pqxx::result result{tx.exec(fmt::format(
-        "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(publication_name)))};
+        "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = {}", quoteStringPostgreSQL(name)))};
     std::set<std::pair<String, String>> tables;
     for (const auto & row : result)
     {
@@ -2500,6 +2506,12 @@ std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublished
 
 template
 std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(pqxx::work & tx) const;
+
+template
+std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(pqxx::nontransaction & tx, const String & name) const;
+
+template
+std::set<std::pair<String, String>> PostgreSQLReplicationHandler::fetchPublishedTablePairs(pqxx::work & tx, const String & name) const;
 
 
 String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontransaction & tx, const String & name) const
@@ -2561,7 +2573,7 @@ String PostgreSQLReplicationHandler::publicationDefinitionConflict(pqxx::nontran
         /// The reverse drift: a table `materialized_postgresql_tables_list` restricts to a column subset is
         /// published with all its columns. Its first `Relation` message would then carry more columns than
         /// the nested table, and the consumer would skip the table from that point on.
-        const auto published_tables = fetchPublishedTablePairs(tx);
+        const auto published_tables = fetchPublishedTablePairs(tx, name);
         for (const auto & [table, columns] : configured_column_lists)
         {
             if (published_tables.contains(table) && !published_column_lists.contains(table))
@@ -2663,6 +2675,17 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         String start_lsn;
         StorageInfo nested_storage_info{ nullptr, {} };
 
+        /// The table must be in the publication before the snapshot LSN is chosen below. `pgoutput` decides
+        /// publication membership by the catalog as of each change's LSN, so a change committed before the
+        /// `ALTER PUBLICATION ... ADD TABLE` is never emitted on the main slot; if the snapshot was taken
+        /// first, the changes between the snapshot and the publication change would be in neither source.
+        /// With this order, every change after the snapshot LSN is in the replication stream, and the
+        /// consumer skips the ones up to `start_lsn` that the snapshot already contains.
+        {
+            pqxx::nontransaction tx(replication_connection.getRef());
+            publication_added = addTableToPublication(tx, postgres_table_name);
+        }
+
         {
             auto tx = std::make_shared<pqxx::nontransaction>(replication_connection.getRef());
 
@@ -2679,11 +2702,6 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
             postgres::Connection tmp_connection(connection_info);
             nested_storage_info = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
             materialized_storage->set(nested_storage_info.storage);
-        }
-
-        {
-            pqxx::nontransaction tx(replication_connection.getRef());
-            publication_added = addTableToPublication(tx, postgres_table_name);
         }
 
         /// Pass storage to consumer and lsn position, from which to start receiving replication messages for this table.
