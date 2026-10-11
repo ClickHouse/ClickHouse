@@ -169,6 +169,45 @@ void dropAliases(ASTPtr & node)
     visitor.visit(node);
 }
 
+class DropTupleFunctionParametersMatcher
+{
+public:
+    struct Data {};
+    Data data;
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Data)
+    {
+        auto * function = node->as<ASTFunction>();
+        if (!function)
+            return;
+
+        if (function->name != "tuple")
+            return;
+
+        if (!function->parameters)
+            return;
+
+        /// parameters is also stored in children, must remove both
+        auto & children = function->children;
+        children.erase(
+            std::remove(children.begin(), children.end(), function->parameters),
+            children.end());
+
+        function->parameters.reset();
+    }
+};
+
+void dropTupleFunctionParameters(ASTPtr & node)
+{
+    DropTupleFunctionParametersMatcher::Data data;
+    InDepthNodeVisitor<DropTupleFunctionParametersMatcher, true> visitor(data);
+    visitor.visit(node);
+}
 
 /// SQLite has no way to represent a NUL byte inside a string literal (see writeQuotedStringSQLite),
 /// and a PostgreSQL string value cannot contain a NUL byte at all (see
@@ -1025,6 +1064,8 @@ String transformQueryForExternalDatabaseImpl(
     bool require_dialect_neutral_literals,
     bool allow_limit_push_down)
 {
+    dropTupleFunctionParameters(clone_query);
+
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
     bool push_down_limit = allow_limit_push_down && context->getSettingsRef()[Setting::external_storage_push_down_limit];
 
@@ -1597,6 +1638,9 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
 
 void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style)
 {
+    /// The names of a parametric `tuple('a', 'b')(x, y)` only affect the ClickHouse result type, and
+    /// the syntax is ClickHouse-only, so drop them just like `transformQueryForExternalDatabaseImpl` does.
+    dropTupleFunctionParameters(node);
     normalizeSubqueryForExternalDatabaseImpl(node, literal_escaping_style, RowValueContext::Disallowed);
 }
 

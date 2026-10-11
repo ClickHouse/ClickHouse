@@ -4,7 +4,7 @@
     </fill_query>
 
     <query>
-        SELECT * FROM file('test_pq_index', Parquet, 'tuple_column Tuple(a Nullable(String))') Format Null
+        SELECT * FROM file('test_pq_index', Parquet, 'tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Tuple(i UInt32, j UInt32))') Format Null
     </query>
 
     <query>
@@ -12,7 +12,7 @@
     </query>
 
     <query>
-        SELECT tuple_column.a FROM file('test_pq_index', Parquet, 'tuple_column Tuple(a Nullable(String))') Format Null
+        SELECT tuple_column.a FROM file('test_pq_index', Parquet, 'tuple_column Tuple(a Nullable(String), b Nullable(Float64), c Tuple(i UInt32, j UInt32))') Format Null
     </query>
 
     <query>
@@ -20,11 +20,11 @@
     </query>
 
     <query>
-        SELECT * FROM file('test_pq_index', Parquet, 'array_tuple_column Array (Tuple(a Nullable(String)))') Format Null
+        SELECT * FROM file('test_pq_index', Parquet, 'array_tuple_column Array (Tuple(a Nullable(String), b Nullable(Float64), c Tuple(i UInt32, j UInt32)))') Format Null
     </query>
 
     <query>
-        SELECT * FROM file('test_pq_index', Parquet, 'map_tuple_column Map(String, Tuple(a Nullable(String)))') Format Null
+        SELECT * FROM file('test_pq_index', Parquet, 'map_tuple_column Map(String, Tuple(a Nullable(String), b Nullable(Float64), c Tuple(i UInt32, j UInt32)))') Format Null
     </query>
 
 </test>
