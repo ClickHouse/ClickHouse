@@ -1,20 +1,20 @@
--- The `rewrite_in_to_join` rewrite must preserve regular IN semantics when the right side is a
--- single column and the left side is a top-level tuple: regular IN compares the whole left tuple
+-- The `rewrite_in_to_join` rewrite must preserve regular `IN` semantics when the right side is a
+-- single column and the left side is a top-level tuple: regular `IN` compares the whole left tuple
 -- against that column as a single set key, and `Set::execute` accurately casts the left value to
 -- the right column type before probing. The `equals` predicate built by the rewrite compares
 -- element-wise over a common supertype instead, so the rewrite is skipped for this shape and the
--- regular IN handling keeps its semantics. Regression test for the review finding in PR #97540.
+-- regular `IN` handling keeps its semantics.
 
 SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
 
--- Regular IN throws when the one-key cast of the left tuple to the right column type fails
--- (`256` does not fit into `Int8`). The rewritten path must throw the same error, not return 0.
-SELECT count() FROM numbers(1) WHERE (toUInt16(256), number) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
+-- An unrepresentable tuple field cannot match a set key. Since `256` does not fit into `Int8`, `IN`
+-- returns 0 even with `rewrite_in_to_join` enabled.
+SELECT count() FROM numbers(1) WHERE (toUInt16(256), number) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'));
 
--- NOT IN takes the same code path.
-SELECT count() FROM numbers(1) WHERE (toUInt16(256), number) NOT IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
+-- `NOT IN` returns 1 for the same non-matching key.
+SELECT count() FROM numbers(1) WHERE (toUInt16(256), number) NOT IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'));
 
 -- The same one-key comparison with values that do fit keeps returning regular IN results.
 SELECT (1, number) IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)')) FROM numbers(2);
@@ -22,8 +22,8 @@ SELECT (1, number) IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)')) FROM numbers
 -- A tuple wrapped into `Nullable` is kept as a single key by regular IN as well (`FunctionIn`
 -- unpacks only a raw top-level tuple), so the rewrite must be skipped for that shape too.
 SET enable_nullable_tuple_type = 1;
-SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Nullable(Tuple(UInt16, UInt64))') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
-SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Nullable(Tuple(UInt16, UInt64))') NOT IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)')); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Nullable(Tuple(UInt16, UInt64))') IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'));
+SELECT count() FROM numbers(1) WHERE CAST((toUInt16(256), number), 'Nullable(Tuple(UInt16, UInt64))') NOT IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'));
 -- A wrapped tuple key that the single right `Tuple` column can hold is a valid one-key comparison:
 -- the analyzer must not reject it, and the rewrite must return the same result as regular `IN`.
 SELECT CAST((1, number), 'Nullable(Tuple(UInt8, UInt64))') IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)')) FROM numbers(2);

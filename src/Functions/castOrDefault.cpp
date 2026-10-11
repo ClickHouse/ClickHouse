@@ -11,9 +11,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVariant.h>
 
 #include <Interpreters/Context.h>
 
@@ -23,6 +21,7 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NullableUtils.h>
 
 namespace DB
 {
@@ -36,20 +35,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-/// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr
-/// when the column cannot hold NULLs. Dynamic/Variant encode NULLs with their
-/// null discriminator instead of a separate null map.
-static ColumnPtr getSourceNullMap(const IColumn & source_column)
-{
-    if (const auto * source_nullable = checkAndGetColumn<ColumnNullable>(&source_column))
-        return source_nullable->getNullMapColumnPtr();
-    if (const auto * source_dynamic = checkAndGetColumn<ColumnDynamic>(&source_column))
-        return source_dynamic->getVariantColumn().createNullMap();
-    if (const auto * source_variant = checkAndGetColumn<ColumnVariant>(&source_column))
-        return source_variant->createNullMap();
-    return nullptr;
 }
 
 class FunctionCastOrDefault final : public IFunction
@@ -174,10 +159,8 @@ public:
         auto probe_type = cast_or_null_resolver->getReturnType(cast_args);
         auto cast_func = cast_or_null_resolver->build(cast_args);
         auto cast_result = cast_func->execute(cast_args, probe_type, non_const_column_to_cast->size(), false);
-        auto cast_result_full = cast_result->convertToFullColumnIfLowCardinality();
-        auto cast_null_map_column = getSourceNullMap(*cast_result_full);
-        auto source_column_full = non_const_column_to_cast->convertToFullColumnIfLowCardinality();
-        auto source_null_map_column = getSourceNullMap(*source_column_full);
+        auto cast_null_map_column = getSourceNullMap(*cast_result);
+        auto source_null_map_column = getSourceNullMap(*non_const_column_to_cast);
         const auto * cast_null_map_data = cast_null_map_column
             ? &assert_cast<const ColumnUInt8 &>(*cast_null_map_column).getData()
             : nullptr;
