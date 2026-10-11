@@ -215,6 +215,9 @@ The clause is scoped to the element it is written on:
 BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
 ```
 
+In this list, back-quote a table or database named `table`, `dictionary`, `view`, `database` or `all`: after a
+comma, an unquoted one is read as the start of the next element.
+
 - On a single-object element (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`) the element's own object is
   the only one in scope, so the clause must name it and nothing else. Give every table its own element and
   its own clause:

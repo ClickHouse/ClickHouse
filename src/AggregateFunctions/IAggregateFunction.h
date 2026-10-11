@@ -97,6 +97,16 @@ public:
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
     virtual DataTypePtr getNormalizedStateType() const;
 
+    /// State type for a pass-through combinator - one that stores nested states inside its own state
+    /// and forwards `isVersioned` / `getDefaultVersion` to the nested function (`-If`, `-Array`,
+    /// `-ForEach`, `-Map`, `-ArgMin` / `-ArgMax`, `-OrNull` / `-OrDefault`, `-Resample`, `-Distinct`,
+    /// and the implicit adaptor for `Nullable` arguments).
+    /// If the nested function spells its current state version out in its state type, the combinator's
+    /// state type must spell the same version: a fresh state column otherwise falls back to the legacy
+    /// default version on local serialization round trips of the column (`groupArray` over the states,
+    /// sorting, views), losing the information the newer version carries.
+    DataTypePtr getStateTypeWithVersionOf(const IAggregateFunction & nested) const;
+
     /// Identifies the state representation variant used by this function.
     /// The default is Aggregation (normal GROUP BY implementation).
     virtual AggregateFunctionStateVariant getStateVariant() const
@@ -427,6 +437,17 @@ public:
         size_t place_offset,
         const IColumn ** columns,
         const UInt64 * offsets,
+        Arena * arena) const = 0;
+
+    /** Row `i` of [row_begin, row_end) goes to the state at `place + (i - row_begin) * place_stride`.
+      * Used by -ForEach, whose nested states for one array are consecutive.
+      */
+    virtual void addBatchConsecutivePlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
         Arena * arena) const = 0;
 
     /** The case when the aggregation key is UInt8
@@ -875,6 +896,18 @@ public:
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
         }
+    }
+
+    void addBatchConsecutivePlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        size_t place_stride,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
     void addBatchLookupTable8(
