@@ -240,6 +240,21 @@ class Targeting:
         fpath = fpath.removeprefix("./")
         return fpath.startswith("ci/jobs/") and Path(fpath).is_file()
 
+    @staticmethod
+    def is_documentation_file(fpath: str) -> bool:
+        """A changed documentation path, the same set as `only_docs` in `filter_job.py`.
+
+        Tolerated alongside test-file changes by the batch-skip check in
+        `functional_tests.py` / `integration_test_job.py`: documentation
+        affects neither the binary nor the selection of tests.
+        """
+        fpath = fpath.removeprefix("./")
+        return (
+            fpath.startswith("docs/")
+            or fpath.startswith("docker/docs")
+            or fpath.endswith(".md")
+        )
+
     @classmethod
     def functional_test_hash_batch_file(cls, fpath: str):
         """Return the on-disk stateless test filename (with extension) that
@@ -371,6 +386,29 @@ class Targeting:
         if not changed_files:
             return result
 
+        # Tests removed by the change, with no source file left under that name.
+        # Their supporting files (`.reference`, the `.python` helper of a `.sh`
+        # test, ...) go with them and are not fixtures of a surviving test.
+        # A deleted `.py` helper is a fixture, so a removed test is recognized by
+        # its removed reference as well.
+        removed_files = {
+            os.path.basename(fpath)
+            for fpath in changed_files
+            if Path(fpath).parent == Path("tests/queries/0_stateless")
+            and not Path(fpath).exists()
+        }
+        removed_tests = set()
+        for fname in removed_files:
+            for ext in self._TEST_FILE_EXTENSIONS:
+                if not fname.endswith(ext):
+                    continue
+                name = fname[: -len(ext)]
+                if (
+                    f"{name}.reference" in removed_files
+                    or f"{name}.reference.j2" in removed_files
+                ) and not self.functional_test_source_file(name):
+                    removed_tests.add(name)
+
         for fpath in changed_files:
             if not fpath.startswith("tests/queries/0_stateless/"):
                 if fpath.startswith("tests/queries/"):
@@ -393,6 +431,20 @@ class Targeting:
                     # turns it into the selector that runs only this test.
                     result.add(f"{test_base_name}.")
                     continue
+
+                # A file of a removed test has no owner to rerun. Mapping it as a
+                # fixture would fall back to every test sharing its number prefix.
+                if not Path(fpath).exists():
+                    candidate = os.path.basename(fpath)
+                    while "." in candidate:
+                        candidate = candidate.rsplit(".", 1)[0]
+                        if candidate in removed_tests:
+                            break
+                    if candidate in removed_tests:
+                        print(
+                            f"File '{fpath}' belongs to the removed test '{candidate}' — skipping"
+                        )
+                        continue
 
             # Either a data fixture nested in a subdirectory
             # (`data_parquet/02716_data.parquet`) or a root-level orphan data file
