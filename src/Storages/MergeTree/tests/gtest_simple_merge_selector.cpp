@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 
 #include <base/unit.h>
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <limits>
 #include <numeric>
 #include <ranges>
 #include <string>
@@ -140,6 +142,73 @@ TEST(SimpleMergeSelector, TestRowsConstraint)
 
         ASSERT_EQ(selected.size(), 0);
     }
+}
+
+namespace
+{
+
+PartProperties makeIndexClearPart(
+    const String & name,
+    time_t next_index_clear_ttl,
+    bool can_clear_indexes,
+    size_t size = 100,
+    bool is_in_volume_where_merges_avoid = false)
+{
+    return PartProperties{
+        .name = name,
+        .info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+        .all_ttl_calculated_if_any = true,
+        .is_in_volume_where_merges_avoid = is_in_volume_where_merges_avoid,
+        .size = size,
+        .rows = 100,
+        .next_index_clear_ttl = next_index_clear_ttl,
+        .can_clear_indexes = can_clear_indexes,
+    };
+}
+
+const std::vector<MergeConstraint> unlimited_constraints{{std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()}};
+
+String selectOneIndexClearPart(const PartsRange & parts)
+{
+    const time_t current_time = 100;
+    TTLIndexClearMergeSelector selector(current_time);
+    const auto selected = selector.select(PartsRanges{parts}, unlimited_constraints, nullptr);
+    if (selected.empty())
+        return "";
+    EXPECT_EQ(selected.size(), 1);
+    EXPECT_EQ(selected.front().size(), 1);
+    return selected.front().front().name;
+}
+
+}
+
+TEST(TTLIndexClearMergeSelector, SkipsIneligibleParts)
+{
+    /// The earlier-expiring part is not eligible, so the later one is selected.
+    EXPECT_EQ(selectOneIndexClearPart(
+        {
+            makeIndexClearPart("all_1_1_0", /*next_index_clear_ttl=*/10, /*can_clear_indexes=*/false),
+            makeIndexClearPart("all_2_2_0", /*next_index_clear_ttl=*/20, /*can_clear_indexes=*/true),
+        }), "all_2_2_0");
+}
+
+TEST(TTLIndexClearMergeSelector, SelectsOneEarliestExpiredPart)
+{
+    /// Adjacent expired parts are not combined, and a part that has not expired yet is skipped.
+    EXPECT_EQ(selectOneIndexClearPart(
+        {
+            makeIndexClearPart("all_1_1_0", /*next_index_clear_ttl=*/50, /*can_clear_indexes=*/true),
+            makeIndexClearPart("all_2_2_0", /*next_index_clear_ttl=*/30, /*can_clear_indexes=*/true),
+            makeIndexClearPart("all_3_3_0", /*next_index_clear_ttl=*/101, /*can_clear_indexes=*/true),
+        }), "all_2_2_0");
+}
+
+TEST(TTLIndexClearMergeSelector, IgnoresSizeAndVolume)
+{
+    /// The merge hardlinks the part's files, so a huge part on a volume that avoids merges is selected.
+    EXPECT_EQ(selectOneIndexClearPart(
+        {makeIndexClearPart("all_1_1_0", /*next_index_clear_ttl=*/10, /*can_clear_indexes=*/true, /*size=*/1ULL << 50, /*is_in_volume_where_merges_avoid=*/true)}),
+        "all_1_1_0");
 }
 
 TEST(SimpleMergeSelector, ForceMergeByPartitionAge)

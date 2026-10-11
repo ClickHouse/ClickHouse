@@ -83,6 +83,8 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d GROUP BY x SET y = max(y)'), '"group_by_key":[{"type":"Identifier","name":"x"}]', '"group_by_key":[]')); -- { serverError BAD_ARGUMENTS }
 SELECT formatQueryFromJSON(replace(parseQueryToJSON('ALTER TABLE t MODIFY TTL d'), '"mode":"DELETE"', '"mode":"DELETE","group_by_key":[{"type":"Identifier","name":"x"}]')); -- { serverError BAD_ARGUMENTS }
+-- A column TTL is a plain expression, so it can't be a `CLEAR INDEX` element.
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('CREATE TABLE t (d Date, x UInt8 TTL d, INDEX i x TYPE minmax) ENGINE = MergeTree ORDER BY d'), '"ttl":{"type":"Identifier","name":"d"}', '"ttl":{"type":"TTLElement","mode":"CLEAR_INDEX","destination_type":"DELETE","index_name":"i","if_exists":false,"ttl_expr":{"type":"Identifier","name":"d"}}')); -- { serverError BAD_ARGUMENTS }
 
 -- ---------------------------------------------------------------------------
 -- INTERPOLATE is parser-produced only as an `ASTExpressionList` of `ASTInterpolateElement`s under an

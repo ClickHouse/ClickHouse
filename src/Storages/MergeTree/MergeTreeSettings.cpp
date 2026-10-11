@@ -2180,6 +2180,14 @@ anyway, and therefore also removes the rows that have expired in it.
     DECLARE(Bool, materialize_ttl_recalculate_only, false, R"(
 When enabled, `MATERIALIZE TTL` recalculates the stored `TTL` metadata for each data part without removing expired data during that operation. When disabled, normal TTL materialization usually applies the configured row, column, or `GROUP BY` TTL actions. For tables with only row TTL and `ttl_only_drop_parts` enabled, it instead recalculates `TTL` metadata and drops only fully expired parts.
 )", 0) \
+    DECLARE(Bool, ttl_clear_index_merges, true, R"(
+Enables background merges that delete the files of skip indexes whose `TTL ... CLEAR INDEX` rule has expired. Such a merge takes one part, hardlinks the rest of its files, and writes only the files that change, so it also runs on parts that regular merges skip, like parts of the maximum size. Regular merges leave expired indexes out of the parts they write regardless of this setting.
+
+A server selects these merges only for parts whose files it can hardlink, so tables with `always_use_copy_instead_of_hardlinks` or zero-copy replication don't get them. In `ReplicatedMergeTree` every replica runs each selected merge, and a replica that can't hardlink copies the part's files.
+
+Versions without `TTL ... CLEAR INDEX` can't load a table that has such a rule, and a replica on one of them stops pulling the replication log when it reads one of these merges. Add `CLEAR INDEX` rules only after all replicas are upgraded. With `compatibility` set to an older version, this setting is off. Before downgrading, remove the rules and wait until `system.replication_queue` has no `TTLClearIndex` merges.
+)", 0, \
+        {"26.10", false, true, "New setting"}) \
     DECLARE(Bool, enable_mixed_granularity_parts, true, R"(
 Enables or disables transitioning to control the granule size with the
 `index_granularity_bytes` setting. Before version 19.11, there was only the

@@ -58,7 +58,9 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
 {
     auto create_choice = [&](PartsRange && parts, MergeType merge_type)
     {
-        const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+        /// A `TTLClearIndex` merge leaves patches pending.
+        const bool apply_patch_parts = merge_type != MergeType::TTLClearIndex
+            && ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
         PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
         return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
     };
@@ -114,6 +116,16 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
 
         if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
+    }
+
+    /// Clearing expired index files - 5 priority. `TTLClearIndex` merges hardlink the part's files, so no size limit applies.
+    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyIndexClearTTL())
+    {
+        TTLIndexClearMergeSelector index_clear_ttl_selector(ctx.current_time);
+        std::vector<MergeConstraint> ttl_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
+
+        if (auto merge_ranges = index_clear_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLClearIndex);
     }
 
     return {};

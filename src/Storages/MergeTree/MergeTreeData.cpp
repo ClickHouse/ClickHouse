@@ -6634,6 +6634,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 all_ttls.push_back(ttl);
             for (const auto & ttl : old_metadata.getRecompressionTTLs())
                 all_ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getIndexClearTTLs())
+                all_ttls.push_back(ttl);
             if (old_metadata.hasRowsTTL())
                 all_ttls.push_back(old_metadata.getRowsTTL());
             for (const auto & [column_name, ttl] : old_metadata.getColumnTTLs())

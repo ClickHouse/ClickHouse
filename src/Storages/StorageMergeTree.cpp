@@ -45,6 +45,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexClearTTL.h>
 #include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1103,7 +1104,8 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     /// Assume mutex is already locked, because this method is called from mergeTask.
 
     /// if we mutate part, than we should reserve space on the same disk, because mutations possible can create hardlinks
-    if (is_mutation)
+    /// (`TTLClearIndex` merges hardlink the source part's files too)
+    if (is_mutation || future_part->merge_type == MergeType::TTLClearIndex)
     {
         reserved_space = StorageMergeTree::tryReserveSpace(total_size, future_part->parts[0]->getDataPartStorage());
     }
@@ -2036,7 +2038,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         /// The mutation version of a patch part is the maximum data version its index covers, not a
         /// position in the mutation queue, so it cannot carry this. Patch parts store the updated
         /// values of a single `UPDATE` and are never rewritten by a metadata mutation anyway.
-        if (!future_part->isResultPatch())
+        /// A `TTLClearIndex` merge keeps the data version of the source part, so pending mutations still apply to its result.
+        if (!future_part->isResultPatch() && future_part->merge_type != MergeType::TTLClearIndex)
         {
             /// `lock` is `currently_processing_in_background_mutex`, the same one `alter` publishes
             /// the new metadata and registers the rename mutation under, so the mutations read here
@@ -2079,7 +2082,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint mt_fail_selected_merge_before_start_once is triggered");
         });
 
-        uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
+        const uint64_t needed_disk_space = future_part->merge_type == MergeType::TTLClearIndex
+            ? estimateDiskSpaceForIndexClear(future_part->parts.front())
+            : CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
         auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
 
         auto entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());

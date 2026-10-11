@@ -147,6 +147,8 @@ public:
             global_ctx->data_settings
                 = global_ctx->data->getSettings(global_ctx->projection ? &global_ctx->projection->settings_changes : nullptr);
 
+            stages = makeStages(global_ctx->future_part->merge_type);
+            stages_iterator = stages.begin();
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
         }
@@ -596,19 +598,34 @@ private:
         GlobalRuntimeContextPtr global_ctx;
     };
 
-    GlobalRuntimeContextPtr global_ctx;
-
-    using Stages = std::array<StagePtr, 4>;
-
-    const Stages stages
+    /// Runs the whole `TTLClearIndex` merge in place of the other stages.
+    struct ClearExpiredIndexesStage : public IStage
     {
-        std::make_shared<ExecuteAndFinalizeHorizontalPart>(),
-        std::make_shared<VerticalMergeStage>(),
-        std::make_shared<MergeTextIndexStage>(),
-        std::make_shared<MergeProjectionsStage>()
+        bool execute() override;
+        void cancel() noexcept override {}
+
+        void setRuntimeContext(StageRuntimeContextPtr /*local*/, StageRuntimeContextPtr global) override
+        {
+            global_ctx = static_pointer_cast<GlobalRuntimeContext>(global);
+        }
+
+        StageRuntimeContextPtr getContextForNextStage() override { return nullptr; }
+        ProfileEvents::Event getTotalTimeProfileEvent() const override { return ProfileEvents::MergeHorizontalStageTotalMilliseconds; }
+
+        GlobalRuntimeContextPtr global_ctx;
+        LoggerPtr log{getLogger("MergeTask::ClearExpiredIndexesStage")};
     };
 
-    Stages::const_iterator stages_iterator = stages.begin();
+    GlobalRuntimeContextPtr global_ctx;
+
+    using Stages = std::vector<StagePtr>;
+    static Stages makeStages(MergeType merge_type);
+
+    Stages stages;
+    Stages::const_iterator stages_iterator;
+
+    /// Claims the temporary directory of the merge and creates `global_ctx->new_data_part` in it.
+    static void createNewDataPart(const GlobalRuntimeContextPtr & global_ctx, const LoggerPtr & log);
 
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
