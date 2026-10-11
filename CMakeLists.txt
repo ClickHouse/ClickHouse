@@ -692,9 +692,12 @@ endif ()
 # Resolving everything at startup costs nothing here because we link dynamically only against libc
 # and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
-# The native SunOS linker does not support '-z relro'; LLD does.
-if (NOT OS_DARWIN AND NOT LINKER_IS_SOLARIS)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+# The native SunOS linker supports '-z now' but not '-z relro'; LLD supports both.
+if (NOT OS_DARWIN)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,now")
+    if (NOT LINKER_IS_SOLARIS)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro")
+    endif ()
 endif ()
 
 # Keep read-only data out of executable pages, so its bytes cannot serve as ROP gadgets.
