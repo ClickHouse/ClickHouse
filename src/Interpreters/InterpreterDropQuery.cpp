@@ -302,11 +302,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             /// Check the access first: otherwise `IF EMPTY` would tell a user who may not drop
             /// the table whether it is empty. Telling a view from a table would resolve a table
             /// function that has not been resolved yet, which `IF EMPTY` refuses anyway, so such a
-            /// table requires both grants instead.
+            /// table requires both grants instead. Nothing is loaded before the check: a
+            /// `lazy_load_tables` stand-in is never a view, a dictionary or a table function (see
+            /// `DatabaseOrdinary::shouldLazyLoad`), and loading it would start the storage up for a
+            /// user who may not touch it.
             AccessFlags required_access;
             if (query.kind == ASTDropQuery::Kind::Truncate)
                 required_access = AccessType::TRUNCATE;
-            else if (isUnresolvedTableFunction(resolveStorageProxyLoading(table)))
+            else if (isUnresolvedTableFunction(resolveStorageProxy(table)))
                 required_access = AccessFlags(AccessType::DROP_TABLE) | AccessType::DROP_VIEW;
             else if (table->isView())
                 required_access = AccessType::DROP_VIEW;
