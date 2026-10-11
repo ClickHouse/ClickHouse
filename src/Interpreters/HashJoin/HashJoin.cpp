@@ -14,6 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/HashTable/FixedHashMap.h>
@@ -52,6 +53,12 @@
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+
+namespace ProfileEvents
+{
+    extern const Event JoinNonJoinedHashTableScans;
+    extern const Event JoinNonJoinedHashTableScansSkipped;
+}
 
 namespace DB
 {
@@ -1084,7 +1091,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
             bool has_right_not_joined = false;
-            if (!flag_per_row && isRightOrFull(kind) && join_mask_col.hasData())
+            if (!flag_per_row && isRightOrFull(kind) && join_mask_col.getKind() != JoinCommon::JoinMask::Kind::AllTrue)
             {
                 ///  - build mask in the source block row space
                 ///  - set bits only for rows that belong to THIS slot (by selector)
@@ -1143,7 +1150,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 nullmap_stored_for_block = true;
             }
 
-            if (!flag_per_row && not_joined_map && (is_inserted || has_right_not_joined))
+            if (!flag_per_row && not_joined_map && has_right_not_joined)
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, std::move(not_joined_map));
                 data->nullmaps_allocated_size += h.allocatedBytes();
@@ -1495,53 +1502,40 @@ HashJoin::~HashJoin()
         getTotalRowCount());
 }
 
-bool HashJoin::hasNonJoinedRows()
+namespace
 {
-    if (has_non_joined_rows_checked)
-        return has_non_joined_rows;
 
-    if (!isRightOrFull(kind))
-        return false;
-
-    if (!needUsedFlagsForPerRightTableRow(table_join))
-        return false;
-
-    /// If the right table is empty, we have no non-joined rows.
-    if (data->rows_to_join == 0)
-        return false;
-
-    updateNonJoinedRowsStatus();
-    return has_non_joined_rows;
-}
-
-void HashJoin::updateNonJoinedRowsStatus()
+/// Whether every key in the cells that stream `bucket_idx` of `num_buckets` walks has its used flag set.
+/// A two-level map numbers the cells of bucket `b` from `bucket_cells_prefix[b] + 1`, and its zero key has offset 0.
+/// The walk splits only two-level maps between streams, so a single-level map is checked as a whole.
+template <typename Map>
+bool allKeysUsed(const Map & map, const JoinStuff::JoinUsedFlags & used_flags, size_t bucket_idx, size_t num_buckets)
 {
-    if (has_non_joined_rows_checked)
-        return;
+    if (used_flags.per_offset_flags.size() < map.getBufferSizeInCells() + 1)
+        return false;
 
-    bool found_non_joined = false;
-    if (data->rows_to_join != 0)
+    if constexpr (requires { map.bucket_cells_prefix; })
     {
-        // 1) There are masks for NULL-keys/ON? -> we have nonJoined rows
-        if (!data->nullmaps.empty())
-            found_non_joined = true;
-        // 2) Used flags present:
-        //    - If per-row flags are required (mixed ON / multiple disjuncts / RIGHT|FULL), conservatively assume non-joined rows exist
-        //    - For single disjunct with per-offset flags, check allOffsetFlagsSet
-        //    - Otherwise assume non-joined rows may exist
-        else if (used_flags)
+        if constexpr (Map::NUM_BUCKETS > 1)
         {
-            if (needUsedFlagsForPerRightTableRow(table_join))
-                found_non_joined = true;
-            else if (table_join->oneDisjunct())
-                found_non_joined = !used_flags->allOffsetFlagsSet();
-            else
-                found_non_joined = true;
+            if (map.bucket_cells_prefix.size() != Map::NUM_BUCKETS)
+                return false;
+            for (size_t bucket = bucket_idx; bucket < Map::NUM_BUCKETS; bucket += num_buckets)
+            {
+                const auto & impl = map.impls[bucket];
+                const size_t begin = map.bucket_cells_prefix[bucket] + 1;
+                if (countBytesInFilter(used_flags.per_offset_flags.data(), begin, begin + impl.getBufferSizeInCells())
+                    != impl.size() - impl.hasZero())
+                    return false;
+                if (impl.hasZero() && !used_flags.getUsedSafe(0))
+                    return false;
+            }
+            return true;
         }
     }
+    return countBytesInFilter(used_flags.per_offset_flags.data(), 0, map.getBufferSizeInCells() + 1) == map.size();
+}
 
-    has_non_joined_rows = found_non_joined;
-    has_non_joined_rows_checked = true;
 }
 
 /// Appends one hash map cell's not-joined rows as a flat run of encoded ref words. Returns the rows
@@ -1722,7 +1716,12 @@ private:
 
 
             if (!position.has_value())
-                position = std::make_any<Iterator>(map.begin());
+            {
+                const bool all_keys_used = allKeysUsed(map, *parent.used_flags, bucket_idx, num_buckets);
+                ProfileEvents::increment(
+                    all_keys_used ? ProfileEvents::JoinNonJoinedHashTableScansSkipped : ProfileEvents::JoinNonJoinedHashTableScans);
+                position = std::make_any<Iterator>(all_keys_used ? map.end() : map.begin());
+            }
 
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
@@ -2814,7 +2813,6 @@ void HashJoin::onBuildPhaseFinish()
         all_join_was_promoted_to_right_any = true;
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
-    updateNonJoinedRowsStatus();
 
     /// In case addBlockToJoin is returning early
     /// we take a peak snapshot

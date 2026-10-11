@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -48,6 +49,7 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -1697,13 +1699,15 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 
 /// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
 /// a static `Decimal`/`DateTime64`/`Time64` anywhere (all scaled decimals), a `Variant` anywhere (a literal
-/// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
+/// does not keep the active member type), a `Dynamic` whose value's type is not visible in the type, or a
+/// `QBit`, whose `Field` is its internal tuple of bit planes.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
     return anyInTypeTree(type, [](const IDataType & nested)
     {
         WhichDataType which(nested);
-        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic()
+            || which.isQBit();
     });
 }
 
@@ -1810,6 +1814,24 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             return makeASTFunction(
                 "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
                 make_intrusive<ASTLiteral>(type->getName()));
+        case TypeIndex::QBit:
+        {
+            /// A QBit `Field` is its tuple of bit planes, which does not cast back to QBit. The bit patterns of its elements do,
+            /// exactly (NaN sign and payload included) and whatever the byte order of either server.
+            const auto & element_type = assert_cast<const DataTypeQBit &>(*type).getElementType();
+            const auto elements = castColumn({column->cut(row, 1), type, ""}, std::make_shared<DataTypeArray>(element_type));
+            const auto & values = assert_cast<const ColumnArray &>(*elements).getData();
+            Array bit_patterns;
+            bit_patterns.reserve(values.size());
+            for (size_t i = 0; i < values.size(); ++i)
+                bit_patterns.push_back(values.get64(i));
+            auto patterns = makeASTFunction(
+                "_CAST", make_intrusive<ASTLiteral>(std::move(bit_patterns)),
+                make_intrusive<ASTLiteral>(fmt::format("Array(UInt{})", 8 * element_type->getSizeOfValueInMemory())));
+            auto bytes = makeASTFunction("reinterpret", std::move(patterns), make_intrusive<ASTLiteral>("String"));
+            auto array = makeASTFunction("reinterpret", std::move(bytes), make_intrusive<ASTLiteral>("Array(" + element_type->getName() + ")"));
+            return makeASTFunction("_CAST", std::move(array), make_intrusive<ASTLiteral>(type->getName()));
+        }
         case TypeIndex::DateTime64:
         case TypeIndex::Time64:
             /// DateTime64/Time64 are backed by a scaled decimal. Serialize the exact (UTC-based) decimal
