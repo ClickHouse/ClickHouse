@@ -28,20 +28,20 @@ ReplicatedMergeTreeBaseMergePredicate::ReplicatedMergeTreeBaseMergePredicate(con
 {
 }
 
-std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
+std::expected<void, LazyPreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
 {
     /// FIXME: remove lock here
     std::lock_guard lock(queue.state_mutex);
     return MergeCore::canMergeParts(left, right);
 }
 
-std::expected<void, PreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::canUsePartInMerges(const MergeTreeDataPartPtr & part) const
+std::expected<void, LazyPreformattedMessage> ReplicatedMergeTreeBaseMergePredicate::canUsePartInMerges(const MergeTreeDataPartPtr & part) const
 {
     if (pinned_part_uuids_ptr && pinned_part_uuids_ptr->part_uuids.contains(part->uuid))
-        return std::unexpected(PreformattedMessage::create("Part {} has uuid {} which is currently pinned", part->name, part->uuid));
+        return std::unexpected(createLazyMessage("Part {} has uuid {} which is currently pinned", refArg(part->name), refArg(part->uuid)));
 
     if (inprogress_quorum_part_ptr && *inprogress_quorum_part_ptr == part->name)
-        return std::unexpected(PreformattedMessage::create("Quorum insert for part {} is currently in progress", part->name));
+        return std::unexpected(createLazyMessage("Quorum insert for part {} is currently in progress", refArg(part->name)));
 
     /// FIXME: remove lock here
     std::lock_guard lock(queue.state_mutex);

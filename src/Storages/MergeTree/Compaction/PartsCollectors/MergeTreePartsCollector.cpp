@@ -79,18 +79,18 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
 
 auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
 {
-    auto predicate = [storage_policy, tx, merge_pred](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
+    auto predicate = [storage_policy, tx, merge_pred](const MergeTreeDataPartPtr & part) -> std::expected<void, LazyPreformattedMessage>
     {
         if (tx)
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
             /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
             if (!part->version->isVisible(tx->getSnapshot(), Tx::EmptyTID))
-                return std::unexpected(PreformattedMessage::create("Part {} is not visible in transaction {}", part->name, tx->dumpDescription()));
+                return std::unexpected(createLazyMessage("Part {} is not visible in transaction {}", refArg(part->name), copyArg(tx->dumpDescription())));
 
             /// Do not try to merge parts that are locked for removal (merge will probably fail)
             if (part->version->isRemovalTIDLocked())
-                return std::unexpected(PreformattedMessage::create("Part {} is locked for removal", part->name));
+                return std::unexpected(createLazyMessage("Part {} is locked for removal", refArg(part->name)));
         }
 
         chassert(merge_pred);
@@ -107,7 +107,7 @@ std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(
     return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(storage_policy, tx, merge_pred), series_log);
 }
 
-std::expected<void, PreformattedMessage> checkAllParts(
+std::expected<void, LazyPreformattedMessage> checkAllParts(
     const MergeTreeDataPartsVector & parts,
     const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
 {
@@ -136,17 +136,17 @@ CollectedPartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     return {constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time), std::move(partitions_stats)};
 }
 
-std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllPartsInsidePartition(
+std::expected<PartsRange, LazyPreformattedMessage> MergeTreePartsCollector::grabAllPartsInsidePartition(
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
     const std::string & partition_id) const
 {
-    auto parts = filterByPartitions(collectInitial(storage, tx), PartitionIdsHint{partition_id});
-    if (auto result = checkAllParts(parts, storage_policy, tx, merge_pred); !result)
+    parts_inside_partition = filterByPartitions(collectInitial(storage, tx), PartitionIdsHint{partition_id});
+    if (auto result = checkAllParts(parts_inside_partition, storage_policy, tx, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 
-    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, storage_policy, current_time);
+    auto ranges = constructPartsRanges({std::move(parts_inside_partition)}, metadata_snapshot, storage_policy, current_time);
     chassert(ranges.size() == 1);
 
     return std::move(ranges.front());
