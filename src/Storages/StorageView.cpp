@@ -336,7 +336,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
   *
   * The context is also marked as a view inner context so that the query analyzer
   * resolves positional arguments inside the view even on remote/secondary nodes
-  * (views are expanded on remote nodes, unlike the outer query).
+  * (views are expanded on remote nodes, unlike the outer query), also when read by a local shard plan.
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
@@ -356,6 +356,7 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::extremes] = false;
     view_context->setSettings(view_settings);
     view_context->setIsViewInnerQuery(true);
+    view_context->setPositionalArgumentsAlreadyResolved(false);
     return view_context;
 }
 
@@ -959,6 +960,7 @@ ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const Storage
     /// The inlined view body is the inner query of the view, just like in `getViewContext`:
     /// e.g. it must read the table itself, not the inserted block of a materialized view.
     view_context->setIsViewInnerQuery(true);
+    view_context->setPositionalArgumentsAlreadyResolved(false);
     return view_context;
 }
 

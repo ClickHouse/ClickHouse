@@ -915,22 +915,13 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
     const auto & settings = scope.context->getSettingsRef();
     if (!settings[Setting::enable_positional_arguments])
         return;
-    const bool is_view_inner = scope.context->isViewInnerQuery();
-    if (!is_view_inner)
-    {
-        /// Skip resolution on distributed/parallel-replicas local plan nodes: the initiator
-        /// already resolved positional arguments in the outer query. View-inner contexts are
-        /// exempt because views are expanded on the local node and were never resolved by the
-        /// initiator.
-        if (scope.context->isPositionalArgumentsAlreadyResolved())
-            return;
-        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
-        /// resolved positional arguments. Do not skip for contexts that never set the kind
-        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
-        /// which must resolve positional arguments itself.
-        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-            return;
-    }
+    /// The query was printed from an already resolved query tree (a local shard plan).
+    if (scope.context->isPositionalArgumentsAlreadyResolved())
+        return;
+    /// A remote shard gets the outer query resolved by the initiator, but expands views itself.
+    /// Contexts that never set the kind (NO_QUERY), e.g. a Replicated database DDL worker, resolve it too.
+    if (!scope.context->isViewInnerQuery() && scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        return;
 
     auto & node_list_typed = node_list->as<ListNode &>();
 

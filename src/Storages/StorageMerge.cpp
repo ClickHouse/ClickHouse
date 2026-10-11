@@ -2005,6 +2005,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// Converting query to AST because types might be different in the source table.
         /// Need to resolve types again.
         auto ast = modified_query_info.query_tree->toAST();
+        /// The AST is printed from the resolved query tree, so its positional arguments are already resolved.
+        modified_context->setPositionalArgumentsAlreadyResolved(true);
         InterpreterSelectQueryAnalyzer interpreter(ast,
             modified_context,
             child_select_query_options);
