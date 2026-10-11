@@ -621,7 +621,8 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("cuckoo_filter", cuckooFilterIndexCreator, Documentation{
         .description = "An experimental cuckoo filter over the values of the index expression, for speeding up equality and IN conditions. "
-            "Requires setting `allow_experimental_cuckoo_filter_index`. Supported column types and predicates are the same as `bloom_filter`.",
+            "Requires setting `allow_experimental_cuckoo_filter_index`. Supports the same column types as `bloom_filter` and its `equals`, `IN`, `has`, `hasAny`, and `hasAll` conditions, "
+            "but unlike `bloom_filter` it is not used through lossless type conversions of the key or for `arrayJoin` conditions.",
         .syntax = "INDEX name expr TYPE cuckoo_filter([false_positive_rate]) GRANULARITY g",
         .examples = {{
             "cuckoo_filter",
@@ -644,7 +645,8 @@ SELECT count() FROM tab WHERE token = 'abc';)",
 
     registerCreator("binary_fuse_filter", binaryFuseFilterIndexCreator, Documentation{
         .description = "An experimental binary fuse filter over the values of the index expression, for speeding up equality and IN conditions. "
-            "Requires setting `allow_experimental_binary_fuse_filter_index`. Supported column types and predicates are the same as `bloom_filter`.",
+            "Requires setting `allow_experimental_binary_fuse_filter_index`. Supports the same column types as `bloom_filter` and its `equals`, `IN`, `has`, `hasAny`, and `hasAll` conditions, "
+            "but unlike `bloom_filter` it is not used through lossless type conversions of the key or for `arrayJoin` conditions.",
         .syntax = "INDEX name expr TYPE binary_fuse_filter([false_positive_rate]) GRANULARITY g",
         .examples = {{
             "binary_fuse_filter",
