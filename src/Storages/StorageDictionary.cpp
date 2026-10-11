@@ -381,7 +381,9 @@ void registerStorageDictionary(StorageFactory & factory)
                         "Dictionary {} already exists.", dictionary_id.getFullNameNotQuoted());
 
             /// Create dictionary storage that owns underlying dictionary
-            auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
+            const bool is_fresh_definition = !isReplayedTableDefinition(args.mode, args.query, local_context);
+            auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(
+                args.query, local_context, dictionary_id.database_name, is_fresh_definition);
 
             /// The overrides of stored keys of a named collection need the same privilege as in table engines.
             /// The dictionary is loaded later with the global context, so the user's privileges are checked here.
