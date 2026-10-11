@@ -135,6 +135,16 @@ private:
     using ColumnStreams = std::map<String, StreamPtr>;
     ColumnStreams column_streams;
 
+    /// Streams of each column in `enumerateStreams` order, computed once in `addStreams`, because the set of
+    /// streams is fixed by `block_sample`. Offsets already written by another writer are not included.
+    struct ColumnStreamEntry
+    {
+        MergeTreeWriterStream * stream;
+        const String * name;
+        bool is_offsets;
+    };
+    std::unordered_map<String, std::vector<ColumnStreamEntry>> column_stream_lists;
+
     /// Some long column names may be replaced to hashes.
     /// Below are mapping from original stream name to actual
     /// stream name (probably hash of the stream) and vice versa.
