@@ -213,6 +213,7 @@ public:
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
+        bool skip_hidden_files_,
         bool with_tags,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -232,6 +233,13 @@ private:
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_columns;
     const bool throw_on_zero_files_match;
+    /// Skip objects with a path segment starting with '_' or '.' below the non-glob prefix,
+    /// the way every other reader of Hive-layout data does (Hive, Spark, Trino): such segments
+    /// hold in-progress staging output and marker objects, not table data. Enabled by the
+    /// per-engine skip_hidden_files settings and unconditionally for hive partition strategy.
+    const bool skip_hidden_files;
+    /// Size of the directory part of the non-glob prefix: segments are checked only past it.
+    size_t hidden_check_prefix_size = 0;
     const LoggerPtr log;
 
     size_t index = 0;
@@ -256,6 +264,7 @@ private:
 
     size_t total_listed = 0;
     size_t total_glob_filtered = 0;
+    size_t total_hidden_filtered = 0;
     size_t total_predicate_filtered = 0;
 };
 
