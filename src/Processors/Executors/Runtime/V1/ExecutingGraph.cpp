@@ -210,6 +210,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
 
         /// Record new processors in pipeline
         const IProcessor & parent = *cur_node.processor();
+        std::shared_ptr<PendingRemovalGroup> parent_group;
+        if (auto it = removed_processors.find(*cur_node.processor_iter); it != removed_processors.end())
+            parent_group = it->second;
+
         for (const auto & new_proc : update.to_add)
         {
             /// Runtime-added processors (lazy reads, external sort, ...) usually have no step,
@@ -219,21 +223,43 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipelineImpl(
             if (!new_proc->getQueryPlanStep())
                 new_proc->inheritQueryPlanStepFromParent(parent, parent.getQueryPlanStepGroup());
 
-            addNode(new_proc);
+            addNode(new_proc).expanded_from = &cur_node;
+
+            /// A processor pending removal can still expand; what it adds is removed with it.
+            if (parent_group)
+            {
+                parent_group->processors.push_back(new_proc);
+                parent_group->not_finished.fetch_add(1);
+                removed_processors.emplace(new_proc, parent_group);
+            }
         }
 
-        /// Record removed processors in pending removal queue
+        /// Record removed processors in pending removal queue, together with every processor
+        /// they added at run time. A node is always appended after the node that added it.
         if (!update.to_remove.empty())
         {
-            size_t not_finished = 0;
-            for (const auto & removed_proc : update.to_remove)
-                if (const auto * node = processors_map.at(removed_proc.get()))
-                    if (node->last_processor_status != IProcessor::Status::Finished)
-                        ++not_finished;
-
             auto group = std::make_shared<PendingRemovalGroup>();
-            group->not_finished = not_finished;
             group->processors = std::move(update.to_remove);
+
+            UnorderedSetWithMemoryTracking<const Node *> group_nodes;
+            for (const auto & removed_proc : group->processors)
+                group_nodes.insert(processors_map.at(removed_proc.get()));
+
+            for (const auto & node : nodes)
+            {
+                if (node.expanded_from && group_nodes.contains(node.expanded_from) && !group_nodes.contains(&node)
+                    && !removed_processors.contains(*node.processor_iter))
+                {
+                    group_nodes.insert(&node);
+                    group->processors.push_back(*node.processor_iter);
+                }
+            }
+
+            size_t not_finished = 0;
+            for (const auto * node : group_nodes)
+                if (node->last_processor_status != IProcessor::Status::Finished)
+                    ++not_finished;
+            group->not_finished = not_finished;
 
             for (const auto & removed_proc : group->processors)
                 removed_processors.emplace(removed_proc, group);
@@ -292,6 +318,28 @@ void ExecutingGraph::removePendingGroup(PendingRemovalGroup & group, Processors 
     removed_nodes.reserve(group.processors.size());
     for (const auto & removed_proc : group.processors)
         removed_nodes.insert(getNodeToRemove(removed_proc));
+
+    /// A processor that stays in the pipeline must not keep a connection to a destroyed one.
+    auto check_peer = [&](const IProcessor * processor, const IProcessor * peer)
+    {
+        auto it = processors_map.find(peer);
+        if (it == processors_map.end() || !removed_nodes.contains(it->second))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Processor {} is removed from the pipeline while it is still connected to {}",
+                describeProcessor(processor),
+                describeProcessor(peer));
+    };
+    for (const auto * node : removed_nodes)
+    {
+        const IProcessor * processor = node->processor();
+        for (const auto & input : processor->getInputs())
+            if (input.isConnected())
+                check_peer(processor, &input.getOutputPort().getProcessor());
+        for (const auto & output : processor->getOutputs())
+            if (output.isConnected())
+                check_peer(processor, &output.getInputPort().getProcessor());
+    }
 
     {
         std::lock_guard guard(processors_mutex);
