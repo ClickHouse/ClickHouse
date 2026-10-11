@@ -18,6 +18,7 @@
 #include "Poco/NumberFormatter.h"
 #include "Poco/Ascii.h"
 #include "Poco/String.h"
+#include "Poco/Exception.h"
 
 
 using Poco::NumberFormatter;
@@ -190,8 +191,26 @@ void HTTPRequest::setProxyCredentials(const std::string& scheme, const std::stri
 }
 
 
+namespace
+{
+	bool hasLineBreak(const std::string& value)
+	{
+		return value.find_first_of("\r\n") != std::string::npos;
+	}
+}
+
+
 void HTTPRequest::write(std::ostream& ostr) const
 {
+	/// CR or LF in the request line or in a header would let the value inject headers or a whole second request.
+	if (hasLineBreak(_method) || hasLineBreak(_uri))
+		throw InvalidArgumentException("HTTP request line contains CR or LF");
+	for (const auto& header : *this)
+	{
+		if (hasLineBreak(header.first) || hasLineBreak(header.second))
+			throw InvalidArgumentException("HTTP request header contains CR or LF", header.first);
+	}
+
 	ostr << _method << " " << _uri << " " << getVersion() << "\r\n";
 	HTTPMessage::write(ostr);
 	ostr << "\r\n";
