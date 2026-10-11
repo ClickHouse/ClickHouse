@@ -278,6 +278,44 @@ SELECT 'nested exact-empty sub-join keeps orientation',
     SETTINGS query_plan_optimize_join_order_limit = 2
 ) WHERE explain ILIKE '%Join:%';
 
+-- A semi, anti or ANY join emits each row of its preserved side at most once, so the bound of the filtered
+-- `dim_04726` must survive one even when the key table makes the product of both bounds exceed
+-- `fact_04726`. The first condition keeps each assertion non-vacuous if the key table stops appearing.
+CREATE TABLE keys_04726 (id Int32) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
+INSERT INTO keys_04726 SELECT number * 2 FROM numbers(10000);
+
+SELECT 'semi sub-join keeps orientation',
+        countIf(explain ILIKE '%keys\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT dim_04726.id AS id FROM dim_04726 LEFT SEMI JOIN keys_04726 ON dim_04726.id = keys_04726.id
+          WHERE dim_04726.nation_id = 5) AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
+) WHERE explain ILIKE '%Join:%';
+
+SELECT 'anti sub-join keeps orientation',
+        countIf(explain ILIKE '%keys\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT dim_04726.id AS id FROM keys_04726 RIGHT ANTI JOIN dim_04726 ON dim_04726.id = keys_04726.id
+          WHERE dim_04726.nation_id = 5) AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
+) WHERE explain ILIKE '%Join:%';
+
+SELECT 'ANY sub-join keeps orientation',
+        countIf(explain ILIKE '%keys\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT dim_04726.id AS id FROM dim_04726 ANY LEFT JOIN keys_04726 ON dim_04726.id = keys_04726.id
+          WHERE dim_04726.nation_id = 5) AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
+) WHERE explain ILIKE '%Join:%';
+
+DROP TABLE keys_04726;
+
 -- A window function keeps the row count of its input, so the swap needs both the bound of `wd` and
 -- the lower bound of `wf` to survive their window steps. The first condition keeps the assertion
 -- non-vacuous if the window steps stop appearing.

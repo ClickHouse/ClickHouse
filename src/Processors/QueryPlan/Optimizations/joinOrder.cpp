@@ -72,7 +72,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_method(join_method_)
 {
     /// A missing child bound yields a missing parent bound.
-    estimated_rows_upper = boundJoinRows(left->estimated_rows_upper, right->estimated_rows_upper, join_operator.kind);
+    estimated_rows_upper = boundJoinRows(left->estimated_rows_upper, right->estimated_rows_upper, join_operator.kind, join_operator.strictness);
 
     /// Merge column stats from both children, then update NDVs for equi-join key columns.
     column_stats = left->column_stats;

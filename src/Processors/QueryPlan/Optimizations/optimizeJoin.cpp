@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -1128,7 +1129,12 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// See `graph_has_mixed_strictness` above: keep each entry's own strictness in a mixed
             /// graph, otherwise stamp the graph's single strictness.
             if (!graph_has_mixed_strictness)
+            {
                 join_operator.strictness = join_strictness;
+                /// The solver bounded this entry as an `All` join.
+                entry->estimated_rows_upper = boundJoinRows(
+                    entry->left->estimated_rows_upper, entry->right->estimated_rows_upper, join_operator.kind, join_strictness);
+            }
 
             /// The optimizer reconstructs an unconnected Inner pair (e.g. `INNER JOIN ... ON 1`,
             /// which produces no join edges) as Cross. That is equivalent only for ALL strictness:

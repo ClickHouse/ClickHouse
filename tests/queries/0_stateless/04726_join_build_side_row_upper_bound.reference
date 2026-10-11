@@ -14,6 +14,9 @@ arrayJoin-expanded side keeps orientation	1
 single-side ON condition keeps orientation	1
 nested sub-join keeps orientation	1
 nested exact-empty sub-join keeps orientation	1
+semi sub-join keeps orientation	1
+anti sub-join keeps orientation	1
+ANY sub-join keeps orientation	1
 window subqueries keep orientation	1
 build side rows	0	4
 rows	0

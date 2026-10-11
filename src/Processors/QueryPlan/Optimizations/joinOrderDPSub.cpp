@@ -56,7 +56,7 @@ private:
         JoinStrictness strictness = JoinStrictness::All) const;
 
     std::optional<UInt64> boundCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind) const;
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind, JoinStrictness strictness) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
@@ -142,9 +142,9 @@ std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
 }
 
 std::optional<UInt64> DPSubJoinOrderOptimizer::boundCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind) const
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, JoinKind join_kind, JoinStrictness strictness) const
 {
-    return boundJoinRows(left_rows, right_rows, join_kind);
+    return boundJoinRows(left_rows, right_rows, join_kind, strictness);
 }
 
 void DPSubJoinOrderOptimizer::initDPsubScratch()
