@@ -875,7 +875,7 @@ TEST_F(ExternalDistinctTransformTest, SuppressionSortingKeepsSortEquivalentKeys)
     {
         const auto header = std::make_shared<const Block>(Block{
             ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k")});
-        /// Hashing retains distinct floating-point bit patterns. Sorting suppression keys must keep
+        /// Packed keys retain distinct floating-point bit patterns. Sorting suppression keys must keep
         /// every representation even when zeros or different NaNs compare equal in the sort order.
         std::vector<UInt64> expected{0, 0x8000000000000000ULL, 0x7ff8000000000000ULL, 0x7ff8000000000001ULL};
         auto keys = ColumnFloat64::create();
@@ -908,7 +908,7 @@ TEST_F(ExternalDistinctTransformTest, SuppressionSortingKeepsSortEquivalentKeys)
         std::vector<UInt64> actual;
         for (const auto & block : blocks)
             for (size_t row = 0; row < block.rows(); ++row)
-                actual.push_back(std::bit_cast<UInt64>(block.getByName("k").column->getFloat64(row)));
+                actual.push_back(block.getByPosition(0).column->getUInt(row));
         std::ranges::sort(actual);
         std::ranges::sort(expected);
         EXPECT_EQ(actual, expected);

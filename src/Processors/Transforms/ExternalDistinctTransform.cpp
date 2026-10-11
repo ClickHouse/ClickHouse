@@ -353,9 +353,9 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     /// of another copy when filtering, sorting, or cutting the unprocessed part of a chunk.
     const size_t input_bytes = input_chunk.allocatedBytes();
 
-    /// Service columns store internal spill metadata: fingerprints for keys compared by hash and
-    /// arrival numbers recording each row's original position. These columns are added when the key
-    /// representation needs fingerprints or the result must preserve input order.
+    /// Service columns store internal spill metadata: exact packed keys or fingerprints used for
+    /// comparison, and arrival numbers recording each row's original position. These columns are added
+    /// when the key representation needs a separate comparison key or the result must preserve input order.
     const size_t service_columns_bytes = DistinctSpillLayout::estimateServiceColumnsMemory(
         input_chunk.getNumRows(), hashing.set.getKeyRepresentation(), preserve_input_order);
 
