@@ -824,8 +824,9 @@ void considerEnablingParallelReplicas(
     }
     LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
 
-    std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash) = findCorrespondingNodeInSingleNodePlan(
-        calculateHashTableCacheKeys(*plan_with_parallel_replicas->getRootNode()).at(replicas_plan_boundary), root, nopr_node_hashes);
+    const auto pr_node_hashes = calculateHashTableCacheKeys(*plan_with_parallel_replicas->getRootNode());
+    std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash)
+        = findCorrespondingNodeInSingleNodePlan(pr_node_hashes.at(replicas_plan_boundary), root, nopr_node_hashes);
     if (!single_replica_plan_boundary)
         return;
     stats_cache.setBoundaryHash(root_key, single_replica_plan_boundary_hash);

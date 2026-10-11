@@ -3,8 +3,7 @@
 -- optimization, and on a declined query it used to be built only to be discarded.
 --
 -- `AutomaticParallelReplicasDecidedWithoutBuildingPlan` fires only on that path, so it separates "declined after building the
--- plan" from "declined without building it" - which is the point of the change and is otherwise invisible
--- from SQL.
+-- plan" from "declined without building it" - which is the point of the change and is otherwise invisible from SQL.
 
 DROP TABLE IF EXISTS t_decide_before_probe SYNC;
 
