@@ -851,14 +851,15 @@ MergeTreeReaderPtr createMergeTreeReader(
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     const IndexGranulesMap & index_granules)
 {
+    const auto & index = index_read_task.index;
     if (index.index->index.type == "text")
     {
         auto it = index_granules.find(index.index->index.name);
-        return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, it != index_granules.end() ? it->second : nullptr);
+        return createMergeTreeReaderTextIndex(main_reader, index_read_task, columns_to_read, it != index_granules.end() ? it->second : nullptr);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);
