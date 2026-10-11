@@ -514,6 +514,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
         for (const auto & recompression_ttl : global_ctx->metadata_snapshot->getRecompressionTTLs())
             add_ttl_expression_columns(recompression_ttl);
+
+        for (const auto & index_clear_ttl : global_ctx->metadata_snapshot->getIndexClearTTLs())
+            add_ttl_expression_columns(index_clear_ttl);
     }
 
     for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)

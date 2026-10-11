@@ -133,6 +133,10 @@ Name of the data part. The part naming structure can be used to determine many a
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL."},
         {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL."},
 
+        {"index_clear_ttl_info.expression",             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),   "The TTL expression of `CLEAR INDEX` rules."},
+        {"index_clear_ttl_info.min",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression within this part."},
+        {"index_clear_ttl_info.max",                    std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression within this part. Used to understand whether the index files can be deleted."},
+
         {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of projection names calculated for this part."},
 
         {"visible",                                     std::make_shared<DataTypeUInt8>(), "Flag which indicated whether this part is visible for SELECT queries."},
@@ -355,6 +359,7 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
+        add_ttl_info_map(part->ttl_infos.index_clear_ttl);
 
         Array projections;
         for (const auto & [name, _] : part->getProjectionParts())

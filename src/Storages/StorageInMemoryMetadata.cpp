@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -285,6 +286,24 @@ void StorageInMemoryMetadata::setTableTTLs(const TTLTableDescription & table_ttl
     table_ttl = table_ttl_;
 }
 
+void StorageInMemoryMetadata::validateTTLIndexClearTargets() const
+{
+    for (const auto & ttl : table_ttl.index_clear_ttl)
+    {
+        if (!secondary_indices.has(ttl.index_name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "TTL CLEAR INDEX refers to index {}, which does not exist",
+                backQuote(ttl.index_name));
+
+        if (secondary_indices.getByName(ttl.index_name).isImplicitlyCreated())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "TTL CLEAR INDEX cannot target implicitly created index {}",
+                backQuote(ttl.index_name));
+    }
+}
+
 void StorageInMemoryMetadata::setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_)
 {
     column_ttls_by_name = column_ttls_by_name_;
@@ -369,7 +388,7 @@ const TTLTableDescription & StorageInMemoryMetadata::getTableTTLs() const
 
 bool StorageInMemoryMetadata::hasAnyTableTTL() const
 {
-    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
+    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL() || hasAnyIndexClearTTL();
 }
 
 bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
@@ -436,6 +455,16 @@ const TTLDescriptions & StorageInMemoryMetadata::getGroupByTTLs() const
 bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
 {
     return !table_ttl.group_by_ttl.empty();
+}
+
+const TTLDescriptions & StorageInMemoryMetadata::getIndexClearTTLs() const
+{
+    return table_ttl.index_clear_ttl;
+}
+
+bool StorageInMemoryMetadata::hasAnyIndexClearTTL() const
+{
+    return !table_ttl.index_clear_ttl.empty();
 }
 
 ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
@@ -509,6 +538,9 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(
         add_for_rows_ttl(entry.expression_columns, required_ttl_columns);
 
     for (const auto & entry : getRecompressionTTLs())
+        add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
+
+    for (const auto & entry : getIndexClearTTLs())
         add_dependent_columns(entry.expression_columns.getNames(), required_ttl_columns);
 
     for (const auto & [name, entry] : getColumnTTLs())

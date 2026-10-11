@@ -1219,6 +1219,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.allow_tuple_element_aggregation = false;
     }
 
+    if (is_fresh_definition)
+        metadata.validateTTLIndexClearTargets();
+
     if (replicated)
     {
         /** `table_readonly` is not supported for `ReplicatedMergeTree`, so a definition that states it
