@@ -19,22 +19,22 @@ namespace Runtime::V2
 class ProcessorRunner
 {
     /// Processor syscalls.
-    void runPrepare(ExecutingProcessor & executing);
-    void runWork(ExecutingProcessor & executing);
-    void runAsyncReady(ExecutingProcessor & executing);
-    void runUpdatePipeline(ExecutingProcessor & executing);
+    void runPrepare(ExecutingProcessor & picked);
+    void runWork(ExecutingProcessor & picked);
+    void runAsyncReady(ExecutingProcessor & picked);
+    void runUpdatePipeline(ExecutingProcessor & picked);
 
     /// Helper methods.
     template <class PortT>
     void visitNeighbour(PortT & neighbour);
-    void notifyOwner(ExecutingProcessor & executing);
-    void prepareRound(ExecutingProcessor & executing, std::unique_lock<Wyrd::Mutex> round_lock);
+    void notifyOwner(ExecutingProcessor & owner);
+    void prepareRound(ExecutingProcessor & owner, std::unique_lock<Wyrd::Mutex> round_lock);
     void profileWaits(IProcessor & processor, std::optional<IProcessor::Status> last_status, IProcessor::Status status) const;
 
 public:
     ProcessorRunner(ExecutingPipeline & pipeline_, const ExecutionOptions & options_, size_t worker_id_);
 
-    void run(ExecutingProcessor & executing);
+    void run(ExecutingProcessor & picked);
     const std::vector<ExecutingProcessor *> & getRunnable() const;
     const std::vector<PollRequest> & getPollRequests() const;
     const std::vector<IProcessor *> & getFinishedProcessors() const;
