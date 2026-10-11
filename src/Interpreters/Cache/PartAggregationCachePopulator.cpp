@@ -41,6 +41,15 @@ PartAggregationCache::Key makePartAggregationCacheKey(
         hash.update(range.end);
     }
 
+    /// The part name alone does not identify the part contents within one table: e.g.
+    /// `SYSTEM RESTORE REPLICA` resets the block number counters in ZooKeeper, so a part with an
+    /// already seen name but different data can appear while the table `UUID` stays the same.
+    /// The total checksum of the part files changes whenever the data does, so stale states
+    /// from a previous part with the same name are never reused.
+    const auto total_checksum = part.data_part->checksums.getTotalChecksumUInt128();
+    hash.update(total_checksum.low64);
+    hash.update(total_checksum.high64);
+
     return PartAggregationCache::Key{getSipHash128AsPair(hash), table_id, part.data_part->name};
 }
 
