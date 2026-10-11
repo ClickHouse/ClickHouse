@@ -21,6 +21,7 @@ public:
         GRPC,
         ARROW_FLIGHT,
         POSTGRESQL,
+        REDIS,
         PROMETHEUS,
         CUSTOM,
         INTERSERVER_HTTP,
