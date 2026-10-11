@@ -222,6 +222,14 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     /// and nesting that inside `tables_mutex` would introduce a second lock order.
     std::map<std::string, StoragePtr> new_materialized_tables;
 
+    /// The nested tables that survived a partially applied `DROP DATABASE` are stale: the create-style startup
+    /// below truncates and reloads them (see `applyPartialDropRecoveryMode`).
+    bool recovering_from_partial_drop = false;
+    {
+        std::lock_guard tables_lock(tables_mutex);
+        recovering_from_partial_drop = partial_drop_recovery_in_progress;
+    }
+
     for (const auto & table_name : tables_to_replicate)
     {
         /// Check nested ReplacingMergeTree table.
@@ -231,6 +239,13 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
         {
             /// Nested table was already created and synchronized.
             storage = std::make_shared<StorageMaterializedPostgreSQL>(storage, getContext(), remote_database_name, table_name);
+
+            /// A survivor of a partially applied `DROP DATABASE` must stay unavailable until it is reloaded:
+            /// publishing the wrappers below ends the database-wide fail-closed window, and from then on the
+            /// visibility of each table is decided by its `hasNested`. `loadFromSnapshot` publishes the table
+            /// again once the snapshot is reloaded into it.
+            if (recovering_from_partial_drop)
+                storage->as<StorageMaterializedPostgreSQL>()->resetNested();
         }
         else
         {

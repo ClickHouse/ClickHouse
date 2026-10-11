@@ -1965,16 +1965,23 @@ bool PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable()
     /// Returns whether every nested table that exists is available.
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable");
 
-    bool has_pending = false;
-    for (const auto & [table_name, materialized_storage] : materialized_storages)
-        if (!materialized_storage->hasNested() && materialized_storage->tryGetNested())
-            has_pending = true;
-
-    if (!has_pending)
-        return true;
-
+    /// The marker disappears when the active worker is about to redo the snapshot (the shared slot was lost, or a
+    /// previous active worker died mid-snapshot): it is removed before the shared nested tables are truncated and
+    /// reloaded. The active worker hides its own tables in `truncateNestedTables`; a standby has to re-hide its
+    /// already published tables here, because the truncation replicates to it as well.
     if (!isInitialSnapshotCompleted())
+    {
+        for (const auto & [table_name, materialized_storage] : materialized_storages)
+        {
+            if (materialized_storage->hasNested())
+            {
+                materialized_storage->resetNested();
+                LOG_INFO(log, "Nested table for `{}`.`{}` is not available until the initial snapshot is redone",
+                         postgres_database, table_name);
+            }
+        }
         return false;
+    }
 
     /// Bound the wait per table, so the coordination task (which also supervises the consumer) is not
     /// blocked for long; a table that has not caught up yet is retried on the next run.
@@ -2035,6 +2042,12 @@ void PostgreSQLReplicationHandler::truncateNestedTables()
         auto nested = materialized_storage->tryGetNested();
         if (!nested)
             continue;
+
+        /// The table is about to be emptied and reloaded, so it must stop being available before it is truncated:
+        /// otherwise user-facing reads and `BACKUP` would observe the empty or partially reloaded table. It is
+        /// published again once it holds the new snapshot: by `loadFromSnapshot` in the plain mode, and by
+        /// `markCaughtUpNestedTablesAvailable` in coordinated mode.
+        materialized_storage->resetNested();
 
         /// A dedicated internal query context, exactly like the snapshot INSERT and the consumer use for
         /// operations against the nested tables.

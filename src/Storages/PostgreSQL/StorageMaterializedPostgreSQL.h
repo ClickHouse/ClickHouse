@@ -145,8 +145,9 @@ public:
     bool supportsBackupPartition() const override;
 
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
-    /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
-    /// only once - when nested table is successfully created and is never changed afterwards.
+    /// an invariant: a table exists only if its nested table exists and holds the snapshot. This atomic variable
+    /// is set to _true_ once the nested table holds the snapshot, and is reset by `resetNested` while the nested
+    /// table is recreated or truncated to reload the snapshot.
     bool hasNested() { return has_nested.load(); }
 
     void createNestedIfNeeded(const NestedTableEngineSpec & engine_spec, PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
@@ -179,9 +180,10 @@ public:
 
     void set(StoragePtr nested_storage);
 
-    /// Forget the cached nested table, so the next `ensureNestedTablesExist` recreates it. Used to recover a
-    /// nested table left shut down (permanently read-only) by a refused coordinated drop: the dead local copy
-    /// is dropped and recreated, and `set` re-populates the wrapper from the fresh nested table.
+    /// Mark the nested table as not available. Used to recover a nested table left shut down (permanently
+    /// read-only) by a refused coordinated drop: the dead local copy is dropped and recreated, and `set`
+    /// re-populates the wrapper from the fresh nested table. Also used to hide a nested table while it is
+    /// truncated and the snapshot is reloaded into it.
     void resetNested() { has_nested.store(false); }
 
     /// Mark this wrapper as belonging to a coordinated (Keeper-managed) MaterializedPostgreSQL database,
