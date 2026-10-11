@@ -162,10 +162,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
+    /// Iceberg reads the row lineage columns from the data file.
+    auto format_filter_actions_dag = info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration());
     auto make_format_filter_info = [&]
     {
         return std::make_shared<FormatFilterInfo>(
-            info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag,
+            format_filter_actions_dag,
             context,
             configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
             query_info.row_level_filter,

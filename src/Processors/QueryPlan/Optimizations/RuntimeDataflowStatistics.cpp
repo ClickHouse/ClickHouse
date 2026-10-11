@@ -39,7 +39,7 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
 }
 
-RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
+RuntimeDataflowStatisticsBlock::~RuntimeDataflowStatisticsBlock()
 {
     if (unsupported_case)
     {
@@ -71,6 +71,16 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             res.input_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
         }
     }
+    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
+    {
+        const auto & stats = duplicated_bytes_statistics[i];
+        if (stats.compressed_bytes)
+        {
+            log_stats(stats, fmt::format("Duplicated{}", toString(static_cast<InputStatisticsType>(i))));
+            const auto compression_ratio = static_cast<double>(stats.sample_bytes) / static_cast<double>(stats.compressed_bytes);
+            res.duplicated_bytes += static_cast<size_t>(static_cast<double>(stats.bytes) / compression_ratio);
+        }
+    }
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
         const auto & stats = output_bytes_statistics[i];
@@ -84,8 +94,9 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input bytes={}, output bytes={}",
+        "Collected statistics: input bytes={}, duplicated bytes={}, output bytes={}",
         res.input_bytes,
+        res.duplicated_bytes,
         res.output_bytes);
 
     if (res.input_bytes == 0 && res.output_bytes == 0)
@@ -197,7 +208,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     cols.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
+    recordColumns(block->output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
@@ -216,7 +227,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
     size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
 
-    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationState];
+    auto & statistics = block->output_bytes_statistics[OutputStatisticsType::AggregationState];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += res;
     statistics.sample_bytes += res;
@@ -232,7 +243,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     cols.reserve(keys_positions.size());
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
+    recordColumns(block->output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
@@ -264,7 +275,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
             cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
     }
 
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], num_rows, cols, full_key_bytes);
+    recordColumns(block->output_bytes_statistics[OutputStatisticsType::AggregationKeys], num_rows, cols, full_key_bytes);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
@@ -285,7 +296,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
             continue;
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
     }
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
+    recordColumns(block->output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
@@ -309,7 +320,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    auto & statistics = input_bytes_statistics[type];
+    auto & statistics = duplicated ? block->duplicated_bytes_statistics[type] : block->input_bytes_statistics[type];
     if (read_bytes && !input_columns.empty())
     {
         if (!column_sizes.empty())
