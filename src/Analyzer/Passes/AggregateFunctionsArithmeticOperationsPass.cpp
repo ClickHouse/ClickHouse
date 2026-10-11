@@ -160,7 +160,8 @@ public:
             return;
 
         const auto * constant_node = right_argument_constant_node ? right_argument_constant_node : left_argument_constant_node;
-        if ((arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && !isFiniteNonZero(constant_node->getValue()))
+        if ((arithmetic_function_name == "multiply" || arithmetic_function_name == "divide" || arithmetic_function_name == "divideExact")
+            && !isFiniteNonZero(constant_node->getValue()))
             return;
 
         /** Need reverse max <-> min for:
