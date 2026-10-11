@@ -1164,14 +1164,15 @@ QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
 
     QueryTreeNodePtr in_result = has_fn;
     /// `IN` compares the columns of a multi-column key separately, and with `transform_null_in = 0` a NULL
-    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match. Guard
-    /// the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are values.
-    if (const size_t key_columns = getInKeyColumnTypes(element_arg->getResultType()).size(); key_columns > 1)
+    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match.
+    /// Guard the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are
+    /// values.
+    if (const size_t key_column_count = getInKeyColumnTypes(element_arg->getResultType()).size(); key_column_count > 1)
     {
         auto and_fn = std::make_shared<FunctionNode>("and");
         and_fn->getArguments().getNodes() =
         {
-            makeTupleHasNoNullElementsPredicate(element_arg, key_columns),
+            makeTupleHasNoNullElementsPredicate(element_arg, key_column_count),
             std::move(in_result),
         };
         in_result = std::move(and_fn);
