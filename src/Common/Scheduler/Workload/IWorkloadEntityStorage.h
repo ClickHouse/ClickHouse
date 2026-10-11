@@ -101,8 +101,8 @@ class RestorerFromBackup;
  * entities: an implicit `default` cannot have children and a `FOR` clause cannot name an implicit resource.
  * A SQL statement resolves a name to the inherited entity first, as the user sees it. A load or a restore
  * resolves it within own entities first, so a reference to an own entity shadowed by name stays valid.
- * The cycle check of `storeEntity` walks own and inherited entities (an inherited entity first, as it wins
- * by name), not only visible ones, so a hidden entity cannot hide a cycle that appears once it is visible.
+ * The cycle check of `storeEntity` walks the references of both the own and the inherited entity of every
+ * name, not only of visible ones, so a hidden entity cannot hide a cycle that appears once it is visible.
  *
  * Writes, backup and restore. `storeEntity`, `removeEntity`, `backup` and `restore` are served by the SQL
  * layer: the implicit layer forwards them, and the configuration is read-only. Implicit entities cannot be

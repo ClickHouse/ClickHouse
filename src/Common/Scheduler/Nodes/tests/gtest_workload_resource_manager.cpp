@@ -2921,6 +2921,14 @@ TEST(SchedulerWorkloadResourceManager, CycleCheckWalksHiddenEntities)
     t.loadConfig("");
     EXPECT_TRUE(t.storage.has("y"));
     EXPECT_TRUE(t.storage.has("x"));
+
+    // A workload hidden by a same-name inherited workload keeps its references in the walk
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b IN a");
+    t.loadConfig("CREATE WORKLOAD b");
+    EXPECT_THROW(t.query("CREATE OR REPLACE WORKLOAD a IN b"), DB::Exception);
+    t.loadConfig("");
+    EXPECT_EQ(t.storage.getEntitySource("b"), "sql");
 }
 
 // A restore recreates own SQL entities that were hidden when backed up: shadowed by a configuration entity,

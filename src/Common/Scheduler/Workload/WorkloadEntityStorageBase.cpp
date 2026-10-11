@@ -1137,7 +1137,8 @@ std::vector<std::pair<String, ASTPtr>> WorkloadEntityStorageBase::getAllEntities
 
 bool WorkloadEntityStorageBase::isIndirectlyReferenced(const String & target, const String & source) const
 {
-    // Walk own and inherited entities, not only visible ones: a hidden own entity becomes visible again later
+    // Walk the references of both the own and the inherited entity of every name, not only of visible ones:
+    // a hidden own entity becomes visible again later, together with its references
     std::queue<String> bfs;
     std::unordered_set<String> visited;
     visited.insert(source);
@@ -1148,9 +1149,12 @@ bool WorkloadEntityStorageBase::isIndirectlyReferenced(const String & target, co
         bfs.pop();
         if (current == target)
             return true;
-        if (ASTPtr entity = findKnownEntity(current, own_entities))
+        for (const auto * layer_entities : {&own_entities, &inherited_entities})
         {
-            forEachReference(entity, [&](const String & next, const String &, ReferenceType)
+            auto it = layer_entities->find(current);
+            if (it == layer_entities->end())
+                continue;
+            forEachReference(it->second, [&](const String & next, const String &, ReferenceType)
             {
                 if (visited.insert(next).second)
                     bfs.push(next);
