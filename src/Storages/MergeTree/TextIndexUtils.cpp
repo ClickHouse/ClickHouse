@@ -338,7 +338,7 @@ private:
     template <typename Sink>
     void flushRun(Window window, Sink && sink);
 
-    /// Flushes the row ids to the sink directly if they are a aligned with append_granularity, otherwise buffers them.
+    /// Flushes the row ids to the sink directly if they are aligned with append_granularity, otherwise buffers them.
     template <typename Sink>
     void flushDirect(std::span<const UInt32> row_ids, Sink && sink);
 
@@ -593,7 +593,7 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, /*with_postings=*/ true);
     const auto & tokens = inputs[source_num].tokens;
     tokens_cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     tokens_queue.push(tokens_cursors[source_num]);
@@ -953,7 +953,7 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
             postings_queue->push(source);
     }
 
-    const bool has_positions = params.positions && std::ranges::any_of(current_token_sources,
+    const bool has_positions = params.enable_positions && std::ranges::any_of(current_token_sources,
         [](const auto & source) { return source.info.header & PostingsSerialization::Flags::HasPositions; });
 
     if (has_positions)
@@ -1185,7 +1185,7 @@ void MergeTextIndexesTask::finalize()
     {
         .version = params.serialization_version,
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
-        .has_positions = params.positions != 0,
+        .has_positions = params.enable_positions,
         .positions_codec = params.positions_codec,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
     };

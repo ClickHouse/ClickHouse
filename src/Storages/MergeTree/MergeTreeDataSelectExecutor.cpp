@@ -1256,7 +1256,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
             }
 
-            if (!skip_indexes.empty())
+            /// Do not build alter conversions (linear in the number of patches) for a part dropped by the primary key.
+            if (!skip_indexes.empty() && !ranges.ranges.empty())
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
                 auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
