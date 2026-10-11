@@ -1,0 +1,23 @@
+<test>
+    <!-- Insert rows whose table-level TTL is already expired into a table with `apply_ttl_delete_on_insert`.
+         The measured statement is the INSERT. -->
+
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <async_insert>0</async_insert>
+    </settings>
+
+    <create_query do_not_check_in_pr="123922">
+        CREATE TABLE ttl_delete_on_insert (ts DateTime, payload UInt64)
+        ENGINE = MergeTree ORDER BY payload
+        TTL ts + INTERVAL 1 DAY
+        SETTINGS apply_ttl_delete_on_insert = 1, non_replicated_deduplication_window = 0, parts_to_delay_insert = 50000, parts_to_throw_insert = 50000, auto_statistics_types = ''
+    </create_query>
+    <create_query>SYSTEM STOP MERGES ttl_delete_on_insert</create_query>
+
+    <query>INSERT INTO ttl_delete_on_insert SELECT toDateTime('2000-01-01 00:00:00'), number FROM numbers(1000000) SETTINGS insert_deduplicate = 0</query>
+    <query>INSERT INTO ttl_delete_on_insert SELECT if(number % 2 = 0, toDateTime('2000-01-01 00:00:00'), toDateTime('2100-01-01 00:00:00')), number FROM numbers(1000000) SETTINGS insert_deduplicate = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS ttl_delete_on_insert</drop_query>
+</test>

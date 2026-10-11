@@ -507,8 +507,40 @@ void MergeTreeTemporaryPart::prewarmCaches()
     }
 }
 
+IColumn::Filter MergeTreeDataWriter::removeRowsExpiredByTTL(
+    const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block, time_t current_time)
+{
+    const auto & ttl_entry = metadata_snapshot.getRowsTTL();
+    auto expr_and_set = ttl_entry.buildExpression(context);
+    for (auto & subquery : expr_and_set.sets->getSubqueries())
+        subquery->buildSetInplace(context);
+
+    auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(
+        expr_and_set.expression, block, ttl_entry.result_column)->convertToFullColumnIfConst();
+
+    const size_t num_rows = block.rows();
+    PaddedPODArray<Int64> timestamps;
+    ITTLAlgorithm::extractTimestamps(ttl_column.get(), DateLUT::serverTimezoneInstance(), timestamps);
+
+    IColumn::Filter kept_rows(num_rows);
+    size_t num_kept = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        kept_rows[i] = !(timestamps[i] && timestamps[i] <= current_time);
+        num_kept += kept_rows[i];
+    }
+
+    if (num_kept != num_rows)
+    {
+        for (auto & column : block)
+            column.column = column.column->filter(kept_rows, num_kept);
+    }
+
+    return kept_rows;
+}
+
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector)
+    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector, bool apply_ttl_delete, time_t current_time)
 {
     /// out_selector is left empty when the block is not split (a single resulting partition);
     /// the caller then knows every row belongs to the only partition.
@@ -523,10 +555,48 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     metadata_snapshot->check(block, true);
 
+    /// Expired rows are removed before the split, so a partition whose rows are all expired is not
+    /// counted against `max_parts`. The selector must still describe every source row.
+    IColumn::Filter kept_rows;
+    if (apply_ttl_delete && metadata_snapshot->hasRowsTTL())
+    {
+        kept_rows = removeRowsExpiredByTTL(context, *metadata_snapshot, block, current_time);
+        if (block.rows() == 0)
+            return result;
+    }
+    const bool rows_removed = !kept_rows.empty() && block.rows() != kept_rows.size();
+
+    auto expand_selector = [&](IColumn::Selector && selector, size_t partitions_count)
+    {
+        if (!out_selector)
+            return;
+
+        if (!rows_removed)
+        {
+            *out_selector = std::move(selector);
+            return;
+        }
+
+        /// A removed row maps past the last partition, so it is attributed to none of them.
+        out_selector->resize(kept_rows.size());
+        size_t kept_row = 0;
+        for (size_t row = 0; row < kept_rows.size(); ++row)
+        {
+            if (kept_rows[row])
+            {
+                (*out_selector)[row] = selector.empty() ? 0 : selector[kept_row];
+                ++kept_row;
+            }
+            else
+                (*out_selector)[row] = partitions_count;
+        }
+    };
+
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(std::make_shared<Block>(std::move(block)), Row{});
         result[0].partition_id = result[0].partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+        expand_selector({}, 1);
         return result;
     }
 
@@ -561,6 +631,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         /// do not interfere with possible calculated primary key columns of the same name.
         result.emplace_back(std::make_shared<Block>(std::move(block)), get_partition(0));
         result[0].partition_id = result[0].partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+        expand_selector({}, 1);
         return result;
     }
 
@@ -585,8 +656,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         item.partition_id = item.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
 
     /// Hand the row -> partition-index mapping to the caller (deduplication uses it).
-    if (out_selector)
-        *out_selector = std::move(selector);
+    expand_selector(std::move(selector), partitions_count);
 
     return result;
 }
@@ -827,32 +897,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if (patch_part_index && !patch_part_index->empty())
         new_part_info.mutation = patch_part_index->getMaxDataVersion();
 
-    String part_name;
-    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
-        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
-
-        const auto & date_lut = DateLUT::serverTimezoneInstance();
-
-        auto min_month = date_lut.toNumYYYYMM(min_date);
-        auto max_month = date_lut.toNumYYYYMM(max_date);
-
-        if (min_month != max_month)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
-
-        part_name = new_part_info.getPartNameV0(min_date, max_date);
-    }
-    else
-        part_name = new_part_info.getPartNameV1();
-
-    std::string temp_prefix = "tmp_insert_";
-    const auto & temp_postfix = data.getPostfixForTempInsertName();
-    if (!temp_postfix.empty())
-        temp_prefix += temp_postfix + "_";
-
-    std::string part_dir = temp_prefix + part_name;
-
     auto indices = collectSkipIndicesToMaterialize(
         metadata_snapshot,
         global_settings[Setting::materialize_skip_indexes_on_insert],
@@ -975,6 +1019,32 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// part only contains empty tuples. As a result, check rows instead.
     if (block.rows() == 0)
         return temp_part;
+
+    String part_name;
+    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
+        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
+
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
+
+        auto min_month = date_lut.toNumYYYYMM(min_date);
+        auto max_month = date_lut.toNumYYYYMM(max_date);
+
+        if (min_month != max_month)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part spans more than one month.");
+
+        part_name = new_part_info.getPartNameV0(min_date, max_date);
+    }
+    else
+        part_name = new_part_info.getPartNameV1();
+
+    std::string temp_prefix = "tmp_insert_";
+    const auto & temp_postfix = data.getPostfixForTempInsertName();
+    if (!temp_postfix.empty())
+        temp_prefix += temp_postfix + "_";
+
+    std::string part_dir = temp_prefix + part_name;
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
