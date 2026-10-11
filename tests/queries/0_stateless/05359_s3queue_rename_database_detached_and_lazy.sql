@@ -64,3 +64,27 @@ SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = '
 DETACH DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
+
+-- `AzureQueue` is checked the same way, as an untouched stand-in and as a detached table.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.azure_lazy (a UInt32)
+ENGINE = AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://whatever-we-dont-care:10000/devstoreaccount1/;', 'cont', '*', 'CSV')
+SETTINGS mode = 'unordered', keeper_path = '/05359{default_path_test}azure_lazy';
+
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'azure_lazy';
+
+RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
+SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'azure_lazy';
+
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.azure_lazy;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.azure_detached (a UInt32)
+ENGINE = AzureQueue('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://whatever-we-dont-care:10000/devstoreaccount1/;', 'cont', '*', 'CSV')
+SETTINGS mode = 'unordered', keeper_path = '/05359{default_path_test}azure_detached';
+DETACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.azure_detached PERMANENTLY;
+RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
+
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.azure_detached;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
