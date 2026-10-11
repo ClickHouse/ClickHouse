@@ -6,10 +6,19 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
+}
 
 std::map<String, time_t> getIndexesWithExpiredClearTTL(
     const StorageInMemoryMetadata & metadata, const MergeTreeDataPartTTLInfos & ttl_infos, time_t current_time)
@@ -66,6 +75,23 @@ ExpiredIndexFiles getExpiredIndexFiles(
             result.packed_archive_dirty |= disk_storage->isFileInPackedSkipIndicesArchive(file);
 
     return result;
+}
+
+bool canHardlinkFilesForIndexClear(const MergeTreeDataPartPtr & part)
+{
+    const auto settings = part->storage.getSettings();
+    if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
+        return false;
+
+    /// Zero-copy replication needs hardlinked files recorded at commit. Merges don't record them.
+    /// Object storage otherwise supports metadata hardlinks, and mutations rely on that.
+    if (part->storage.supportsReplication()
+        && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication]
+        && part->isStoredOnRemoteDiskWithZeroCopySupport())
+        return false;
+
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part->getDataPartStorage());
+    return disk_storage && disk_storage->getDisk()->supportsHardLinks();
 }
 
 }
