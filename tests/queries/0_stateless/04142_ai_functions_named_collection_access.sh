@@ -25,24 +25,29 @@ CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
 
 # Runs the AI functions as the test user in one client invocation and emits one line
 # per query — "ACCESS_DENIED" if that line of output mentions ACCESS_DENIED, "OK" otherwise.
-# `aiEmbed` and `aiSimilarity` do not go through `FunctionBaseAI` and have their own access
-# checks, so we verify all three.
+# `aiEmbed`, `aiSimilarity` and `aiRelevance` each resolve credentials in their own `executeImpl`,
+# so we verify each of them, not just a `FunctionBaseAI` text function.
 # The zero-row variants (FROM (SELECT ... WHERE 0)) lock in that the access check runs even
 # when no row reaches the function — otherwise an empty input could be used to bypass the grant.
 function check_access_both()
 {
     $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
+        SET allow_experimental_ai_relevance_function = 1;
         SELECT aiGenerate('hi', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed('hi', 'test-model', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
         SELECT aiSimilarity('hi', 'there', 'test-model', map('credentials', '$collection_name')) FORMAT Null;
         SELECT 'SEP';
+        SELECT aiRelevance('hi', 'there', map('credentials', '$collection_name')) FORMAT Null;
+        SELECT 'SEP';
         SELECT aiGenerate(x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed(x, 'test-model', map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
         SELECT aiSimilarity(x, x, 'test-model', map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT 'SEP';
+        SELECT aiRelevance(x, x, map('credentials', '$collection_name')) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
     " 2>&1 | awk '
         /ACCESS_DENIED/ { denied = 1; next }
         /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }
@@ -53,23 +58,30 @@ function check_access_both()
 # Same checks, but credentials are selected via the default-credentials settings instead of the
 # `credentials` map key. This settings-based indirection is a separate, security-sensitive path
 # (`ai_function_text_default_credentials` for text functions, `ai_function_embedding_default_credentials`
-# for the embedding functions) that must enforce the same NAMED_COLLECTION grant.
+# for the embedding functions, `ai_function_rerank_default_credentials` for `aiRelevance`) that must
+# enforce the same NAMED_COLLECTION grant.
 function check_access_both_default()
 {
     $CLICKHOUSE_CLIENT --user "$user_name" --password "password" --multiquery --ignore-error -q "
         SET ai_function_text_default_credentials = '$collection_name';
         SET ai_function_embedding_default_credentials = '$collection_name';
+        SET ai_function_rerank_default_credentials = '$collection_name';
+        SET allow_experimental_ai_relevance_function = 1;
         SELECT aiGenerate('hi') FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed('hi', 'test-model') FORMAT Null;
         SELECT 'SEP';
         SELECT aiSimilarity('hi', 'there', 'test-model') FORMAT Null;
         SELECT 'SEP';
+        SELECT aiRelevance('hi', 'there') FORMAT Null;
+        SELECT 'SEP';
         SELECT aiGenerate(x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
         SELECT aiEmbed(x, 'test-model') FROM (SELECT '' AS x WHERE 0) FORMAT Null;
         SELECT 'SEP';
         SELECT aiSimilarity(x, x, 'test-model') FROM (SELECT '' AS x WHERE 0) FORMAT Null;
+        SELECT 'SEP';
+        SELECT aiRelevance(x, x) FROM (SELECT '' AS x WHERE 0) FORMAT Null;
     " 2>&1 | awk '
         /ACCESS_DENIED/ { denied = 1; next }
         /^SEP$/ { print (denied ? "ACCESS_DENIED" : "OK"); denied = 0; next }

@@ -21,6 +21,7 @@ DROP NAMED COLLECTION IF EXISTS ai_remote_https;
 DROP NAMED COLLECTION IF EXISTS ai_local_http;
 DROP NAMED COLLECTION IF EXISTS ai_local_ip_http;
 DROP NAMED COLLECTION IF EXISTS ai_embed_remote_http;
+DROP NAMED COLLECTION IF EXISTS ai_rerank_remote_http;
 
 CREATE NAMED COLLECTION ai_remote_http AS
     provider = 'openai', endpoint = 'http://ai.example.com/v1/chat/completions', model = 'chat-model', api_key = 'fake-key';
@@ -32,10 +33,15 @@ CREATE NAMED COLLECTION ai_local_ip_http AS
     provider = 'openai', endpoint = 'http://127.0.0.1:1/v1/chat/completions', model = 'chat-model', api_key = 'fake-key';
 CREATE NAMED COLLECTION ai_embed_remote_http AS
     provider = 'openai', endpoint = 'http://ai.example.com/v1/embeddings', api_key = 'fake-key';
+CREATE NAMED COLLECTION ai_rerank_remote_http AS
+    provider = 'cohere', endpoint = 'http://ai.example.com/v2/rerank', model = 'rerank-model', api_key = 'fake-key';
+
+SET allow_experimental_ai_relevance_function = 1;
 
 SELECT '-- Remote http endpoint is rejected by default';
 SELECT aiGenerate(x, map('credentials', 'ai_remote_http')) FROM tab; -- { serverError BAD_ARGUMENTS }
 SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_embed_remote_http')) FROM tab; -- { serverError BAD_ARGUMENTS }
+SELECT aiRelevance(x, x, map('credentials', 'ai_rerank_remote_http')) FROM tab; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- Remote https endpoint is allowed';
 SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_remote_https')) AS r FROM tab);
@@ -48,6 +54,7 @@ SELECT '-- Setting ai_function_allow_insecure_endpoint permits a remote http end
 SET ai_function_allow_insecure_endpoint = 1;
 SELECT count() FROM (SELECT aiGenerate(x, map('credentials', 'ai_remote_http')) AS r FROM tab);
 SELECT count() FROM (SELECT aiEmbed(x, 'embed-model', map('credentials', 'ai_embed_remote_http')) AS r FROM tab);
+SELECT count() FROM (SELECT aiRelevance(x, x, map('credentials', 'ai_rerank_remote_http')) AS r FROM tab);
 SET ai_function_allow_insecure_endpoint = 0;
 
 -- =============================================================================
@@ -59,4 +66,5 @@ DROP NAMED COLLECTION ai_remote_https;
 DROP NAMED COLLECTION ai_local_http;
 DROP NAMED COLLECTION ai_local_ip_http;
 DROP NAMED COLLECTION ai_embed_remote_http;
+DROP NAMED COLLECTION ai_rerank_remote_http;
 DROP TABLE tab;

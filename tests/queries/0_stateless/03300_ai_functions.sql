@@ -12,7 +12,8 @@
 -- function-specific mandatory arguments, then an optional trailing
 -- Map(String, String) of parameters (credentials, model, temperature, …).
 -- Credentials come from the map's `credentials` key or, when absent, from
--- `ai_function_text_default_credentials` / `ai_function_embedding_default_credentials`.
+-- `ai_function_text_default_credentials` / `ai_function_embedding_default_credentials` /
+-- `ai_function_rerank_default_credentials`.
 -- =============================================================================
 
 -- Helper table: a String column with zero rows, used to test function behavior
@@ -297,8 +298,10 @@ WHERE name IN (
     'ai_function_max_api_calls_per_query',
     'ai_function_throw_on_quota_exceeded',
     'ai_function_embedding_max_batch_size',
+    'ai_function_rerank_max_batch_size',
     'ai_function_text_default_credentials',
-    'ai_function_embedding_default_credentials'
+    'ai_function_embedding_default_credentials',
+    'ai_function_rerank_default_credentials'
 )
 ORDER BY name;
 
@@ -654,9 +657,183 @@ SELECT aiSimilarity(x, x, 'claude-test', map('credentials', 'ai_anthropic_sim'))
 DROP NAMED COLLECTION ai_anthropic_sim;
 
 -- =============================================================================
+-- 19b. aiRelevance
+-- Experimental, so it is gated separately from the other AI functions. `model` resolves from
+-- the map's `model` key, falling back to the named collection's `model`. Credentials come from
+-- the map's `credentials` key or, when absent, from `ai_function_rerank_default_credentials`
+-- (not set until the rerank collection below is created, so the text and embedding defaults
+-- set above must not leak into it).
+-- =============================================================================
+
+SELECT '-- aiRelevance: disabled without allow_experimental_ai_relevance_function';
+SELECT aiRelevance('q', 'd') SETTINGS allow_experimental_ai_relevance_function = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+SET allow_experimental_ai_relevance_function = 1;
+
+SELECT '-- aiRelevance: registered';
+SELECT name FROM system.functions WHERE name = 'aiRelevance';
+
+SELECT '-- aiRelevance: too few arguments';
+SELECT aiRelevance(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT aiRelevance('q'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiRelevance: too many arguments';
+SELECT aiRelevance('q', 'd', map('model', 'm'), 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- aiRelevance: wrong type for query argument (not a string)';
+SELECT aiRelevance(1, 'd'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiRelevance: wrong type for document argument (not a string)';
+SELECT aiRelevance(x, 1) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiRelevance: wrong type for document argument (Array of String)';
+SELECT aiRelevance(x, [x]) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiRelevance: non-constant parameter map';
+SELECT aiRelevance(x, x, map('model', toString(number))) FROM (SELECT x, 0 AS number FROM tab); -- { serverError ILLEGAL_COLUMN }
+
+SELECT '-- aiRelevance: wrong type for parameter argument (not a map)';
+SELECT aiRelevance(x, x, 256) FROM tab; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- aiRelevance: missing credentials (no default, no map)';
+SELECT aiRelevance('q', 'd'); -- { serverError BAD_ARGUMENTS }
+
+DROP NAMED COLLECTION IF EXISTS ai_rerank_no_provider;
+CREATE NAMED COLLECTION ai_rerank_no_provider AS
+    endpoint = 'http://localhost:1/v2/rerank',
+    api_key = 'fake-key';
+
+SELECT '-- aiRelevance: named collection missing provider';
+SELECT aiRelevance('q', 'd', map('credentials', 'ai_rerank_no_provider')); -- { serverError BAD_ARGUMENTS }
+
+DROP NAMED COLLECTION ai_rerank_no_provider;
+
+DROP NAMED COLLECTION IF EXISTS ai_rerank_no_model;
+CREATE NAMED COLLECTION ai_rerank_no_model AS
+    provider = 'cohere',
+    endpoint = 'http://localhost:1/v2/rerank',
+    api_key = 'fake-key';
+
+SELECT '-- aiRelevance: named collection missing model (and none in map)';
+SELECT aiRelevance('q', 'd', map('credentials', 'ai_rerank_no_model')); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiRelevance: model supplied via the parameter map resolves';
+SELECT count() FROM (SELECT aiRelevance(x, x, map('credentials', 'ai_rerank_no_model', 'model', 'test-model')) AS result FROM tab);
+
+DROP NAMED COLLECTION ai_rerank_no_model;
+
+SELECT '-- aiRelevance: nonexistent named collection';
+SELECT aiRelevance('q', 'd', map('credentials', 'nonexistent_collection_xyz')); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+
+-- The named collection's `model` is the default, overridable via the map.
+DROP NAMED COLLECTION IF EXISTS ai_rerank_credentials;
+CREATE NAMED COLLECTION ai_rerank_credentials AS
+    provider = 'cohere',
+    endpoint = 'http://localhost:1/v2/rerank',
+    model = 'test-model',
+    api_key = 'fake-key';
+
+SET ai_function_rerank_default_credentials = 'ai_rerank_credentials';
+
+SELECT '-- aiRelevance: model resolved from the named collection';
+SELECT count() FROM (SELECT aiRelevance(x, x) AS result FROM tab);
+
+SELECT '-- aiRelevance: model in the parameter map overrides the named collection';
+SELECT count() FROM (SELECT aiRelevance(x, x, map('model', 'other-model')) AS result FROM tab);
+
+DROP NAMED COLLECTION IF EXISTS ai_rerank_bad_provider;
+CREATE NAMED COLLECTION ai_rerank_bad_provider AS
+    provider = 'unknown_provider',
+    endpoint = 'http://localhost:1/v2/rerank',
+    model = 'test-model',
+    api_key = 'fake-key';
+
+SELECT '-- aiRelevance: unknown provider name';
+SELECT aiRelevance('q', 'd', map('credentials', 'ai_rerank_bad_provider')); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiRelevance: unknown provider name on empty input';
+SELECT aiRelevance(x, x, map('credentials', 'ai_rerank_bad_provider')) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+
+DROP NAMED COLLECTION ai_rerank_bad_provider;
+
+-- A known provider without a reranking endpoint fails with NOT_IMPLEMENTED, before the zero-row
+-- fast path.
+SELECT '-- aiRelevance: rejects openai provider (no reranking endpoint)';
+DROP NAMED COLLECTION IF EXISTS ai_rerank_openai;
+CREATE NAMED COLLECTION ai_rerank_openai AS
+    provider = 'openai',
+    endpoint = 'http://localhost:1/v2/rerank',
+    model = 'test-model',
+    api_key = 'fake-key';
+SELECT aiRelevance('q', 'd', map('credentials', 'ai_rerank_openai')); -- { serverError NOT_IMPLEMENTED }
+SELECT aiRelevance(x, x, map('credentials', 'ai_rerank_openai')) FROM (SELECT '' AS x WHERE 0); -- { serverError NOT_IMPLEMENTED }
+DROP NAMED COLLECTION ai_rerank_openai;
+
+SELECT '-- aiRelevance: rejects anthropic provider (no reranking endpoint)';
+DROP NAMED COLLECTION IF EXISTS ai_rerank_anthropic;
+CREATE NAMED COLLECTION ai_rerank_anthropic AS
+    provider = 'anthropic',
+    endpoint = 'http://localhost:1/v1/messages',
+    model = 'test-model',
+    api_key = 'fake-key';
+SELECT aiRelevance('q', 'd', map('credentials', 'ai_rerank_anthropic')); -- { serverError NOT_IMPLEMENTED }
+SELECT aiRelevance(x, x, map('credentials', 'ai_rerank_anthropic')) FROM (SELECT '' AS x WHERE 0); -- { serverError NOT_IMPLEMENTED }
+DROP NAMED COLLECTION ai_rerank_anthropic;
+
+-- The cohere provider only supports reranking, so the chat and embedding functions must reject it.
+-- The collection omits `model`: `aiEmbed`/`aiSimilarity` reject any collection that defines one
+-- (`BAD_ARGUMENTS`) before checking provider support, which would hide the error under test.
+-- `aiGenerate` gets `model` from the parameter map instead.
+DROP NAMED COLLECTION IF EXISTS ai_cohere_rerank_only;
+CREATE NAMED COLLECTION ai_cohere_rerank_only AS
+    provider = 'cohere',
+    endpoint = 'http://localhost:1/v2/rerank',
+    api_key = 'fake-key';
+
+SELECT '-- aiGenerate: rejects cohere provider (no chat endpoint)';
+SELECT aiGenerate('hi', map('credentials', 'ai_cohere_rerank_only', 'model', 'test-model')); -- { serverError NOT_IMPLEMENTED }
+SELECT aiGenerate(x, map('credentials', 'ai_cohere_rerank_only', 'model', 'test-model')) FROM (SELECT '' AS x WHERE 0); -- { serverError NOT_IMPLEMENTED }
+
+SELECT '-- aiEmbed: rejects cohere provider (no embedding endpoint)';
+SELECT aiEmbed('hi', 'test-model', map('credentials', 'ai_cohere_rerank_only')); -- { serverError NOT_IMPLEMENTED }
+SELECT aiEmbed(x, 'test-model', map('credentials', 'ai_cohere_rerank_only')) FROM (SELECT '' AS x WHERE 0); -- { serverError NOT_IMPLEMENTED }
+
+SELECT '-- aiSimilarity: rejects cohere provider (no embedding endpoint)';
+SELECT aiSimilarity('a', 'b', 'test-model', map('credentials', 'ai_cohere_rerank_only')); -- { serverError NOT_IMPLEMENTED }
+
+DROP NAMED COLLECTION ai_cohere_rerank_only;
+
+SELECT '-- aiRelevance: unknown parameter key rejected';
+SELECT aiRelevance('q', 'd', map('bogus', '1')); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiRelevance: top_n is not a parameter of the scalar function';
+SELECT aiRelevance('q', 'd', map('top_n', '1')); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- aiRelevance: return type';
+SELECT toTypeName(aiRelevance('', 'a'));
+
+SELECT '-- aiRelevance: return type with Nullable(String) operands';
+SELECT toTypeName(aiRelevance(CAST(NULL, 'Nullable(String)'), CAST(NULL, 'Nullable(String)')));
+
+SELECT '-- aiRelevance: NULL / empty operands → NULL';
+DROP TABLE IF EXISTS _03300_relevance_null;
+CREATE TABLE _03300_relevance_null (q Nullable(String), d Nullable(String)) ENGINE = Memory;
+INSERT INTO _03300_relevance_null VALUES (NULL, 'a'), ('q', NULL), ('', 'a'), ('q', ''), (NULL, NULL);
+SELECT q, d, aiRelevance(q, d) FROM _03300_relevance_null;
+DROP TABLE _03300_relevance_null;
+
+SELECT '-- aiRelevance: constant NULL / empty operands → NULL';
+SELECT aiRelevance(NULL::Nullable(String), 'a'), aiRelevance('q', NULL::Nullable(String)), aiRelevance('', 'a'), aiRelevance('q', '');
+
+SELECT '-- aiRelevance: empty input executes';
+SELECT count() FROM (SELECT aiRelevance(x, x) AS result FROM tab);
+
+-- =============================================================================
 -- 20. AI functions in column DEFAULTs: CREATE + INSERT + SELECT must complete.
 -- The HTTP call fails (no provider on localhost:1); `ai_function_throw_on_error = 0`
 -- swallows the error so the INSERT still succeeds, with `[]` / "" / NULL for the row.
+-- These only guard evaluation on the INSERT path; they are not usage recommendations
+-- (e.g. `aiRelevance` is meant for query-time ranking, not persisted scores).
 -- =============================================================================
 
 SET ai_function_throw_on_error = 0;
@@ -768,6 +945,19 @@ INSERT INTO _03300_similarity_default (id, a, b) VALUES (1, 'hello', 'world');
 SELECT id, score IS NULL FROM _03300_similarity_default;
 DROP TABLE _03300_similarity_default;
 
+SELECT '-- aiRelevance: DEFAULT survives INSERT (no exception)';
+DROP TABLE IF EXISTS _03300_relevance_default;
+CREATE TABLE _03300_relevance_default
+(
+    id UInt32,
+    query String,
+    document String,
+    score Nullable(Float32) DEFAULT aiRelevance(query, document)
+) ENGINE = MergeTree ORDER BY id;
+INSERT INTO _03300_relevance_default (id, query, document) VALUES (1, 'hello', 'world');
+SELECT id, score FROM _03300_relevance_default;
+DROP TABLE _03300_relevance_default;
+
 SET ai_function_throw_on_error = 1;
 SET ai_function_request_timeout_sec = 60;
 SET ai_function_retry_initial_delay_ms = 1000;
@@ -778,6 +968,8 @@ SET ai_function_retry_initial_delay_ms = 1000;
 
 SET ai_function_text_default_credentials = '';
 SET ai_function_embedding_default_credentials = '';
+SET ai_function_rerank_default_credentials = '';
 DROP TABLE IF EXISTS tab;
 DROP NAMED COLLECTION ai_credentials;
 DROP NAMED COLLECTION ai_embed_credentials;
+DROP NAMED COLLECTION ai_rerank_credentials;
