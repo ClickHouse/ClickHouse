@@ -4,10 +4,12 @@ SELECT count() FROM (SELECT 1 SETTINGS workload = 'other') SETTINGS workload = '
 SELECT count() FROM (SELECT 1 SETTINGS weight = 2); -- { serverError BAD_ARGUMENTS }
 SELECT (SELECT 1 SETTINGS workload_priority = 1); -- { serverError BAD_ARGUMENTS }
 SELECT 1 WHERE 1 IN (SELECT 1 SETTINGS weight_lowering_factor = 0.5); -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM (SELECT 1 SETTINGS weight = DEFAULT) SETTINGS weight = 2; -- { serverError BAD_ARGUMENTS }
 
 -- The same values as the query's are allowed.
 SELECT count() FROM (SELECT 1 SETTINGS workload = 'default') SETTINGS workload = 'default';
 SELECT count() FROM (SELECT 1 SETTINGS weight = 1);
+SELECT count() FROM (SELECT 1 SETTINGS weight = DEFAULT);
 
 -- `PARALLEL WITH` subqueries are parts of the query too.
 DROP TABLE IF EXISTS t_sched_part_1;

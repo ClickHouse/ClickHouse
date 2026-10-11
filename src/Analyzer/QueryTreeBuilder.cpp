@@ -316,10 +316,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             auto checked_changes = set_query.changes;
             updated_context->clampToSettingsConstraints(checked_changes, SettingSource::QUERY);
             updated_context->applySettingsChanges(checked_changes);
-            /// All parts of a query are scheduled under the query's settings.
-            updated_context->checkSchedulingSettingsOfQueryPart(checked_changes);
             settings_changes = set_query.changes;
         }
+
+        /// All parts of a query are scheduled under the query's settings, so a part can neither change
+        /// them nor reset them to their defaults.
+        updated_context->checkSchedulingSettingsOfQueryPart(set_query.changes, set_query.default_settings);
     }
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
