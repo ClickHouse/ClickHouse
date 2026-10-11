@@ -59,7 +59,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
