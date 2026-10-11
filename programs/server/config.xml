@@ -1269,10 +1269,11 @@
 
     <!-- Embedded Iceberg REST catalog server (experimental). Not recommended for production use.
          The catalog state is stored in Keeper under <zookeeper_path>/<warehouse>.
-         Disabled unless the port is set. -->
+         Disabled unless <port> or <secure_port> is set. -->
     <!--
     <iceberg_rest_catalog>
         <port>8182</port>
+        <secure_port>8183</secure_port>
         <warehouse>my_warehouse</warehouse>
         <base_location>s3://my-bucket/warehouse</base_location>
         <zookeeper_path>/clickhouse/iceberg_rest_catalog</zookeeper_path>
