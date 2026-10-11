@@ -43,18 +43,19 @@ SELECT match(obfuscateQueryWithSeed('SELECT ''192.168.1.255''', 1),
 
 -- A dotted number with a fifth group is not an IPv4 address: the leading group goes through
 -- the plain number path and only the last four groups through the address path. The two paths
--- are told apart by their contracts: the address path keeps the octets 0, 1 and 255 and draws
--- the others from 2..255, while the number path keeps only 0 and 1 and keeps the bit length of
--- its input. So in `9.255.1.2.255` the trailing `255`, `1` and `255` must survive verbatim and
--- the trailing `2` must leave the range 2..3 that the number path would be confined to, while
--- the leading `9` must stay a 4-bit number (the number path emits 8 + hash % 8, so it may map
--- `9` back to `9`; only the range is a contract).
-WITH obfuscateQueryWithSeed('SELECT ''9.255.1.2.255''', 1) AS o,
+-- are told apart structurally: the address path parses every octet and writes it back with
+-- `writeIntText`, so a leading zero cannot survive it, while the number path copies the digits
+-- `0` and `1` verbatim and would therefore keep `010` as `010`. The address path also keeps the
+-- octets 0, 1 and 255 as is. So in `9.255.010.1.255` the trailing `255`, `1` and `255` must
+-- survive verbatim, the `010` must come back without its leading zero, and the leading `9` must
+-- stay a 4-bit number (the number path emits 8 + hash % 8, so it may map `9` back to `9`; only
+-- the range is a contract).
+WITH obfuscateQueryWithSeed('SELECT ''9.255.010.1.255''', 1) AS o,
      splitByChar('.', extract(o, '[0-9.]+')) AS groups
 SELECT length(groups) AS five_groups,
        arrayAll(x -> toUInt16(x) <= 255, groups) AS every_group_is_an_octet,
-       groups[2] = '255' AND groups[3] = '1' AND groups[5] = '255' AS trailing_sentinel_octets_kept,
-       toUInt16(groups[4]) > 3 AS trailing_octet_not_from_number_path,
+       groups[2] = '255' AND groups[4] = '1' AND groups[5] = '255' AS trailing_sentinel_octets_kept,
+       NOT startsWith(groups[3], '0') AS leading_zero_octet_canonicalised,
        toUInt16(groups[1]) BETWEEN 8 AND 15 AS leading_group_from_number_path;
 
 -- A number literal that does not fit into UInt64 (2^65 here) wraps to zero while being read
