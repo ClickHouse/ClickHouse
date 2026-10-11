@@ -639,9 +639,15 @@ bool WorkloadEntityStorageBase::removeEntity(
                 return false;
         }
 
-        // Referenced by visible entities or by own entities (shadowed ones become visible again later)
+        // Only own entities can be removed; an entity stored only in an inner layer is read-only here
+        const bool inherited = inherited_entities.contains(entity_name);
+        if (!own_entities.contains(entity_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
+
+        // Referenced by visible entities or by own entities (shadowed ones become visible again later).
+        // An own entity shadowed by name is not the target of visible references: they reach the inherited one.
         std::set<String> referencing;
-        if (auto reference_it = references.find(entity_name); reference_it != references.end())
+        if (auto reference_it = references.find(entity_name); !inherited && reference_it != references.end())
             referencing.insert(reference_it->second.begin(), reference_it->second.end());
         for (const auto & [own_name, own_entity] : own_entities)
         {
@@ -658,9 +664,6 @@ bool WorkloadEntityStorageBase::removeEntity(
                 names += " " + name;
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' cannot be dropped. It is referenced by:{}", entity_name, names);
         }
-
-        if (inherited_entities.contains(entity_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
 
         auto result = removeEntityImpl(
             current_context,

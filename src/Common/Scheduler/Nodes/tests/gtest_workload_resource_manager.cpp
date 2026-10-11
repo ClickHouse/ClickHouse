@@ -2656,6 +2656,14 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByName)
     EXPECT_TRUE(t.manager->hasResource("slots"));
     EXPECT_EQ(t.storage.getQueryResourceName(), "slots");
     EXPECT_EQ(t.storage.getMemoryReservationResourceName(), "");
+
+    // An entity shadowed by name can be dropped, even while a configuration workload references the shadowing one
+    t.loadConfig("CREATE RESOURCE res (WRITE DISK d2); CREATE WORKLOAD cfg SETTINGS max_io_requests = 1 FOR res");
+    t.query("DROP RESOURCE res");
+    EXPECT_EQ(t.storage.getEntitySource("res"), "configuration");
+    EXPECT_THROW(t.query("DROP RESOURCE res"), DB::Exception); // read-only now
+    t.loadConfig("");
+    EXPECT_FALSE(t.storage.has("res"));
 }
 
 // Conflicts are rejected: two entities of one layer claiming one role, and a SQL statement claiming a
