@@ -27,7 +27,7 @@ public:
 
     /// Sets that the backup query was sent to other hosts.
     /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
-    virtual void setBackupQueryIsSentToOtherHosts() = 0;
+    virtual void setBackupQueryIsSentToOtherHosts(const String & ddl_entry_path) = 0;
     virtual bool isBackupQuerySentToOtherHosts() const = 0;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.

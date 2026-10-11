@@ -20,7 +20,7 @@ public:
     RestoreCoordinationLocal(bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_);
     ~RestoreCoordinationLocal() override;
 
-    void setRestoreQueryIsSentToOtherHosts() override {}
+    void setRestoreQueryIsSentToOtherHosts(const String &) override {}
     bool isRestoreQuerySentToOtherHosts() const override { return false; }
     Strings setStage(const String &, const String &, bool) override { return {}; }
     void setError(std::exception_ptr, bool) override { is_error_set = true; }  /// RestoreStarter::onException() has already logged the error.

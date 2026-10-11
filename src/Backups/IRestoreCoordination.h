@@ -23,7 +23,7 @@ public:
 
     /// Sets that the restore query was sent to other hosts.
     /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
-    virtual void setRestoreQueryIsSentToOtherHosts() = 0;
+    virtual void setRestoreQueryIsSentToOtherHosts(const String & ddl_entry_path) = 0;
     virtual bool isRestoreQuerySentToOtherHosts() const = 0;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
