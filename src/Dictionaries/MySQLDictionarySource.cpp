@@ -247,7 +247,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("mysql", create_table_source, Documentation{
+    factory.registerSource("mysql", create_table_source, SecretArgumentsSpec{.secret_keys = {"password", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"}}, Documentation{
         .description = R"DOCS_MD(
 # MySQL dictionary source
 
