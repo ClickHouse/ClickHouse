@@ -55,6 +55,7 @@ public:
         BACKGROUND = 9, // e.g. queries from refreshable materialized views
         ARROW_FLIGHT = 10,
         ICEBERG_REST_CATALOG = 11,
+        REDIS = 12,
     };
 
     enum class HTTPMethod : uint8_t
