@@ -51,12 +51,6 @@ void SerializationNullable::enumerateStreams(
 
     if (!use_default_null_map)
     {
-        /// The null map subcolumn is provided even if the column has no null map.
-        /// Do not create the null map in the column itself, because the column may be shared.
-        ColumnPtr null_map_subcolumn = column_null_map;
-        if (column_nullable && !null_map_subcolumn)
-            null_map_subcolumn = ColumnUInt8::create(column_nullable->size(), static_cast<UInt8>(0));
-
         auto null_map_serialization
             = SerializationNamed::create(SerializationNumber<UInt8>::create(), "null", SubstreamType::NamedNullMap);
 
@@ -64,8 +58,19 @@ void SerializationNullable::enumerateStreams(
         settings.path.push_back(hide_null_map_subcolumn ? Substream::NullMapHidden : Substream::NullMap);
         auto null_map_data = SubstreamData(null_map_serialization)
                                  .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
-                                 .withColumn(null_map_subcolumn)
+                                 .withColumn(column_null_map)
                                  .withSerializationInfo(data.serialization_info);
+
+        /// The null map subcolumn is provided even if the column has no null map.
+        /// The zero null map is created only if the subcolumn is actually requested.
+        /// Do not create the null map in the column itself, because the column may be shared.
+        if (column_nullable && !column_null_map)
+        {
+            null_map_data.withLazyColumnCreator([size = column_nullable->size()]() -> ColumnPtr
+            {
+                return ColumnUInt8::create(size, static_cast<UInt8>(0));
+            });
+        }
 
         settings.path.back().data = null_map_data;
         callback(settings.path);
