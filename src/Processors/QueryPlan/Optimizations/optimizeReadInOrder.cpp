@@ -1,7 +1,10 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -220,7 +223,42 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
+/// Whether `node` is a literal set with exactly one element, like the right side of `x IN ('a')`.
+/// Only `FutureSetFromTuple` is filled at planning time; sets from subqueries or storages are not.
+bool isSingleElementLiteralSet(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::COLUMN || !node.column)
+        return false;
+
+    const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+    if (!column_set)
+        return false;
+
+    const auto * set_from_tuple = typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
+    if (!set_from_tuple)
+        return false;
+
+    auto set = set_from_tuple->get();
+    return set && set->isCreated() && set->getTotalRowCount() == 1;
+}
+
+void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
+{
+    fixed_columns.insert(fixed_column);
+
+    /// Support injective functions chain.
+    const ActionsDAG::Node * maybe_injective = fixed_column;
+    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
+        && maybe_injective->children.size() == 1
+        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
+    {
+        maybe_injective = maybe_injective->children.front();
+        fixed_columns.insert(maybe_injective);
+    }
+}
+
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
+/// A single-element `IN`, like `column IN (value)`, fixes the column the same way as `column = value`.
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
@@ -254,20 +292,12 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                 }
 
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
-                {
-                    //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
-                    fixed_columns.insert(maybe_fixed_column);
-
-                    /// Support injective functions chain.
-                    const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
-                    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
-                        && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
-                    {
-                        maybe_injective = maybe_injective->children.front();
-                        fixed_columns.insert(maybe_injective);
-                    }
-                }
+                    addFixedColumn(maybe_fixed_column, fixed_columns);
+            }
+            else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
+            {
+                if (node->children.size() == 2 && !node->children[0]->column && isSingleElementLiteralSet(*node->children[1]))
+                    addFixedColumn(node->children[0], fixed_columns);
             }
         }
     }

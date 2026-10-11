@@ -1,0 +1,29 @@
+-- { echoOn }
+
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project = '1' ORDER BY ts DESC LIMIT 3) WHERE explain LIKE '%ReadType%';
+ReadType: InReverseOrder
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project IN ('1') ORDER BY ts DESC LIMIT 3) WHERE explain LIKE '%ReadType%';
+ReadType: InReverseOrder
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project IN ['1'] ORDER BY ts DESC LIMIT 3) WHERE explain LIKE '%ReadType%';
+ReadType: InReverseOrder
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM t_read_in_order_single_in WHERE owner IN ('o') AND project IN ('1') ORDER BY ts ASC LIMIT 3) WHERE explain LIKE '%ReadType%';
+ReadType: InOrder
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project IN ('1', '1') ORDER BY ts DESC LIMIT 3) WHERE explain LIKE '%ReadType%';
+ReadType: InReverseOrder
+-- Several elements: the column is not fixed, so the read is not in order.
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project IN ('1', '2') ORDER BY ts DESC LIMIT 3) WHERE explain LIKE '%ReadType%';
+ReadType: Default
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project NOT IN ('1') ORDER BY ts DESC LIMIT 3) WHERE explain LIKE '%ReadType%';
+ReadType: Default
+SELECT project, ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project IN ('1') ORDER BY ts DESC LIMIT 3;
+1	2026-01-01 00:00:28
+1	2026-01-01 00:00:25
+1	2026-01-01 00:00:22
+SELECT project, ts FROM t_read_in_order_single_in WHERE owner IN ('o') AND project IN ['2'] ORDER BY ts ASC LIMIT 3;
+2	2026-01-01 00:00:02
+2	2026-01-01 00:00:05
+2	2026-01-01 00:00:08
+SELECT project, ts FROM t_read_in_order_single_in WHERE owner = 'o' AND project IN ('1', '2') ORDER BY ts DESC LIMIT 3;
+2	2026-01-01 00:00:29
+1	2026-01-01 00:00:28
+2	2026-01-01 00:00:26
