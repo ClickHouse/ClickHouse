@@ -20,26 +20,30 @@ namespace DB
 namespace
 {
 
-/// Whether `resolveFunction` could replace the function with a constant.
-bool canBeConstantFolded(const FunctionNode & function_node)
+/// Whether `resolveFunction` would replace the function with a constant.
+bool canBeConstantFolded(const FunctionNode & function_node, const ContextPtr & context)
 {
     const auto & function = function_node.getFunction();
     if (!function->isSuitableForConstantFolding())
         return false;
 
+    auto arguments = function_node.getArgumentColumns();
+    const auto & argument_nodes = function_node.getArguments().getNodes();
     bool all_arguments_constant = true;
-    for (const auto & argument : function_node.getArguments().getNodes())
+    for (size_t i = 0; i < argument_nodes.size(); ++i)
     {
-        /// `resolveFunction` folds through `__getScalar` with the scalar's value, which is not visible here.
-        if (const auto * argument_function = argument->as<FunctionNode>(); argument_function && argument_function->getFunctionName() == "__getScalar")
-            return true;
-        all_arguments_constant &= argument->as<ConstantNode>() != nullptr;
+        if (argument_nodes[i]->as<ConstantNode>())
+            continue;
+        if (auto scalar_column = tryGetScalarConstantColumn(argument_nodes[i], context))
+            arguments[i].column = std::move(scalar_column);
+        else
+            all_arguments_constant = false;
     }
 
     if (all_arguments_constant)
         return true;
 
-    return function->getConstantResultForNonConstArguments(function_node.getArgumentColumns(), function->getResultType()) != nullptr;
+    return function->getConstantResultForNonConstArguments(arguments, function->getResultType()) != nullptr;
 }
 
 class ComparisonTupleEliminationPassVisitor : public InDepthQueryTreeVisitorWithContext<ComparisonTupleEliminationPassVisitor>
@@ -254,7 +258,7 @@ private:
         resolveOrdinaryFunctionNodeByName(*comparison_function, comparison_function->getFunctionName(), getContext());
 
         /// A remote server analyzes the query again and folds such a comparison, so its name would differ there.
-        if (canBeConstantFolded(*comparison_function))
+        if (canBeConstantFolded(*comparison_function, getContext()))
             return {};
 
         return comparison_function;

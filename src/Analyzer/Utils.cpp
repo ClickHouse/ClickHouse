@@ -1171,6 +1171,31 @@ QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
         ConstantValue{column_const->getPtr(), std::move(result_type)}, cast_node, is_deterministic);
 }
 
+ColumnPtr tryGetScalarConstantColumn(const QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    const auto * get_scalar_function_node = node->as<FunctionNode>();
+    if (!get_scalar_function_node || get_scalar_function_node->getFunctionName() != "__getScalar")
+        return nullptr;
+
+    const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
+    if (!get_scalar_const_arg || !context->hasQueryContext())
+        return nullptr;
+
+    auto query_context = context->getQueryContext();
+    auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
+    if (!query_context->hasScalar(scalar_string))
+        return nullptr;
+
+    auto scalar = query_context->getScalar(scalar_string);
+    const auto & scalar_column = scalar.getByPosition(0).column;
+    /// The column comes from the scalars map while the type comes from the resolved node, and the
+    /// two disagree when the overload resolver wrapped the node's result type (a Nullable name).
+    if (scalar_column->size() != 1 || !columnMatchesType(*scalar_column, *get_scalar_function_node->getResultType()))
+        return nullptr;
+
+    return ColumnConst::create(scalar_column, 1);
+}
+
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
 {
     auto function = FunctionFactory::instance().get(function_name, context);
