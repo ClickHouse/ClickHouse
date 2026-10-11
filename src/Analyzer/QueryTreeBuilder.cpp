@@ -355,6 +355,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsGroupByWithTotals(select_query_typed.group_by_with_totals);
     current_query_tree->setIsGroupByWithCube(select_query_typed.group_by_with_cube);
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);
+    current_query_tree->setIsGroupByRollupOrCubeTupleKeyFromFunctionSyntax(
+        select_query_typed.group_by_rollup_or_cube_tuple_key_from_function_syntax);
     current_query_tree->setIsGroupByWithGroupingSets(select_query_typed.group_by_with_grouping_sets);
     current_query_tree->setIsGroupByAll(select_query_typed.group_by_all);
     current_query_tree->setIsLimitByAll(select_query_typed.limit_by_all);

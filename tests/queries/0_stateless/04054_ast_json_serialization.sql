@@ -28,8 +28,8 @@ FROM (SELECT parseQueryToJSON('SELECT 1 UNION DISTINCT SELECT 1') AS j);
 -- ==========================================================================
 -- 2. ASTSelectQuery
 -- Fields: recursive_with, distinct, group_by_all, group_by_with_totals,
---         group_by_with_rollup, group_by_with_cube, group_by_with_constant_keys,
---         group_by_with_grouping_sets, order_by_all, limit_with_ties,
+--         group_by_with_rollup, group_by_with_cube, group_by_rollup_or_cube_tuple_key_from_function_syntax,
+--         group_by_with_constant_keys, group_by_with_grouping_sets, order_by_all, limit_with_ties,
 --         limit_by_all, with, select, tables, prewhere, where, group_by,
 --         having, window, qualify, order_by, limit_by_offset, limit_by_length,
 --         limit_by, limit_offset, limit_length, settings, interpolate
@@ -54,6 +54,11 @@ FROM (SELECT parseQueryToJSON('SELECT a, count() FROM t GROUP BY ROLLUP(a)') AS 
 SELECT 'SelectQuery_cube' AS t,
     JSONExtractBool(j, 'list_of_selects', 'children', 1, 'group_by_with_cube') AS cube
 FROM (SELECT parseQueryToJSON('SELECT a, count() FROM t GROUP BY CUBE(a)') AS j);
+
+-- Test function-syntax tuple-key marker
+SELECT 'SelectQuery_rollup_function_syntax' AS t,
+    JSONExtractBool(j, 'list_of_selects', 'children', 1, 'group_by_rollup_or_cube_tuple_key_from_function_syntax') AS function_syntax
+FROM (SELECT parseQueryToJSON('SELECT count() FROM t GROUP BY ROLLUP((a, b))') AS j);
 
 -- Test group_by_with_grouping_sets
 SELECT 'SelectQuery_grouping_sets' AS t,
@@ -1396,6 +1401,7 @@ SELECT 'RT_with' AS t, formatQueryFromJSON(parseQueryToJSON('WITH x AS (SELECT 1
 -- GROUP BY modifiers
 SELECT 'RT_rollup' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT a, b, count() FROM t GROUP BY ROLLUP(a, b)'));
 SELECT 'RT_cube' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT a, b, count() FROM t GROUP BY CUBE(a, b)'));
+SELECT 'RT_rollup_tuple_key' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT count() FROM t GROUP BY ROLLUP((a, b))'));
 SELECT 'RT_grouping_sets' AS t, formatQueryFromJSON(parseQueryToJSON('SELECT a, b, count() FROM t GROUP BY GROUPING SETS ((a), (b))'));
 
 -- LIMIT WITH TIES

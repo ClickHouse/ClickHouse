@@ -5,6 +5,7 @@ SelectQuery_distinct	1
 SelectQuery_totals	1
 SelectQuery_rollup	1
 SelectQuery_cube	1
+SelectQuery_rollup_function_syntax	1
 SelectQuery_grouping_sets	1
 SelectQuery_group_by_all	1
 SelectQuery_order_by_all	1
@@ -207,6 +208,7 @@ RT_explain_syntax	EXPLAIN SYNTAX SELECT 1
 RT_with	WITH x AS (SELECT 1 AS a) SELECT * FROM x
 RT_rollup	SELECT a, b, count() FROM t GROUP BY a, b WITH ROLLUP
 RT_cube	SELECT a, b, count() FROM t GROUP BY a, b WITH CUBE
+RT_rollup_tuple_key	SELECT count() FROM t GROUP BY tuple(a, b) WITH ROLLUP
 RT_grouping_sets	SELECT a, b, count() FROM t GROUP BY GROUPING SETS ((a), (b))
 RT_limit_with_ties	SELECT a FROM t ORDER BY a ASC LIMIT 5  WITH TIES
 RT_limit_by	SELECT a, b FROM t LIMIT 1 BY a

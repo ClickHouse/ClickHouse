@@ -249,6 +249,16 @@ public:
         is_group_by_with_cube = is_group_by_with_cube_value;
     }
 
+    bool isGroupByRollupOrCubeTupleKeyFromFunctionSyntax() const
+    {
+        return group_by_rollup_or_cube_tuple_key_from_function_syntax;
+    }
+
+    void setIsGroupByRollupOrCubeTupleKeyFromFunctionSyntax(bool value)
+    {
+        group_by_rollup_or_cube_tuple_key_from_function_syntax = value;
+    }
+
     /// Returns true, if query node has GROUP BY with GROUPING SETS modifier, false otherwise
     bool isGroupByWithGroupingSets() const
     {
@@ -770,6 +780,7 @@ private:
     bool is_group_by_with_totals = false;
     bool is_group_by_with_rollup = false;
     bool is_group_by_with_cube = false;
+    bool group_by_rollup_or_cube_tuple_key_from_function_syntax = false;
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
     bool is_order_by_all = false;

@@ -377,6 +377,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
         is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
+        group_by_rollup_or_cube_tuple_key_from_function_syntax == rhs_typed.group_by_rollup_or_cube_tuple_key_from_function_syntax &&
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
@@ -425,6 +426,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_with_totals);
     state.update(is_group_by_with_rollup);
     state.update(is_group_by_with_cube);
+    state.update(group_by_rollup_or_cube_tuple_key_from_function_syntax);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
     state.update(is_order_by_all);
@@ -458,6 +460,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_totals = is_group_by_with_totals;
     result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
     result_query_node->is_group_by_with_cube = is_group_by_with_cube;
+    result_query_node->group_by_rollup_or_cube_tuple_key_from_function_syntax = group_by_rollup_or_cube_tuple_key_from_function_syntax;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->is_order_by_all = is_order_by_all;
@@ -481,6 +484,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_with_totals = is_group_by_with_totals;
     select_query->group_by_with_rollup = is_group_by_with_rollup;
     select_query->group_by_with_cube = is_group_by_with_cube;
+    select_query->group_by_rollup_or_cube_tuple_key_from_function_syntax = group_by_rollup_or_cube_tuple_key_from_function_syntax;
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     select_query->group_by_all = is_group_by_all;
     select_query->order_by_all = is_order_by_all;
