@@ -2940,6 +2940,9 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
     columns.reserve(header.columns());
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
+    
+    /// Cache for whole Map columns
+    std::unordered_map<String, ColumnWithTypeAndName> map_columns;
 
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
     if (settings.allow_geoparquet_parser)
@@ -2968,48 +2971,113 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                 boost::to_lower(search_nested_table_name);
 
             if (name_to_arrow_column.contains(search_nested_table_name))
-            {
-                if (!nested_tables.contains(search_nested_table_name))
-                {
-                    NamesAndTypesList nested_columns;
-                    for (const auto & name_and_type : header.getNamesAndTypesList())
-                    {
-                        if (name_and_type.name.starts_with(nested_table_name + "."))
-                            nested_columns.push_back(name_and_type);
+            {   /// Verify that the parent column is a Map
+                const auto & parent_arrow_column = name_to_arrow_column.find(search_nested_table_name)->second;
+                if (parent_arrow_column.field->type()->id() == arrow::Type::MAP
+                    && header_column.name.size() > nested_table_name.size() + 1)
+                {    /// Calculating a subcolumn name
+                    String subcolumn_name = header_column.name.substr(nested_table_name.size() + 1);
+                    if (case_insensitive_matching)        
+                        boost::to_lower(subcolumn_name); 
+
+                    if (subcolumn_name == "keys" || subcolumn_name == "values")
+
+                    { /// Reading the entire Map column with cache
+                      /// If the method is called again, the check will return false, and we will skip the operation
+                        if (!map_columns.contains(search_nested_table_name))
+                        { 
+                          /// A call of existing function,
+                          // that is responsible for reading any arrow column of any type  
+                            ColumnWithTypeAndName whole_map = readColumnFromArrowColumn(
+                                parent_arrow_column.column,
+                                nested_table_name,
+                                nested_table_name,
+                                dictionary_infos,
+                                nullptr /*type_hint*/,  
+                                parent_arrow_column.field->nullable() /*is_nullable_column*/,
+                                false /*is_map_nested_column*/,
+                                geo_columns.contains(nested_table_name) ? std::optional(geo_columns[nested_table_name]) : std::nullopt,
+                                settings,
+                                parent_arrow_column.field,
+                                parquet_columns_to_clickhouse,
+                                clickhouse_columns_to_parquet);
+
+                            if (whole_map.column)
+                            /// Note the result and store it in the cache
+                                map_columns[search_nested_table_name] = std::move(whole_map);
+                        }
+
+                        auto map_it = map_columns.find(search_nested_table_name);
+                        if (map_it != map_columns.end())
+                        {
+                            const auto & map_type = assert_cast<const DataTypeMap &>(*map_it->second.type);
+                            const auto & column_map = assert_cast<const ColumnMap &>(*map_it->second.column);
+                            const auto & nested_array = column_map.getNestedColumn();
+                            const auto & nested_tuple = column_map.getNestedData();
+                            
+                            if (subcolumn_name == "keys")
+                            {
+                            /// Select by position, not by name
+                            /// Index 0 for keys, index 1 for values
+                                column.column = ColumnArray::create(nested_tuple.getColumnPtr(0), nested_array.getOffsetsPtr());
+                                column.type = std::make_shared<DataTypeArray>(map_type.getKeyType());
+                            }
+                            else
+                            {
+                                column.column = ColumnArray::create(nested_tuple.getColumnPtr(1), nested_array.getOffsetsPtr());
+                                column.type = std::make_shared<DataTypeArray>(map_type.getValueType());
+                            }
+                            column.name = header_column.name;
+                            read_from_nested = true;
+                        }
                     }
-                    auto nested_table_type = Nested::collect(nested_columns).front().type;
-
-                    const auto & arrow_column = name_to_arrow_column.find(search_nested_table_name)->second;
-
-                    ColumnsWithTypeAndName cols =
-                    {
-                        readColumnFromArrowColumn(arrow_column.column,
-                            nested_table_name,
-                            nested_table_name,
-                            dictionary_infos,
-                            nested_table_type,
-                            arrow_column.field->nullable() /*is_nullable_column*/,
-                            false /*is_map_nested_column*/,
-                            geo_columns.contains(header_column.name) ? std::optional(geo_columns[header_column.name]) : std::nullopt,
-                            settings,
-                            arrow_column.field,
-                            parquet_columns_to_clickhouse,
-                            clickhouse_columns_to_parquet)
-                    };
-
-                    BlockPtr block_ptr = std::make_shared<Block>(cols);
-                    auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
-                    nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
                 }
-                /// The requested spelling, not the lower-cased one: the helper matches names
-                /// case-insensitively itself, and an exact element name outranks a folded match.
-                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(header_column.name);
-                if (nested_column)
+
+                if (!read_from_nested)
                 {
-                    column = *nested_column;
-                    if (case_insensitive_matching)
-                        column.name = header_column.name;
-                    read_from_nested = true;
+                    if (!nested_tables.contains(search_nested_table_name))
+                    {
+                        NamesAndTypesList nested_columns;
+                        for (const auto & name_and_type : header.getNamesAndTypesList())
+                        {
+                            if (name_and_type.name.starts_with(nested_table_name + "."))
+                                nested_columns.push_back(name_and_type);
+                        }
+
+                        auto nested_table_type = Nested::collect(nested_columns).front().type;
+
+                        const auto & arrow_column = name_to_arrow_column.find(search_nested_table_name)->second;
+
+                        ColumnsWithTypeAndName cols =
+                        {
+                            readColumnFromArrowColumn(arrow_column.column,
+                                nested_table_name,
+                                nested_table_name,
+                                dictionary_infos,
+                                nested_table_type,
+                                arrow_column.field->nullable() /*is_nullable_column*/,
+                                false /*is_map_nested_column*/,
+                                geo_columns.contains(header_column.name) ? std::optional(geo_columns[header_column.name]) : std::nullopt,
+                                settings,
+                                arrow_column.field,
+                                parquet_columns_to_clickhouse,
+                                clickhouse_columns_to_parquet)
+                        };
+
+                        BlockPtr block_ptr = std::make_shared<Block>(cols);
+                        auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
+                        nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
+                    }
+                    /// The requested spelling, not the lower-cased one: the helper matches names
+                    /// case-insensitively itself, and an exact element name outranks a folded match.
+                    auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(header_column.name);
+                    if (nested_column)
+                    {
+                        column = *nested_column;
+                        if (case_insensitive_matching)
+                            column.name = header_column.name;
+                        read_from_nested = true;
+                    }
                 }
             }
 
