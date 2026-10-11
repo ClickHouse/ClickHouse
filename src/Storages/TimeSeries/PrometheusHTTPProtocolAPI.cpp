@@ -23,6 +23,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Storages/TimeSeries/PrometheusQueryExecutionException.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -54,7 +55,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -243,7 +247,19 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     }
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
-    auto sql_query = converter.getSQL();
+    ASTPtr sql_query;
+    try
+    {
+        sql_query = converter.getSQL();
+    }
+    catch (const Exception & e)
+    {
+        /// Unsupported but valid PromQL is an execution error in the Prometheus HTTP API.
+        /// Keep the original SQL-visible error codes on the shared converter path.
+        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+            throw PrometheusQueryExecutionException("{}", e.message());
+        throw;
+    }
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
@@ -255,28 +271,41 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
-
     try
     {
-        PullingAsyncPipelineExecutor executor(io.pipeline);
+        auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
-        /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-        writeQueryResponse(response, executor, converter.getResultType());
+        try
+        {
+            PullingAsyncPipelineExecutor executor(io.pipeline);
 
-        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
-        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
-        io.pipeline.finalizeWriteInQueryResultCache();
+            /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
+            writeQueryResponse(response, executor, converter.getResultType());
+
+            /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
+            /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
+            io.pipeline.finalizeWriteInQueryResultCache();
+        }
+        catch (...)
+        {
+            io.onException();
+            throw;
+        }
+
+        /// Release the query slot early so a slow client draining the response does not keep occupying it,
+        /// then flush the response (query_finish_callback) and record QueryFinish.
+        finishExecutedQuery(io, query_finish_callback);
     }
-    catch (...)
+    catch (const Exception & e)
     {
-        io.onException();
+        /// Once conversion succeeds, these failures come from evaluating the generated query.
+        /// Mark them for the HTTP layer without changing the error codes exposed by SQL interfaces.
+        if (e.code() == ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY
+            || e.code() == ErrorCodes::CANNOT_CONVERT_TYPE
+            || e.code() == ErrorCodes::NOT_IMPLEMENTED)
+            throw PrometheusQueryExecutionException("{}", e.message());
         throw;
     }
-
-    /// Release the query slot early so a slow client draining the response does not keep occupying it,
-    /// then flush the response (query_finish_callback) and record QueryFinish.
-    finishExecutedQuery(io, query_finish_callback);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(

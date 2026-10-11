@@ -39,6 +39,7 @@
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#include <Storages/TimeSeries/PrometheusQueryExecutionException.h>
 
 
 namespace DB
@@ -627,16 +628,26 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
-            /// not with the query: report it as an internal error so that clients don't attribute it
-            /// to the PromQL expression.
-            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
-            response.setStatusAndReason(
-                server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
-                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            if (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA)
+            {
+                /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
+                /// not with the query: report it as an internal error so that clients don't attribute it
+                /// to the PromQL expression.
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+                writeString(R"({"status":"error","errorType":"internal","error":)", error_buf);
+            }
+            else if (dynamic_cast<const PrometheusQueryExecutionException *>(&e))
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_UNPROCESSABLE_ENTITY);
+                writeString(R"({"status":"error","errorType":"execution","error":)", error_buf);
+            }
+            else
+            {
+                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+                writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            }
             writeJSONString(e.message(), error_buf, FormatSettings{});
             writeString("}", error_buf);
             error_buf.finalize();
