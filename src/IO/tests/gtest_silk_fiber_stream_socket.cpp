@@ -296,6 +296,48 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
 }
 
 
+/// Plain-only: a TLS socket reports a reset through OpenSSL, not through this receive path.
+using SilkFiberPlainSocketTest = SilkFiberSocketTest<PlainPolicy>;
+
+
+TEST_F(SilkFiberPlainSocketTest, ResetOnReceiveKeepsPocoMessage)
+{
+    auto listener = policy.makeListener();
+    const uint16_t port = listener.address().port();
+
+    silk::FiberFuture client_future;
+    const int run_result = Silk::spawn(
+        [port, impl = policy.makeClient()]() -> int
+        {
+            Poco::Net::StreamSocket socket(impl);
+            socket.connect(Poco::Net::SocketAddress("127.0.0.1", port));
+            socket.setReceiveTimeout(Poco::Timespan(10, 0));
+
+            /// Poco prints a reset's argument as the peer, so the failed call must not appear there.
+            char buf[1] = {};
+            try
+            {
+                socket.receiveBytes(buf, sizeof(buf));
+                ADD_FAILURE() << "receiveBytes did not throw on a reset connection";
+            }
+            catch (const Poco::Exception & e)
+            {
+                EXPECT_EQ(e.displayText(), "Connection reset by peer");
+            }
+            return 0;
+        },
+        client_future);
+    ASSERT_EQ(run_result, 0);
+
+    auto peer = listener.acceptConnection();
+    /// A zero linger makes close() send RST instead of FIN.
+    peer.setLinger(true, 0);
+    peer.close();
+
+    client_future.wait();
+}
+
+
 TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
 {
     auto listener = this->policy.makeListener();
