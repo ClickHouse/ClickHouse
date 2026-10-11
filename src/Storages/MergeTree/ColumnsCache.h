@@ -19,6 +19,7 @@ namespace DB
 {
 
 class MergeTreeIndexGranularity;
+struct StorageID;
 
 /// Key of a cached deserialized column: one stripe of consecutive granules of one column of one
 /// data part.
@@ -69,6 +70,14 @@ struct ColumnsCacheKeyHash
 /// with the identity of the old one. It is stable across reads of an unchanged table, so repeated
 /// reads find their entries.
 UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity);
+
+/// The table that owns the columns cache entries of an external file (such as a `Parquet` file
+/// in an object storage) read by the storage `storage_id`. `system.columns_cache` shows the entries
+/// of a table only to a user who may see the table, and the entries of a table function (the nil
+/// UUID) to a user who may read from its source. Returns `std::nullopt` for a table without a UUID
+/// (e.g. in an `Ordinary` database): the provenance of its entries cannot be kept, so it does not
+/// use the cache.
+std::optional<UUID> getColumnsCacheTableUUIDOfExternalFile(const StorageID & storage_id);
 
 /// How the marks of a part are cut into stripes: `stripe_marks` consecutive granules each, the
 /// last stripe shorter. The same for every reader of the part, since it depends only on the

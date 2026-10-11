@@ -3,6 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/Distributed/DistributedAsyncInsertSource.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -2082,8 +2083,12 @@ Chunk StorageFileSource::generate()
                 md.etag_is_strong = current_file_version_settled;
                 object_with_metadata.emplace(current_path, std::move(md));
                 /// The path of a local file is absolute, so it identifies the file on the server.
-                object_with_metadata->path_for_content_cache = current_path;
-                object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
+                {
+                    object_with_metadata->path_for_content_cache = current_path;
+                    object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                    object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+                }
             }
 
             /// Consult the Query Condition Cache. If a previous query with the same predicate already
@@ -2969,8 +2974,12 @@ public:
                     md.etag = file.file.version_token;
                     md.etag_is_strong = isFileCacheVersionTokenSettled(file_stat);
                     object_with_metadata.emplace(path, std::move(md));
-                    object_with_metadata->path_for_content_cache = path;
-                    object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                    if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage->getStorageID()))
+                    {
+                        object_with_metadata->path_for_content_cache = path;
+                        object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
+                        object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+                    }
                 }
 
                 /// The rows of a file must be returned in ascending order, otherwise

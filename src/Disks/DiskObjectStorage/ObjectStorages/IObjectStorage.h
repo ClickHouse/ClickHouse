@@ -15,6 +15,7 @@
 #include <IO/copyData.h>
 
 #include <Core/Types.h>
+#include <Core/UUID.h>
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -174,6 +175,9 @@ struct RelativePathWithMetadata
     /// for an object without them.
     std::optional<String> path_for_content_cache;
     ObjectStorageType storage_type_for_content_cache = ObjectStorageType::None;
+    /// The table the object is read by, which decides who may see the cached entries, or the nil
+    /// UUID for a table function. See `getColumnsCacheTableUUIDOfExternalFile`.
+    UUID table_uuid_for_content_cache = UUIDHelpers::Nil;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 

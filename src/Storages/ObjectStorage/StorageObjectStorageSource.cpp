@@ -45,6 +45,7 @@
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
@@ -1594,8 +1595,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 object_with_metadata->relative_path = object_info->getPath();
             /// The relative path alone does not identify the object: another bucket, container or
             /// endpoint can have an object with the same key and version token.
-            object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
-            object_with_metadata->storage_type_for_content_cache = configuration->getType();
+            if (auto table_uuid = getColumnsCacheTableUUIDOfExternalFile(storage_id))
+            {
+                object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
+                object_with_metadata->storage_type_for_content_cache = configuration->getType();
+                object_with_metadata->table_uuid_for_content_cache = *table_uuid;
+            }
             input_format = FormatFactory::instance().getInputWithMetadata(
                 format_name,
                 *read_buf,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/AccessType.h>
+#include <Core/UUID.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Formats/FormatSettings.h>
 
@@ -27,7 +28,12 @@ struct ColumnsCacheOptions
     /// Shown as the `part` of the entries in `system.columns_cache`.
     String file_path;
 
-    /// The source whose `READ` grant is required to see the entries in `system.columns_cache`.
+    /// The table the file is read by: `system.columns_cache` shows the entries only to a user who
+    /// may see the table. The nil UUID for a table function, see `source`.
+    UUID table_uuid = UUIDHelpers::Nil;
+
+    /// For a table function: the source whose `READ` grant is required to see the entries in
+    /// `system.columns_cache`.
     AccessTypeObjects::Source source = AccessTypeObjects::Source::FILE;
 
     /// A hash of what identifies the content of the file - the path among all storages, the ETag (or the version token

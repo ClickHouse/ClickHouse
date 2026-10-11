@@ -101,6 +101,7 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     auto options = std::make_shared<Parquet::ColumnsCacheOptions>();
     options->cache = std::move(cache);
     options->file_path = object_with_metadata->getPath();
+    options->table_uuid = object_with_metadata->table_uuid_for_content_cache;
     options->source = *source;
     options->enable_reads = enable_reads;
     options->enable_writes = enable_writes;

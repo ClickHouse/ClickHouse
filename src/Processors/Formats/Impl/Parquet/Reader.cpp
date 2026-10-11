@@ -4003,7 +4003,7 @@ void Reader::initColumnsCache()
 
     columns_cache_writes_possible = cache_options.enable_writes && canWriteToColumnsCache();
     if (columns_cache_writes_possible)
-        columns_cache_generation = cache.getInvalidationGeneration(UUIDHelpers::Nil);
+        columns_cache_generation = cache.getInvalidationGeneration(cache_options.table_uuid);
 
     size_t hits = 0;
     size_t misses = 0;
@@ -4141,9 +4141,10 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
         column->shrinkToFit();
 
         auto entry = std::make_shared<ColumnsCacheEntry>();
-        entry->table_uuid = UUIDHelpers::Nil;
+        entry->table_uuid = cache_options.table_uuid;
         entry->part_name = cache_options.file_path;
-        entry->source = cache_options.source;
+        if (cache_options.table_uuid == UUIDHelpers::Nil)
+            entry->source = cache_options.source;
         entry->column_name = extended_sample_block.getByPosition(idx).name;
         entry->schema_identity = cache_options.file_identity;
         entry->first_mark = 0;

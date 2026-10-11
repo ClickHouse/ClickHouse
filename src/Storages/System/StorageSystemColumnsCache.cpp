@@ -119,8 +119,8 @@ protected:
         {
             const auto & meta = all_entries[current_index];
 
-            /// Look up database and table names from UUID. The entries of `Parquet` files have the
-            /// nil UUID: they belong to no table.
+            /// Look up database and table names from UUID. The entries of `Parquet` files read by
+            /// table functions have the nil UUID: they belong to no table.
             String database_name;
             String table_name;
             DatabaseAndTable database_and_table;
@@ -140,9 +140,10 @@ protected:
             /// cache is warmed.
             if (meta.table_uuid == UUIDHelpers::Nil)
             {
-                /// An entry of a file read by a table function or an external table engine: its
-                /// path is visible only to a user who may read from its source (`FILE`, `S3`, ...)
-                /// without restrictions, besides holding `SHOW COLUMNS` globally.
+                /// An entry of a file read by a table function (a file read by a table has the
+                /// UUID of the table, see `getColumnsCacheTableUUIDOfExternalFile`): its path is
+                /// visible only to a user who may read from its source (`FILE`, `S3`, ...) without
+                /// restrictions, besides holding `SHOW COLUMNS` globally.
                 if (!has_global_show_columns || !meta.source
                     || !access->isGranted(AccessType::READ, toStringSource(*meta.source)))
                 {
