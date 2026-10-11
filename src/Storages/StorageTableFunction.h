@@ -102,6 +102,12 @@ public:
         return storage ? storage->totalRows(query_context) : std::nullopt;
     }
 
+    std::optional<MinMaxCountStatistics> getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr query_context) const override
+    {
+        auto storage = nestedIfResolved();
+        return storage ? storage->getMinMaxCountStatistics(columns, query_context) : std::nullopt;
+    }
+
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
         auto storage = nestedIfResolved();

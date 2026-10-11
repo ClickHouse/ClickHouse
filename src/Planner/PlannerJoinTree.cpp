@@ -9,6 +9,8 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/Arena.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
@@ -163,6 +165,7 @@ namespace Setting
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool optimize_trivial_count_with_sparsity_filter;
+    extern const SettingsBool optimize_trivial_min_max_query;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -819,6 +822,162 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
     prepared_count->setStepDescription("Optimized trivial count with sparsity filter");
     query_plan.addStep(std::move(prepared_count));
+
+    return true;
+}
+
+ColumnPtr createSingleValueStateColumn(const AggregateFunctionPtr & function, const Field & value)
+{
+    const auto & argument_type = function->getArgumentTypes().front();
+    auto argument_column = argument_type->createColumn();
+    if (!value.isNull())
+        argument_column->insert(convertFieldToTypeOrThrow(value, *argument_type));
+
+    Arena arena;
+    AggregateDataPtr place = arena.alignedAlloc(function->sizeOfData(), function->alignOfData());
+    function->create(place);
+    SCOPE_EXIT_MEMORY_SAFE(function->destroy(place));
+
+    const IColumn * columns[] = {argument_column.get()};
+    if (!argument_column->empty())
+        function->add(place, columns, 0, &arena);
+
+    auto column = ColumnAggregateFunction::create(function);
+    column->insertFrom(place);
+    return column;
+}
+
+bool applyTrivialMinMaxIfPossible(
+    QueryPlan & query_plan,
+    const SelectQueryInfo & select_query_info,
+    const TableNode * table_node,
+    const TableFunctionNode * table_function_node,
+    const QueryTreeNodePtr & query_tree,
+    const QueryTreeNodePtr & table_expression_node,
+    ContextMutablePtr & query_context,
+    const PlannerContext & planner_context)
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!settings[Setting::optimize_trivial_min_max_query])
+        return false;
+
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
+        return false;
+
+    const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+
+    if (query_context->getPinnedStorageSnapshot(storage->getStorageID().uuid))
+        return false;
+
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
+        return false;
+
+    if (select_query_info.additional_filter_ast)
+        return false;
+
+    if (hasTrivialCountIncompatibleModifiers(table_node, table_function_node))
+        return false;
+
+    auto & main_query_node = query_tree->as<QueryNode &>();
+    if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
+        return false;
+
+    if (settings[Setting::empty_result_for_aggregation_by_empty_set])
+        return false;
+
+    if (query_context->canUseParallelReplicasOnFollower())
+        return false;
+
+    QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
+    if (aggregates.empty())
+        return false;
+
+    NamesAndTypesList columns;
+    std::unordered_map<String, size_t> column_indexes;
+    std::vector<std::optional<size_t>> aggregate_column_indexes;
+    for (const auto & aggregate : aggregates)
+    {
+        const auto & function_node = aggregate->as<const FunctionNode &>();
+        const auto & function = function_node.getAggregateFunction();
+        const auto & name = function->getName();
+        const bool is_count = name == "count";
+        if ((!is_count && name != "min" && name != "max") || !function->getParameters().empty())
+            return false;
+
+        if (is_count
+            && (!settings[Setting::optimize_trivial_count_query]
+                || !storage->supportsTrivialCountOptimization(storage_snapshot, query_context)))
+            return false;
+
+        const auto & arguments = function_node.getArguments().getNodes();
+        if (arguments.empty() && is_count)
+        {
+            aggregate_column_indexes.emplace_back();
+            continue;
+        }
+
+        if (arguments.size() != 1)
+            return false;
+
+        const auto * column_node = arguments.front()->as<ColumnNode>();
+        if (!column_node || column_node->getColumnSource() != table_expression_node)
+            return false;
+
+        auto [it, inserted] = column_indexes.emplace(column_node->getColumnName(), columns.size());
+        if (inserted)
+            columns.emplace_back(column_node->getColumnName(), function->getArgumentTypes().front());
+        aggregate_column_indexes.emplace_back(it->second);
+    }
+
+    auto statistics = storage->getMinMaxCountStatistics(columns, query_context);
+    if (!statistics)
+        return false;
+
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    {
+        if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
+            settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+            settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY)
+            return false;
+
+        query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial min/max optimization");
+    }
+
+    Block block;
+    for (size_t i = 0; i < aggregates.size(); ++i)
+    {
+        String column_name = calculateActionNodeName(aggregates[i], planner_context);
+        if (block.has(column_name))
+            continue;
+
+        const auto & function = aggregates[i]->as<const FunctionNode &>().getAggregateFunction();
+        ColumnPtr column;
+        if (!aggregate_column_indexes[i])
+        {
+            column = createSingleCountStateColumn(function, statistics->total_rows);
+        }
+        else
+        {
+            const auto & column_statistics = statistics->columns[*aggregate_column_indexes[i]];
+            if (function->getName() == "count")
+                column = createSingleCountStateColumn(function, column_statistics.non_null_rows);
+            else
+                column = createSingleValueStateColumn(
+                    function, function->getName() == "min" ? column_statistics.min : column_statistics.max);
+        }
+
+        block.insert({
+            column,
+            std::make_shared<DataTypeAggregateFunction>(function, function->getArgumentTypes(), function->getParameters()),
+            column_name});
+    }
+
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block)));
+    auto prepared_min_max = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    prepared_min_max->setStepDescription("Optimized trivial min/max");
+    query_plan.addStep(std::move(prepared_min_max));
 
     return true;
 }
@@ -2106,6 +2265,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     table_expression,
                     planner_context->getMutableQueryContext(),
                     table_expression_data.getColumnNames(),
+                    *planner_context)
+                || applyTrivialMinMaxIfPossible(
+                    query_plan,
+                    table_expression_query_info,
+                    table_node,
+                    table_function_node,
+                    select_query_info.query_tree,
+                    table_expression,
+                    planner_context->getMutableQueryContext(),
                     *planner_context));
 
         if (is_trivial_count_applied)

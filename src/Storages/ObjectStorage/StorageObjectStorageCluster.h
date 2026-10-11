@@ -70,6 +70,7 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+    std::optional<MinMaxCountStatistics> getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr query_context) const override;
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 

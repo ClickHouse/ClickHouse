@@ -11,6 +11,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MinMaxCountStatistics.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -834,6 +835,11 @@ public:
     };
     virtual std::optional<ColumnDefaultnessStats>
     getColumnDefaultnessStats(const String & /*column_name*/, ContextPtr) const { return {}; }
+
+    /// Exact `min`, `max` (both `Null` if there are no non-NULL values) and number of non-NULL values of each column,
+    /// together with the number of rows, taken from the table metadata without reading the data.
+    virtual std::optional<MinMaxCountStatistics>
+    getMinMaxCountStatistics(const NamesAndTypesList & /*columns*/, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

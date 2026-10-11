@@ -12,6 +12,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MinMaxCountStatistics.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -118,6 +119,7 @@ public:
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
+    virtual std::optional<MinMaxCountStatistics> getMinMaxCountStatistics(const NamesAndTypesList &, ContextPtr) const { return {}; }
 
     /// Data which we are going to read is sorted by sorting key specified in StorageMetadataPtr.
     /// For example in Iceberg it's a valid query to change sort_order for table, but older files will

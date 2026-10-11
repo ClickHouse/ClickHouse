@@ -318,6 +318,16 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
     return configuration->totalRows(query_context);
 }
 
+std::optional<MinMaxCountStatistics>
+StorageObjectStorageCluster::getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr query_context) const
+{
+    if (!configuration->isDataLakeConfiguration())
+        return std::nullopt;
+
+    configuration->lazyInitializeIfNeeded(object_storage, query_context);
+    return configuration->getMinMaxCountStatistics(columns, query_context);
+}
+
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
 {
     configuration->lazyInitializeIfNeeded(

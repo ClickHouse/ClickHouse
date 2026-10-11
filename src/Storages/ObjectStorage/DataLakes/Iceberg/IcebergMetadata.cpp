@@ -57,6 +57,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <Interpreters/ExpressionActions.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
@@ -99,6 +101,7 @@ namespace ProfileEvents
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
 extern const Event IcebergTrivialCountOptimizationApplied;
+extern const Event IcebergMinMaxOptimizationApplied;
 }
 
 namespace DB
@@ -1467,6 +1470,159 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
         result += count.value();
     }
 
+    return result;
+}
+
+namespace
+{
+
+bool hasExactBoundsInManifest(const IDataType & type)
+{
+    WhichDataType which(type);
+    return which.isInt32() || which.isInt64() || which.isDate32() || which.isDateTime64();
+}
+
+void mergeMinMaxCountStatistics(MinMaxCountStatistics & to, const MinMaxCountStatistics & from)
+{
+    to.total_rows += from.total_rows;
+    for (size_t i = 0; i < to.columns.size(); ++i)
+    {
+        auto & to_column = to.columns[i];
+        const auto & from_column = from.columns[i];
+        to_column.non_null_rows += from_column.non_null_rows;
+        if (from_column.min.isNull())
+            continue;
+        if (to_column.min.isNull() || from_column.min < to_column.min)
+            to_column.min = from_column.min;
+        if (to_column.max.isNull() || to_column.max < from_column.max)
+            to_column.max = from_column.max;
+    }
+}
+
+}
+
+std::optional<MinMaxCountStatistics>
+IcebergMetadata::getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr local_context) const
+{
+    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
+
+    MinMaxCountStatistics result;
+    result.columns.resize(columns.size());
+    if (!actual_data_snapshot)
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergMinMaxOptimizationApplied);
+        return result;
+    }
+
+    const Int32 schema_id = actual_table_state_snapshot.schema_id;
+    const auto & schema_processor = *persistent_components.schema_processor;
+    const auto table_schema = persistent_components.schema_processor->getClickHouseTableSchemaById(schema_id);
+
+    std::vector<Int32> field_ids;
+    DataTypes types;
+    for (const auto & column : columns)
+    {
+        auto table_column = table_schema->tryGetByName(column.name);
+        if (!table_column)
+            return {};
+
+        auto type = removeNullable(table_column->type);
+        if (!hasExactBoundsInManifest(*type) || !type->equals(*removeNullable(column.type)))
+            return {};
+
+        auto field_id = schema_processor.tryGetColumnIDByName(schema_id, column.name);
+        if (!field_id)
+            return {};
+
+        field_ids.push_back(*field_id);
+        types.push_back(std::move(type));
+    }
+
+    bool exact = true;
+    Iceberg::decodeManifestsInOrder(
+        actual_data_snapshot->manifest_list_entries,
+        local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
+        getIcebergManifestDecodeThreadPool().get(),
+        DB::ThreadName::ICEBERG_ITERATOR,
+        [&](const ManifestFileCacheKey & manifest_list_entry) -> std::optional<MinMaxCountStatistics>
+        {
+            auto manifest_file_ptr = getManifestFileEntriesHandle(
+                object_storage, persistent_components, local_context, log, manifest_list_entry, schema_id);
+
+            if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+                || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
+                return std::nullopt;
+
+            MinMaxCountStatistics manifest_result;
+            manifest_result.columns.resize(field_ids.size());
+            for (const auto & entry : manifest_file_ptr.getFilesWithoutDeleted(FileContentType::DATA))
+            {
+                const auto & parsed_entry = *entry->parsed_entry;
+                if (parsed_entry.record_count < 0)
+                    return std::nullopt;
+                manifest_result.total_rows += parsed_entry.record_count;
+                if (parsed_entry.record_count == 0)
+                    continue;
+
+                MinMaxCountStatistics file_result;
+                file_result.columns.resize(field_ids.size());
+                for (size_t i = 0; i < field_ids.size(); ++i)
+                {
+                    auto file_column = schema_processor.tryGetFieldCharacteristics(entry->resolved_schema_id, field_ids[i]);
+                    if (!file_column)
+                        return std::nullopt;
+
+                    auto file_type = removeNullable(file_column->type);
+                    if (!file_type->equals(*types[i]) && !(WhichDataType(file_type).isInt32() && WhichDataType(types[i]).isInt64()))
+                        return std::nullopt;
+
+                    std::optional<Int64> nulls_count;
+                    if (auto info_it = parsed_entry.columns_infos.find(field_ids[i]); info_it != parsed_entry.columns_infos.end())
+                        nulls_count = info_it->second.nulls_count;
+                    if (!nulls_count && !file_column->type->isNullable())
+                        nulls_count = 0;
+                    if (!nulls_count || *nulls_count < 0 || *nulls_count > parsed_entry.record_count)
+                        return std::nullopt;
+
+                    auto & column_result = file_result.columns[i];
+                    column_result.non_null_rows = parsed_entry.record_count - *nulls_count;
+                    if (column_result.non_null_rows == 0)
+                        continue;
+
+                    String lower;
+                    String upper;
+                    auto bounds_it = parsed_entry.value_bounds.find(field_ids[i]);
+                    if (bounds_it == parsed_entry.value_bounds.end() || !bounds_it->second.first.tryGet(lower)
+                        || !bounds_it->second.second.tryGet(upper))
+                        return std::nullopt;
+
+                    auto lower_value = deserializeFieldFromBinaryRepr(lower, file_type, true, /*compensate_rounding=*/false);
+                    auto upper_value = deserializeFieldFromBinaryRepr(upper, file_type, false, /*compensate_rounding=*/false);
+                    if (!lower_value || !upper_value || *upper_value < *lower_value)
+                        return std::nullopt;
+
+                    column_result.min = std::move(*lower_value);
+                    column_result.max = std::move(*upper_value);
+                }
+                mergeMinMaxCountStatistics(manifest_result, file_result);
+            }
+            return manifest_result;
+        },
+        [&](std::optional<MinMaxCountStatistics> manifest_result)
+        {
+            if (!manifest_result)
+            {
+                exact = false;
+                return false;
+            }
+            mergeMinMaxCountStatistics(result, *manifest_result);
+            return true;
+        });
+
+    if (!exact)
+        return {};
+
+    ProfileEvents::increment(ProfileEvents::IcebergMinMaxOptimizationApplied);
     return result;
 }
 

@@ -687,6 +687,16 @@ std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) 
     return configuration->totalRows(query_context);
 }
 
+std::optional<MinMaxCountStatistics>
+StorageObjectStorage::getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr query_context) const
+{
+    if (!configuration->isDataLakeConfiguration() || distributed_processing)
+        return std::nullopt;
+
+    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
+    return configuration->getMinMaxCountStatistics(columns, query_context);
+}
+
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
     if (!configuration->supportsTotalBytes(query_context, object_storage->getType()))

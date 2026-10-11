@@ -5672,6 +5672,21 @@ Possible values:
 - 1 — Optimization enabled.
 )", 0, \
         {"26.5", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."}) \
+    DECLARE(Bool, optimize_trivial_min_max_query, true, R"(
+Enables or disables answering queries of the form `SELECT min(c), max(c), count(), count(c) FROM table` (without `WHERE`, `PREWHERE` and `GROUP BY`) from the table metadata, without reading the data.
+
+Currently supported for Iceberg tables, using the column bounds and null counts stored in the manifest files. The optimization is applied only when the snapshot has no delete files, every data file carries the statistics of the requested columns, and the columns are of the Iceberg types `int`, `long`, `date`, `time`, `timestamp`, `timestamptz`, `timestamp_ns` or `timestamptz_ns`. Bounds of other types are not exact in the manifests: `string` and `binary` bounds may be truncated, `decimal` bounds may be rounded, and `float` and `double` bounds do not account for `NaN`.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+
+See also:
+
+- [optimize_trivial_count_query](#optimize_trivial_count_query)
+)", 0, \
+        {"26.10", false, true, "New setting to answer `min`, `max` and `count` over Iceberg tables from the statistics in manifest files."}) \
     DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, true, R"(
 Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
 queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
