@@ -20,6 +20,36 @@ class MergeTreeDataMergerMutator;
 
 struct MutationContext;
 
+namespace MutationHelpers
+{
+
+/// True iff the shape of `part` alone forces mutating it with `commands` to rewrite the whole part
+/// instead of hardlinking the files it does not touch. Shared by splitAndModifyMutationCommands, by
+/// rewritesAllPartColumns (which adds the interpreter-dependent condition) and by
+/// isHardlinkOnlyMutation below, so the shape conditions cannot drift apart between them.
+bool mutationRequiresFullPartRewrite(const MergeTreeData::DataPartPtr & part, const MutationCommands & commands);
+
+/// True iff mutating `part` with `commands` is guaranteed to take the partial route (hardlink every
+/// untouched file, unlink the dropped ones) AND to write none of the data-copying outputs that route
+/// can otherwise produce. Such a mutation needs almost no free space, so the selection guards may
+/// admit it for a part larger than the free-space budget. Conservative: any doubt means false.
+/// Answers about the state as of the call: the copy-mode setting and the storage's patch parts can both
+/// change afterwards, so a caller that admits a mutation on this answer must re-validate on the write
+/// side, which MutateTask does.
+/// Locking: reads `data`'s active patch parts, so it acquires `data`'s data-parts read lock itself. Safe
+/// to call while ReplicatedMergeTreeQueue's state_mutex is held, which is the order that critical
+/// section already uses (ReplicatedMergeTreeQueue.cpp:1774 takes the same lock through getPartIfExists).
+/// Must NOT be called with the data-parts lock already held.
+/// `has_pending_rename` says whether a rename outside `commands` still applies to `part`; the caller
+/// answers it, because only the caller can query its own mutation bookkeeping.
+bool isHardlinkOnlyMutation(
+    const MergeTreeData & data,
+    const MergeTreeData::DataPartPtr & part,
+    const MutationCommands & commands,
+    bool has_pending_rename);
+
+}
+
 class MutateTask
 {
 public:

@@ -1,0 +1,33 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <small_disk>
+                <path>/mutation_hardlink_only_small/</path>
+            </small_disk>
+            <!-- Second disk for the case where the source part MOVES between admission and execution:
+                 the reservation the mutation carries was taken on the disk the part was on when it was
+                 admitted, and a hardlink cannot cross disks. -->
+            <other_disk>
+                <path>/mutation_hardlink_only_other/</path>
+            </other_disk>
+        </disks>
+        <policies>
+            <small_only>
+                <volumes>
+                    <main>
+                        <disk>small_disk</disk>
+                    </main>
+                </volumes>
+            </small_only>
+            <!-- One volume with two disks, so ALTER TABLE ... MOVE PART ... TO DISK is allowed. -->
+            <two_disks>
+                <volumes>
+                    <main>
+                        <disk>small_disk</disk>
+                        <disk>other_disk</disk>
+                    </main>
+                </volumes>
+            </two_disks>
+        </policies>
+    </storage_configuration>
+</clickhouse>
