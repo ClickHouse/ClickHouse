@@ -388,11 +388,6 @@ void ThreadStatus::applyQuerySettings()
 
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
-    {
-        SignalUnsafeMutationGuard guard(is_query_id_usable);
-        query_id = query_context_ptr->getCurrentQueryId();
-    }
-
     if (boundToOSThread())
         initQueryProfiler();
 
@@ -439,6 +434,13 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
             {
                 tryLogCurrentException(log);
             }
+        }
+
+        /// Set before the tracker and the sample config below route the thread's traces to the query.
+        if (auto query_context_ptr = thread_group->query_context.lock())
+        {
+            SignalUnsafeMutationGuard guard(is_query_id_usable);
+            query_id = query_context_ptr->getCurrentQueryId();
         }
 
         /// Reparenting the memory tracker flushes the untracked balance the thread carried in, so the

@@ -132,8 +132,8 @@ def test_samples_of_profiled_query_carry_its_query_id(started_cluster):
         pytest.skip("Disabled for sanitizers and llvm coverage builds")
 
     # node2 samples every allocation, but only on threads running a query with jemalloc_enable_profiler,
-    # so even the few allocations a thread makes while detaching from the query are always sampled.
-    query_id = "test_samples_carry_query_id"
+    # so even the few allocations a thread makes while attaching to or detaching from the query are always sampled.
+    query_id = "test_samples_of_profiled_query_carry_its_query_id"
     node2.query(
         "SELECT * FROM numbers(1000000) ORDER BY number FORMAT Null",
         settings={
