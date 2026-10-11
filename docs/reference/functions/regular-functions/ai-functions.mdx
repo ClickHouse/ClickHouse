@@ -28,6 +28,7 @@ All functions are sharing a common infrastructure that provides:
 
 - **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 - **Retry with backoff**: Transient failures are retried ([`ai_function_max_retries`](/reference/settings/session-settings/ai-function#ai_function_max_retries)) with exponential backoff ([`ai_function_retry_initial_delay_ms`](/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+- **Identical inputs**: [`ai_function_reuse_identical`](/reference/settings/session-settings/ai-function#ai_function_reuse_identical) (off by default) stores the provider outcome of an input for the rest of that query. A later row with the same input reuses the outcome and does not send another HTTP request or consume API-call or token quota. The cache is dropped when the query finishes. Its size is bounded by [`ai_function_reuse_identical_max_size_bytes`](/reference/settings/session-settings/ai-function#ai_function_reuse_identical_max_size_bytes).
 
 ## Configuration {#configuration}
 
@@ -156,6 +157,7 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | `AIOutputTokens` | Total output tokens consumed. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
+| `AIReusedIdenticalInputs` | Number of inputs served from a stored provider outcome in the same query, without another HTTP request. Not counted for the row that issued the request, and not counted for a quota skip. |
 
 Query these events:
 
@@ -163,7 +165,8 @@ Query these events:
 SELECT
     ProfileEvents['AIAPICalls'] AS api_calls,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AIReusedIdenticalInputs'] AS reused_inputs
 FROM system.query_log
 WHERE query_id = 'query_id'
 AND type = 'QueryFinish'

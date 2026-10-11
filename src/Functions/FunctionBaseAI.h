@@ -18,6 +18,9 @@
 namespace DB
 {
 
+class AIDuplicateCache;
+class QueryStatus;
+
 static constexpr UInt64 DEFAULT_AI_MAX_TOKENS = 1024;
 
 /// Logical type of an AI-function parameter. The parameter map is `Map(String, String)`, so every
@@ -143,12 +146,23 @@ public:
     /// target vector size when the model supports it.
     static AIParamSpecs embeddingParams();
 
+    /// Why one text in `embedTexts` did not receive a vector, or that it did.
+    /// `Unset` means the call stopped before this input was classified (usually because it threw).
+    enum class EmbeddingInputStatus : uint8_t
+    {
+        Unset,
+        Embedded,
+        ProviderFailed,
+        QuotaSkipped,
+    };
+
     /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
     /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
     /// `ai_function_throw_on_error` disabled).
     struct EmbeddingResult
     {
         VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;
+        VectorWithMemoryTracking<EmbeddingInputStatus> statuses;
         UInt64 texts_embedded = 0;
         UInt64 texts_skipped = 0;
     };
@@ -156,6 +170,10 @@ public:
     /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching,
     /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
     /// Accumulates into `result`, so the batches completed before a throw stay visible to the caller.
+    ///
+    /// When `input_cache` is set, identical texts in this query reuse one provider outcome. Distinct texts
+    /// are still batched into the existing HTTP requests. `cache_prefix` is the constant part of the key
+    /// (credentials, model, dimensions). `reserved_bytes` is the weight known before the vector arrives.
     static void embedTexts(
         IAIProvider & provider,
         const String & model,
@@ -168,7 +186,11 @@ public:
         bool throw_on_error,
         AIQuotaTracker & quota,
         const ConnectionTimeouts & timeouts,
-        EmbeddingResult & result);
+        EmbeddingResult & result,
+        AIDuplicateCache * input_cache = nullptr,
+        UInt128 cache_prefix = {},
+        size_t reserved_bytes = 0,
+        QueryStatus * process_list = nullptr);
 
 protected:
     ContextPtr context;

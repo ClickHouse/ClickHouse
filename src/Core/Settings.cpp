@@ -10347,6 +10347,14 @@ Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimi
 If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
 )", BETA, \
         {"26.8", true, false, "AI functions now reject insecure (http) endpoints to remote hosts by default."}) \
+    DECLARE(Bool, ai_function_reuse_identical, false, R"(
+When enabled, AI functions reuse a stored provider outcome for an identical input in the same query instead of sending another HTTP request. An input is identical when the provider, endpoint, API version, API key, model, and input text match. Chat functions also include the temperature, `max_tokens`, system prompt, and response format that were sent. Embedding functions (`aiEmbed`, `aiSimilarity`) also include `dimensions`, and share one cache so the same text is embedded once. The cache belongs to one query execution and the next query starts empty. A reused input does not increment `AIAPICalls` or the token counters; see `AIReusedIdenticalInputs`. Off by default.
+)", BETA, \
+        {"26.10", false, false, "New setting"}) \
+    DECLARE(UInt64, ai_function_reuse_identical_max_size_bytes, 67108864, R"(
+Maximum size in bytes of the per-query cache used by `ai_function_reuse_identical`. The default is 64 MiB. Least recently used entries are evicted once the total exceeds this size. An entry larger than the cap is inserted and then evicted, so a later copy of that input calls the provider again. Must be positive when `ai_function_reuse_identical` is enabled; 0 is rejected. Ignored when reuse is disabled.
+)", BETA, \
+        {"26.10", 67108864, 67108864, "New setting"}) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

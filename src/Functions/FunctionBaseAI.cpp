@@ -1,4 +1,5 @@
 #include <Functions/FunctionBaseAI.h>
+#include <Functions/AI/AIDuplicateCache.h>
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
@@ -8,7 +9,10 @@
 #include <Poco/Net/NetException.h>
 #include <algorithm>
 #include <exception>
+#include <mutex>
+#include <sstream>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -21,6 +25,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
+#include <Interpreters/ProcessList.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Core/Settings.h>
@@ -34,6 +39,7 @@ namespace ProfileEvents
     extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
+    extern const Event AIReusedIdenticalInputs;
 }
 
 namespace DB
@@ -52,6 +58,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
     extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
 }
@@ -366,6 +373,60 @@ AIParamSpecs FunctionBaseAI::embeddingParams()
     };
 }
 
+namespace
+{
+
+bool reuseEntryStillPending(const AIReuseEntryPtr & entry)
+{
+    std::lock_guard lock(entry->mutex);
+    return entry->kind == AIReuseKind::Pending;
+}
+
+struct EmbeddingReuseSlot
+{
+    AIReuseKey key;
+    AIReuseEntryPtr entry;
+    bool owned = false;
+};
+
+void publishOwnedEmbeddings(
+    AIDuplicateCache & cache,
+    VectorWithMemoryTracking<EmbeddingReuseSlot> & slots,
+    const VectorWithMemoryTracking<size_t> & owned_positions,
+    FunctionBaseAI::EmbeddingResult & owned_result,
+    std::exception_ptr failure)
+{
+    for (size_t j = 0; j < owned_positions.size(); ++j)
+    {
+        EmbeddingReuseSlot & slot = slots[owned_positions[j]];
+        if (!reuseEntryStillPending(slot.entry))
+            continue;
+
+        const bool has_status = j < owned_result.statuses.size();
+        const auto status = has_status ? owned_result.statuses[j] : FunctionBaseAI::EmbeddingInputStatus::Unset;
+        if (status == FunctionBaseAI::EmbeddingInputStatus::Embedded)
+        {
+            cache.publishSuccessEmbedding(slot.key, slot.entry, std::move(owned_result.embeddings[j]));
+        }
+        else if (status == FunctionBaseAI::EmbeddingInputStatus::QuotaSkipped)
+        {
+            cache.publishQuotaSkip(slot.key, slot.entry);
+        }
+        else if (status == FunctionBaseAI::EmbeddingInputStatus::ProviderFailed)
+        {
+            cache.publishProviderFailure(slot.key, slot.entry, nullptr);
+        }
+        else
+        {
+            cache.publishProviderFailure(slot.key, slot.entry, failure);
+            if (!failure)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Embedding input was left without a reuse status");
+        }
+    }
+}
+
+}
+
 void FunctionBaseAI::embedTexts(
     IAIProvider & provider,
     const String & model,
@@ -378,9 +439,134 @@ void FunctionBaseAI::embedTexts(
     bool throw_on_error,
     AIQuotaTracker & quota,
     const ConnectionTimeouts & timeouts,
-    EmbeddingResult & result)
+    EmbeddingResult & result,
+    AIDuplicateCache * input_cache,
+    UInt128 cache_prefix,
+    size_t reserved_bytes,
+    QueryStatus * process_list)
 {
+    if (input_cache && !inputs.empty())
+    {
+        UInt64 reused = 0;
+        SCOPE_EXIT({
+            ProfileEvents::increment(ProfileEvents::AIReusedIdenticalInputs, reused);
+        });
+
+        /// One slot per input. A repeated key in this call shares the first claim: claiming the
+        /// same key again on this thread, before it is published, waits for itself.
+        VectorWithMemoryTracking<EmbeddingReuseSlot> slots;
+        slots.reserve(inputs.size());
+        VectorWithMemoryTracking<size_t> owned_positions;
+        owned_positions.reserve(inputs.size());
+        std::unordered_map<AIReuseKey, size_t, AIReuseKeyHash> first_index; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+        /// Publish every owned placeholder if this call leaves early, so waiters do not stay pending.
+        SCOPE_EXIT({
+            const std::exception_ptr failure = std::current_exception();
+            for (size_t position : owned_positions)
+            {
+                EmbeddingReuseSlot & slot = slots[position];
+                if (!reuseEntryStillPending(slot.entry))
+                    continue;
+                try
+                {
+                    input_cache->publishProviderFailure(slot.key, slot.entry, failure);
+                }
+                catch (...) // NOLINT(bugprone-empty-catch) A scope-guard destructor must not throw.
+                {
+                }
+            }
+        });
+
+        for (size_t i = 0; i < inputs.size(); ++i)
+        {
+            const AIReuseKey key = hashAIReuseKey(cache_prefix, inputs[i]);
+            if (auto it = first_index.find(key); it != first_index.end())
+            {
+                slots.push_back(EmbeddingReuseSlot{key, slots[it->second].entry, false});
+                continue;
+            }
+
+            auto [entry, owned] = input_cache->claim(key, reserved_bytes);
+            const size_t index = slots.size();
+            slots.push_back(EmbeddingReuseSlot{key, std::move(entry), owned});
+            if (owned)
+                owned_positions.push_back(index);
+            first_index.emplace(key, index);
+        }
+
+        VectorWithMemoryTracking<std::string_view> owned_inputs;
+        owned_inputs.reserve(owned_positions.size());
+        for (size_t position : owned_positions)
+            owned_inputs.push_back(inputs[position]);
+
+        EmbeddingResult owned_result;
+        try
+        {
+            if (!owned_inputs.empty())
+            {
+                embedTexts(
+                    provider, model, dimensions, function_name, owned_inputs, max_batch_size, max_retries, retry_delay_ms,
+                    throw_on_error, quota, timeouts, owned_result, nullptr, {}, 0, nullptr);
+            }
+        }
+        catch (...)
+        {
+            publishOwnedEmbeddings(*input_cache, slots, owned_positions, owned_result, std::current_exception());
+            throw;
+        }
+
+        if (owned_result.embeddings.size() != owned_positions.size() || owned_result.statuses.size() != owned_positions.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Embedding reuse lost alignment with the owned inputs");
+
+        publishOwnedEmbeddings(*input_cache, slots, owned_positions, owned_result, nullptr);
+
+        result.embeddings.resize(inputs.size());
+        result.statuses.resize(inputs.size());
+        std::exception_ptr first_error;
+        for (size_t i = 0; i < slots.size(); ++i)
+        {
+            AIReuseOutcome outcome = input_cache->wait(slots[i].entry, process_list);
+            if (!slots[i].owned && (outcome.kind == AIReuseKind::Success || outcome.kind == AIReuseKind::ProviderFailure))
+                ++reused;
+
+            if (outcome.kind == AIReuseKind::Success)
+            {
+                result.embeddings[i] = std::move(outcome.embedding);
+                result.statuses[i] = EmbeddingInputStatus::Embedded;
+                ++result.texts_embedded;
+            }
+            else if (outcome.kind == AIReuseKind::ProviderFailure)
+            {
+                result.statuses[i] = EmbeddingInputStatus::ProviderFailed;
+                if (outcome.exception)
+                {
+                    if (!first_error)
+                        first_error = outcome.exception;
+                }
+                else
+                {
+                    ++result.texts_skipped;
+                }
+            }
+            else if (outcome.kind == AIReuseKind::QuotaSkip)
+            {
+                result.statuses[i] = EmbeddingInputStatus::QuotaSkipped;
+                ++result.texts_skipped;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "AI input reuse entry was still pending after wait");
+            }
+        }
+
+        if (first_error)
+            std::rethrow_exception(first_error);
+        return;
+    }
+
     result.embeddings.resize(inputs.size());
+    result.statuses.assign(inputs.size(), EmbeddingInputStatus::Unset);
 
     UInt64 api_calls = 0;
     UInt64 input_tokens = 0;
@@ -395,6 +581,8 @@ void FunctionBaseAI::embedTexts(
     {
         if (quota.checkQuotas())
         {
+            for (size_t k = batch_start; k < inputs.size(); ++k)
+                result.statuses[k] = EmbeddingInputStatus::QuotaSkipped;
             result.texts_skipped += inputs.size() - batch_start;
             break;
         }
@@ -411,12 +599,16 @@ void FunctionBaseAI::embedTexts(
 
         AIEmbeddingResponse ai_embedding_response;
         bool batch_ok = false;
+        bool quota_skipped = false;
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
             /// Reserve an API-call slot before each request; this also performs a quota check.
             /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
             if (!quota.recordApiCall())
+            {
+                quota_skipped = true;
                 break;
+            }
 
             try
             {
@@ -447,6 +639,11 @@ void FunctionBaseAI::embedTexts(
 
         if (!batch_ok)
         {
+            const EmbeddingInputStatus status = quota_skipped
+                ? EmbeddingInputStatus::QuotaSkipped
+                : EmbeddingInputStatus::ProviderFailed;
+            for (size_t k = batch_start; k < batch_end; ++k)
+                result.statuses[k] = status;
             result.texts_skipped += batch_end - batch_start;
             continue;
         }
@@ -457,6 +654,7 @@ void FunctionBaseAI::embedTexts(
         for (size_t k = 0; k < ai_embedding_response.embeddings.size(); ++k)
         {
             result.embeddings[batch_start + k] = std::move(ai_embedding_response.embeddings[k]);
+            result.statuses[batch_start + k] = EmbeddingInputStatus::Embedded;
             ++result.texts_embedded;
         }
     }
@@ -511,6 +709,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 total_output_tokens = 0;
     UInt64 rows_processed = 0;
     UInt64 rows_skipped = 0;
+    UInt64 rows_reused = 0;
 
     /// Increment ProfileEvents counters upon destruction, to avoid underreporting on error
     SCOPE_EXIT({
@@ -519,34 +718,64 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
         ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
+        ProfileEvents::increment(ProfileEvents::AIReusedIdenticalInputs, rows_reused);
     });
 
-    for (size_t i = 0; i < input_rows_count; ++i)
+    /// Null when `ai_function_reuse_identical` is off, so the default path does not hash or allocate.
+    /// The cache is taken from the query context: a subquery `SETTINGS` clause does not apply.
+    const auto input_cache = getContext()->getAIDuplicateCache();
+    UInt128 cache_prefix{};
+    if (input_cache)
     {
-        if (prompt_nullable && prompt_nullable->getNullMapData()[i])
+        String response_format_text;
+        if (response_format)
         {
-            result_col->insertDefault();
-            null_map_col->getData()[i] = 1;
-            continue;
+            std::ostringstream response_format_stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            response_format->stringify(response_format_stream);
+            response_format_text = response_format_stream.str();
         }
+        cache_prefix = hashAIChatPrefix(
+            params.collection.provider,
+            params.collection.endpoint,
+            params.collection.api_version,
+            params.collection.api_key,
+            model,
+            temperature,
+            max_tokens,
+            system_prompt,
+            response_format_text);
+    }
+    QueryStatus * process_list = input_cache ? getContext()->getProcessListElement().get() : nullptr;
 
+    /// One provider call for a sanitized user message. Quota is checked here, not before a cache hit,
+    /// so a stored success is still returned after the quota is exhausted. Token totals are updated
+    /// inside the attempt, including when the attempt throws.
+    struct ChatCallResult
+    {
+        bool success = false;
+        bool quota_skipped = false;
+        String text;
+        std::exception_ptr exception;
+    };
+
+    auto call_chat = [&](const String & user_message) -> ChatCallResult
+    {
+        ChatCallResult out;
         if (quota_tracker->checkQuotas())
         {
-            result_col->insertDefault();
-            ++rows_skipped;
-            continue;
+            out.quota_skipped = true;
+            return out;
         }
-
-        String user_message = sanitizeForModel(buildUserMessage(arguments, i));
-        String result;
-        bool success = false;
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
             /// Reserve an API-call slot before each request; this also performs a quota check.
             /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
             if (!quota_tracker->recordApiCall())
-                break;
+            {
+                out.quota_skipped = true;
+                return out;
+            }
 
             try
             {
@@ -604,9 +833,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                             safe_finish_reason);
                 }
 
-                result = postProcessResponse(ai_response.result);
-                success = true;
-                break;
+                out.text = postProcessResponse(ai_response.result);
+                out.success = true;
+                return out;
             }
             catch (...)
             {
@@ -617,22 +846,98 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 }
 
                 if (!throw_on_error)
-                    break;
+                    return out;
 
-                throw;
+                out.exception = std::current_exception();
+                return out;
             }
         }
 
-        if (success)
+        return out;
+    };
+
+    auto apply_outcome = [&](const AIReuseOutcome & outcome, bool count_reuse)
+    {
+        if (outcome.kind == AIReuseKind::Pending)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AI input reuse entry was still pending after wait");
+
+        if (count_reuse && outcome.kind != AIReuseKind::QuotaSkip)
+            ++rows_reused;
+
+        if (outcome.kind == AIReuseKind::Success)
         {
-            insertProcessedResult(*result_col, result);
+            insertProcessedResult(*result_col, outcome.text);
             ++rows_processed;
+            return;
         }
-        else
+
+        if (outcome.exception)
+            std::rethrow_exception(outcome.exception);
+
+        result_col->insertDefault();
+        ++rows_skipped;
+    };
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        if (prompt_nullable && prompt_nullable->getNullMapData()[i])
         {
             result_col->insertDefault();
-            ++rows_skipped;
+            null_map_col->getData()[i] = 1;
+            continue;
         }
+
+        const String user_message = sanitizeForModel(buildUserMessage(arguments, i));
+        if (!input_cache)
+        {
+            ChatCallResult call = call_chat(user_message);
+            AIReuseOutcome outcome;
+            if (call.quota_skipped)
+                outcome.kind = AIReuseKind::QuotaSkip;
+            else if (call.success)
+            {
+                outcome.kind = AIReuseKind::Success;
+                outcome.text = std::move(call.text);
+            }
+            else
+            {
+                outcome.kind = AIReuseKind::ProviderFailure;
+                outcome.exception = std::move(call.exception);
+            }
+            apply_outcome(outcome, false);
+            continue;
+        }
+
+        const AIReuseKey key = hashAIReuseKey(cache_prefix, user_message);
+        auto [entry, owned] = input_cache->claim(key, 0);
+        if (owned)
+        {
+            bool published = false;
+            /// Runs on every exit, including an exception from the quota check. Must not throw:
+            /// `publish` notifies before it updates the cache weight.
+            SCOPE_EXIT({
+                if (published || !reuseEntryStillPending(entry))
+                    return;
+                try
+                {
+                    input_cache->publishProviderFailure(key, entry, std::current_exception());
+                }
+                catch (...) // NOLINT(bugprone-empty-catch) A scope-guard destructor must not throw.
+                {
+                }
+            });
+
+            ChatCallResult call = call_chat(user_message);
+            if (call.quota_skipped)
+                input_cache->publishQuotaSkip(key, entry);
+            else if (call.success)
+                input_cache->publishSuccessText(key, entry, std::move(call.text));
+            else
+                input_cache->publishProviderFailure(key, entry, std::move(call.exception));
+            published = true;
+        }
+
+        apply_outcome(input_cache->wait(entry, process_list), !owned);
     }
 
     if (result_type->isNullable())

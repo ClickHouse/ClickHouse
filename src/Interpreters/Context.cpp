@@ -111,6 +111,7 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Functions/AI/AIQuotaTracker.h>
+#include <Functions/AI/AIDuplicateCache.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -311,6 +312,8 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
+    extern const SettingsBool ai_function_reuse_identical;
+    extern const SettingsUInt64 ai_function_reuse_identical_max_size_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -9652,6 +9655,28 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
             settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
     }
     return query_context->ai_quota_tracker;
+}
+
+AIDuplicateCachePtr Context::getAIDuplicateCache() const
+{
+    auto query_context = getQueryContext();
+    const auto & settings_ref = query_context->getSettingsRef();
+
+    if (!settings_ref[Setting::ai_function_reuse_identical])
+        return nullptr;
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->ai_duplicate_cache)
+    {
+        const auto max_bytes = settings_ref[Setting::ai_function_reuse_identical_max_size_bytes];
+        if (max_bytes == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'ai_function_reuse_identical_max_size_bytes' must be positive when 'ai_function_reuse_identical' is enabled");
+
+        query_context->ai_duplicate_cache = std::make_shared<AIDuplicateCache>(max_bytes);
+    }
+    return query_context->ai_duplicate_cache;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
