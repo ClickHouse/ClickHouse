@@ -125,6 +125,10 @@ workflow = Workflow.Config(
             )
             for job in INTEGRATION_TARGETED_JOBS
         ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_contrib_tsan_pr_jobs
+        ],
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
