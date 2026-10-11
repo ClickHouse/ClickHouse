@@ -1591,7 +1591,7 @@ StorageFileSource::FilesIterator::FilesIterator(
     {
         if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
         {
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
             Strings filter_paths = filter_sources;
             if (!archive_member_path.empty())
             {
@@ -1607,7 +1607,7 @@ StorageFileSource::FilesIterator::FilesIterator(
                 archive_member_path.empty() ? nullptr : &archive_member_names);
         }
         else
-            deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
     }
 }
 
@@ -2738,7 +2738,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
 }
 
-StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const
+StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey() const
 {
     const auto & settings = getContext()->getSettingsRef();
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
@@ -2751,19 +2751,24 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
-    /// key covers. `condition_hash` covers the pushed-down filter and a PREWHERE collected with it.
-    /// Without any of them the reader drops nothing else. A row policy is covered by neither.
+    /// key covers, and so must the rows the filter drops after the format, which do not make the threshold.
+    /// So the key covers the whole filter of the step and a PREWHERE collected with it, not only the part
+    /// pushed into the format (without the conjuncts on virtual and hive partition columns).
+    /// Without any of them nothing else drops rows. A row policy is covered by neither.
     if (query_info.row_level_filter)
         return {};
 
     auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
     size_t condition_hash = 0;
-    if (format_filter_info.condition_hash)
+    if (filter_actions_dag)
     {
-        condition_hash = *format_filter_info.condition_hash;
-        key->condition = format_filter_info.filter_actions_dag->dumpNames() + ", ";
+        auto filter_condition_hash = FormatFilterInfo::computeConditionHash(*filter_actions_dag, query_info.prewhere_info, getContext());
+        if (!filter_condition_hash)
+            return {};
+        condition_hash = *filter_condition_hash;
+        key->condition = filter_actions_dag->dumpNames() + ", ";
     }
-    else if (!filter_actions_dag && !query_info.prewhere_info)
+    else if (!query_info.prewhere_info)
         condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings));
     else
         return {};
@@ -2826,7 +2831,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
-    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey(*format_filter_info);
+    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
         /// The verdicts written under the key also cover row groups whose rows were all returned
