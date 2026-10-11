@@ -6,6 +6,7 @@
 
 #include <base/types.h>
 #include <Common/Logger.h>
+#include <Common/StringWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Timespan.h>
@@ -132,7 +133,7 @@ private:
     };
 
     /// The body of the response frame. The values reference it by offsets.
-    String body;
+    StringWithMemoryTracking body;
     VectorWithMemoryTracking<ColumnSpec> column_specs;
     size_t rows_count = 0;
     VectorWithMemoryTracking<Value> values;
@@ -174,15 +175,15 @@ private:
     struct Frame
     {
         UInt8 opcode = 0;
-        String body;
+        StringWithMemoryTracking body;
         /// The offset in the body where the message starts, after the tracing id, warnings, and custom payload.
         size_t message_offset = 0;
     };
 
     void handshake(const ConnectionSettings & settings);
-    void sendFrame(UInt8 opcode, const String & body);
-    String compress(const String & body) const;
-    void decompress(String & body) const;
+    void sendFrame(UInt8 opcode, std::string_view body);
+    StringWithMemoryTracking compress(std::string_view body) const;
+    void decompress(StringWithMemoryTracking & body) const;
     Frame receiveFrame();
     [[noreturn]] void throwServerError(const Frame & frame) const;
 

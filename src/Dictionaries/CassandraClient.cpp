@@ -191,10 +191,10 @@ public:
 
     void writeBytes(std::string_view s) { writeLongString(s); }
 
-    String & str() { return body; }
+    std::string_view str() const { return body; }
 
 private:
-    String body;
+    StringWithMemoryTracking body;
 };
 
 
@@ -416,13 +416,13 @@ Connection::~Connection()
     out->cancel();
 }
 
-void Connection::sendFrame(UInt8 opcode, const String & body)
+void Connection::sendFrame(UInt8 opcode, std::string_view body)
 {
     if (body.size() > MAX_FRAME_BODY_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Request of size {} is too large for the Cassandra protocol", body.size());
 
-    const String compressed_body = compression_started ? compress(body) : String{};
-    const String & payload = compression_started ? compressed_body : body;
+    const StringWithMemoryTracking compressed_body = compression_started ? compress(body) : StringWithMemoryTracking{};
+    const std::string_view payload = compression_started ? std::string_view(compressed_body) : body;
 
     char header[FRAME_HEADER_SIZE];
     header[0] = static_cast<char>(PROTOCOL_VERSION);
@@ -491,13 +491,13 @@ Connection::Frame Connection::receiveFrame()
     return frame;
 }
 
-String Connection::compress(const String & body) const
+StringWithMemoryTracking Connection::compress(std::string_view body) const
 {
-    String res;
+    StringWithMemoryTracking res;
     switch (compression)
     {
         case Compression::None:
-            return body;
+            return StringWithMemoryTracking(body);
         case Compression::LZ4:
         {
             /// The uncompressed size, then an LZ4 block.
@@ -512,8 +512,13 @@ String Connection::compress(const String & body) const
         }
         case Compression::Snappy:
 #if USE_SNAPPY
-            snappy::Compress(body.data(), body.size(), &res);
+        {
+            res.resize(snappy::MaxCompressedLength(body.size()));
+            size_t compressed_size = 0;
+            snappy::RawCompress(body.data(), body.size(), res.data(), &compressed_size);
+            res.resize(compressed_size);
             return res;
+        }
 #else
             UNREACHABLE();
 #endif
@@ -521,9 +526,9 @@ String Connection::compress(const String & body) const
     UNREACHABLE();
 }
 
-void Connection::decompress(String & body) const
+void Connection::decompress(StringWithMemoryTracking & body) const
 {
-    String res;
+    StringWithMemoryTracking res;
     switch (compression)
     {
         case Compression::None:
@@ -554,7 +559,8 @@ void Connection::decompress(String & body) const
             if (size > MAX_FRAME_BODY_SIZE)
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                     "Too large uncompressed size {} of a frame from Cassandra server {}", size, address.toString());
-            if (!snappy::Uncompress(body.data(), body.size(), &res))
+            res.resize(size);
+            if (!snappy::RawUncompress(body.data(), body.size(), res.data()))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress a frame from Cassandra server {} with Snappy", address.toString());
             break;
 #else
