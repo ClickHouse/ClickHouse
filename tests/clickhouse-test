@@ -2697,19 +2697,22 @@ class TestCase:
     # A `no-<feature>` tag means the test does not work with that feature, so the feature
     # must be off unless the test itself turns it on.
     FEATURE_TAG_OVERRIDES = {
-        "no-parallel-replicas": "enable_parallel_replicas",
-        "no-async-insert": "async_insert",
+        "no-parallel-replicas": ("enable_parallel_replicas",),
+        "no-async-insert": ("async_insert",),
+        "no-random-detach": (
+            "reattach_tables_before_query_execution",
+            "reattach_tables_before_query_execution_probability",
+        ),
     }
 
-    def feature_tag_overrides(self) -> str:
+    def feature_tag_overrides(self) -> dict:
         tags = self.tags or set()
-        return self.cli_format_settings(
-            {
-                setting: 0
-                for tag, setting in self.FEATURE_TAG_OVERRIDES.items()
-                if tag in tags
-            }
-        )
+        return {
+            setting: 0
+            for tag, settings in self.FEATURE_TAG_OVERRIDES.items()
+            if tag in tags
+            for setting in settings
+        }
 
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
@@ -2781,10 +2784,18 @@ class TestCase:
         # Last, so that it beats an externally supplied --client-option that enabled the
         # feature: with --allow_repeated_settings the last occurrence takes effect. A SET
         # or SETTINGS clause inside the test still wins over any command line value.
+        # The same goes for the HTTP parameters, where the last occurrence of a setting wins
+        # too, so a pre-populated `CLICKHOUSE_URL_PARAMS` cannot enable the feature either.
         overrides = self.feature_tag_overrides()
         if overrides:
-            os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {overrides}"
-            return f"{new_options} {client_options} {overrides}"
+            cli_overrides = self.cli_format_settings(overrides)
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {cli_overrides}"
+            http_overrides = self.http_format_settings(overrides)
+            current_url_params = os.environ.get("CLICKHOUSE_URL_PARAMS", "")
+            os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                f"{current_url_params}&{http_overrides}" if current_url_params else http_overrides
+            )
+            return f"{new_options} {client_options} {cli_overrides}"
 
         return new_options + " " + client_options
 
