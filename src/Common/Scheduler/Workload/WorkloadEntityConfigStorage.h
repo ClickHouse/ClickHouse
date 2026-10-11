@@ -20,6 +20,9 @@ public:
     std::string_view getName() const override { return "configuration"; }
 
 private:
+    /// A configuration workload may have a parent defined via SQL
+    bool allowsParentsFromOuterLayers() const override { return true; }
+
     OperationResult storeEntityImpl(
         const ContextPtr & current_context,
         WorkloadEntityType entity_type,

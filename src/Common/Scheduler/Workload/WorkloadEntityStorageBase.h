@@ -100,7 +100,7 @@ protected:
     enum class StoreMode
     {
         Statement, /// A SQL statement: conflicts with own and inherited entities are rejected
-        Restore, /// An own entity recreated from a backup: overlap is resolved by hiding, as on a load of persisted data
+        Restore, /// An own entity recreated from a backup: overlap is resolved by shadowing or hiding, conflicts with inherited entities are rejected
     };
 
     /// Validates `create_entity_query` according to `mode`, stores it through `storeEntityImpl` and notifies subscribers
@@ -120,8 +120,8 @@ protected:
         const ContextMutablePtr & context, const std::unordered_map<String, ASTPtr> & to_restore, bool throw_if_exists, bool replace_if_exists);
 
     /// Replaces own entities with loaded `new_entities` (configuration, Keeper or disk) and notifies subscribers
-    /// with one transaction. Throws on invalid entities; conflicts between them are handled by `on_conflict`;
-    /// entities overlapping inherited entities are shadowed.
+    /// with one transaction. Throws on invalid entities; conflicts and broken references between them are handled
+    /// by `on_conflict`; overlap with inherited entities is resolved by shadowing or hiding.
     void setOwnEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities, OnOwnConflict on_conflict);
 
     /// Replaces own entities with `new_own_entities` without validation, and notifies subscribers with one
@@ -131,6 +131,9 @@ protected:
 
     /// Whether this layer owns the implicit entities, whose names are reserved for all other layers
     virtual bool ownsImplicitEntities() const { return false; }
+
+    /// Whether an own workload may name a parent unknown to this layer: it may be defined by an outer layer
+    virtual bool allowsParentsFromOuterLayers() const { return false; }
 
     /// Adds entities derived from the visible entities (own entities that are not shadowed plus inherited
     /// ones) to `visible_entities`. Called with the lock held on every change of own or inherited entities.
@@ -168,6 +171,12 @@ private:
 
     /// Throws if `entity` claims a key also claimed by an own entity with another name or by an inherited entity
     void checkClaimConflicts(const String & entity_name, const ASTPtr & entity) const;
+
+    /// Throws if an own or inherited workload references `entity_name` as an entity of another kind than `entity`
+    void checkInboundReferences(const String & entity_name, const ASTPtr & entity) const;
+
+    /// Throws if references of loaded `new_own_entities` are broken (see "References" in IWorkloadEntityStorage.h)
+    void checkLoadedReferences(const std::unordered_map<String, ASTPtr> & new_own_entities) const;
 
     /// Notify subscribers about changes describe by vector of events `tx`. Takes `notify_mutex` before unlocking
     /// `lock`, so transactions are delivered in the order they were computed.
@@ -217,8 +226,8 @@ private:
     std::unordered_map<String, ASTPtr> own_entities; /// Entities that are stored in this layer, including shadowed ones
     std::unordered_map<String, ASTPtr> inherited_entities; /// Visible entities of the next storage (a copy to be accessed under own mutex)
     std::unordered_set<String> shadowed_entities; /// Names of own entities that are currently shadowed
-    std::unordered_set<String> conflicting_entities; /// Names of own entities hidden by a conflict with another own entity
-    std::unordered_set<String> orphaned_entities; /// Names of own workloads hidden because their parent is not a visible workload
+    std::unordered_set<String> conflicting_entities; /// Names of own entities hidden by a conflict or a parent cycle
+    std::unordered_set<String> orphaned_entities; /// Names of workloads hidden because their parent is not a visible workload
 
     /// Serializes deliveries of transactions to subscribers. Taken while `mutex` is held, then held without
     /// `mutex` while handlers run.
