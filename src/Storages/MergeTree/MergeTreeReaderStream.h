@@ -165,18 +165,23 @@ class MergeTreeReaderStreamOneOfMultipleColumns : public MergeTreeReaderStreamMu
 {
 public:
     template <typename... Args>
-    explicit MergeTreeReaderStreamOneOfMultipleColumns(size_t column_position_, Args &&... args)
+    explicit MergeTreeReaderStreamOneOfMultipleColumns(size_t first_column_position_, size_t column_position_, Args &&... args)
         : MergeTreeReaderStreamMultipleColumns{std::forward<Args>(args)...}
+        , first_column_position(first_column_position_)
         , column_position(column_position_)
     {
     }
 
     size_t getRightOffset(size_t right_mark_non_included) override;
-    std::optional<size_t> getLeftOffset(size_t mark) override { return getLeftOffsetOneColumn(mark, column_position); }
+    std::optional<size_t> getLeftOffset(size_t mark) override { return getLeftOffsetOneColumn(mark, first_column_position); }
     std::pair<size_t, size_t> estimateMarkRangeBytes(const MarkRanges & mark_ranges) override;
-    void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, column_position); }
+    void seekToMark(size_t row_index) override { seekToMarkAndColumn(row_index, first_column_position); }
 
 private:
+    /// With substream marks a column has a mark per substream: the stream reads from the mark of the first
+    /// substream (`first_column_position`) up to the end of the last one (`column_position`).
+    /// Without substream marks both positions are the position of the column.
+    const size_t first_column_position;
     const size_t column_position;
 };
 
