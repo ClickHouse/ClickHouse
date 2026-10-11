@@ -104,6 +104,10 @@ def find_violations(base_ref, head_ref="HEAD"):
     for old_path, new_path in _changed_docs(base_sha, head_sha):
         old_blocks = _generated_blocks(_read_file(base_sha, old_path))
         new_blocks = _generated_blocks(_read_file(head_sha, new_path))
+        # New pages may declare empty regions for their first generation.
+        # Existing pages and new regions containing generated content stay protected.
+        if old_path is None and all(not block.strip() for block in new_blocks):
+            continue
         if old_blocks != new_blocks:
             violations.append(new_path or old_path)
     return sorted(set(violations))

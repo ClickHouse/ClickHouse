@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 std::shared_ptr<re2::RE2> getColumnsExceptMatcher(const ASTColumnsExceptTransformer & transformer)
@@ -238,6 +239,13 @@ void applyColumnsTransformer(const ASTPtr & transformer, ASTs & nodes)
         applyColumnsExceptTransformer(*except, nodes);
     else if (const auto * replace = transformer->as<ASTColumnsReplaceTransformer>())
         applyColumnsReplaceTransformer(*replace, nodes);
+    else if (transformer->as<ASTColumnsRenameTransformer>())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "RENAME column transformer requires the query analyzer and is not supported "
+            "in INSERT column lists or EXPLAIN AST with optimize = 1");
+    else
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Unsupported column transformer {}", transformer->formatForErrorMessage());
 }
 
 }

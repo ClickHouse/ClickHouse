@@ -1,0 +1,6 @@
+SELECT * RENAME a AS x FROM t
+SELECT * RENAME (a AS x, b AS y) FROM t
+SELECT * RENAME `a b` AS `x.y` FROM t
+SELECT * APPLY sum RENAME (col -> concat(col, '_sum')) FROM t
+SELECT t.COLUMNS('a') RENAME a AS x FROM t
+SELECT COLUMNS(a, b) RENAME (a AS b, b AS a) FROM t
