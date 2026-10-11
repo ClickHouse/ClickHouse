@@ -197,9 +197,10 @@ SELECT log_comment, ProfileEvents['ParquetRowsFilterExpression'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05361_string_off', '05361_string_on') AND type = 'QueryFinish'
 ORDER BY log_comment;
+-- The threshold step ran and then stopped; the PREWHERE alone filters 300000 rows of low.parquet.
 SELECT log_comment, multiIf(
-    log_comment = '05361_low', ProfileEvents['ParquetRowsFilterExpression'] < 100000,
-    log_comment = '05361_low_prewhere', ProfileEvents['ParquetRowsFilterExpression'] < 450000,
+    log_comment = '05361_low', ProfileEvents['ParquetRowsFilterExpression'] BETWEEN 1 AND 99999,
+    log_comment = '05361_low_prewhere', ProfileEvents['ParquetRowsFilterExpression'] BETWEEN 300001 AND 449999,
     ProfileEvents['ParquetRowsFilterExpression'] > 200000)
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05361_low', '05361_low_order', '05361_low_prewhere') AND type = 'QueryFinish'
