@@ -117,6 +117,13 @@ namespace
         if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
             return false;
 
+        /// The SCRAM client proof is derived from the password alone, so it cannot carry or verify
+        /// a one-time password. Accepting it would let the client skip the second factor.
+        /// The PostgreSQL frontend refuses to run the SCRAM exchange for such users (see `getScramSalt`);
+        /// this check keeps the bypass closed for any other producer of SCRAM credentials.
+        if (authentication_method.getOneTimePassword())
+            return false;
+
         const auto & client_proof = scram_sha256_credentials->getClientProof();
         const auto & auth_message = scram_sha256_credentials->getAuthMessage();
         const auto & password = authentication_method.getPasswordHashBinary();
