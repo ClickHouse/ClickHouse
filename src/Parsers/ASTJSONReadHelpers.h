@@ -140,6 +140,17 @@ public:
         return child;
     }
 
+    /// Read a parser-owned comma-separated expression list. The generic `ExpressionList` JSON
+    /// format also supports other separators, so slots parsed with a comma-list parser must
+    /// check their separator at this boundary. Some comma-list parsers allow an empty list.
+    ASTPtr readCommaSeparatedExpressionListChild(
+        const char * key, bool require_nonempty = false, bool screen_expressions = false) const;
+
+    /// Restore a list produced by `ParserNotEmptyExpressionList`. A JSON list may contain nodes
+    /// that the SQL expression parser never creates, so compare it with the parsed SQL and return
+    /// the parser's tree before any caller can use its elements as expressions.
+    ASTPtr readParserExpressionListChild(const char * key, bool allow_alias_without_as_keyword) const;
+
     /// Read a child AST node and require it to be an identifier (`ASTIdentifier` or a subclass such
     /// as `ASTTableIdentifier`; this also accepts a parameterized identifier, which the parser
     /// produces as an `ASTIdentifier` carrying an `ASTQueryParameter` child). Database/table target
@@ -347,15 +358,16 @@ public:
 
     static Field readFieldFromObject(const Poco::JSON::Object & field_obj);
 
+    /// Reject argument-less function nodes inside a restored expression subtree before any
+    /// parser canonicalization can turn them into valid zero-argument calls.
+    static void screenArgumentlessFunctions(const IAST & ast, const char * key);
+
 private:
     /// Recursive worker for `readFieldFromObject`. `depth` tracks the nesting level of
     /// structured `Field` values (Array/Tuple/Map). A hostile `Literal` node can embed
     /// deeply nested `{"field_type":"Array","value":[...]}` levels that add no AST nodes,
     /// so the AST depth/element limits and `checkDepth` do not bound this recursion.
     static Field readFieldFromObjectImpl(const Poco::JSON::Object & field_obj, size_t depth);
-
-    /// `readExpressionChild`'s screen, for the template above.
-    static void screenArgumentlessFunctions(const IAST & ast, const char * key);
 
     const Poco::JSON::Object & obj;
 };

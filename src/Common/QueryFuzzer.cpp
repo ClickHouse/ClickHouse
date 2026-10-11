@@ -3094,12 +3094,16 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
         /// Capture the original form before clearing so the branch below can act on it.
         const bool was_query = (projection.query != nullptr);
 
-        /// Clear children first to avoid orphaned nodes being visited during recursion.
+        /// Clear every child member before releasing the children. A stale member would point
+        /// into freed storage (and the next clone/format would dereference it).
+        projection.forEachPointerToChild([](IAST ** raw, ASTPtr * smart)
+        {
+            if (raw)
+                *raw = nullptr;
+            if (smart)
+                smart->reset();
+        });
         projection.children.clear();
-        projection.query = nullptr;
-        projection.index = nullptr;
-        projection.type = nullptr;
-        projection.with_settings = nullptr;
 
         if (was_query)
         {

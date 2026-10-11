@@ -7,6 +7,7 @@ namespace Poco::JSON { class Object; }
 namespace DB
 {
 
+class ASTExpressionList;
 class ASTFunction;
 class ASTSetQuery;
 
@@ -18,6 +19,10 @@ public:
     IAST * index = nullptr;
     ASTFunction * type = nullptr;
     ASTSetQuery * with_settings = nullptr;
+
+    /// Optional `ASTColumnDeclaration` list, holding only the columns whose codec is overridden.
+    /// Mutually exclusive with `index`.
+    ASTExpressionList * columns = nullptr;
 
     String getID(char) const override { return "Projection"; }
 
@@ -32,6 +37,7 @@ public:
         f(&index, nullptr);
         f(reinterpret_cast<IAST **>(&type), nullptr);
         f(reinterpret_cast<IAST **>(&with_settings), nullptr);
+        f(reinterpret_cast<IAST **>(&columns), nullptr);
     }
 
     /// everything after the name, so a statement that prints the name itself can reuse it

@@ -38,6 +38,7 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>

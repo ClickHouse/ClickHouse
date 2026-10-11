@@ -5,12 +5,17 @@
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
+#include <Common/quoteString.h>
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -21,8 +26,11 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/ExpressionContainsArrayJoin.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -44,6 +52,9 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Poco/String.h>
+#include <unordered_map>
+
 namespace DB
 {
 
@@ -56,12 +67,16 @@ namespace ErrorCodes
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int THERE_IS_NO_COLUMN;
+    extern const int DUPLICATE_COLUMN;
 }
 
 namespace Setting
 {
 
 extern const SettingsBool enable_positional_arguments_for_projections;
+extern const SettingsBool allow_projection_column_codecs_in_replicated_or_distributed_ddl;
+extern const SettingsUInt64 distributed_ddl_entry_format_version;
 
 }
 
@@ -74,6 +89,122 @@ extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
 extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
 extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
 extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+
+}
+
+namespace
+{
+
+/// Bind declared names to the projection's typed, physical columns. The SELECT-facing name can
+/// be an alias, while the part must keep its existing expression-derived column name.
+void applyProjectionColumnCodecs(
+    const IAST & declarations,
+    const Names & visible_names,
+    const Names & physical_names,
+    const ColumnsDescription & source_columns,
+    const String & projection_name,
+    bool with_parent_part_offset,
+    ColumnsDescription & projection_columns)
+{
+    static const Settings codec_policy;
+    static const NameSet allowed_families = {"NONE", "LZ4", "ZSTD", "DELTA", "DOUBLEDELTA"};
+
+    if (visible_names.size() != physical_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} has mismatched visible and physical output bindings", backQuote(projection_name));
+
+    NameSet unique_physical_names;
+    for (const auto & physical_name : physical_names)
+        if (!unique_physical_names.insert(physical_name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} has multiple SELECT outputs stored in column {}",
+                backQuote(projection_name), backQuote(physical_name));
+
+    NameSet bound_columns;
+    for (const auto & child : declarations.children)
+    {
+        const auto & declaration = child->as<const ASTColumnDeclaration &>();
+        const auto & name = declaration.name;
+
+        std::optional<size_t> output_position;
+        for (size_t i = 0; i < visible_names.size(); ++i)
+        {
+            if (visible_names[i] != name && physical_names[i] != name)
+                continue;
+            if (output_position && *output_position != i)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Column {} ambiguously names more than one output of projection {}",
+                    backQuote(name), backQuote(projection_name));
+            output_position = i;
+        }
+
+        if (!output_position)
+            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+                "Column {} is not produced by projection {}", backQuote(name), backQuote(projection_name));
+
+        const auto & physical_name = physical_names[*output_position];
+        if (source_columns.hasSubcolumn(GetColumnsOptions::All, physical_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} cannot declare a codec for subcolumn {}", backQuote(projection_name), backQuote(physical_name));
+
+        const String storage_name = with_parent_part_offset && physical_name == "_part_offset"
+            ? "_parent_part_offset" : physical_name;
+        if (!projection_columns.has(storage_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} cannot declare a codec for an implicit column {}", backQuote(projection_name), backQuote(name));
+        if (!bound_columns.insert(storage_name).second)
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN,
+                "Column {} is declared more than once in projection {}", backQuote(storage_name), backQuote(projection_name));
+
+        if (declaration.getType() || declaration.default_specifier != ColumnDefaultSpecifier::Empty
+            || declaration.getDefaultExpression() || declaration.getComment() || declaration.getTTL()
+            || declaration.getStatisticsDesc() || declaration.getCollation() || declaration.getSettings()
+            || declaration.null_modifier || declaration.primary_key_specifier)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection {} column {} may declare only CODEC, without a type or other properties",
+                backQuote(projection_name), backQuote(name));
+
+        const auto codec_ast = declaration.getCodec();
+        const auto * codec = codec_ast ? codec_ast->as<ASTFunction>() : nullptr;
+        if (!codec || !codec->arguments || codec->arguments->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} column {} must declare a CODEC", backQuote(projection_name), backQuote(name));
+
+        for (const auto & stage : codec->arguments->children)
+        {
+            String family;
+            if (const auto * identifier = stage->as<ASTIdentifier>())
+                family = identifier->name();
+            else if (const auto * function = stage->as<ASTFunction>())
+                family = function->name;
+            if (!allowed_families.contains(Poco::toUpper(family)))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Codec {} is not supported for projection column {}; supported codecs are "
+                    "NONE, LZ4, ZSTD, Delta, and DoubleDelta",
+                    stage->formatForErrorMessage(), backQuote(name));
+        }
+
+        const auto & output_type = projection_columns.get(storage_name).type;
+        auto & factory = CompressionCodecFactory::instance();
+        auto effective_codec = factory.validateCodecAndGetPreprocessedAST(
+            codec_ast, output_type, CodecValidationSettings(codec_policy));
+
+        /// A lossy projection could return different answers from a base-table scan. Resolve the
+        /// codec for every written substream, just as the part writer does for compound types.
+        bool is_lossy = false;
+        ISerialization::StreamCallback callback = [&](const auto & substream_path)
+        {
+            if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+                return;
+            is_lossy = factory.get(effective_codec, substream_path.back().data.type.get())->isLossyCompression();
+        };
+        output_type->getDefaultSerialization()->enumerateStreams(callback, output_type);
+        if (is_lossy)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} cannot use a lossy codec for column {}", backQuote(projection_name), backQuote(name));
+
+        projection_columns.modify(storage_name, [&](ColumnDescription & output) { output.codec = effective_codec; });
+    }
+}
 
 }
 
@@ -133,10 +264,72 @@ ProjectionsDescription ProjectionsDescription::clone() const
     return other;
 }
 
+namespace
+{
+
+/// Codec declarations are bound to output names, regardless of their order in the list.
+String projectionDefinitionForComparison(const ProjectionDescription & projection)
+{
+    auto definition = projection.definition_ast->clone();
+    auto & declaration = definition->as<ASTProjectionDeclaration &>();
+    if (!declaration.columns)
+        return definition->formatIgnoringRedundantParentheses();
+
+    /// Sort only the comparison clone; the stored declaration keeps its original order.
+    ::sort(declaration.columns->children.begin(), declaration.columns->children.end(), [](const ASTPtr & lhs, const ASTPtr & rhs)
+    {
+        return lhs->as<const ASTColumnDeclaration &>().name < rhs->as<const ASTColumnDeclaration &>().name;
+    });
+
+    return definition->formatIgnoringRedundantParentheses();
+}
+
+}
+
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
     return name == other.name
-        && definition_ast->formatIgnoringRedundantParentheses() == other.definition_ast->formatIgnoringRedundantParentheses();
+        && projectionDefinitionForComparison(*this) == projectionDefinitionForComparison(other);
+}
+
+bool hasProjectionColumnCodecs(const IAST & ast)
+{
+    if (const auto * projection = ast.as<ASTProjectionDeclaration>(); projection && projection->columns)
+        return true;
+
+    for (const auto & child : ast.children)
+        if (hasProjectionColumnCodecs(*child))
+            return true;
+
+    return false;
+}
+
+bool hasProjectionColumnCodecs(const ProjectionsDescription & projections)
+{
+    for (const auto & projection : projections)
+        if (hasProjectionColumnCodecs(*projection.definition_ast))
+            return true;
+
+    for (const auto & definition : projections.getUnavailableDefinitions())
+        if (hasProjectionColumnCodecs(*definition))
+            return true;
+
+    return false;
+}
+
+void checkProjectionColumnCodecPublication(const ContextPtr & context, bool queued_ddl)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::allow_projection_column_codecs_in_replicated_or_distributed_ddl])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Projection column codecs in replicated or distributed DDL require "
+            "allow_projection_column_codecs_in_replicated_or_distributed_ddl = 1 after all consumers are upgraded");
+
+    if (queued_ddl && settings[Setting::distributed_ddl_entry_format_version] < DDLLogEntry::SETTINGS_IN_ZK_VERSION)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Projection column codecs in distributed DDL require distributed_ddl_entry_format_version >= {} "
+            "to pass the compatibility setting to workers",
+            DDLLogEntry::SETTINGS_IN_ZK_VERSION);
 }
 
 namespace
@@ -299,11 +492,15 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     if (result.index)
     {
+        if (projection_definition->columns)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A projection index cannot have a column codec list");
         result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context, *merge_tree_settings);
     }
     else
     {
-        fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, *merge_tree_settings);
+        fillProjectionDescriptionByQuery(
+            result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns,
+            partition_key, query_context, *merge_tree_settings, projection_definition->columns);
     }
 
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
@@ -377,7 +574,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
-    const MergeTreeSettings & projection_settings)
+    const MergeTreeSettings & projection_settings,
+    const IAST * declared_columns)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
@@ -407,6 +605,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
+    Names visible_output_names;
+    Names physical_output_names;
     {
         /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
         /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions
@@ -424,6 +624,27 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         query_tree_pass_manager.runOnlyResolve(query_tree);
 
         is_aggregate = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
+
+        if (declared_columns)
+        {
+            const auto & resolved_outputs = query_node.getProjectionColumns();
+            const size_t visible_count = resolved_outputs.size() - (projection_order_by ? 1 : 0);
+            visible_output_names.reserve(visible_count);
+            physical_output_names.reserve(visible_count);
+            const auto & projection_nodes = query_node.getProjection().getNodes();
+            if (projection_nodes.size() != resolved_outputs.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot bind codec declarations to the outputs of projection {}", backQuote(result.name));
+            for (size_t i = 0; i < visible_count; ++i)
+            {
+                visible_output_names.push_back(resolved_outputs[i].name);
+                ConvertToASTOptions ast_options;
+                ast_options.fully_qualified_identifiers = false;
+                auto physical_expression = projection_nodes[i]->toAST(ast_options);
+                physical_expression->setAlias({});
+                physical_output_names.push_back(physical_expression->getColumnName());
+            }
+        }
 
         /// Expand aliases in projection ORDER BY using the Analyzer-resolved query tree.
         /// cloneToASTSelect() appends the ORDER BY expression as the last SELECT child,
@@ -553,6 +774,11 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             metadata_columns.add(std::move(column_description));
         }
     }
+
+    if (declared_columns)
+        applyProjectionColumnCodecs(
+            *declared_columns, visible_output_names, physical_output_names, columns,
+            result.name, result.with_parent_part_offset, metadata_columns);
 
     metadata.setColumns(std::move(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
@@ -878,28 +1104,36 @@ const ProjectionDescription & ProjectionsDescription::get(const String & project
     return *(it->second);
 }
 
-void ProjectionsDescription::add(ProjectionDescription && projection, const String & after_projection, bool first, bool if_not_exists)
+bool ProjectionsDescription::shouldAdd(const String & projection_name, bool if_not_exists) const
 {
-    if (has(projection.name))
+    if (has(projection_name))
     {
         if (if_not_exists)
-            return;
+            return false;
         throw Exception(
-            ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
+            ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection_name);
     }
 
     for (const auto & definition_ast : unavailable)
     {
-        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection.name)
+        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection_name)
             continue;
         if (if_not_exists)
-            return;
+            return false;
         throw Exception(
             ErrorCodes::ILLEGAL_PROJECTION,
             "Cannot add projection {}: a projection with this name is declared but could not be analyzed when the table "
             "was loaded. Drop it first, or remove the cause recorded in the server log and restart the server",
-            projection.name);
+            projection_name);
     }
+
+    return true;
+}
+
+void ProjectionsDescription::add(ProjectionDescription && projection, const String & after_projection, bool first, bool if_not_exists)
+{
+    if (!shouldAdd(projection.name, if_not_exists))
+        return;
 
     auto insert_it = projections.cend();
 
