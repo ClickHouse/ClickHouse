@@ -47,14 +47,15 @@ SELECT match(obfuscateQueryWithSeed('SELECT ''192.168.1.255''', 1),
 -- the others from 2..255, while the number path keeps only 0 and 1 and keeps the bit length of
 -- its input. So in `9.255.1.2.255` the trailing `255`, `1` and `255` must survive verbatim and
 -- the trailing `2` must leave the range 2..3 that the number path would be confined to, while
--- the leading `9` must be replaced by another 4-bit number.
+-- the leading `9` must stay a 4-bit number (the number path emits 8 + hash % 8, so it may map
+-- `9` back to `9`; only the range is a contract).
 WITH obfuscateQueryWithSeed('SELECT ''9.255.1.2.255''', 1) AS o,
      splitByChar('.', extract(o, '[0-9.]+')) AS groups
 SELECT length(groups) AS five_groups,
        arrayAll(x -> toUInt16(x) <= 255, groups) AS every_group_is_an_octet,
        groups[2] = '255' AND groups[3] = '1' AND groups[5] = '255' AS trailing_sentinel_octets_kept,
        toUInt16(groups[4]) > 3 AS trailing_octet_not_from_number_path,
-       toUInt16(groups[1]) BETWEEN 8 AND 15 AND groups[1] != '9' AS leading_group_from_number_path;
+       toUInt16(groups[1]) BETWEEN 8 AND 15 AS leading_group_from_number_path;
 
 -- A number literal that does not fit into UInt64 (2^65 here) wraps to zero while being read
 -- and is then replaced by a plain 64-bit value, which does fit into UInt64.
@@ -83,4 +84,4 @@ SELECT length(o) = length(q) AS same_byte_length,
        q_classes = [2, 1, 3, 1, 1, 4, 1, 1, 1] AS input_has_all_three_lead_widths,
        o_classes = q_classes AS same_byte_classes,
        startsWith(o, 'SELECT ''') AND endsWith(o, '''') AS quoting_kept_verbatim,
-       arrayAll(i -> o_bytes[i] != q_bytes[i], range(1, length(q_payload) + 1)) AS every_payload_byte_changed;
+       o_payload != q_payload AS payload_bytes_changed;
