@@ -1,7 +1,7 @@
 #pragma once
 
-#include <map>
-#include <vector>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::Runtime::Wyrd
 {
@@ -12,10 +12,10 @@ class FutexTable
 {
 public:
     void park(void * address, SimulatedThread * thread);
-    std::vector<SimulatedThread *> wake(void * address, size_t count);
+    VectorWithMemoryTracking<SimulatedThread *> wake(void * address, size_t count);
 
 private:
-    std::map<void *, std::vector<SimulatedThread *>> queues;
+    MapWithMemoryTracking<void *, VectorWithMemoryTracking<SimulatedThread *>> queues;
 };
 
 }

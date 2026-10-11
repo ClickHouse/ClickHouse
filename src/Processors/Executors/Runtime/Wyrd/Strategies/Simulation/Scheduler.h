@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulationParams.h>
-
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::Runtime::Wyrd
 {
@@ -33,9 +32,9 @@ private:
     const SimulationParams params;
 
     /// Thread states.
-    std::vector<SimulatedThread *> runnable_threads;
-    std::vector<SimulatedThread *> held_threads;
-    std::vector<SimulatedThread *> threads_in_lock_free_scope;
+    VectorWithMemoryTracking<SimulatedThread *> runnable_threads;
+    VectorWithMemoryTracking<SimulatedThread *> held_threads;
+    VectorWithMemoryTracking<SimulatedThread *> threads_in_lock_free_scope;
 
     /// Currently running thread information.
     SimulatedThread * current_thread = nullptr;

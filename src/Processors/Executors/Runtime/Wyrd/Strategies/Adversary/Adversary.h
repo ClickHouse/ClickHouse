@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/AdversaryParams.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/defines.h>
 
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <vector>
 
 namespace DB::Runtime::Wyrd
 {
@@ -51,7 +51,7 @@ private:
     std::atomic<size_t> spurious_failure_count{0};
 
     std::mutex mutex;
-    std::vector<std::shared_ptr<SuspendedThread>> suspended TSA_GUARDED_BY(mutex);
+    VectorWithMemoryTracking<std::shared_ptr<SuspendedThread>> suspended TSA_GUARDED_BY(mutex);
 };
 
 }

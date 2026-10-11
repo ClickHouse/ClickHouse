@@ -51,7 +51,7 @@ bool randomEvent(double probability)
 }
 
 template <typename T>
-T popRandom(std::vector<T> & items)
+T popRandom(VectorWithMemoryTracking<T> & items)
 {
     size_t index = randomNumber() % items.size();
     T item = std::move(items[index]);
@@ -61,6 +61,6 @@ T popRandom(std::vector<T> & items)
 }
 
 struct SimulatedThread;
-template SimulatedThread * popRandom(std::vector<SimulatedThread *> & items);
+template SimulatedThread * popRandom(VectorWithMemoryTracking<SimulatedThread *> & items);
 
 }

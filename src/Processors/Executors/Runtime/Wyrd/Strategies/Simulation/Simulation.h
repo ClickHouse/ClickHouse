@@ -4,13 +4,13 @@
 #include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Scheduler.h>
 #include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulationParams.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <exception>
 #include <functional>
 #include <memory>
 #include <source_location>
 #include <string>
-#include <vector>
 
 namespace DB::Runtime::Wyrd
 {
@@ -68,10 +68,10 @@ private:
     const SimulationParams params;
     Scheduler scheduler;
 
-    std::vector<TraceRecord> timeline;
+    VectorWithMemoryTracking<TraceRecord> timeline;
 
     FutexTable futexes;
-    std::vector<std::unique_ptr<SimulatedThread>> threads;
+    VectorWithMemoryTracking<std::unique_ptr<SimulatedThread>> threads;
     SimulatedThread * running_thread = nullptr;
     size_t alive = 0;
     UInt32 next_thread_id = 1;

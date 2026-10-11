@@ -3,10 +3,10 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <functional>
-#include <vector>
 
 namespace DB::Runtime::Wyrd
 {
@@ -20,7 +20,7 @@ public:
 
 private:
     Atomic<UInt32> started{0};
-    std::vector<Thread> threads;
+    VectorWithMemoryTracking<Thread> threads;
 };
 
 }

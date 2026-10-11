@@ -2,6 +2,8 @@
 
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
+#    include <Common/SetWithMemoryTracking.h>
+#    include <Common/VectorWithMemoryTracking.h>
 #    include <Common/randomSeed.h>
 
 #    include <fmt/format.h>
@@ -13,7 +15,6 @@
 #    include <cstdlib>
 #    include <exception>
 #    include <optional>
-#    include <set>
 #    include <stdexcept>
 #    include <string>
 #    include <string_view>
@@ -71,13 +72,13 @@ struct FailedRun
     size_t steps;
     std::string timeline;
     std::string error_message;
-    std::vector<CapturedFailure> failures;
+    VectorWithMemoryTracking<CapturedFailure> failures;
 };
 
 struct RunnerOutcome
 {
-    std::vector<SimulationResult> results;
-    std::vector<FailedRun> failures;
+    VectorWithMemoryTracking<SimulationResult> results;
+    VectorWithMemoryTracking<FailedRun> failures;
     std::exception_ptr error;
 };
 
@@ -88,7 +89,7 @@ void runTest(std::function<void()> body, TestParams params)
     const size_t threads = fixed_seed ? 1 : std::max<size_t>(1, std::min(runs, threadsFromEnvironment()));
     const bool timeline_requested = timelineRequested();
 
-    std::vector<RunnerOutcome> outcomes(threads);
+    VectorWithMemoryTracking<RunnerOutcome> outcomes(threads);
 
     auto run_simulation = [&](size_t i, RunnerOutcome & outcome)
     {
@@ -146,7 +147,7 @@ void runTest(std::function<void()> body, TestParams params)
         }
     };
 
-    std::vector<std::thread> pool;
+    VectorWithMemoryTracking<std::thread> pool;
     for (size_t thread = 0; thread < threads; ++thread)
         pool.emplace_back(worker, thread);
     for (auto & thread : pool)
@@ -156,8 +157,8 @@ void runTest(std::function<void()> body, TestParams params)
     size_t min_steps = 0;
     size_t max_steps = 0;
     size_t sum_steps = 0;
-    std::set<UInt64> digests;
-    std::vector<const FailedRun *> failed_runs;
+    SetWithMemoryTracking<UInt64> digests;
+    VectorWithMemoryTracking<const FailedRun *> failed_runs;
     for (const auto & outcome : outcomes)
     {
         for (const auto & result : outcome.results)

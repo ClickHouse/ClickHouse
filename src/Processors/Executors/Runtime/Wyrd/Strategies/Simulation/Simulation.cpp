@@ -39,7 +39,7 @@ namespace
 
 thread_local Simulation * current_simulation = nullptr;
 
-std::string formatTimeline(const std::vector<TraceRecord> & timeline)
+std::string formatTimeline(const VectorWithMemoryTracking<TraceRecord> & timeline)
 {
     std::string out;
     for (size_t i = 0; i < timeline.size(); ++i)

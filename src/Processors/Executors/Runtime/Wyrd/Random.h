@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <cstddef>
-#include <vector>
 
 namespace DB::Runtime::Wyrd
 {
@@ -16,6 +16,6 @@ double randomReal(double from, double to);
 bool randomEvent(double probability);
 
 template <typename T>
-T popRandom(std::vector<T> & items);
+T popRandom(VectorWithMemoryTracking<T> & items);
 
 }

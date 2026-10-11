@@ -9,12 +9,12 @@ namespace DB::Runtime::Wyrd
 namespace
 {
 
-bool contains(const std::vector<SimulatedThread *> & threads, const SimulatedThread * thread)
+bool contains(const VectorWithMemoryTracking<SimulatedThread *> & threads, const SimulatedThread * thread)
 {
     return std::ranges::contains(threads, thread);
 }
 
-void moveRandom(std::vector<SimulatedThread *> & from, std::vector<SimulatedThread *> & to)
+void moveRandom(VectorWithMemoryTracking<SimulatedThread *> & from, VectorWithMemoryTracking<SimulatedThread *> & to)
 {
     if (!from.empty())
         to.push_back(popRandom(from));
