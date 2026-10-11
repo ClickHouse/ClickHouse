@@ -17,6 +17,8 @@ TimestampType alignTimestampWithStep(TimestampType timestamp, DurationType step)
     auto x = timestamp % step;
     if (!x)
         return timestamp;
+    if (x < 0)
+        x += step;
     return timestamp - x;
 }
 
