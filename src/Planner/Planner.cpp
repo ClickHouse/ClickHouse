@@ -1555,7 +1555,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 {
                     interpolate_expression = &interpolate_actions_dag.addCast(*interpolate_expression,
                         expression_to_interpolate->result_type,
-                        interpolate_expression->result_name,
+                        {},
                         planner_context->getQueryContext());
                 }
 
