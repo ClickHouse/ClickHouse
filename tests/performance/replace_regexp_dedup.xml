@@ -1,0 +1,88 @@
+<test>
+    <!-- Per-block deduplication in ReplaceRegexpImpl only engages on the RE2 path,
+         so the JIT is disabled for all queries here. -->
+    <settings>
+        <min_count_to_compile_regular_expression>1000000000</min_count_to_compile_regular_expression>
+    </settings>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpAll(Referer, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpOne(URL, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+
+    <!-- FixedString haystacks, which go through their own entry point. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpAll(toFixedString(substring(Referer, 1, 64), 64), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+
+    <!-- Short-circuiting patterns that reject almost every row: the match-ratio guard must switch to
+         the capture-free pre-check so these do not pay for hashing the haystacks. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpOne(URL, '^missing', 'X'))</query>
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '^missing', 'X'))</query>
+
+    <!-- Same short-circuiting reject, but with blocks shorter than the distinct-ratio sample: the match
+         ratio must be sampled early enough for the pre-check to engage inside each short block. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '^missing', 'X')) SETTINGS max_block_size = 100</query>
+
+    <!-- A rejecting distinct prefix followed by a matching distinct suffix in each block: the guards disable
+         the cache and engage the pre-check on the prefix, and the re-evaluated match ratio must turn the
+         pre-check off on the suffix instead of scanning every remaining row twice. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat(if(number % 100000 &lt; 25000, 'nonmatching:', 'https://example.com/'), toString(number)), '^https?://([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 100000</query>
+
+    <!-- Same shape, but the matching distinct suffix is much shorter than the rejected prefix
+         (25000 rejected rows, then 7000 matching rows in a 32000-row block): the checkpoint must keep
+         firing during the rejected run, or the whole suffix would keep the cache and the pre-check
+         without ever re-evaluating either. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat(if(number % 32000 &lt; 25000, 'nonmatching:', 'https://example.com/'), toString(number)), '^https?://([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 32000</query>
+
+    <!-- Mostly short rejecting rows with a long matching row every 64th: the pre-check stays engaged
+         across the matching rows, so each of them is scanned once by the check and once by the
+         replacement itself, and both scans have to reach the cancellation budget. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(if(number % 64 = 0, concat('https://example.com/', repeat('longpathcomponent/', 100)), concat('nonmatching:', toString(number))), '^https?://([^/]+)/.*$', '\\1'))</query>
+
+    <!-- One repeated rejecting haystack: every row after the first is served by the adjacent-duplicate
+         compare, and the ratio checkpoint ahead of it must keep firing without disturbing that path. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(materialize(concat('https://example.com/', repeat('longpathcomponent/', 25))), '^missing', 'X'))</query>
+
+    <!-- The same repeated haystack with a pattern whose reject cannot short-circuit: the duplicate
+         compare must be consulted ahead of the non-matching pre-check, or every repeat would re-run
+         the full-scan reject. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(materialize(concat('https://example.com/', repeat('longpathcomponent/', 25))), '[0-9]{{50}}', 'X'))</query>
+
+    <!-- A cycle of rejecting haystacks against the same full-scan reject: every row differs from its
+         neighbour, so the non-adjacent repeats must be served by the cache instead of re-running the
+         reject for every occurrence. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example', toString(number % 10), '.com/', repeat('longpathcomponent/', 25)), '[0-9]{{50}}', 'X'))</query>
+
+    <!-- Mostly-distinct haystacks of equal length that share a long prefix, against a reject that
+         short-circuits at the first byte: once the distinct-ratio guard has dropped the cache, no per-row
+         compare may run ahead of the reject, or every row would scan the shared prefix for nothing. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example.com/', repeat('longpathcomponent/', 100), leftPad(toString(number), 7, '0')), '^missing', 'X'))</query>
+
+    <!-- The same haystacks against a match that also settles at the first bytes: with the pre-check off,
+         the plain path must not pay a per-row compare either. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpOne(concat('https://example.com/', repeat('longpathcomponent/', 100), leftPad(toString(number), 7, '0')), '^https', 'X'))</query>
+
+    <!-- Mostly-distinct haystacks: the distinct-ratio guard must disable deduplication. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+
+    <!-- Same guard, but with blocks small enough that a high first-check threshold would never trigger it. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 500</query>
+
+    <!-- A repeated prefix followed by a mostly-distinct suffix in each block (400 rows of one haystack, then
+         3600 distinct matches): the distinct ratio must be measured over recent rows, or the repeated prefix
+         would keep the cache on for the whole suffix and every distinct row would pay the lookup for nothing. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 4000 &lt; 400, 'https://example.com/path/repeated', concat('https://example.com/path/', toString(number))), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 4000</query>
+
+    <!-- A mostly-distinct prefix followed by a four-value cycle in each block (256 distinct rows, then 1744 rows
+         over four haystacks): the distinct-ratio guard drops the cache after the first window, and the sampled
+         value must bring it back for the cycle instead of running the regexp on every remaining row. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 2000 &lt; 256, concat('https://example.com/path/', toString(number)), concat('https://example.com/path/', toString(number % 4))), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 2000</query>
+
+    <!-- A distinct prefix followed by one repeated haystack, in blocks that end before the next
+         distinct-ratio boundary (256 distinct rows, then 244 rows of one value in a 500-row block): the
+         recurring sample must bring the cache back within the block, or the whole repetitive suffix
+         would run the regexp once per row. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 500 &lt; 256, concat('https://example.com/path/', toString(number)), 'https://example.com/path/repeated'), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 500</query>
+
+    <!-- The same shape with a nine-value cycle: probes spaced at a fixed stride of 32 rows would visit
+         only the cycle positions 32 * k mod 9 and never the sampled one, so the rows following the
+         sample must be compared consecutively for the cache to come back. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(if(number % 2000 &lt; 256, concat('https://example.com/path/', toString(number)), concat('https://example.com/path/', toString(number % 9))), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1')) SETTINGS max_block_size = 2000</query>
+</test>
