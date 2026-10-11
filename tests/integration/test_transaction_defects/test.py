@@ -80,7 +80,10 @@ VERSION_NOT_VISIBLE = "Not visible by transaction version"
 # `version_metadata_store_creation_csn_fail` fires inside `~MergeTreeData::Transaction`, which
 # logs the exception and swallows it. The statement already reported the first injected failure,
 # so this line is the only thing that says the rollback's own mark failed too.
-ROLLBACK_MARK_LOG = "Injected failure of the creation_csn store"
+# `VersionMetadata::storeCreationCSN` names the part it was about to write
+# (`VersionInfo::getObjectName`), so the table and the part turn this global message into one
+# about the reproduction at hand.
+ROLLBACK_MARK_LOG = "Injected failure of the creation_csn store of"
 
 # `non_transactional_removal_store_fail_after_first_part` raises this from
 # `NonTransactionalRemovalLocks::store`, after the first part of the batch was already stamped.
@@ -155,8 +158,19 @@ def start_cluster():
         cluster.shutdown(ignore_logical_errors=True, ignore_fatal=True)
 
 
+# `cluster.shutdown` can exempt a run from its `LOGICAL_ERROR` check, but only the whole run, and
+# this module needs that exemption for one reproduction. So the exemption is replaced per test: a
+# test named here may log the message it names, and every other test must log no logical error at
+# all. The `<Fatal>` check stays exempt and unreplaced -- the abort of a logical error writes a
+# whole stack, of which one line carries the message, so counting cannot tell it from an unrelated
+# crash.
+LOGICAL_ERROR_EXPECTED = {
+    "test_drop_partition_of_uncommitted_creation_is_refused": CREATION_CSN_LOG,
+}
+
+
 @pytest.fixture(autouse=True)
-def isolated_test(start_cluster):
+def isolated_test(start_cluster, request):
     """Each test gets its own transaction sessions and leaves no failpoint armed.
 
     Cleanup raises rather than logs: a failpoint still armed or a transaction still open makes
@@ -169,6 +183,9 @@ def isolated_test(start_cluster):
     _session_names.clear()
     _query_ids.clear()
     _pending_requests = 0
+    expected_error = LOGICAL_ERROR_EXPECTED.get(request.node.name)
+    logical_errors = log_hits("LOGICAL_ERROR")
+    expected_errors = log_hits(expected_error) if expected_error else 0
     yield
     # pytest runs the tests after this one whatever a teardown error says, so a server that
     # cannot be cleaned is replaced rather than merely reported.
@@ -213,6 +230,13 @@ def isolated_test(start_cluster):
             left_behind.append(f"and the restart failed: {e}")
             _mark_contaminated("; ".join(left_behind))
         raise Precondition("cleanup left the server contaminated: " + "; ".join(left_behind))
+    unaccounted = (log_hits("LOGICAL_ERROR") - logical_errors) - (
+        (log_hits(expected_error) - expected_errors) if expected_error else 0
+    )
+    require(
+        unaccounted <= 0,
+        f"the server logged {unaccounted} logical error(s) this test did not declare",
+    )
 
 
 def _mark_contaminated(reason):
@@ -429,12 +453,17 @@ def mutation_postpone_reasons(table, timeout=QUERY_TIMEOUT):
     ).strip()
 
 
-def mutation_outcome(table, future, timeout=HANG_TIMEOUT):
+def mutation_outcome(table, future, timeout=HANG_TIMEOUT, stop_early=True):
     """`(finished, postponed)` for a mutation that should finish.
 
-    Returns as soon as either is settled -- the request answered, or the scheduler recorded that
-    it cannot select a part because the version is not visible to the mutation's transaction. So
-    the reproduction rests on that reason, and only an inconclusive run pays the whole budget.
+    With `stop_early` this returns as soon as either is settled -- the request answered, or the
+    scheduler recorded that it cannot select a part because the version is not visible to the
+    mutation's transaction -- so only an inconclusive run pays the whole budget.
+
+    A verdict passes `stop_early=False` and waits the budget out. `selectPartsToMutate` clears
+    `current_parts_postpone_reasons` at the start of each pass, so the reason outlives whatever
+    made it true: read right after releasing the thing the mutation was waiting for, it describes
+    the pass before that and would report a mutation that is about to proceed as stuck.
     """
     postponed = False
 
@@ -442,12 +471,16 @@ def mutation_outcome(table, future, timeout=HANG_TIMEOUT):
         nonlocal postponed
         if future.done():
             return True
+        if not stop_early:
+            return False
         if VERSION_NOT_VISIBLE in mutation_postpone_reasons(table, remaining):
             postponed = True
             return True
         return False
 
     poll(check, timeout)
+    if not stop_early and not future.done():
+        postponed = VERSION_NOT_VISIBLE in mutation_postpone_reasons(table)
     return future.done(), postponed
 
 
@@ -568,7 +601,16 @@ def one_line(text, limit=300):
     return " ".join(text.split())[:limit] if text else text
 
 
-def require_rollback_mark_failed(baseline):
+def rollback_mark_log(table):
+    """The log line the rollback's own failed mark leaves, for `table` alone.
+
+    The failpoint is global and fires once for whichever metadata store reaches it first, so the
+    bare message says nothing about which table's rollback failed.
+    """
+    return f"{ROLLBACK_MARK_LOG} {q('SELECT currentDatabase()').strip()}.{table}"
+
+
+def require_rollback_mark_failed(table, baseline):
     """The rollback's own `creation_csn` mark must have failed too.
 
     `require_injected_failure` cannot tell the two injections apart: both raise
@@ -576,19 +618,29 @@ def require_rollback_mark_failed(baseline):
     reproduction still passes its precondition when only the removal store failed, which is the
     single-fault test next door.
 
-    The rollback runs in `~MergeTreeData::Transaction`, after the client already has the error,
-    hence the wait.
+    `~MergeTreeData::Transaction` logs the second failure and swallows it. The wait is for the log
+    file, not for the rollback: the local transaction object unwinds before the exception leaves
+    the storage call, so the mark has already failed by the time the client sees the first error.
     """
     require(
-        poll(lambda _: log_hits(ROLLBACK_MARK_LOG) > baseline, HANG_TIMEOUT),
+        poll(lambda _: log_hits(rollback_mark_log(table)) > baseline, HANG_TIMEOUT),
         "the rollback's own creation_csn mark did not fail, so this is the single-fault path",
     )
 
 
 def table_path(table):
-    return q(
-        f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
-    ).strip()
+    """The one directory the table's parts are in.
+
+    A table on several disks would put them in several, and everything that reads the disk here
+    would be reading one of them. These tables use the default policy, so this says so rather
+    than taking the first path and hoping.
+    """
+    paths = q(
+        "SELECT arrayStringConcat(data_paths, ' ') FROM system.tables "
+        f"WHERE database = currentDatabase() AND name = '{table}'"
+    ).split()
+    require(len(paths) == 1, f"{table} has {len(paths)} data paths, expected one: {paths}")
+    return paths[0]
 
 
 def part_dirs(table):
@@ -724,6 +776,10 @@ def two_parts(
     """
     q(f"DROP TABLE IF EXISTS {table} SYNC")
     q(f"CREATE TABLE {table} (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS {settings}")
+    # Before the inserts: a merge of the two rows into one part leaves the removal batch holding a
+    # single part, and the failpoint has no second part to fail after. The module-wide stop comes
+    # later and cannot cover this, since it only locks the tables that exist when it runs.
+    q(f"SYSTEM STOP MERGES {table}")
     q(f"INSERT INTO {table} VALUES (1)")
     q(f"INSERT INTO {table} VALUES (2)")
 
@@ -797,7 +853,9 @@ def test_mutation_at_raised_snapshot_finishes(start_cluster):
                     1, "ALTER TABLE t_raised_snapshot UPDATE v = 1 WHERE 1", query_id=query_id
                 )
             )
-            finished, postponed = mutation_outcome("t_raised_snapshot", mutation)
+            finished, postponed = mutation_outcome(
+                "t_raised_snapshot", mutation, stop_early=False
+            )
             if finished:
                 # Not suppressed: a statement that failed for another reason is not this defect.
                 mutation.result(timeout=FUTURE_TIMEOUT)
@@ -904,8 +962,10 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
                     held = False
                     snapshot.result(timeout=FUTURE_TIMEOUT)
                     raise Precondition(
-                        "the snapshot was not accepted while unloaded: this defect is repaired, and "
-                        "the rest of this test measures a different one"
+                        "the snapshot was not accepted while unloaded, so #124488 is repaired: "
+                        "drop this test's xfail marker and its premise. It cannot report the "
+                        "repair as the expected failure turning into a pass, because everything "
+                        "after this point measures a different defect"
                     )
                 snapshot.result(timeout=FUTURE_TIMEOUT)
 
@@ -930,7 +990,9 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
                 tx(3, "INSERT INTO t_unloaded_commit_poke VALUES (1)")
                 tx(3, "COMMIT")
 
-                finished, postponed = mutation_outcome("t_unloaded_commit", mutation)
+                finished, postponed = mutation_outcome(
+                    "t_unloaded_commit", mutation, stop_early=False
+                )
                 if finished:
                     mutation.result(timeout=FUTURE_TIMEOUT)
                 else:
@@ -1003,10 +1065,34 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
     seen = tx(3, f"SELECT count() FROM {table}").strip()
     require(seen == "1", f"the lowered snapshot does not see the row: {seen}")
 
+    def removal_attempted(timeout=QUERY_TIMEOUT):
+        """Whether the cleanup thread has looked at the part since the snapshot was lowered.
+
+        `grabOldParts` stamps `last_removal_attempt_time` on every part it examines, before it
+        tests whether a transaction can still see it, so this is the chance the defect needs. A
+        run where cleanup never got that chance proves nothing: both assertions below would pass
+        on a server that still removes the part.
+        """
+        return int(
+            q(
+                "SELECT max(last_removal_attempt_time) > toDateTime(0) FROM system.parts "
+                f"WHERE database = currentDatabase() AND table = '{table}'",
+                timeout=timeout,
+            ).strip()
+            or 0
+        )
+
     q(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
     try:
         # Stop early once the part is gone: that is the defect the assertions below report.
-        poll(lambda remaining: parts_on_disk(remaining) == 0, 5)
+        require(
+            poll(
+                lambda remaining: parts_on_disk(remaining) == 0 or removal_attempted(remaining),
+                60,
+            ),
+            "the cleanup thread never looked at the part, so this run says nothing about what it "
+            "skips",
+        )
 
         assert tx(3, f"SELECT count() FROM {table}").strip() == "1"
         assert parts_on_disk() == 1, "the cleanup removed a part the transaction still sees"
@@ -1110,6 +1196,8 @@ def test_failed_replace_partition_leaves_destination_intact(start_cluster):
     q("DROP TABLE IF EXISTS t_replace_dst SYNC")
     q("CREATE TABLE t_replace_src (n UInt64) ENGINE = MergeTree ORDER BY n")
     q("CREATE TABLE t_replace_dst (n UInt64) ENGINE = MergeTree ORDER BY n")
+    # See `two_parts`: the destination's two parts must survive as two.
+    q("SYSTEM STOP MERGES t_replace_dst")
     q("INSERT INTO t_replace_src VALUES (100)")
     q("INSERT INTO t_replace_dst VALUES (1)")
     q("INSERT INTO t_replace_dst VALUES (2)")
@@ -1142,7 +1230,7 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
     two_parts("t_rollback_mark")
     with merges_and_cleanup_stopped():
         require_parts("t_rollback_mark", 2)
-        marks_failed = log_hits(ROLLBACK_MARK_LOG)
+        marks_failed = log_hits(rollback_mark_log("t_rollback_mark"))
         with failpoints(
             "non_transactional_removal_store_fail_after_first_part",
             "version_metadata_store_creation_csn_fail",
@@ -1152,7 +1240,7 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
                 settings={"send_logs_level": "none"},
             )
         require_injected_failure(error)
-        require_rollback_mark_failed(marks_failed)
+        require_rollback_mark_failed("t_rollback_mark", marks_failed)
         require_rows("t_rollback_mark", "2\t3")
 
         require_rolled_back_parts_on_disk("t_rollback_mark")
