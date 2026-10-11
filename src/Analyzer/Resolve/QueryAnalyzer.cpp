@@ -1328,6 +1328,10 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
             continue;
 
         limit_by_nodes.push_back(projection_node->clone());
+
+        /// The clone must resolve its named windows from the same definitions as the projection item it is made from.
+        if (!named_window_snapshots.empty())
+            copyNamedWindowSnapshots(projection_node, limit_by_nodes.back());
     }
 
     if (limit_by_nodes.empty())
