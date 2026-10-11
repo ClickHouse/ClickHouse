@@ -1,3 +1,8 @@
+/// Injects scheduling noise by interposing pthread primitives and delivering signals, to shake
+/// out races in testing. Both halves are POSIX-specific, and this is a test aid rather than
+/// something the client needs.
+#if !defined(OS_WINDOWS)
+
 // NOLINTBEGIN(readability-inconsistent-declaration-parameter-name,readability-else-after-return)
 
 #include <csignal>
@@ -462,3 +467,5 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 #pragma clang diagnostic pop
 
 // NOLINTEND(readability-inconsistent-declaration-parameter-name,readability-else-after-return)
+
+#endif

@@ -44,6 +44,53 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# mingw-w64 installs the Win32 API headers and the CRT import libraries under
+# /usr/x86_64-w64-mingw32, which is where cmake/windows/toolchain-x86_64.cmake looks for them.
+# Only the headers and import libraries are used: the compiler, linker and C++ runtime all come
+# from our own clang/lld and contrib/llvm-project.
+#
+# It cannot come from this distribution's repository: Ubuntu 24.04 ships mingw-w64 11, whose
+# headers and `libmsvcrt.a` lack the `_l`-suffixed per-locale CRT functions (`_iswctype_l`, ...)
+# that the libc++ 22 locale support calls. Take the packages from a newer Ubuntu instead: both
+# are data-only `all`-architecture packages (headers and import libraries, no host binaries)
+# depending only on each other, so they install cleanly on any base.
+#
+# Two sources per file, both verified against the same SHA-256 pins below: the Ubuntu archive
+# pool (fast, but the URL disappears once the package is superseded in its release) and
+# Launchpad's permanent per-file archive `launchpadlibrarian.net` (unaffected by the package
+# being superseded, but intermittently answers 503), with retries on both.
+RUN fetch() { \
+        curl -fsSL --connect-timeout 10 --retry 5 --retry-all-errors -o "$1" "$2" \
+        || curl -fsSL --connect-timeout 10 --retry 5 --retry-all-errors -o "$1" "$3"; \
+    } \
+    && fetch /tmp/mingw-w64-common.deb \
+        "http://archive.ubuntu.com/ubuntu/pool/universe/m/mingw-w64/mingw-w64-common_13.0.0-2ubuntu1_all.deb" \
+        "https://launchpadlibrarian.net/847416730/mingw-w64-common_13.0.0-2ubuntu1_all.deb" \
+    && fetch /tmp/mingw-w64-x86-64-dev.deb \
+        "http://archive.ubuntu.com/ubuntu/pool/universe/m/mingw-w64/mingw-w64-x86-64-dev_13.0.0-2ubuntu1_all.deb" \
+        "https://launchpadlibrarian.net/847416735/mingw-w64-x86-64-dev_13.0.0-2ubuntu1_all.deb" \
+    && printf '%s\n' \
+        "da9b2cb14134ca0ef3a31302df50295a2dd6fee7aa4fd888b11c6f72f8ab939e /tmp/mingw-w64-common.deb" \
+        "da40b9e2ae89d98d44b547a9e4fd01862858edb176bade9f12ad143e7ae7efe4 /tmp/mingw-w64-x86-64-dev.deb" \
+      | sha256sum -c \
+    && dpkg -i /tmp/mingw-w64-common.deb /tmp/mingw-w64-x86-64-dev.deb \
+    && rm /tmp/mingw-w64-common.deb /tmp/mingw-w64-x86-64-dev.deb
+
+# Wine, to run the `clickhouse.exe` the Windows cross-build just produced. Nothing else in the
+# image needs it, and it is installed on `amd64` only: an `x86_64` PE needs an `x86_64` host, and
+# the ARM build of Wine ships no `x86` emulator, so there it would be dead weight.
+#
+# `wine` rather than `wine64` alone, and without recommends. `wine64` is only the loader and the
+# DLLs - it installs nothing into `PATH` - so the launcher has to come from `wine`, whose
+# dependency is satisfied by `wine64` on `amd64`; without recommends apt does not additionally
+# pull the i386 multiarch half, which a 64-bit PE does not need.
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        apt-get update \
+        && apt-get install --yes --no-install-recommends --verbose-versions wine \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*; \
+    fi
+
 # Optional PGO+BOLT optimized toolchain override
 ARG TOOLCHAIN_COMMIT=bbbf2c95d11bed6a3dbabcc9cb2a65d02cfda55e
 # S3 directory of that commit's artifacts. Praktika owns the prefix layout and

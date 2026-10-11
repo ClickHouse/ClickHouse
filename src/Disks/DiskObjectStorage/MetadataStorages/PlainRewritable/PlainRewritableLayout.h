@@ -3,7 +3,6 @@
 #include <string>
 #include <string_view>
 #include <optional>
-#include <filesystem>
 
 namespace DB
 {
@@ -117,7 +116,7 @@ public:
     std::optional<std::string> parseTombstoneMarkerKey(const std::string & key) const;
 
 private:
-    const std::filesystem::path object_storage_common_key_prefix;
+    const std::string object_storage_common_key_prefix;
 };
 
 }

@@ -102,7 +102,7 @@ public:
         if (series_name.size() > 100) /// Arbitrary safety threshold
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Series name '{}' is too long", series_name);
 
-        String serial_path = std::filesystem::path(keeper_path) / series_name;
+        String serial_path = zkutil::joinZooKeeperPath(keeper_path, series_name);
 
         if (current_series < max_series)
         {

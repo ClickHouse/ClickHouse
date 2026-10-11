@@ -1,11 +1,15 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IDisk.h>
 
+#include <IO/PlatformFileIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+
+#include <Common/ErrnoException.h>
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -32,6 +36,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TOO_DEEP_RECURSION;
     extern const int FAULT_INJECTED;
+    extern const int CANNOT_STAT;
 }
 
 namespace FailPoints
@@ -57,6 +62,25 @@ std::optional<DiskObjectStorageMetadata> tryReadMetadataFile(const std::string &
         return std::nullopt;
 
     return object_metadata;
+}
+
+/// `fs::relative(leaf, root)` in string space, for a `leaf` found by walking the directory `root`. Both are
+/// `/`-separated virtual paths of the disk; going through `std::filesystem` would treat `\` as a separator
+/// and decode the bytes through the active code page on Windows.
+std::string relativeVirtualPath(std::string_view leaf, std::string_view root)
+{
+    std::string_view rest = leaf;
+    while (root.ends_with('/'))
+        root.remove_suffix(1);
+
+    if (!rest.starts_with(root) || (rest.size() > root.size() && !root.empty() && rest[root.size()] != '/'))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not inside the directory {}", leaf, root);
+
+    rest.remove_prefix(root.size());
+    while (rest.starts_with('/'))
+        rest.remove_prefix(1);
+
+    return rest.empty() ? "." : std::string(rest);
 }
 
 }
@@ -228,9 +252,9 @@ CreateDirectoryRecursiveOperation::CreateDirectoryRecursiveOperation(std::string
 void CreateDirectoryRecursiveOperation::execute()
 {
     fs::path p(path);
-    while (!disk.existsFileOrDirectory(p))
+    while (!disk.existsFileOrDirectory(pathToGenericString(p)))
     {
-        paths_created.push_back(p);
+        paths_created.push_back(pathToGenericString(p));
         if (!p.has_parent_path())
             break;
 
@@ -289,7 +313,7 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
     }
 
     if (ref_count == 0)
-        if (!should_remove_objects || should_remove_objects(fs::relative(leaf, path)))
+        if (!should_remove_objects || should_remove_objects(relativeVirtualPath(leaf, path)))
             removed_objects.append_range(object_metadata->objects);
 }
 
@@ -298,8 +322,15 @@ void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
     for (auto it = disk.iterateDirectory(mid_path); it->isValid(); it->next())
     {
         const std::string next_to_visit = it->path();
-        const int64_t path_inode = disk.stat(next_to_visit).st_ino;
-        const bool is_new_path = visited_inodes.emplace(path_inode).second;
+
+        /// The disk behind local metadata storage is a local disk, so the entry's identity can be
+        /// read from the filesystem directly. Not through `disk.stat`: `struct stat` cannot carry
+        /// a Windows file identity (the CRT reports `st_ino` as zero for every file), and a zero
+        /// key would make every directory after the first look like a revisit.
+        PlatformFileVersion file_version;
+        if (0 != platformFileVersion(pathToString(pathFromString(disk.getPath()) / pathFromString(next_to_visit)), file_version))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, next_to_visit, "Cannot stat file {}", next_to_visit);
+        const bool is_new_path = visited_file_ids.emplace(file_version.device_id, file_version.file_id).second;
 
         /// Hardlinks will point to the same inode for different files.
         /// So here we need to remove file in any case.

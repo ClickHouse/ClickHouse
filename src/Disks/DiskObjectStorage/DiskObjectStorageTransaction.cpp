@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
@@ -247,7 +248,12 @@ void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & 
 {
     for (const auto & [path, if_exists] : files)
     {
-        const bool should_remove_objects = !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename());
+        /// `path` is a logical `IDisk` path, `/`-separated on every platform, so take its last component
+        /// as a string rather than through `std::filesystem`: on Windows that would decode the name
+        /// through the active code page and split it at `\` as well.
+        const size_t last_slash = path.rfind('/');
+        const std::string file_name = last_slash == std::string::npos ? path : path.substr(last_slash + 1);
+        const bool should_remove_objects = !keep_all_batch_data && !file_names_remove_metadata_only.contains(file_name);
         addOperation([path, if_exists, should_remove_objects](MetadataTransactionPtr tx)
         {
             tx->unlinkFile(path, if_exists, should_remove_objects);

@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -125,7 +126,7 @@ public:
         auto quota_tracker = getContext()->getAIQuotaTracker();
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
-        timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
+        timeouts.receive_timeout = timespanFromSeconds(timeout_sec);
 
         /// `isNullAt` and `getDataAt` are virtual on `IColumn`, so a single path covers `ColumnString`,
         /// `ColumnConst(ColumnString)`, `ColumnNullable` and `ColumnConst(ColumnNullable)` (e.g.

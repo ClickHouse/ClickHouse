@@ -150,7 +150,10 @@ public:
         auto quota_tracker = getContext()->getAIQuotaTracker();
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
-        timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(settings[Setting::ai_function_request_timeout_sec].value) /*s*/, 0 /*us*/);
+        /// The single-argument (microseconds) constructor: the two-argument one takes the seconds
+        /// as `long`, which is 32-bit on Windows.
+        timeouts.receive_timeout = Poco::Timespan(
+            static_cast<Poco::Timespan::TimeDiff>(settings[Setting::ai_function_request_timeout_sec].value) * 1000000 /*us*/);
 
         /// `isNullAt` and `getDataAt` are virtual on `IColumn`, so a single path covers `ColumnString`,
         /// `ColumnConst(ColumnString)`, `ColumnNullable` and `ColumnConst(ColumnNullable)`. A constant

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/atomicRename.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -216,9 +217,9 @@ namespace DB
 static void renameNoReplaceFallback(const std::string & old_path, const std::string & new_path)
 {
     /// NOTE it's unsafe
-    if (fs::exists(new_path))
+    if (fs::exists(pathFromString(new_path)))
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} exists", new_path);
-    fs::rename(old_path, new_path);
+    fs::rename(pathFromString(old_path), pathFromString(new_path));
 }
 
 /// Do not use [[noreturn]] to avoid warnings like "code will never be executed" in other places

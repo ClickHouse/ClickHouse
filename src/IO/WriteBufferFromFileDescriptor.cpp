@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <IO/PlatformFileIO.h>
 #include <cerrno>
 #include <sys/stat.h>
 #include <algorithm>
@@ -57,7 +58,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
         ssize_t res = 0;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
-            res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+            res = platformWrite(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
         }
 
         if ((-1 == res || 0 == res) && errno != EINTR)
@@ -128,11 +129,7 @@ void WriteBufferFromFileDescriptor::sync()
     Stopwatch watch;
 
     /// Request OS to sync data with storage medium.
-#if defined(OS_DARWIN)
-    int res = ::fsync(fd);
-#else
-    int res = ::fdatasync(fd);
-#endif
+    int res = platformFDataSync(fd);
     ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
     if (-1 == res)

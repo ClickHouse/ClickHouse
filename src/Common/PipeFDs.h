@@ -1,5 +1,11 @@
 #pragma once
 
+/// A POSIX pipe with the fault handling around it. Not built on Windows: its users here -
+/// `TraceSender`, `SignalHandlers` and `ShellCommand` - are not built either, and a Windows
+/// pipe is not pollable alongside sockets, so a port would want a socket pair instead.
+#if !defined(OS_WINDOWS)
+
+
 namespace DB
 {
 
@@ -35,3 +41,5 @@ struct PipeFDs : public LazyPipeFDs
 };
 
 }
+
+#endif

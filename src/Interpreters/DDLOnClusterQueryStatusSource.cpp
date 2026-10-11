@@ -8,6 +8,7 @@
 #include <Interpreters/DDLOnClusterQueryStatusSource.h>
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/isLocalAddress.h>
 
 namespace DB
@@ -38,8 +39,7 @@ DDLOnClusterQueryStatusSource::DDLOnClusterQueryStatusSource(
 
 ExecutionStatus DDLOnClusterQueryStatusSource::checkStatus(const String & host_id)
 {
-    fs::path status_path = fs::path(node_path) / "finished" / host_id;
-    return getExecutionStatus(status_path);
+    return getExecutionStatus(zkutil::joinZooKeeperPath(node_path, "finished", host_id));
 }
 
 Chunk DDLOnClusterQueryStatusSource::generateChunkWithUnfinishedHosts() const
@@ -67,7 +67,7 @@ Chunk DDLOnClusterQueryStatusSource::generateChunkWithUnfinishedHosts() const
 
 Strings DDLOnClusterQueryStatusSource::getNodesToWait()
 {
-    return {String(fs::path(node_path) / "finished"), String(fs::path(node_path) / "active")};
+    return {zkutil::joinZooKeeperPath(node_path, "finished"), zkutil::joinZooKeeperPath(node_path, "active")};
 }
 Chunk DDLOnClusterQueryStatusSource::handleTimeoutExceeded()
 {

@@ -2,6 +2,8 @@
 
 #include "config.h"
 
+#include <Common/Socket.h>
+
 namespace Poco::Net { class StreamSocket; }
 
 #if USE_SSL
@@ -26,7 +28,7 @@ enum class SocketState
     Closed,
 };
 
-/// Probes the raw file descriptor with a single `recv(..., MSG_PEEK | MSG_DONTWAIT)`:
+/// Probes the socket with a single non-blocking peek (see `Socket::peek`):
 ///   - `> 0`               -> `DataPending` (bytes are waiting to be read);
 ///   - `0`                 -> `Closed` (the peer sent a FIN, the next read would return EOF);
 ///   - `EAGAIN`            -> `Idle` (a healthy idle connection);
@@ -34,7 +36,7 @@ enum class SocketState
 ///
 /// This is a raw (TLS-unaware) check on the plain socket; on a TLS connection use the
 /// `StreamSocket` overload below, which is TLS-aware.
-SocketState getSocketState(int fd);
+SocketState getSocketState(Socket socket);
 
 /// Same as above for a Poco socket.
 ///
@@ -61,7 +63,7 @@ SocketState getSSLSocketState(ssl_st * ssl);
 /// `getSocketState(...) == SocketState::Closed`. A live connection returns false whether or not
 /// there are bytes waiting to be read; for a connection-pool reuse check, which must also reject
 /// a connection with unread data, test for `SocketState::Idle` instead.
-bool isSocketPeerClosed(int fd);
+bool isSocketPeerClosed(Socket socket);
 
 /// Same as above for a Poco socket (TLS-aware, see `getSocketState`).
 bool isSocketPeerClosed(const Poco::Net::StreamSocket & socket);

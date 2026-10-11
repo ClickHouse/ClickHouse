@@ -46,17 +46,17 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 /// path as written: on a filesystem-backed storage that separator is what makes a path absolute.
 std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path);
 
-/// Inverse of `joinPathUnderPrefix` under the same prefix. An empty prefix again needs care, for
-/// the opposite reason: `fs::relative` of an absolute path against an empty base is the empty
-/// path, which would lose the value rather than leave it.
-std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path);
+/// Inverse of `joinPathUnderPrefix` under the same prefix. An empty prefix leaves the path as
+/// written. Returns `std::nullopt` when `path` is not under `prefix`, so no key could produce it.
+std::optional<std::string> relativizePathUnderPrefix(const std::string & prefix, const std::string & path);
 
 std::string formatObjectPath(
     const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info);
 /// `joinPathUnderPrefix` is not injective under a non-empty prefix: a key with a leading separator
 /// and the same key without it render to the same `_path` value, so `relativizePathUnderPrefix`
 /// alone cannot tell which of them produced a given value. Returns every key that could have, so
-/// that a caller which needs the original key can see when the answer is not unique.
+/// that a caller which needs the original key can see when the answer is not unique, and nothing
+/// when no key could have.
 Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);

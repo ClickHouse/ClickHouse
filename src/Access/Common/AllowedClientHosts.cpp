@@ -8,11 +8,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
 #include <Common/DNSResolver.h>
-#include <ifaddrs.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
+#include <Common/isLocalAddress.h>
 
 namespace DB
 {
@@ -71,31 +67,22 @@ namespace
     {
         std::vector<IPAddress> addresses;
 
-        ifaddrs * ifa_begin = nullptr;
-        SCOPE_EXIT({
-            if (ifa_begin)
-                freeifaddrs(ifa_begin);
-        });
-
-        int err = getifaddrs(&ifa_begin);
-        if (err)
-            return {IPAddress{"::1"}};
-
-        for (const ifaddrs * ifa = ifa_begin; ifa; ifa = ifa->ifa_next)
+        try
         {
-            if (!ifa->ifa_addr)
-                continue;
-            if (ifa->ifa_addr->sa_family == AF_INET)
-            {
-                const auto & sin = *reinterpret_cast<const sockaddr_in *>(ifa->ifa_addr);
-                addresses.push_back(toIPv6(IPAddress(&sin.sin_addr, sizeof(sin.sin_addr))));
-            }
-            else if (ifa->ifa_addr->sa_family == AF_INET6)
-            {
-                const auto & sin = *reinterpret_cast<const sockaddr_in6 *>(ifa->ifa_addr);
-                addresses.push_back(IPAddress(&sin.sin6_addr, sizeof(sin.sin6_addr), sin.sin6_scope_id));
-            }
+            for (const auto & address : getLocalInterfaceAddresses())
+                addresses.push_back(address.family() == IPAddress::Family::IPv4 ? toIPv6(address) : address);
         }
+        catch (...)
+        {
+            /// Ok: keeping the pre-existing behaviour - if the interface list cannot be obtained,
+            /// assume the loopback address rather than failing every access check.
+            LOG_WARNING(
+                getLogger("AllowedClientHosts"),
+                "Cannot get the addresses of the local interfaces: {}",
+                getCurrentExceptionMessage(true));
+            return {IPAddress{"::1"}};
+        }
+
         return addresses;
     }
 
@@ -266,8 +253,8 @@ String AllowedClientHosts::IPSubnet::toString() const
     if (isMaskAllBitsOne())
         return prefix.toString();
     if (IPAddress{prefix_length, mask.family()} == mask)
-        return fs::path(prefix.toString()) / std::to_string(prefix_length);
-    return fs::path(prefix.toString()) / mask.toString();
+        return prefix.toString() + "/" + std::to_string(prefix_length);
+    return prefix.toString() + "/" + mask.toString();
 }
 
 bool AllowedClientHosts::IPSubnet::isMaskAllBitsOne() const

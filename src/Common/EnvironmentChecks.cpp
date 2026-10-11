@@ -35,7 +35,14 @@ void checkHarmfulEnvironmentVariables(char ** argv)
         if (const char * value = getenv(var); value && value[0]) // NOLINT(concurrency-mt-unsafe)
         {
             /// NOTE: setenv() is used over unsetenv() since unsetenv() marked as harmful
+#if defined(OS_WINDOWS)
+            /// `_putenv_s` with an empty value is the Windows spelling; like `setenv` with an
+            /// empty string it leaves the variable defined but empty, which is what this wants -
+            /// `unsetenv` is deliberately not used, see the note above.
+            if (_putenv_s(var, ""))
+#else
             if (setenv(var, "", true)) // NOLINT(concurrency-mt-unsafe) // this is safe if not called concurrently
+#endif
             {
                 /// musl - and so Emscripten - spells this `#define stderr (stderr)`, which
                 /// `-Wdisabled-macro-expansion` reports at every use.

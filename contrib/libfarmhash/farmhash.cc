@@ -165,6 +165,16 @@
 #define bswap_64(x) bswap64(x)
 #endif
 
+#elif defined(_WIN32)
+
+/* The Windows CRT has no <byteswap.h>. These are only ever used on a big-endian
+   host (see FARMHASH_BIG_ENDIAN below), but the header would be included
+   regardless, so map them onto the compiler's own byte-swap builtins. */
+#undef bswap_32
+#undef bswap_64
+#define bswap_32(x) __builtin_bswap32(x)
+#define bswap_64(x) __builtin_bswap64(x)
+
 #else
 
 #undef bswap_32

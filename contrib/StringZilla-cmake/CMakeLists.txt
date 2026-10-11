@@ -58,6 +58,16 @@ endif ()
 
 # We need SZ_DYNAMIC_DISPATCH=1 to be public because otherwise the headers will redefine the API (sz_find for example)
 # again and avoid dynamic dispatch.
-target_compile_definitions(_stringzilla PUBLIC "SZ_DYNAMIC_DISPATCH=1")
+#
+# Not on Windows: dynamic dispatch is built out of `__attribute__((weak))` definitions that appear
+# in several of StringZilla's own translation units, which is fine in ELF - one wins - but in COFF
+# each becomes a `.weak.<name>.default` symbol that has to be unique, so they collide with each
+# other. Without it the headers inline the serial implementations directly, which is what the
+# non-dispatching build does everywhere else.
+if (OS_WINDOWS)
+    target_compile_definitions(_stringzilla PUBLIC "SZ_DYNAMIC_DISPATCH=0")
+else ()
+    target_compile_definitions(_stringzilla PUBLIC "SZ_DYNAMIC_DISPATCH=1")
+endif ()
 target_compile_definitions(_stringzilla PRIVATE "SZ_AVOID_LIBC=0")
 target_compile_definitions(_stringzilla PRIVATE "SZ_DEBUG=0")

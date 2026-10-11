@@ -267,7 +267,7 @@ ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTask
         return CheckExistingPartResult::OK;
 
     /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-    if (storage.getZooKeeper()->exists(fs::path(storage.replica_path) / "parts" / existing_part->name))
+    if (storage.getZooKeeper()->exists(zkutil::joinZooKeeperPath(storage.replica_path, "parts", existing_part->name)))
     {
         LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
 

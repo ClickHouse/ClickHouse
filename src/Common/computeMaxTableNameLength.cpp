@@ -1,4 +1,5 @@
 #include <Common/computeMaxTableNameLength.h>
+#include <base/pathToString.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/Context.h>
 
@@ -14,13 +15,20 @@ size_t computeMaxTableNameLength(const String & database_name, ContextPtr contex
     namespace fs = std::filesystem;
 
     const String suffix = ".sql.detached";
-    const String metadata_path = fs::path(context->getPath()) / "metadata";
-    const String metadata_dropped_path = fs::path(context->getPath()) / "metadata_dropped";
+    const String metadata_path = pathToString(fs::path(context->getPath()) / "metadata");
+    const String metadata_dropped_path = pathToString(fs::path(context->getPath()) / "metadata_dropped");
 
     // Helper lambda to get the maximum name length
-    auto get_max_name_length = [](const String & path) -> size_t {
+    auto get_max_name_length = []([[maybe_unused]] const String & path) -> size_t {
+#if defined(OS_WINDOWS)
+        /// Windows has no `pathconf`. The limit is a property of the filesystem rather than of a
+        /// path, and it is 255 for every filesystem Windows can create a table directory on
+        /// (NTFS, ReFS, exFAT), which is also what `NAME_MAX` is on Linux.
+        return 255;
+#else
         auto length = pathconf(path.c_str(), _PC_NAME_MAX);
         return (length == -1) ? NAME_MAX : static_cast<size_t>(length);
+#endif
     };
 
     size_t max_create_length = get_max_name_length(metadata_path) - suffix.length();

@@ -22,8 +22,21 @@
 /* Should we define BN_DIV2W here? */
 
 /* Only one for the following should be defined */
+/*
+ * ClickHouse: this header is shared by all the platforms we build for, so the choice is
+ * made from the data model rather than baked in. Windows is LLP64 - `long` is 32 bits
+ * there - so the 64-bit bignum limb has to be `long long` (`SIXTY_FOUR_BIT`) instead of
+ * `long` (`SIXTY_FOUR_BIT_LONG`). This mirrors what OpenSSL's own `Configure` emits for
+ * its `mingw64` target. Getting it wrong is not caught by the type system: it makes
+ * `bn_div_words`' inline `divq` be handed a 32-bit register operand.
+ */
+#if defined(_WIN64)
+#undef SIXTY_FOUR_BIT_LONG
+#define SIXTY_FOUR_BIT
+#else
 #define SIXTY_FOUR_BIT_LONG
 #undef SIXTY_FOUR_BIT
+#endif
 #undef THIRTY_TWO_BIT
 
 #endif

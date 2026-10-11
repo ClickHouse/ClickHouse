@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/WasmModuleManager.h>
 #include <Interpreters/WebAssembly/HostApi.h>
 #include <Interpreters/WebAssembly/WasmTimeRuntime.h>
@@ -150,7 +151,7 @@ WasmModuleManager::WasmModuleManager(DiskPtr user_scripts_disk_, std::filesystem
     , user_scripts_path(std::move(user_scripts_path_))
     , engine(createEngine(engine_name))
 {
-    user_scripts_disk->createDirectories(user_scripts_path);
+    user_scripts_disk->createDirectories(pathToGenericString(user_scripts_path));
     registerExistingModules();
 }
 
@@ -326,7 +327,7 @@ void WasmModuleManager::registerExistingModules()
     UniqueLock lock(modules_mutex);
     LOG_DEBUG(log, "Loading WASM modules from '{}/{}' at disk '{}'", user_scripts_disk->getPath(), user_scripts_path, user_scripts_disk->getName());
 
-    auto files_it = user_scripts_disk->iterateDirectory(user_scripts_path);
+    auto files_it = user_scripts_disk->iterateDirectory(pathToGenericString(user_scripts_path));
     for (; files_it->isValid(); files_it->next())
     {
         const auto & file_path = files_it->path();
@@ -351,7 +352,7 @@ void WasmModuleManager::registerExistingModules()
 
 std::string WasmModuleManager::getFilePath(std::string_view module_name) const
 {
-    return user_scripts_path / fmt::format("{}{}", module_name, FILE_EXTENSION);
+    return pathToGenericString(user_scripts_path / fmt::format("{}{}", module_name, FILE_EXTENSION));
 }
 
 std::vector<std::pair<std::string, UInt256>> WasmModuleManager::getModulesList() const

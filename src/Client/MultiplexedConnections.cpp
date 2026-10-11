@@ -1,3 +1,4 @@
+#include <Common/Socket.h>
 #include <Client/MultiplexedConnections.h>
 
 #include <Client/scaleInteractiveDelayByFanout.h>
@@ -540,11 +541,11 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         size_t replica_state_number = 0;
         for (const auto & replica_state : replica_states)
         {
-            fd_to_replica_state_idx.emplace(replica_state.connection->socket->impl()->sockfd(), replica_state_number);
+            fd_to_replica_state_idx.emplace(Socket(replica_state.connection->socket->impl()->sockfd()).toDescriptor(), replica_state_number);
             ++replica_state_number;
         }
     }
-    return replica_states[fd_to_replica_state_idx.at(socket.impl()->sockfd())];
+    return replica_states[fd_to_replica_state_idx.at(Socket(socket.impl()->sockfd()).toDescriptor())];
 }
 
 void MultiplexedConnections::invalidateReplica(ReplicaState & state)
