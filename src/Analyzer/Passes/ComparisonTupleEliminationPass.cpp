@@ -8,11 +8,18 @@
 
 #include <Interpreters/Context.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
+
+#include <base/unit.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -20,30 +27,51 @@ namespace DB
 namespace
 {
 
-/// Whether `resolveFunction` would replace the function with a constant.
-bool canBeConstantFolded(const FunctionNode & function_node, const ContextPtr & context)
+/// Argument columns as `resolveFunction` folds with them: a constant or a known `__getScalar` argument has a column.
+ColumnsWithTypeAndName getFoldingArgumentColumns(const FunctionNode & function_node, const ContextPtr & context)
 {
-    const auto & function = function_node.getFunction();
-    if (!function->isSuitableForConstantFolding())
-        return false;
-
     auto arguments = function_node.getArgumentColumns();
     const auto & argument_nodes = function_node.getArguments().getNodes();
-    bool all_arguments_constant = true;
     for (size_t i = 0; i < argument_nodes.size(); ++i)
     {
-        if (argument_nodes[i]->as<ConstantNode>())
-            continue;
-        if (auto scalar_column = tryGetScalarConstantColumn(argument_nodes[i], context))
-            arguments[i].column = std::move(scalar_column);
-        else
-            all_arguments_constant = false;
+        if (!arguments[i].column)
+            arguments[i].column = tryGetScalarConstantColumn(argument_nodes[i], context);
     }
+    return arguments;
+}
 
-    if (all_arguments_constant)
+bool areAllConstant(const ColumnsWithTypeAndName & arguments)
+{
+    return std::ranges::all_of(arguments, [](const auto & argument) { return argument.column != nullptr; });
+}
+
+/// The constant `resolveFunction` would replace the function `node` with, given its argument columns, or nullptr.
+ColumnPtr tryFoldFunction(const QueryTreeNodePtr & node, const ColumnsWithTypeAndName & arguments)
+{
+    const auto & function = node->as<const FunctionNode &>().getFunction();
+    if (!function->isSuitableForConstantFolding())
+        return nullptr;
+
+    ColumnPtr column;
+    if (areAllConstant(arguments))
+        column = function->prepare(arguments)->execute(arguments, function->getResultType(), 1, /*dry_run=*/ true);
+    else
+        column = function->getConstantResultForNonConstArguments(arguments, function->getResultType());
+
+    /// `resolveFunction` keeps the function in these cases.
+    const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
+    if (!column_const || column_const->getDataColumn().isDummy() || hasAggregateFunctionNodes(node)
+        || hasFunctionNode(node, "arrayJoin") || column->byteSize() >= 1_MiB)
+        return nullptr;
+
+    return column;
+}
+
+bool hasColumnNode(const QueryTreeNodePtr & node)
+{
+    if (node->getNodeType() == QueryTreeNodeType::COLUMN)
         return true;
-
-    return function->getConstantResultForNonConstArguments(arguments, function->getResultType()) != nullptr;
+    return std::ranges::any_of(node->getChildren(), [](const auto & child) { return child && hasColumnNode(child); });
 }
 
 class ComparisonTupleEliminationPassVisitor : public InDepthQueryTreeVisitorWithContext<ComparisonTupleEliminationPassVisitor>
@@ -153,7 +181,7 @@ private:
 
         if (lhs_tuple_function_arguments_nodes_size == 1)
         {
-            return makeComparisonFunction(lhs_tuple_function_arguments_nodes[0], rhs_tuple_function_arguments_nodes[0], comparison_function_name);
+            return makeNonFoldingComparisonFunction(lhs_tuple_function_arguments_nodes[0], rhs_tuple_function_arguments_nodes[0], comparison_function_name);
         }
 
         QueryTreeNodes tuple_arguments_equals_functions;
@@ -162,8 +190,6 @@ private:
         for (size_t i = 0; i < lhs_tuple_function_arguments_nodes_size; ++i)
         {
             auto equals_function = makeEqualsFunction(lhs_tuple_function_arguments_nodes[i], rhs_tuple_function_arguments_nodes[i]);
-            if (!equals_function)
-                return {};
             tuple_arguments_equals_functions.push_back(std::move(equals_function));
         }
 
@@ -203,7 +229,7 @@ private:
         if (function_arguments_nodes_size == 1)
         {
             auto comparison_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[0], tuple_data_type_elements[0]);
-            return makeComparisonFunction(function_arguments_nodes[0], std::move(comparison_argument_constant_node), comparison_function_name);
+            return makeNonFoldingComparisonFunction(function_arguments_nodes[0], std::move(comparison_argument_constant_node), comparison_function_name);
         }
 
         QueryTreeNodes tuple_arguments_equals_functions;
@@ -213,8 +239,6 @@ private:
         {
             auto equals_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[i], tuple_data_type_elements[i]);
             auto equals_function = makeEqualsFunction(function_arguments_nodes[i], std::move(equals_argument_constant_node));
-            if (!equals_function)
-                return {};
             tuple_arguments_equals_functions.push_back(std::move(equals_function));
         }
 
@@ -224,10 +248,24 @@ private:
     QueryTreeNodePtr makeEquivalentTupleComparisonFunction(QueryTreeNodes tuple_arguments_equals_functions,
         const std::string & comparison_function_name) const
     {
+        /// A remote server analyzes the query again and names a folded constant that depends on a column differently.
+        /// It folds the element comparisons first, then `and` with their results.
+        ColumnsWithTypeAndName and_arguments;
+        for (const auto & equals_function : tuple_arguments_equals_functions)
+        {
+            auto folding_result = tryFoldFunction(equals_function, getFoldingArgumentColumns(equals_function->as<const FunctionNode &>(), getContext()));
+            if (folding_result && hasColumnNode(equals_function))
+                return {};
+            and_arguments.emplace_back(std::move(folding_result), equals_function->getResultType(), "");
+        }
+
         auto result_function = std::make_shared<FunctionNode>("and");
         result_function->markAsOperator();
         result_function->getArguments().getNodes() = std::move(tuple_arguments_equals_functions);
         resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), getContext());
+
+        if (tryFoldFunction(result_function, and_arguments))
+            return {};
 
         if (comparison_function_name == "notEquals")
         {
@@ -257,8 +295,16 @@ private:
 
         resolveOrdinaryFunctionNodeByName(*comparison_function, comparison_function->getFunctionName(), getContext());
 
-        /// A remote server analyzes the query again and folds such a comparison, so its name would differ there.
-        if (canBeConstantFolded(*comparison_function, getContext()))
+        return comparison_function;
+    }
+
+    QueryTreeNodePtr makeNonFoldingComparisonFunction(QueryTreeNodePtr lhs_argument, QueryTreeNodePtr rhs_argument,
+        const std::string & comparison_function_name) const
+    {
+        auto comparison_function = makeComparisonFunction(std::move(lhs_argument), std::move(rhs_argument), comparison_function_name);
+
+        /// A remote server analyzes the query again and names the constant it folds this comparison into differently.
+        if (tryFoldFunction(comparison_function, getFoldingArgumentColumns(comparison_function->as<const FunctionNode &>(), getContext())))
             return {};
 
         return comparison_function;
