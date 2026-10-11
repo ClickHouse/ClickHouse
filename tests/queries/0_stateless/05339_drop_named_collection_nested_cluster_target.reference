@@ -1,0 +1,4 @@
+--- CREATE TABLE ... AS remote(..., urlCluster(cluster, nc)) ---
+--- ENGINE = Remote(..., urlCluster(cluster, nc)) ---
+--- the collection can be dropped once the tables are gone ---
+0

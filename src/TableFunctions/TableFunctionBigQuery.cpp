@@ -35,8 +35,6 @@ private:
 
     const char * getStorageEngineName() const override { return "BigQuery"; }
 
-    String getUsedNamedCollectionName() const override { return configuration ? configuration->named_collection_name : String{}; }
-
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -95,6 +93,7 @@ void TableFunctionBigQuery::parseArguments(const ASTPtr & ast_function, ContextP
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function 'bigquery' must have arguments");
 
     configuration = std::make_shared<BigQueryConfiguration>(BigQueryConfiguration::fromArguments(func_args.arguments->children, context));
+    setUsedNamedCollectionName(configuration->named_collection_name);
     /// The token provider only stores the configuration here; no network request is made until a token
     /// is actually needed (during schema inference or execution).
     token_provider = std::make_shared<BigQueryTokenProvider>(*configuration);

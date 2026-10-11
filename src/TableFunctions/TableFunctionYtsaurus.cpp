@@ -106,7 +106,8 @@ void TableFunctionYTsaurus::parseArguments(const ASTPtr & ast_function, ContextP
     {
         // With Named Collection
         ASTs main_arguments(args.begin(), args.begin() + 1);
-        configuration = std::make_shared<YTsaurusStorageConfiguration>(StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context));
+        configuration = std::make_shared<YTsaurusStorageConfiguration>(
+            StorageYTsaurus::getConfiguration(main_arguments, yt_settings, context, nullptr, getUsedNamedCollectionNameForUpdate()));
         structure = checkAndGetLiteralArgument<String>(args[1], "structure");
     }
     else if (args.size() == 4)

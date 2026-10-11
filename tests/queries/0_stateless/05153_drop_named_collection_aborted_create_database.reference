@@ -1,0 +1,7 @@
+--- a CREATE DATABASE that fails after the collection was resolved ---
+0
+--- the name is reused by a database that does not use the collection ---
+0
+--- the name is reused by a database that uses another collection ---
+0
+0
