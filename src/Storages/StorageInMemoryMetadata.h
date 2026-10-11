@@ -122,6 +122,9 @@ struct StorageInMemoryMetadata
     /// Set common table TTLs
     void setTableTTLs(const TTLTableDescription & table_ttl_);
 
+    /// Throws if a `CLEAR INDEX` TTL names an index that doesn't exist or was created implicitly.
+    void validateTTLIndexClearTargets() const;
+
     /// TTLs for separate columns
     void setColumnTTLs(const TTLColumnsDescription & column_ttls_by_name_);
 
@@ -173,7 +176,7 @@ struct StorageInMemoryMetadata
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
-    /// Returns true if only rows TTL is set, not even rows where.
+    /// Returns true if only rows TTL is set, not even rows where. `CLEAR INDEX` rules are ignored.
     bool hasOnlyRowsTTL() const;
 
     /// Common tables TTLs (for rows and moves).
@@ -203,6 +206,10 @@ struct StorageInMemoryMetadata
     // Just wrapper for table TTLs, return info about recompression ttl
     const TTLDescriptions & getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
+
+    /// Just wrapper for table TTLs, return `CLEAR INDEX` TTLs
+    const TTLDescriptions & getIndexClearTTLs() const;
+    bool hasAnyIndexClearTTL() const;
 
     using HasDependencyCallback = std::function<bool(const String &, ColumnDependency::Kind)>;
 
