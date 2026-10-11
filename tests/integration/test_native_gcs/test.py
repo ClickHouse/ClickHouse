@@ -850,9 +850,11 @@ def test_profile_events(started_cluster):
             )
         )
 
-    # A disk write goes through the resumable upload and is counted for the disk as well.
-    assert event(write_id, "GCSWriteObject") > 0
-    assert event(write_id, "DiskGCSWriteObject") > 0
+    # The files of a small part are uploaded by single requests rather than by resumable uploads,
+    # and are counted for the disk as well.
+    assert event(write_id, "GCSInsertObject") > 0
+    assert event(write_id, "DiskGCSInsertObject") > 0
+    assert event(write_id, "GCSWriteObject") == 0
     assert event(write_id, "WriteBufferFromGCSBytes") > 0
 
     # A disk read issues ReadObject and reports the bytes it got back.
@@ -861,6 +863,47 @@ def test_profile_events(started_cluster):
     assert event(read_id, "ReadBufferFromGCSBytes") > 0
 
     node.query("DROP TABLE gcs_events SYNC")
+
+
+def test_upload_switches_to_resumable_above_single_part_size(started_cluster):
+    """An object larger than `s3_max_single_part_upload_size` is written by a resumable upload, a
+    smaller one by a single `InsertObject` request, and both round trip."""
+    node = started_cluster.instances["node"]
+
+    def upload(path, max_single_part_upload_size):
+        query_id = f"gcs_upload_{uuid.uuid4()}"
+        node.query(
+            f"INSERT INTO FUNCTION gcs('{gcs_url(path)}', NOSIGN, 'TSV', 'a UInt64') "
+            "SELECT number FROM numbers(100000)",
+            query_id=query_id,
+            settings={
+                "use_native_gcs": 1,
+                "s3_max_single_part_upload_size": max_single_part_upload_size,
+            },
+        )
+        assert str(sum(range(100000))) == node.query(
+            f"SELECT sum(a) FROM gcs('{gcs_url(path)}', NOSIGN, 'TSV', 'a UInt64') "
+            "SETTINGS use_native_gcs = 1"
+        ).strip()
+        return query_id
+
+    single_id = upload(f"upload/{uuid.uuid4()}.tsv", 32 * 1024 * 1024)
+    resumable_id = upload(f"upload/{uuid.uuid4()}.tsv", 10000)
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    def event(query_id, name):
+        return int(
+            node.query(
+                f"SELECT ProfileEvents['{name}'] FROM system.query_log "
+                f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            )
+        )
+
+    assert event(single_id, "GCSInsertObject") == 1
+    assert event(single_id, "GCSWriteObject") == 0
+    assert event(resumable_id, "GCSInsertObject") == 0
+    assert event(resumable_id, "GCSWriteObject") == 1
 
 
 def test_profile_events_list_objects_is_counted_by_the_transport(started_cluster):

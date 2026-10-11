@@ -52,7 +52,7 @@ int conditionalWriteErrorCode(const WriteSettings & write_settings)
 {
     try
     {
-        WriteBufferFromGCS buffer(makeOfflineClient(), "bucket", "key", 1024, write_settings, nullptr);
+        WriteBufferFromGCS buffer(makeOfflineClient(), "bucket", "key", 1024, 1024, write_settings, nullptr);
         return 0;
     }
     catch (const Exception & e)

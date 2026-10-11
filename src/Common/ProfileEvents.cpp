@@ -901,6 +901,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(GCSGetObject, "Number of GCS API ReadObject calls (native google-cloud-cpp backend).", ValueType::Number) \
     M(GCSWriteObject, "Number of GCS API resumable upload (WriteObject) calls.", ValueType::Number) \
+    M(GCSInsertObject, "Number of GCS API single-request upload (InsertObject) calls, used for objects not larger than `max_single_part_upload_size`.", ValueType::Number) \
     M(GCSGetObjectMetadata, "Number of GCS API GetObjectMetadata calls.", ValueType::Number) \
     M(GCSListObjects, "Number of GCS API ListObjects calls.", ValueType::Number) \
     M(GCSDeleteObjects, "Number of GCS API DeleteObject calls.", ValueType::Number) \
@@ -908,6 +909,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(DiskGCSGetObject, "Number of GCS API ReadObject calls for a GCS disk.", ValueType::Number) \
     M(DiskGCSWriteObject, "Number of GCS API resumable upload (WriteObject) calls for a GCS disk.", ValueType::Number) \
+    M(DiskGCSInsertObject, "Number of GCS API single-request upload (InsertObject) calls for a GCS disk.", ValueType::Number) \
     M(DiskGCSGetObjectMetadata, "Number of GCS API GetObjectMetadata calls for a GCS disk.", ValueType::Number) \
     M(DiskGCSListObjects, "Number of GCS API ListObjects calls for a GCS disk.", ValueType::Number) \
     M(DiskGCSDeleteObjects, "Number of GCS API DeleteObject calls for a GCS disk.", ValueType::Number) \

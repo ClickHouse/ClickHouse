@@ -67,6 +67,7 @@ namespace Setting
     extern const SettingsUInt64 s3_max_get_burst;
     extern const SettingsUInt64 s3_max_put_rps;
     extern const SettingsUInt64 s3_max_put_burst;
+    extern const SettingsUInt64 s3_max_single_part_upload_size;
 }
 
 namespace
@@ -407,6 +408,8 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.for_disk = true;
     result.read_only = config.getBool(config_prefix + ".readonly", false);
     result.list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", 1000);
+    result.max_single_part_upload_size = config.getUInt64(
+        config_prefix + ".max_single_part_upload_size", settings[Setting::s3_max_single_part_upload_size]);
 
     validateGCSRefreshTokenTriple(result);
 

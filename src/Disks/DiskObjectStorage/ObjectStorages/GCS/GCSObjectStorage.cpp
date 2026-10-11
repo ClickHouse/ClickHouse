@@ -322,6 +322,7 @@ std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject( /// NOLI
         bucket,
         object.remote_path,
         buf_size,
+        snapshot->settings.max_single_part_upload_size,
         patchSettings(write_settings),
         std::move(blob_storage_log),
         std::move(attributes),

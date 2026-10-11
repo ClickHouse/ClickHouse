@@ -31,9 +31,12 @@ google::cloud::storage::IfGenerationMatch makeGCSWritePrecondition(
 
 /// Writes a GCS object through the native google-cloud-cpp storage client.
 ///
-/// Backed by a `google::cloud::storage::ObjectWriteStream` (a std::ostream). The SDK transparently
-/// switches to a resumable upload for large objects, so no explicit multipart handling is needed.
-/// Only whole-object rewrites are supported (GCS objects are immutable; there is no append).
+/// An object not larger than `max_single_part_upload_size` is accumulated in memory and uploaded by a
+/// single `InsertObject` request when the buffer is finalized. A resumable upload (an
+/// `google::cloud::storage::ObjectWriteStream`) needs one more request to open its session, which
+/// dominates the cost of the many small files of a `MergeTree` part, so the buffer switches to it only
+/// once the data outgrows that size. Only whole-object rewrites are supported (GCS objects are
+/// immutable; there is no append).
 class WriteBufferFromGCS final : public WriteBufferFromFileBase
 {
 public:
@@ -42,6 +45,7 @@ public:
         const String & bucket_,
         const String & key_,
         size_t buf_size_,
+        size_t max_single_part_upload_size_,
         const WriteSettings & write_settings_,
         BlobStorageLogWriterPtr blob_log_,
         std::optional<ObjectAttributes> attributes_ = std::nullopt,
@@ -57,16 +61,26 @@ private:
     void finalizeImpl() override;
     void cancelImpl() noexcept override;
     void logUploadResult(Int32 error_code, const String & error_message);
+    void openWriteStream();
+    void writeToStream(const char * data, size_t size);
+    void finalizeWriteStream();
+    void insertObject();
+    void accountUploadedBytes(size_t size);
 
     std::shared_ptr<google::cloud::storage::Client> client;
     const String bucket;
     const String key;
+    const size_t max_single_part_upload_size;
     const WriteSettings write_settings;
+    const google::cloud::storage::IfGenerationMatch precondition;
     BlobStorageLogWriterPtr blob_log;
     const std::optional<ObjectAttributes> attributes;
     /// Attributes request counters to `DiskGCS*` in addition to `GCS*`.
     const bool for_disk;
 
+    /// The data written so far, as long as it fits into a single `InsertObject` request.
+    String pending_data;
+    /// The resumable upload, opened once the data no longer fits into `pending_data`.
     std::unique_ptr<google::cloud::storage::ObjectWriteStream> write_stream;
 
     size_t total_bytes_written = 0;

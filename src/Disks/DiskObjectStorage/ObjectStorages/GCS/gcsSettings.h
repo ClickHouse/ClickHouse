@@ -11,6 +11,7 @@
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/ProxyConfigurationResolver.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/S3Defines.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <Poco/Net/HTTPClientSession.h>
@@ -140,6 +141,11 @@ struct GCSObjectStorageSettings
     bool read_only = false;
     /// Page size of the object listings (`maxResults`). 0 means "use the backend default".
     UInt64 list_object_keys_size = 1000;
+    /// Largest object uploaded by a single `InsertObject` request; a larger one goes through a resumable
+    /// upload, which costs an extra request to open the upload session. From the `max_single_part_upload_size`
+    /// key of a disk section or of the S3 request settings, falling back to `s3_max_single_part_upload_size`,
+    /// the same knob that decides between a single `PutObject` and a multipart upload on the S3 path.
+    UInt64 max_single_part_upload_size = S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE;
 
     /// Parse the settings from a disk config section (`config_prefix`), resolving the endpoint into
     /// bucket + key prefix and (for the refresh-token flow) minting an access token.

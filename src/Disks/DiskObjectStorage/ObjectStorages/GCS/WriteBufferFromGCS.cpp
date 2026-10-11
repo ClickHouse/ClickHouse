@@ -17,6 +17,8 @@ namespace ProfileEvents
 {
     extern const Event GCSWriteObject;
     extern const Event DiskGCSWriteObject;
+    extern const Event GCSInsertObject;
+    extern const Event DiskGCSInsertObject;
     extern const Event WriteBufferFromGCSMicroseconds;
     extern const Event WriteBufferFromGCSBytes;
     extern const Event WriteBufferFromGCSRequestsErrors;
@@ -64,6 +66,7 @@ WriteBufferFromGCS::WriteBufferFromGCS(
     const String & bucket_,
     const String & key_,
     size_t buf_size_,
+    size_t max_single_part_upload_size_,
     const WriteSettings & write_settings_,
     BlobStorageLogWriterPtr blob_log_,
     std::optional<ObjectAttributes> attributes_,
@@ -72,29 +75,13 @@ WriteBufferFromGCS::WriteBufferFromGCS(
     , client(std::move(client_))
     , bucket(bucket_)
     , key(key_)
+    , max_single_part_upload_size(max_single_part_upload_size_)
     , write_settings(write_settings_)
+    , precondition(makeGCSWritePrecondition(write_settings, bucket, key))
     , blob_log(std::move(blob_log_))
     , attributes(std::move(attributes_))
     , for_disk(for_disk_)
 {
-    ProfileEvents::increment(ProfileEvents::GCSWriteObject);
-    if (for_disk)
-        ProfileEvents::increment(ProfileEvents::DiskGCSWriteObject);
-
-    auto precondition = makeGCSWritePrecondition(write_settings, bucket, key);
-
-    if (attributes && !attributes->empty())
-    {
-        gcs::ObjectMetadata object_metadata;
-        for (const auto & [name, value] : *attributes)
-            object_metadata.upsert_metadata(name, value);
-        write_stream = std::make_unique<gcs::ObjectWriteStream>(
-            client->WriteObject(bucket, key, gcs::WithObjectMetadata(std::move(object_metadata)), precondition));
-    }
-    else
-    {
-        write_stream = std::make_unique<gcs::ObjectWriteStream>(client->WriteObject(bucket, key, precondition));
-    }
 }
 
 WriteBufferFromGCS::~WriteBufferFromGCS()
@@ -120,15 +107,40 @@ void WriteBufferFromGCS::logUploadResult(Int32 error_code, const String & error_
     upload_result_logged = true;
 }
 
-void WriteBufferFromGCS::nextImpl()
+void WriteBufferFromGCS::accountUploadedBytes(size_t size)
 {
-    const size_t bytes_to_write = offset();
-    if (bytes_to_write == 0)
-        return;
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSBytes, size);
+    total_bytes_written += size;
 
+    if (write_settings.remote_throttler)
+        write_settings.remote_throttler->throttle(size);
+}
+
+void WriteBufferFromGCS::openWriteStream()
+{
+    ProfileEvents::increment(ProfileEvents::GCSWriteObject);
+    if (for_disk)
+        ProfileEvents::increment(ProfileEvents::DiskGCSWriteObject);
+
+    if (attributes && !attributes->empty())
+    {
+        gcs::ObjectMetadata object_metadata;
+        for (const auto & [name, value] : *attributes)
+            object_metadata.upsert_metadata(name, value);
+        write_stream = std::make_unique<gcs::ObjectWriteStream>(
+            client->WriteObject(bucket, key, gcs::WithObjectMetadata(std::move(object_metadata)), precondition));
+    }
+    else
+    {
+        write_stream = std::make_unique<gcs::ObjectWriteStream>(client->WriteObject(bucket, key, precondition));
+    }
+}
+
+void WriteBufferFromGCS::writeToStream(const char * data, size_t size)
+{
     CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
     Stopwatch watch;
-    write_stream->write(working_buffer.begin(), static_cast<std::streamsize>(bytes_to_write));
+    write_stream->write(data, static_cast<std::streamsize>(size));
     const size_t elapsed_microseconds = watch.elapsedMicroseconds();
     total_time_microseconds += elapsed_microseconds;
     ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSMicroseconds, elapsed_microseconds);
@@ -142,18 +154,38 @@ void WriteBufferFromGCS::nextImpl()
             fmt::format("while writing '{}' in bucket '{}'", key, bucket));
     }
 
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSBytes, bytes_to_write);
-    total_bytes_written += bytes_to_write;
-
-    if (write_settings.remote_throttler)
-        write_settings.remote_throttler->throttle(bytes_to_write);
+    accountUploadedBytes(size);
 }
 
-void WriteBufferFromGCS::finalizeImpl()
+void WriteBufferFromGCS::nextImpl()
 {
-    /// Flush whatever remains in the working buffer, then close the upload.
-    next();
+    const size_t bytes_to_write = offset();
+    if (bytes_to_write == 0)
+        return;
 
+    if (!write_stream)
+    {
+        if (pending_data.size() + bytes_to_write <= max_single_part_upload_size)
+        {
+            pending_data.append(working_buffer.begin(), bytes_to_write);
+            return;
+        }
+
+        /// The object is too large for a single request: hand everything accumulated so far to a
+        /// resumable upload and stream the rest of the data through it.
+        openWriteStream();
+        if (!pending_data.empty())
+        {
+            writeToStream(pending_data.data(), pending_data.size());
+            String().swap(pending_data);
+        }
+    }
+
+    writeToStream(working_buffer.begin(), bytes_to_write);
+}
+
+void WriteBufferFromGCS::finalizeWriteStream()
+{
     CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
     Stopwatch watch;
     write_stream->Close();
@@ -176,11 +208,63 @@ void WriteBufferFromGCS::finalizeImpl()
     }
 }
 
+void WriteBufferFromGCS::insertObject()
+{
+    ProfileEvents::increment(ProfileEvents::GCSInsertObject);
+    if (for_disk)
+        ProfileEvents::increment(ProfileEvents::DiskGCSInsertObject);
+
+    CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
+    Stopwatch watch;
+    google::cloud::StatusOr<gcs::ObjectMetadata> result;
+    if (attributes && !attributes->empty())
+    {
+        gcs::ObjectMetadata object_metadata;
+        for (const auto & [name, value] : *attributes)
+            object_metadata.upsert_metadata(name, value);
+        result = client->InsertObject(bucket, key, pending_data, gcs::WithObjectMetadata(std::move(object_metadata)), precondition);
+    }
+    else
+    {
+        result = client->InsertObject(bucket, key, pending_data, precondition);
+    }
+    const size_t elapsed_microseconds = watch.elapsedMicroseconds();
+    total_time_microseconds += elapsed_microseconds;
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSMicroseconds, elapsed_microseconds);
+
+    if (result)
+        accountUploadedBytes(pending_data.size());
+
+    logUploadResult(result ? 0 : static_cast<Int32>(result.status().code()), result ? "" : result.status().message());
+
+    if (!result)
+    {
+        ProfileEvents::increment(ProfileEvents::WriteBufferFromGCSRequestsErrors);
+        throwFromGCSStatus(result.status(),
+            fmt::format("while uploading '{}' in bucket '{}'", key, bucket));
+    }
+
+    String().swap(pending_data);
+}
+
+void WriteBufferFromGCS::finalizeImpl()
+{
+    /// Flush whatever remains in the working buffer, then complete the upload: a resumable one if the
+    /// object outgrew a single request, otherwise one `InsertObject` request with the whole object.
+    next();
+
+    if (write_stream)
+        finalizeWriteStream();
+    else
+        insertObject();
+}
+
 void WriteBufferFromGCS::cancelImpl() noexcept
 {
     /// Abandon the (possibly resumable) upload without finalizing it. Dropping the stream leaves any
     /// resumable session unfinished; GCS garbage-collects incomplete uploads automatically.
     write_stream.reset();
+    String().swap(pending_data);
 }
 
 }

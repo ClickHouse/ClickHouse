@@ -49,6 +49,7 @@ namespace S3RequestSetting
 {
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 retry_attempts;
+    extern const S3RequestSettingsUInt64 max_single_part_upload_size;
 }
 
 void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -301,6 +302,9 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     const auto & retry_attempts = s3_settings->request_settings[S3RequestSetting::retry_attempts];
     if (retry_attempts.changed)
         gcs_settings.retry_attempts = retry_attempts.value;
+
+    /// Small objects are uploaded by a single request, up to the same size as on the S3-compatibility path.
+    gcs_settings.max_single_part_upload_size = s3_settings->request_settings[S3RequestSetting::max_single_part_upload_size];
 
     validateGCSRefreshTokenTriple(gcs_settings);
     checkGCSCredentialsAllowedInUserQuery(gcs_settings, context);
