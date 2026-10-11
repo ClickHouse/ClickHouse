@@ -176,6 +176,27 @@ CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32) ENGI
     conn.close()
 
 
+@pytest.mark.parametrize("replace_query", ["true", "false", "1", "0"])
+def test_replace_query_literals(started_cluster, replace_query):
+    table_name = f"test_replace_query_{replace_query}"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}', {replace_query});
+        """
+    )
+    assert node1.query(f"SELECT count() FROM {table_name}").rstrip() == "0"
+
+    conn.close()
+
+
 def test_insert_on_duplicate_select(started_cluster):
     table_name = "test_insert_on_duplicate_select"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
