@@ -729,7 +729,7 @@ void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
 }
 
 
-void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation)
 {
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
@@ -740,7 +740,7 @@ void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrack
         else
             nested_source_columns.push_back(source_column);
     }
-    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
+    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns, check_cancellation);
 }
 
 namespace

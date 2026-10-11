@@ -2161,7 +2161,7 @@ void ColumnObject::fixDynamicStructure()
     max_dynamic_paths = dynamic_paths.size();
 }
 
-ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
+ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics(const CheckCancellationCallback & check_cancellation) const
 {
     if (statistics)
         return statistics;
@@ -2173,6 +2173,11 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
     const auto [shared_data_paths, _] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != shared_data_paths->size(); ++i)
     {
+        /// Shared data holds one entry per row and path that did not fit the dynamic structure, so
+        /// this loop is unbounded from the caller's point of view. Give the caller a chance to abort it.
+        if (check_cancellation && i % CANCELLATION_CHECK_PERIOD_ROWS == 0)
+            check_cancellation();
+
         auto path = shared_data_paths->getDataAt(i);
         if (auto it = calculated_statistics->shared_data_paths_statistics.find(path); it != calculated_statistics->shared_data_paths_statistics.end())
             ++it->second;
@@ -2183,7 +2188,7 @@ ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
     return calculated_statistics;
 }
 
-void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation)
 {
     /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
 
@@ -2220,7 +2225,7 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
     for (const auto & source_column : source_columns)
     {
         const auto & source_object = assert_cast<const ColumnObject &>(*source_column);
-        const auto & source_statistics = source_object.getOrCalculateStatistics();
+        const auto & source_statistics = source_object.getOrCalculateStatistics(check_cancellation);
 
         /// For dynamic paths in source statistics: if the path is in our dynamic structure, add directly;
         /// otherwise accumulate in shared data candidates.
@@ -2274,7 +2279,7 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
                 dynamic_path_source_columns.push_back(it->second);
         }
         if (!dynamic_path_source_columns.empty())
-            column->takeOrCalculateStatisticsFrom(dynamic_path_source_columns);
+            column->takeOrCalculateStatisticsFrom(dynamic_path_source_columns, check_cancellation);
     }
 
     /// Recursively update statistics for typed paths.
@@ -2284,7 +2289,7 @@ void ColumnObject::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<
         typed_path_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
-        column->takeOrCalculateStatisticsFrom(typed_path_source_columns);
+        column->takeOrCalculateStatisticsFrom(typed_path_source_columns, check_cancellation);
     }
 }
 
