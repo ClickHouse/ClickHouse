@@ -256,7 +256,12 @@ void checkHeaderOption(const ASTCopyQuery & node)
             ErrorCodes::BAD_ARGUMENTS, "Option HEADER of the postgresql copy command is not supported with the binary format");
 }
 
-bool parseOption(IParser::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTCopyQuery> node, DataShapeOptions & data_shape_options)
+bool parseOption(
+    IParser::Pos & pos,
+    Expected & expected,
+    boost::intrusive_ptr<ASTCopyQuery> node,
+    DataShapeOptions & data_shape_options,
+    bool allow_format_option = true)
 {
     const String option_as_written(pos->begin, pos->end);
 
@@ -267,6 +272,9 @@ bool parseOption(IParser::Pos & pos, Expected & expected, boost::intrusive_ptr<A
 
     if (option == "format")
     {
+        if (!allow_format_option)
+            return false;
+
         String format_name;
         if (!parseOptionValue(pos, expected, format_name))
             return false;
@@ -274,7 +282,7 @@ bool parseOption(IParser::Pos & pos, Expected & expected, boost::intrusive_ptr<A
     }
     else if (option == "csv" || option == "binary" || option == "text")
     {
-        /// The legacy spelling of the format: WITH [BINARY] [CSV].
+        /// The legacy spelling of the format: [WITH] [BINARY] [CSV].
         setFormat(option, node);
     }
     else if (option == "header")
@@ -346,37 +354,37 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
                 ErrorCodes::BAD_ARGUMENTS, "Unknown part of the postgresql copy command: {}", String(pos->begin, pos->end));
     };
 
-    if (!s_with.ignore(pos, expected))
-    {
-        assert_end();
-        return true;
-    }
+    const bool has_with = s_with.ignore(pos, expected);
+    if (isEndOfStatement(pos))
+        return !has_with;
 
     DataShapeOptions data_shape_options;
 
-    /// The form every modern client sends: WITH (FORMAT csv, HEADER true, ...).
+    /// PostgreSQL allows WITH to be omitted before the parenthesized option list:
+    /// (FORMAT csv, HEADER true, ...).
     if (open_bracket.ignore(pos, expected))
     {
-        bool is_first_option = true;
+        /// Require at least one option: an empty list must not trigger a default-format COPY.
+        if (!parseOption(pos, expected, node, data_shape_options))
+            return false;
+
         while (!close_bracket.ignore(pos, expected))
         {
-            if (!is_first_option && !comma.ignore(pos, expected))
+            if (!comma.ignore(pos, expected))
                 return false;
-            is_first_option = false;
-
             if (!parseOption(pos, expected, node, data_shape_options))
                 return false;
         }
     }
     else
     {
-        /// The legacy spelling, which `psql` and the client libraries still use:
-        /// WITH [BINARY] [CSV [HEADER]] [DELIMITER [AS] 'c'] [NULL [AS] 's'] [QUOTE [AS] 'c'].
+        /// PostgreSQL also allows WITH to be omitted from the legacy spelling:
+        /// [BINARY] [CSV [HEADER]] [DELIMITER [AS] 'c'] [NULL [AS] 's'] [QUOTE [AS] 'c'].
         /// `WITH FORMAT csv` is not PostgreSQL syntax at all, but this protocol has accepted it from
-        /// the beginning, so it is parsed here too.
+        /// the beginning, so keep requiring WITH for that extension.
         while (!isEndOfStatement(pos))
         {
-            if (!parseOption(pos, expected, node, data_shape_options))
+            if (!parseOption(pos, expected, node, data_shape_options, /* allow_format_option = */ has_with))
                 return false;
         }
     }

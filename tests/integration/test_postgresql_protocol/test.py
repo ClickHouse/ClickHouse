@@ -2040,6 +2040,50 @@ def test_copy_options(started_cluster):
     setup.close()
 
 
+def test_copy_options_without_with(started_cluster):
+    # Exercise the PostgreSQL wire protocol, not just ParserCopyQuery.
+    node = started_cluster.instances["node"]
+
+    def connect():
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    with connect() as c:
+        c.cursor().execute("DROP TABLE IF EXISTS copy_without_with;")
+        c.cursor().execute("CREATE TABLE copy_without_with (s String) ENGINE = Memory;")
+
+    try:
+        # The legacy syntax must parse CSV and skip the header without WITH.
+        with connect() as c:
+            c.cursor().copy_expert(
+                "COPY copy_without_with (s) FROM STDIN CSV HEADER",
+                StringIO('s\n"hello, world"\n'),
+            )
+
+        with connect() as c:
+            cur = c.cursor()
+            cur.execute("SELECT s FROM copy_without_with;")
+            assert cur.fetchall() == [("hello, world",)]
+
+        # The parenthesized syntax must write CSV, not silently fall back to TSV.
+        out = StringIO()
+        with connect() as c:
+            c.cursor().copy_expert(
+                "COPY copy_without_with TO STDOUT (FORMAT csv)", out
+            )
+        assert out.getvalue() == '"hello, world"\n'
+    finally:
+        with connect() as c:
+            c.cursor().execute("DROP TABLE IF EXISTS copy_without_with;")
+
+
 def test_copy_option_defaults_are_pinned(started_cluster):
     # The option list of a `COPY` is accepted only when it asks for the shape this protocol
     # transfers anyway, which is checked against the defaults of the formats. The session must not
