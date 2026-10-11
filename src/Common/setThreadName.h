@@ -61,6 +61,7 @@ namespace DB
     M(DISTRIBUTED_SINK, "DistrOutStrProc") \
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
     M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
+    M(DISTINCT_FINAL, "DistinctFinal") \
     M(DROP_TABLES, "DropTables") \
     M(SHUTDOWN_TABLES, "ShutdownTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
