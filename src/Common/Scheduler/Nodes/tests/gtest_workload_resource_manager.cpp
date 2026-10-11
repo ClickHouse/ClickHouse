@@ -2795,6 +2795,13 @@ TEST(SchedulerWorkloadResourceManager, ImplicitResourceNamesReserved)
 
     t.query("DROP RESOURCE __server_cpu__");
     EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE RESOURCE io (READ DISK d)"));
+
+    // A backup of such an entity is restored hidden again; SQL statements still reject the name
+    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD)"));
+    EXPECT_FALSE(t.storage.has(String(IMPLICIT_CPU_RESOURCE_NAME)));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION)"));
+    t.query("DROP RESOURCE __server_cpu__");
 }
 
 // Persisted entities cannot reference implicit entities: they live in an outer layer.

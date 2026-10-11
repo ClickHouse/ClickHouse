@@ -545,8 +545,10 @@ bool WorkloadEntityStorageBase::validateAndStoreEntity(
     const Settings & settings,
     StoreMode mode)
 {
-    checkUserEntityName(entity_name);
     const bool restore = mode == StoreMode::Restore;
+    // A restore recreates persisted data, which may hold a reserved name written by an older version: it is hidden again
+    if (!(restore && isReservedEntityName(entity_name)))
+        checkUserEntityName(entity_name);
 
     create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query);
     auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(create_entity_query.get());

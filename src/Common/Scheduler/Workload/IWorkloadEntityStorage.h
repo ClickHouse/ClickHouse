@@ -81,7 +81,8 @@ class RestorerFromBackup;
  * conflict if it is of another kind (e.g. a user resource `default`). The names of the implicit
  * resources are reserved: user entities with these names are rejected by SQL statements and by the
  * configuration. A persisted layer (Keeper, disk) may hold such an entity written by an older version: it is
- * loaded hidden, with an error in the log, and can be dropped.
+ * loaded hidden, with an error in the log, and can be dropped. A restore of such an entity recreates it
+ * hidden as well.
  *
  * Root workload. The workload entity with the empty name `""`. It is the parent of every workload without
  * an explicit parent, and its settings are the per-resource root limits (e.g. `max_concurrent_threads =
