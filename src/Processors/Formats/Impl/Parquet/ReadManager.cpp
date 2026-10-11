@@ -65,6 +65,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     }
     reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
+    reader.markDataPagesThatMayBeReadPartially();
 
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
     ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, reader.file_metadata.row_groups.size() - reader.row_groups.size());

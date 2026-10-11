@@ -603,6 +603,8 @@ struct Reader
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
     void preparePrewhere();
+    /// After preparePrewhere(): tells the prefetcher which column chunks may be decoded only in part.
+    void markDataPagesThatMayBeReadPartially();
 
     /// Deserialize bf header and determine which bf blocks to read.
     void processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info);

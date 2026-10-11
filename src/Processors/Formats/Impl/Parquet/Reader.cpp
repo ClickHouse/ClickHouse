@@ -1450,6 +1450,23 @@ void Reader::initializePrefetches()
     prefetcher.finalizeRanges();
 }
 
+void Reader::markDataPagesThatMayBeReadPartially()
+{
+    /// Without an offset index the data pages of a column chunk are one range. The first step decodes its columns
+    /// in full unless the column index or a read of selected rows narrows the row group's rows; later steps decode
+    /// only the pages that hold rows they need.
+    size_t first_step = steps.empty() ? 0 : 1;
+    bool selected_rows_only = bool(format_filter_info->rows_to_read);
+    for (RowGroup & row_group : row_groups)
+    {
+        bool rows_may_be_narrowed = selected_rows_only
+            || std::any_of(row_group.columns.begin(), row_group.columns.end(), [](const ColumnChunk & c) { return c.use_column_index; });
+        for (size_t i = 0; i < primitive_columns.size(); ++i)
+            if (rows_may_be_narrowed || primitive_columns[i].first_step_to_calculate != first_step)
+                prefetcher.markMayBeReadPartially(row_group.columns.at(i).data_pages_prefetch);
+    }
+}
+
 void Reader::preparePrewhere()
 {
     const auto & row_level_filter = format_filter_info->row_level_filter;

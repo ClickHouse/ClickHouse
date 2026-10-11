@@ -2,6 +2,7 @@
 
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/copyData.h>
+#include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
@@ -22,6 +23,7 @@ namespace ProfileEvents
     extern const Event ParquetPrefetcherReadRandomRead;
     extern const Event ParquetPrefetcherReadSeekAndRead;
     extern const Event ParquetPrefetcherReadEntireFile;
+    extern const Event ParquetPrefetcherReadZeroCopy;
 }
 
 namespace DB::Parquet
@@ -66,6 +68,7 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
             {
                 reader = seekable;
                 read_mode = ReadMode::RandomRead;
+                mmap_reader = dynamic_cast<const MMapReadBufferFromFileDescriptor *>(seekable);
             }
             else if (seekable->checkIfActuallySeekable())
             {
@@ -141,6 +144,12 @@ PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool like
     req.allow_incidental_read.store(likely_to_be_used || length < min_bytes_for_seek, std::memory_order_relaxed);
     range_sets[0].ranges.push_back(RangeState {.request = &req, .start = offset, .end = offset + length});
     return PrefetchHandle(&req);
+}
+
+void Prefetcher::markMayBeReadPartially(const PrefetchHandle & handle)
+{
+    if (handle)
+        handle.request->may_be_read_partially = true;
 }
 
 void Prefetcher::finalizeRanges()
@@ -395,6 +404,7 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
     task.refcount.store(initial_refcount);
 
     size_t actual_refcount = 0;
+    size_t bytes_read_partially = 0;
     for (size_t idx = start_idx; idx < end_idx; ++idx)
     {
         const RangeState & range = ranges[idx];
@@ -404,10 +414,16 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
 
         RequestState::State s = RequestState::State::HasRange;
         if (req->state.compare_exchange_strong(s, RequestState::State::HasTask))
+        {
             actual_refcount += 1;
+            if (req->may_be_read_partially)
+                bytes_read_partially += range.length();
+        }
         else
             chassert(s == RequestState::State::Cancelled);
     }
+    /// The task takes the read hint mode of most of its bytes.
+    task.read_entirely = bytes_read_partially * 2 <= total_length_of_covered_ranges;
 
     chassert(actual_refcount > 0);
     decreaseTaskRefcount(&task, initial_refcount - actual_refcount);
@@ -503,14 +519,26 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     auto final_state = Task::State::Done;
     try
     {
-        /// When the reader supports zero-copy cached reads, get retained cache cells
-        /// instead of allocating a buffer and copying data into it.
+        /// Reference the reader's data (page cache cells or a memory-mapped file) instead of copying it.
+        /// Decoders read up to PADDING_FOR_SIMD bytes on both sides of a range, as `task->buf` allows.
         if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0)
         {
             auto cached_regions = reader->readBigAtRetainCells(task->length, task->offset);
-            chassert(!cached_regions.empty());
+            size_t bytes_read = 0;
+            for (const auto & region : cached_regions)
+                bytes_read += region.size;
+            if (bytes_read != task->length)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected eof: offset {}, length {}, bytes read {}, expected file size {}",
+                    task->offset, task->length, bytes_read, file_size);
 
-            if (cached_regions.size() == 1)
+            bool zero_copy = cached_regions.size() == 1 && cached_regions[0].readable_before >= PADDING_FOR_SIMD
+                && cached_regions[0].readable_after >= PADDING_FOR_SIMD;
+
+            /// The mapping has not been read yet, and a copy reads all of the range.
+            if (mmap_reader)
+                mmap_reader->adviseWillNeed(task->offset, task->length, task->read_entirely || !zero_copy);
+
+            if (zero_copy)
             {
                 /// We got lucky and the Task's range is all in one cache cell. Zero-copy it.
                 auto & cr = cached_regions[0];
@@ -520,22 +548,19 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
                     .size = cr.size,
                     .file_offset = cr.file_offset,
                 };
+                ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadZeroCopy);
             }
             else
             {
-                /// If the data spans multiple cache blocks, pre-assemble it into task->buf now
+                /// If the data spans multiple cache blocks or lacks the padding, pre-assemble it into task->buf now
                 /// (on the single-threaded producer side) to avoid a data race in getRangeData,
                 /// where multiple consumer threads could try to lazily populate task->buf concurrently.
-                if (cached_regions.size() > 1)
+                task->buf.resize(task->length);
+                size_t copied = 0;
+                for (const auto & region : cached_regions)
                 {
-                    task->buf.resize(task->length);
-                    size_t copied = 0;
-                    for (const auto & region : cached_regions)
-                    {
-                        memcpy(task->buf.data() + copied, region.data, region.size);
-                        copied += region.size;
-                    }
-                    chassert(copied == task->length);
+                    memcpy(task->buf.data() + copied, region.data, region.size);
+                    copied += region.size;
                 }
             }
 
