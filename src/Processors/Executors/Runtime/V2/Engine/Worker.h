@@ -26,6 +26,7 @@ class Worker
     ExecutingProcessor * tryPick();
     ExecutingProcessor * trySteal(size_t rounds);
     ExecutingProcessor * pickFromBatch(std::span<ExecutingProcessor *> batch);
+    ExecutingProcessor * pickFromFired(std::span<ExecutingProcessor *> fired);
     bool anyWorkHasAppeared() const;
 
     /// Population.

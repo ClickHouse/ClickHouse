@@ -106,13 +106,8 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
             const size_t fired = pool.poller.poll(tmp_buffer, -1);
             pool.coordinator.stopPolling();
 
-            if (fired > 0)
-            {
-                metrics.poll_picks += 1;
-                auto * picked = pickFromBatch(std::span(tmp_buffer).first(fired));
-                wakeFor(fired - 1);
+            if (auto * picked = pickFromFired(std::span(tmp_buffer).first(fired)))
                 return picked;
-            }
         }
         else
         {
@@ -150,13 +145,8 @@ ExecutingProcessor * Worker::tryPick()
         const size_t fired = pool.poller.poll(tmp_buffer, 0);
         pool.coordinator.stopPolling();
 
-        if (fired > 0)
-        {
-            metrics.poll_picks += 1;
-            auto * picked = pickFromBatch(std::span(tmp_buffer).first(fired));
-            wakeFor(fired - 1);
+        if (auto * picked = pickFromFired(std::span(tmp_buffer).first(fired)))
             return picked;
-        }
     }
 
     if (pool.coordinator.startStealing())
@@ -201,6 +191,19 @@ ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor *> batch
     injectShuffle(batch);
     pushManyLifo(batch.first(batch.size() - 1));
     return batch.back();
+}
+
+ExecutingProcessor * Worker::pickFromFired(std::span<ExecutingProcessor *> fired)
+{
+    if (fired.empty())
+        return nullptr;
+
+    metrics.poll_picks += 1;
+    auto * picked = pickFromBatch(fired);
+
+    const Int64 next_poller = pool.poller.pending() > 0 ? 1 : 0;
+    wakeFor(fired.size() - 1 + next_poller);
+    return picked;
 }
 
 bool Worker::anyWorkHasAppeared() const
