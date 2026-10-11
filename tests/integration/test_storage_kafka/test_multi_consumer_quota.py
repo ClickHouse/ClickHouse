@@ -431,6 +431,138 @@ def test_multi_consumer_with_partition_affinity(kafka_cluster):
                 )
 
 
+TMP_QUOTA_LOG_RE = re.compile(
+    r"The consumer can take (\d+) temporary locks in the current round "
+    r"\(available=(\d+), idx=(\d+)\)"
+)
+
+# Before the fix the quota alternated 1, 0, 1, 0, ...; after it the quota holds. 4 is well
+# above what the old code could reach and well below what the fixed code sustains.
+REQUIRED_NONZERO_RUN = 4
+
+
+def collect_tmp_quota_sequences(instance, tables, consumer_idx=0):
+    """
+    Return {table: [(quota, available), ...]} in log order for one consumer of each table.
+
+    The two early returns in `lockTemporaryLocksLocked` bail out before the log line, so
+    every entry is a round that really reached the quota adjustment.
+    """
+    sequences = {table: [] for table in tables}
+    log = instance.grep_in_log("temporary locks in the current round")
+    for line in log.splitlines():
+        match = TMP_QUOTA_LOG_RE.search(line)
+        if not match:
+            continue
+        quota, available, idx = (int(x) for x in match.groups())
+        if idx != consumer_idx:
+            continue
+        for table in tables:
+            if table in line:
+                sequences[table].append((quota, available))
+                break
+    return sequences
+
+
+def longest_nonzero_run(sequence):
+    """Length of the longest streak of consecutive rounds with a non-zero quota."""
+    best = current = 0
+    for quota, _available in sequence:
+        current = current + 1 if quota > 0 else 0
+        best = max(best, current)
+    return best
+
+
+def test_temporary_lock_quota_is_retained_across_rounds(kafka_cluster):
+    """
+    A consumer must be able to keep its temporary-lock quota across rounds.
+
+    `lockTemporaryLocksLocked` grows the quota by one per round, capped at the number of
+    available partitions, and shrinks it only when it exceeds that number. Before the fix
+    the shrink condition was inverted, so a quota of 1 was always pushed back to 0 and the
+    quota alternated 1, 0, 1, 0, ... -- a consumer held a temporary lock only every other
+    round, and every reacquisition moved the partition to another replica and rewound it.
+
+    The absolute quota value is deliberately not asserted: the leftover partitions
+    (P mod R) are fewer than the replicas competing for them, so even the fixed code
+    converges to 1 here. The run length is what separates the two behaviours.
+
+    11 partitions over 4 replicas: node_quota = max(11/4, 1) = 2 pins 8 partitions and
+    leaves 3 for temporary locks. Every replica holds permanent locks, which keeps
+    `has_replica_without_locks` false -- otherwise the quota is forced to 0 before the
+    adjustment runs.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "tmp_quota_11p_4r"
+    keeper_path = f"/clickhouse/test/{topic_name}"
+    num_partitions = 11
+    replicas = [f"r{i}" for i in range(1, 5)]
+    tables = [f"kafka_tmp_{replica}" for replica in replicas]
+    timeout = 300
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        for p in range(num_partitions):
+            k.kafka_produce(kafka_cluster, topic_name,
+                            [json.dumps({"key": p, "value": 1})], retries=5)
+
+        # Phase 1: register all replicas before any of them consumes, so each one computes
+        # node_quota against the full replica set.
+        #
+        # The quota is only adjusted on the slow path of `prepareToPoll`, once every
+        # LOCKS_REFRESH_POLLS (15) polls. The short timeouts keep a round at a few seconds;
+        # with the defaults it would be minutes per round.
+        instance.query("\n".join(
+            create_kafka_table(
+                table_name=table,
+                topic_name=topic_name,
+                consumer_group=topic_name,
+                keeper_path=keeper_path,
+                replica_name=replica,
+                settings={
+                    "kafka_num_consumers": 1,
+                    "kafka_poll_timeout_ms": 50,
+                    "kafka_consumer_reschedule_ms": 100,
+                    "kafka_flush_interval_ms": 500,
+                },
+            )
+            for table, replica in zip(tables, replicas)
+        ))
+        wait_for_replicas_registered(kafka_cluster, keeper_path, len(replicas))
+
+        # Phase 2: start consuming. The 8 permanent locks settle first, then the remaining
+        # 3 partitions drive the temporary-lock quota.
+        instance.query("\n".join(
+            attach_materialized_view(table) for table in tables
+        ))
+
+        start = time.time()
+        sequences = {}
+        while time.time() - start < timeout:
+            sequences = collect_tmp_quota_sequences(instance, tables)
+            if any(longest_nonzero_run(seq) >= REQUIRED_NONZERO_RUN
+                   for seq in sequences.values()):
+                return
+            time.sleep(2)
+
+        observed = "; ".join(
+            f"{table}: quotas={[q for q, _a in seq]} available={[a for _q, a in seq]}"
+            for table, seq in sequences.items()
+        )
+        rounds = max((len(seq) for seq in sequences.values()), default=0)
+        if rounds < REQUIRED_NONZERO_RUN:
+            pytest.fail(
+                f"Only {rounds} temporary-lock quota rounds were logged within {timeout}s, "
+                f"so the quota logic was never exercised and the test proves nothing: "
+                f"{observed}"
+            )
+        pytest.fail(
+            f"No consumer kept a non-zero temporary-lock quota for {REQUIRED_NONZERO_RUN} "
+            f"consecutive rounds, i.e. the quota still collapses after every increase: "
+            f"{observed}"
+        )
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
