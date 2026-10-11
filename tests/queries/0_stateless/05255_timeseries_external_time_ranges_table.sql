@@ -37,11 +37,9 @@ SELECT '-- the filter is applied: a time series is hidden from a range which its
 ALTER TABLE ext_time_ranges UPDATE min_time = toDateTime64(3000, 3), max_time = toDateTime64(3000, 3) WHERE min_time = toDateTime64(500, 3) SETTINGS mutations_sync = 1;
 SELECT min_time, max_time FROM ext_time_ranges ORDER BY min_time;
 
--- A selector matching the whole metric doesn't filter time series by their stored time ranges, only the samples are filtered by their timestamps.
+-- h1 is hidden from all the selectors: the correct results would be 5, 4 and 4.
 SELECT count() FROM timeSeriesSelector(ts_ext, 'm', 0, 2500);
--- h2 is in [0, 2500] and fails the matcher, so the time series are filtered by their stored time ranges and h1 is hidden (the correct result is 4).
 SELECT count() FROM timeSeriesSelector(ts_ext, 'm{host="h1"}', 0, 2500);
--- h2 has no samples in [0, 1500], so the probe decides that the selector matches the whole metric and the stored time range of h1 is not consulted.
 SELECT count() FROM timeSeriesSelector(ts_ext, 'm{host="h1"}', 0, 1500);
 
 DROP TABLE ts_ext;

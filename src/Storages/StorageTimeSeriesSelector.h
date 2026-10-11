@@ -47,6 +47,7 @@ public:
     /// registering their tags for timeSeriesIdToTags(). The time bounds have the scale `time_scale`; they are converted
     /// to the type of the timestamps in the table and applied to the stored time ranges of the series if the table
     /// stores them. The query reads from a `null` table (returns no ids) if no timestamp of the table is in the time range.
+    /// The query must be executed with the settings set by applySettingsForSelectIDsQuery.
     static ASTPtr makeSelectIDsQuery(
         const StorageTimeSeries & time_series_storage,
         const StorageID & tags_table_id,
@@ -58,6 +59,10 @@ public:
         const std::optional<DateTime64> & max_time,
         UInt32 time_scale,
         const ContextPtr & context);
+
+    /// Sets the settings the query made by makeSelectIDsQuery relies on: the time ranges table is joined by a merge join
+    /// over tables read in the order of `id`.
+    static void applySettingsForSelectIDsQuery(Context & context);
 
     void readImpl(
         QueryPlan & query_plan,

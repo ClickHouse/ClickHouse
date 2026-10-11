@@ -605,7 +605,9 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto query_context = Context::createCopy(getContext());
+    StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(*query_context);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     try
     {
@@ -922,7 +924,9 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto query_context = Context::createCopy(getContext());
+    StorageTimeSeriesSelector::applySettingsForSelectIDsQuery(*query_context);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     try
     {
