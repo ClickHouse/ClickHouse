@@ -97,7 +97,7 @@ String columnTypeToString(ColumnType type);
 struct ColumnSpec
 {
     String name;
-    ColumnType type;
+    ColumnType type = ColumnType::Custom;
 };
 
 /// One page of rows returned by a query.
@@ -173,10 +173,10 @@ public:
 private:
     struct Frame
     {
-        UInt8 opcode;
+        UInt8 opcode = 0;
         String body;
         /// The offset in the body where the message starts, after the tracing id, warnings, and custom payload.
-        size_t message_offset;
+        size_t message_offset = 0;
     };
 
     void handshake(const ConnectionSettings & settings);
