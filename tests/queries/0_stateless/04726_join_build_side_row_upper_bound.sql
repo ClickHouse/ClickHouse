@@ -278,6 +278,18 @@ SELECT 'nested exact-empty sub-join keeps orientation',
     SETTINGS query_plan_optimize_join_order_limit = 2
 ) WHERE explain ILIKE '%Join:%';
 
+-- A window function keeps the row count of its input, so the swap needs both the bound of `wd` and
+-- the lower bound of `wf` to survive their window steps. The first condition keeps the assertion
+-- non-vacuous if the window steps stop appearing.
+SELECT 'window subqueries keep orientation',
+        countIf(explain ILIKE '%Window step%') >= 2
+    AND countIf(explain ILIKE '%Join: wf%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT max(wd.rn), max(wf.rn)
+    FROM (SELECT id, row_number() OVER () AS rn FROM dim_04726 WHERE nation_id = 5) AS wd
+    JOIN (SELECT id, row_number() OVER () AS rn FROM fact_04726) AS wf ON wd.id = wf.id
+);
+
 -- The plan arms above assert the orientation; this one asserts the effect it exists for, so a
 -- future change cannot keep the plan shape while losing the small build side at runtime.
 SELECT avg(val)

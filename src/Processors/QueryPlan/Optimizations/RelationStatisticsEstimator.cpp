@@ -9,6 +9,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -20,7 +21,10 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -362,6 +366,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     /// already-distributed subtree would otherwise report unknown cardinality, degrading
     /// broadcast-vs-shuffle and join order decisions.
     if (dynamic_cast<LogicalExchangeStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), filter);
+
+    /// These steps pass every input row through unchanged.
+    if (typeid_cast<const WindowStep *>(step) || typeid_cast<const BuildRuntimeFilterStep *>(step)
+        || typeid_cast<const SaveSubqueryResultToBufferStep *>(step) || typeid_cast<const StreamInQueryResultCacheStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter);
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
