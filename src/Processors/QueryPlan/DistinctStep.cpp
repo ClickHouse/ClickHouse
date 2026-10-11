@@ -16,8 +16,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 #include <Core/SortDescription.h>
 
 namespace ProfileEvents
@@ -65,7 +63,6 @@ namespace QueryPlanSerializationSetting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
@@ -73,46 +70,6 @@ namespace ErrorCodes
 bool preliminaryDistinctIsUseful(size_t max_threads)
 {
     return max_threads > 1;
-}
-
-/// Combines enabled absolute and ratio thresholds by taking their minimum.
-static size_t getMaxBytesBeforeExternalDistinct(size_t max_bytes_before_external_distinct, double max_bytes_ratio_before_external_distinct)
-{
-    std::optional<size_t> threshold;
-    if (max_bytes_before_external_distinct != 0)
-        threshold = max_bytes_before_external_distinct;
-
-    if (max_bytes_ratio_before_external_distinct != 0.)
-    {
-        double ratio = max_bytes_ratio_before_external_distinct;
-        if (ratio < 0 || ratio >= 1.)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_distinct should be >= 0 and < 1 ({})", ratio);
-
-        auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
-        {
-            /// Zero disables spilling, so an enabled ratio must produce at least a one-byte threshold.
-            const size_t ratio_in_bytes = std::max<size_t>(1, static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio));
-            if (threshold)
-                threshold = std::min(threshold.value(), ratio_in_bytes);
-            else
-                threshold = ratio_in_bytes;
-
-            LOG_TRACE(
-                getLogger("DistinctStep"),
-                "Adjusting memory limit before external DISTINCT with {} (ratio: {}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
-        }
-        else
-        {
-            LOG_TRACE(getLogger("DistinctStep"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_distinct");
-        }
-    }
-
-    return threshold.value_or(0);
 }
 
 DistinctStep::Settings::Settings(const DB::Settings & settings_)
@@ -236,8 +193,10 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
         return;
     }
 
-    const size_t external_threshold = getMaxBytesBeforeExternalDistinct(
-        settings.max_bytes_before_external_distinct, settings.max_bytes_ratio_before_external_distinct);
+    const size_t external_threshold = getMaxBytesBeforeExternalProcessing(
+        settings.max_bytes_before_external_distinct,
+        settings.max_bytes_ratio_before_external_distinct,
+        "max_bytes_ratio_before_external_distinct");
     /// Constant keys produce at most one row and need no external storage.
     if (!pre_distinct && external_threshold
         && !calculateDistinctKeyColumnsPositions(*pipeline.getSharedHeader(), columns).empty())
@@ -249,7 +208,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             {.current_metric = CurrentMetrics::TemporaryFilesForDistinct,
              .bytes_compressed = ProfileEvents::ExternalDistinctCompressedBytes,
              .bytes_uncompressed = ProfileEvents::ExternalDistinctUncompressedBytes,
-             .num_files = ProfileEvents::ExternalDistinctWritePart},
+             .num_files = ProfileEvents::ExternalDistinctWritePart,
+             .spilled_to_disk_operator = "distinct"},
             settings.temporary_files_buffer_size,
             settings.temporary_files_codec);
 
