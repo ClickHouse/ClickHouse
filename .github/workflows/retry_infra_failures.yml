@@ -128,6 +128,10 @@ jobs:
             echo "Checking run $run_url ..."
 
             should_rerun=false
+            consistent=false
+            infra_count=0
+            infra_id=""
+            infra_name=""
 
             # Fetch all job data once (reused for multiple checks below)
             jobs_raw=$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" --paginate)
@@ -182,7 +186,7 @@ jobs:
             # may name another PR; match the candidates against the run's own head branch
             # and repository instead. `.pull_requests` is empty for fork PRs, so then look
             # the PRs up through the head commit. An ambiguous or unresolved run gets no PR
-            # number, so no PR-scoped artifact or marker is read for it.
+            # number and is skipped below, so no PR-scoped artifact or marker is read for it.
             pr_candidates=$(echo "$run_data" | jq -c \
               --arg ref "$run_head_branch" --arg repo_id "$run_head_repo_id" '
               [(.pull_requests // [])[] |
@@ -210,53 +214,77 @@ jobs:
               echo "  Run belongs to several PRs ($pr_candidates) - not using a PR number."
             fi
 
-            # If the job-level heuristic didn't trigger, check Praktika result JSONs
-            # on S3 for infrastructure-related failures:
-            # - "Checkout Submodules" failures (transient DNS/git issues)
-            # - Results with the "infra" label (e.g. Docker image pull failures)
-            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
-              # Get names of failed jobs (excluding pipeline plumbing)
-              failed_job_names=$(echo "$jobs_raw" | jq -r '
+            if [ -z "$pr_number" ]; then
+              echo "  Cannot resolve the pull request for this run, skipping."
+              continue
+            fi
+
+            pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
+              --jq '{sha: .head.sha, updated: .updated_at}' 2>/dev/null || true)
+            pr_sha=$(echo "$pr_data" | jq -r '.sha // empty')
+            pr_updated=$(echo "$pr_data" | jq -r '.updated // empty')
+
+            # "Mergeable Check" is a commit status and a rerun keeps the original head
+            # commit, so a run whose commit is no longer the head of the pull request
+            # cannot unblock it however it is rerun.
+            if [ -z "$pr_sha" ] || [ "$run_sha" != "$pr_sha" ]; then
+              echo "  Run commit is not the head of PR #$pr_number, skipping."
+              continue
+            fi
+
+            # If the job-level heuristic didn't trigger, classify each failed job from the
+            # Praktika results on S3. The workflow-level result is the same artifact
+            # "Finish Workflow" reads for "Mergeable Check", so the two cannot disagree.
+            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ]; then
+              result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_pr.json"
+              result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
+
+              failed_jobs=$(echo "$jobs_raw" | jq -r '
                 .jobs[] | select(.conclusion == "failure") |
                 select(.name != "Config Workflow" and .name != "Finish Workflow") |
-                .name
+                "\(.id)\t\(.name)"
               ')
 
-              all_infra_failures=true
-              while IFS= read -r job_name; do
-                [ -z "$job_name" ] && continue
-                # Normalize job name to match Praktika result file naming:
-                # lowercase, replace non-alphanumeric chars with underscore, collapse runs
-                normalized=$(echo "$job_name" | tr '[:upper:]' '[:lower:]' | \
-                  sed 's/[^a-z0-9_]/_/g; s/__*/_/g')
-                result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_${normalized}.json"
+              real_failure=false
+              if [ -n "$result_json" ] && [ -n "$failed_jobs" ]; then
+                consistent=true
+                while IFS=$'\t' read -r job_id job_name; do
+                  [ -z "$job_name" ] && continue
+                  # The S3 key names a pull request and a commit but no run, so two runs
+                  # at one commit share this file: an entry describes this job only when
+                  # its own "run_url" points at it. Anything else is unclassifiable.
+                  verdict=$(echo "$result_json" | jq -r \
+                    --arg name "$job_name" --arg job_url "$run_url/job/$job_id" '
+                    [.results[]? | select(.name == $name)] | .[0] as $r |
+                    if $r == null then "foreign"
+                    elif ($r.ext.run_url // "") != $job_url then "foreign"
+                    elif (["FAIL", "ERROR", "UNKNOWN", "XPASS", "DROPPED"]
+                          | index($r.status)) == null then "foreign"
+                    elif (($r.ext.labels // [])
+                          | any((if type == "object" then .name else . end) == "infra"))
+                      then "infra"
+                    elif (($r.results // []) | length) > 0
+                         and all($r.results[]; .name == "Checkout Submodules") then "infra"
+                    else "real"
+                    end
+                  ')
+                  case "$verdict" in
+                    infra)
+                      infra_count=$((infra_count + 1))
+                      infra_id="$job_id"
+                      infra_name="$job_name"
+                      ;;
+                    real) real_failure=true ;;
+                    *)
+                      consistent=false
+                      echo "  Praktika results do not describe job '$job_name' of this run."
+                      break
+                      ;;
+                  esac
+                done <<< "$failed_jobs"
+              fi
 
-                result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
-                if [ -z "$result_json" ]; then
-                  all_infra_failures=false
-                  break
-                fi
-
-                # Check if the top-level result has the "infra" label
-                has_infra_label=$(echo "$result_json" | jq -r '
-                  (.ext.labels // []) | any(. == "infra")
-                ')
-                if [ "$has_infra_label" = "true" ]; then
-                  continue
-                fi
-
-                # Check: all failed sub-results must be "Checkout Submodules"
-                has_non_checkout_failure=$(echo "$result_json" | jq -r '
-                  [.results[] | select(.status == "failure" or .status == "error") |
-                   .name] | map(select(. != "Checkout Submodules")) | length > 0
-                ')
-                if [ "$has_non_checkout_failure" = "true" ]; then
-                  all_infra_failures=false
-                  break
-                fi
-              done <<< "$failed_job_names"
-
-              if [ "$all_infra_failures" = "true" ] && [ -n "$failed_job_names" ]; then
+              if [ "$consistent" = "true" ] && [ "$infra_count" -gt 0 ] && [ "$real_failure" = "false" ]; then
                 should_rerun=true
                 echo "  Infrastructure failure detected (Praktika results indicate infra issue)."
               fi
@@ -275,16 +303,9 @@ jobs:
                 ] | first // empty
               ')
 
-              if [ -n "$config_failed_at" ] && [ -n "$pr_number" ]; then
-                pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
-                  --jq '{sha: .head.sha, updated: .updated_at}')
-                pr_sha=$(echo "$pr_data" | jq -r '.sha')
-                pr_updated=$(echo "$pr_data" | jq -r '.updated')
-
-                if [ "$run_sha" = "$pr_sha" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
-                  should_rerun=true
-                  echo "  Config Workflow failed but PR #$pr_number was updated after — rerunning."
-                fi
+              if [ -n "$config_failed_at" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
+                should_rerun=true
+                echo "  Config Workflow failed but PR #$pr_number was updated after, rerunning."
               fi
             fi
 
@@ -322,8 +343,7 @@ jobs:
               # label event) says nothing about why this run failed.
               # And it must come from this PR: another open PR can share the
               # commit, so the marker is posted with the Praktika report URL of
-              # its PR (`?PR=<n>&`). Without a PR number nothing matches, and
-              # the run is retried as before.
+              # its PR (`?PR=<n>&`).
               finish_window=$(echo "$jobs_raw" | jq -r '
                 [.jobs[] | select(.name == "Finish Workflow" and .conclusion == "failure")] |
                 first // {} | [(.started_at // ""), (.completed_at // "")] | @tsv
@@ -357,6 +377,17 @@ jobs:
                 echo "  Triggered rerun: $run_url/attempts/$((run_attempt + 1))"
               else
                 echo "  Failed to trigger rerun (may already be rerunning)"
+              fi
+            elif [ "$consistent" = "true" ] && [ "$infra_count" -eq 1 ]; then
+              # Rerunning a whole run that also failed for real is pointless, so rerun the
+              # one infrastructure job. That also reruns its dependents, which its own
+              # failure had skipped, and "Finish Workflow", which reposts "Mergeable
+              # Check". One job per run: a rerun stales every other job id of this attempt.
+              if gh run rerun --job "$infra_id" --repo "$GH_REPO"; then
+                rerun_count=$((rerun_count + 1))
+                echo "  Triggered rerun of infrastructure job '$infra_name': $run_url"
+              else
+                echo "  Failed to trigger rerun of '$infra_name'"
               fi
             else
               echo "  Not an infrastructure failure, skipping."

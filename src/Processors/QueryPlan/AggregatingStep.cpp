@@ -423,18 +423,37 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
             return "a prior run measured the staged stream as repeat-dominated";
     }
 
-    /// TODO (nihalzp): Support LowCardinality and Nullable keys.
+    /// TODO (nihalzp): Support LowCardinality keys and the single-key Nullable methods.
+    bool has_nullable_key = false;
     for (const auto & key : params.keys)
     {
         const auto & type = pipeline.getHeader().getByName(key).type;
-        if (type->lowCardinality() || type->isNullable())
-            return "a key is LowCardinality or Nullable";
+        if (type->lowCardinality())
+            return "a key is LowCardinality";
+        has_nullable_key |= type->isNullable();
     }
 
     Sizes key_sizes;
     const auto method = AggregatedDataVariants::chooseMethod(pipeline.getHeader(), params.keys, key_sizes);
     if (!AggregatedDataVariants::isConvertibleToTwoLevel(method))
         return "the aggregation method has no two-level form";
+
+    /// A missed row is staged with the key its method builds. These methods pack the null map into that key; the single-key
+    /// Nullable methods keep NULL in a separate cell of the table instead, which the staging bypasses.
+    if (has_nullable_key)
+    {
+        using Type = AggregatedDataVariants::Type;
+        switch (method)
+        {
+            case Type::nullable_keys128:
+            case Type::nullable_keys256:
+            case Type::nullable_serialized:
+            case Type::nullable_prealloc_serialized:
+                break;
+            default:
+                return "a Nullable key is kept in a separate null-key cell";
+        }
+    }
 
     return nullptr;
 }
