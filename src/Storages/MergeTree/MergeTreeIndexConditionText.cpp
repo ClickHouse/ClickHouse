@@ -1975,6 +1975,10 @@ bool MergeTreeIndexConditionText::traverseSubstringOccurrenceNode(const RPNBuild
         || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle_string.data()), needle_string.size()))
         return false;
 
+    /// `countSubstrings` of an empty needle is 0, unlike `LIKE '%%'`.
+    if (needle_string.empty() && search_function_name.starts_with("countSubstrings"))
+        return false;
+
     /// A UInt8 virtual column cannot carry the NULL of a Nullable haystack.
     const auto * haystack_node = search_function.getArgumentAt(0).getDAGNode();
     if (!haystack_node || isNullableOrLowCardinalityNullable(haystack_node->result_type))

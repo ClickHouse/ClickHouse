@@ -140,6 +140,10 @@ SELECT 'start position', arraySort(groupArray(id)) FROM tab WHERE position(messa
 SELECT 'empty needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'empty needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'empty needle', arraySort(groupArray(id)) FROM tab WHERE position(message, '') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT 'empty needle count', arraySort(groupArray(id)) FROM tab WHERE countSubstrings(message, '') > 0 SETTINGS use_skip_indexes = 0;
+SELECT 'empty needle count', arraySort(groupArray(id)) FROM tab WHERE countSubstrings(message, '') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT 'empty needle count', arraySort(groupArray(id)) FROM tab WHERE countSubstrings(message, '') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT 'empty needle count uses no index', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE countSubstrings(message, '') > 0 SETTINGS use_skip_indexes = 1) WHERE explain LIKE '%Name: idx%';
 
 SELECT 'position > 1', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 1 SETTINGS use_skip_indexes = 0;
 SELECT 'position > 1', arraySort(groupArray(id)) FROM tab WHERE position(message, 'lpha') > 1 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
