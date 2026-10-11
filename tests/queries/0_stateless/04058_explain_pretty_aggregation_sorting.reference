@@ -102,10 +102,10 @@ Filter (HAVING)
 --- Window function ---
 Output: a, row_number() OVER (PARTITION BY b ORDER BY a * 3 − 1 ASC)
 
-Window (Window step for window \'PARTITION BY b ORDER BY minus(multiply(a, _CAST(3_UInt16, \'UInt16\'_String)), 1_UInt8) ASC\')
+Window (Window step for window \'PARTITION BY b ORDER BY minus(multiply(a, _CAST(3_UInt16, \'UInt16\'_String)), 1_UInt8) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\')
 │  Window: (PARTITION BY b ORDER BY a * 3 − 1 ASC)
 │  Functions: row_number() OVER (PARTITION BY b ORDER BY a * 3 − 1 ASC)
-└──Sorting (Sorting for window \'PARTITION BY b ORDER BY minus(multiply(a, _CAST(3_UInt16, \'UInt16\'_String)), 1_UInt8) ASC\')
+└──Sorting (Sorting for window \'PARTITION BY b ORDER BY minus(multiply(a, _CAST(3_UInt16, \'UInt16\'_String)), 1_UInt8) ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\')
    │  Sort description: b ASC, a * 3 − 1 ASC
    └──ReadFromMergeTree (default.t1)
          Read type: Default
