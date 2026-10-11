@@ -24,6 +24,11 @@ INSERT INTO src_ajun SETTINGS array_join_use_nulls = 1 VALUES (4, []); -- { serv
 
 DROP TABLE mv_ajun;
 
+-- The view query enables the setting itself, so it is reported regardless of the setting of the `INSERT`.
+CREATE MATERIALIZED VIEW mv_ajun TO dst_ajun AS SELECT id, x FROM src_ajun LEFT ARRAY JOIN arr AS x SETTINGS array_join_use_nulls = 1;
+INSERT INTO src_ajun SETTINGS array_join_use_nulls = 0 VALUES (7, [7]); -- { serverError INCORRECT_QUERY }
+DROP TABLE mv_ajun;
+
 CREATE MATERIALIZED VIEW mv_ajun_pinned TO dst_ajun_pinned AS SELECT id, x FROM src_ajun LEFT ARRAY JOIN arr AS x SETTINGS array_join_use_nulls = 0;
 CREATE MATERIALIZED VIEW mv_ajun_nullable TO dst_ajun_nullable AS SELECT id, x FROM src_ajun LEFT ARRAY JOIN arr AS x;
 

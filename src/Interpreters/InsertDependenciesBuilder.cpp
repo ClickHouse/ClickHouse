@@ -51,6 +51,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Formats/FormatFactory.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -152,6 +153,24 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Whether any `SETTINGS` clause of the query enables `array_join_use_nulls`.
+bool enablesArrayJoinUseNulls(const IAST & ast)
+{
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+    {
+        if (const Field * value = set_query->changes.tryGet("array_join_use_nulls"); value && SettingFieldBool(*value))
+            return true;
+    }
+
+    for (const auto & child : ast.children)
+    {
+        if (child && enablesArrayJoinUseNulls(*child))
+            return true;
+    }
+    return false;
+}
+
 /// Cap `min_insert_block_size_bytes` by a fraction of the server-wide memory hard limit so
 /// squashing does not accumulate more data than the host can hold. Shared between direct
 /// INSERT and materialized-view pipelines so the cap is applied symmetrically.
@@ -654,10 +673,11 @@ private:
         pipeline.dropTotalsAndExtremes();
 
         /// The target table of the view has the column types fixed at creation time, but the `SELECT` runs
-        /// with the settings of the `INSERT`. `LEFT ARRAY JOIN` under `array_join_use_nulls` makes the joined
-        /// columns `Nullable`, which cannot be stored into the non-`Nullable` columns of the target table.
-        /// Report it explicitly, like `StorageView` does for ordinary views.
-        if (local_context->getSettingsRef()[Setting::array_join_use_nulls]
+        /// with the settings of the `INSERT`, possibly overridden by `SETTINGS` clauses of the view query.
+        /// `LEFT ARRAY JOIN` under `array_join_use_nulls` makes the joined columns `Nullable`, which cannot be
+        /// stored into the non-`Nullable` columns of the target table. Report it explicitly, like `StorageView`
+        /// does for ordinary views.
+        if ((local_context->getSettingsRef()[Setting::array_join_use_nulls] || enablesArrayJoinUseNulls(*select_query))
             && hasLeftArrayJoin(*select_query)
             && changedNullabilityOneWay(pipeline.getHeader(), inner_metadata->getSampleBlock()))
         {
