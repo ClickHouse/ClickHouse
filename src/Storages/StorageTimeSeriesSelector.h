@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <unordered_map>
+
 #include <Common/Logger.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -41,6 +44,20 @@ public:
     std::string getName() const override { return "TimeSeriesSelector"; }
 
     static VirtualColumnsDescription createVirtuals();
+
+    /// Maps a tag name to the dedicated tags-table column from `tags_to_columns`. `__name__` is not included.
+    static std::unordered_map<String, String> makeColumnNameByTagNameMap(const TimeSeriesSettings & time_series_settings);
+
+    /// Makes a WHERE filter for the inner tags table from instant-selector matchers and optional stored time bounds.
+    /// The time bounds have the scale `time_scale`; they are converted to the type of the timestamps in the table,
+    /// and the filter is always false if no timestamp of the table is in the time range.
+    static ASTPtr makeWhereFilterForTagsTable(
+        const PrometheusQueryTree::MatcherList & matchers,
+        const std::unordered_map<String, String> & column_name_by_tag_name,
+        const std::optional<DateTime64> & min_time,
+        const std::optional<DateTime64> & max_time,
+        const DataTypePtr & table_timestamp_type,
+        UInt32 time_scale);
 
     /// Makes a SELECT query for the ids (`series_id`) of the series matching the matchers and optional time bounds (need stored min_time/max_time), registering their tags for timeSeriesIdToTags().
     /// The time bounds have the scale `time_scale`; they are converted to the type of the timestamps in the table, and the query
