@@ -1,0 +1,36 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>
+        SELECT sum(clamp(number, toUInt64(100), toUInt64(24999999)))
+        FROM numbers(25000000)
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT sum(length(clamp(
+            toString(number),
+            repeat('!', 256),
+            repeat('~', 256))))
+        FROM numbers(2000000)
+        FORMAT Null
+    </query>
+
+    <query>
+        WITH
+            range(128) AS lower_bound,
+            arrayMap(x -> x + toUInt64(1000000000), range(128)) AS upper_bound
+        SELECT sum(length(clamp([number], lower_bound, upper_bound)))
+        FROM numbers(1000000)
+        SETTINGS max_block_size = 8192
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT sum(clamp(number, number, number + toUInt64(1)))
+        FROM numbers(25000000)
+        FORMAT Null
+    </query>
+</test>
