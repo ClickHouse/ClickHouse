@@ -85,6 +85,9 @@ private:
     };
 
     FileStreams streams;
+    /// Read order of `columns_to_read`: presence (`m.exists_<k>`) subcolumns last,
+    /// so their reads see the part's key set already discovered by value streams.
+    std::vector<size_t> read_order;
 
     /// Which columns a read of the part touches, and whether their streams continue from where the
     /// previous read left them or seek to the mark. Returns nothing for a column that is not read.

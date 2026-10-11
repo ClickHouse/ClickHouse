@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
 #endif
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -555,7 +556,21 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         }
 
         NameAndTypePair missed_column{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
-        return {missed_column, IDataType::getSerialization(missed_column)};
+
+        /// Only a `with_key_columns` Map needs the part's SerializationInfo here: dynamic subcolumns such as `m.key_a`
+        /// are not listed in `columns.txt` but must open the per-key streams written for this part. Everything else
+        /// keeps the default serialization, which reads no streams of a layout (e.g. Map buckets) the part may not have.
+        auto it = infos.find(name_pair.first);
+        const auto * info = it != infos.end() ? it->second.get() : nullptr;
+        const auto & info_settings = info ? info->getSettings() : infos.getSettings();
+        if (info_settings.map_serialization_version != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+            return {missed_column, IDataType::getSerialization(missed_column)};
+
+        NameAndTypePair storage_column{name_pair.first, type_in_part};
+        auto serialization = info ? IDataType::getSerialization(storage_column, *info) : IDataType::getSerialization(storage_column, info_settings);
+        if (missed_column.isSubcolumn())
+            serialization = type_in_part->getSubcolumnSerialization(name_pair.second, serialization);
+        return {missed_column, serialization};
     }
 
     /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
@@ -573,6 +588,19 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         if (required_column.isSubcolumn())
             serialization = type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
         return {*column_in_part, serialization};
+    }
+
+    /// A Map's part serialization reflects the part's actual Map layout (including `with_key_columns` parts whose
+    /// `serialization.json` does not describe it), so the Map and its subcolumns are resolved from it even when the
+    /// result (a per-key subcolumn) is not poolable: such a subcolumn serialization is created anew for every reader.
+    if (typeid_cast<const DataTypeMap *>(column_in_part->getTypeInStorage().get()))
+    {
+        if (auto serialization_in_part = data_part_info_for_read->tryGetSerialization(column_in_part->getNameInStorage()))
+        {
+            if (column_in_part->isSubcolumn())
+                serialization_in_part = column_in_part->getTypeInStorage()->getSubcolumnSerialization(column_in_part->getSubcolumnName(), serialization_in_part);
+            return {*column_in_part, serialization_in_part};
+        }
     }
 
     /// The part holds the serialization of every column it stores, built with the same call as below, so take it

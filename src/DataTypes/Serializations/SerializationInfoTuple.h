@@ -34,6 +34,7 @@ public:
 
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
     ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }
+    size_t getElementCount() const { return elems.size(); }
 
 protected:
     void writeJSONFields(WriteBuffer & out, const String * name) const override;
