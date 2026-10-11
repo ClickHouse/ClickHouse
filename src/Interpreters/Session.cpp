@@ -716,6 +716,18 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (user_id && !query_context->getAccess()->tryGetUser())
         query_context->setUser(*user_id, external_roles);
 
+    /// When external roles were pushed from an interserver initiator, they represent the
+    /// initiator's active role set (SET ROLE / role=).  Clear the user's default current_roles
+    /// so that only the pushed external_roles are active — otherwise the remote node would
+    /// evaluate row policies under the union of its own defaults plus the pushed roles,
+    /// which is wider than what the initiator intended.
+    if (!external_roles.empty()
+        && query_context->getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
+        && query_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
+    {
+        query_context->setCurrentRoles({}, /* check_grants= */ false);
+    }
+
     /// Query context is ready.
     query_context_created = true;
     if (user_id)

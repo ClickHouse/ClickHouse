@@ -422,23 +422,42 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (!duplicated_part_uuids.empty())
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
-    // Collect all roles granted on this node and pass those to the remote node
+    // Collect roles to push to the remote node.
+    // When the initiator used SET ROLE / role= and the user identity was not rewritten
+    // (e.g. via remote(user=>...)), send the *current* (active) roles so that row policies
+    // on the remote node are scoped the same way as on the initiator.
+    // Otherwise, fall back to sending all granted roles (the pre-existing behavior).
     std::vector<String> local_granted_roles;
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {
-        auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
-        boost::container::flat_set<String> granted_roles;
-        if (user)
+        auto current_role_ids = context->getCurrentRoles();
+        bool has_custom_roles = !current_role_ids.empty()
+            && modified_client_info.initial_user == context->getClientInfo().current_user;
+
+        if (has_custom_roles)
         {
             const auto & access_control = context->getAccessControl();
-            for (const auto & e : user->granted_roles.getElements())
+            for (const auto & id : current_role_ids)
             {
-                // `tryReadNames` instead of `readNames` because the original user might have a dropped role.
-                auto names = access_control.tryReadNames(e.ids);
-                granted_roles.insert(names.begin(), names.end());
+                if (auto name = access_control.tryReadName(id))
+                    local_granted_roles.push_back(*name);
             }
         }
-        local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
+        else
+        {
+            auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
+            boost::container::flat_set<String> granted_roles;
+            if (user)
+            {
+                const auto & access_control = context->getAccessControl();
+                for (const auto & e : user->granted_roles.getElements())
+                {
+                    auto names = access_control.tryReadNames(e.ids);
+                    granted_roles.insert(names.begin(), names.end());
+                }
+            }
+            local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
+        }
     }
 
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true, local_granted_roles);
