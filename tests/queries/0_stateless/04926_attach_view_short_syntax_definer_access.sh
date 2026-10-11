@@ -56,6 +56,21 @@ ${CLICKHOUSE_CLIENT} --user "$weak" --query "ATTACH VIEW IF NOT EXISTS $db.v_def
 ${CLICKHOUSE_CLIENT} --user "$weak" --query "ATTACH VIEW IF NOT EXISTS $db.v_none" 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "NO ERROR"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '$db' AND name IN ('v_definer', 'v_none')"
 
+# A Memory database keeps the parsed definition, in which `DEFINER = CURRENT_USER` is already resolved
+# to its creator: re-attaching must neither skip SET DEFINER nor rebind the definer to the attaching user.
+mem="${db}_mem"
+${CLICKHOUSE_CLIENT} <<EOF
+DROP DATABASE IF EXISTS $mem;
+CREATE DATABASE $mem ENGINE = Memory;
+GRANT CREATE VIEW ON $mem.* TO $definer, $weak;
+EOF
+${CLICKHOUSE_CLIENT} --user "$definer" --query "CREATE VIEW $mem.v DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT k FROM $db.src"
+${CLICKHOUSE_CLIENT} --query "DETACH VIEW $mem.v"
+${CLICKHOUSE_CLIENT} --user "$weak" --query "ATTACH VIEW $mem.v" 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --query "ATTACH VIEW $mem.v"
+${CLICKHOUSE_CLIENT} --query "SELECT definer = '$definer' FROM system.tables WHERE database = '$mem' AND name = 'v'"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE $mem"
+
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP VIEW $db.v_definer;
 DROP VIEW $db.v_none;

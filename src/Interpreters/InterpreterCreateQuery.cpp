@@ -2055,8 +2055,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (create.isView() && !(if_not_exists && database->isTableExist(create.getTable(), getContext())))
         {
             if (create_query.sql_security)
-                processSQLSecurityOption(
-                    getContext(), create_query.sql_security->as<ASTSQLSecurity &>(), create_query.is_materialized_view, mode);
+            {
+                auto & stored_sql_security = create_query.sql_security->as<ASTSQLSecurity &>();
+                /// A `Memory` database keeps the parsed AST, where `CURRENT_USER` is already resolved to the definer.
+                if (stored_sql_security.definer)
+                    stored_sql_security.is_definer_current_user = false;
+                processSQLSecurityOption(getContext(), stored_sql_security, create_query.is_materialized_view, mode);
+            }
 
             AccessRightsElements target_access;
             if (create_query.targets)
