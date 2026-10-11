@@ -21,7 +21,7 @@ ColumnsDescription StorageSystemResources::getColumnsDescription()
         {"read_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for read operations."},
         {"write_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for write operations."},
         {"unit", std::make_shared<DataTypeString>(), "Resource unit used for cost measurements."},
-        {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the resource."},
+        {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the resource. For an implicit resource (`source` = `implicit`) it describes the resource and cannot be executed."},
         {"source", std::make_shared<DataTypeString>(), "The name of the storage that defines the resource: `configuration` for the server configuration, `disk` or `keeper` for SQL, `implicit` for resources created implicitly by the server."},
     };
 }
