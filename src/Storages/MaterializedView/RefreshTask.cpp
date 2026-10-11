@@ -177,7 +177,8 @@ public:
         ready = false;
         try
         {
-            link.queue->enqueueRequest(this);
+            /// Stamp the query's scheduling context and state, as synchronous `QuerySlot` admission does.
+            link.enqueue(this);
         }
         catch (...)
         {

@@ -74,7 +74,7 @@ def test_queued_long_refreshes_do_not_starve_fast_refreshes():
                 "REFRESH EVERY 1 SECOND SETTINGS refresh_retries=0 APPEND "
                 "TO starvation.fast_results EMPTY "
                 f"AS SELECT toUInt16({view_id}) AS view_id "
-                "SETTINGS refresh_workload='fast', max_threads=1"
+                "SETTINGS workload='fast', max_threads=1"
             )
 
         for view_id in range(SLOW_VIEWS):
@@ -84,7 +84,7 @@ def test_queued_long_refreshes_do_not_starve_fast_refreshes():
                 "TO starvation.slow_results EMPTY "
                 f"AS SELECT toUInt16({view_id}) AS view_id, sum(sleepEachRow(1)) AS slept "
                 f"FROM numbers({SLOW_DURATION_SECONDS}) "
-                "SETTINGS refresh_workload='slow', max_threads=1, max_block_size=1, "
+                "SETTINGS workload='slow', max_threads=1, max_block_size=1, "
                 "max_execution_time=0"
             )
 

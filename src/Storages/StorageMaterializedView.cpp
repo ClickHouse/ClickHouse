@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <thread>
 #include <Storages/StorageMaterializedView.h>
 
@@ -14,7 +13,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTRefreshStrategy.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -62,7 +60,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
-    extern const SettingsString refresh_workload;
 }
 
 namespace ServerSetting
@@ -743,33 +740,6 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     /// Use the same metadata snapshot for SQL SECURITY and the SELECT settings/query.
     out_select_query = view_metadata->getSelectQuery().select_query->clone();
     InterpreterSetQuery::applySettingsFromQuery(out_select_query, refresh_context);
-    const String refresh_workload = refresh_context->getSettingsRef()[Setting::refresh_workload];
-    if (!refresh_workload.empty())
-    {
-        /// Apply through the settings interpreter so the definer's workload constraints are checked.
-        auto runtime_settings = make_intrusive<ASTSetQuery>();
-        runtime_settings->changes.emplace_back("workload", refresh_workload);
-        InterpreterSetQuery(runtime_settings, refresh_context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
-
-        /// SELECT interpreters may reapply settings, including in nested queries. Keep the private
-        /// execution copy consistent with admission; the persisted SELECT and CREATE are unchanged.
-        ASTs pending{out_select_query};
-        while (!pending.empty())
-        {
-            auto node = std::move(pending.back());
-            pending.pop_back();
-            if (auto * settings = node->as<ASTSetQuery>())
-            {
-                for (auto & change : settings->changes)
-                    if (change.name == "workload")
-                        change.value = refresh_workload;
-                settings->default_settings.erase(
-                    std::remove(settings->default_settings.begin(), settings->default_settings.end(), "workload"),
-                    settings->default_settings.end());
-            }
-            pending.insert(pending.end(), node->children.begin(), node->children.end());
-        }
-    }
     return refresh_context;
 }
 

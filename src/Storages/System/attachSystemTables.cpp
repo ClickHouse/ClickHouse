@@ -3724,6 +3724,8 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
 .description
 Information about [Refreshable Materialized Views](/reference/statements/create/view#refreshable-materialized-view). Contains all refreshable materialized views, regardless of whether there's a refresh in progress or not.
 
+When `use_query_slot_to_refresh_materialized_view` is enabled, `WaitingForResource` means that a refresh is queued for a `QUERY` slot in the `workload` selected by the stored `SELECT` settings. It has not started refresh execution and does not occupy a background execution worker.
+
 .examples
 ```sql
 SELECT
