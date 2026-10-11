@@ -634,7 +634,17 @@ struct HashMethodSerialized
 
         /// The hashes are computed together with the serialization of the keys, see `getPrecomputedHash`.
         precomputed_hashes.resize(row_sizes.size());
-        hashed_rows = 0;
+        /// The keys of the rows below the first one may be not serialized, see `skipRowsBefore`.
+        hashed_rows = std::max(hashed_rows, first_row);
+    }
+
+    /// The rows below this one are not requested anymore, so they are not serialized and hashed.
+    /// Called when the rows of the block are processed starting from the middle of it, so that the first chunk
+    /// does not start from row 0 (e.g. the remainder of a block after an adaptive aggregation split).
+    void skipRowsBefore(size_t row)
+    {
+        serialized_rows = std::max(serialized_rows, row);
+        hashed_rows = std::max(hashed_rows, row);
     }
 
     /// Serializes the next chunk of keys, which ends after the row.
