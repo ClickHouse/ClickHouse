@@ -233,6 +233,7 @@ private:
     UInt64 poll_interval = DBMS_DEFAULT_POLL_INTERVAL;
     UInt64 idle_connection_timeout = 3600;
     UInt64 interactive_delay = 100000;
+    UInt64 interactive_delay_ms = 100;
     Poco::Timespan sleep_in_send_tables_status;
     UInt64 unknown_packet_in_send_data = 0;
     Poco::Timespan sleep_after_receiving_query;
