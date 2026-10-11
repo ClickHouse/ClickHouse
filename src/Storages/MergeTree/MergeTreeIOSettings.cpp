@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool enable_reads_from_columns_cache;
     extern const SettingsBool enable_writes_to_columns_cache;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
 }
@@ -143,6 +144,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.prefetch_json_shared_data_substreams = settings[Setting::merge_tree_prefetch_json_shared_data_substreams];
     result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indexes_enable_bulk_filtering];
+    result.bulk_filtering_chunk_size = settings[Setting::max_block_size];
     result.merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek];
     result.merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek];
     result.merge_tree_coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity];
