@@ -1,3 +1,9 @@
+-- Tags: long
+-- long: a flaky check hands every worker the same changed test, so this one contends with copies of
+-- itself rather than with unrelated tests. Over 4192 runs there its median is 20.5s and one run reached
+-- 355s, past the 180s verdict a `long` test is exempt from. The other estimation tests carry the tag for
+-- the same reason.
+
 -- For runs with the old analyzer
 SET enable_analyzer=1;
 
