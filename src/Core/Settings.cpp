@@ -7100,7 +7100,7 @@ Enable the [query condition cache](/concepts/features/performance/caches/query-c
 
 Such conditions are non-deterministic (they change with the clock), so they cannot be cached directly. Instead, a deterministic condition is derived from them by rounding the folded current-time constant onto a time grid, e.g. `WHERE time >= '2026-08-09 12:34:56'` becomes `WHERE time >= '2026-08-09 00:00:00'` (rounding down for cache reads, up for cache writes, which keeps the cache sound). The grid step is proportional to the distance between the constant and the current time (see [`query_condition_cache_time_condition_grid_factor`](#query_condition_cache_time_condition_grid_factor)), clamped to between one second and one day.
 
-If the constant is already aligned to the grid (e.g. `WHERE time >= today() - 10` or `WHERE time >= toStartOfDay(now())`), the cache is effective for the whole grid cell, e.g. until the end of the day. Otherwise, cache entries written during one grid cell are used during the next one.
+If the constant is already aligned to the grid (e.g. `WHERE time >= today() - 10` or `WHERE time >= toStartOfDay(now())`), the cache is effective for the whole grid cell, e.g. until the end of the day. Otherwise, the cache is reused only for lower bounds on the time, e.g. `WHERE time >= now() - INTERVAL 10 DAY`: cache entries written during one grid cell are used during the next one. An unaligned upper bound such as `WHERE time < now()`, alone or as a part of a sliding window like `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, is not reused by later queries, because their condition is not contained in the condition of the earlier ones.
 
 This setting has no effect unless `use_query_condition_cache` is also enabled.
 
