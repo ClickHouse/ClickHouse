@@ -482,8 +482,8 @@ class ToolSet:
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
-    CH_AMD_LLVM_COVERAGE_BUILD = (
-        "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
+    CH_ARM_LLVM_COVERAGE_BUILD = (
+        "CH_ARM_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
     )
     CH_AMD_PER_TEST_COVERAGE_BUILD = (
         "CH_AMD_PER_TEST_COVERAGE_BUILD"  # build with LLVM coverage + per-test depth instrumentation
@@ -524,8 +524,8 @@ class ArtifactNames:
     FAST_TEST = "FAST_TEST"
 
     UNITTEST_ARM_ASAN_UBSAN = "UNITTEST_ARM_ASAN_UBSAN"
-    UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
-    UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
+    UNITTEST_ARM_TSAN = "UNITTEST_ARM_TSAN"
+    UNITTEST_ARM_MSAN = "UNITTEST_ARM_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
     # Packages are built for the release builds only - they are what gets published, and
@@ -659,7 +659,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
-            ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
             ArtifactNames.CH_AMD_ASAN_UBSAN,
@@ -774,8 +774,8 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
-            ArtifactNames.UNITTEST_AMD_TSAN,
-            ArtifactNames.UNITTEST_AMD_MSAN,
+            ArtifactNames.UNITTEST_ARM_TSAN,
+            ArtifactNames.UNITTEST_ARM_MSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
     )

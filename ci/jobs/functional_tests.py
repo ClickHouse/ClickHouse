@@ -529,7 +529,7 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
-        elif to.startswith("amd_") and "coverage" in to:
+        elif to.startswith(("amd_", "arm_")) and "coverage" in to:
             is_llvm_coverage = True
         if "excluded_from_llvm" in to:
             is_excluded_from_llvm = True
@@ -1681,7 +1681,7 @@ def main():
             )
             force_ok_exit = True
     if is_llvm_coverage and test_result:
-        # do not block pipeline on amd_llvm_coverage job failures
+        # do not block pipeline on llvm_coverage job failures
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
         force_ok_exit = True
     if is_bugfix_validation:
