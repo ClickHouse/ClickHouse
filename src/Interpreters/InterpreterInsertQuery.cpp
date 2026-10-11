@@ -152,7 +152,10 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
+    {
+        quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_ROWS);
         quota->checkExceededForQuery(getContext()->getNormalizedQueryHash(), QuotaType::WRITTEN_BYTES);
+    }
 
     const Settings & settings = getContext()->getSettingsRef();
     if (!settings[Setting::allow_named_tuple_conversion_with_extra_source_fields_on_insert])
