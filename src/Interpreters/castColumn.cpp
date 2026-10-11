@@ -162,6 +162,48 @@ static ColumnPtr getDateTime64ToFloatLossMap(const ColumnDecimal<DateTime64> & c
     return result;
 }
 
+/// Marks the timestamps of `column`, of type `type`, that a cast to the non-composite type `to_type`
+/// changes: a timestamp that a floating-point type does not hold exactly, a fraction that the target scale
+/// discards, or a value outside the range of `DateTime`. Returns no column for a target that holds every
+/// timestamp exactly.
+static ColumnPtr getDateTime64ToScalarLossMap(
+    const ColumnDecimal<DateTime64> & column, const DataTypeDateTime64 & type, const DataTypePtr & to_type)
+{
+    ColumnPtr float_loss_map;
+    if (callOnBasicType<void, false, true, false, false>(to_type->getTypeId(), [&](const auto & types)
+        {
+            using FloatType = typename std::decay_t<decltype(types)>::RightType;
+            float_loss_map = getDateTime64ToFloatLossMap<FloatType>(column);
+            return true;
+        }))
+        return float_loss_map;
+
+    UInt32 target_scale = 0;
+    const WhichDataType target(to_type);
+    if (target.isDateTime64() || target.isTime64() || target.isDecimal())
+        target_scale = getDecimalScale(*to_type);
+    else if (!target.isDateOrDate32() && !target.isDateTime() && !target.isTime() && !target.isInteger())
+        return {};
+
+    const UInt32 source_scale = type.getScale();
+    if (target_scale >= source_scale && !target.isDateTime())
+        return {};
+
+    const Int64 divisor = DecimalUtils::scaleMultiplier<Int64>(source_scale > target_scale ? source_scale - target_scale : 0);
+    const Int64 source_multiplier = type.getScaleMultiplier().value;
+    const auto & values = column.getData();
+    auto result = ColumnUInt8::create(values.size(), UInt8(0));
+    auto & loss_map = result->getData();
+    for (size_t row = 0; row < values.size(); ++row)
+    {
+        const Int64 value = values[row];
+        const Int64 seconds = value / source_multiplier;
+        loss_map[row] = value % divisor != 0
+            || (target.isDateTime() && (value < 0 || seconds > std::numeric_limits<UInt32>::max()));
+    }
+    return result;
+}
+
 ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const DataTypePtr & target_type)
 {
     if (source.type->equals(*target_type))
@@ -195,15 +237,19 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
     {
         /// The cast converts every variant on its own and takes each row from its active variant, as
         /// `createVariantToColumnWrapper` does, so the loss maps of the variants are read back through the
-        /// discriminators. A NULL row has no variant.
+        /// discriminators. A NULL row has no variant, and a variant without rows has no timestamp to check,
+        /// like an all-NULL `Nullable` column above.
         const auto & column_variant = assert_cast<const ColumnVariant &>(*column);
         const auto & variant_types = from_variant->getVariants();
 
         Columns variant_loss_maps(variant_types.size());
         for (size_t global_discriminator = 0; global_discriminator < variant_types.size(); ++global_discriminator)
-            variant_loss_maps[global_discriminator] = getDateTime64CastLossMap(
-                {column_variant.getVariantPtrByGlobalDiscriminator(global_discriminator), variant_types[global_discriminator], source.name},
-                to_type);
+        {
+            const auto & variant = column_variant.getVariantPtrByGlobalDiscriminator(global_discriminator);
+            if (!variant->empty())
+                variant_loss_maps[global_discriminator] = getDateTime64CastLossMap(
+                    {variant, variant_types[global_discriminator], source.name}, to_type);
+        }
         if (std::ranges::none_of(variant_loss_maps, [](const ColumnPtr & loss_map) { return loss_map != nullptr; }))
             return {};
 
