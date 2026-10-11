@@ -127,6 +127,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// needs the new contract is not serialized for such a peer at all.
 /// Version 20 also registers the `BlocksMarshalling` step, so a plan fragment that pre-serializes its
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
+/// Version 20 also knows the `group_by_each_block_no_merge` plan setting name on `AggregatingStep`.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
 ///
@@ -207,6 +208,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DI
 /// correctness cannot be shipped to a peer below this version: the peer would ignore the bit and
 /// rebuild the read with the cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 19;
+/// First query-plan serialization version that knows the `group_by_each_block_no_merge` plan setting
+/// name. `AggregatingStep::serializeSettings` writes the name only towards a peer at this version or
+/// later, and refuses to ship an enabled step towards an older peer (see the comment there).
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_EACH_BLOCK_NO_MERGE = 20;
 /// First global query-plan version that writes version 1 of `Aggregating`, which carries the
 /// `GROUP BY` top-K parameters. Towards an older peer the parameters are omitted rather than
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,
