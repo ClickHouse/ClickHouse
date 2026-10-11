@@ -74,6 +74,19 @@ void IMergingTransformBase::setHaveAllInputs()
     have_all_inputs = true;
 }
 
+void IMergingTransformBase::acceptQueryResultPreview(Chunk chunk)
+{
+    /// Previews arrive through different inputs, so an older one may come after a newer one. Each
+    /// preview supersedes the previous ones, so only a preview newer than both the pending and the
+    /// already forwarded one is kept.
+    UInt64 sequence_number = getQueryResultPreviewSequenceNumber(chunk);
+    if (sequence_number <= last_forwarded_query_result_preview
+        || (pending_query_result_preview && sequence_number <= getQueryResultPreviewSequenceNumber(pending_query_result_preview)))
+        return;
+
+    pending_query_result_preview = std::move(chunk);
+}
+
 IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
 {
     /// Add information about inputs.
@@ -115,7 +128,7 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// See `QueryResultPreview.h`: previews bypass the merging algorithm.
         if (isQueryResultPreview(chunk))
         {
-            pending_query_result_preview = std::move(chunk);
+            acceptQueryResultPreview(std::move(chunk));
             input.setNeeded();
             all_inputs_has_data = false;
             continue;
@@ -200,7 +213,10 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     /// An out-of-band query result preview forwarded from one of the inputs (see `QueryResultPreview.h`).
     if (pending_query_result_preview && !is_port_full && !pushed_output_chunk)
+    {
+        last_forwarded_query_result_preview = getQueryResultPreviewSequenceNumber(pending_query_result_preview);
         output.push(std::move(pending_query_result_preview));
+    }
 
     if (!is_initialized)
         return prepareInitializeInputs();
@@ -269,11 +285,10 @@ IProcessor::Status IMergingTransformBase::prepare()
             auto pulled_chunk = input.pull(/* set_not_needed */ true);
 
             /// An out-of-band query result preview (see `QueryResultPreview.h`): forward it to the
-            /// output instead of feeding it to the merging algorithm. A newer preview replaces a
-            /// pending one - each preview supersedes the previous.
+            /// output instead of feeding it to the merging algorithm.
             if (isQueryResultPreview(pulled_chunk))
             {
-                pending_query_result_preview = std::move(pulled_chunk);
+                acceptQueryResultPreview(std::move(pulled_chunk));
                 input.setNeeded();
                 return Status::NeedData;
             }

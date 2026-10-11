@@ -23,8 +23,18 @@ bool isQueryResultPreview(const Chunk & chunk)
 
 void markAsQueryResultPreview(Chunk & chunk)
 {
-    if (!isQueryResultPreview(chunk))
-        chunk.getChunkInfos().add(std::make_shared<QueryResultPreviewInfo>());
+    /// Shared by all queries: only the relative order of the previews of one query matters.
+    static std::atomic<UInt64> last_sequence_number{0};
+
+    chunk.getChunkInfos().extract<QueryResultPreviewInfo>();
+    chunk.getChunkInfos().add(
+        std::make_shared<QueryResultPreviewInfo>(last_sequence_number.fetch_add(1, std::memory_order_relaxed) + 1));
+}
+
+UInt64 getQueryResultPreviewSequenceNumber(const Chunk & chunk)
+{
+    auto info = chunk.getChunkInfos().get<QueryResultPreviewInfo>();
+    return info ? info->sequence_number : 0;
 }
 
 QueryResultPreviewsSettings QueryResultPreviewsSettings::fromSettings(const Settings & settings)

@@ -295,6 +295,8 @@ protected:
     std::shared_ptr<IFramingFormat> framing;
 
     QueryResultPreviewFormatCreator query_result_preview_format_creator;
+    /// The sequence number of the last query result preview passed to `consumeQueryResultPreview`.
+    UInt64 last_query_result_preview_sequence_number = 0;
 
     /// Notify the framing format of a packet boundary of the given kind. Format-owned buffers (for
     /// example the UTF-8 validation adaptor's `WriteBufferValidUTF8`) may still hold a tail of the

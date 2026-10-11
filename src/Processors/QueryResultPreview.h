@@ -26,16 +26,31 @@ struct Settings;
   * Previews are enabled fail-close: emitters stay dormant unless `QueryPipeline::complete` proves
   * that every processor between the emitter and the output format declares
   * `IProcessor::supportsQueryResultPreviews` and the format itself can deliver previews.
+  *
+  * Previews of one stage may travel to the output through different branches of the pipeline (for
+  * example, the parallel transforms of a sorting after an aggregation), so a newer preview can
+  * overtake an older one. Every preview carries a sequence number assigned at its emission, which
+  * is monotonic across all the stages, and the processors that merge several inputs, as well as the
+  * output format, drop a preview older than the one they have already forwarded.
   */
 class QueryResultPreviewInfo : public ChunkInfoCloneable<QueryResultPreviewInfo>
 {
 public:
-    QueryResultPreviewInfo() = default;
+    explicit QueryResultPreviewInfo(UInt64 sequence_number_) : sequence_number(sequence_number_) {}
     QueryResultPreviewInfo(const QueryResultPreviewInfo & other) = default;
+
+    const UInt64 sequence_number;
 };
 
 bool isQueryResultPreview(const Chunk & chunk);
+
+/// Annotates a freshly emitted preview with the next sequence number. Emitters call it while
+/// holding the emission lock of their stage, so that the order of the sequence numbers is the order
+/// of the snapshots.
 void markAsQueryResultPreview(Chunk & chunk);
+
+/// The sequence number of a preview chunk, or 0 for a chunk which is not a preview.
+UInt64 getQueryResultPreviewSequenceNumber(const Chunk & chunk);
 
 /// Thresholds extracted from the query settings. All frequency limits must pass for a preview
 /// to be emitted: at least `min_interval_ms`/`min_rows`/`min_bytes` processed since the previous

@@ -1091,8 +1091,9 @@ void WindowTransform::computeQueryResultPreview()
     Chunk preview = std::move(query_result_preview_input);
 
     /// The marker must not enter the one-shot pipeline: the fresh transform would divert
-    /// the chunk right back instead of computing it.
-    preview.getChunkInfos().extract<QueryResultPreviewInfo>();
+    /// the chunk right back instead of computing it. It is put back on the computed preview, which
+    /// keeps the sequence number of the original one.
+    auto preview_info = preview.getChunkInfos().extract<QueryResultPreviewInfo>();
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(input.getSharedHeader(), std::move(preview))));
@@ -1121,7 +1122,7 @@ void WindowTransform::computeQueryResultPreview()
     if (!computed.hasColumns())
         computed.setColumns(output.getHeader().cloneEmptyColumns(), 0);
 
-    markAsQueryResultPreview(computed);
+    computed.getChunkInfos().add(std::move(preview_info));
     pending_query_result_preview = std::move(computed);
 }
 

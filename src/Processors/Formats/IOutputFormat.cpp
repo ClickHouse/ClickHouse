@@ -143,7 +143,16 @@ void IOutputFormat::work()
 
     if (has_input && current_block_kind == Main && isQueryResultPreview(current_chunk))
     {
-        consumeQueryResultPreview(std::move(current_chunk));
+        /// Previews may overtake each other on the way through different branches of the pipeline
+        /// (see `QueryResultPreview.h`); a preview older than the last delivered one is stale.
+        UInt64 sequence_number = getQueryResultPreviewSequenceNumber(current_chunk);
+        if (sequence_number > last_query_result_preview_sequence_number)
+        {
+            last_query_result_preview_sequence_number = sequence_number;
+            consumeQueryResultPreview(std::move(current_chunk));
+        }
+        else
+            current_chunk.clear();
         has_input = false;
         return;
     }
