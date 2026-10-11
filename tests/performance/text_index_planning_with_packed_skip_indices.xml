@@ -1,0 +1,33 @@
+<test>
+    <!-- Planning of a query with a text index called `stat` on disk for every part to look for the
+         optional positions substream when another skip index was stored in `skp_idx.packed`. -->
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE test_text_index_planning_packed
+        (
+            project_id UInt64,
+            id UInt64,
+            s String,
+            INDEX idx_id id TYPE bloom_filter GRANULARITY 1,
+            INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha)
+        )
+        ENGINE = MergeTree ORDER BY project_id
+        SETTINGS packed_skip_index_max_bytes = 1048576, parts_to_delay_insert = 100000, parts_to_throw_insert = 100000
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES test_text_index_planning_packed</fill_query>
+
+    <!-- 2000 parts of 50 rows, one value of `project_id` per part. -->
+    <fill_query>
+        INSERT INTO test_text_index_planning_packed SELECT intDiv(number, 50), number, concat('tok', toString(number))
+        FROM numbers(100000)
+        SETTINGS max_block_size = 50, min_insert_block_size_rows = 50, min_insert_block_size_bytes = 0, max_insert_threads = 1
+    </fill_query>
+
+    <query>SELECT count() FROM test_text_index_planning_packed WHERE project_id = 777 AND hasToken(s, 'tok38857')</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_text_index_planning_packed</drop_query>
+</test>

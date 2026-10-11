@@ -2304,7 +2304,7 @@ MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(
         {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
 
-    /// V2: positions file exists on disk.
+    /// V2: the part has the positions substream.
     if (indexFileExistsInChecksums(checksums, relative_path_prefix + ".pos", ".idx", &storage))
     {
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
