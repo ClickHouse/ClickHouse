@@ -35,6 +35,16 @@ struct VersionInfo
     /// Returns true if the object was created, is being removed, or was removed by a transaction (not non-transactionally).
     bool wasInvolvedInTransaction() const;
 
+    /// Clear an uncommitted `removal_tid`. Both return false when there is nothing to reset. The two
+    /// differ only in whether a source this same transaction created is marked rolled back, which is
+    /// safe only when the caller knows the owner is gone.
+    ///
+    /// Own rollback: this transaction is dying, so its own source dies with it.
+    bool resetRemovalForOwnRollback();
+    /// Peer takeover: the previous owner may still be LIVE (a non-transactional DROP outranks a
+    /// transactional holder), so marking its creation rolled back would kill a live part.
+    bool resetRemovalForPeerTakeover();
+
     String toString(bool one_line) const;
     void fromString(const String & content, bool one_line);
     void readFromBuffer(ReadBuffer & buf, bool one_line);
@@ -43,6 +53,7 @@ struct VersionInfo
     bool operator==(const VersionInfo & other) const noexcept = default;
 
 private:
+    bool resetRemoval(bool stamp_rolled_back_creation);
     void readFromMultiLineBuffer(ReadBuffer & buf);
 };
 }

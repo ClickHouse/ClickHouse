@@ -778,12 +778,14 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
         }
 
-        /// An internal metadata replay (server startup / restore, the same distinction
+        /// The server's own replay of stored metadata (server startup, the same distinction
         /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
         /// startup rebuilds every database from persisted metadata with an ATTACH query and
         /// `loadMetadata` aborts on the first exception, so a validation added after the database
         /// was created must not turn its stored definition into a server that cannot boot.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH`
+        /// run user statements as internal ones, and those must stay fail-closed.
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
@@ -811,7 +813,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
         /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for an internal metadata replay: enforcing the policy there would turn one
+        /// Skip it only for the server's own metadata replay: enforcing the policy there would turn one
         /// database created before the whitelist was tightened into a server that cannot boot.
         /// A user-issued `ATTACH DATABASE` is not a replay and stays fail-closed, otherwise it
         /// would be a direct bypass of the policy.
@@ -839,12 +841,13 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             args.database_name, configuration.database, connection_info,
             std::move(postgresql_replica_settings));
     };
-    factory.registerDatabase("MaterializedPostgreSQL", create_fn, {
+    factory.registerDatabase("MaterializedPostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
         .supports_arguments = true,
         .supports_settings = true,
         .supports_table_overrides = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
+        .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -855,20 +858,20 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::note
+<Note>
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
+</Note>
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
 Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. In this case you should use `ATTACH`/ `DETACH PERMANENTLY` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
-:::note
+<Note>
 This database engine is experimental. To use it, set `allow_experimental_database_materialized_postgresql` to 1 in your configuration files or by using the `SET` command:
 ```sql
 SET allow_experimental_database_materialized_postgresql=1
 ```
-:::
+</Note>
 
 ## Creating a database {#creating-a-database}
 
@@ -907,9 +910,9 @@ After `MaterializedPostgreSQL` database is created, it does not automatically de
 ATTACH TABLE postgres_database.new_table;
 ```
 
-:::warning
+<Warning>
 Before version 22.1, adding a table to replication left a non-removed temporary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in ClickHouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. This issue is fixed in 22.1.
-:::
+</Warning>
 
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
 
@@ -997,9 +1000,9 @@ FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
 ```
 
-:::note
+<Note>
 [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
-:::
+</Note>
 
 ## Settings {#settings}
 

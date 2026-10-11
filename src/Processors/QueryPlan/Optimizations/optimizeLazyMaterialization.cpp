@@ -1,4 +1,3 @@
-#include <limits>
 #include <memory>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ActionsDAG.h>
@@ -52,17 +51,8 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     return true;
 }
 
-/// A DAG input that has no counterpart in the step's input header. A step can legitimately carry
-/// such a dangling input when no output depends on it — e.g. `optimizePrewhere` moves a filter
-/// into a reading step whose header shrinks after applying a row-level filter, while the remaining
-/// `ExpressionStep`'s DAG keeps the now-unused input. Execution tolerates it (`ExpressionActions`
-/// only requires inputs its outputs depend on), so the mapping must tolerate it as well; it is an
-/// error only if such an input turns out to be required.
-static constexpr size_t POSITION_NOT_FOUND = std::numeric_limits<size_t>::max();
-
 /// Returns two vectors of total size equal to the number of columns in the header.
-/// The first vector (size of `inputs.size()`) contains positions of the inputs in the header
-/// (or POSITION_NOT_FOUND for a dangling input).
+/// The first vector (size of `inputs.size()`) contains positions of the inputs in the header.
 /// The second vector contains other positions (sorted).
 static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
@@ -76,10 +66,7 @@ static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPosi
     {
         auto & lst = name_to_position[input->result_name];
         if (lst.empty())
-        {
-            positions.push_back(POSITION_NOT_FOUND);
-            continue;
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown identifier: '{}'", input->result_name);
 
         positions.push_back(lst.front());
         lst.pop_front();
@@ -135,15 +122,8 @@ static std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, cons
     const auto & inputs = dag.getInputs();
     const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
     for (size_t i = 0; i < inputs.size(); ++i)
-    {
-        if (!required_nodes.contains(inputs[i]))
-            continue;
-
-        if (header_positions[i] == POSITION_NOT_FOUND)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required input '{}' is missing from the header", inputs[i]->result_name);
-
-        required_input_positions[header_positions[i]] = true;
-    }
+        if (required_nodes.contains(inputs[i]))
+            required_input_positions[header_positions[i]] = true;
 
     /// Used columns which are not DAG outputs should be forwarded to the input header.
     size_t num_outputs = dag.getOutputs().size();
@@ -221,7 +201,7 @@ static void addRequiredInputDependenciesIntoNodesSet(const ActionsDAG & dag, std
     std::unordered_set<const ActionsDAG::Node *> visited;
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        const ActionsDAG::Node * node = nullptr;
         size_t next_child = 0;
     };
     std::stack<Frame> stack;
@@ -286,7 +266,7 @@ static SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expr
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
     {
-        if (header_positions[i] != POSITION_NOT_FOUND && required_inputs[header_positions[i]])
+        if (required_inputs[header_positions[i]])
             split_nodes.insert(inputs[i]);
     }
 
@@ -343,7 +323,7 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
 
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
-        if (header_positions[i] != POSITION_NOT_FOUND && required_inputs[header_positions[i]])
+        if (required_inputs[header_positions[i]])
             split_nodes.insert(inputs[i]);
 
     for (size_t i = 0; i < outputs.size(); ++i)
@@ -447,37 +427,18 @@ static IQueryPlanStep * findReadingStep(QueryPlan::Node & node, StepStack & back
 }
 
 /// A computed node can carry the same name as one of the DAG's inputs, e.g. a storage-level
-/// row policy filter merged with a schema-conversion cast that reuses the source column name
-/// (`CAST(x, ...) AS x` over input `x`). When such a DAG is split into the main and the lazy
-/// halves, `ActionsDAG::split` has to rename the node promoted to the lazy half's input
-/// (`avoid_duplicate_inputs`), and the main half's output no longer matches the following
-/// main-branch step's inputs, which are bound by name at reassembly. Detect the shadowing
-/// upfront and leave such plans alone.
-static bool hasInputNameShadowedByComputedNode(const ActionsDAG & dag)
-{
-    std::unordered_set<std::string_view> input_names;
-    for (const auto * input : dag.getInputs())
-        input_names.insert(input->result_name);
-
-    for (const auto & node : dag.getNodes())
-        if (node.type != ActionsDAG::ActionType::INPUT && input_names.contains(node.result_name))
-            return true;
-
-    return false;
-}
-
 static bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
 {
     while (!node->children.empty())
     {
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(node->step.get()))
         {
-            if (expr_step->getExpression().hasArrayJoin() || hasInputNameShadowedByComputedNode(expr_step->getExpression()))
+            if (expr_step->getExpression().hasArrayJoin() || expr_step->getExpression().hasInputNameShadowedByComputedNode())
                 return false;
         }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
-            if (filter_step->getExpression().hasArrayJoin() || hasInputNameShadowedByComputedNode(filter_step->getExpression()))
+            if (filter_step->getExpression().hasArrayJoin() || filter_step->getExpression().hasInputNameShadowedByComputedNode())
                 return false;
         }
         else

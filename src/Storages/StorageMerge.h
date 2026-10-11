@@ -14,6 +14,8 @@ namespace DB
 
 struct QueryPlanResourceHolder;
 
+class ReadFromMergeTree;
+
 struct RowPolicyFilter;
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 
@@ -46,7 +48,9 @@ public:
     std::string getName() const override { return "Merge"; }
 
     bool isRemote() const override;
+    bool readRequiresAnalyzedQuery() const override { return true; }
     bool readsFromOtherTables() const override { return true; }
+    bool supportsTruncate() const override { return false; }
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
@@ -82,7 +86,7 @@ public:
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     /// Evaluate database name or regexp for StorageMerge and TableFunction merge
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
@@ -196,15 +200,45 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
+    /// Whether `requestReadingInOrder` accepts a reverse direction: every reading step of every child plan
+    /// has to accept it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
+    bool canReadInReverseOrder();
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
+
+    /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
+    bool hasChildPlans() const { return child_plans.has_value(); }
+    /// Drops the child plans, so that they are created again when they are needed next. For a first-pass
+    /// optimization which probes the children before the filters are applied to this step (`applyFilters`):
+    /// children created then would miss the filter on `_database` and `_table` (`getSelectedTables`), and
+    /// they are created only once. Nothing may hold the child plans when this is called.
+    void resetChildPlans();
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
 
     /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
     /// plans are returned as `nullptr` so that callers can pair tables with their plans.
     std::vector<QueryPlan *> getAllChildPlans();
+
+    /// For parallel replicas only: the tables this `Merge` read would be expanded into, empty when it
+    /// cannot be expanded (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read,
+    /// or a read which `can_ship_read` - the caller's own rule for a read it would distribute - rejects).
+    /// Answering this without touching the plan lets the caller decide whether the query is distributed at
+    /// all before anything is rewritten. The answer is computed once and lives as long as this step.
+    const std::vector<StorageID> & getExpandableReads(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
+
+    /// Replace this opaque `Merge` read with a plan-level `UnionStep` over the per-table child plans, so
+    /// that the parallel-replicas plan transformation can coordinate the underlying `MergeTree` reads and
+    /// distribute the steps above them. Only call it when `getExpandableReads` returned a value; the child
+    /// plans are moved out of this step, which the caller then replaces.
+    QueryPlan expandForParallelReplicas();
+
+    /// Whether the plan-based parallel replicas may expand this read (see `expandForParallelReplicas`): the
+    /// settings allow it and `getExpandableReads` would say yes, without caching its answer. `false` means this
+    /// step is still in the plan when the second optimization pass runs; `true` only means it might not be,
+    /// because whether anything is distributed also depends on the rest of the plan. Creates the child plans.
+    bool mayBeExpandedForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
 
     void addFilter(FilterDAGInfo filter);
 
@@ -260,13 +294,15 @@ private:
 
         /// Create explicit filter transform to exclude
         /// rows that are not conform to row level policy
-        void addFilterTransform(QueryPlan &) const;
+        void addFilterTransform(QueryPlan &, ContextPtr) const;
 
     private:
         std::string filter_column_name; // complex filter, may contain logic operations
         ActionsDAG actions_dag;
         ExpressionActionsPtr filter_actions;
         StorageMetadataPtr storage_metadata_snapshot;
+        /// Owns the policy predicate's IN-subqueries, which stay unbuilt until a set-building step is planted.
+        PreparedSetsPtr prepared_sets;
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
@@ -275,7 +311,18 @@ private:
     {
         QueryPlan plan;
         QueryProcessingStage::Enum stage;
+        /// Set for a child aggregated by keys of other types than the `Merge` table.
+        bool forget_aggregation_buckets = false;
     };
+
+    /// Answer of `getExpandableReads`, unset until it is asked for. The parallel-replicas pass asks first
+    /// whether the query would be distributed and then again when it expands, and the child plans it
+    /// inspects do not change in between. Assumes the same predicate on every call, which the single
+    /// caller satisfies.
+    std::optional<std::vector<StorageID>> expandable_reads;
+
+    /// The uncached computation behind `getExpandableReads` and `mayBeExpandedForParallelReplicas`.
+    std::vector<StorageID> computeExpandableReads(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
 
     /// Store read plan for each child table.
     /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
@@ -306,13 +353,16 @@ private:
 
     static void convertAndFilterSourceStream(
         const Block & header,
+        const SelectQueryInfo & outer_query_info,
         SelectQueryInfo & modified_query_info,
         const StorageSnapshotPtr & snapshot,
+        const ColumnsDescription & merge_columns,
         const Aliases & aliases,
         const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
         ChildPlan & child,
-        bool is_smallest_column_requested);
+        bool is_smallest_column_requested,
+        const Names & column_names_read);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context) const;

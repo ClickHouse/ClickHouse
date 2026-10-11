@@ -96,3 +96,37 @@ SELECT sum(x) FROM merge(currentDatabase(), '2$');
 
 DROP TABLE t1;
 DROP TABLE t2;
+
+SELECT 'An escape of a non-alphanumeric character is part of the literal, so it stays on the fast path';
+
+-- `RE2::QuoteMeta` escapes every non-alphanumeric byte, so its output arrives as `\%`, `\ `, `\:` and so on.
+SELECT extract('100%-alpha', '^100\\%');
+SELECT extract('x100%-alpha', '^100\\%');
+SELECT extract('a b', '^a\\ b$');
+SELECT extract('a:b', '^a\\:b$');
+SELECT extract('svc,4999', 'svc\\,4999$');
+SELECT extract('user@host', '^user\\@host$');
+SELECT extract('a#b', '^a\\#b');
+SELECT extract('a=b', '^a\\=b');
+SELECT extract('a~b', '^a\\~b');
+SELECT extract('a_b', '^a\\_b');
+SELECT extract('a\\b', '^a\\\\b');
+SELECT extract('xa b', '^a\\ b');
+SELECT extract('a bx', '^a\\ b');
+
+SELECT 'An escape of an alphanumeric character is a special sequence and stays on the re2 path';
+
+SELECT extract('a1', '^a\\d');
+SELECT extract('aXb', '^a\\wb');
+SELECT extract('A', '^\\x41$');
+SELECT extract('ab', '^a\\x62$');
+SELECT extract('a\tb', '^a\\tb$');
+
+SELECT 'A column haystack with an escaped literal, where the first row matches';
+
+SELECT match(s, '^a\\ b') FROM (SELECT arrayJoin(['a b', 'xa b', 'a bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, 'a\\ b$') FROM (SELECT arrayJoin(['a b', 'xa b', 'a bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, '^a\\ b$') FROM (SELECT arrayJoin(['a b', 'xa b', 'a bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, '^a\\%b') FROM (SELECT arrayJoin(['a%b', 'xa%b', 'a%bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(s, '^a\\:b$') FROM (SELECT arrayJoin(['a:b', 'xa:b', 'a:bx', 'ab', '']) AS s) ORDER BY s;
+SELECT match(f, '^a\\ b') FROM (SELECT toFixedString(s, 5) AS f FROM (SELECT arrayJoin(['a b', 'xa b', 'a bx']) AS s)) ORDER BY f;

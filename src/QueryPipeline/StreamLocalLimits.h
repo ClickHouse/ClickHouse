@@ -33,7 +33,7 @@ struct StreamLocalLimits
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 
     /// Result-size limits (max_result_rows / max_result_bytes / result_overflow_mode)
-    /// applied to the final stream of a query. Used by executeQuery, WATCH and EXPLAIN ANALYZE.
+    /// applied to the final stream of a query. Used by executeQuery and EXPLAIN ANALYZE.
     static StreamLocalLimits forQueryResult(const Settings & settings);
 };
 

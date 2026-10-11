@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
@@ -86,6 +87,35 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// An empty set makes the result independent of the left operand, so the result is constant
+    /// even when that operand is not. Reporting it here keeps DAG nodes in agreement with
+    /// `executeImpl`, which returns a ColumnConst for the same case.
+    ColumnPtr getConstantResultForNonConstArguments(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        /// The -IgnoreSet variants carry no set to inspect: they exist to resolve types without one.
+        if (ignore_set || arguments.size() != 2)
+            return nullptr;
+
+        /// Fold only a non-`Nullable` result: a NULL left operand yields NULL, so the set no longer
+        /// determines the result on its own. `LowCardinality` does not affect the value.
+        if (!isUInt8(removeLowCardinality(result_type)))
+            return nullptr;
+
+        const ColumnSet * column_set = tryGetColumnSet(arguments[1].column);
+        if (!column_set)
+            return nullptr;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return nullptr;
+
+        if (!isImmutableEmptySet(*future_set))
+            return nullptr;
+
+        return result_type->createColumnConst(1, static_cast<UInt8>(negative));
+    }
+
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, true, input_rows_count);
@@ -101,11 +131,8 @@ public:
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
-        /// Second argument must be ColumnSet (possibly wrapped in ColumnConst).
         ColumnPtr column_set_ptr = arguments[1].column;
-        const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(column_set_ptr.get());
-        if (!column_set)
-            column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
+        const ColumnSet * column_set = tryGetColumnSet(column_set_ptr);
         if (!column_set)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function '{}' must be Set; found {}",
                 getName(), column_set_ptr->getName());
@@ -128,9 +155,9 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
         }
 
-        /// Empty set: return a constant result. Must be checked before input_rows_count == 0
-        /// so that header evaluation produces a ColumnConst detectable by ConstantFilterDescription.
-        if (set->getTotalRowCount() == 0)
+        /// Empty set: return a constant result, checked before input_rows_count == 0 so that header
+        /// evaluation produces a `ColumnConst` detectable by `ConstantFilterDescription`.
+        if (set->getTotalRowCount() == 0 && canReportEmptySetAsConstant(*future_set))
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
 
         /// Unwrap ColumnConst for the first argument if needed.
@@ -171,6 +198,36 @@ public:
     }
 
 private:
+    /// The set argument arrives either bare or wrapped in a ColumnConst.
+    static const ColumnSet * tryGetColumnSet(const ColumnPtr & column)
+    {
+        if (const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(column.get()))
+            return column_set;
+        return checkAndGetColumn<const ColumnSet>(column.get());
+    }
+
+    /// Emptiness is a property of the plan only for a tuple set, which is finished in its constructor
+    /// and never mutated afterwards. A storage-backed set is the live set of an `ENGINE = Set` table
+    /// and grows on INSERT, and a subquery set is still consulted for index analysis.
+    static bool isImmutableEmptySet(const FutureSet & future_set)
+    {
+        const auto * tuple_set = typeid_cast<const FutureSetFromTuple *>(&future_set);
+        if (!tuple_set)
+            return false;
+
+        auto set = tuple_set->get();
+        return set && set->getTotalRowCount() == 0;
+    }
+
+    /// A tuple set is reported as constant by the DAG node too, and a subquery set holds no value while
+    /// step headers are being declared. A storage-backed set is readable straight away and is not folded,
+    /// so a constant here would land in a declared header that the stream cannot fill.
+    static bool canReportEmptySetAsConstant(const FutureSet & future_set)
+    {
+        return typeid_cast<const FutureSetFromTuple *>(&future_set)
+            || typeid_cast<const FutureSetFromSubquery *>(&future_set);
+    }
+
     String function_name;
     bool negative;
     bool null_is_skipped;
