@@ -69,8 +69,17 @@ SYSTEM FLUSH LOGS query_log;
 
 -- The mark cache is process-wide and can be evicted by another test. Repeated
 -- selects make the assertion cover the accumulated evidence after prewarming.
-SELECT countIf(ProfileEvents['LoadedMarksCount'] = 0) > 0 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '03254_prewarm_mark_cache_rmt_final';
+-- With parallel replicas the local replica may read nothing; rows of remote replicas have current_database = 'default'.
+SELECT countIf(loaded_marks = 0) > 0 FROM
+(
+    SELECT sum(ProfileEvents['LoadedMarksCount']) AS loaded_marks FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND initial_query_id IN
+    (
+        SELECT query_id FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query AND log_comment = '03254_prewarm_mark_cache_rmt_final' AND query LIKE 'SELECT count() FROM t_prewarm_cache%'
+    )
+    GROUP BY initial_query_id
+);
 
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;
