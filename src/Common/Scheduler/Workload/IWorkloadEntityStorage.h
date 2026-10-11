@@ -116,7 +116,7 @@ class RestorerFromBackup;
  * `removeEntity` rejects dropping an entity referenced by a visible or own entity. The cycle check of
  * `storeEntity` walks the references of both the own and the inherited entity of every name, not only of
  * visible ones, so a hidden entity cannot hide a cycle that appears once it is visible.
- * Loading the configuration rejects the whole reload, keeping the previous state, if a parent or a `FOR`
+ * Loading the configuration rejects the whole reload, keeping the previous entities, if a parent or a `FOR`
  * target it had before is dropped while still referenced, if a parent or a `FOR` target is of the wrong
  * kind, if a `FOR` target does not exist, or if its workloads form a parent cycle. Loading persisted data
  * (Keeper, disk) never fails because of references: a workload with a missing or wrong-kind parent is hidden,

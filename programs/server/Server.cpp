@@ -2942,8 +2942,17 @@ try
                     "has been removed and is ignored. Use 'CREATE RESOURCE' and 'CREATE WORKLOAD' queries instead.");
             }
 
-            /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            /// Load WORKLOADs and RESOURCEs. A rejected reload keeps the previous entities and the rest of the reload proceeds.
+            try
+            {
+                global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            }
+            catch (...)
+            {
+                if (initial_loading)
+                    throw;
+                tryLogCurrentException(log, "Failed to reload workload entities from the configuration");
+            }
 
             /// Synthesize implicit WORKLOADs and RESOURCEs from the server limits resolved above.
             {
