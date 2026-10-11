@@ -167,7 +167,7 @@ SQLQueryPiece applyFunctionQuantileOverTime(
                         "a fixed @ modifier on the range vector {}",
                         function_name, getPromQLText(range_argument, context));
     }
-    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+    const auto aggregation_range = getRangeAggregationRange(range_argument, node_range, context);
 
     /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
     /// range vector holds series, and a scalar grid if it was made from a scalar.
