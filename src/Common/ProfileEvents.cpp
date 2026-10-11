@@ -210,6 +210,11 @@
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
     M(NativeProtocolSend, "Number of non-empty native protocol output buffer flushes.", ValueType::Number) \
     M(FilterPartsByVirtualColumnsMicroseconds, "Total time spent in filterPartsByVirtualColumns function.", ValueType::Microseconds) \
+    M(FilterPartsByPartitionMicroseconds, "Total time spent in filterPartsByPartition function (selecting parts by the partition value index, the min-max index and the partition key).", ValueType::Microseconds) \
+    M(PartitionValueIndexUsed, "Number of times the partition value index was used to select the partitions of a MergeTree table that can match a query's filter.", ValueType::Number) \
+    M(PartitionValueIndexPrunedParts, "Number of parts skipped by the partition value index without being checked one by one.", ValueType::Number) \
+    M(PartitionValueIndexCatalogBuilds, "Number of times the catalog of partitions used by the partition value index was rebuilt for a new parts snapshot.", ValueType::Number) \
+    M(PartitionValueIndexStepLimitReached, "Number of times the generic exclusion search over the partition value index reached its step limit, so the remaining partitions were selected without further analysis.", ValueType::Number) \
     \
     M(GlobalThreadPoolExpansions, "Counts the total number of times new threads have been added to the global thread pool. This metric indicates the frequency of expansions in the global thread pool to accommodate increased processing demands.", ValueType::Number) \
     M(GlobalThreadPoolShrinks, "Counts the total number of times the global thread pool has shrunk by removing threads. This occurs when the number of idle threads exceeds max_thread_pool_free_size, indicating adjustments in the global thread pool size in response to decreased thread utilization.", ValueType::Number) \

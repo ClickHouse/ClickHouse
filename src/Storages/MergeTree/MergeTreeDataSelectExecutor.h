@@ -233,10 +233,11 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
-    /// Filter parts using minmax index and partition key.
+    /// Filter parts using the partition value index, minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
+        const std::optional<PartitionRangeCondition> & partition_range_condition,
         const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,

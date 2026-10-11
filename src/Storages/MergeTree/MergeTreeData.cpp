@@ -141,6 +141,7 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/PartitionCatalog.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -10814,10 +10815,41 @@ MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context)
                 auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, *lock_holder);
                 shared_ranges_in_parts = std::make_shared<const RangesInDataParts>(parts);
                 shared_parts_list = std::make_shared<const DataPartsVector>(std::move(parts));
+
+                std::lock_guard latest_lock(latest_shared_ranges_in_parts_mutex);
+                latest_shared_ranges_in_parts = shared_ranges_in_parts;
             }
         }
         return std::make_tuple(shared_ranges_in_parts, shared_parts_list);
     }
+}
+
+std::shared_ptr<const PartitionCatalog> MergeTreeData::tryGetPartitionCatalog(const RangesInDataParts & parts, const DataTypes & partition_key_types) const
+{
+    std::lock_guard lock(partition_catalog_mutex);
+
+    auto types_match = [&](const PartitionCatalog & catalog)
+    {
+        const auto & catalog_types = catalog.partition_set->types;
+        return catalog_types.size() == partition_key_types.size()
+            && std::equal(catalog_types.begin(), catalog_types.end(), partition_key_types.begin(), [](const auto & l, const auto & r) { return l->equals(*r); });
+    };
+
+    if (partition_catalog && partition_catalog->isFor(parts) && types_match(*partition_catalog))
+        return partition_catalog;
+
+    RangesInDataPartsPtr source;
+    {
+        std::lock_guard latest_lock(latest_shared_ranges_in_parts_mutex);
+        source = latest_shared_ranges_in_parts.lock();
+    }
+
+    /// If the latest shared snapshot is alive and has the same address as `parts`, it is the same object.
+    if (!source || source.get() != &parts)
+        return nullptr;
+
+    partition_catalog = PartitionCatalog::build(source, partition_key_types, partition_catalog ? partition_catalog->partition_set : nullptr);
+    return partition_catalog;
 }
 
 DataPartsVector MergeTreeData::getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const

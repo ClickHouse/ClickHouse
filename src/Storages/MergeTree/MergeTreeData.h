@@ -102,6 +102,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
 class UniqueKeyDenseIndexOps;
+struct PartitionCatalog;
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 namespace ErrorCodes
@@ -801,6 +802,11 @@ public:
     DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
     /// If using a shared lock (it guarantees no mutation has happened) and there is no transactions, we can return a shared copy of parts ranges
     std::tuple<RangesInDataPartsPtr, DataPartsVectorPtr> getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context) const;
+    /// Returns the catalog of partitions of `parts` (see `PartitionCatalog`) for the partition value index, building it if needed.
+    /// Returns nullptr if `parts` is not the latest shared parts snapshot (e.g. parts of a transaction, of a projection,
+    /// or already filtered parts), so the catalog is built only for the snapshot that is shared between queries.
+    /// Does not lock the parts.
+    std::shared_ptr<const PartitionCatalog> tryGetPartitionCatalog(const RangesInDataParts & parts, const DataTypes & partition_key_types) const;
     /// Whereas if a unique lock is used, mutations could have happened, meaning shared part list *may* have been invalidated.
     DataPartsVector getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const;
     DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
@@ -1877,6 +1883,15 @@ protected:
     mutable DataPartsVectorPtr shared_parts_list;
     /// Same as above, but this time caching a copy of RangesInDataParts
     mutable RangesInDataPartsPtr shared_ranges_in_parts;
+
+    /// The most recent `shared_ranges_in_parts`. Unlike it, it is not reset when the set of parts changes, and it can be
+    /// read without locking the parts, which `tryGetPartitionCatalog` must not do for every query.
+    mutable std::mutex latest_shared_ranges_in_parts_mutex;
+    mutable std::weak_ptr<const RangesInDataParts> latest_shared_ranges_in_parts TSA_GUARDED_BY(latest_shared_ranges_in_parts_mutex);
+
+    /// The catalog of partitions of the most recent shared parts snapshot, see `tryGetPartitionCatalog`.
+    mutable std::mutex partition_catalog_mutex;
+    mutable std::shared_ptr<const PartitionCatalog> partition_catalog TSA_GUARDED_BY(partition_catalog_mutex);
 
     /// Mutex for critical sections which alter set of parts
     /// It is like truncate, drop/detach partition

@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/MergeTree/PartitionValueIndex.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Parsers/ASTFunction.h>
 #include <base/defines.h>
@@ -142,6 +143,7 @@ public:
         PrimaryKeyExpand,
         Statistics,
         NonIntersectingSplit,
+        PartitionValueIndex,
     };
 
     struct DistributedIndexStat
@@ -343,6 +345,8 @@ public:
         ConditionTemplate<KeyCondition>::Ptr part_offset_condition;
         ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
         std::optional<PartitionPruner> partition_pruner;
+        /// Set if the partition value index can be used for the filter, see `use_partition_value_index`.
+        std::optional<PartitionRangeCondition> partition_range_condition;
         UsefulSkipIndexes skip_indexes;
         /// Shared by every index analysis of this step, see `SkipIndexOrderCache`.
         SkipIndexOrderCachePtr skip_index_orders = std::make_shared<SkipIndexOrderCache>();
@@ -680,6 +684,8 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    /// `num_parts` is the number of parts to filter, used to skip building the condition of the partition value index
+    /// when the index will not be used.
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
         const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
@@ -687,6 +693,7 @@ private:
         const ContextPtr & query_context,
         const StorageMetadataPtr & metadata_snapshot,
         bool skip_partition_pruning_,
+        size_t num_parts,
         bool require_ready_sets = false);
 
     MergeTreeSettingsPtr data_settings;

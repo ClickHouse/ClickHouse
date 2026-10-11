@@ -1,0 +1,30 @@
+<test>
+    <!--
+        Part selection on a multi-tenant table with many partitions of one part each. The partition value index
+        (`use_partition_value_index`) selects the partitions that can match the filter with a binary search or a
+        generic exclusion search over the sorted partition values, instead of checking every part one by one.
+    -->
+    <settings>
+        <max_partitions_per_insert_block>0</max_partitions_per_insert_block>
+        <max_insert_threads>1</max_insert_threads>
+        <max_threads>1</max_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <send_logs_level>none</send_logs_level>
+    </settings>
+
+    <create_query>
+        CREATE TABLE partition_value_index (tenant UInt16, ts DateTime('UTC'), value UInt64)
+        ENGINE = MergeTree PARTITION BY (tenant, toYYYYMMDD(ts)) ORDER BY ts
+    </create_query>
+    <fill_query>
+        INSERT INTO partition_value_index
+        SELECT intDiv(number, 10), toDateTime('2026-09-01 00:00:00', 'UTC') + (number % 10) * 86400, number
+        FROM numbers(10000)
+    </fill_query>
+
+    <query>SELECT sum(value) FROM partition_value_index WHERE tenant = 500 AND ts >= toDateTime('2026-09-03 00:00:00', 'UTC') AND ts &lt; toDateTime('2026-09-06 00:00:00', 'UTC')</query>
+    <query>SELECT sum(value) FROM partition_value_index WHERE tenant IN (10, 500, 999)</query>
+    <query>SELECT sum(value) FROM partition_value_index WHERE toYYYYMMDD(ts) = 20260905</query>
+
+    <drop_query>DROP TABLE partition_value_index</drop_query>
+</test>

@@ -75,6 +75,7 @@
 #include <Storages/MergeTree/SealGatedReadTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PartitionCatalog.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -329,6 +330,8 @@ namespace Setting
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_partition_value_index;
+    extern const SettingsUInt64 partition_value_index_min_parts;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
@@ -3000,10 +3003,19 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
     const ContextPtr & query_context,
     const StorageMetadataPtr & metadata_snapshot,
     bool skip_partition_pruning_,
+    [[maybe_unused]] size_t num_parts, /// Unused in debug builds, see below.
     bool require_ready_sets)
 {
     const auto & settings = query_context->getSettingsRef();
     const bool skip_constant_folding = skip_partition_pruning_ || !settings[Setting::use_constant_folding_in_index_analysis];
+
+    /// In debug builds, the partition value index is evaluated for small tables as well, to check its result.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    const bool may_use_partition_value_index = settings[Setting::use_partition_value_index];
+#else
+    const bool may_use_partition_value_index
+        = settings[Setting::use_partition_value_index] && num_parts >= settings[Setting::partition_value_index_min_parts];
+#endif
     const auto & partition_key = metadata_snapshot->getPartitionKey();
     const auto data_settings = data.getSettings();
 
@@ -3034,6 +3046,28 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
             /*strict=*/false,
             /*skip_analysis=*/skip_partition_pruning_ || !settings[Setting::use_partition_pruning],
             require_ready_sets);
+
+        if (may_use_partition_value_index)
+        {
+            /// The same condition as in `PartitionPruner`, but built for ranges of partition values instead of single points.
+            auto adjusted_partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot, query_context);
+            if (PartitionCatalog::canBuildForTypes(adjusted_partition_key.data_types))
+            {
+                KeyCondition partition_range_condition(
+                    *filter_dag_ptr,
+                    query_context,
+                    adjusted_partition_key.column_names,
+                    adjusted_partition_key.expression,
+                    /*single_point_=*/false,
+                    /*skip_analysis_=*/skip_partition_pruning_ || !settings[Setting::use_partition_pruning],
+                    require_ready_sets);
+
+                if (!partition_range_condition.alwaysUnknownOrTrue())
+                    indexes.partition_range_condition.emplace(PartitionRangeCondition{
+                        .condition = std::move(partition_range_condition),
+                        .key_types = adjusted_partition_key.data_types});
+            }
+        }
     }
 }
 
@@ -3047,11 +3081,11 @@ RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
 {
     auto filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate, query_context, /* boolean_context */ true);
     Indexes partition_indexes(nullptr);
-    buildPartitionPruningIndexes(partition_indexes, filter_dag, data, query_context, metadata_snapshot, skip_partition_pruning_, /* require_ready_sets */ true);
+    buildPartitionPruningIndexes(partition_indexes, filter_dag, data, query_context, metadata_snapshot, skip_partition_pruning_, parts.size(), /* require_ready_sets */ true);
     IndexStats unused_stats;
     /// Execution checks forced index usage after it builds subquery sets.
     return MergeTreeDataSelectExecutor::filterPartsByPartition(
-        parts, partition_indexes.partition_pruner, partition_indexes.minmax_idx_condition,
+        parts, partition_indexes.partition_pruner, partition_indexes.partition_range_condition, partition_indexes.minmax_idx_condition,
         std::nullopt, metadata_snapshot, data, query_context, nullptr, getLogger("ReadFromMergeTree"), unused_stats,
         /* check_index_usage */ false);
 }
@@ -3101,7 +3135,7 @@ void ReadFromMergeTree::buildIndexes(
         indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
 
-    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_);
+    buildPartitionPruningIndexes(*indexes, filter_dag_ptr, data, query_context, metadata_snapshot, skip_partition_pruning_, parts.size());
 
     indexes->part_values
         = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(metadata_snapshot, data, parts, filter_dag.predicate, query_context);
@@ -5909,6 +5943,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKeyExpand";
         case ReadFromMergeTree::IndexType::NonIntersectingSplit:
             return "NonIntersectingSplit";
+        case ReadFromMergeTree::IndexType::PartitionValueIndex:
+            return "PartitionValueIndex";
     }
 }
 
@@ -6626,7 +6662,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
     {
         IndexStats unused_stats;
         auto pruned_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
-            parts, indexes->partition_pruner, indexes->minmax_idx_condition,
+            parts, indexes->partition_pruner, indexes->partition_range_condition, indexes->minmax_idx_condition,
             indexes->part_values, getStorageMetadata(), data, getContext(),
             max_block_numbers_to_read.get(), getLogger("ReadFromMergeTree"), unused_stats);
         return data.getConditionSelectivityEstimator(pruned_parts, required_columns, getContext());

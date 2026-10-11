@@ -2115,6 +2115,29 @@ Possible values:
 - 1 — Enabled.
 )", 0, use_partition_key, \
         {"26.3", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."}) \
+    DECLARE(Bool, use_partition_value_index, true, R"(
+Use an in-memory index of the partition values of a `MergeTree` table to select the partitions that can match the query's filter before checking the parts one by one.
+
+The distinct partition values of the table are kept sorted by value, and the partition key condition of the filter is evaluated over ranges of them with a binary search (if the condition is a single continuous range of the partition key) or a generic exclusion search. Only the parts of the selected partitions are then checked with the min-max index and the partition key. This makes part selection on tables with many partitions much faster, for example on a multi-tenant table partitioned by `(tenant_id, toYYYYMMDD(time))` queried with `tenant_id = ...`.
+
+The index is used only for tables that have at least `partition_value_index_min_parts` active parts, and only if all partition key columns have a type with a total order (floating-point, tuple, array, map and similar types are not supported).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, true, "New setting to select partitions with an in-memory index of the partition values."}) \
+    DECLARE(UInt64, partition_value_index_min_parts, 1000, R"(
+The minimum number of active parts in a `MergeTree` table for the partition value index (see `use_partition_value_index`) to be used. For tables with fewer parts, the parts are checked one by one.
+)", 0, \
+        {"26.10", 1000, 1000, "New setting to configure when the partition value index is used."}) \
+    DECLARE(UInt64, partition_value_index_max_steps, 0, R"(
+The maximum number of steps (checks of a range of partition values) of the generic exclusion search over the partition value index (see `use_partition_value_index`). The search is used when the partition key condition is not a single continuous range of the partition key, for example when it uses only the second column of the partition key. When the budget is spent, the remaining partitions are selected as a whole and their parts are checked one by one.
+
+The default value `0` means one step per 16 partitions of the table, but at least 64 steps.
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the analysis cost of the partition value index."}) \
     DECLARE(Bool, force_index_by_date, false, R"(
 Disables query execution if the index can't be used by date.
 

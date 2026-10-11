@@ -17,6 +17,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/GenericExclusionSearch.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/PartitionCatalog.h>
+#include <Storages/MergeTree/PartitionValueIndex.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -87,6 +89,10 @@ extern const Event IndexGenericExclusionSearchStepLimitReached;
 extern const Event TextIndexGenericExclusionSearchAlgorithm;
 extern const Event TextIndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event FilterPartsByPartitionMicroseconds;
+extern const Event PartitionValueIndexUsed;
+extern const Event PartitionValueIndexPrunedParts;
+extern const Event PartitionValueIndexStepLimitReached;
 extern const Event QueryConditionCacheHits;
 extern const Event QueryConditionCacheMisses;
 }
@@ -123,6 +129,9 @@ namespace Setting
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsBool use_partition_value_index;
+    extern const SettingsUInt64 partition_value_index_min_parts;
+    extern const SettingsUInt64 partition_value_index_max_steps;
 }
 
 namespace FailPoints
@@ -715,7 +724,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
     ReadFromMergeTree::IndexStats & index_stats)
 {
     auto res = filterPartsByPartition(
-        parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
+        parts, indexes.partition_pruner, indexes.partition_range_condition, indexes.minmax_idx_condition, indexes.part_values,
         metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
     return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
@@ -723,6 +732,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<PartitionRangeCondition> & partition_range_condition,
     const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
     const std::optional<std::unordered_set<String>> & part_values,
     const StorageMetadataPtr & metadata_snapshot,
@@ -733,6 +743,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     ReadFromMergeTree::IndexStats & index_stats,
     bool check_index_usage)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilterPartsByPartitionMicroseconds);
+
     RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
@@ -753,9 +765,37 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     QueryStatusPtr query_status = context->getProcessListElement();
 
+    /// Select the partitions that can match the filter with the partition value index, so that only their parts are
+    /// checked one by one below.
+    PartitionCatalogPtr partition_catalog;
+    std::optional<PartitionValueIndexResult> partition_index_result;
+    bool use_partition_index_result = false;
+    if (partition_range_condition && settings[Setting::use_partition_value_index] && !parts.empty()
+        && !parts.front().data_part->isProjectionPart())
+    {
+        use_partition_index_result = parts.size() >= settings[Setting::partition_value_index_min_parts];
+
+        /// In debug builds, the index is evaluated for small tables as well, to check its result (but not to use it).
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        const bool evaluate_partition_index = true;
+#else
+        const bool evaluate_partition_index = use_partition_index_result;
+#endif
+
+        if (evaluate_partition_index)
+            partition_catalog = data.tryGetPartitionCatalog(parts, partition_range_condition->key_types);
+
+        if (partition_catalog)
+            partition_index_result = selectPartsByPartitionValueIndex(
+                parts, *partition_catalog, partition_range_condition->condition, settings[Setting::merge_tree_coarse_index_granularity],
+                settings[Setting::partition_value_index_max_steps]);
+
+        use_partition_index_result = use_partition_index_result && partition_index_result;
+    }
+
     PartFilterCounters part_filter_counters;
     res = selectPartsToRead(
-        parts,
+        use_partition_index_result ? partition_index_result->parts : parts,
         part_values,
         minmax_idx_condition,
         minmax_columns_types,
@@ -763,6 +803,63 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
         max_block_numbers_to_read,
         part_filter_counters,
         query_status);
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    if (partition_index_result)
+    {
+        /// Every part selected without the index must belong to a partition selected by the index.
+        RangesInDataParts selected_without_index;
+        if (use_partition_index_result)
+        {
+            PartFilterCounters unused_counters;
+            selected_without_index = selectPartsToRead(
+                parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner,
+                max_block_numbers_to_read, unused_counters, query_status);
+        }
+
+        const auto & expected = use_partition_index_result ? selected_without_index : res;
+        const auto & candidates = partition_index_result->parts;
+        size_t candidate_pos = 0;
+        for (const auto & part : expected)
+        {
+            while (candidate_pos < candidates.size() && candidates[candidate_pos].data_part != part.data_part)
+                ++candidate_pos;
+
+            if (candidate_pos == candidates.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The partition value index excluded part {} that can match the condition {}",
+                    part.data_part->name, partition_range_condition->condition.toString());
+        }
+    }
+#endif
+
+    if (use_partition_index_result)
+    {
+        /// The total amount of data before the index is applied.
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::None,
+            .num_parts_after = partition_catalog->total_parts,
+            .num_granules_after = partition_catalog->total_granules});
+
+        auto description = partition_range_condition->condition.getDescription();
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PartitionValueIndex,
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
+            .num_parts_after = partition_index_result->parts.size(),
+            .num_granules_after = partition_index_result->num_granules,
+            .search_algorithm = partition_index_result->search_algorithm});
+
+        ProfileEvents::increment(ProfileEvents::PartitionValueIndexUsed);
+        ProfileEvents::increment(ProfileEvents::PartitionValueIndexPrunedParts, parts.size() - partition_index_result->parts.size());
+        if (partition_index_result->reached_step_limit)
+            ProfileEvents::increment(ProfileEvents::PartitionValueIndexStepLimitReached);
+
+        LOG_DEBUG(log, "Partition value index selected {}/{} partitions with {}/{} parts in {} steps{}",
+            partition_index_result->num_selected_partitions, partition_catalog->partition_set->ids.size(),
+            partition_index_result->parts.size(), parts.size(), partition_index_result->num_steps,
+            partition_index_result->reached_step_limit ? " (step limit reached)" : "");
+    }
 
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
