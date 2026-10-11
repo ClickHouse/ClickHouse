@@ -5,6 +5,7 @@
 #include <Common/typeid_cast.h>
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 namespace ProfileEvents
 {
@@ -25,6 +26,31 @@ namespace ErrorCodes
 TextIndexAnalyzer::ReadableRows::ReadableRows(std::vector<RowsRange> ranges_)
     : ranges(std::move(ranges_))
 {
+}
+
+size_t TextIndexAnalyzer::ReadableRows::countReachableRows(const TokenPostingsInfo & token_info) const
+{
+    if (token_info.ranges.empty())
+        return 0;
+
+    const RowsRange token_span(token_info.ranges.front().begin, token_info.ranges.back().end);
+    auto it = std::lower_bound(
+        ranges.begin(), ranges.end(), token_span.begin,
+        [](const RowsRange & range, size_t value) { return range.end < value; });
+
+    /// One block can be touched by two adjacent readable ranges, so the blocks are deduplicated -
+    /// this counts what `readPostingsBlocksForToken` reads, which asks per mark range.
+    std::set<size_t> blocks;
+    for (; it != ranges.end() && it->begin <= token_span.end; ++it)
+        for (size_t block : token_info.getBlocksToRead(*it))
+            blocks.insert(block);
+
+    /// The row count of a single block is not stored, but a block holds at most as many rows as its row range.
+    size_t reachable_width = 0;
+    for (size_t block : blocks)
+        reachable_width += token_info.ranges[block].end - token_info.ranges[block].begin + 1;
+
+    return std::min<size_t>(token_info.cardinality, reachable_width);
 }
 
 std::optional<RowsRange> TextIndexAnalyzer::ReadableRows::clipRowsRange(const RowsRange & rows_range) const
@@ -213,7 +239,7 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
     });
 }
 
-void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
+std::optional<size_t> TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
     all_token_infos[token] = token_info;
 
@@ -233,7 +259,7 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
             });
 
             queries_by_token.erase(token);
-            return;
+            return {};
         }
 
         token_rows_range = *clipped_range;
@@ -250,6 +276,8 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
         addPostings(token, embedded);
         ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
     }
+
+    return readable_rows ? readable_rows->countReachableRows(*token_info) : token_info->cardinality;
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, const PostingList & postings)
