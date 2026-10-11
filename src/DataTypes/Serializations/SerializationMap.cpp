@@ -734,8 +734,10 @@ void SerializationMap::enumerateStreams(
         bool enumerate_bucket_index = !settings.check_stream_exists_callback || settings.check_stream_exists_callback(settings.path);
         if (enumerate_bucket_index)
         {
-            auto bucket_index_serialization = getSmallestIndexesType(buckets)->getDefaultSerialization();
+            auto bucket_index_type = getSmallestIndexesType(buckets);
+            auto bucket_index_serialization = bucket_index_type->getDefaultSerialization();
             auto bucket_index_data = SubstreamData(bucket_index_serialization)
+                .withType(map_type ? bucket_index_type : nullptr)
                 .withDeserializeState(map_deserialize_state ? map_deserialize_state->bucket_index_state : nullptr);
             bucket_index_serialization->enumerateStreams(settings, callback, bucket_index_data);
         }
@@ -897,7 +899,8 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
         /// Read statistics if any.
         ColumnMap::StatisticsPtr statistics;
         bool have_statistics = false;
-        readBinary(have_statistics, *stream);
+        if (settings.read_statistics)
+            readBinary(have_statistics, *stream);
         if (have_statistics)
         {
             auto mutable_statistics = std::make_shared<ColumnMap::Statistics>();
