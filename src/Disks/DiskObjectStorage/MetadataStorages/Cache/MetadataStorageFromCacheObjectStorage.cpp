@@ -253,6 +253,15 @@ bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
     /// moves the blobs that the wrapped storage removed into `objects_to_remove`, so that the blob killer
     /// drops the stale cache entries for them. That is exactly what a cached `plain` or `plain_rewritable`
     /// disk needs, where blob paths are not random and a new file reuses the path of a deleted one.
+    /// The checks below only tell whether new blobs can be queued from now on. The disk may have been
+    /// reloaded as read-only after some blobs were already queued, and the queue is kept only in memory,
+    /// so as long as it is not empty, it has to be drained, otherwise the stale cache entries would survive.
+    {
+        std::lock_guard guard(removed_objects_mutex);
+        if (objects_to_remove.size() > 0)
+            return true;
+    }
+
     /// A read-only storage never removes anything, so nothing is ever queued for it.
     if (underlying->isReadOnly())
         return false;
