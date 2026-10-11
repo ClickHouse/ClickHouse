@@ -199,6 +199,7 @@ ExecutingProcessor * Worker::pickFromFired(std::span<ExecutingProcessor *> fired
         return nullptr;
 
     metrics.poll_picks += 1;
+    metrics.polled_records += fired.size();
     auto * picked = pickFromBatch(fired);
 
     const Int64 next_poller = pool.poller.pending() > 0 ? 1 : 0;

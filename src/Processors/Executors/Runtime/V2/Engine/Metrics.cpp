@@ -13,6 +13,7 @@ Metrics combine(const Metrics & lhs, const Metrics & rhs)
         .local_picks = lhs.local_picks + rhs.local_picks,
         .global_picks = lhs.global_picks + rhs.global_picks,
         .poll_picks = lhs.poll_picks + rhs.poll_picks,
+        .polled_records = lhs.polled_records + rhs.polled_records,
         .steal_picks = lhs.steal_picks + rhs.steal_picks,
         .stolen_records = lhs.stolen_records + rhs.stolen_records,
         .steal_misses = lhs.steal_misses + rhs.steal_misses,

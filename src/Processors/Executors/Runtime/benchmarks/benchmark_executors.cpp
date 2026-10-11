@@ -57,6 +57,7 @@ void reportMetrics(benchmark::State & state, const Runtime::V2::Metrics & total)
     state.counters["local_picks"] = average(total.local_picks);
     state.counters["global_picks"] = average(total.global_picks);
     state.counters["poll_picks"] = average(total.poll_picks);
+    state.counters["polled_records"] = average(total.polled_records);
     state.counters["steal_picks"] = average(total.steal_picks);
     state.counters["stolen_records"] = average(total.stolen_records);
     state.counters["offloads"] = average(total.offloads);
