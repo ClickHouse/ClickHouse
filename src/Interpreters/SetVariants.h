@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
@@ -77,6 +79,14 @@ struct SetMethodString
     {
         key_columns[0]->insertData(key.data(), key.size());
     }
+
+    /// Returns the key that the `hashed` method computes for a row with this key.
+    static UInt128 getHashedKey(std::string_view key)
+    {
+        SipHash hash;
+        ColumnString::updateHashWithStringValue(key, hash);
+        return hash.get128();
+    }
 };
 
 /// For the case when there is one fixed-length string key.
@@ -94,6 +104,14 @@ struct SetMethodFixedString
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         key_columns[0]->insertData(key.data(), key.size());
+    }
+
+    /// Returns the key that the `hashed` method computes for a row with this key.
+    static UInt128 getHashedKey(std::string_view key)
+    {
+        SipHash hash;
+        ColumnFixedString::updateHashWithStringValue(key, hash);
+        return hash.get128();
     }
 };
 
@@ -354,11 +372,34 @@ struct SetVariantsTemplate: public Variant
 
     void init(Type type_);
 
+    /// Calls `func` with the method of the set, which must be initialized, and returns what `func` returns.
+    /// The method is const for a const set.
+    template <typename Self, typename Func>
+    decltype(auto) callOnMethod(this Self & self, Func && func)
+    {
+        switch (self.type)
+        {
+            case Type::EMPTY:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The method of an uninitialized set is called");
+
+        #define M(NAME) case Type::NAME: return std::forward<Func>(func)(std::forward_like<Self &>(*self.NAME));
+            APPLY_FOR_SET_VARIANTS(M)
+        #undef M
+        }
+        UNREACHABLE();
+    }
+
     /// Estimates peak additional key-storage memory assuming every input row is new. Includes hash-table
-    /// buffers and arena allocations. Requires an initialized set and materialized key columns matching
-    /// the selected method. Saturates at the maximum of `size_t` when the bound is not representable.
-    size_t estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t num_rows) const
+    /// buffers and arena allocations for the range beginning at `start_row`. Requires an initialized
+    /// set and materialized key columns matching the selected method. Saturates at the maximum of
+    /// `size_t` when the bound is not representable.
+    size_t estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows) const
         requires std::is_same_v<Variant, NonClearableSet>;
+
+    /// Estimates the per-row packed-key buffer of the selected hash method, independently of table
+    /// growth. Other methods pack or hash each row on demand and need no such buffer.
+    /// Requires an initialized set and key sizes matching the selected method.
+    size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes) const;
 
     size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`
