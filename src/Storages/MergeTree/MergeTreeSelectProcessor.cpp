@@ -253,61 +253,57 @@ String MergeTreeSelectProcessor::getName() const
 
 /// Inserts the steps that read the virtual columns of indexes, each right before the first step that uses them,
 /// so that an index is read only for the rows that passed the preceding steps. Columns that no step uses are read last.
-/// Those must be separate steps, because index readers cannot read physical columns from table.
+/// Those must be separate steps, one per index, because index readers cannot read physical columns from table.
 static void addIndexReadSteps(PrewhereExprSteps & steps, const IndexReadTasks & index_read_tasks, const ExpressionActionsSettings & actions_settings)
 {
-    std::vector<NameSet> inputs_of_steps;
-    inputs_of_steps.reserve(steps.size());
-
-    for (const auto & step : steps)
-    {
-        auto & inputs = inputs_of_steps.emplace_back();
-        if (step->actions)
-        {
-            for (const auto & name : step->actions->getActionsDAG().getRequiredColumnsNames())
-                inputs.insert(name);
-        }
-        else if (!step->filter_column_name.empty())
-        {
-            inputs.insert(step->filter_column_name);
-        }
-    }
-
-    /// (position of the first step that uses the columns, index name) -> columns to read.
-    std::map<std::pair<size_t, String>, NamesAndTypesList> columns_to_read;
-
-    for (const auto & [index_name, index_task] : index_read_tasks)
-    {
-        for (const auto & column : index_task.columns)
-        {
-            auto it = std::ranges::find_if(inputs_of_steps, [&](const auto & inputs) { return inputs.contains(column.name); });
-            size_t position = it - inputs_of_steps.begin();
-            columns_to_read[{position, index_name}].emplace_back(column.name, column.type);
-        }
-    }
-
-    if (columns_to_read.empty())
+    if (index_read_tasks.empty())
         return;
 
     PrewhereExprSteps result;
-    result.reserve(steps.size() + columns_to_read.size());
-    auto it = columns_to_read.begin();
+    result.reserve(steps.size() + index_read_tasks.size());
+    NameSet read_columns;
 
-    for (size_t i = 0; i <= steps.size(); ++i)
+    /// Adds a step for every index to read its columns that are used and not read by the previous steps.
+    auto add_index_read_steps = [&](auto && is_used)
     {
-        for (; it != columns_to_read.end() && it->first.first == i; ++it)
+        for (const auto & [_, index_task] : index_read_tasks)
         {
+            NamesAndTypesList columns_to_read;
+            for (const auto & column : index_task.columns)
+            {
+                if (!read_columns.contains(column.name) && is_used(column.name))
+                {
+                    read_columns.insert(column.name);
+                    columns_to_read.emplace_back(column.name, column.type);
+                }
+            }
+
+            if (columns_to_read.empty())
+                continue;
+
             auto index_read_step = std::make_shared<PrewhereExprStep>();
             index_read_step->type = PrewhereExprStep::None;
-            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(it->second), actions_settings);
+            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(columns_to_read), actions_settings);
             index_read_step->perform_alter_conversions = true;
             result.push_back(std::move(index_read_step));
         }
+    };
 
-        if (i < steps.size())
-            result.push_back(std::move(steps[i]));
+    for (auto & step : steps)
+    {
+        add_index_read_steps([&](const String & name)
+        {
+            if (!step->actions)
+                return name == step->filter_column_name;
+
+            const auto & inputs = step->actions->getActionsDAG().getInputs();
+            return std::ranges::any_of(inputs, [&](const auto * input) { return input->result_name == name; });
+        });
+
+        result.push_back(std::move(step));
     }
 
+    add_index_read_steps([](const String &) { return true; });
     steps = std::move(result);
 }
 
