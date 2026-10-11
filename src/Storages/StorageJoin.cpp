@@ -363,11 +363,43 @@ size_t StorageJoin::getSize(ContextPtr context) const
     return join->getTotalRowCount();
 }
 
+namespace
+{
+
+/// Whether a read of the table returns every stored row of a key rather than one row per key.
+constexpr bool readsAllRowsOfKey(JoinKind kind, JoinStrictness strictness)
+{
+    return strictness == JoinStrictness::All || (kind == JoinKind::Right && strictness != JoinStrictness::RightAny);
+}
+
+}
+
 std::optional<UInt64> StorageJoin::totalRows(ContextPtr query_context) const
 {
     const auto & settings = query_context->getSettingsRef();
     TableLockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, RWLockImpl::NO_QUERY, settings[Setting::lock_acquire_timeout]);
-    return join->getTotalRowCount();
+    if (!readsAllRowsOfKey(join->getKind(), join->getStrictness()))
+        return join->getTotalRowCount();
+
+    /// getTotalRowCount counts keys, so the rows of each key are summed here.
+    const auto data = join->getJoinedData();
+    const auto * maps = std::get_if<HashJoin::MapsAll>(&data->maps.front());
+    if (!maps)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin keeps every row of a key in a map that is not MapsAll");
+
+    UInt64 rows = 0;
+    switch (data->type)
+    {
+#define M(TYPE) \
+        case HashJoin::Type::TYPE: \
+            if (maps->TYPE) \
+                for (const auto & cell : *maps->TYPE) \
+                    rows += cell.getMapped().rows(); \
+            break;
+        APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+    }
+    return rows;
 }
 
 std::optional<UInt64> StorageJoin::totalBytes(ContextPtr query_context) const
@@ -992,37 +1024,12 @@ private:
 
         for (; it != end; ++it)
         {
-            if constexpr (STRICTNESS == JoinStrictness::RightAny)
-            {
-                fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::All)
-            {
-                fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Any)
-            {
-                if constexpr (KIND == JoinKind::Left || KIND == JoinKind::Inner)
-                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Semi)
-            {
-                if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else if constexpr (STRICTNESS == JoinStrictness::Anti)
-            {
-                if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-                else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
-            }
-            else
+            if constexpr (STRICTNESS == JoinStrictness::Asof)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
+            else if constexpr (readsAllRowsOfKey(KIND, STRICTNESS))
+                fillAll<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
+            else
+                fillOne<Map>(columns, column_indices, it, layout, rows_added, stored_columns);
 
             if (rows_added >= max_block_size)
             {
