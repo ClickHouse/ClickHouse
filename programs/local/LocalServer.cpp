@@ -1591,18 +1591,29 @@ void LocalServer::processConfig()
     per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
     per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
 
-    /// An explicitly configured merges/mutations soft limit takes effect the same way as in the server
-    /// (clamped by the ram ratio): it gates selection of background merges (canEnqueueBackgroundTask) and
-    /// bounds their up-front memory reservations (MergeMemoryReservation). Unlike the server, the ratio
-    /// default is NOT applied when the setting is 0: plain `clickhouse-local` historically runs its
-    /// background merges ungated, and only an explicit setting opts into the gate.
+    /// An explicitly configured merges/mutations memory limit takes effect the same way as in the server:
+    /// it gates selection of background merges (canEnqueueBackgroundTask) and bounds their up-front memory
+    /// reservations (MergeMemoryReservation). A non-zero `merges_mutations_memory_usage_soft_limit` is
+    /// clamped by the ram ratio, and a zero one is derived from the ram ratio - but, unlike the server, only
+    /// when `merges_mutations_memory_usage_to_ram_ratio` is set explicitly: plain `clickhouse-local`
+    /// historically runs its background merges ungated, and only an explicit setting opts into the gate.
     size_t merges_mutations_memory_usage_soft_limit = server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
-    if (merges_mutations_memory_usage_soft_limit != 0)
+    const bool merges_mutations_ratio_is_explicit = config().has("merges_mutations_memory_usage_to_ram_ratio");
+    if (merges_mutations_memory_usage_soft_limit != 0 || merges_mutations_ratio_is_explicit)
     {
         const double merges_mutations_memory_usage_to_ram_ratio = server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio];
         const size_t default_merges_mutations_server_memory_usage
             = static_cast<size_t>(static_cast<double>(physical_server_memory) * merges_mutations_memory_usage_to_ram_ratio);
-        if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
+        if (merges_mutations_memory_usage_soft_limit == 0)
+        {
+            merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+            LOG_INFO(log, "Setting 'merges_mutations_memory_usage_soft_limit' was set to {}"
+                " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
+                formatReadableSizeWithBinarySuffix(physical_server_memory),
+                merges_mutations_memory_usage_to_ram_ratio);
+        }
+        else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
         {
             merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
             LOG_WARNING(log, "Lowered setting 'merges_mutations_memory_usage_soft_limit' to {}"
