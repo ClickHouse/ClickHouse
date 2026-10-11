@@ -392,8 +392,9 @@ void PrettyBlockOutputFormat::writingThread()
         /// The writing methods are called only when the query produces more output. A query that has
         /// already produced all of its output and keeps reading (for example, `SELECT DISTINCT` over a
         /// huge table) would not notice the error until it finishes, so cancel it with this exception.
+        /// In the client the format outlives the query, so its process list element may be gone already.
         if (auto query_context = CurrentThread::tryGetQueryContext())
-            if (auto process_list_element = query_context->getProcessListElement())
+            if (auto process_list_element = query_context->getProcessListElementSafe())
                 process_list_element->cancelQuery(DB::CancelReason::CANCELLED_BY_ERROR, exception);
     }
 }

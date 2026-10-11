@@ -611,6 +611,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             reader,
+            reading->getMutationsSnapshot(),
             empty_mutations_snapshot,
             required_columns,
             metadata,
