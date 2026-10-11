@@ -2641,13 +2641,14 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         && (allow_experimental_parallel_reading_from_replicas == 0)
         && !empty_result_for_aggregation_by_empty_set
         && storage
-        && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())
         /// `totalRows` counts the live table, not the snapshot pinned for this query.
         && !context->getPinnedStorageSnapshot(storage->getStorageID().uuid)
         && query_info.filter_asts.empty()
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
-        && typeid_cast<const AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
+        && typeid_cast<const AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get())
+        /// Last: the storage predicate may block or touch storage metadata.
+        && storage->supportsTrivialCountOptimization(storage_snapshot, getContext());
 
     if (!optimize_trivial_count)
         return {};
