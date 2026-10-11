@@ -25,10 +25,8 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t_reattach_own_disk (a UInt64) ENGINE = MergeTree ORDER BY a
     SETTINGS disk = disk(type = local, path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_DATABASE}_own_disk/')"
 
-check_if_not_detached "SELECT count() FROM t_reattach_own_disk" "t_reattach_own_disk"
-
 # Control: a table that only uses disks from the server configuration stays a reattach candidate, so
-# the check above cannot pass just because the hook did nothing at all.
+# the check below cannot pass just because the hook did nothing at all.
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_server_disk (a UInt64) ENGINE = MergeTree ORDER BY a"
 
 # The hook also skips a table that it cannot lock exclusively within a short probe timeout, and right
@@ -38,6 +36,17 @@ for _ in {1..10}
 do
     result=$(check_if_detached "SELECT count() FROM t_reattach_server_disk" "t_reattach_server_disk")
     [ "$result" = "OK" ] && break
+done
+echo "$result"
+
+# Check the table under test only now that the control has shown that the hook detaches a fresh
+# `MergeTree` table on this server, and repeat the check, so that a single run in which the table was
+# skipped only for being busy cannot make it pass: every run has to leave the table attached.
+result="OK"
+for _ in {1..5}
+do
+    run_result=$(check_if_not_detached "SELECT count() FROM t_reattach_own_disk" "t_reattach_own_disk")
+    [ "$run_result" = "OK" ] || result="$run_result"
 done
 echo "$result"
 
