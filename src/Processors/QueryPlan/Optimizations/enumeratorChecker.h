@@ -45,7 +45,7 @@ class EnumeratorCheckerWithCosts
 public:
     EnumeratorCheckerWithCosts(const size_t num_relations_, Optimizer & optimizer_)
         : dp_table(num_relations_), optimizer(optimizer_), num_relations(num_relations_) {}
-    double computeJoinCost(UInt lhs, UInt rhs, const JoinKeyEstimate & keys) const;
+    double computeJoinCost(UInt lhs, UInt rhs, const JoinKeyEstimate & keys, JoinKind join_kind, JoinStrictness strictness) const;
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
@@ -63,28 +63,26 @@ template <class TDPTable, class TOptimizer>
 double
 EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::computeJoinCost(const UInt lhs,
                                                                   const UInt rhs,
-                                                                  const JoinKeyEstimate & keys) const
+                                                                  const JoinKeyEstimate & keys,
+                                                                  JoinKind join_kind,
+                                                                  JoinStrictness strictness) const
 {
-    /// The same rows as `joinedRowsSearchValue`: two estimated inputs give `estimateJoinedRows`,
-    /// otherwise the reported selectivity times the search values, as `searchRows` counts them
-    /// (estimate; a join's selectivity over its inputs' values; a relation's upper bound, else one
-    /// row).
+    /// The search value of an entry as `searchRows` counts it, with the same rule for each join below.
     std::function<double(UInt)> search_rows = [&](UInt relations) -> double
     {
         const auto & entry = dp_table[relations];
         if (entry.estimated_rows)
             return static_cast<double>(*entry.estimated_rows);
         if (entry.left != 0 || entry.right != 0)
-            return entry.sel * search_rows(entry.left) * search_rows(entry.right);
+            return joinSearchRows(entry.sel, search_rows(entry.left), search_rows(entry.right), entry.kind, entry.strictness);
         if (entry.max_rows)
             return static_cast<double>(*entry.max_rows);
         return 1;
     };
     const auto & left_entry = dp_table[lhs];
     const auto & right_entry = dp_table[rhs];
-    const double joined_rows = left_entry.estimated_rows && right_entry.estimated_rows
-        ? estimateJoinedRows(keys, static_cast<double>(*left_entry.estimated_rows), static_cast<double>(*right_entry.estimated_rows))
-        : keys.selectivity * search_rows(lhs) * search_rows(rhs);
+    const double joined_rows = joinedRowsSearchValue(
+        keys, left_entry.estimated_rows, right_entry.estimated_rows, search_rows(lhs), search_rows(rhs), join_kind, strictness);
     return left_entry.cost + right_entry.cost + joined_rows;
 }
 
@@ -133,7 +131,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         kind = JoinKind::Inner;
 
     auto keys = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
-    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, keys);
+    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, keys, kind, strictness);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
              keys.selectivity,

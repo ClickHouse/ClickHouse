@@ -86,7 +86,7 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                     continue;
 
                 auto keys = computeSelectivity(query_graph, dp_table, expression_selectivity, edges, left->relations, right->relations);
-                auto current_cost = computeJoinCost(query_graph, left, right, keys);
+                auto current_cost = computeJoinCost(query_graph, left, right, keys, join_kind.value(), query_graph.join_strictness);
                 /// A pair joined on a key always supersedes one without a key equality, whatever
                 /// the cost: a join without one is a cross product, or a filter on the product, that
                 /// a later key join would have to undo.

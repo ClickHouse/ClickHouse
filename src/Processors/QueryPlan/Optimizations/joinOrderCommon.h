@@ -142,15 +142,59 @@ inline UInt64 keyColumnId(const String & column_name)
     return std::hash<String>{}(column_name);
 }
 
-/// Rows the cost model counts for an entry: its estimate; for a join without one, its selectivity
-/// times its inputs' values (its bound is the product of its inputs' bounds, which would grow with
-/// every join); for a relation without one, its row bound, else one row.
+/// The input whose rows a join emits at most once each: the preserved side of a semi or anti
+/// join, the side that takes one match per row in an `ANY` or `ASOF` join (the left side, or
+/// the right side of a `RIGHT` join and of a right-any join). None for the other strictnesses.
+inline std::optional<bool> singleMatchSideIsLeft(JoinKind join_kind, JoinStrictness strictness)
+{
+    switch (strictness)
+    {
+        case JoinStrictness::Semi:
+        case JoinStrictness::Anti:
+        case JoinStrictness::Any:
+        case JoinStrictness::Asof:
+            return !isRight(join_kind);
+        case JoinStrictness::RightAny:
+            return join_kind == JoinKind::Left;
+        default:
+            return {};
+    }
+}
+
+/// Rows a join emits for the cost model when an input has no estimate: `selectivity` times the inputs'
+/// search values, counted by the join kind and strictness as `estimateJoinCardinality` counts them. A
+/// `SEMI` or `ANTI` join keeps a share of its preserved side; an `ANY` or `ASOF` join emits each row of
+/// one side at most once, and every row of it when the join is outer.
+inline double joinSearchRows(double selectivity, double left, double right, JoinKind join_kind, JoinStrictness strictness)
+{
+    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+    {
+        const bool preserve_left = !isRight(join_kind);
+        const double preserved = preserve_left ? left : right;
+        const double other = preserve_left ? right : left;
+        const double match_fraction = std::min(1.0, selectivity * other);
+        return strictness == JoinStrictness::Semi ? preserved * match_fraction : preserved * (1.0 - match_fraction);
+    }
+    if (const auto single_side_is_left = singleMatchSideIsLeft(join_kind, strictness))
+    {
+        const double single_side = *single_side_is_left ? left : right;
+        if (join_kind != JoinKind::Inner)
+            return single_side;
+        return std::min(selectivity * left * right, single_side);
+    }
+    return selectivity * left * right;
+}
+
+/// Rows the cost model counts for an entry: its estimate; for a join without one, `joinSearchRows` of
+/// its inputs' values (its bound is the product of its inputs' bounds, which would grow with every
+/// join); for a relation without one, its row bound, else one row.
 inline double searchRows(const DPJoinEntryPtr & entry, const QueryGraph & query_graph)
 {
     if (entry->estimated_rows)
         return static_cast<double>(*entry->estimated_rows);
     if (!entry->isLeaf())
-        return entry->selectivity * searchRows(entry->left, query_graph) * searchRows(entry->right, query_graph);
+        return joinSearchRows(entry->selectivity, searchRows(entry->left, query_graph), searchRows(entry->right, query_graph),
+            entry->join_operator.kind, entry->join_operator.strictness);
     if (entry->max_rows)
         return static_cast<double>(*entry->max_rows);
     return 1;
@@ -250,25 +294,6 @@ inline void collectEdgeKeys(
         const UInt64 lhs_column = keyColumnId(lhs.getColumnName());
         const UInt64 rhs_column = keyColumnId(rhs.getColumnName());
         keys.countIndependentKey(left_values, right_values, {lhs_on_left ? lhs_column : rhs_column}, {lhs_on_left ? rhs_column : lhs_column});
-    }
-}
-
-/// The input whose rows a join emits at most once each: the preserved side of a semi or anti
-/// join, the side that takes one match per row in an `ANY` or `ASOF` join (the left side, or
-/// the right side of a `RIGHT` join and of a right-any join). None for the other strictnesses.
-inline std::optional<bool> singleMatchSideIsLeft(JoinKind join_kind, JoinStrictness strictness)
-{
-    switch (strictness)
-    {
-        case JoinStrictness::Semi:
-        case JoinStrictness::Anti:
-        case JoinStrictness::Any:
-        case JoinStrictness::Asof:
-            return !isRight(join_kind);
-        case JoinStrictness::RightAny:
-            return join_kind == JoinKind::Left;
-        default:
-            return {};
     }
 }
 
@@ -443,19 +468,36 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, keys, join_kind, strictness);
 }
 
-/// Rows a join emits for the cost model: `estimateJoinedRows` of two estimated inputs, otherwise
-/// the reported selectivity times the inputs' search values.
-inline double joinedRowsSearchValue(const QueryGraph & query_graph, const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const JoinKeyEstimate & keys)
+/// Rows a join emits for the cost model, for every solver: with two estimated inputs, the estimate of
+/// the join (`estimateJoinedRows` for an `ALL` join); otherwise `joinSearchRows` over the inputs'
+/// search values.
+inline double joinedRowsSearchValue(
+    const JoinKeyEstimate & keys,
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows,
+    double left_search_rows,
+    double right_search_rows,
+    JoinKind join_kind,
+    JoinStrictness strictness)
 {
-    if (left->estimated_rows && right->estimated_rows)
-        return estimateJoinedRows(keys, static_cast<double>(*left->estimated_rows), static_cast<double>(*right->estimated_rows));
-    return keys.selectivity * searchRows(left, query_graph) * searchRows(right, query_graph);
+    if (left_rows && right_rows)
+    {
+        if (strictness == JoinStrictness::All)
+            return estimateJoinedRows(keys, static_cast<double>(*left_rows), static_cast<double>(*right_rows));
+        if (const auto rows = estimateJoinCardinality(left_rows, right_rows, keys, join_kind, strictness))
+            return static_cast<double>(*rows);
+    }
+    return joinSearchRows(keys.selectivity, left_search_rows, right_search_rows, join_kind, strictness);
 }
 
 /// The cost of a join: both inputs' costs plus the rows it emits.
-inline double computeJoinCost(const QueryGraph & query_graph, const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const JoinKeyEstimate & keys)
+inline double computeJoinCost(
+    const QueryGraph & query_graph, const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const JoinKeyEstimate & keys,
+    JoinKind join_kind, JoinStrictness strictness)
 {
-    return left->cost + right->cost + joinedRowsSearchValue(query_graph, left, right, keys);
+    return left->cost + right->cost
+        + joinedRowsSearchValue(keys, left->estimated_rows, right->estimated_rows, searchRows(left, query_graph), searchRows(right, query_graph),
+            join_kind, strictness);
 }
 
 /// The estimate of a join of two relations, by the shared formulas: the key selectivity and
