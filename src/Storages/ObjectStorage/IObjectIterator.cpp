@@ -37,7 +37,7 @@ static ExpressionActionsPtr getExpressionActions(
     if (filter.has_value())
     {
         VirtualColumnUtils::buildSetsForDAG(*filter, context_);
-        return std::make_shared<ExpressionActions>(std::move(*filter));
+        return std::make_shared<ExpressionActions>(std::move(*filter), ExpressionActionsSettings(context_));
     }
     return nullptr;
 }
