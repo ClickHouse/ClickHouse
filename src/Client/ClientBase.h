@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <string>
 
@@ -223,8 +224,8 @@ protected:
     /// Drops the cached answers about the server session, to be called once a new session is
     /// established: a reconnect can land on a different server, which may not know a setting the
     /// previous one knew, or may run the session under a different settings profile. The sticky
-    /// flags are kept, because they fail closed: `dialect_may_be_changed_by_profile` only pins the
-    /// internal queries to the ClickHouse dialect, and the rows the agent may have left unmarked in
+    /// flags are kept, because they fail closed: `settings_may_be_changed_by_profile` only pins the
+    /// internal queries to the ClickHouse dialect and asks the server for `readonly`, and the rows the agent may have left unmarked in
     /// the query log stay there after a reconnect, so `read_query_log` must not come back.
     void resetServerSessionCaches();
 
@@ -244,6 +245,13 @@ protected:
     /// parses with the effective dialect of the session, which a settings profile may set to
     /// another one without the client seeing it.
     bool internalQueriesRequireDialectPin();
+
+    /// The effective value of the `readonly` setting of the session. The client context has it
+    /// unless a `SET profile` or `apply_settings_from_server = 0` hides it from the client, and
+    /// then the server is asked - see `serverEffectiveSettingValue`. Empty only while that very
+    /// question is being asked: it is an internal query itself, and those need the answer to
+    /// decide which settings may travel with them.
+    std::optional<UInt64> sessionReadonlyIfKnown();
 
 #if USE_CLIENT_AI
     /// Create the AI agent on the first use of the `?` command: from a configured or
@@ -678,8 +686,9 @@ protected:
     /// A settings profile is applied on the server without its constituent settings being sent
     /// back to the client. Once one is used, always pin internal queries (of the `help` command
     /// and of the AI agent) to the ClickHouse dialect instead of trusting the stale local
-    /// dialect value. Not guarded by `USE_CLIENT_AI`: `help` needs it in every build.
-    bool dialect_may_be_changed_by_profile = false;
+    /// dialect value, and ask the server for the effective `readonly` - see
+    /// `sessionReadonlyIfKnown`. Not guarded by `USE_CLIENT_AI`: `help` needs it in every build.
+    bool settings_may_be_changed_by_profile = false;
 
     /// The effective values of the settings of this session as the server reports them, asked one
     /// by one and cached - see `serverEffectiveSettingValue`. A `nullopt` value means the server
@@ -687,9 +696,10 @@ protected:
     /// `SET profile` drops all of them: it changes a set of settings the client is not told.
     /// Not guarded by `USE_CLIENT_AI`: `help` needs the dialect question in every build.
     std::map<String, std::optional<String>> server_effective_setting_values;
-    /// Set while such a question is in flight. It is an internal query itself, and those ask the
-    /// question before they are sent, so it must not be asked again while being answered.
-    bool server_setting_probe_in_progress = false;
+    /// The settings such a question is in flight for. It is an internal query itself, and those
+    /// ask the question before they are sent, so it must not be asked again while being answered.
+    /// The questions nest: the one about `dialect` needs the answer about `readonly` first.
+    std::set<String> server_setting_probes_in_progress;
 
 #if USE_CLIENT_AI
     /// The AI agent behind the interactive `?` command

@@ -3278,11 +3278,12 @@ void ClientBase::processParsedSingleQuery(
 
             /// A profile is applied by the server and deliberately not reproduced in the client
             /// context, so after it the client can no longer tell which settings it changed: neither
-            /// the dialect the internal queries have to work around, nor `readonly` - so it must not
-            /// promise that the marker of the queries of the agent was accepted, either.
+            /// the dialect the internal queries have to work around, nor `readonly`, which is asked
+            /// of the server from now on - and it must not promise that the marker of the queries of
+            /// the agent was accepted, either.
             if (changes_setting("profile"))
             {
-                dialect_may_be_changed_by_profile = true;
+                settings_may_be_changed_by_profile = true;
                 /// A profile changes an unknown set of settings and the client is not told which,
                 /// so no cached answer about the effective value of a setting survives it - see
                 /// `serverEffectiveSettingValue`. Without this, a value asked about before the
@@ -5075,18 +5076,12 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
 
 UInt64 ClientBase::aiSessionReadonly()
 {
-    /// The settings the server applies to the session - `readonly` from the settings profile of
-    /// the user in particular - are sent to the client in the handshake and applied to the client
-    /// context, so its value is the effective one and no query is needed to learn it. This
-    /// normally happens before every query; the agent can run before the first one.
-    ///
-    /// Two cases stay invisible to the client: a profile applied by a `SET profile` after the
-    /// handshake, and a user with `apply_settings_from_server = 0`, who asked for the settings of
-    /// the server not to reach the client. The agent then works with what it knows and the server
-    /// reports what it got wrong: a rejected setting change comes back as an explicit `READONLY`
-    /// error, which is passed to the model like any other query error.
-    applySettingsFromServerIfNeeded();
-    return client_context->getSettingsRef()[Setting::readonly];
+    /// The agent never asks while the question about `readonly` is in flight: that question is an
+    /// internal query that carries no marker of the agent and no isolation settings.
+    const std::optional<UInt64> readonly = sessionReadonlyIfKnown();
+    if (!readonly.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The effective `readonly` of the session is needed while it is being asked");
+    return *readonly;
 }
 
 bool ClientBase::aiQueryLogMarkerAllowed()
@@ -5449,11 +5444,11 @@ std::optional<String> ClientBase::serverEffectiveSettingValue(const String & nam
     /// it is left unanswered and asked again once connected. A question already in flight is not
     /// asked again: the internal query that asks it is an internal query like any other, and those
     /// ask this question before they are sent.
-    if (!connection || server_setting_probe_in_progress)
+    if (!connection || server_setting_probes_in_progress.contains(name))
         return {};
 
-    server_setting_probe_in_progress = true;
-    SCOPE_EXIT(server_setting_probe_in_progress = false);
+    server_setting_probes_in_progress.insert(name);
+    SCOPE_EXIT(server_setting_probes_in_progress.erase(name));
 
     try
     {
@@ -5511,12 +5506,47 @@ bool ClientBase::sessionMayDisplaySecrets()
     return *value != "0";
 }
 
+std::optional<UInt64> ClientBase::sessionReadonlyIfKnown()
+{
+    applySettingsFromServerIfNeeded();
+    const Settings & settings = client_context->getSettingsRef();
+
+    /// The settings the server applies to the session - `readonly` from the settings profile of
+    /// the user in particular - are sent to the client in the handshake and applied to the client
+    /// context, so its value is the effective one and no query is needed to learn it. Without a
+    /// server there is nothing else to go by.
+    ///
+    /// Two cases stay invisible to the client: a profile applied by a `SET profile` after the
+    /// handshake, and a user with `apply_settings_from_server = 0`, who asked for the settings of
+    /// the server not to reach the client. In both the local value may be wrong in either
+    /// direction, and every guarantee decided on it with it: the agent would offer to run writes
+    /// in a read-only session, and the internal queries would carry settings that such a session
+    /// rejects. So the server is asked, once, until a `SET` of `readonly` or of a profile, or a
+    /// reconnect, drops the answer.
+    ///
+    /// A value the client changed itself - `--readonly` on the command line, or a `SET` - travels
+    /// with the queries of the session, so it is effective whatever the server would answer: the
+    /// question carries no settings of the session and would not see it.
+    if (!connection || settings.isChanged("readonly")
+        || (settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile))
+        return settings[Setting::readonly];
+
+    /// The question itself does not know the answer yet - see `fetchInternalQueryResult`.
+    if (server_setting_probes_in_progress.contains("readonly"))
+        return {};
+
+    const std::optional<String> value = serverEffectiveSettingValue("readonly");
+    if (!value.has_value())
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "The server does not report the `readonly` setting of the session");
+    return parse<UInt64>(*value);
+}
+
 bool ClientBase::internalQueriesRequireDialectPin()
 {
     applySettingsFromServerIfNeeded();
 
     const Settings & settings = client_context->getSettingsRef();
-    if (dialect_may_be_changed_by_profile || settings[Setting::dialect] != Dialect::clickhouse)
+    if (settings_may_be_changed_by_profile || settings[Setting::dialect] != Dialect::clickhouse)
         return true;
 
     /// The local value is the effective one only when the settings of the server reach the client.
@@ -5536,7 +5566,13 @@ bool ClientBase::internalQueriesRequireDialectPin()
         /// The question is ClickHouse SQL, and under `readonly = 1` it travels without the pin, so
         /// a session that parses another dialect fails it with a syntax error of that dialect. That
         /// error is what the user gets, and it says nothing about how to get out of it.
-        if (settings[Setting::readonly] == 1)
+        /// Only what is already known is consulted: asking the server here would replace this
+        /// error with the failure of another question.
+        const auto readonly_answer = server_effective_setting_values.find("readonly");
+        const bool session_is_readonly = readonly_answer != server_effective_setting_values.end()
+            ? readonly_answer->second == "1"
+            : settings[Setting::readonly] == 1;
+        if (session_is_readonly)
             e.addMessage(
                 "The internal queries are ClickHouse SQL and `readonly = 1` does not allow pinning the `dialect` setting "
                 "for them. If the session uses another SQL dialect, run `SET dialect = 'clickhouse'` first");
@@ -5568,16 +5604,31 @@ Block ClientBase::fetchInternalQueryResult(
     /// one query that must not ask it: there is no answer yet, and under `readonly = 1` it would be
     /// refused here instead of being sent. It is ClickHouse SQL, so a session that really parses
     /// another dialect fails it, and the failure of the question then fails the query that asked.
-    const bool session_is_readonly = client_context->getSettingsRef()[Setting::readonly] == 1;
-    if (session_is_readonly && !server_setting_probe_in_progress && internalQueriesRequireDialectPin())
+    ///
+    /// `readonly` is not read from the client context either, for the same reason - see
+    /// `sessionReadonlyIfKnown`. The question about it is the one query that cannot know the
+    /// answer, so it carries only the pin to the ClickHouse dialect: a session that already parses
+    /// ClickHouse SQL ignores it as an unchanged value at any `readonly` level, and one that does
+    /// not accepts it unless it is read-only - where these queries cannot run anyway.
+    const std::optional<UInt64> session_readonly = sessionReadonlyIfKnown();
+    const bool asking_session_readonly = !session_readonly.has_value();
+    const bool session_is_readonly = session_readonly == 1;
+    if (session_is_readonly && server_setting_probes_in_progress.empty() && internalQueriesRequireDialectPin())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
             "`dialect` setting. Run `SET dialect = 'clickhouse'` first");
 
     std::optional<Settings> settings_to_send;
-    if (!session_is_readonly)
+    if (asking_session_readonly)
+    {
+        settings_to_send.emplace();
+        settings_to_send->set("dialect", String("clickhouse"));
+    }
+    else if (!session_is_readonly)
+    {
         settings_to_send = networkCompressionSettings(client_context->getSettingsRef());
+    }
 
     /// Left empty for the queries of the `help` command, so the server assigns the query id. This
     /// is not the `query_id` member: that one is the query id of the session, which the queries
@@ -5604,7 +5655,7 @@ Block ClientBase::fetchInternalQueryResult(
     /// the user typed. It is not worth failing a query over, so a session that rejects it keeps
     /// the agent, only without it. The question about whether it may be attached does not attach
     /// it: it is asking, and asking must not fail over the answer.
-    if (from_ai_agent && !ai_query_log_marker_probe_in_progress && aiQueryLogMarkerAllowed())
+    if (from_ai_agent && !asking_session_readonly && !ai_query_log_marker_probe_in_progress && aiQueryLogMarkerAllowed())
     {
         if (!settings_to_send)
             settings_to_send.emplace();
@@ -5663,7 +5714,7 @@ Block ClientBase::fetchInternalQueryResult(
     /// own is allowed without confirmation, and the definition it renders is masked either way.
     /// The unconfirmed read-only tool does not get that exception - it refuses to run at all unless
     /// it can install the whole isolation, see `runQueryForAI`.
-    if (from_ai_agent && settings_to_send)
+    if (from_ai_agent && !asking_session_readonly && settings_to_send)
     {
         settings_to_send->set("show_remote_databases_in_system_tables", false);
         settings_to_send->set("show_data_lake_catalogs_in_system_tables", false);
