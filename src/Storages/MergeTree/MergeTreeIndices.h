@@ -315,7 +315,8 @@ struct IMergeTreeIndex
     /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
     /// nothing once a required system column is invalidated). Mutation cleanup uses this so a
     /// stale legacy substream on a mixed-format part is skipped/stripped, not hardlinked forward.
-    virtual MergeTreeIndexSubstreams getAllSubstreamsInPart(
+    /// Probes `getPotentialSubstreams`, so reimplement that one to cover another version.
+    MergeTreeIndexSubstreams getAllSubstreamsInPart(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & relative_path_prefix,
         const IDataPartStorage * storage) const;
