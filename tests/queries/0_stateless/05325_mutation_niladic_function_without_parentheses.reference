@@ -1,0 +1,18 @@
+not pruned
+0000000000	(DELETE WHERE d < today())	['20000101','21000101']
+0000000001	(DELETE WHERE d < today)	['20000101','21000101']
+0000000002	(DELETE WHERE d < CURRENT_DATE)	['20000101','21000101']
+0000000003	(DELETE WHERE toDateTime(d) < now)	['20000101','21000101']
+0000000004	(DELETE WHERE d < r)	['20000101','21000101']
+0000000005	(DELETE WHERE (d < \'2050-01-01\') AND arrayExists(x -> (x <= today), [d]))	['20000101','21000101']
+0000000006	(DELETE WHERE d = \'2000-01-01\')	['20000101']
+rejected on a replicated table
+replaced with the value on the initiator when written with parentheses
+(DELETE WHERE (d < _CAST(N, \'Date\')) AND (k = 100))
+a column, a lambda parameter or an alias with the same name
+0000000000	(UPDATE v = 1 WHERE (p = 1) AND (user = \'a\') AND (today = \'2000-01-01\'))	['1']
+0000000001	(UPDATE v = 2 WHERE (p = 1) AND arrayExists(now -> (now > 0), [v]))	['1']
+0000000002	(UPDATE v = 3 WHERE ((p AS now) = 1) AND (now = 1))	['1']
+0000000003	(UPDATE v = (p AS now) WHERE now = 1)	['1','2']
+a column added, renamed or dropped by the same query
+1	7	8
