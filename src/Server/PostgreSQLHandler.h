@@ -124,7 +124,21 @@ private:
     bool processPrepareStatement(const String & query);
     bool processExecute(const String & query, ContextMutablePtr query_context);
     bool processDeallocate(const String & query);
-    bool processCopyQuery(const String & query);
+    enum class CopyQueryResult : uint8_t
+    {
+        NotCopy,
+        Success,
+        ErrorHandled,
+    };
+    CopyQueryResult processCopyQuery(const String & query);
+    bool copy_protocol_error = false;
+
+    /// After an error has been reported in the middle of `COPY ... FROM STDIN`, consumes and discards
+    /// the copy-subprotocol frames the client keeps sending until it terminates the copy with
+    /// `CopyDone` or `CopyFail`, as PostgreSQL does, so that the connection stays usable.
+    /// `pending_frame_bytes` is the unread remainder of the frame the copy was abandoned in, if any: it
+    /// is payload and is skipped before the next message header is looked for.
+    void discardRemainingCopyInFrames(size_t pending_frame_bytes);
 
     void processParseQuery();
     void processDescribeQuery();
@@ -133,12 +147,14 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
-    void recoverFromRejectedMessage();
+    /// Reports a failed statement to the client with `ErrorResponse`. Must be called from within a
+    /// `catch` block: a failed write to the client (for example, it went away in the middle of the
+    /// result) cancels `out`, and nothing can be written into a canceled buffer any more. There is
+    /// nobody to deliver `ErrorResponse` to in that case, so the exception being handled is
+    /// rethrown to tear the connection down instead.
+    void sendErrorResponseOrRethrow(const Exception & e);
 
-    std::function<void(const Progress&)> createProgressCallback(
-        ContextMutablePtr query_context,
-        std::atomic<UInt64>& result_rows,
-        std::atomic<UInt64>& written_rows);
+    void recoverFromRejectedMessage();
 
     UInt64 executeQueryWithTracking(
         String && sql_query,
@@ -146,9 +162,19 @@ private:
         PostgreSQLProtocol::Messaging::CommandComplete::Command command);
 
     static bool isEmptyQuery(const String & query);
+    /// Transaction-control statements (BEGIN [READ ONLY], START TRANSACTION, COMMIT, ROLLBACK, ...) that
+    /// ClickHouse does not implement but that libpq/pqxx clients send around every statement. They are
+    /// acknowledged without execution so that such clients (including ClickHouse's own `postgresql` table
+    /// function/engine pointed at another ClickHouse instance) can talk to the PostgreSQL wire protocol.
+    static bool isTransactionControlQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
 
+    /// Lazily creates the emulated `pg_catalog` views on the first statement of the connection, then, before
+    /// any statement that may read them, assigns stable OIDs to databases and tables that appeared since
+    /// (see `refreshCatalogOids`).
+    void prepareSystemTables(ContextMutablePtr query_context, const String & query);
     void initializeSystemTables(ContextMutablePtr query_context);
+    void refreshCatalogOids(ContextMutablePtr query_context);
     bool should_init_system_tables = true;
 };
 

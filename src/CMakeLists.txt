@@ -355,6 +355,7 @@ endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::heks)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
 endif()
@@ -475,10 +476,9 @@ set_source_files_properties(Server/KeeperJemallocHandler.cpp PROPERTIES OBJECT_D
 # Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed.
 # Add OBJECT_DEPENDS only if the submodule is checked out.
 set(_nlp_charset "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst")
-set(_nlp_tonality "${CMAKE_SOURCE_DIR}/contrib/nlp-data/tonality_ru.zst")
-if (EXISTS "${_nlp_charset}" AND EXISTS "${_nlp_tonality}")
+if (EXISTS "${_nlp_charset}")
     set_source_files_properties(Common/FrequencyHolder.cpp PROPERTIES OBJECT_DEPENDS
-        "${_nlp_charset};${_nlp_tonality}")
+        "${_nlp_charset}")
 endif()
 
 set_source_files_properties(Storages/System/attachInformationSchemaTables.cpp PROPERTIES OBJECT_DEPENDS
@@ -509,6 +509,7 @@ add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
 add_object_library(clickhouse_processors_executors_runtime Processors/Executors/Runtime)
+add_object_library(clickhouse_processors_executors_runtime_v1 Processors/Executors/Runtime/V1)
 add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_framing Processors/Formats/Framing)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
@@ -554,6 +555,8 @@ set_property(SOURCE
     Columns/IColumn.cpp                        # hashjoin_with_large_output
     Processors/Transforms/WindowTransform.cpp  # window functions
     Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
+    Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
+    Processors/Transforms/Window/Partition.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
     WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
@@ -1044,6 +1047,8 @@ if (ENABLE_TESTS)
         # `gtest_lz4_decompress_branchless` includes `<lz4.h>` directly; the include path only
         # propagates transitively in full-library builds, so declare the dependency explicitly.
         ch_contrib::lz4)
+
+    target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::heks)
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)

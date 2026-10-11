@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/HTTPConnectionPool.h>
 #include <IO/WriteHelpers.h>
@@ -31,6 +32,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
+    extern const Event ReadBufferFromS3RequestsCut;
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
@@ -106,13 +108,15 @@ ReadBufferFromS3::ReadBufferFromS3(
     std::optional<size_t> file_size_,
     const S3CredentialsRefreshCallback & credentials_refresh_callback_,
     BlobStorageLogWriterPtr blob_storage_log_,
-    const String & expected_etag_)
+    const String & expected_etag_,
+    UInt64 expected_etag_hash_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
     , version_id(version_id_)
     , expected_etag(expected_etag_)
+    , expected_etag_hash(expected_etag_hash_)
     , request_settings(request_settings_)
     , offset(offset_)
     , read_until_position(read_until_position_)
@@ -584,6 +588,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
         {
             cut_request_end = static_cast<size_t>(offset) + fill_size;
             right_offset = cut_request_end - 1;
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsCut);
         }
     }
 
@@ -668,6 +673,14 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
                 "S3 object {}/{} was replaced during read (etag changed from {} to {}); "
                 "retry the query, or set s3_validate_etag_on_read=0 to disable this check",
                 bucket, key, expected_etag, response_etag);
+
+        /// With only the hash there is no If-Match, so nothing else pins this GET: an empty response
+        /// ETag fails too.
+        if (version_id.empty() && expected_etag_hash && getETagHash(response_etag) != expected_etag_hash)
+            throw Exception(
+                ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "S3 object {}/{} was replaced during read (expected etag hash {}, got etag {}); retry the query",
+                bucket, key, expected_etag_hash, response_etag);
 
         if (blob_storage_log)
         {

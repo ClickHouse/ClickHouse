@@ -1,35 +1,21 @@
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-
 #include <base/arithmeticOverflow.h>
-
-#include <ranges>
 
 namespace DB
 {
 
-namespace
+SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, SlidingIndex index)
 {
+    int64_t rows_count = chunk.getNumRows();
+    Columns input_columns = chunk.detachColumns();
 
-Columns materializeColumns(Columns columns, const std::vector<bool> & should_materialize)
-{
-    for (auto && [column, materialize] : std::views::zip(columns, should_materialize))
-        if (materialize)
-            column = recursiveRemoveLowCardinality(column->convertToFullIfWrapped());
-
-    return columns;
-}
-
-}
-
-SlidingBlock & SlidingBlocks::add(Chunk chunk, const WindowTransformParams & params)
-{
     return blocks.emplace_back(SlidingBlock{
-        .input_columns = chunk.getColumns(),
-        .materialized_columns = materializeColumns(chunk.getColumns(), params.should_materialize),
-        .rows_count = static_cast<int64_t>(chunk.getNumRows()),
+        .input_columns = std::move(input_columns),
+        .materialized_columns = std::move(materialized_columns),
+        .rows_count = rows_count,
         .block_number = next_block_number++,
+        .index = std::move(index),
         .result_columns = {},
     });
 }
