@@ -52,6 +52,8 @@ public:
     /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
     void createNamespaceIfNotExists(const String & namespace_name) const override;
 
+    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+
     void getTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
@@ -138,6 +140,8 @@ private:
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(
         const std::string & route,
         std::function<void(std::ostream &)> out_stream_callback) const;
+
+    void deleteRequest(const std::string & route) const;
 
     std::string getBearerToken(bool force_refresh = false) const;
 
