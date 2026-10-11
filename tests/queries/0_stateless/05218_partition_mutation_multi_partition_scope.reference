@@ -1,0 +1,20 @@
+parts before the mutation
+1_1_1_0
+2_2_2_0
+3_3_3_0
+(UPDATE n = n + 100 IN PARTITION ID \'1\', ID \'2\' WHERE 1)
+parts after the mutation
+1_1_1_0_4
+2_2_2_0_4
+3_3_3_0
+a	101
+b	102
+c	3
+(DELETE IN PARTITION ID \'2\', ID \'3\' WHERE n = 3)
+1	101
+2	102
+parts after the pending mutation
+1_1_1_0_4
+2_2_2_0_6
+3_3_3_0_6
+0

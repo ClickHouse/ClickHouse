@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <mutex>
 
