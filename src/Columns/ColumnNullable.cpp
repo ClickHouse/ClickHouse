@@ -1474,7 +1474,8 @@ bool ColumnNullable::hasOnlyTypeDefaults() const
 
 ColumnPlanes ColumnNullable::getPlanes() const
 {
-    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapData().data());
+    /// Do not create the null map: the planes are read-only, and the column may be stored and accounted (e.g. in a hash join).
+    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapRawDataOrZeros());
     planes.children = {&getNestedColumn()};
     return planes;
 }

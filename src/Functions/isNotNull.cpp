@@ -103,6 +103,10 @@ public:
 
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
+            /// A column without a null map has no NULLs. Do not create the null map in the argument, it may be shared.
+            if (!nullable->hasNullMap())
+                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(1));
+
             /// Return the negated null map.
             auto res_column = ColumnUInt8::create(input_rows_count);
             const auto & src_data = nullable->getNullMapData();
