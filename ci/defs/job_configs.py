@@ -10,6 +10,7 @@ from ci.defs.defs import (
     LLVM_FT_NUM_BATCHES,
     LLVM_FT_S3_DB_REPL_NUM_BATCHES,
     LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_S3_PARALLEL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -150,13 +151,14 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
-# The Darwin fast test additionally consumes the Darwin skip list and its wrapper
-# script, so changes to either must schedule the job (the shared digest above does
-# not cover them).
+# The Darwin fast test additionally consumes its wrapper script, so changes to it
+# must schedule the job (the shared digest above does not cover it).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=fast_test_digest_config.include_paths
-    + ["./ci/defs/darwin.skip", "./ci/jobs/scripts/fast_test_darwin.sh"],
+    + ["./ci/jobs/scripts/fast_test_darwin.sh"],
 )
+
+TIDY_SHARDS = 4
 
 common_build_job_config = Job.Config(
     name=JobNames.BUILD,
@@ -183,6 +185,7 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/seaweedfs_service.py",
             # clickhouse_proc.py's "No such key" check runs this script, and so does
             # check_logs_for_critical_errors in tests/docker_scripts/stress_tests.lib.
             "./ci/jobs/scripts/s3_key_lifecycle.py",
@@ -352,12 +355,18 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
         ),
     )
+    # The clang-tidy build does not link anything, so its object files are split
+    # across independent shards, see `write_tidy_shard_targets` in `build_clickhouse.py`.
     tidy_build_arm_jobs = common_build_job_config.parametrize(
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_TIDY,
-            provides=[],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"{BuildTypes.ARM_TIDY}, {i}/{TIDY_SHARDS}",
+                command=f'python3 ./ci/jobs/build_clickhouse.py --build-type "{BuildTypes.ARM_TIDY}" --shard {i}/{TIDY_SHARDS}',
+                provides=[],
+                runs_on=RunnerLabels.ARM_LARGE,
+            )
+            for i in range(1, TIDY_SHARDS + 1)
+        ]
     )
     tidy_build_amd_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
@@ -622,14 +631,14 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.AMD_FUZZERS,
+            parameter=BuildTypes.ARM_FUZZERS,
             provides=[],
-            # The target arch comes from the toolchain file, not from the host, so this
-            # cross-compiles on arm like every other Linux `amd_*` build. It has to: the
-            # ~18 fuzzers each statically link the whole of ClickHouse with its own copy
-            # of the ASan+debug DWARF, ~94 GiB of build output, which does not fit in the
-            # ~135 GiB free on `amd-large` (`m7i.8xlarge`) and dies linking one of the
-            # last targets. Only the job that *runs* the binaries needs an amd64 host.
+            # Targets aarch64: each fuzzer statically links all of ClickHouse with ASan
+            # and SanitizerCoverage, and that image's allocated sections already exceed
+            # 2 GiB - out of reach of x86-64's 32-bit displacements, which lld cannot
+            # repair with thunks, while aarch64 addresses +-4 GiB and does thunk calls.
+            # The ~94 GiB of build output also does not fit the ~135 GiB free on
+            # `amd-large` (`m7i.8xlarge`).
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -650,7 +659,7 @@ class JobConfigs:
                     with_git_submodules=True,
                 )
             )
-            if job.parameter == BuildTypes.AMD_FUZZERS
+            if job.parameter == BuildTypes.ARM_FUZZERS
             else job
         )
         for job in special_build_jobs
@@ -922,24 +931,36 @@ class JobConfigs:
             for total_batches in (LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel"],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, ParallelReplicas, s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[
+                    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel_{batch}"
+                ],
+            )
+            for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
             provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential"],
         ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel"],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, AsyncInsert, s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[
+                    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel_{batch}"
+                ],
+            )
+            for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
@@ -1324,7 +1345,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
-            for total_batches in (6,)
+            for total_batches in (8,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -1438,6 +1459,65 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_BINARY],
             ),
+        )
+    )
+
+    # Pull requests run the LLVM coverage jobs only with the `ci-coverage` label. By default they
+    # run the same configurations on the `arm_binary` build instead, which is several times faster
+    # than the coverage build and randomizes settings and runs `long` tests, which the coverage runs
+    # do not. The plain coverage batches and `excluded_from_llvm` need no replacement: the full
+    # `arm_binary, parallel`/`sequential` stateless jobs already run the whole suite. The parallel
+    # jobs use the same runner shape as the coverage jobs (16 vCPU, 64 GiB): with 32 vCPU and the
+    # same memory, the stateful data load and the doubled test concurrency exceed the memory limits.
+    functional_tests_arm_binary_coverage_replacement_pr_jobs = common_ft_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"arm_binary, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_MEDIUM,
+                requires=[ArtifactNames.CH_ARM_BINARY],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+        Job.ParamSet(
+            parameter="arm_binary, s3 storage, DBReplicated, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, AsyncInsert, s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, AsyncInsert, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+    )
+    # The same for the full integration run: all test modules, including the ones the coverage
+    # run leaves to `excluded_from_llvm`.
+    integration_test_arm_binary_coverage_replacement_pr_jobs = (
+        common_integration_test_job_config.parametrize(
+            *[
+                Job.ParamSet(
+                    parameter=f"arm_binary, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.ARM_MEDIUM,
+                    requires=[ArtifactNames.CH_ARM_BINARY],
+                )
+                for total_batches in (4,)
+                for batch in range(1, total_batches + 1)
+            ],
         )
     )
 
@@ -1638,12 +1718,16 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
                 # Both servers export their system logs to the CI Logs cluster
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./tests/config/users.d/ci_logs_sender.yaml",
+                # Provisions the job-local S3 endpoint (ci/jobs/scripts/perf/s3_service.py)
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             ],
         ),
         timeout=2 * 3600,
@@ -1679,12 +1763,16 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
                 # Both servers export their system logs to the CI Logs cluster
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./tests/config/users.d/ci_logs_sender.yaml",
+                # Provisions the job-local S3 endpoint (ci/jobs/scripts/perf/s3_service.py)
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             ],
         ),
         timeout=2 * 3600,
@@ -1962,7 +2050,7 @@ class JobConfigs:
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.AMD_MEDIUM,
+        runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         # Five hours of fuzzing per target, all targets in parallel, plus
         # artifact download and corpus upload. Praktika's default is exactly
@@ -1972,9 +2060,9 @@ class JobConfigs:
         # from the actual set of functions, data types and keywords. It has to be the
         # binary for the arch this job runs the fuzzers on.
         requires=[
-            ArtifactNames.AMD_FUZZERS,
+            ArtifactNames.ARM_FUZZERS,
             ArtifactNames.FUZZERS_CORPUS,
-            ArtifactNames.CH_AMD_RELEASE,
+            ArtifactNames.CH_ARM_RELEASE,
         ],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -1991,12 +2079,12 @@ class JobConfigs:
     )
     libfuzzer_corpus_minimization_job = Job.Config(
         name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
-        runs_on=RunnerLabels.AMD_MEDIUM,
+        runs_on=RunnerLabels.ARM_MEDIUM,
         command=(
             "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
             "'libFuzzer corpus minimization'"
         ),
-        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
@@ -2014,6 +2102,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/collect_clickhouse_profiles.py",
                 "./ci/jobs/scripts/server_cleanup.py",
+                # Classifies tests (needs-S3 / shell-query) for the skip decisions
+                "./ci/jobs/scripts/perf/test_discovery.py",
                 "./cmake/profile_optimization.cmake",
                 "./tests/performance/",
             ],

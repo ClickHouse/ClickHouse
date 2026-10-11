@@ -71,6 +71,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ReadBufferFromFileDescriptorRead` ([UInt64](/reference/data-types/int-uint)) — Number of reads (read/pread) from a file descriptor. Does not include sockets.
 - `ProfileEvent_ReadBufferFromFileDescriptorReadFailed` ([UInt64](/reference/data-types/int-uint)) — Number of times the read (read/pread) from a file descriptor have failed.
 - `ProfileEvent_ReadBufferFromFileDescriptorReadBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes read from file descriptors. If the file is compressed, this will show the compressed data size.
+- `ProfileEvent_ReadBufferFromFileDescriptorPageCacheHitBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes read from file descriptors with the synchronous `pread` that were detected to be served from the OS page cache (this is done only for the reads with a bandwidth throttler).
 - `ProfileEvent_WriteBufferFromFileDescriptorWrite` ([UInt64](/reference/data-types/int-uint)) — Number of writes (write/pwrite) to a file descriptor. Does not include sockets.
 - `ProfileEvent_WriteBufferFromFileDescriptorWriteFailed` ([UInt64](/reference/data-types/int-uint)) — Number of times the write (write/pwrite) to a file descriptor have failed.
 - `ProfileEvent_WriteBufferFromFileDescriptorWriteBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.
@@ -182,10 +183,11 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_TextIndexLazySegmentsBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of segments actually read and decoded (cache misses) in lazy posting list mode.
 - `ProfileEvent_TextIndexLazyBruteForceIntersections` ([UInt64](/reference/data-types/int-uint)) — Number of brute-force intersections performed in lazy posting list mode.
 - `ProfileEvent_TextIndexLazyLeapfrogIntersections` ([UInt64](/reference/data-types/int-uint)) — Number of leapfrog intersections performed in lazy posting list mode.
-- `ProfileEvent_TextIndexLazyBruteForceEarlyExits` ([UInt64](/reference/data-types/int-uint)) — Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.
+- `ProfileEvent_TextIndexLazyBruteForceEarlyExits` ([UInt64](/reference/data-types/int-uint)) — Number of brute-force intersections in lazy posting list mode that stopped early because no row of the window was left in all the posting lists applied so far, so the intersection is empty.
 - `ProfileEvent_TextIndexLazySegmentsSkippedDense` ([UInt64](/reference/data-types/int-uint)) — Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.
-- `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
-- `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+- `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of segments skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
+- `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
+- `ProfileEvent_TextIndexLazyBlocksSkippedDense` ([UInt64](/reference/data-types/int-uint)) — Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.
 - `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/reference/data-types/int-uint)) — Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.
 - `ProfileEvent_TextIndexPatternBypassCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 - `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search algorithm is used over the text index.
@@ -194,9 +196,13 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.
 - `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times encryption header bytes were found in the encryption header cache, so the source read of the header was skipped.
 - `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times encryption header bytes were not found in the encryption header cache, so they were read from the source.
-- `ProfileEvent_QueryCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.
-- `ProfileEvent_QueryCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.
-- `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/reference/data-types/int-uint)) — The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.
+- `ProfileEvent_QueryCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a query result has been found in the query cache (and query computation was avoided). Counts the query cache as a whole: a miss in memory followed by a hit in the query cache on disk is one hit. Only updated for SELECT queries with SETTING use_query_cache = 1.
+- `ProfileEvent_QueryCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times a query result has not been found in the query cache (and required query computation). Counts the query cache as a whole: a query is a miss only if it was found in neither the in-memory nor the on-disk backend. Only updated for SELECT queries with SETTING use_query_cache = 1.
+- `ProfileEvent_QueryCacheOnDiskHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a query result has been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheHits. Only updated for SELECT queries with SETTING use_query_cache = 1.
+- `ProfileEvent_QueryCacheOnDiskMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times a query result has not been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheMisses. Only updated for SELECT queries with SETTING use_query_cache = 1.
+- `ProfileEvent_QueryCacheOnDiskReadBytes` ([UInt64](/reference/data-types/int-uint)) — Number of serialized (compressed) bytes read from the query cache on disk.
+- `ProfileEvent_QueryCacheOnDiskWrittenBytes` ([UInt64](/reference/data-types/int-uint)) — Number of serialized (compressed) bytes written into the query cache on disk.
+- `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/reference/data-types/int-uint)) — The sum of ages of found query cache entries in seconds. Only updated for hits, of both the in-memory and the on-disk backend of the query cache.
 - `ProfileEvent_QueryCacheReadRows` ([UInt64](/reference/data-types/int-uint)) — The number of rows read from the query cache.
 - `ProfileEvent_QueryCacheReadBytes` ([UInt64](/reference/data-types/int-uint)) — The number of (uncompressed) bytes read from the query cache.
 - `ProfileEvent_QueryCacheWrittenRows` ([UInt64](/reference/data-types/int-uint)) — The number of rows saved into the query cache.
@@ -457,6 +463,11 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ExternalDistinctTailKeptRows` ([UInt64](/reference/data-types/int-uint)) — Number of buffered rows retained in memory for the final external DISTINCT merge.
 - `ProfileEvent_ExternalDistinctCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for DISTINCT in external memory.
 - `ProfileEvent_ExternalDistinctUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for DISTINCT in external memory.
+- `ProfileEvent_ExternalSetWritePart` ([UInt64](/reference/data-types/int-uint)) — Number of times a temporary file was written to disk for an `IN` set in external memory.
+- `ProfileEvent_ExternalSetMerge` ([UInt64](/reference/data-types/int-uint)) — Number of times temporary files were merged for an `IN` set in external memory.
+- `ProfileEvent_ExternalSetCompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of compressed bytes written for `IN` sets in external memory.
+- `ProfileEvent_ExternalSetUncompressedBytes` ([UInt64](/reference/data-types/int-uint)) — Amount of data (uncompressed, before compression) written for `IN` sets in external memory.
+- `ProfileEvent_ExternalSetReadBlocks` ([UInt64](/reference/data-types/int-uint)) — Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.
 - `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of skipped files during Iceberg partition pruning
 - `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/reference/data-types/int-uint)) — Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list
 - `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/reference/data-types/int-uint)) — Trivial count optimization applied while reading from Iceberg
@@ -467,6 +478,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_JoinResultRowCount` ([UInt64](/reference/data-types/int-uint)) — Total number of rows in the result of a JOIN operation.
 - `ProfileEvent_JoinNonJoinedTransformBlockCount` ([UInt64](/reference/data-types/int-uint)) — Number of blocks emitted by NonJoinedBlocksTransform.
 - `ProfileEvent_JoinNonJoinedTransformRowCount` ([UInt64](/reference/data-types/int-uint)) — Number of non-joined rows emitted by NonJoinedBlocksTransform.
+- `ProfileEvent_JoinNonJoinedHashTableScans` ([UInt64](/reference/data-types/int-uint)) — Number of times a RIGHT or FULL hash join scanned its hash table for non-joined rows.
+- `ProfileEvent_JoinNonJoinedHashTableScansSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.
 - `ProfileEvent_JoinDelayedJoinedTransformBlockCount` ([UInt64](/reference/data-types/int-uint)) — Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.
 - `ProfileEvent_JoinDelayedJoinedTransformRowCount` ([UInt64](/reference/data-types/int-uint)) — Number of rows emitted by DelayedJoinedBlocksWorkerTransform.
 - `ProfileEvent_JoinSpillingHashJoinSwitchedToGraceJoin` ([UInt64](/reference/data-types/int-uint)) — Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
@@ -499,6 +512,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_SelectedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.
 - `ProfileEvent_RowsReadByMainReader` ([UInt64](/reference/data-types/int-uint)) — Number of rows read from MergeTree tables by the main reader (after PREWHERE step).
 - `ProfileEvent_RowsReadByPrewhereReaders` ([UInt64](/reference/data-types/int-uint)) — Number of rows read from MergeTree tables (in total) by prewhere readers.
+- `ProfileEvent_StringValueFilterValuesChecked` ([UInt64](/reference/data-types/int-uint)) — Number of string values checked during a scan against a filter extracted from a substring search condition in PREWHERE.
+- `ProfileEvent_StringValueFilterValuesReplaced` ([UInt64](/reference/data-types/int-uint)) — Number of non-matching string values replaced with empty strings during a scan by a filter extracted from a substring search condition in PREWHERE.
+- `ProfileEvent_StringValueFilterBytesSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of bytes of non-matching string values that were not copied into a column during a scan due to a filter extracted from a substring search condition in PREWHERE.
 - `ProfileEvent_LoadedDataParts` ([UInt64](/reference/data-types/int-uint)) — Number of data parts loaded by MergeTree tables during initialization.
 - `ProfileEvent_LoadedDataPartsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Microseconds spent by MergeTree tables for loading data parts during initialization.
 - `ProfileEvent_FilteringMarksWithPrimaryKeyProcessedMarks` ([UInt64](/reference/data-types/int-uint)) — Total marks processed during PK analysis.
@@ -519,6 +535,10 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_MarkCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from the mark cache.
 - `ProfileEvent_MarkCacheEvictedMarks` ([UInt64](/reference/data-types/int-uint)) — Number of marks evicted from the mark cache.
 - `ProfileEvent_MarkCacheEvictedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of mark files evicted from the mark cache.
+- `ProfileEvent_ColumnsCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a deserialized column was found in the columns cache.
+- `ProfileEvent_ColumnsCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times a deserialized column was not found in the columns cache.
+- `ProfileEvent_ColumnsCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from the columns cache.
+- `ProfileEvent_ColumnsCacheEvictedEntries` ([UInt64](/reference/data-types/int-uint)) — Number of entries evicted from the columns cache.
 - `ProfileEvent_LoadedPrimaryIndexFiles` ([UInt64](/reference/data-types/int-uint)) — Number of primary index files loaded.
 - `ProfileEvent_LoadedPrimaryIndexRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows of primary key loaded.
 - `ProfileEvent_LoadedPrimaryIndexBytes` ([UInt64](/reference/data-types/int-uint)) — Number of rows of primary key loaded.
@@ -804,6 +824,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/reference/data-types/int-uint)) — Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.
 - `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/reference/data-types/int-uint)) — Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.
 - `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/reference/data-types/int-uint)) — Number of the 'plain_rewritable' disks with legacy layout.
+- `ProfileEvent_DiskPlainRewritableOrphanedObjectsRemoved` ([UInt64](/reference/data-types/int-uint)) — Number of objects deleted by the 'plain_rewritable' metadata storage while loading, because they were left by removals that a previous server process had committed but not finished (for example, it was killed during DROP TABLE).
 - `ProfileEvent_DiskPlainRewritableUndoStageRetries` ([UInt64](/reference/data-types/int-uint)) — Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.
 - `ProfileEvent_MetadataTransactionRollbacks` ([UInt64](/reference/data-types/int-uint)) — Number of metadata transactions that failed to commit and were rolled back.
 - `ProfileEvent_MetadataTransactionRollbacksFailed` ([UInt64](/reference/data-types/int-uint)) — Number of metadata transaction rollbacks that did not run to completion, so the metadata keeps a part of a transaction that was reported as failed.
@@ -814,6 +835,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_ReadBufferFromS3InitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent initializing connection to S3.
 - `ProfileEvent_ReadBufferFromS3Bytes` ([UInt64](/reference/data-types/int-uint)) — Bytes read from S3.
 - `ProfileEvent_ReadBufferFromS3RequestsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions while reading from S3.
+- `ProfileEvent_ReadBufferFromS3RequestsCut` ([UInt64](/reference/data-types/int-uint)) — Number of requests from S3 disks cut to one buffer fill because the connection group of the disks was at or above `disk_connections_soft_limit`.
 - `ProfileEvent_WriteBufferFromS3Microseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent on writing to S3.
 - `ProfileEvent_WriteBufferFromS3Bytes` ([UInt64](/reference/data-types/int-uint)) — Bytes written to S3.
 - `ProfileEvent_WriteBufferFromS3RequestsErrors` ([UInt64](/reference/data-types/int-uint)) — Number of exceptions while writing to S3.
@@ -886,7 +908,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_FilesystemCacheStateLockMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Lock filesystem cache time for state lock
 - `ProfileEvent_FilesystemCacheReserveMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache space reservation time
 - `ProfileEvent_FilesystemCacheReserveAttempts` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache space reservation attempt
-- `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/reference/data-types/int-uint)) — Number of failed file cache space reservation attempts.
+- `ProfileEvent_FilesystemCacheReserveAheadRetries` ([UInt64](/reference/data-types/int-uint)) — Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size
+- `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/reference/data-types/int-uint)) — Number of failed file cache space reservation attempts, including reserve-ahead attempts that were retried with the exact size (see FilesystemCacheReserveAheadRetries).
 - `ProfileEvent_FilesystemCacheEvictMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache eviction time
 - `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache getOrSet() time
 - `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache get() time
@@ -984,6 +1007,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_AggregationTopKKeysEvicted` ([UInt64](/reference/data-types/int-uint)) — How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).
 - `ProfileEvent_AggregationTopKKeysPruned` ([UInt64](/reference/data-types/int-uint)) — How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.
 - `ProfileEvent_AggregationTopKHeapsFrozen` ([UInt64](/reference/data-types/int-uint)) — How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).
+- `ProfileEvent_TopKGranulesSkippedByPrimaryKey` ([UInt64](/reference/data-types/int-uint)) — Number of granules skipped while reading because the primary index shows that all their rows lie beyond the running top-K threshold, published by the aggregation (see `enable_group_by_top_k_dynamic_filtering`) or by the sorting (see `use_top_k_dynamic_filtering`).
 - `ProfileEvent_DistinctTransformsAbandonedDeduplication` ([UInt64](/reference/data-types/int-uint)) — How many deduplication transforms dropped their hash table and stopped deduplicating because the observed input was almost entirely unique and a consumer downstream deduplicates anyway: the preliminary `DISTINCT` (see `allow_preliminary_distinct_abandoning`) and the per-stream pre-deduplication in front of an `IN`-subquery set fill.
 - `ProfileEvent_DistinctTransformsSwitchedToPassThrough` ([UInt64](/reference/data-types/int-uint)) — How many preliminary `DISTINCT` transforms freed their hash table and started passing every row through because query memory exceeded the external `DISTINCT` threshold, or projected hashing allocations would exceed the remaining threshold budget (see `max_bytes_before_external_distinct`): the final `DISTINCT`, which spills to disk, resolves the duplicates instead.
 - `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/reference/data-types/int-uint)) — How many elements were preallocated in hash tables for hash join.
@@ -1585,7 +1609,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_JemallocFailedAllocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc allocation sample failed
 - `ProfileEvent_JemallocFailedDeallocationSampleTracking` ([UInt64](/reference/data-types/int-uint)) — Total number of times tracking of jemalloc deallocation sample failed
 - `ProfileEvent_SetsBuiltFromSubquery` ([UInt64](/reference/data-types/int-uint)) — Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.
+- `ProfileEvent_SetsSpilledToDisk` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` sets that spilled to disk while they were built from their subquery.
 - `ProfileEvent_LoadedStatisticsMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Elapsed time of loading statistics from parts
+- `ProfileEvent_LoadedStatistics` ([UInt64](/reference/data-types/int-uint)) — Number of data parts for which column statistics were loaded
 - `ProfileEvent_SelectivityEstimatorInSetNotBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it
 - `ProfileEvent_SelectivityEstimatorInSetEstimatedFromSize` ([UInt64](/reference/data-types/int-uint)) — Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`
 - `ProfileEvent_RuntimeDataflowStatisticsInputBytes` ([UInt64](/reference/data-types/int-uint)) — Collected statistics on the number of bytes replicas would read if the query was executed with parallel replicas
