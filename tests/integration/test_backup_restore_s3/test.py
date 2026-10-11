@@ -1278,6 +1278,136 @@ def test_backup_restore_s3_plain(cluster):
     instance.query("DROP TABLE sample_restored SYNC")
 
 
+def test_backup_restore_s3_plain_backup_metadata_only(cluster):
+    # A table on a storage policy marked `backup_metadata_only` keeps its data on the storage: `BACKUP` stores only its
+    # metadata, and `RESTORE` recreates it with its UUID from the backup, so it finds its data on the storage again.
+    # The inner table of a materialized view is backed up and restored through the view, and it is covered too.
+    instance = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    policy = "policy_s3_plain_backup_metadata_only"
+
+    instance.query(
+        """
+        DROP TABLE IF EXISTS sample SYNC;
+        DROP TABLE IF EXISTS mv SYNC;
+        DROP TABLE IF EXISTS src SYNC;
+        CREATE TABLE sample (key Int, value String) ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
+        AS SELECT number, concat('name_', toString(number)) FROM numbers(100);
+        CREATE TABLE src (key Int) ENGINE = Null;
+        CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY key AS SELECT key FROM src;
+        INSERT INTO src SELECT number FROM numbers(10);
+        """
+    )
+
+    def get_uuid(table):
+        return instance.query(
+            f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{table}'"
+        ).strip()
+
+    sample_uuid = get_uuid("sample")
+    mv_uuid = get_uuid("mv")
+    inner_uuid = get_uuid(f".inner_id.{mv_uuid}")
+
+    # Copy the parts to the read-only plain disk, where a table with the same UUID finds them.
+    minio = cluster.minio_client
+    for table_uuid in [sample_uuid, inner_uuid]:
+        table_data_path = (
+            instance.query(f"SELECT data_paths[1] FROM system.tables WHERE uuid = '{table_uuid}'")
+            .strip()
+            .replace("/var/lib/clickhouse/", "")
+            .strip("/")
+        )
+        remote_blob_path = f"data/disks/disk_s3_plain/{table_data_path}"
+        remove_directory(minio, cluster.minio_bucket, remote_blob_path)
+        upload_directory(
+            minio,
+            cluster.minio_bucket,
+            os.path.join(instance.path, "database", table_data_path),
+            remote_blob_path,
+            use_relpath=True,
+        )
+
+    instance.query(
+        f"""
+        DROP TABLE sample SYNC;
+        DROP TABLE mv SYNC;
+        ATTACH TABLE sample UUID '{sample_uuid}' (key Int, value String) ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
+        SETTINGS storage_policy = '{policy}';
+        ATTACH TABLE `.inner_id.{mv_uuid}` UUID '{inner_uuid}' (key Int) ENGINE = MergeTree ORDER BY key
+        SETTINGS storage_policy = '{policy}', index_granularity = 8192;
+        ATTACH MATERIALIZED VIEW mv UUID '{mv_uuid}' TO INNER UUID '{inner_uuid}' (key Int) ENGINE = MergeTree ORDER BY key
+        SETTINGS storage_policy = '{policy}', index_granularity = 8192 AS SELECT key FROM src;
+        """
+    )
+    assert instance.query("SELECT count() FROM sample") == "100\n"
+    assert instance.query("SELECT count() FROM mv") == "10\n"
+
+    instance.query(f"BACKUP TABLE sample, TABLE mv TO {backup_destination}")
+
+    # The backup has the definitions of the tables, but none of their data.
+    backup_manifest = (
+        minio.get_object(cluster.minio_bucket, f"data/backups/{backup_name}/.backup").read().decode()
+    )
+    assert "<name>metadata/default/sample.sql</name>" in backup_manifest, backup_manifest
+    assert "<name>data/" not in backup_manifest, backup_manifest
+
+    # Only the definition is backed up, so a backup of some partitions would restore as the whole table.
+    err = instance.query_and_get_error(
+        f"BACKUP TABLE sample PARTITIONS 0 TO S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
+    )
+    assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
+
+    # The restored table keeps its UUID, so it can't be restored next to the source table.
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample AS sample_copy FROM {backup_destination}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and "already has this UUID" in err, err
+
+    instance.query("DROP TABLE sample SYNC")
+    instance.query("DROP TABLE mv SYNC")
+
+    # The table shows all the data of its storage, so a partition filter can't be applied.
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample PARTITIONS 0 FROM {backup_destination}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and "partition filter cannot be applied" in err, err
+    instance.query("DROP TABLE IF EXISTS sample SYNC")
+
+    # A table in an `Ordinary` database has no UUID: its data would be under a path derived from its name.
+    instance.query(
+        "CREATE DATABASE ordinary_db ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample AS ordinary_db.sample FROM {backup_destination}"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and "its database doesn't give tables UUIDs" in err, err
+    instance.query("DROP DATABASE ordinary_db SYNC")
+
+    # An existing table with another UUID doesn't see the data of the table from the backup.
+    instance.query(
+        f"""
+        ATTACH TABLE sample UUID '{uuid.uuid4()}' (key Int, value String) ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
+        SETTINGS storage_policy = '{policy}'
+        """
+    )
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample FROM {backup_destination} SETTINGS create_table = 'must-exist'"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and f"must have its UUID {sample_uuid}" in err, err
+    instance.query("DROP TABLE sample SYNC")
+
+    instance.query(f"RESTORE TABLE sample, TABLE mv FROM {backup_destination}")
+    assert get_uuid("sample") == sample_uuid
+    assert instance.query("SELECT count(), sum(key) FROM sample") == "100\t4950\n"
+    assert instance.query("SELECT count(), sum(key) FROM mv") == "10\t45\n"
+
+    instance.query("DROP TABLE sample SYNC")
+    instance.query("DROP TABLE mv SYNC")
+    instance.query("DROP TABLE src SYNC")
+
+
 @pytest.mark.parametrize(
     "to_disk",
     [

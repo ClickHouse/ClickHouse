@@ -3,11 +3,25 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Disks/IStoragePolicy.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Common/typeid_cast.h>
 
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+}
 
 namespace DB::BackupUtils
 {
@@ -147,6 +161,82 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
 {
     /// We skip inner tables of materialized views. They're backed up by StorageMaterializedView.
     return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
+}
+
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context)
+{
+    /// The storages that keep the data of `storage`.
+    std::vector<StoragePtr> data_storages;
+    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        if (materialized_view->hasInnerTable())
+        {
+            if (auto target = materialized_view->tryGetTargetTable())
+                data_storages.push_back(target);
+        }
+    }
+    else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
+    {
+        for (auto target_kind : StorageTimeSeries::getTargetKinds())
+        {
+            if (time_series->isInnerTable(target_kind))
+            {
+                if (auto target = time_series->tryGetTargetTable(target_kind, context))
+                    data_storages.push_back(target);
+            }
+        }
+    }
+    else
+    {
+        data_storages.push_back(storage);
+    }
+
+    size_t num_on_backup_metadata_only_policy = 0;
+    for (const auto & data_storage : data_storages)
+    {
+        auto policy = data_storage->getStoragePolicy();
+        if (policy && policy->isBackupMetadataOnly())
+            ++num_on_backup_metadata_only_policy;
+    }
+
+    if (num_on_backup_metadata_only_policy && num_on_backup_metadata_only_policy != data_storages.size())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Some inner tables of {} are on a storage policy marked backup_metadata_only and some are not, "
+            "BACKUP and RESTORE of such a table are not supported",
+            storage->getStorageID().getNameForLogs());
+
+    return num_on_backup_metadata_only_policy != 0;
+}
+
+bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
+{
+    auto is_on_backup_metadata_only_policy = [&](const ASTStorage * storage)
+    {
+        if (!storage || !storage->engine)
+            return false;
+
+        /// An unknown engine is reported by `CREATE`.
+        const auto & storages = StorageFactory::instance().getAllStorages();
+        auto it = storages.find(storage->engine->name);
+        if (it == storages.end() || !it->second.features.get_storage_policy_fn)
+            return false;
+
+        auto policy = it->second.features.get_storage_policy_fn(*storage, context);
+        return policy && policy->isBackupMetadataOnly();
+    };
+
+    if (is_on_backup_metadata_only_policy(create_query.storage))
+        return true;
+
+    if (create_query.targets)
+    {
+        for (const auto * inner_engine : create_query.targets->getInnerEngines())
+            if (is_on_backup_metadata_only_policy(inner_engine))
+                return true;
+    }
+
+    return false;
 }
 
 }

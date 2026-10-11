@@ -2,12 +2,14 @@
 
 #include <Parsers/ASTBackupQuery.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace DB
 {
 class IBackup;
 class AccessRightsElements;
+class ASTCreateQuery;
 class DDLRenamingMap;
 struct QualifiedTableName;
 
@@ -27,6 +29,18 @@ bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, con
 /// Returns true if this table should be skipped while making a backup because it's an inner table.
 bool isInnerTable(const QualifiedTableName & table_name);
 bool isInnerTable(const String & database_name, const String & table_name);
+
+/// A table on a storage policy marked `backup_metadata_only` gets its data from the storage itself, e.g. a shared
+/// read-only dataset: `BACKUP` stores only the definition of the table, and `RESTORE` recreates the table with its UUID
+/// from the backup, because the data is on the storage under a path derived from the UUID, and doesn't restore data.
+
+/// Whether the data of `storage` is on storage policies marked `backup_metadata_only`. The data of a materialized view
+/// or a `TimeSeries` table is in its inner tables. Throws if only a part of the data is on such policies.
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context);
+
+/// Whether a table created by `create_query`, or one of the inner tables of the view it creates, is on a storage policy
+/// marked `backup_metadata_only`.
+bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context);
 
 }
 

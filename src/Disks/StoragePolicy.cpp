@@ -117,6 +117,20 @@ StoragePolicy::StoragePolicy(
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
                         move_factor, backQuote(name));
 
+    /// The data of a table on such a policy is not backed up, so it must come from the storage, not from writes to it.
+    backup_metadata_only = config.getBool(config_prefix + ".backup_metadata_only", false);
+    if (backup_metadata_only)
+    {
+        for (const auto & volume : volumes)
+        {
+            if (!volume->isReadOnly())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                "Storage policy {} is marked backup_metadata_only, but its volume {} is not read-only, "
+                                "so BACKUP would leave out the data written to it",
+                                backQuote(name), backQuote(volume->getName()));
+        }
+    }
+
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }

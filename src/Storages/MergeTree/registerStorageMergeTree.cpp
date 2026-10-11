@@ -1269,6 +1269,22 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
+/// Resolves the storage policy the way `create` does: the `storage_policy` setting, otherwise the default one of the engine.
+template <bool replicated>
+static StoragePolicyPtr getStoragePolicy(const ASTStorage & storage_def, const ContextPtr & context)
+{
+    const auto * changes = storage_def.settings ? &storage_def.settings->changes : nullptr;
+    if (const auto * storage_policy = changes ? changes->tryGet("storage_policy") : nullptr)
+        return context->getStoragePolicy(storage_policy->safeGet<String>());
+
+    /// A table with the `disk` setting gets a policy of its own, which can only be resolved by creating the table.
+    if (changes && changes->tryGet("disk"))
+        return nullptr;
+
+    const auto & default_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
+    return context->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
+}
+
 void registerStorageMergeTree(StorageFactory & factory);
 void registerStorageMergeTree(StorageFactory & factory)
 {
@@ -1281,6 +1297,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
+        .get_storage_policy_fn = getStoragePolicy<false>,
     };
 
     factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
@@ -2265,6 +2282,7 @@ Tags:
 - `disk` — a disk within a volume.
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
+- `backup_metadata_only` — the data of tables on this policy is provided by the storage itself, e.g. a shared read-only dataset (by default, `false`). All volumes of the policy must be read-only. `BACKUP` stores only the definitions of such tables, and `RESTORE` recreates them without restoring data and keeps their UUIDs from the backup, so that they find their data on the storage again. `RESTORE` of specific partitions of such a table fails.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
@@ -4406,6 +4424,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
+    features.get_storage_policy_fn = getStoragePolicy<true>;
 
     factory.registerStorage("ReplicatedMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(

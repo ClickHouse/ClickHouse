@@ -111,6 +111,7 @@ namespace
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
     }
+
  }
 
 
@@ -871,9 +872,29 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 "as a mount, or restore the selected partitions without mount_readonly_parts_from_snapshot.");
 #endif
 
-        /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
-        /// The generated UUID will be ignored if the database does not support UUIDs.
-        restore_coordination->generateUUIDForTable(*create_table_query);
+        if (create_table_query->uuid != UUIDHelpers::Nil && BackupUtils::isCreatedOnBackupMetadataOnlyStoragePolicy(*create_table_query, context))
+        {
+            /// `RESTORE` doesn't restore the data of a table on a `backup_metadata_only` storage policy, the table finds it on
+            /// its storage under a path derived from its UUID. So the table keeps the UUID it has in the backup.
+            auto existing_table = DatabaseCatalog::instance().tryGetByUUID(create_table_query->uuid).second;
+            if (existing_table)
+            {
+                auto existing_table_id = existing_table->getStorageID();
+                if (existing_table_id.database_name != table_name.database || existing_table_id.table_name != table_name.table)
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "The table is on a storage policy marked backup_metadata_only, so it keeps its UUID {} from the backup "
+                        "to find its data on the storage, but table {} already has this UUID",
+                        toString(create_table_query->uuid),
+                        existing_table_id.getNameForLogs());
+            }
+        }
+        else
+        {
+            /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
+            /// The generated UUID will be ignored if the database does not support UUIDs.
+            restore_coordination->generateUUIDForTable(*create_table_query);
+        }
 
         /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
         create_table_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
@@ -1048,17 +1069,62 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     StoragePtr storage;
     String data_path_in_backup;
     std::optional<ASTs> partitions;
+    UUID uuid_in_backup = UUIDHelpers::Nil;
     {
         std::lock_guard lock{mutex};
         auto & table_info = table_infos.at(table_name);
         storage = table_info.storage;
         data_path_in_backup = table_info.data_path_in_backup;
         partitions = table_info.partitions;
+        if (const auto * create_table_query = table_info.create_table_query ? table_info.create_table_query->as<ASTCreateQuery>() : nullptr)
+            uuid_in_backup = create_table_query->uuid;
+    }
+
+    if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context))
+    {
+        skipTableDataOnBackupMetadataOnlyStoragePolicy(table_name, storage, partitions, uuid_in_backup);
+        return;
     }
 
     schedule(
         [this, table_name, storage, data_path_in_backup, partitions]() { insertDataToTableImpl(table_name, storage, data_path_in_backup, partitions); },
         ThreadName::RESTORE_TABLE_DATA);
+}
+
+void RestorerFromBackup::skipTableDataOnBackupMetadataOnlyStoragePolicy(
+    const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions, const UUID & uuid_in_backup) const
+{
+    if (partitions)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore specific partitions of {}: it is on a storage policy marked backup_metadata_only, so it shows "
+            "all the data of its storage and the partition filter cannot be applied",
+            tableNameWithTypeToString(table_name.database, table_name.table, false));
+
+    /// The table finds its data on the storage under a path derived from its UUID, so it must keep its UUID from the backup.
+    /// `createTable` keeps it when it sees the policy in the definition of the table, this catches the cases it doesn't.
+    /// A table without a UUID, e.g. in an `Ordinary` database, keeps its data under a path derived from its name, which
+    /// `RESTORE ... AS` or a restore into another database changes, so it is refused too.
+    auto uuid = storage->getStorageID().uuid;
+    if (uuid == UUIDHelpers::Nil || uuid_in_backup == UUIDHelpers::Nil)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it must "
+            "have its UUID from the backup to find the data on the storage, but {}",
+            tableNameWithTypeToString(table_name.database, table_name.table, false),
+            uuid == UUIDHelpers::Nil ? "its database doesn't give tables UUIDs" : "the backup records no UUID for it");
+
+    if (uuid != uuid_in_backup)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it must "
+            "have its UUID {} from the backup to find the data on the storage, but it has UUID {}",
+            tableNameWithTypeToString(table_name.database, table_name.table, false),
+            toString(uuid_in_backup),
+            toString(uuid));
+
+    LOG_INFO(log, "Not restoring the data of {}: it is on a storage policy marked backup_metadata_only",
+        tableNameWithTypeToString(table_name.database, table_name.table, false));
 }
 
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

@@ -35,6 +35,9 @@ public:
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
 
+    /// The storage policy a table created with `storage_def` would keep its data on, without creating the table.
+    using GetStoragePolicyFn = StoragePolicyPtr(const ASTStorage & storage_def, const ContextPtr & context);
+
     struct Arguments
     {
         const String & engine_name;
@@ -83,6 +86,8 @@ public:
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
+        /// Null if the engine doesn't keep its data on a storage policy.
+        GetStoragePolicyFn * get_storage_policy_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -122,6 +127,7 @@ public:
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
+        .get_storage_policy_fn = nullptr,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const

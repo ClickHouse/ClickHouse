@@ -50,6 +50,8 @@ public:
     /// Get free space from most free disk
     UInt64 getMaxUnreservedFreeSpace() const override;
 
+    bool isBackupMetadataOnly() const override { return backup_metadata_only; }
+
     const String & getName() const override{ return name; }
 
     /// Returns valid reservation or nullptr
@@ -100,6 +102,8 @@ private:
     /// We move something if disk from this policy
     /// filled more than total_size * move_factor
     double move_factor = 0.1; /// by default move factor is 10%
+
+    bool backup_metadata_only = false;
 
     void buildVolumeIndices();
 
