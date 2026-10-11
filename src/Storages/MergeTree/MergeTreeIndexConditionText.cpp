@@ -1039,7 +1039,7 @@ template <bool case_insensitive>
 TextSearchQueryPtr makePhraseWordQuery(const String & function_name, const InfixPhraseWord & phrase_word)
 {
     std::vector<OptimizedRegularExpression> patterns;
-    patterns.emplace_back(Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, case_insensitive>(likePatternOf(phrase_word)));
+    patterns.emplace_back(Regexps::createRegexp</*like=*/ true, /*similar_to=*/ false, /*no_capture=*/ true, case_insensitive>(likePatternOf(phrase_word)));
     return std::make_shared<TextSearchQuery>(
         function_name, TextSearchMode::Any, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>(), std::move(patterns));
 }
