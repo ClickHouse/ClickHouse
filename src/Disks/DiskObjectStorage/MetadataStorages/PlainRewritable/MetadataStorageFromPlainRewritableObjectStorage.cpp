@@ -220,7 +220,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::isSnapshotReader() const
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataStorageFromPlainRewritableObjectStorage::tryReadSnapshotFile(
-    const LoggerPtr & log, bool skip_if_unchanged) const
+    const LoggerPtr & log, bool skip_if_unchanged, bool read_contents) const
 {
     SnapshotFileContents result;
     const auto key = layout->constructSnapshotObjectKey();
@@ -233,14 +233,27 @@ MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataSt
     }
 
     result.exists = true;
+    if (metadata->isEtagUsableAsCacheKey())
+        result.etag = metadata->etag;
 
     /// The same snapshot was already applied, there is nothing new to read.
     /// Only a strong ETag proves that: a weak or missing one may stay the same after a rewrite.
-    if (skip_if_unchanged && metadata->isEtagUsableAsCacheKey() && metadata->etag == applied_snapshot_etag)
+    if (skip_if_unchanged && !result.etag.empty() && result.etag == applied_snapshot_etag)
     {
         result.unchanged = true;
         return result;
     }
+
+    /// The state was loaded by listing the object storage while this file already existed, so applying the file would
+    /// roll the state back (e.g. after a single failed read of the file).
+    if (!result.etag.empty() && result.etag == superseded_snapshot_etag)
+    {
+        LOG_DEBUG(log, "The snapshot file '{}' is not newer than the state loaded by listing the object storage", key);
+        return result;
+    }
+
+    if (!read_contents)
+        return result;
 
     try
     {
@@ -249,8 +262,6 @@ MetadataStorageFromPlainRewritableObjectStorage::SnapshotFileContents MetadataSt
 
         auto in = object_storage->readObject(StoredObject(key, /*local_path*/ "", metadata->size_bytes), read_settings, metadata->size_bytes);
         result.layout = readPlainRewritableSnapshot(*in);
-        if (metadata->isEtagUsableAsCacheKey())
-            result.etag = metadata->etag;
         LOG_DEBUG(log, "Read the snapshot file '{}' ({} bytes) with {} directories", key, metadata->size_bytes, result.layout->size());
     }
     catch (...)
@@ -316,7 +327,7 @@ MetadataStorageFromPlainRewritableObjectStorage::readTombstoneMarkers(const Read
 }
 
 std::vector<MetadataStorageFromPlainRewritableObjectStorage::TargetReadFromBackup>
-MetadataStorageFromPlainRewritableObjectStorage::findTargetsToReadFromBackups(const LoggerPtr & log) const
+MetadataStorageFromPlainRewritableObjectStorage::findTargetsToReadFromBackups(const LoggerPtr & log, bool & has_malformed_markers) const
 {
     auto settings = getReadSettings();
     settings.enable_filesystem_cache = false;
@@ -326,6 +337,12 @@ MetadataStorageFromPlainRewritableObjectStorage::findTargetsToReadFromBackups(co
     for (const auto & [removed_name, marker_path, content] : readTombstoneMarkers(settings))
     {
         auto parsed = PlainRewritableLayout::parseTombstoneMarkerContent(content, removed_name);
+        if (parsed.kind == PlainRewritableLayout::TombstoneMarker::Kind::Malformed)
+        {
+            LOG_WARNING(log, "The marker '{}' of an unfinished operation is malformed: '{}'", marker_path, content);
+            has_malformed_markers = true;
+            continue;
+        }
         if (parsed.kind != PlainRewritableLayout::TombstoneMarker::Kind::PendingReplace)
             continue;
 
@@ -1049,6 +1066,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
     /// The writer must have the latest and precise state, which it fully controls, so it never reads the snapshot: it
     /// lists the object storage on startup and on reloads, and writes the snapshot after every change of the state.
 
+    /// The ETag of the snapshot file that a reader did not apply. The state loaded by listing is at least as fresh as it.
+    std::string snapshot_etag_to_supersede;
+
     if (isSnapshotReader())
     {
         /// The only exception from trusting the snapshot is a replacement of a file that the writer is doing right now:
@@ -1056,9 +1076,16 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
         /// target is in its backup (see `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`). Such files are read
         /// from their backups, as on a listing of the object storage. Finding them takes a listing of the markers,
         /// which is a single request, since there are no markers most of the time.
-        auto targets_read_from_backups = findTargetsToReadFromBackups(log);
+        ///
+        /// A torn marker does not tell whether it belongs to a replacement whose target was already overwritten, so then
+        /// the snapshot is not used at all: the listing of the object storage fails if anything still has its name.
+        bool has_malformed_markers = false;
+        auto targets_read_from_backups = findTargetsToReadFromBackups(log, has_malformed_markers);
 
-        auto snapshot = tryReadSnapshotFile(log, /*skip_if_unchanged=*/ targets_read_from_backups.empty() && !applied_snapshot_had_pending_replaces);
+        auto snapshot = tryReadSnapshotFile(
+            log,
+            /*skip_if_unchanged=*/ targets_read_from_backups.empty() && !applied_snapshot_had_pending_replaces && !has_malformed_markers,
+            /*read_contents=*/ !has_malformed_markers);
         if (snapshot.unchanged)
         {
             LOG_DEBUG(log, "The snapshot file did not change since it was loaded");
@@ -1094,6 +1121,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
             fs.applyLayout(std::move(*snapshot.layout), std::move(backups_of_targets));
             applied_snapshot_etag = std::move(snapshot.etag);
             applied_snapshot_had_pending_replaces = !targets_read_from_backups.empty();
+            superseded_snapshot_etag.clear();
             /// The state came from the writer: the pending replacements seen by a previous listing are no longer relevant.
             remote_directories_of_pending_replaces.clear();
             previous_refresh.restart();
@@ -1102,6 +1130,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
         }
 
         applied_snapshot_etag.clear();
+        applied_snapshot_had_pending_replaces = false;
+        snapshot_etag_to_supersede = std::move(snapshot.etag);
     }
 
     bool has_metadata = true;
@@ -1137,6 +1167,21 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
         base = getCurrentLayout();
 
     const bool empty = loadRemoteLayout(base ? &base.value() : nullptr, /*is_initial_load=*/ mode == LoadMode::Initial, log);
+
+    if (isSnapshotReader())
+        superseded_snapshot_etag = std::move(snapshot_etag_to_supersede);
+
+    /// A writer with snapshots disabled must not leave a snapshot written before (e.g. when snapshots were enabled) for the
+    /// readers: they would trust the stale state forever instead of listing the object storage.
+    if (mode == LoadMode::Initial && has_metadata && !snapshot_settings.enabled && !object_storage->isReadOnly())
+    {
+        const StoredObject snapshot_object(layout->constructSnapshotObjectKey());
+        if (object_storage->exists(snapshot_object))
+        {
+            object_storage->removeObjectIfExists(snapshot_object);
+            LOG_INFO(log, "Removed the snapshot file '{}' as snapshots are disabled", snapshot_object.remote_path);
+        }
+    }
 
     /// Publish the state for the readers. A disk without metadata gets no snapshot until the first change, to not
     /// write to a storage that is only looked at. An empty disk with metadata may have a snapshot left (e.g. it was

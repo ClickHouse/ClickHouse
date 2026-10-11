@@ -28,6 +28,11 @@
 #include <ranges>
 #include <thread>
 
+namespace DB::ErrorCodes
+{
+    extern const int NETWORK_ERROR;
+}
+
 using namespace DB;
 
 class MetadataPlainRewritableDiskTest : public testing::Test
@@ -2633,6 +2638,131 @@ TEST_F(MetadataPlainRewritableDiskTest, ReaderTrustsSnapshot)
     EXPECT_GT(reader_storage->listings, 0);
     EXPECT_TRUE(listing_reader.existsFile("A/later"));
     EXPECT_EQ(sorted(listing_reader.listDirectory("")), std::vector<std::string>({"A", "C"}));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReaderDoesNotRollBackAfterFailedSnapshotRead)
+{
+    class FailingStorage : public LocalObjectStorage
+    {
+    public:
+        using LocalObjectStorage::LocalObjectStorage;
+        mutable std::atomic<size_t> snapshot_read_failures_left = 0;
+
+        std::unique_ptr<ReadBufferFromFileBase> readObject(
+            const StoredObject & object, const ReadSettings & settings, std::optional<size_t> hint,
+            bool external_buffer, bool restrict_seek) const override
+        {
+            if (object.remote_path.ends_with("/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME) && snapshot_read_failures_left > 0)
+            {
+                --snapshot_read_failures_left;
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Injected failure of reading the snapshot");
+            }
+            return LocalObjectStorage::readObject(object, settings, hint, external_buffer, restrict_seek);
+        }
+    };
+
+    const std::string test = "ReaderDoesNotRollBackAfterFailedSnapshotRead";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = writer->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+
+    /// The snapshot lags behind the object storage.
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_key, stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+    write_file("A/later", "test");
+    std::filesystem::copy_file(stale_snapshot, snapshot_key, std::filesystem::copy_options::overwrite_existing);
+
+    /// The snapshot cannot be read once, so the reader lists the object storage and gets a fresher state.
+    auto reader_storage = std::make_shared<FailingStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    reader_storage->snapshot_read_failures_left = 1;
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    EXPECT_TRUE(reader.existsFile("A/later"));
+
+    /// The same snapshot is not applied on the next refresh: it would roll the state back.
+    reader.refresh(0);
+    EXPECT_TRUE(reader.existsFile("A/later"));
+
+    /// A newer snapshot is applied.
+    write_file("A/new", "test");
+    reader.refresh(0);
+    EXPECT_EQ(sorted(reader.listDirectory("A")), std::vector<std::string>({"file", "later", "new"}));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, ReaderListsWithMalformedMarker)
+{
+    const std::string test = "ReaderListsWithMalformedMarker";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    auto write_file = [&](const std::string & path, const std::string & data)
+    {
+        auto tx = writer->createTransaction();
+        size_t size = writeObject(object_storage, tx->generateObjectKeyForPath(path).serialize(), data);
+        tx->createMetadataFile(path, {StoredObject(path, path, size)});
+        tx->commit(DB::NoCommitOptions{});
+    };
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+    write_file("A/file", "test");
+
+    /// The snapshot lags behind the object storage.
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    const auto stale_snapshot = fmt::format("./{}.stale_snapshot", test);
+    std::filesystem::copy_file(snapshot_key, stale_snapshot, std::filesystem::copy_options::overwrite_existing);
+    SCOPE_EXIT({ std::filesystem::remove(stale_snapshot); });
+    write_file("A/later", "test");
+    std::filesystem::copy_file(stale_snapshot, snapshot_key, std::filesystem::copy_options::overwrite_existing);
+
+    /// A torn marker of an unfinished operation: the snapshot cannot tell whether it matters, so the reader lists the object storage.
+    const PlainRewritableLayout layout(object_storage->getCommonKeyPrefix());
+    writeObject(object_storage, layout.constructTombstoneMarkerKey(PlainRewritableLayout::REMOVED_NAME_PREFIX + "abcdefghijklmnop"), "torn");
+
+    auto reader_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("reader", object_storage->getCommonKeyPrefix(), /*read_only_=*/ true));
+    MetadataStorageFromPlainRewritableObjectStorage reader(reader_storage, "", hard_links_enabled);
+    EXPECT_TRUE(reader.existsFile("A/later"));
+    reader.refresh(0);
+    EXPECT_TRUE(reader.existsFile("A/later"));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, WriterWithSnapshotsDisabledRemovesSnapshot)
+{
+    const std::string test = "WriterWithSnapshotsDisabledRemovesSnapshot";
+    auto writer = getMetadataStorage(test);
+    auto object_storage = getObjectStorage(test);
+
+    {
+        auto tx = writer->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto snapshot_key = fmt::format("{}/__meta/{}", object_storage->getCommonKeyPrefix(), PlainRewritableLayout::SNAPSHOT_FILE_NAME);
+    ASSERT_TRUE(std::filesystem::exists(snapshot_key));
+
+    /// The readers would trust the snapshot forever, as it is not rewritten anymore.
+    MetadataStorageFromPlainRewritableObjectStorage writer_without_snapshots(object_storage, "", hard_links_enabled, PlainRewritableSnapshotSettings{.enabled = false});
+    EXPECT_FALSE(std::filesystem::exists(snapshot_key));
+    EXPECT_TRUE(writer_without_snapshots.existsDirectory("A"));
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, UnlinkKeepsSharedBlob)

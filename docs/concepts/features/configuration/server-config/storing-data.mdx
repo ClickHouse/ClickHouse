@@ -476,7 +476,11 @@ storage.
 
 The writer has to have the latest and precise state, so it never reads the
 snapshot: it lists the object storage on startup as usual, and writes the
-snapshot after it.
+snapshot after it. A writer with `metadata_snapshot_enabled` set to `false`
+removes a snapshot left from before on startup, so that the read-only disks do
+not keep using a stale state. If a snapshot cannot be read, or there is a
+malformed marker of an unfinished operation, the read-only disk lists the
+object storage, and does not use that snapshot until it is rewritten.
 
 | Setting                             | Description                                                                                                                                                                                                                  | Default |
 |-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|

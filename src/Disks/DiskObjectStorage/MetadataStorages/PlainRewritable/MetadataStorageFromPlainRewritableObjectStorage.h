@@ -113,13 +113,14 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
         /// The file has the same ETag as the one applied last time, so it was not read.
         bool unchanged = false;
         std::optional<PlainRewritableRemoteLayout> layout;
-        /// The strong ETag of the file that was read, empty if there is none.
+        /// The strong ETag of the file (also if it was not read), empty if there is none.
         std::string etag;
     };
 
-    /// Reads the snapshot file if it exists, unless `skip_if_unchanged` and it is the same as the one applied last time.
+    /// Reads the snapshot file if it exists, unless `skip_if_unchanged` and it is the same as the one applied last time,
+    /// or it is the same as `superseded_snapshot_etag`, or not `read_contents` (then only `exists` and `etag` are filled).
     /// Must be called under `load_mutex`.
-    SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log, bool skip_if_unchanged) const;
+    SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log, bool skip_if_unchanged, bool read_contents) const;
 
     struct TombstoneMarkerObject
     {
@@ -140,7 +141,8 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
     };
 
     /// The targets of the replacements that are not committed yet, which a read-only disk reads from their complete backups.
-    std::vector<TargetReadFromBackup> findTargetsToReadFromBackups(const LoggerPtr & log) const;
+    /// Sets `has_malformed_markers` if there is a marker whose content is torn (see `PlainRewritableLayout::parseTombstoneMarkerContent`).
+    std::vector<TargetReadFromBackup> findTargetsToReadFromBackups(const LoggerPtr & log, bool & has_malformed_markers) const;
 
     /// Lists the object storage and publishes the result in `fs`. If `base` is provided, directories whose `prefix.path`
     /// has the same ETag as in `base` are taken from it without reading `prefix.path` and listing their files.
@@ -233,6 +235,10 @@ private:
     /// Some files of the state loaded from the snapshot file are read from the backups of pending replacements.
     /// Protected by `load_mutex`.
     bool applied_snapshot_had_pending_replaces = false;
+    /// The ETag of the snapshot file that existed when a reader loaded the state by listing the object storage instead
+    /// (e.g. the file could not be read), empty if there is none. That state is at least as fresh as the file, so the file
+    /// is not applied until it changes. Protected by `load_mutex`.
+    std::string superseded_snapshot_etag;
     AtomicStopwatch previous_refresh;
 
     /// The version of `fs` after the latest change that has to be written to the snapshot.
