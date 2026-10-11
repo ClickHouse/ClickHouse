@@ -77,6 +77,51 @@ ExpiredIndexFiles getExpiredIndexFiles(
     return result;
 }
 
+bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const String & index_name, const StorageInMemoryMetadata & metadata)
+{
+    /// Every index type has a main `.idx` or `.idx2` file, as `IMergeTreeDataPart::hasSecondaryIndex` assumes.
+    const String file_name = getIndexFileName(index_name, metadata.escape_index_filenames);
+    const auto * packed_storage = part.checksums.has(String(SKIP_INDICES_PACKED_FILENAME))
+        ? dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage())
+        : nullptr;
+    for (const auto * extension : {".idx", ".idx2"})
+    {
+        if (IMergeTreeDataPart::getStreamNameOrHash(file_name, extension, part.checksums))
+            return true;
+    }
+
+    if (!packed_storage)
+        return false;
+
+    /// Merge selection calls `partHasSkipIndexFiles`. If reading a corrupt `skp_idx.packed` threw there, every
+    /// selection pass would throw and no merge or mutation of the table would start. So a part whose archive
+    /// can't be read is not selected.
+    try
+    {
+        for (const auto * extension : {".idx", ".idx2"})
+        {
+            if (packed_storage->isFileInPackedSkipIndicesArchive(file_name + extension))
+                return true;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger(part.storage.getLogName()), fmt::format("Cannot read {} of part {}", SKIP_INDICES_PACKED_FILENAME, part.name), LogsLevel::debug);
+    }
+    return false;
+}
+
+UInt64 estimateDiskSpaceForIndexClear(const MergeTreeDataPartPtr & part)
+{
+    if (!canHardlinkFilesForIndexClear(part))
+        return part->getBytesOnDisk();
+
+    /// `checksums.txt`, `metadata_version.txt`, and the block-number min/max files are small, so this counts only the
+    /// packed skip index archive, which is rewritten when it holds an expired index.
+    const auto it = part->checksums.files.find(String(SKIP_INDICES_PACKED_FILENAME));
+    return it == part->checksums.files.end() ? 0 : it->second.file_size;
+}
+
 bool canHardlinkFilesForIndexClear(const MergeTreeDataPartPtr & part)
 {
     const auto settings = part->storage.getSettings();

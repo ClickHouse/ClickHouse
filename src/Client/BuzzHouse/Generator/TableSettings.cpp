@@ -705,6 +705,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {},
          false)},
     {"try_fetch_recompressed_part_timeout", highRangeSetting},
+    {"ttl_clear_index_merges", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
     {"unique_key_conflict_action",
      CHSetting(
