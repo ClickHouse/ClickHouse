@@ -139,6 +139,10 @@ public:
         IColumn::Permutation *& permutation,
         const MergeTreeData::MergingParams & merging_params);
 
+    /// Removes from `block` the rows which are already expired by a table-level `TTL ... DELETE` rule.
+    /// The other kinds of TTL (`GROUP BY`, `RECOMPRESS`, moves and column TTLs) are not applied.
+    static void removeRowsExpiredByTTL(const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block);
+
 private:
     MergeTreeTemporaryPartPtr writeTempPartImpl(
         BlockWithPartition & block_with_partition,

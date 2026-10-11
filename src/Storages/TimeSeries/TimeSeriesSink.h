@@ -7,6 +7,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 
 #include <string_view>
@@ -66,6 +67,9 @@ private:
         BlockIO io;
         std::unique_ptr<PushingPipelineExecutor> executor;
         std::shared_ptr<ExpressionActions> converting_actions;
+
+        /// If set, the rows already expired by the table-level `TTL ... DELETE` rules of this metadata are not pushed.
+        StorageMetadataPtr expired_rows_ttl_metadata;
 
         void push(Block block) const;
         ~TargetPipeline();
