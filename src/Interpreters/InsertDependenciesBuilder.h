@@ -10,6 +10,7 @@
 
 #include <Common/Logger.h>
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <unordered_map>
@@ -118,6 +119,14 @@ public:
     size_t getSinkStreamSize() const
     {
         return sink_stream_size;
+    }
+
+    /// The number of writing pipelines of this insert that squash blocks at the same time: the one of
+    /// the root (the target table or the inner table of the target view) and one per dependent
+    /// materialized view. They share the memory budget of `capInsertBlockSizeBytesToMemoryLimit`.
+    size_t getNumSquashingPipelines() const
+    {
+        return std::max<size_t>(1, dependent_views.size());
     }
 
     /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. some sink

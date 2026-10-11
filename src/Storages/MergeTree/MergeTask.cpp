@@ -1638,7 +1638,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
     /// memory limit exactly like the insert path does. Without this, a merge of a table with projections
     /// keeps multi-hundred-MiB buffers alive on a small server even after the source-part fan-in has been
     /// narrowed, which would leave the "merges fit into a small server's memory" contract unmet.
-    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes]);
+    /// The pre-calculate squash and one post-calculate squash per projection are alive at the same time.
+    const size_t num_simultaneous_squashes = global_ctx->projections_to_rebuild.size() + 1;
+    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
+        settings[Setting::min_insert_block_size_bytes], num_simultaneous_squashes);
 
     if (!global_ctx->projections_to_rebuild.empty())
     {

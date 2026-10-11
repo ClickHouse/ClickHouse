@@ -2442,7 +2442,10 @@ void PartMergerWriter::prepare()
     /// The squash buffers below are the same kind of block-sized copies an `INSERT` pipeline holds, and a
     /// mutation is background work running next to the queries the server is there for, so bound them by
     /// the memory limit exactly like the insert path does.
-    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes]);
+    /// The pre-calculate squash and one post-calculate squash per projection are alive at the same time.
+    const size_t num_simultaneous_squashes = ctx->projections_to_build.size() + 1;
+    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(
+        settings[Setting::min_insert_block_size_bytes], num_simultaneous_squashes);
 
     /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
     /// projection calculation. Shared across all projections since they all consume

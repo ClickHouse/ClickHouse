@@ -19,7 +19,12 @@ namespace DB
 /// Cap the threshold so those copies stay a bounded share of the server's memory limit. On a server
 /// with several GiB of RAM or more this leaves the setting untouched; on a small one it is the
 /// difference between the insert completing and failing with `MEMORY_LIMIT_EXCEEDED`.
-size_t capInsertBlockSizeBytesToMemoryLimit(size_t min_block_size_bytes)
+///
+/// One operation can run several squashing pipelines at once: an `INSERT` squashes for the target
+/// table and again for every dependent materialized view, and a merge or a mutation squashes once
+/// for the projection input and once per rebuilt projection. Each of them holds its own copies, so
+/// the share is split between `num_simultaneous_squashes` of them.
+size_t capInsertBlockSizeBytesToMemoryLimit(size_t min_block_size_bytes, size_t num_simultaneous_squashes)
 {
     const Int64 memory_limit = total_memory_tracker.getHardLimit();
     if (memory_limit <= 0)
@@ -33,7 +38,8 @@ size_t capInsertBlockSizeBytesToMemoryLimit(size_t min_block_size_bytes)
     static constexpr double copies_held_by_the_pipeline = 5;
 
     const double budget = static_cast<double>(memory_limit) * budget_of_the_limit;
-    return std::min(min_block_size_bytes, static_cast<size_t>(budget * share_for_insert_blocks / copies_held_by_the_pipeline));
+    const double copies = copies_held_by_the_pipeline * static_cast<double>(std::max<size_t>(1, num_simultaneous_squashes));
+    return std::min(min_block_size_bytes, static_cast<size_t>(budget * share_for_insert_blocks / copies));
 }
 
 }

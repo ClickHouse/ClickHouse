@@ -719,7 +719,7 @@ private:
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
             settings[Setting::min_insert_block_size_rows],
-            capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes]),
+            capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], getNumSquashingPipelines()),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -1210,7 +1210,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes]) : 0ULL,
+                        table_prefers_large_blocks ? capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], getNumSquashingPipelines()) : 0ULL,
                         settings[Setting::max_insert_block_size],
                         settings[Setting::max_insert_block_size_bytes],
                         squash_with_strict_limits));
