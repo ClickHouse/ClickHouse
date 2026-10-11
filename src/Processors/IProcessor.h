@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
@@ -189,8 +190,8 @@ public:
     virtual Status prepare();
 
     /// Optimization for prepare in case we know ports were updated.
-    using UpdatedInputPorts  = std::vector<InputPort *>;
-    using UpdatedOutputPorts = std::vector<OutputPort *>;
+    using UpdatedInputPorts  = VectorWithMemoryTracking<InputPort *>;
+    using UpdatedOutputPorts = VectorWithMemoryTracking<OutputPort *>;
     virtual Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
