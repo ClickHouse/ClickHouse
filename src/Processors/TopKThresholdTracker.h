@@ -12,7 +12,8 @@ class IDataType;
 class ITopKThresholdTracker
 {
 public:
-    explicit ITopKThresholdTracker(const SortColumnDescription & sort_desc_) : sort_desc(sort_desc_) {}
+    ITopKThresholdTracker(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
+        : sort_desc(sort_desc_), data_type(std::move(data_type_)) {}
     virtual ~ITopKThresholdTracker() = default;
 
     virtual void testAndSet(const Field & value) = 0;
@@ -23,9 +24,12 @@ public:
     int getDirection() const { return sort_desc.direction; }
     int getNullsDirection() const { return sort_desc.nulls_direction; }
     const std::shared_ptr<Collator> & getCollator() const { return sort_desc.collator; }
+    /// The type of the sort column the published values are taken from.
+    const DataTypePtr & getDataType() const { return data_type; }
 
 protected:
     SortColumnDescription sort_desc;
+    DataTypePtr data_type;
 };
 
 /// Lock-free tracker for types whose values are represented in a `Field` by a plain
@@ -34,7 +38,7 @@ template <typename T>
 class TopKThresholdTrackerNumeric : public ITopKThresholdTracker
 {
 public:
-    explicit TopKThresholdTrackerNumeric(const SortColumnDescription & sort_desc_);
+    TopKThresholdTrackerNumeric(const SortColumnDescription & sort_desc_, DataTypePtr data_type_);
 
     void testAndSet(const Field & value) override;
     bool isValueInsideThreshold(const Field & value) const override;
@@ -50,7 +54,8 @@ private:
 class TopKThresholdTrackerGeneric : public ITopKThresholdTracker
 {
 public:
-    explicit TopKThresholdTrackerGeneric(const SortColumnDescription & sort_desc_) : ITopKThresholdTracker(sort_desc_) {}
+    TopKThresholdTrackerGeneric(const SortColumnDescription & sort_desc_, DataTypePtr data_type_)
+        : ITopKThresholdTracker(sort_desc_, std::move(data_type_)) {}
 
     void testAndSet(const Field & value) override;
     bool isValueInsideThreshold(const Field & value) const override;
