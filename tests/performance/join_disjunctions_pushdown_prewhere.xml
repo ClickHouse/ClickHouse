@@ -1,0 +1,44 @@
+<test>
+    <settings>
+        <use_join_disjunctions_push_down>1</use_join_disjunctions_push_down>
+        <optimize_move_to_prewhere>1</optimize_move_to_prewhere>
+    </settings>
+
+    <!-- Wide parts and a high-entropy payload: the win is not reading `payload` for the rows the
+         pushed-down filter rejects, so it only shows if that column is expensive to read.
+         Statistics are off because they reorder PREWHERE conditions and add noise. -->
+    <create_query>
+        CREATE TABLE join_disj_left (k UInt64, sel UInt64, payload String)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = ''
+    </create_query>
+    <create_query>
+        CREATE TABLE join_disj_right (k UInt64, x UInt64, payload String)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = ''
+    </create_query>
+
+    <fill_query>
+        INSERT INTO join_disj_left
+        SELECT number, number % 1000, arrayStringConcat(arrayMap(i -> hex(sipHash64(number, i)), range(8)), ' ')
+        FROM numbers(3000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO join_disj_right
+        SELECT number, number % 1000, arrayStringConcat(arrayMap(i -> hex(sipHash64(number, i)), range(8)), ' ')
+        FROM numbers(3000000)
+    </fill_query>
+
+    <!-- Each OR branch contributes one condition per side, so a partial filter is pushed into both
+         sides: `sel IN (1, 2)` and `x IN (1, 2)`. Both keep 0.2% of the rows. -->
+    <query>
+        SELECT sum(length(l.payload)) + sum(length(r.payload))
+        FROM join_disj_left AS l
+        INNER JOIN join_disj_right AS r ON l.k = r.k
+        WHERE (l.sel = 1 AND r.x = 1) OR (l.sel = 2 AND r.x = 2)
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE join_disj_left</drop_query>
+    <drop_query>DROP TABLE join_disj_right</drop_query>
+</test>
