@@ -91,8 +91,13 @@ ColumnPtr castColumnAccurateSkipNulls(
 {
     chassert(!type->isNullable());
 
-    /// A `Nullable` column converts through its nested column. A `Variant` keeps its NULLs in the discriminators
-    /// and converts as it is once the NULL rows are filtered out.
+    const ColumnPtr null_map_column = getSourceNullMap(*arg.column);
+    if (!null_map_column)
+        return castColumnAccurate(arg, type, cache);
+
+    /// A `Nullable` column converts through its nested column. Any other column keeps its NULLs in its own
+    /// representation, e.g. the discriminators of a `Variant`, and converts as it is once the NULL rows are
+    /// filtered out.
     ColumnWithTypeAndName values = arg;
     if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(arg.column.get()))
         values = {column_nullable->getNestedColumnPtr(), removeNullable(arg.type), arg.name};
@@ -100,7 +105,6 @@ ColumnPtr castColumnAccurateSkipNulls(
     if (values.type->equals(*type))
         return values.column;
 
-    const ColumnPtr null_map_column = getSourceNullMap(*arg.column);
     const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
     const size_t rows = arg.column->size();
     const size_t not_null_rows = rows - countBytesInFilter(null_map);
@@ -117,6 +121,31 @@ ColumnPtr castColumnAccurateSkipNulls(
     auto result = IColumn::mutate(castColumnAccurate(
         {values.column->filter(not_null, not_null_rows), values.type, arg.name}, type, cache));
     result->expand(not_null, false);
+    return result;
+}
+
+ColumnPtr castColumnAccurateOrNullSkipNulls(
+    const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
+{
+    chassert(!type->isNullable());
+
+    const ColumnPtr null_map_column = getSourceNullMap(*arg.column);
+    if (!null_map_column)
+        return castColumnAccurateOrNull(arg, type, cache);
+
+    /// A column of NULLs has no value to convert, and its cast could fail on the types alone, e.g. for
+    /// tuples of different sizes.
+    const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+    const size_t rows = arg.column->size();
+    if (countBytesInFilter(null_map) == rows)
+        return makeNullable(type->createColumn()->cloneResized(rows));
+
+    /// `accurateCastOrNull` reports a value that does not convert as NULL instead of throwing, so the whole
+    /// column converts, and only the NULLs of its non-NULL rows are kept.
+    auto result = IColumn::mutate(castColumnAccurateOrNull(arg, type, cache));
+    auto & result_null_map = assert_cast<ColumnNullable &>(*result).getNullMapData();
+    for (size_t i = 0; i < rows; ++i)
+        result_null_map[i] &= !null_map[i];
     return result;
 }
 

@@ -36,11 +36,16 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 
-/// Accurately cast the non-NULL rows of a materialized column that stores NULLs in its own representation,
-/// a `Nullable` or a `Variant`, to a non-nullable type.
-/// Preserve row positions and leave unspecified values at the skipped rows. The caller must retain
-/// the source null map to distinguish those values from the converted non-NULL values.
+/// Accurately cast the non-NULL rows of a materialized column to a non-nullable type. The NULL rows are those
+/// of `getSourceNullMap`, and a column without them converts as a whole. Preserve row positions and leave
+/// unspecified values at the skipped rows. The caller must retain the source null map to distinguish those
+/// values from the converted non-NULL values.
 ColumnPtr castColumnAccurateSkipNulls(
+    const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
+
+/// The same with `castColumnAccurateOrNull`: return a `Nullable(type)` column whose NULLs are the non-NULL
+/// rows that do not convert. The skipped rows are not NULL.
+ColumnPtr castColumnAccurateOrNullSkipNulls(
     const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 
 /// Mark non-NULL values whose `DateTime64` components lose fractional seconds, exceed the destination
