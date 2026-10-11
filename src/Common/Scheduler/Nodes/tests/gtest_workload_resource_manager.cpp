@@ -203,12 +203,12 @@ public:
     }
 
     // Runs the restore of entities found in a backup (pre-check, then creation in dependency order)
-    void restoreAccumulated(const String & data)
+    void restoreAccumulated(const String & data, bool replace_if_exists = false)
     {
         std::unordered_map<String, ASTPtr> to_restore;
         for (const auto & [entity_name, entity] : parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")))
             to_restore.emplace(entity_name, entity);
-        restoreEntities(Context::createCopy(Context::getGlobalContextInstance()), to_restore, false, false);
+        restoreEntities(Context::createCopy(Context::getGlobalContextInstance()), to_restore, false, replace_if_exists);
     }
 
     // Recreates own entities the way a RESTORE does, in the order of a backup
@@ -2963,6 +2963,15 @@ TEST(SchedulerWorkloadResourceManager, RestorePreCheckValidatesReferenceKind)
     EXPECT_FALSE(t.storage.has("a"));
     EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD a; CREATE WORKLOAD w SETTINGS max_concurrent_threads = 1 FOR cpu"), DB::Exception);
     EXPECT_FALSE(t.storage.has("a"));
+
+    // Replacing an existing entity by one of another kind or cost unit fails before creating anything
+    EXPECT_THROW(t.sql_storage->restoreAccumulated(
+        "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD); CREATE RESOURCE r (READ DISK d);"
+        "CREATE WORKLOAD w SETTINGS max_concurrent_threads = 1 FOR cpu", /* replace_if_exists = */ true), DB::Exception);
+    EXPECT_FALSE(t.storage.has("r"));
+    EXPECT_THROW(t.sql_storage->restoreAccumulated(
+        "CREATE RESOURCE parent (MEMORY RESERVATION); CREATE RESOURCE r (READ DISK d)", /* replace_if_exists = */ true), DB::Exception);
+    EXPECT_FALSE(t.storage.has("r"));
 
     // A reference to an entity of the right kind, existing or restored together, passes
     EXPECT_NO_THROW(t.sql_storage->restoreAccumulated("CREATE RESOURCE r (READ DISK d); CREATE WORKLOAD p; CREATE WORKLOAD c IN p SETTINGS max_io_requests = 1 FOR r"));

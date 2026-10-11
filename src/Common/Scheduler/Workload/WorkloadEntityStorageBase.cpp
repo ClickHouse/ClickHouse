@@ -1501,6 +1501,24 @@ void WorkloadEntityStorageBase::restoreEntities(
     if (!isReplicated())
     {
         std::lock_guard lock{mutex};
+
+        // An existing own entity is replaced only by an entity of the same kind (and, for a resource, the same
+        // cost unit), as `validateAndStoreEntity` requires; anything else would fail midway through the restore
+        for (const auto & [entity_name, entity] : to_restore)
+        {
+            ASTPtr existing = findOwnEntity(entity_name);
+            if (!existing)
+                continue;
+            if (throw_if_exists)
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore workload entities: workload entity '{}' already exists", entity_name);
+            if (replace_if_exists && (getEntityType(existing) != getEntityType(entity) || resourceUnitChanged(existing, entity)))
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore workload entities: existing workload entity '{}' cannot be replaced by the one from "
+                    "the backup, as it is of another kind or cost unit",
+                    entity_name);
+        }
+
         for (const auto & entry : to_restore)
         {
             forEachReference(entry.second, [&](const String & target, const String & source, ReferenceType type)
