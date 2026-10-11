@@ -4,6 +4,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 
 
 namespace DB
@@ -25,6 +26,10 @@ enum class PrometheusQueryEvaluationMode
 struct PrometheusQueryEvaluationSettings
 {
     StorageID time_series_storage_id = StorageID::createEmpty();
+
+    /// Set when the target is a Distributed table over per-shard TimeSeries tables.
+    std::optional<PrometheusQueryDistributedTarget> distributed;
+
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
 
     /// Data type of the timestamp column in the TimeSeries table.
