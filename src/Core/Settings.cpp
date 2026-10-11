@@ -9942,6 +9942,8 @@ With `max_threads = 1`, one thread fills all the parts.
 The estimate comes from the query plan, or from the statistics of earlier runs of the same join (see `collect_hash_table_stats_during_joins`).
 `ASOF` joins never get an estimate, and with `query_plan_optimize_join_order_limit = 0` no join gets one.
 Without an estimate the threshold has no effect, and the join always splits the hash table into parts.
+The exception is a right table known to be empty, such as a `MergeTree` table without data parts.
+`INNER`, `RIGHT` and `LEFT SEMI` joins return no rows with it, so for them it counts as 0 rows.
 )", 0, \
         {"25.5", 0, 100'000, "New setting"}, \
         {"25.4", 0, 0, "New setting"}, \

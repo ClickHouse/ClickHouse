@@ -267,6 +267,10 @@ struct JoinAlgorithmParams
     std::optional<UInt64> rhs_size_estimation;
     std::optional<UInt64> result_rows_estimation;
 
+    /// Set by `JoinStepLogical::buildPhysicalJoin` when the right input reads nothing.
+    /// Only the build layout uses it; the row store uses `rhs_size_estimation` alone.
+    bool rhs_known_empty = false;
+
     explicit JoinAlgorithmParams(const Context & context);
 
     JoinAlgorithmParams(
