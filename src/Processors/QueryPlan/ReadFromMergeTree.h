@@ -115,6 +115,11 @@ namespace QueryPlanOptimizations
 /// The query condition cache consults a read that still waits for the filter under this PREWHERE, because
 /// the executed read writes its entries under it.
 PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info);
+
+/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
+/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`), also inside the
+/// body of a lambda (`arrayMap(x -> rowNumberInBlock(), arr)`).
+bool dependsOnItsBlock(const ActionsDAG & actions);
 }
 
 struct LazyMaterializingRows;
@@ -623,11 +628,13 @@ public:
     }
 
     /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
-    /// step that this step replaces (the projection read built by `optimizeUseNormalProjections`).
-    /// `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so the descriptors
-    /// are attached to the base-table read and would be lost otherwise. Every descriptor is registered
-    /// anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the key column
-    /// is prunable through this step's own metadata (the projection's primary key or skip indexes).
+    /// step that this step replaces: the projection read built by `optimizeUseNormalProjections`, and the
+    /// steps `clone` and `createLocalParallelReplicasReadingStep` rebuild, which are not always optimized
+    /// again afterwards. `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so
+    /// the descriptors are attached to the base-table read and would be lost otherwise. Every descriptor
+    /// is registered anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the
+    /// key column is prunable through this step's own metadata (the projection's primary key or skip
+    /// indexes).
     void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
@@ -710,12 +717,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Carried over to a projection read by copyJoinRuntimeFilterIndexAnalysisDescriptors,
-    /// but not by clone()/serialize()/deserialize(), so the pruning is intentionally skipped when the step
-    /// is rebuilt for distributed or parallel-replicas reads (results stay correct, only the optimization
-    /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
-    /// (see its description in `Settings.cpp`) and is pinned by
-    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
+    /// optimization, and carried over by copyJoinRuntimeFilterIndexAnalysisDescriptors whenever the step
+    /// is rebuilt - a projection read, a clone, a parallel-replicas read - because a rebuilt step is not
+    /// always optimized again afterwards. Not serialized: a replica that receives a plan packet attaches
+    /// its own while optimizing it. A read that ends up without them reads its share unpruned, which is
+    /// what still happens with `make_distributed_plan`, and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_modes`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed

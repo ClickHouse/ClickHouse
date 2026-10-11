@@ -92,6 +92,7 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
+    bool enable_group_by_top_k_dynamic_filtering;
     bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
     bool top_k_optimization_shared_boundary = true;
@@ -262,6 +263,7 @@ struct QueryPlanOptimizationSettings
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
+    float automatic_parallel_replicas_max_duplicated_read_ratio;
 
     bool query_plan_optimize_primary_key = true;
 
