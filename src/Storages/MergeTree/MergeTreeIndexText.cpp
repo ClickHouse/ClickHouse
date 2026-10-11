@@ -1811,7 +1811,7 @@ std::vector<TokenPostingsInfoPtr> TextIndexSerialization::deserializeTokenInfos(
             continue;
         }
 
-        auto info = deserializeTokenInfo(istr, /*with_postings=*/true);
+        auto info = deserializeTokenInfo(istr, /*with_postings=*/ true);
         result.emplace_back(std::make_shared<TokenPostingsInfo>(std::move(info)));
         ++j;
     }

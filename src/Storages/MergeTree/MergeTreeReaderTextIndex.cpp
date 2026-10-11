@@ -107,11 +107,11 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
                 column.name, column.type->getName());
         }
 
-        auto query_it = index_read_task.search_queries.find(column.name);
-        if (query_it == index_read_task.search_queries.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has no search query in the read task of the text index '{}'", column.name, index_read_task.index.index->index.name);
+        auto task_column_it = std::ranges::find(index_read_task.columns, column.name, &IndexReadTask::Column::name);
+        if (task_column_it == index_read_task.columns.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not in the read task of the text index '{}'", column.name, index_read_task.index.index->index.name);
 
-        search_queries.push_back(query_it->second);
+        search_queries.push_back(task_column_it->search_query);
     }
 
     /// The match column of a scoring predicate is filled in the same pass over the scoring cursors as its
@@ -670,6 +670,7 @@ void MergeTreeReaderTextIndex::fillColumnScores(MutableColumns & res_columns, Sc
 void MergeTreeReaderTextIndex::initializePositionsStream()
 {
     const auto & data_part = getDataPart();
+
     auto index_format = index_read_task.index.index->getDeserializedFormat(*data_part, index_read_task.index.index->getFileName());
 
     const auto positions_substream = std::ranges::find_if(

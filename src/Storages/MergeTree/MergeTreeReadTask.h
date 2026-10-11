@@ -2,7 +2,6 @@
 
 #include <map>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -78,9 +77,17 @@ enum class MergeTreeReadType : uint8_t
 /// Some indexes (e.g. inverted text index) may read special virtual columns.
 struct IndexReadTask
 {
-    NamesAndTypesList columns;
-    /// The text search query each of `columns` is filled from.
-    std::unordered_map<String, TextSearchQueryPtr> search_queries;
+    /// A virtual column filled by the index reader and the text search query it is filled from.
+    /// Default expression is evaluated by the main reader in parts where the index is not materialized.
+    struct Column
+    {
+        String name;
+        DataTypePtr type;
+        TextSearchQueryPtr search_query;
+        ASTPtr default_expression;
+    };
+
+    std::vector<Column> columns;
     MergeTreeIndexWithCondition index;
     /// Set when the query computes `bm25()` over this text index.
     std::optional<BM25Params> bm25_params;
@@ -88,6 +95,8 @@ struct IndexReadTask
     NameSet scoring_tokens;
     /// Query-global BM25 state, built once the parts to read are known (`ReadFromMergeTree::initializePipeline`).
     BM25StatePtr bm25_score_state;
+
+    NamesAndTypesList getNamesAndTypesList() const;
 };
 
 /// Ordered map to ensure deterministic iteration order.
@@ -99,7 +108,6 @@ using IndexReadTasks = std::map<String, IndexReadTask>;
 
 /// Returns the read task of the index, or nullptr if there is none.
 const IndexReadTask * tryGetIndexReadTask(const IndexReadTasks & index_read_tasks, const String & index_name);
-using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -245,7 +253,9 @@ public:
     /// `read_mark_ranges` with `row_count == 0` may have been filtered before PREWHERE evaluated
     /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
     /// See Issue #104781.
-    bool readersChainCanSkipMarksBeforePrewhere() const;
+    /// With `prewhere_filters_by_top_k_threshold`, the PREWHERE holds the `__topKFilter` of the read as a conjunct, and
+    /// the marks skipped by the primary key against the same top-K threshold do not count.
+    bool readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const;
 
     /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
     /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
