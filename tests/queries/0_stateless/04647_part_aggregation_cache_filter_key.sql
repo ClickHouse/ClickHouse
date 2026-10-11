@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
+-- Tag no-parallel-replicas: the part aggregation cache is intentionally not used for parallel-replica reads
 
 -- Regression test for the part aggregation cache key: the cached per-part state covers only the
 -- mark ranges that primary key / skip-index analysis selected for the part, so two queries whose

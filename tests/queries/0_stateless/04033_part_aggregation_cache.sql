@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
+-- Tag no-parallel-replicas: the part aggregation cache is intentionally not used for parallel-replica reads
 
 -- `max_rows_to_group_by` is a per-aggregation-invocation limit, so the populator (which aggregates each
 -- part independently) cannot reproduce single-pass semantics and the optimization fails closed when it is

@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
+-- Tag no-parallel-replicas: the part aggregation cache is intentionally not used for parallel-replica reads
 
 -- Fail-closed guards for the experimental per-part aggregation cache: the optimization must not
 -- reuse stale per-part states across metadata `ALTER`, lightweight deletes, overflow-mode limits,

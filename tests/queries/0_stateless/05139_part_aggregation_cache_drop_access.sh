@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-parallel-replicas
+# Tag no-parallel-replicas: the part aggregation cache is intentionally not used for parallel-replica reads
 # Reason: creates users and uses the server-wide part aggregation cache
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none

@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
+-- Tag no-parallel-replicas: the part aggregation cache is intentionally not used for parallel-replica reads
 
 -- Regression test for the mixed cached+fresh execution path of `optimizeUsePartAggregationCache`:
 -- cached states for old parts must be merged (via `convertToAggregatingProjection`) with a fresh
