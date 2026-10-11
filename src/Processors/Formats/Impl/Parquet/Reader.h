@@ -600,7 +600,6 @@ struct Reader
     bool row_groups_ordered_by_top_k = false;
     /// TopN dynamic filtering: the first of `steps` compares the sort column with the threshold.
     bool has_top_k_step = false;
-    /// `stop_when_unprofitable`: the threshold step stops for the rest of the file once it drops too few rows (`applyPrewhere`).
     bool top_k_step_may_stop = false;
     static constexpr size_t top_k_step_rows_to_observe = 1 << 13;
     size_t top_k_step_columns_after = 0;
