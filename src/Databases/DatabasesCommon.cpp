@@ -5,6 +5,7 @@
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Common/ProfileEvents.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -40,6 +41,11 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -569,7 +575,6 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 {
     ensurePopulated();
     std::lock_guard lock(mutex);
-
     /// Consumers of this iterator - the `system.parts` / `system.replicas` family, the `SYSTEM` commands,
     /// the asynchronous metrics - recognize an engine by downcasting the storage they get, which the
     /// lazy-load stand-in defeats, so such a table stayed invisible to them even after it had been loaded.
@@ -582,6 +587,7 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
             snapshot_tables.emplace(table_name, unwrapMaterializedLazyTable(storage, /* wait_for_materialization= */ false));
     }
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, snapshot_tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(snapshot_tables), database_name);
 }
 
