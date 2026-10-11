@@ -358,6 +358,7 @@ The built-in Web UI (`play.html`) automatically detects `{name:Type}` parameter 
 <Note>
 Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries.
 They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
+They also work in DDL statements: in place of database and table names (for example `CREATE TABLE {db:Identifier}.{tbl:Identifier}`), and in `ALTER` statements in place of the names of the columns, indices, projections, and constraints being referenced (for example `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`).
 </Note>
 
 ## Functions {#functions}
