@@ -88,10 +88,11 @@ public:
     /// Other keys, such as `String`, are stored as 128-bit hashes, whose order is arbitrary.
     /// The memory of the set does not include its Bloom filters, which have a budget of their own.
     /// A set that stays in memory while it is filled is usually built before the rest of the query takes its
-    /// memory, so it can also spill while it is used: when `execute` finds query memory above the threshold
-    /// and the keys large enough to spill, the keys are written to a `DiskSet` while other lookups keep
-    /// reading the table, and the disk set then replaces the table. The keys are final by then, so no size
-    /// limit applies, and explicit elements stay, because their consumers read them without locking the set.
+    /// memory, so it can also spill while it is used: when `execute` finds query memory above the threshold,
+    /// counting the directory and the Bloom filters that the disk set will take, and the keys large enough to
+    /// spill, the keys are written to a `DiskSet` while other lookups keep reading the table, and the disk
+    /// set then replaces the table. The keys are final by then, so no size limit applies, and explicit
+    /// elements stay, because their consumers read them without locking the set.
     void setSpillSettings(SetSpillSettings spill_settings_);
 
     bool transformNullIn() const { return transform_null_in; }
@@ -289,9 +290,14 @@ private:
     bool isSpillNeededBeforeInsert(const ColumnRawPtrs & key_columns, size_t rows) const;
 
     /// Returns whether the set in memory has to spill now: query memory exceeds the spill threshold, and the
-    /// set is large enough to spill. The set checks it after inserting a chunk and after each lookup in
-    /// memory. Call it under `rwlock`.
+    /// set is large enough to spill. The set checks it after inserting a chunk. Call it under `rwlock`.
     bool isSpillNeeded() const;
+
+    /// Returns whether the set in memory has to spill while it is used, which `execute` checks after each
+    /// lookup in memory: the set is large enough to spill, and query memory exceeds the spill threshold with
+    /// the directory and the Bloom filters of the disk set (see `estimateDiskSetMemory`), which the set takes
+    /// besides the table until the disk set is complete. Call it under `rwlock`.
+    bool isSpillNeededAfterBuild() const;
 
     /// Moves the keys of the table to a `DiskSetBuilder`, which takes later insertions, and frees the table.
     void spill(std::string_view reason);

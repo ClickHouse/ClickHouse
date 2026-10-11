@@ -157,6 +157,19 @@ bool Set::isSpillNeeded() const
         && isLargeEnoughToSpill();
 }
 
+bool Set::isSpillNeededAfterBuild() const
+{
+    if (!spill_settings.max_bytes_before_external_set || !isLargeEnoughToSpill())
+        return false;
+
+    /// The directory and Bloom filters of the set on disk take this memory for the table's exact key count.
+    const size_t disk_set_memory = data->callOnMethod(
+        [&]<typename Method>(const Method &)
+        { return estimateDiskSetMemory<DiskSetKey<Method>>(data->getTotalRowCount(), spill_settings.max_bytes_for_bloom_filter); });
+    return getCurrentQueryMemoryUsage() + static_cast<Int64>(disk_set_memory)
+        > static_cast<Int64>(spill_settings.max_bytes_before_external_set);
+}
+
 void Set::spillAfterBuild() const
 {
     if (spill_after_build_started.exchange(true))
@@ -171,7 +184,7 @@ void Set::spillAfterBuild() const
 
         /// Only the lookup that started the spill replaces the table, so the table is still in memory here.
         chassert(data && !disk_set);
-        logSpill("while it is used", "query memory exceeds the spill threshold");
+        logSpill("while it is used", "query memory with the memory of the set on disk exceeds the spill threshold");
 
         data->callOnMethod([&]<typename Method>(const Method & method)
         {
@@ -833,7 +846,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
     /// The set is usually built before the rest of the query takes its memory, so it also spills while it is
     /// used. Spilling takes the lock exclusively, so this lookup releases its shared lock first.
-    if (isSpillNeeded())
+    if (isSpillNeededAfterBuild())
     {
         lock.unlock();
         spillAfterBuild();

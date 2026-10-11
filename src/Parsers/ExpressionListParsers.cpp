@@ -4401,9 +4401,10 @@ SETTINGS max_bytes_before_external_set = 16777216;
 ```
 
 A set is usually built before the rest of the query takes much memory. A set that stays in memory while
-it is built can still be written to disk later, while the query uses it: once query memory exceeds the
-threshold, the set is written to disk, and most of its memory is released for the rest of the query, such
-as an aggregation that grows after the set is built.
+it is built can still be written to disk later, while the query uses it: once query memory, together with
+the memory that the set keeps when it is on disk, such as its Bloom filter, exceeds the threshold, the set is
+written to disk, and most of its memory is released for the rest of the query, such as an aggregation that
+grows after the set is built.
 
 `max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
 set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
