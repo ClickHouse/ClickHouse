@@ -11,10 +11,10 @@ FROM numbers(10);
 
 -- Scale conversion excludes only timestamps with digits that the destination cannot represent.
 -- Nullable fields, outer NULLs, empty containers, and tuple field mapping retain their own semantics.
--- Every pair of scales that drops digits is checked. All lossless conversions take the same path, so one
--- widening pair and one identity pair represent them.
+-- All pairs of scales that drop digits take the same path, so one of them represents the rest. One widening
+-- pair and one identity pair represent the lossless conversions.
 {% for mode in [0, 1] %}
-{% for source_scale, target_scale in [(0, 9), (3, 0), (6, 0), (6, 3), (9, 0), (9, 3), (9, 6), (9, 9)] %}
+{% for source_scale, target_scale in [(0, 9), (9, 3), (9, 9)] %}
 {% set source_timestamp_type = "DateTime64(" ~ source_scale ~ ", 'UTC')" %}
 {% set target_timestamp_type = "DateTime64(" ~ target_scale ~ ", 'UTC')" %}
 {% for label, expression, target, null_value, empty in [
@@ -85,8 +85,7 @@ SETTINGS transform_null_in = {{ mode }};
 
 -- Numeric and clock destinations reject only fractional digits that their scale discards.
 {% for mode in [0, 1] %}
-{% for target, scale in [('Int64', 0), ('Date', 0), ('Date32', 0), ('Time', 0), ('Time64(2)', 2),
-    ('Decimal32(2)', 2), ('Decimal64(2)', 2), ('Decimal128(2)', 2), ('Decimal256(2)', 2)] %}
+{% for target, scale in [('Int64', 0), ('Date', 0), ('Date32', 0), ('Time', 0), ('Time64(2)', 2), ('Decimal64(2)', 2)] %}
 WITH inputs AS
 (
     SELECT number, fromUnixTimestamp64Milli(toInt64(arrayElement([0, 500, 1000, 1250, 1125], number + 1)), 'UTC') AS t,

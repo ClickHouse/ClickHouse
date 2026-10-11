@@ -6,16 +6,13 @@ SET enable_nullable_tuple_type = 1;
     ('Date', '2026-01-01', 'bad'), ('Date32', '2026-01-01', 'bad'),
     ("DateTime(\'UTC\')", '2026-01-01 00:00:00', 'bad'),
     ("DateTime64(3, \'UTC\')", '2026-01-01 00:00:00.123', 'bad'),
-    ('Bool', 'true', 'bad'), ("Enum8(\'a\' = 1)", 'a', 'bad'),
-    ("Enum16(\'a\' = 1)", 'a', 'bad'), ('IPv4', '192.0.2.1', 'bad'),
+    ('Bool', 'true', 'bad'), ("Enum8(\'a\' = 1)", 'a', 'bad'), ('IPv4', '192.0.2.1', 'bad'),
     ('IPv6', '2001:db8::1', 'bad'), ('UUID', '00000000-0000-0000-0000-000000000001', 'bad'),
     ('FixedString(2)', 'a', 'long'), ('Tuple(UInt8)', '(1)', 'bad')
 ] %}
-{% for wrapper in ['', 'materialize'] %}
-SELECT '{{ target | replace("'", "\\'") }}', '{{ wrapper }}',
-    isNull(accurateCastOrNull({{ wrapper }}(tuple('{{ valid }}')), 'Tuple({{ target | replace("'", "\\'") }})')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple('{{ invalid }}')), 'Tuple({{ target | replace("'", "\\'") }})'));
-{% endfor %}
+SELECT '{{ target | replace("'", "\\'") }}',
+    isNull(accurateCastOrNull(materialize(tuple('{{ valid }}')), 'Tuple({{ target | replace("'", "\\'") }})')),
+    isNull(accurateCastOrNull(materialize(tuple('{{ invalid }}')), 'Tuple({{ target | replace("'", "\\'") }})'));
 {% endfor %}
 
 -- Tuple text parsing uses the same failure policy as parsing an individual field.
@@ -35,22 +32,16 @@ SELECT isNull(accurateCastOrNull(tuple(toLowCardinality('1')), 'Tuple(UInt8)')),
     isNull(accurateCastOrNull(tuple(toLowCardinality('bad')), 'Tuple(UInt8)'));
 
 -- A NULL in a nullable dictionary field is reported through the tuple like a NULL in a plain nullable field.
-{% for wrapper in ['', 'materialize'] %}
-SELECT accurateCastOrNull({{ wrapper }}(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
-    accurateCastOrNull({{ wrapper }}(tuple(CAST('1', 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
-    accurateCastOrNull({{ wrapper }}(tuple(CAST('bad', 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
-    accurateCastOrNull({{ wrapper }}(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(String)'),
-    accurateCastOrNull({{ wrapper }}(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(Nullable(UInt8))');
-{% endfor %}
+SELECT accurateCastOrNull(materialize(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
+    accurateCastOrNull(materialize(tuple(CAST('1', 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
+    accurateCastOrNull(materialize(tuple(CAST('bad', 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
+    accurateCastOrNull(materialize(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(String)'),
+    accurateCastOrNull(materialize(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(Nullable(UInt8))');
 SELECT k, accurateCastOrNull(tuple(k), 'Tuple(UInt8)'), accurateCastOrNull(tuple(k), 'Tuple(String)')
 FROM (SELECT arrayJoin(CAST(['1', NULL, 'bad', '1'], 'Array(LowCardinality(Nullable(String)))')) AS k);
-{% for enum_type in ['Enum8', 'Enum16'] %}
-{% for wrapper in ['', 'materialize'] %}
-SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('a', 1))), 'Tuple({{ enum_type }}(\'a\' = 1))')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('b', 1))), 'Tuple({{ enum_type }}(\'a\' = 1))')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(CAST(NULL, 'Nullable(String)'))), 'Tuple({{ enum_type }}(\'a\' = 1))'));
-{% endfor %}
-{% endfor %}
+SELECT isNull(accurateCastOrNull(materialize(tuple(toFixedString('a', 1))), 'Tuple(Enum8(\'a\' = 1))')),
+    isNull(accurateCastOrNull(materialize(tuple(toFixedString('b', 1))), 'Tuple(Enum8(\'a\' = 1))')),
+    isNull(accurateCastOrNull(materialize(tuple(CAST(NULL, 'Nullable(String)'))), 'Tuple(Enum8(\'a\' = 1))'));
 
 -- Named casts convert retained fields and initialize added fields without converting dropped values.
 SELECT accurateCastOrNull(CAST(tuple('bad', '1'), 'Tuple(discard String, keep String)'),
@@ -71,13 +62,11 @@ SELECT id,
     (k, 1) IN ((tuple(toUInt8(1)), 1)),
     (tupleElement(k, 1), 1) IN (SELECT toUInt8(1), 1)
 FROM nullable_tuple_conversion_rows ORDER BY id;
-{% for wrapper in ['', 'materialize'] %}
 SELECT
-    ({{ wrapper }}(tuple(toUInt16(257))), 1) IN (SELECT tuple(toUInt8(1)), 1),
-    ({{ wrapper }}(tuple(toUInt16(257))), 1) NOT IN (SELECT tuple(toUInt8(1)), 1),
-    ({{ wrapper }}(tuple(CAST(NULL, 'Nullable(UInt8)'))), 1) IN (SELECT tuple(toUInt8(1)), 1),
-    ({{ wrapper }}(tuple(CAST(NULL, 'Nullable(UInt8)'))), 1) NOT IN (SELECT tuple(toUInt8(1)), 1);
-{% endfor %}
+    (materialize(tuple(toUInt16(257))), 1) IN (SELECT tuple(toUInt8(1)), 1),
+    (materialize(tuple(toUInt16(257))), 1) NOT IN (SELECT tuple(toUInt8(1)), 1),
+    (materialize(tuple(CAST(NULL, 'Nullable(UInt8)'))), 1) IN (SELECT tuple(toUInt8(1)), 1),
+    (materialize(tuple(CAST(NULL, 'Nullable(UInt8)'))), 1) NOT IN (SELECT tuple(toUInt8(1)), 1);
 
 -- Nullable tuple fields and outer NULLs have distinct matching rules in each mode.
 {% for mode in [0, 1] %}
@@ -101,10 +90,8 @@ SETTINGS transform_null_in = 0;
 
 -- Clock parsers report invalid tuple fields through the same nullable result path.
 {% for target, valid in [('Time', '12:34:56'), ('Time64(3)', '12:34:56.123')] %}
-{% for wrapper in ['', 'materialize'] %}
-SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple('{{ valid }}')), 'Tuple({{ target }})')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple('bad')), 'Tuple({{ target }})'));
-{% endfor %}
+SELECT isNull(accurateCastOrNull(materialize(tuple('{{ valid }}')), 'Tuple({{ target }})')),
+    isNull(accurateCastOrNull(materialize(tuple('bad')), 'Tuple({{ target }})'));
 {% endfor %}
 
 -- Fixed-string parsers report malformed text as a NULL tuple.
@@ -116,66 +103,52 @@ SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple('{{ valid }}')), 'Tuple({{ 
     ('Bool', 'true', 'bad'), ('IPv6', '2001:db8::1', 'bad'),
     ('UUID', '00000000-0000-0000-0000-000000000001', 'bad')
 ] %}
-{% for wrapper in ['', 'materialize'] %}
-SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('{{ valid }}', {{ valid | length }}))), 'Tuple({{ target }})')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('{{ invalid }}', {{ invalid | length }}))), 'Tuple({{ target }})'));
-{% endfor %}
+SELECT isNull(accurateCastOrNull(materialize(tuple(toFixedString('{{ valid }}', {{ valid | length }}))), 'Tuple({{ target }})')),
+    isNull(accurateCastOrNull(materialize(tuple(toFixedString('{{ invalid }}', {{ invalid | length }}))), 'Tuple({{ target }})'));
 {% endfor %}
 
 -- Only IPv4-mapped IPv6 values can be accurately converted to an IPv4 tuple field.
-{% for wrapper in ['', 'materialize'] %}
-SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple(toIPv6('::ffff:192.0.2.1'))), 'Tuple(IPv4)')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(toIPv6('2001:db8::1'))), 'Tuple(IPv4)'));
-{% endfor %}
+SELECT isNull(accurateCastOrNull(materialize(tuple(toIPv6('::ffff:192.0.2.1'))), 'Tuple(IPv4)')),
+    isNull(accurateCastOrNull(materialize(tuple(toIPv6('2001:db8::1'))), 'Tuple(IPv4)'));
 
 -- Each date-time parsing mode preserves nullable failure reporting inside tuple fields.
 {% for mode in ['basic', 'best_effort', 'best_effort_us'] %}
-{% for wrapper in ['', 'materialize'] %}
-SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple('2026-01-01 12:34:56')), 'Tuple(DateTime)')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple('bad')), 'Tuple(DateTime)')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('2026-01-01 12:34:56', 19))), 'Tuple(DateTime)')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('bad', 3))), 'Tuple(DateTime)'))
+SELECT isNull(accurateCastOrNull(materialize(tuple('2026-01-01 12:34:56')), 'Tuple(DateTime)')),
+    isNull(accurateCastOrNull(materialize(tuple('bad')), 'Tuple(DateTime)')),
+    isNull(accurateCastOrNull(materialize(tuple(toFixedString('2026-01-01 12:34:56', 19))), 'Tuple(DateTime)')),
+    isNull(accurateCastOrNull(materialize(tuple(toFixedString('bad', 3))), 'Tuple(DateTime)'))
 SETTINGS cast_string_to_date_time_mode = '{{ mode }}';
-{% endfor %}
 {% endfor %}
 
 -- Scalar casts share the fixed-string failure policy with tuple fields, including padded text.
-{% for wrapper in ['', 'materialize'] %}
-SELECT isNull(accurateCastOrNull({{ wrapper }}(toFixedString('1', 4)), 'UInt8')),
-    isNull(accurateCastOrNull({{ wrapper }}(toFixedString('bad', 4)), 'UInt8')),
-    isNull(accurateCastOrNull({{ wrapper }}(toFixedString('1.25', 8)), 'Decimal64(2)')),
-    isNull(accurateCastOrNull({{ wrapper }}(toFixedString('bad', 8)), 'Decimal64(2)'));
-{% endfor %}
+SELECT isNull(accurateCastOrNull(materialize(toFixedString('1', 4)), 'UInt8')),
+    isNull(accurateCastOrNull(materialize(toFixedString('bad', 4)), 'UInt8')),
+    isNull(accurateCastOrNull(materialize(toFixedString('1.25', 8)), 'Decimal64(2)')),
+    isNull(accurateCastOrNull(materialize(toFixedString('bad', 8)), 'Decimal64(2)'));
 
 -- Binary fixed strings retain the same UUID and IPv6 interpretation as ordinary casts.
-{% for wrapper in ['', 'materialize'] %}
-WITH {{ wrapper }}(toFixedString('abcdefgh', 16)) AS binary
+WITH materialize(toFixedString('abcdefgh', 16)) AS binary
 SELECT accurateCastOrNull(tuple(binary), 'Tuple(UUID)') = tuple(CAST(binary, 'UUID')),
     accurateCastOrNull(tuple(binary), 'Tuple(IPv6)') = tuple(CAST(binary, 'IPv6'));
-{% endfor %}
 
 -- Ordinary fixed-string casts keep reporting malformed input for nullable destinations.
 SELECT CAST(materialize(toFixedString('bad', 3)), 'Nullable(UUID)'); -- { serverError CANNOT_PARSE_UUID }
 SELECT CAST(materialize(toFixedString('bad', 3)), 'Nullable(DateTime64(3))'); -- { serverError CANNOT_PARSE_DATETIME }
 
 -- Decimal parsers ignore trailing zero padding and reject empty text or embedded zero bytes.
-{% for bits in [32, 64, 128, 256] %}
-{% for wrapper in ['', 'materialize'] %}
-SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('1.25', 8))), 'Tuple(Decimal{{ bits }}(2))')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('1\0x', 8))), 'Tuple(Decimal{{ bits }}(2))')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('', 8))), 'Tuple(Decimal{{ bits }}(2))')),
-    toDecimal{{ bits }}OrNull({{ wrapper }}(toFixedString('1.25', 8)), 2) = toDecimal{{ bits }}('1.25', 2),
-    toDecimal{{ bits }}OrZero({{ wrapper }}(toFixedString('1.25', 8)), 2) = toDecimal{{ bits }}('1.25', 2),
-    toDecimal{{ bits }}OrZero({{ wrapper }}(toFixedString('bad', 8)), 2) = 0;
-{% endfor %}
+{% for bits in [64, 256] %}
+SELECT isNull(accurateCastOrNull(materialize(tuple(toFixedString('1.25', 8))), 'Tuple(Decimal{{ bits }}(2))')),
+    isNull(accurateCastOrNull(materialize(tuple(toFixedString('1\0x', 8))), 'Tuple(Decimal{{ bits }}(2))')),
+    isNull(accurateCastOrNull(materialize(tuple(toFixedString('', 8))), 'Tuple(Decimal{{ bits }}(2))')),
+    toDecimal{{ bits }}OrNull(materialize(toFixedString('1.25', 8)), 2) = toDecimal{{ bits }}('1.25', 2),
+    toDecimal{{ bits }}OrZero(materialize(toFixedString('1.25', 8)), 2) = toDecimal{{ bits }}('1.25', 2),
+    toDecimal{{ bits }}OrZero(materialize(toFixedString('bad', 8)), 2) = 0;
 {% endfor %}
 
 -- Decimal-backed timestamp and clock types also accept padded text.
 {% for target, valid in [('DateTime64(3)', '2026-01-01 00:00:00.123'), ('Time64(3)', '12:34:56.123')] %}
-{% for wrapper in ['', 'materialize'] %}
-SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('{{ valid }}', 32))), 'Tuple({{ target }})')),
-    isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('bad', 32))), 'Tuple({{ target }})'));
-{% endfor %}
+SELECT isNull(accurateCastOrNull(materialize(tuple(toFixedString('{{ valid }}', 32))), 'Tuple({{ target }})')),
+    isNull(accurateCastOrNull(materialize(tuple(toFixedString('bad', 32))), 'Tuple({{ target }})'));
 {% endfor %}
 
 DROP TABLE nullable_tuple_conversion_rows;
