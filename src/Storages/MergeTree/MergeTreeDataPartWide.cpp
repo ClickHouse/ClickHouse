@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
@@ -502,8 +503,27 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             }
         }
     }
-    else
+
+    /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
+    /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
+    /// in that case too, as when there are no checksums at all.
+    if (!hasTrustworthyChecksums())
     {
+        /// The marks alone do not prove that the data is there: a stream whose `.bin` file is gone entirely
+        /// still has intact marks. Checksums regenerated from the files on disk would not notice it either.
+        auto check_data_file_exists = [&](const String & stream_name)
+        {
+            auto data_file_name = stream_name + DATA_FILE_EXTENSION;
+            if (!getDataPartStorage().existsFile(data_file_name))
+                throw Exception(
+                    ErrorCodes::NO_FILE_IN_DATA_PART,
+                    "Part {} is broken: no data file {} for marks file {}{}",
+                    getDataPartStorage().getFullPath(),
+                    data_file_name,
+                    stream_name,
+                    marks_file_extension);
+        };
+
         if (!cols_substreams.empty())
         {
             /// Use columns_substreams.txt as the source of truth.
@@ -515,7 +535,20 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 {
                     auto stream_name = getStreamNameOrHash(substream, marks_file_extension, getDataPartStorage());
                     if (!stream_name)
-                        continue;
+                    {
+                        /// Missing or regenerated checksums cannot tell that a marks file is gone. But
+                        /// `columns_substreams.txt` names every substream the part was written with, and
+                        /// each of them must have its marks.
+                        throw Exception(
+                            ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "Part {} is broken: no marks file ({}{}) for column {}",
+                            getDataPartStorage().getFullPath(),
+                            substream,
+                            marks_file_extension,
+                            getColumns().getNames()[col_idx]);
+                    }
+
+                    check_data_file_exists(*stream_name);
 
                     auto file_path = *stream_name + marks_file_extension;
                     UInt64 file_size = getDataPartStorage().getFileSize(file_path);
@@ -527,27 +560,64 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             getDataPartStorage().getFullPath(),
                             std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
+                    /// Compressed marks of different streams compress to different sizes, so compare their
+                    /// decompressed sizes. Reading them through also proves that each one is complete.
+                    UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(file_path)->ignoreAll() : file_size;
+
                     if (!marks_size)
-                        marks_size = file_size;
-                    else if (file_size != *marks_size)
+                        marks_size = marks_payload_size;
+                    else if (marks_payload_size != *marks_size)
                         throw Exception(
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+
+                    checkDataFileCoversMarks(*stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1);
                 }
             }
         }
         else
         {
             /// Fallback: check that all marks are nonempty and have the same size.
+            std::optional<UInt64> marks_size;
+            NameSet checked_marks_files;
+            auto check_marks_file = [&](const String & stream_name)
+            {
+                auto file_path = stream_name + marks_file_extension;
+                if (!checked_marks_files.insert(file_path).second)
+                    return;
+
+                UInt64 file_size = getDataPartStorage().getFileSize(file_path);
+
+                if (!file_size)
+                    throw Exception(
+                        ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                        "Part {} is broken: {} is empty.",
+                        getDataPartStorage().getFullPath(),
+                        std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+
+                /// Compressed marks of different streams compress to different sizes, so compare their
+                /// decompressed sizes. Reading them through also proves that each one is complete.
+                UInt64 marks_payload_size = index_granularity_info.mark_type.compressed ? readFile(file_path)->ignoreAll() : file_size;
+
+                if (!marks_size)
+                    marks_size = marks_payload_size;
+                else if (marks_payload_size != *marks_size)
+                    throw Exception(
+                        ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                        "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+
+                checkDataFileCoversMarks(stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1);
+            };
+
+            /// Dynamic streams are not enumerated here, so a sample column with the dynamic structure is not
+            /// needed. Reading one would not work anyway: the reader looks the streams up in the checksums,
+            /// which are empty for parts of very old formats.
             ISerialization::EnumerateStreamsSettings settings;
             settings.enumerate_dynamic_streams = false;
-            std::optional<UInt64> marks_size;
             for (const auto & name_type : getColumns())
             {
                 auto serialization = getSerialization(name_type.name);
-                auto data = ISerialization::SubstreamData(serialization)
-                    .withType(name_type.type)
-                    .withColumn(getColumnSample(name_type));
+                auto data = ISerialization::SubstreamData(serialization).withType(name_type.type);
                 serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
                 {
                     auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
@@ -556,23 +626,51 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                     if (!stream_name)
                         return;
 
-                    auto file_path = *stream_name + marks_file_extension;
-                    UInt64 file_size = getDataPartStorage().getFileSize(file_path);
-
-                    if (!file_size)
-                        throw Exception(
-                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                            "Part {} is broken: {} is empty.",
-                            getDataPartStorage().getFullPath(),
-                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
-
-                    if (!marks_size)
-                        marks_size = file_size;
-                    else if (file_size != *marks_size)
-                        throw Exception(
-                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                            "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+                    check_data_file_exists(*stream_name);
+                    check_marks_file(*stream_name);
                 }, data);
+            }
+
+            /// Dynamic streams (`JSON`, `Dynamic`) cannot be enumerated without the deserialization state,
+            /// so check every stream found in the part directory, in both directions: a marks file that is
+            /// gone entirely leaves its `.bin` peer behind, and a data file that is gone leaves its marks.
+            /// Skip indices have marks without `.bin` files, so their files are left out.
+            NameSet file_names;
+            for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
+                file_names.insert(it->name());
+
+            for (const auto & file_name : file_names)
+            {
+                if (file_name.starts_with(SKIP_INDEX_FILE_PREFIX))
+                    continue;
+
+                if (file_name.ends_with(marks_file_extension))
+                {
+                    String data_file_name = file_name.substr(0, file_name.size() - marks_file_extension.size()) + DATA_FILE_EXTENSION;
+                    if (!file_names.contains(data_file_name))
+                        throw Exception(
+                            ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "Part {} is broken: no data file {} for marks file {}",
+                            getDataPartStorage().getFullPath(),
+                            data_file_name,
+                            file_name);
+                    continue;
+                }
+
+                if (!file_name.ends_with(DATA_FILE_EXTENSION))
+                    continue;
+
+                String stream_name = file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION));
+                String marks_file_name = stream_name + marks_file_extension;
+                if (!file_names.contains(marks_file_name))
+                    throw Exception(
+                        ErrorCodes::NO_FILE_IN_DATA_PART,
+                        "Part {} is broken: no marks file {} for data file {}",
+                        getDataPartStorage().getFullPath(),
+                        marks_file_name,
+                        file_name);
+
+                check_marks_file(stream_name);
             }
         }
     }
