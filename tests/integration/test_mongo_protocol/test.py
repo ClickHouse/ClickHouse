@@ -2407,6 +2407,17 @@ def test_read_commands_apply_max_time_ms(started_cluster):
     assert len(list(collection.aggregate([], allowDiskUse=True))) == 2
     with pytest.raises(pymongo.errors.OperationFailure, match="allowDiskUse"):
         list(collection.aggregate([], allowDiskUse=False))
+    with pytest.raises(pymongo.errors.OperationFailure, match="allowDiskUse"):
+        database.command({"find": "max_time_ms", "sort": {"id": 1}, "allowDiskUse": False})
+
+    # A write command runs as an awaited mutation, which `max_execution_time` does not bound.
+    with pytest.raises(pymongo.errors.OperationFailure, match="maxTimeMS"):
+        database.command({"delete": "max_time_ms", "deletes": [{"q": {"id": 1}, "limit": 0}], "maxTimeMS": 1})
+    with pytest.raises(pymongo.errors.OperationFailure, match="maxTimeMS"):
+        database.command(
+            {"update": "max_time_ms", "updates": [{"q": {"id": 1}, "u": {"$set": {"id": 3}}}], "maxTimeMS": 1}
+        )
+    assert collection.count_documents({}) == 2
 
     # A non-boolean `preserveNullAndEmptyArrays` is an error rather than an inner unwind.
     with pytest.raises(pymongo.errors.OperationFailure, match="preserveNullAndEmptyArrays"):

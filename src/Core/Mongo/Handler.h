@@ -178,6 +178,13 @@ std::optional<bool> getBoolOption(const rapidjson::Value & json, const char * na
   */
 SettingsChanges getMaxTimeSettings(const rapidjson::Value & json, const char * command);
 
+/** Rejects a non-zero `maxTimeMS` of a write command - `delete` and `update`. Such a command runs
+  * as a count of the matched documents followed by an awaited mutation, and a mutation is not
+  * bounded by `max_execution_time`, so a deadline could not be honoured: a request with one must
+  * not run without it.
+  */
+void rejectMaxTime(const rapidjson::Value & json, const char * command);
+
 /** The number of rows a translated `find` returns, i.e. the number of documents a filter matches.
   * A mutation of ClickHouse is asynchronous and reports nothing about the rows it will rewrite,
   * so a write command counts the matched documents itself before submitting the mutation.

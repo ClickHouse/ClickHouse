@@ -26,6 +26,7 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     auto collection = getCollectionRef(documents[0].documents[0], "delete");
     rejectUnorderedWriteBatch(documents[0].documents[0], "delete");
     rejectUnsupportedOptions(documents[0].documents[0].getRapidJSONRepresentation(), "delete", {"let"});
+    rejectMaxTime(documents[0].documents[0].getRapidJSONRepresentation(), "delete");
 
     /// The specs come either as a `deletes` document sequence or as the `deletes` array of the
     /// command body itself, see `getWriteBatch`.

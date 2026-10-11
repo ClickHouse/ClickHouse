@@ -977,6 +977,12 @@ SettingsChanges getMaxTimeSettings(const rapidjson::Value & json, const char * c
     return settings;
 }
 
+void rejectMaxTime(const rapidjson::Value & json, const char * command)
+{
+    if (!getMaxTimeSettings(json, command).empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The option 'maxTimeMS' of a '{}' command is not supported", command);
+}
+
 std::function<bool(const String &)> getNameFilter(const rapidjson::Value & command, const char * command_name)
 {
     auto filter_it = command.FindMember("filter");

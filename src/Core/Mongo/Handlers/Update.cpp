@@ -166,6 +166,7 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     auto collection = getCollectionRef(sections[0].documents[0], "update");
     rejectUnorderedWriteBatch(sections[0].documents[0], "update");
     rejectUnsupportedOptions(sections[0].documents[0].getRapidJSONRepresentation(), "update", {"let"});
+    rejectMaxTime(sections[0].documents[0].getRapidJSONRepresentation(), "update");
 
     /// The specs come either as an `updates` document sequence or as the `updates` array of the
     /// command body itself, see `getWriteBatch`.

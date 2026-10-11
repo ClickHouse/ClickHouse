@@ -304,8 +304,14 @@ void InsertHandler::createTable(
         /// insert itself. The columns are altered rather than the table recreated: an `ALTER`
         /// of an empty table only rewrites the metadata, while a `DROP` would throw away a
         /// table that the user may have created for something else.
-        auto count = executor->execute(fmt::format("SELECT count() FROM {} FORMAT TSV", collection.getQualifiedName()));
-        if (!count.starts_with('0'))
+        /// Whether it is empty is read from the metadata rather than from the rows, so that the
+        /// first insert needs only the `INSERT` and `ALTER` grants, not `SELECT`. An unknown number
+        /// of rows (`NULL`) counts as not empty.
+        auto is_empty = executor->execute(fmt::format(
+            "SELECT total_rows = 0 FROM system.tables WHERE database = {} AND name = {} FORMAT TSV",
+            quoteString(collection.database),
+            quoteString(collection.collection)));
+        if (!is_empty.starts_with('1'))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The collection '{}.{}' keeps whole documents in a single 'json' column and is not empty, so a document cannot be "

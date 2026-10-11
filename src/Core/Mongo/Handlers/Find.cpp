@@ -50,6 +50,10 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     auto json_representation = document.getRapidJSONRepresentation();
     rejectUnsupportedOptions(
         json_representation, "find", {"collation", "let", "min", "max", "returnKey", "showRecordId", "tailable", "awaitData"});
+    /// `allowDiskUse: false` forbids a blocking sort to spill to disk, but ClickHouse spills a large
+    /// sort by default (see `max_bytes_ratio_before_external_sort`), the same as for `aggregate`.
+    if (!getBoolOption(json_representation, "allowDiskUse", "find").value_or(true))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The option 'allowDiskUse: false' of a 'find' command is not supported");
 
     /// `filter` is a document so it owns its allocator: it is serialized below and
     /// must stay valid (it must not reference a temporary document's allocator).
