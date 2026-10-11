@@ -23,6 +23,11 @@ ${CLICKHOUSE_CLIENT} --query="
              output_format_parquet_write_bloom_filter = 1, engine_file_truncate_on_insert = 1, max_block_size = 1000000;
 "
 
+# Backdate the file so its version token has settled before the measurements: the footer cache keys
+# a local file by whether its token has settled, so a file that settles between the two measurements
+# below would have its footer re-read by the second one only.
+touch -d '2020-01-01 00:00:00' "${CLICKHOUSE_USER_FILES}/${DATA_FILE}"
+
 # Disable the min/max and page filters so pruning happens only via the dictionary or the bloom filter.
 CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0 --input_format_parquet_dictionary_filter_push_down=100000000"
 

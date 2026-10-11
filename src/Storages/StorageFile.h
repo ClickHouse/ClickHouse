@@ -28,6 +28,9 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
+struct FileBucketInfo;
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+
 class PullingPipelineExecutor;
 
 struct FormatParserSharedResources;
@@ -290,6 +293,15 @@ public:
         }
 
         const String & getFileNameInArchive();
+
+        /// Returns the (possibly virtual-column-filtered) list of files this iterator
+        /// will produce. Only meaningful when not reading from an archive and not
+        /// using distributed_processing.
+        const std::vector<std::string> & getFiles() const { return files; }
+
+        /// Whether a `_path` / `_file` filter is still pending and is applied only in `next`.
+        /// In that case `getFiles` is not the final set of files to read.
+        bool hasDeferredFilter() const { return deferred_filter_actions != nullptr; }
 private:
         std::vector<std::string> files;
 
@@ -428,11 +440,30 @@ private:
         std::vector<size_t> matched_row_groups;
         /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
         std::vector<std::pair<size_t, Field>> best_values;
+        /// See `IInputFormat::getFileMetadataDigest`.
+        UInt64 file_metadata_digest = 0;
     };
     std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
+
+    /// Optional subset-of-file assignment. When set, the input format only reads
+    /// these buckets (e.g. for Parquet — only the listed row groups). This is how
+    /// a single big file is processed in parallel by multiple sources.
+    FileBucketInfoPtr file_bucket_info;
+
+    /// When this source has been assigned a specific (file, bucket) pair, it
+    /// reads only that one file (once) and ignores the shared FilesIterator.
+    /// Set together with `file_bucket_info`.
+    std::optional<String> fixed_file_path;
+    bool fixed_file_consumed = false;
+
+    /// The file version (`computeFileCacheVersionToken`) observed when the bucket split was
+    /// decided. Set together with `file_bucket_info`. If the file changed by the time
+    /// this source reads it, the bucket indices are stale and the read fails-close
+    /// rather than returning inconsistent data.
+    std::optional<String> expected_file_cache_version;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

@@ -2,6 +2,9 @@
 
 #if USE_PARQUET
 
+/// For `computeParquetFooterDigest`, which `ParquetMetadataCacheCell::footerDigest` memoizes.
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+
 namespace CurrentMetrics
 {
 extern const Metric ParquetMetadataCacheBytes;
@@ -33,6 +36,19 @@ ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData
     : metadata(std::move(metadata_))
     , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
 {
+}
+
+UInt64 ParquetMetadataCacheCell::footerDigest() const
+{
+    UInt64 digest = memoized_footer_digest.load(std::memory_order_relaxed);
+    if (digest == 0)
+    {
+        /// Racing callers compute the same value from the same immutable `metadata`, so the only cost
+        /// of a race is doing the work twice.
+        digest = computeParquetFooterDigest(metadata);
+        memoized_footer_digest.store(digest, std::memory_order_relaxed);
+    }
+    return digest;
 }
 size_t ParquetMetadataCacheCell::calculateMemorySize() const
 {
