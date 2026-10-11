@@ -1,0 +1,5 @@
+-- a compatibility alias whose backend is overridden by an explicit `object_storage_type`, inside the base directory
+0
+-- the same alias pointing outside the base directory
+BAD_ARGUMENTS
+no directory

@@ -167,7 +167,7 @@ bool MergeTreeReadPool::cutRangesToRead(size_t task_idx, size_t & part_idx, size
 
     part_idx = thread_tasks.parts_and_ranges.back().part_idx;
     const auto marks_in_part = thread_tasks.sum_marks_in_parts.back();
-    const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
+    const auto min_marks_per_task = getMinMarksPerTask(part_idx);
 
     if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
         need_marks = marks_in_part;
@@ -196,7 +196,7 @@ void MergeTreeReadPool::cutFromThreadTask(ThreadTask & thread_tasks, size_t thre
 {
     auto & thread_task = thread_tasks.parts_and_ranges.back();
     auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
-    const auto min_marks_per_task = per_part_infos[thread_task.part_idx]->min_marks_per_task;
+    const auto min_marks_per_task = getMinMarksPerTask(thread_task.part_idx);
 
     /// Do not leave too little rows in part for next time.
     if (marks_in_part > need_marks && marks_in_part - need_marks < min_marks_per_task / 2)

@@ -59,8 +59,9 @@ struct DynamicS3DiskCredentialInfo
 /// (when `info->load_anonymously`) or `validateResolvedS3DiskCredentials`.
 [[ maybe_unused ]] Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & disk_args, ContextPtr context, bool is_loading_from_existing_metadata = false, DynamicS3DiskCredentialInfo * info = nullptr, bool for_system_database = false);
 
-/// Rewrite a dynamic disk configuration so its S3 client is built anonymously (see `getDiskConfigurationFromASTImpl`).
-void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config);
+/// Rewrite a dynamic disk configuration so its S3 client is built anonymously (see `getDiskConfigurationFromASTImpl`):
+/// the disk root, and every `locations.<name>` child whose resolved S3 auth is not proved safe.
+void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info);
 
 /// As `forceAnonymousS3DiskConfig`, but for a single backend selected by `prefix` (empty for the disk root, or
 /// `locations.<name>.` for one child of a multi-location `DiskObjectStorage`).
