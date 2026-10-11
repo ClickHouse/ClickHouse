@@ -1,0 +1,42 @@
+-- the kinds stored in the tags table
+empty	a	0
+floats	a	1
+histograms	a	2
+mixed	a	3
+mixed	b	3
+-- the data tables read by a selector: samples, histograms
+floats	1	0
+histograms	0	1
+mixed	1	1
+mixed{job="b"}	1	1
+floats or histograms	1	1
+empty	0	0
+-- the samples returned by a selector: value, number of histograms
+floats	1	0
+histograms	0	1
+mixed	0	1
+mixed	0	1
+mixed	2	0
+mixed	3	0
+floats or histograms	0	1
+floats or histograms	1	0
+empty	0
+-- PromQL over float samples only, and over histogram samples which it does not support yet
+[('__name__','floats'),('job','a')]	1
+-- a time series without samples found without the time filter
+empty	0	0
+-- without aggregation the column is a part of the sorting key
+(metric_name, id, min_time, max_time, sample_kinds)
+floats	1	0
+-- without the time ranges there is no column, both tables are read
+0
+floats	1	1
+-- an external tags table gets the column with DEFAULT 1 for the rows written by a version without histograms
+floats	1	0
+old	1	0
+old	5	0
+-- a customized engine of the inner tags table must keep the kinds when it merges rows
+ts_custom_columns
+ts_custom_engine
+ts_custom_memory
+-- the column must have one of the allowed types

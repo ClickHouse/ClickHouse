@@ -125,7 +125,8 @@ ${CLIENT} -q "CREATE TABLE ${DB}.ext_tags (
                   tags Map(LowCardinality(String), String),
                   all_tags Map(String, String),
                   min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))),
-                  max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))))
+                  max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))),
+                  sample_kinds SimpleAggregateFunction(groupBitOr, UInt8))
               ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name
               ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1"
 ${CLIENT} -q "CREATE TABLE ${DB}.ext_metrics (metric_family String, type LowCardinality(String),

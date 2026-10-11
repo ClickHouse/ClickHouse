@@ -24,6 +24,11 @@ public:
         DataTypePtr table_timestamp_type;
         DataTypePtr table_value_type;
 
+        /// Whether the TimeSeries table has histograms (see `timeSeriesVersionSupportsHistograms`).
+        /// Then the storage returns histogram samples too, with the column `histogram`
+        /// (see `TimeSeriesHistogramsColumns::getHistogramColumnType`).
+        bool with_histograms = false;
+
         PrometheusQueryTree selector;
 
         /// The scale of `min_time` and `max_time`: the scale of `table_timestamp_type`, but not less than the scale

@@ -403,7 +403,8 @@ def test_external_tables():
         "metric_name LowCardinality(String), "
         "tags Map(LowCardinality(String), String), "
         "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
-        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
+        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))), "
+        "sample_kinds SimpleAggregateFunction(groupBitOr, UInt8)) "
         "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
         "SETTINGS allow_dimensions_outside_sorting_key = 1"
     )
@@ -442,7 +443,8 @@ def test_data_keyword():
         "metric_name LowCardinality(String), "
         "tags Map(LowCardinality(String), String), "
         "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
-        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
+        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))), "
+        "sample_kinds SimpleAggregateFunction(groupBitOr, UInt8)) "
         "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
         "SETTINGS allow_dimensions_outside_sorting_key = 1"
     )

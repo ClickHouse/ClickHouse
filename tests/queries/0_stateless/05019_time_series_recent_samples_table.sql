@@ -36,11 +36,6 @@ FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN 
 SELECT value FROM prometheusQuery(ts_recent, 'test_metric', now()) ORDER BY value;
 SELECT value FROM prometheusQuery(ts_recent, 'sum(test_metric)', now()) ORDER BY value;
 
-SELECT '-- a query outside the TTL window reads from the main samples table';
-
-SELECT plan LIKE '%.inner_id.recentsamples.%' AS reads_recent, plan LIKE '%.inner_id.samples.%' AS reads_main
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN SELECT sum(value) FROM prometheusQuery(ts_recent, 'test_metric', toDateTime64('2020-01-01 00:00:00', 3))));
-
 SELECT '-- disabling the preference reads from the main samples table';
 
 SELECT plan LIKE '%.inner_id.recentsamples.%' AS reads_recent, plan LIKE '%.inner_id.samples.%' AS reads_main
@@ -63,6 +58,17 @@ INSERT INTO ts_recent (metric_name, tags, samples) VALUES
 SELECT
     (SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.samples.%') AS samples_rows,
     (SELECT sum(total_rows) FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%') AS recent_rows;
+
+SELECT '-- a query outside the TTL window reads from the main samples table';
+
+-- The query needs a series with a sample at that time: a selector matching no series reads no data table at all.
+-- The sample is written to the recent samples table as well, already expired, and the TTL can drop it at any moment,
+-- so it's inserted after the last check of the row counts.
+INSERT INTO ts_recent (metric_name, tags, samples) VALUES
+    ('test_metric', map('env', 'prod'), [(toDateTime64('2021-01-01 00:00:00', 3), 1.)]);
+
+SELECT plan LIKE '%.inner_id.recentsamples.%' AS reads_recent, plan LIKE '%.inner_id.samples.%' AS reads_main
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN SELECT sum(value) FROM prometheusQuery(ts_recent, 'test_metric', toDateTime64('2021-01-01 00:00:00', 3))));
 
 SELECT '-- custom partitioning and index granularity of the recent samples table';
 

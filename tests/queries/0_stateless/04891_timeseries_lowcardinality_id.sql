@@ -5,8 +5,8 @@
 
 -- A `TimeSeries` id of type `Tuple(UInt64, LowCardinality(UUID))` keeps the identifiers
 -- dictionary-encoded: the default id generator wraps the tags hash in `toLowCardinality`,
--- and the whole-metric primary-key range conditions are still emitted. Queries behave
--- exactly as with a plain `Tuple(UInt64, UUID)` id.
+-- and the range of the selected ids still replaces the id set in primary-key index analysis
+-- of a whole-metric selector. Queries behave exactly as with a plain `Tuple(UInt64, UUID)` id.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -42,16 +42,20 @@ SELECT '-- whole-metric selector: results and the emitted id range';
 
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) ORDER BY value, timestamp;
 
-SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
+SELECT
+    countIf(explain ILIKE '%Condition:%' AND explain LIKE '%(id in [%') > 0 AS has_id_range,
+    countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%-element set%') > 0 AS id_set_in_index_analysis
+FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000));
 
-SELECT '-- partial selector: results, no id range';
+SELECT '-- partial selector: results and the id set alone';
 
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000) ORDER BY value, timestamp;
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000) ORDER BY value, timestamp;
 
-SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)));
+SELECT
+    countIf(explain ILIKE '%Condition:%' AND explain LIKE '%(id in [%') > 0 AS has_id_range,
+    countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%-element set%') > 0 AS id_set_in_index_analysis
+FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000));
 
 SELECT '-- prometheus query evaluation over the dictionary-encoded ids';
 

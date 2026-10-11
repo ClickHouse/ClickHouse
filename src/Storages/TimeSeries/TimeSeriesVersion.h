@@ -32,6 +32,8 @@ class StorageTimeSeries;
 ///       (see `TimeSeriesColumnNames::getInnerMetricFamily`).
 ///   7 - The deduplication caches of the metric families and tags tables were introduced together with their settings
 ///       (`metric_families_deduplication_cache_*` and `tags_deduplication_cache_*`). Tables of earlier versions don't use the caches.
+///   8 - The "histograms" target table was introduced: every table of this version has a fifth target table
+///       storing native histogram samples, written with the keyword `HISTOGRAMS`. Tables of earlier versions have none.
 namespace TimeSeriesVersion
 {
     /// The first version recording the `id_type` setting (see the version history above).
@@ -57,11 +59,14 @@ namespace TimeSeriesVersion
     /// A table of an earlier version doesn't use the caches and must not have the settings: an older server wouldn't understand them.
     constexpr UInt64 MIN_WITH_DEDUPLICATION_CACHES = 7;
 
+    /// The first version with the "histograms" target table.
+    constexpr UInt64 MIN_WITH_HISTOGRAMS_TARGET = MIN_WITH_DEDUPLICATION_CACHES + 1;
+
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 7;
+    constexpr UInt64 LATEST = MIN_WITH_HISTOGRAMS_TARGET;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -82,6 +87,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_METRIC_FAMILIES_TARGET_NAME <= LATEST);
     static_assert(MIN_WITH_METRIC_FAMILY_INNER_COLUMN <= LATEST);
     static_assert(MIN_WITH_DEDUPLICATION_CACHES <= LATEST);
+    static_assert(MIN_WITH_HISTOGRAMS_TARGET <= LATEST);
 
     static_assert(MIN_SUPPORTED <= LATEST);
     static_assert((MIN_SUPPORTED <= MIN_WRITABLE) && (MIN_WRITABLE <= LATEST));
@@ -90,6 +96,12 @@ namespace TimeSeriesVersion
 
 /// Whether a version is in the range [MIN_SUPPORTED, LATEST].
 bool isTimeSeriesVersionSupported(UInt64 version);
+
+/// Whether tables of the specified version have the histograms target (and the outer `histograms.*` columns).
+inline bool timeSeriesVersionSupportsHistograms(UInt64 version)
+{
+    return version >= TimeSeriesVersion::MIN_WITH_HISTOGRAMS_TARGET;
+}
 
 /// Checks that the version of a TimeSeries table is in the range [MIN_SUPPORTED, LATEST], throws otherwise.
 /// A table with a newer version can appear after a downgrade of ClickHouse; it can still be attached,

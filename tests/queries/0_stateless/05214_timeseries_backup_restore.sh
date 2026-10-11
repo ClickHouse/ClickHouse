@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BACKUP and RESTORE of a TimeSeries table of the current version: the definition and the data
-# of all the inner tables (samples, recent samples, tags, metric families) must survive the round trip.
+# of all the inner tables (samples, recent samples, tags, metric families, histograms) must survive the round trip.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,6 +33,7 @@ function count_inner_tables()
     count_tables_like '.inner\_id.recentsamples.%'
     count_tables_like '.inner\_id.tags.%'
     count_tables_like '.inner\_id.metricfamilies.%'
+    count_tables_like '.inner\_id.histograms.%'
 }
 
 $CLIENT -q "CREATE TABLE ts ENGINE = TimeSeries"
@@ -40,8 +41,10 @@ $CLIENT -q "INSERT INTO ts (metric_name, tags, samples, metric_family, type, uni
     ('memory_usage_bytes', {'job': 'test', 'instance': 'a'}, [(toDateTime64('2026-01-01 00:00:00', 3), 10.), (toDateTime64('2026-01-01 00:00:15', 3), 12.)], 'memory_usage_bytes', 'gauge', 'bytes', 'Memory usage'),
     ('disk_usage_bytes', {'job': 'test', 'instance': 'a'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)], 'disk_usage_bytes', 'gauge', 'bytes', 'Disk usage'),
     ('up', {'job': 'test'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)], 'up', 'gauge', '', 'Whether the target is up')"
+$CLIENT -q "INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_spans, histograms.positive_values_int) VALUES
+    ('request_duration_seconds', {'job': 'test'}, [toDateTime64('2026-01-01 00:00:00', 3)], [3], [1.5], [[(0, 1)]], [[3]])"
 
-echo '--- the table has four inner tables ---'
+echo '--- the table has five inner tables ---'
 count_inner_tables
 
 BACKUP_NAME="${CLICKHOUSE_TEST_UNIQUE_NAME}"

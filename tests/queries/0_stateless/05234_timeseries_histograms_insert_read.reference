@@ -1,0 +1,62 @@
+--- the outer columns of the histograms group ---
+histograms.timestamp	Array(DateTime64(3))
+histograms.is_float	Array(Bool)
+histograms.counter_reset_hint	Array(UInt8)
+histograms.schema	Array(Int8)
+histograms.zero_threshold	Array(Float64)
+histograms.sum	Array(Float64)
+histograms.positive_spans	Array(Array(Tuple(offset Int32, length UInt32)))
+histograms.negative_spans	Array(Array(Tuple(offset Int32, length UInt32)))
+histograms.custom_values	Array(Array(Float64))
+histograms.count_int	Array(UInt64)
+histograms.zero_count_int	Array(UInt64)
+histograms.positive_values_int	Array(Array(UInt64))
+histograms.negative_values_int	Array(Array(UInt64))
+histograms.count_float	Array(Float64)
+histograms.zero_count_float	Array(Float64)
+histograms.positive_values_float	Array(Array(Float64))
+histograms.negative_values_float	Array(Array(Float64))
+--- inserting histograms of every flavour ---
+6
+5
+--- the rows of the histograms table ---
+latency	2026-01-01 00:00:00.000	false	0	3	0.001	12.5	[(-2,2),(1,2)]	[(0,1)]	[]	50	2	[3,10,20,9]	[6]	0	0	[]	[]
+latency_float	2026-01-01 00:00:00.000	true	3	2	0.001	3.25	[(0,3)]	[]	[]	0	0	[]	[]	7.5	0.5	[1.5,2.5,3]	[]
+latency_nhcb	2026-01-01 00:00:00.000	false	0	-53	0	4.2	[(0,4)]	[]	[0.1,0.5,1]	15	0	[1,2,4,8]	[]	0	0	[]	[]
+mixed	2026-01-01 00:00:10.000	false	0	3	0	0.5	[(0,1)]	[]	[]	1	0	[1]	[]	0	0	[]	[]
+mixed	2026-01-01 00:00:20.000	false	0	3	0	1.5	[(0,1)]	[]	[]	2	0	[2]	[]	0	0	[]	[]
+--- the time range of a time series covers its histogram samples ---
+latency	2026-01-01 00:00:00.000	2026-01-01 00:00:00.000
+latency_float	2026-01-01 00:00:00.000	2026-01-01 00:00:00.000
+latency_nhcb	2026-01-01 00:00:00.000	2026-01-01 00:00:00.000
+mixed	2026-01-01 00:00:00.000	2026-01-01 00:00:20.000
+up	2026-01-01 00:00:00.000	2026-01-01 00:00:00.000
+up	2026-01-01 00:00:00.000	2026-01-01 00:00:00.000
+--- reading the outer columns: a time series with samples of one kind only gets empty arrays for the other kind ---
+latency	{'__name__':'latency','job':'api'}	[]	['2026-01-01 00:00:00.000']	[3]	[50]	[0]
+latency_float	{'__name__':'latency_float','job':'api'}	[]	['2026-01-01 00:00:00.000']	[2]	[0]	[7.5]
+latency_nhcb	{'__name__':'latency_nhcb','job':'api'}	[]	['2026-01-01 00:00:00.000']	[-53]	[15]	[0]
+mixed	{'__name__':'mixed','job':'api'}	[('2026-01-01 00:00:00.000',1.5)]	['2026-01-01 00:00:10.000','2026-01-01 00:00:20.000']	[3,3]	[1,2]	[0,0]
+up	{'__name__':'up','job':'api'}	[('2026-01-01 00:00:00.000',1)]	[]	[]	[]	[]
+up	{'__name__':'up','job':'web'}	[('2026-01-01 00:00:00.000',1)]	[]	[]	[]	[]
+--- reading the data columns only ---
+[]	[0]
+[]	[15]
+[]	[50]
+[('2026-01-01 00:00:00.000',1)]	[]
+[('2026-01-01 00:00:00.000',1)]	[]
+[('2026-01-01 00:00:00.000',1.5)]	[1,2]
+['2026-01-01 00:00:00.000']	[3.25]
+['2026-01-01 00:00:00.000']	[4.2]
+['2026-01-01 00:00:00.000']	[12.5]
+['2026-01-01 00:00:10.000','2026-01-01 00:00:20.000']	[0.5,1.5]
+--- ARRAY JOIN over the group ---
+latency	2026-01-01 00:00:00.000	[3,10,20,9]
+latency_float	2026-01-01 00:00:00.000	[]
+latency_nhcb	2026-01-01 00:00:00.000	[1,2,4,8]
+mixed	2026-01-01 00:00:10.000	[1]
+mixed	2026-01-01 00:00:20.000	[2]
+--- errors ---
+5
+--- a table of version 5 has no histograms columns ---
+0

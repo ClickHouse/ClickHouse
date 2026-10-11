@@ -23,7 +23,8 @@ CREATE TABLE ts_tags (
     metric_name LowCardinality(String),
     tags Map(LowCardinality(String), String),
     min_time SimpleAggregateFunction(min, Nullable(DateTime64(9, 'UTC'))),
-    max_time SimpleAggregateFunction(max, Nullable(DateTime64(9, 'UTC'))))
+    max_time SimpleAggregateFunction(max, Nullable(DateTime64(9, 'UTC'))),
+    sample_kinds SimpleAggregateFunction(groupBitOr, UInt8))
 -- `tags` is functionally dependent on `id`, so it is kept outside the sorting key on purpose.
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
 

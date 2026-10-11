@@ -118,6 +118,28 @@ remote_write:
 
 ClickHouse acknowledges an asynchronous remote-write request only after the data is flushed to all inner tables of the `TimeSeries` table, regardless of the [`wait_for_async_insert`](/reference/settings/session-settings/wait-for#wait_for_async_insert) setting: the remote-write protocol treats an acknowledged write as durable. If the flush fails, the request returns an error and Prometheus retries it.
 
+### Native histograms {#remote-write-native-histograms}
+
+Prometheus sends [native histograms](https://prometheus.io/docs/specs/native_histograms/) over remote-write only when asked to:
+
+```yaml
+remote_write:
+  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics
+    send_native_histograms: true
+```
+
+A `TimeSeries` table stores them in its [histograms table](/reference/engines/table-engines/integrations/time-series#histograms-table), exactly as sent: integer and float histograms, histograms with custom buckets, and stale markers. They can be read through the `histograms.*` columns of the table or the [timeSeriesHistograms](/reference/functions/table-functions/timeSeriesHistograms) table function.
+
+PromQL queries don't support native histograms yet: a query fails if the time series it selects have histogram samples in the evaluated time range. Queries selecting only time series without histogram samples aren't affected.
+
+A histogram which Prometheus itself would reject, for example one whose bucket spans do not match its bucket counts, makes ClickHouse reject the whole request with HTTP status 400, and Prometheus drops the request without retrying, as it does with any 4xx status.
+
+:::note
+Prometheus does not send native histograms with custom buckets (such as classic histograms converted with `convert_classic_histograms_to_nhcb`) over remote-write 1.0, which is the protocol version ClickHouse supports: Prometheus 3.10 and later drop them on the sending side with a warning, and earlier versions send them without their bucket bounds, which makes ClickHouse reject the request. Exponential native histograms are sent by every version. Other senders do send custom-bucket histograms over remote-write 1.0, for example the OpenTelemetry Collector with `convert_explicit_histograms_to_nhcb` enabled, and ClickHouse stores them.
+:::
+
+A table of an older [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) has no histograms table. Such a table stores the float samples of a request and drops its native histograms: rejecting the request would make Prometheus drop the float samples too. Every drop is counted in the `PrometheusRemoteWriteDroppedHistograms` profile event and logged with a warning, at most once a minute. To store native histograms, create a table of the current version and move the data into it.
+
 ## Query with PromQL {#promql-query-support}
 
 Use the instant-query endpoint to evaluate a PromQL expression at one point in time:
@@ -254,3 +276,11 @@ remote_read:
       username: default
       password: <password>
 ```
+
+For a `TimeSeries` table with a [histograms table](/reference/engines/table-engines/integrations/time-series#histograms-table), remote read returns the [native histograms](#remote-write-native-histograms) of a time series too, exactly as they were written.
+
+If a time series has several samples with the same timestamp, remote read returns one of them, as close to Prometheus as possible. Prometheus keeps the sample written first and rejects the others; ClickHouse doesn't keep the order of writes, so it resolves the conflict when reading:
+- Identical samples count as one sample, as in Prometheus.
+- A float sample is returned instead of a histogram sample, as Prometheus does for samples sent in the same request.
+- Of float samples with different values, the greatest value is returned.
+- Of different histograms, the histogram with the greatest count of observations is returned. An integer histogram and a float histogram with the same counts are different histograms, as in Prometheus.

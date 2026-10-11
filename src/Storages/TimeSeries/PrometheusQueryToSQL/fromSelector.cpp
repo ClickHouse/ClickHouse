@@ -9,6 +9,8 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
+#include <fmt/format.h>
+
 
 namespace DB::PrometheusQueryToSQL
 {
@@ -16,6 +18,9 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
+
+    /// The alias of `timeSeriesSelector` in the FROM clause, to refer to its columns rather than to the aliases of the SELECT list.
+    constexpr const char * SELECTOR_ALIAS = "selector";
 
     ASTPtr isStaleMarker(ASTPtr value)
     {
@@ -45,7 +50,30 @@ namespace
 
         /// The columns `timestamp` and `value` keep the types they have in the table, see the comment for StoreMethod::RAW_DATA.
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+
+        if (timeSeriesVersionSupportsHistograms(context.time_series_version))
+        {
+            /// For a TimeSeries table with histograms `timeSeriesSelector` returns histogram samples too, which the evaluation
+            /// of prometheus queries doesn't support yet, so the query fails if the selected time series have any:
+            /// timeSeriesThrowIfNotEmpty(value, histogram, '<message>') AS value
+            /// It checks whole blocks: the samples of the selector's samples table come in blocks of their own, with empty `histogram`.
+            /// The check is in the SELECT list rather than in WHERE: a WHERE condition could be evaluated before the id filter
+            /// of the selector, on histogram samples of other time series. For the same reason the stale-marker filter below
+            /// refers to the selector's column `value`, not to this alias.
+            const String message = fmt::format(
+                "Evaluation of prometheus queries over native histograms is not implemented yet, but the selector {} selected histogram samples",
+                instant_selector_text);
+            builder.select_list.push_back(makeASTFunction(
+                "timeSeriesThrowIfNotEmpty",
+                make_intrusive<ASTIdentifier>(ColumnNames::Value),
+                make_intrusive<ASTIdentifier>(ColumnNames::Histogram),
+                make_intrusive<ASTLiteral>(message)));
+            builder.select_list.back()->setAlias(ColumnNames::Value);
+        }
+        else
+        {
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+        }
 
         /// The range is (start_time - window, end_time] at the result scale. The table function converts the bounds to the scale
         /// of the table itself, rounding them towards the inside of the range.
@@ -59,14 +87,17 @@ namespace
             make_intrusive<ASTLiteral>(String{instant_selector_text}),
             timeSeriesTimestampToAST(min_time, context.result_timestamp_type),
             timeSeriesTimestampToAST(max_time, context.result_timestamp_type));
+        builder.from_table_function->setAlias(SELECTOR_ALIAS);
 
         /// Prometheus range selectors omit the dedicated stale-NaN payload while preserving
         /// ordinary NaN samples as data.
+        /// The filter is on the selector's column `value`: the alias `value` of the SELECT list can be the check of the histogram
+        /// samples (see above), and the filter is pushed down into the selector's reads.
         if (filter_stale_markers)
         {
             builder.where = makeASTFunction(
                 "not",
-                isStaleMarker(make_intrusive<ASTIdentifier>(ColumnNames::Value)));
+                isStaleMarker(make_intrusive<ASTIdentifier>(std::vector<String>{SELECTOR_ALIAS, ColumnNames::Value})));
         }
 
         res.select_query = builder.getSelectQuery();

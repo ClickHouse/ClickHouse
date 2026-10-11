@@ -1,4 +1,5 @@
---- the table has four inner tables ---
+--- the table has five inner tables ---
+1
 1
 1
 1
@@ -11,11 +12,14 @@ definitions are equal
 2
 2
 2
+2
 --- the restored table has the same data ---
-disk_usage_bytes	{'__name__':'disk_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',1)]	disk_usage_bytes	gauge	bytes	Disk usage
-memory_usage_bytes	{'__name__':'memory_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',10),('2026-01-01 00:00:15.000',12)]	memory_usage_bytes	gauge	bytes	Memory usage
-up	{'__name__':'up','job':'test'}	[('2026-01-01 00:00:00.000',1)]	up	gauge		Whether the target is up
+disk_usage_bytes	{'__name__':'disk_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',1)]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	disk_usage_bytes	gauge	bytes	Disk usage
+memory_usage_bytes	{'__name__':'memory_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',10),('2026-01-01 00:00:15.000',12)]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	memory_usage_bytes	gauge	bytes	Memory usage
+request_duration_seconds	{'__name__':'request_duration_seconds','job':'test'}	[]	['2026-01-01 00:00:00.000']	[false]	[0]	[0]	[0]	[1.5]	[[(0,1)]]	[[]]	[[]]	[3]	[0]	[[3]]	[[]]	[0]	[0]	[[]]	[[]]				
+up	{'__name__':'up','job':'test'}	[('2026-01-01 00:00:00.000',1)]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	up	gauge		Whether the target is up
 restored:
-disk_usage_bytes	{'__name__':'disk_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',1)]	disk_usage_bytes	gauge	bytes	Disk usage
-memory_usage_bytes	{'__name__':'memory_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',10),('2026-01-01 00:00:15.000',12)]	memory_usage_bytes	gauge	bytes	Memory usage
-up	{'__name__':'up','job':'test'}	[('2026-01-01 00:00:00.000',1)]	up	gauge		Whether the target is up
+disk_usage_bytes	{'__name__':'disk_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',1)]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	disk_usage_bytes	gauge	bytes	Disk usage
+memory_usage_bytes	{'__name__':'memory_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',10),('2026-01-01 00:00:15.000',12)]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	memory_usage_bytes	gauge	bytes	Memory usage
+request_duration_seconds	{'__name__':'request_duration_seconds','job':'test'}	[]	['2026-01-01 00:00:00.000']	[false]	[0]	[0]	[0]	[1.5]	[[(0,1)]]	[[]]	[[]]	[3]	[0]	[[3]]	[[]]	[0]	[0]	[[]]	[[]]				
+up	{'__name__':'up','job':'test'}	[('2026-01-01 00:00:00.000',1)]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	[]	up	gauge		Whether the target is up

@@ -5,13 +5,19 @@
 
 #include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/types.h>
 #include <Storages/IStorage_fwd.h>
 #include <prompb/remote.pb.h>
 
 
 namespace DB
 {
+class IColumn;
 class StorageTimeSeries;
+
+/// Inserts a Prometheus timestamp (milliseconds since the epoch) into a column of the timestamp type of a TimeSeries table
+/// (`DateTime64` with the specified scale, or `DateTime` / `UInt32`).
+void insertPrometheusTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column);
 
 /// Helper class to support the prometheus remote write protocol.
 class PrometheusRemoteWriteProtocol : WithMutableContext
