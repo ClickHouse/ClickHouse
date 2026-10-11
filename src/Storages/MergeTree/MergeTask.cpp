@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
@@ -51,6 +52,7 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeIndexClearTTL.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -450,7 +452,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     for (const auto & index : skip_indexes)
     {
-        if (exclude_index_names.contains(index.name)) /// user requested to skip this index during merge
+        if (exclude_index_names.contains(index.name)) /// user requested to skip this index during merge, or its `CLEAR INDEX` rule expired
             continue;
 
         /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
@@ -546,6 +548,73 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     /// Track whether any projection or index needs _block_number/_block_offset in the horizontal phase.
     global_ctx->need_block_number_in_merge |= key_columns.contains(BlockNumberColumn::name);
     global_ctx->need_block_offset_in_merge |= key_columns.contains(BlockOffsetColumn::name);
+}
+
+static void writeChecksumsFile(
+    IDataPartStorage & storage, const MergeTreeDataPartChecksums & checksums, const WriteSettings & write_settings, bool sync)
+{
+    auto out_checksums = storage.writeFile("checksums.txt", 4096, write_settings);
+    checksums.write(*out_checksums);
+    out_checksums->finalize();
+    if (sync)
+        out_checksums->sync();
+}
+
+static void pruneExpiredIndexFilesFromPart(
+    const MergeTreeData::MutableDataPartPtr & part,
+    const StorageMetadataPtr & metadata_snapshot,
+    time_t current_time,
+    bool sync,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings)
+{
+    const auto clear_index_files = getExpiredIndexFiles(*part, metadata_snapshot, current_time);
+    if (clear_index_files.files.empty())
+        return;
+
+    auto & storage = part->getDataPartStorage();
+    bool removed_any = false;
+
+    if (clear_index_files.packed_archive_dirty)
+    {
+        /// Packed virtual files are read back from the archive produced by the merge. Object-storage
+        /// transactions do not expose that archive through the part storage until it is checkpointed.
+        storage.checkpointTransaction();
+        const auto & disk_storage = dynamic_cast<const DataPartStorageOnDiskBase &>(storage);
+        disk_storage.filterPackedSkipIndicesArchiveTo(
+            clear_index_files.files,
+            storage,
+            write_settings,
+            read_settings,
+            part->checksums,
+            sync);
+        if (!part->checksums.has(String(SKIP_INDICES_PACKED_FILENAME)))
+        {
+            storage.removeFileIfExists(String(SKIP_INDICES_PACKED_FILENAME));
+            disk_storage.resetSkipIndicesPackedReader();
+        }
+        removed_any = true;
+    }
+
+    for (const auto & file : clear_index_files.files)
+    {
+        if (part->checksums.has(file))
+        {
+            storage.removeFileIfExists(file);
+            part->checksums.remove(file);
+            removed_any = true;
+        }
+    }
+
+    if (removed_any)
+    {
+        writeChecksumsFile(storage, part->checksums, write_settings, sync);
+        auto sync_guard = sync ? storage.getDirectorySyncGuard() : nullptr;
+
+        part->setBytesOnDisk(part->checksums.getTotalSizeOnDisk());
+        part->setBytesUncompressedOnDisk(part->checksums.getTotalSizeUncompressedOnDisk());
+        part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    }
 }
 
 String MergeTask::buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix)
@@ -948,6 +1017,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         if (!exclude_indexes_string.empty())
             exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_ctx->context->getSettingsRef());
     }
+
+    /// Leave out indexes whose `CLEAR INDEX` rule has expired. When TTL values are being recalculated, the
+    /// stored ones may be stale, so the merge keeps every index and `pruneExpiredIndexFilesFromPart` decides after
+    /// `finalizePart`. Unlike TTL delete, a later `SYSTEM STOP TTL MERGES` doesn't abort the merge, because leaving
+    /// out an index adds no work.
+    if (!ctx->force_ttl && !global_ctx->ttl_merges_blocker->isCancelled())
+        for (const auto & [index_name, _] : getIndexesWithExpiredClearTTL(
+                 *global_ctx->metadata_snapshot, global_ctx->new_data_part->ttl_infos, global_ctx->time_of_merge))
+            exclude_index_names.insert(index_name);
 
     const bool has_block_columns = enabledBlockNumberColumn(global_ctx) && enabledBlockOffsetColumn(global_ctx);
     global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
@@ -2588,6 +2666,15 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);
     else
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, &global_ctx->storage_columns);
+
+    if (!global_ctx->ttl_merges_blocker->isCancelled())
+        pruneExpiredIndexFilesFromPart(
+            global_ctx->new_data_part,
+            global_ctx->metadata_snapshot,
+            global_ctx->time_of_merge,
+            ctx->need_sync,
+            global_ctx->context->getReadSettings(),
+            global_ctx->context->getWriteSettings());
 
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
