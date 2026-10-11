@@ -157,15 +157,19 @@ bool WorkloadEntityImplicitStorage::storeEntity(
     return getNextStorage()->storeEntity(current_context, entity_type, entity_name, create_entity_query, throw_if_exists, replace_if_exists, settings);
 }
 
-bool WorkloadEntityImplicitStorage::definesEntity(const String & entity_name) const
+bool WorkloadEntityImplicitStorage::definesEntity(const String & entity_name, WorkloadEntityType entity_type) const
 {
     auto lock = getLock();
+    if (entity_type == WorkloadEntityType::Resource)
+    {
+        if (entity_name == IMPLICIT_CPU_RESOURCE_NAME)
+            return config.respect_cpu_limit;
+        if (entity_name == IMPLICIT_MEMORY_RESOURCE_NAME)
+            return config.respect_memory_limit;
+        return false;
+    }
     if (entity_name.empty())
         return true; // The root workload
-    if (entity_name == IMPLICIT_CPU_RESOURCE_NAME)
-        return config.respect_cpu_limit;
-    if (entity_name == IMPLICIT_MEMORY_RESOURCE_NAME)
-        return config.respect_memory_limit;
     if (entity_name == DEFAULT_WORKLOAD_NAME)
         return config.implicit_default_workload;
     return false;
@@ -178,8 +182,12 @@ bool WorkloadEntityImplicitStorage::removeEntity(
     bool throw_if_not_exists)
 {
     // An implicit entity cannot be dropped even while shadowed: it stays defined by the server settings and becomes
-    // visible again when the shadowing entity goes away. An entity of an inner layer with the same name is dropped instead.
-    if (definesEntity(entity_name) && !getNextStorage()->has(entity_name))
+    // visible again when the shadowing entity goes away. An entity of the same kind and name in an inner layer is
+    // dropped instead.
+    auto inner_entity = getNextStorage()->tryGet(entity_name);
+    const bool inner_has_kind = inner_entity
+        && (typeid_cast<ASTCreateResourceQuery *>(inner_entity.get()) != nullptr) == (entity_type == WorkloadEntityType::Resource);
+    if (definesEntity(entity_name, entity_type) && !inner_has_kind)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Workload entity '{}' cannot be dropped: it is an implicit entity defined by the server setting `{}`",
             entity_name, getImplicitEntitySetting(entity_name));

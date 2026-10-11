@@ -2792,6 +2792,13 @@ TEST(SchedulerWorkloadResourceManager, ImplicitEntitiesCannotBeReferenced)
     t.query("DROP RESOURCE cpu");
     EXPECT_EQ(t.storage.getEntitySource(String(IMPLICIT_CPU_RESOURCE_NAME)), "implicit");
 
+    // A resource `default` shadows the implicit workload by name, but does not make it droppable
+    t.query("CREATE RESOURCE default (READ DISK d)");
+    expect_drop_error("DROP WORKLOAD default", "implicit_default_workload");
+    expect_drop_error("DROP WORKLOAD IF EXISTS default", "implicit_default_workload");
+    t.query("DROP RESOURCE default");
+    EXPECT_EQ(t.storage.getEntitySource("default"), "implicit");
+
     // Once the setting is off, the name is just absent
     t.setImplicitEntities({});
     EXPECT_THROW(t.query("DROP RESOURCE __server_cpu__"), DB::Exception);

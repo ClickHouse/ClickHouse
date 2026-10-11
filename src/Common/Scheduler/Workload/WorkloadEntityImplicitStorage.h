@@ -57,8 +57,8 @@ private:
         const String & entity_name,
         bool throw_if_not_exists) override;
 
-    /// Whether the server settings define an implicit entity with this name, visible or shadowed
-    bool definesEntity(const String & entity_name) const;
+    /// Whether the server settings define an implicit entity of this kind and name, visible or shadowed
+    bool definesEntity(const String & entity_name, WorkloadEntityType entity_type) const;
 
     /// Adds the root workload
     void addDerivedEntities(std::unordered_map<String, ASTPtr> & visible_entities) const override;
