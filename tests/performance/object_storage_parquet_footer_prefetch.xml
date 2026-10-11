@@ -1,0 +1,20 @@
+<!-- Short queries over many Parquet objects in object storage wait for the footer of every object. -->
+<test requires_s3="1">
+    <settings>
+        <max_threads>4</max_threads>
+        <use_parquet_metadata_cache>0</use_parquet_metadata_cache>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_cache_for_count_from_files>0</use_cache_for_count_from_files>
+    </settings>
+
+    <fill_query>
+        INSERT INTO FUNCTION s3(perf_s3, filename = 'object_storage_parquet_footer_prefetch/f_{{_partition_id}}.parquet', format = Parquet)
+        PARTITION BY number % 100
+        SELECT number, intHash32(number) % 100000 AS key, toString(cityHash64(number)) AS s FROM numbers(10000000)
+        SETTINGS s3_truncate_on_insert = 1
+    </fill_query>
+
+    <query>SELECT count() FROM s3(perf_s3, filename = 'object_storage_parquet_footer_prefetch/f_*.parquet', format = Parquet) WHERE key = 100000</query>
+    <query>SELECT count() FROM s3(perf_s3, filename = 'object_storage_parquet_footer_prefetch/f_*.parquet', format = Parquet)</query>
+    <query>SELECT sum(key) FROM s3(perf_s3, filename = 'object_storage_parquet_footer_prefetch/f_*.parquet', format = Parquet)</query>
+</test>

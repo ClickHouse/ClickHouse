@@ -17,6 +17,11 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
+namespace ProfileEvents
+{
+    extern const Event ParquetPrefetchedFooters;
+}
+
 namespace DB
 {
 
@@ -36,6 +41,91 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     options.dictionary_filter_limit_bytes = format_settings.parquet.dictionary_filter_push_down;
 
     return options;
+}
+
+bool ParquetPrefetchedFooter::tryStart()
+{
+    std::lock_guard lock(mutex);
+    if (state != State::Scheduled)
+        return false;
+    state = State::Running;
+    return true;
+}
+
+void ParquetPrefetchedFooter::finish(parquet::format::FileMetaData metadata_)
+{
+    {
+        std::lock_guard lock(mutex);
+        chassert(state == State::Running);
+        metadata = std::move(metadata_);
+        state = State::Done;
+    }
+    done.notify_all();
+}
+
+void ParquetPrefetchedFooter::fail(std::exception_ptr exception_) noexcept
+{
+    {
+        std::lock_guard lock(mutex);
+        if (state != State::Scheduled && state != State::Running)
+            return;
+        exception = std::move(exception_);
+        state = State::Done;
+    }
+    done.notify_all();
+}
+
+std::optional<parquet::format::FileMetaData> ParquetPrefetchedFooter::take()
+{
+    std::unique_lock lock(mutex);
+    if (state == State::Scheduled || state == State::Taken)
+    {
+        state = State::Taken;
+        return std::nullopt;
+    }
+
+    done.wait(lock, [this] { return state == State::Done; });
+    state = State::Taken;
+
+    if (exception)
+    {
+        auto to_rethrow = std::move(exception);
+        lock.unlock();
+        /// The read ran with `Exception::SuppressErrorCodesScope`: a failure nobody takes is not an error of the query.
+        try
+        {
+            std::rethrow_exception(to_rethrow);
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+    }
+
+    chassert(metadata.has_value());
+    return std::move(metadata);
+}
+
+parquet::format::FileMetaData readParquetFileMetaData(ReadBuffer & buf, const FormatSettings & format_settings)
+{
+    const Parquet::ReadOptions read_options = convertReadOptions(format_settings);
+    Parquet::Prefetcher prefetcher;
+    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
+    return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+}
+
+parquet::format::FileMetaData readParquetFileMetaDataAhead(
+    ReadBuffer & buf,
+    const FormatSettings & format_settings,
+    const ParquetMetadataCachePtr & metadata_cache,
+    const RelativePathWithMetadata & object)
+{
+    if (metadata_cache)
+        return metadata_cache->getOrSetMetadata(
+            ParquetMetadataCache::createKey(object.getPath(), object.metadata->etag),
+            [&] { return readParquetFileMetaData(buf, format_settings); });
+    return readParquetFileMetaData(buf, format_settings);
 }
 
 ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
@@ -104,8 +194,20 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
     }
 }
 
-parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher) const
+parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher)
 {
+    if (prefetched_footer)
+    {
+        auto prefetched = prefetched_footer->take();
+        prefetched_footer.reset();
+        if (prefetched)
+        {
+            /// The background read has already made the metadata cache access of this object.
+            ProfileEvents::increment(ProfileEvents::ParquetPrefetchedFooters);
+            return std::move(*prefetched);
+        }
+    }
+
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
     {
         String file_name = object_with_metadata->getPath();
@@ -198,6 +300,11 @@ void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & bucke
     buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
 }
 
+void ParquetV3BlockInputFormat::setPrefetchedFooter(std::shared_ptr<ParquetPrefetchedFooter> footer)
+{
+    prefetched_footer = std::move(footer);
+}
+
 const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const
 {
     return &previous_block_missing_values;
@@ -243,9 +350,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
 {
     if (initialized)
         return;
-    Parquet::Prefetcher prefetcher;
-    prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    file_metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    file_metadata = readParquetFileMetaData(in, read_options.format);
     initialized = true;
 }
 
@@ -320,10 +425,7 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
-    Parquet::ReadOptions read_options = convertReadOptions(format_settings_);
-    Parquet::Prefetcher prefetcher;
-    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
-    auto metadata = Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+    auto metadata = readParquetFileMetaData(buf, format_settings_);
     std::vector<size_t> bucket_sizes;
     for (const auto & row_group : metadata.row_groups)
         bucket_sizes.push_back(size_t(row_group.total_byte_size));

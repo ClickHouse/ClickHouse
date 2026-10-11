@@ -9,8 +9,48 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 
+#include <condition_variable>
+
 namespace DB
 {
+
+/// The footer of one object, read in the background ahead of the reader that opens the object.
+class ParquetPrefetchedFooter : private boost::noncopyable
+{
+public:
+    /// The background read calls `tryStart` and then `finish` or `fail`. It must not start if `tryStart` returns false.
+    bool tryStart();
+    void finish(parquet::format::FileMetaData metadata_);
+    void fail(std::exception_ptr exception_) noexcept;
+
+    /// For the reader: waits for a read in progress and returns its footer or rethrows its error.
+    /// Returns nullopt if the read has not started, and then it never starts.
+    std::optional<parquet::format::FileMetaData> take();
+
+private:
+    enum class State : uint8_t
+    {
+        Scheduled,
+        Running,
+        Done,
+        Taken,
+    };
+
+    std::mutex mutex;
+    std::condition_variable done;
+    State state = State::Scheduled;
+    std::optional<parquet::format::FileMetaData> metadata;
+    std::exception_ptr exception;
+};
+
+parquet::format::FileMetaData readParquetFileMetaData(ReadBuffer & buf, const FormatSettings & format_settings);
+
+/// Reads the footer of `object` as `ParquetV3BlockInputFormat` does, through `metadata_cache` if it is not null.
+parquet::format::FileMetaData readParquetFileMetaDataAhead(
+    ReadBuffer & buf,
+    const FormatSettings & format_settings,
+    const ParquetMetadataCachePtr & metadata_cache,
+    const RelativePathWithMetadata & object);
 
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
@@ -67,6 +107,8 @@ public:
     std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
     bool isTopKFilterApplied() const override;
 
+    void setPrefetchedFooter(std::shared_ptr<ParquetPrefetchedFooter> footer) override;
+
 private:
     Chunk read() override;
 
@@ -92,8 +134,9 @@ private:
 
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
+    std::shared_ptr<ParquetPrefetchedFooter> prefetched_footer;
 
-    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
+    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher);
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader

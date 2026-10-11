@@ -16,6 +16,7 @@ namespace DB
 
 class BlockMissingValues;
 struct SelectQueryInfo;
+class ParquetPrefetchedFooter;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -144,6 +145,9 @@ public:
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
+
+    /// The footer of the file read in the background before the reader was created, used by the Parquet reader.
+    virtual void setPrefetchedFooter(std::shared_ptr<ParquetPrefetchedFooter> /*footer*/) {}
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

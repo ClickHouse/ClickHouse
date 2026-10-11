@@ -369,6 +369,11 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
 }
 
+bool QueryConditionCache::contains(const UUID & table_id, const String & part_name, UInt64 condition_hash) const
+{
+    return table_id != UUIDHelpers::Nil && cache.contains(makeKey(table_id, part_name, condition_hash));
+}
+
 std::vector<QueryConditionCache::Cache::KeyMapped> QueryConditionCache::dump() const
 {
     return cache.dump();

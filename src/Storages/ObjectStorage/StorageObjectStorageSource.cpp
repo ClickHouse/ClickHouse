@@ -1098,20 +1098,77 @@ Chunk StorageObjectStorageSource::generate()
     return {};
 }
 
-void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
+std::optional<SchemaCache::Key> StorageObjectStorageSource::getKeyForNumRowsCache(
+    const StorageObjectStorageConfiguration & configuration,
+    const ObjectInfo & object_info,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
 {
     /// The cache key does not include the compression method. Under an explicit `compression_method` the
     /// same object can decode differently (or fail) through another definition with a different codec,
     /// so only row counts read with the codec derived from the path are cached.
-    if (!isCompressionMethodHintAuto(configuration->compression_method))
-        return;
+    if (!isCompressionMethodHintAuto(configuration.compression_method))
+        return std::nullopt;
 
-    const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().value_or(configuration->format),
+    return getKeyForSchemaCache(
+        getUniqueStoragePathIdentifier(configuration, object_info),
+        object_info.getFileFormat().value_or(configuration.format),
         format_settings,
-        read_context);
-    schema_cache.addNumRows(cache_key, num_rows);
+        context);
+}
+
+std::optional<time_t> StorageObjectStorageSource::getLastModificationTime(const ObjectInfo & object_info)
+{
+    const auto metadata = object_info.getObjectMetadata();
+    /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
+    /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
+    /// it as unavailable makes the count cache re-read the file instead.
+    if (!metadata || !metadata->is_last_modified_known)
+        return std::nullopt;
+    return std::optional<time_t>(metadata->last_modified.epochTime());
+}
+
+/// TopN dynamic filtering compares the values the reader returns against a threshold made
+/// from the values the query sorts by, so it may only be applied to a file where the two are
+/// the same. They are not where a data lake rewrites the file's columns after the reader:
+/// schema evolution renames and casts them (and a column of the file may carry the name
+/// another column has in the current schema), and an identity-partitioned column takes the
+/// value the manifest defines for it, whatever the file stores. A file with an initial schema
+/// but no schema transform (an Iceberg file with equality deletes in the current schema) is
+/// read under the current names, and deletes only remove rows after the reader.
+bool StorageObjectStorageSource::isTopKFilterAllowed(
+    const StorageObjectStorageConfiguration & configuration,
+    const FormatFilterInfo * format_filter_info,
+    const ObjectInfoPtr & object_info,
+    const ContextPtr & context)
+{
+    if (!format_filter_info || !format_filter_info->top_k_filter)
+        return false;
+    /// Only the Parquet reader consumes the filter, and a data lake table configured as `Parquet`
+    /// can also contain files of other formats (e.g. ORC in Iceberg). Such a file is read as
+    /// without TopN, so it keeps using the query condition cache.
+    if (!boost::iequals(object_info->getFileFormat().value_or(configuration.format), "Parquet"))
+        return false;
+    if (object_info->data_lake_metadata && object_info->data_lake_metadata->schema_transform)
+        return false;
+    if (configuration.getSchemaTransformer(context, object_info))
+        return false;
+#if USE_AVRO
+    if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+    {
+        const auto & sort_column = format_filter_info->top_k_filter->column_name;
+        for (const auto & column : iceberg_info->info.identity_partition_columns)
+            if (column.first == sort_column)
+                return false;
+    }
+#endif
+    return true;
+}
+
+void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
+{
+    if (auto cache_key = getKeyForNumRowsCache(*configuration, object_info, format_settings, read_context))
+        schema_cache.addNumRows(*cache_key, num_rows);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
@@ -1152,37 +1209,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
-    /// TopN dynamic filtering compares the values the reader returns against a threshold made
-    /// from the values the query sorts by, so it may only be applied to a file where the two are
-    /// the same. They are not where a data lake rewrites the file's columns after the reader:
-    /// schema evolution renames and casts them (and a column of the file may carry the name
-    /// another column has in the current schema), and an identity-partitioned column takes the
-    /// value the manifest defines for it, whatever the file stores. A file with an initial schema
-    /// but no schema transform (an Iceberg file with equality deletes in the current schema) is
-    /// read under the current names, and deletes only remove rows after the reader.
     auto is_top_k_filter_allowed = [&](const ObjectInfoPtr & object) -> bool
     {
-        if (!format_filter_info || !format_filter_info->top_k_filter)
-            return false;
-        /// Only the Parquet reader consumes the filter, and a data lake table configured as `Parquet`
-        /// can also contain files of other formats (e.g. ORC in Iceberg). Such a file is read as
-        /// without TopN, so it keeps using the query condition cache.
-        if (!boost::iequals(object->getFileFormat().value_or(configuration->format), "Parquet"))
-            return false;
-        if (object->data_lake_metadata && object->data_lake_metadata->schema_transform)
-            return false;
-        if (configuration->getSchemaTransformer(context_, object))
-            return false;
-#if USE_AVRO
-        if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object.get()))
-        {
-            const auto & sort_column = format_filter_info->top_k_filter->column_name;
-            for (const auto & column : iceberg_info->info.identity_partition_columns)
-                if (column.first == sort_column)
-                    return false;
-        }
-#endif
-        return true;
+        return isTopKFilterAllowed(*configuration, format_filter_info.get(), object, context_);
     };
 
     /// Entries are only written by reads of files without TopN dynamic filtering (see `generate`), so
@@ -1194,12 +1223,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     if (format_filter_info && format_filter_info->condition_hash)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
+    std::shared_ptr<ParquetPrefetchedFooter> prefetched_footer;
     while (true)
     {
         object_info = file_iterator->next(processor);
 
         if (!object_info || object_info->getPath().empty())
             return {};
+        /// Moved out because the object info can outlive the reader, and the footer must not.
+        prefetched_footer = std::move(object_info->prefetched_footer);
         if (!object_info->getObjectMetadata())
         {
             bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
@@ -1282,26 +1314,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// the object. It is only valid when the codec follows from the path (see `addNumRowsToCache`), so an
         /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
         /// not rejected) always reads the object as the actual read would.
-        if (!isCompressionMethodHintAuto(configuration->compression_method))
+        const auto cache_key = getKeyForNumRowsCache(*configuration, *object_info, format_settings, context_);
+        if (!cache_key)
             return std::nullopt;
 
-        const auto cache_key = getKeyForSchemaCache(
-            getUniqueStoragePathIdentifier(*configuration, *object_info),
-            object_info->getFileFormat().value_or(configuration->format),
-            format_settings,
-            context_);
-
-        auto get_last_mod_time = [&]() -> std::optional<time_t>
-        {
-            const auto metadata = object_info->getObjectMetadata();
-            /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
-            /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
-            /// it as unavailable makes the count cache re-read the file instead.
-            if (!metadata || !metadata->is_last_modified_known)
-                return std::nullopt;
-            return std::optional<time_t>(metadata->last_modified.epochTime());
-        };
-        return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
+        auto get_last_mod_time = [&] { return getLastModificationTime(*object_info); };
+        return schema_cache->tryGetNumRows(*cache_key, get_last_mod_time);
     };
 
     /// Row-level delete transformers need real row values: an equality-delete FilterTransform
@@ -1623,6 +1641,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
+        input_format->setPrefetchedFooter(std::move(prefetched_footer));
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (need_only_count)

@@ -12,11 +12,10 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Storages/Cache/SchemaCache.h>
 
 namespace DB
 {
-
-class SchemaCache;
 
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
@@ -79,6 +78,21 @@ public:
     /// object cannot be safely cached and caching must be skipped (fail-close). Exposed for testing:
     /// the safety-critical contract is that a weak etag (e.g. HDFS) never keys the cache.
     static std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake);
+
+    /// The key of the object's number of rows in the schema cache, or nullopt if it is not cached.
+    static std::optional<SchemaCache::Key> getKeyForNumRowsCache(
+        const StorageObjectStorageConfiguration & configuration,
+        const ObjectInfo & object_info,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & context);
+
+    static std::optional<time_t> getLastModificationTime(const ObjectInfo & object_info);
+
+    static bool isTopKFilterAllowed(
+        const StorageObjectStorageConfiguration & configuration,
+        const FormatFilterInfo * format_filter_info,
+        const ObjectInfoPtr & object_info,
+        const ContextPtr & context);
 
 protected:
     StorageID storage_id;
