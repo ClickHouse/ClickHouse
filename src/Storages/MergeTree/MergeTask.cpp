@@ -559,6 +559,11 @@ String MergeTask::buildTempPartBasename(const String & prefix, const String & pa
     return prefix + suffix;
 }
 
+bool MergeTask::isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time)
+{
+    return part.ttl_infos.table_ttl.min != 0 && part.ttl_infos.table_ttl.max <= time;
+}
+
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
@@ -665,6 +670,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
+    /// A part with rows but without a calculated rows TTL adds nothing to the aggregated bound,
+    /// so that bound must not decide that all merged rows have expired.
+    if (global_ctx->metadata_snapshot->hasRowsTTL()
+        && std::ranges::any_of(global_ctx->future_part->parts, [](const auto & part)
+            { return !part->isEmpty() && part->ttl_infos.table_ttl.min == 0; }))
+        global_ctx->new_data_part->ttl_infos.table_ttl = {};
+
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (global_ctx->metadata_snapshot->hasAnyTTL() && local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
         ctx->need_remove_expired_values = true;
@@ -681,10 +693,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// `alter_conversions` below, so the expired-columns check observes the same mutations.
     auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
 
+    Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
+    for (const auto & patch : patch_parts)
+        min_patch_metadata_version = std::min<Int64>(min_patch_metadata_version, patch->getMetadataVersion());
+
     MergeTreeData::IMutationsSnapshot::Params params
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
         .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_patch_metadata_version = min_patch_metadata_version,
         .min_part_data_versions = nullptr,
         .max_mutation_versions = nullptr,
         .need_data_mutations = false,
@@ -830,6 +847,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     && !storage_column_names.contains(rename.rename_from))
                     renamed_column_targets.emplace(rename.rename_to);
             }
+
+            /// A patch may still need a rename that every base part has already passed.
+            for (const auto & patch : conversions->getAllPatches())
+            {
+                for (const auto & rename : patch.part->getAlterConversions()->getRenameMap())
+                {
+                    if (columns_present_in_patch_parts.contains(rename.rename_from) && !storage_column_names.contains(rename.rename_from))
+                        renamed_column_targets.emplace(rename.rename_to);
+                }
+            }
         }
 
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
@@ -859,7 +886,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
-    /// For TTLDrop merges, all source parts are fully expired.
+    /// If every source part of a TTLDrop merge has a calculated rows TTL that has expired, all rows are dropped.
     /// Skip creating the read pipeline to avoid opening source parts
     /// and allocating read/prefetch buffers.
     ///
@@ -874,7 +901,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const bool can_short_circuit_ttl_drop =
         global_ctx->future_part->merge_type == MergeType::TTLDrop
         && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
-        && ctx->need_remove_expired_values;
+        && ctx->need_remove_expired_values
+        && std::ranges::all_of(global_ctx->future_part->parts, [&](const auto & part) { return isRowsTTLExpired(*part, global_ctx->time_of_merge); });
 
     /// The short-circuit below commits a 0-row part without ever running a pipeline, so nothing
     /// would retire these projections. Decide before the bookkeeping rather than undoing it
