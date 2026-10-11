@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <limits>
 #include <map>
 #include <optional>
 #include <vector>
@@ -18,6 +19,8 @@ using TTLDescriptions = std::vector<TTLDescription>;
 /// Minimal and maximal ttl for column or table
 struct MergeTreeDataPartTTLInfo
 {
+    static constexpr time_t NEVER = std::numeric_limits<time_t>::max();
+
     time_t min = 0;
     time_t max = 0;
 
@@ -30,6 +33,9 @@ struct MergeTreeDataPartTTLInfo
 
     void update(time_t time);
     void update(const MergeTreeDataPartTTLInfo & other_info);
+
+    /// A TTL of 0 never expires, so it sets `max` to `NEVER` and leaves `min` unchanged.
+    void updateZeroAsNever(time_t time);
 };
 
 /// Order is important as it would be serialized and hashed for checksums
@@ -86,10 +92,19 @@ struct MergeTreeDataPartTTLInfos
             part_max_ttl = ttl_info.max;
     }
 
+    /// A column TTL never deletes rows, so its values of 0, which never expire, must not keep the part from being dropped.
+    void updatePartMinMaxColumnTTL(const MergeTreeDataPartTTLInfo & ttl_info)
+    {
+        MergeTreeDataPartTTLInfo part_ttl_info = ttl_info;
+        if (part_ttl_info.max == MergeTreeDataPartTTLInfo::NEVER)
+            part_ttl_info.max = 0;
+        updatePartMinMaxTTL(part_ttl_info);
+    }
+
     bool empty() const
     {
         /// part_min_ttl in minimum of rows, rows_where and group_by TTLs
-        return !part_min_ttl && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
+        return !part_min_ttl && !table_ttl.initialized() && moves_ttl.empty() && recompression_ttl.empty() && columns_ttl.empty() && rows_where_ttl.empty() && group_by_ttl.empty();
     }
 };
 

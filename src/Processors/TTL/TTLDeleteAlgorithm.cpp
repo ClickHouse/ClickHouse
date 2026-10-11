@@ -48,7 +48,10 @@ void TTLDeleteAlgorithm::execute(Block & block)
         {
             /// Update ttl info only if row passes the filter.
             /// Rows that don't pass the filter should not affect TTL.
-            new_ttl_info.update(cur_ttl);
+            if (ttl_expressions.where_expression)
+                new_ttl_info.update(cur_ttl);
+            else
+                new_ttl_info.updateZeroAsNever(cur_ttl);
         }
     }
 
