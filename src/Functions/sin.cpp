@@ -1,3 +1,4 @@
+#include <Functions/FastTrig.h>
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
 
@@ -7,7 +8,7 @@ namespace
 {
 
 struct SinName { static constexpr auto name = "sin"; };
-using FunctionSin = FunctionMathUnary<UnaryFunctionVectorized<SinName, sin>>;
+using FunctionSin = FunctionMathUnary<VectorizedFloat64Impl<SinName, FastTrig::sin, /*ReadsSrcAfterWritingDst*/ true>>;
 
 }
 
