@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
@@ -39,6 +40,8 @@
 #include <Common/randomSeed.h>
 #include <base/UUID.h>
 #include <base/defines.h>
+
+#include <unordered_set>
 
 #include <atomic>
 #include <expected>
@@ -466,6 +469,21 @@ private:
     std::atomic<time_t> last_queue_update_finish_time{0};
 
     mutable std::mutex last_queue_update_exception_lock;
+
+    /// Mutation znode name -> byte weight of its remaining parts when this replica first sized it,
+    /// grown if more remaining work shows up: in-memory denominators for byte-weighted progress
+    /// in `system.mutations` (see getMutationsStatus()).
+    mutable std::mutex mutation_initial_bytes_mutex;
+    mutable std::unordered_map<String, MutationScopeInitialBytes> mutation_initial_bytes;
+    /// Mutations removed while a reader holds a snapshot, so it can tell that its own mutation
+    /// disappeared rather than merely that some mutation did. Emptied once no reader is in flight,
+    /// which bounds it by the drops racing one `system.mutations` read.
+    mutable std::unordered_set<String> mutation_initial_bytes_dropped;
+    mutable size_t mutation_initial_bytes_readers = 0;
+    /// Called by the queue when a mutation is done or leaves it: a done mutation reports progress 1
+    /// whatever the denominator was, so the bookkeeping goes at the transition, not on the next read.
+    void dropMutationInitialBytes(const String & mutation_id);
+
     String last_queue_update_exception;
     String getLastQueueUpdateException() const;
 
