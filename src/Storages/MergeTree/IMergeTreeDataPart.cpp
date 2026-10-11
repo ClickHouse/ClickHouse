@@ -3452,6 +3452,7 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
 
     auto new_column_sizes_ptr = std::make_unique<ColumnSizeByName>();
+    total_columns_size = {};
     calculateEachColumnSizes(*new_column_sizes_ptr, total_columns_size);
     columns_sizes = std::move(new_column_sizes_ptr);
 }
@@ -3469,6 +3470,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     auto secondary_indices_descriptions = storage_metadata_snapshot->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
+    total_secondary_indices_size = {};
 
     /// A substream with no standalone checksums entry (e.g. bundled in skp_idx.packed) is sized
     /// via getFileSizeOrZeroResolved below, so `secondary_indices_compressed_bytes` reflects it too.

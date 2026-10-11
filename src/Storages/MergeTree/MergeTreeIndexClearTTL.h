@@ -1,0 +1,31 @@
+#pragma once
+
+#include <Core/Names.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+
+#include <ctime>
+#include <map>
+#include <memory>
+
+namespace DB
+{
+
+class IMergeTreeDataPart;
+struct StorageInMemoryMetadata;
+
+/// The skip indexes whose `CLEAR INDEX` rule has expired for every row covered by `ttl_infos`,
+/// mapped to the earliest such rule's TTL.
+std::map<String, time_t> getIndexesWithExpiredClearTTL(
+    const StorageInMemoryMetadata & metadata, const MergeTreeDataPartTTLInfos & ttl_infos, time_t current_time);
+
+struct ExpiredIndexFiles
+{
+    NameSet files;
+    bool packed_archive_dirty = false;
+};
+
+/// The files of the part's expired skip indexes, and whether any of them is in `skp_idx.packed`.
+ExpiredIndexFiles getExpiredIndexFiles(
+    const IMergeTreeDataPart & part, const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot, time_t current_time);
+
+}
