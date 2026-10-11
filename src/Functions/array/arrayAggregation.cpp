@@ -585,6 +585,7 @@ If a lambda function `func` is specified, returns the minimum element of the lam
     FunctionDocumentation documentation_min = {description_min, syntax_min, arguments_min, {}, returned_value_min, examples_min, introduced_in_min, category_min};
 
     factory.registerFunction<FunctionArrayMin>(documentation_min);
+    factory.registerAlias("array_min", "arrayMin", FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_max = R"(
 Returns the maximum element in the source array.
@@ -607,6 +608,7 @@ If a lambda function `func` is specified, returns the maximum element of the lam
     FunctionDocumentation documentation_max = {description_max, syntax_max, arguments_max, {}, returned_value_max, examples_max, introduced_in_max, category_max};
 
     factory.registerFunction<FunctionArrayMax>(documentation_max);
+    factory.registerAlias("array_max", "arrayMax", FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_sum = R"(
 Returns the sum of elements in the source array.

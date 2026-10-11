@@ -37,6 +37,7 @@ SELECT queryString('https://clickhouse.com/docs?query=value&param=123#section');
     FunctionDocumentation documentation_queryString = {description_queryString, syntax_queryString, arguments_queryString, {}, returned_value_queryString, examples_queryString, introduced_in_queryString, category_queryString};
 
     factory.registerFunction<FunctionQueryString>(documentation_queryString);
+    factory.registerAlias("url_extract_query", "queryString", FunctionFactory::Case::Insensitive);
 }
 
 }

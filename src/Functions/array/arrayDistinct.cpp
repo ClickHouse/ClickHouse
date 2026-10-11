@@ -318,6 +318,7 @@ REGISTER_FUNCTION(ArrayDistinct)
     FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayDistinct>(documentation);
+    factory.registerAlias("array_distinct", "arrayDistinct", FunctionFactory::Case::Insensitive);
 }
 
 }

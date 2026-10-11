@@ -23,6 +23,7 @@
 
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
+#include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -1385,6 +1386,29 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
+
+    /// The parser cannot distinguish the single element array constructor `ARRAY[x]` from subscripting
+    /// a column named `ARRAY`, and parses it as a subscript. If there is no such column, it is the constructor.
+    if (function_name == "arrayElement"
+        && !function_node_ptr->isWindowFunction()
+        && function_node_ptr->getParameters().getNodes().empty()
+        && function_node_ptr->getArguments().getNodes().size() == 2)
+    {
+        const auto & arguments = function_node_ptr->getArguments().getNodes();
+        const auto * array_identifier = arguments[0]->as<IdentifierNode>();
+        if (array_identifier
+            && array_identifier->getIdentifier().isShort()
+            && equalsCaseInsensitive(array_identifier->getIdentifier().getFullName(), "array")
+            && !tryResolveIdentifier({array_identifier->getIdentifier(), IdentifierLookupContext::EXPRESSION}, scope).resolved_identifier)
+        {
+            auto array_function_node = std::make_shared<FunctionNode>("array");
+            array_function_node->getArguments().getNodes().push_back(arguments[1]);
+            array_function_node->setAlias(node->getAlias());
+            array_function_node->setOriginalAST(node->getOriginalAST());
+            node = std::move(array_function_node);
+            return resolveFunction(node, scope, allow_niladic_functions);
+        }
+    }
 
     /// Resolve function parameters
 
