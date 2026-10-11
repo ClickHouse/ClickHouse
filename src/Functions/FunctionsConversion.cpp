@@ -779,6 +779,9 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 if (cast_type == CastType::accurateOrNull
                     || (requested_result_is_nullable && std::is_same_v<LeftDataType, DataTypeString>))
                 {
+                    /// Consistent with `CAST(Nullable(String) AS Nullable(Numbers))`: when converting to a
+                    /// `Nullable` type, or with `accurateCastOrNull`, we apply a different parsing rule,
+                    /// which does not throw an exception but returns NULL in case of malformed input.
                     /// Ordinary `FixedString` casts retain strict parsing even for nullable destinations.
                     result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
                         arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag, settings, scale);
@@ -1046,6 +1049,7 @@ FunctionCast::ElementWrappers FunctionCast::getElementWrappers(const DataTypes &
 
 FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const
 {
+    /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         return createStringParsingWrapper();
 
@@ -1079,8 +1083,9 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
 
         if (tuple_size == 0)
         {
-            /// Preserve the number of rows for empty tuple columns.
-            /// `prepareRemoveNullable` wraps the result in `Nullable` when needed.
+            /// Preserve the number of rows for empty tuple columns. No need to wrap in `ColumnNullable` for
+            /// `accurateCastOrNull`. The outer `prepareRemoveNullable` handles the `Nullable` wrapping via
+            /// `wrapInNullable`.
             return ColumnTuple::create(col->size());
         }
 
@@ -1103,9 +1108,21 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             }
         }
 
-        /// `accurateCastOrNull` makes the whole tuple NULL if any field conversion fails.
-        /// For non-nullable target fields, every resulting NULL is a failure. For nullable fields,
-        /// only newly introduced NULLs indicate failure; source NULLs and added field defaults are valid.
+        /// For `accurateCastOrNull`, element conversions may produce `ColumnNullable`
+        /// to represent per-element conversion failures. A conversion failure at any
+        /// element means the entire Tuple cast is inaccurate, so the whole Tuple is NULL.
+        ///
+        /// How we detect conversion failures:
+        /// - Non-Nullable target element: any NULL in the result is a conversion failure,
+        ///   because the target type cannot hold NULL — the `ColumnNullable` was injected
+        ///   by the `accurateOrNull` conversion path.
+        /// - Nullable target element with a source: a NULL is a conversion failure only if
+        ///   it is NEW — present in the result but not in the source. Source NULLs are
+        ///   legitimate values that should remain as element NULLs, not Tuple-level failures.
+        /// - Nullable target element without a source (named tuple default): the default
+        ///   NULL is not a conversion failure. For example, casting `Tuple(a Int32)` to
+        ///   `Tuple(a Float32, b Nullable(UInt8))` — element `b` has no source, so it is
+        ///   filled with NULL by default. This is valid, not a failure.
         if (cast_type_is_accurate_or_null)
         {
             MutableColumnPtr combined_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
@@ -1118,7 +1135,10 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
 
                 if (!isNullableOrLowCardinalityNullable(to_element_types[i]))
                 {
-                    /// Non-nullable fields propagate conversion failures and source NULLs to the tuple.
+                    /// Non-Nullable target: the element cannot hold NULL, so every NULL is a
+                    /// conversion failure -- including a genuine source NULL.
+                    /// (a) Failures captured in the converted column's null map (numeric
+                    ///     `accurateOrNull` conversions inject a `ColumnNullable` to mark them).
                     if (nullable_col)
                     {
                         const auto & result_null_map = nullable_col->getNullMapData();
@@ -1126,8 +1146,9 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                             null_map_data[row] |= result_null_map[row];
                         converted_columns[i] = nullable_col->getNestedColumnPtr();
                     }
-                    /// `Dynamic` and `Variant` may produce a non-nullable default column when no row
-                    /// can be converted. Read their source null maps to retain those failures.
+                    /// (b) A `Dynamic`/`Variant` source whose block has no convertible row yields a
+                    ///     plain (non-Nullable) default column, so its source NULLs leave no
+                    ///     trace in (a). Reconstruct them from the source.
                     if (source_positions[i])
                     {
                         const size_t source_position = *source_positions[i];
@@ -1141,8 +1162,10 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                 }
                 else if (nullable_col && source_positions[i])
                 {
-                    /// Nullable fields preserve source NULLs, including those in `LowCardinality`,
-                    /// `Dynamic`, and `Variant` columns. Only additional NULLs invalidate the tuple.
+                    /// Nullable target with a source element: only NULLs that are NEW
+                    /// (present in result but not in source) are conversion failures.
+                    /// Source may be `ColumnNullable`, `ColumnLowCardinality` wrapping, or a
+                    /// `Dynamic`/`Variant` whose NULLs are encoded by `NULL_DISCRIMINATOR`.
                     const auto & result_null_map = nullable_col->getNullMapData();
                     const size_t source_position = *source_positions[i];
                     auto source_null_map_col = getSourceNullMap(*column_tuple.getColumns()[source_position]);
@@ -1158,7 +1181,10 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
                         for (size_t row = 0; row < input_rows_count; ++row)
                             null_map_data[row] |= result_null_map[row];
                     }
+                    /// Keep `ColumnNullable` -- target type is Nullable.
                 }
+                /// else: Nullable target without source (named tuple default), or a plain
+                /// converted column with no NULL info -- not a conversion failure.
             }
 
             return ColumnNullable::create(ColumnTuple::create(converted_columns), std::move(combined_null_map));
@@ -2856,9 +2882,9 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataType
         };
     }
 
-    /// A nullable dictionary always holds a NULL entry, so a conversion to a non-nullable type checks the rows
-    /// for NULLs in the wrapper below instead of the dictionary. `accurateCastOrNull` does not reject NULLs
-    /// at all: it reports them through its nullable result, so the check is skipped for it.
+    /// A nullable dictionary always holds a NULL entry, so a conversion to a non-nullable type checks the
+    /// rows for NULLs in the wrapper below instead of the dictionary. `accurateCastOrNull` does not reject
+    /// NULLs at all: it reports them through its nullable result, so the check is skipped for it.
     const bool skip_not_null_check = from_low_cardinality && from_nested->isNullable() && !to_nested->isNullable()
         && cast_type != CastType::accurateOrNull;
 

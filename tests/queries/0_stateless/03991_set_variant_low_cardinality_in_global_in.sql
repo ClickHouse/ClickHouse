@@ -1,5 +1,7 @@
 -- `GLOBAL IN` index preparation must preserve the `LowCardinality` columns inside a `Variant`
--- together with their types while converting set elements to the key column types.
+-- together with their types while converting set elements to the key column types: stripping
+-- `LowCardinality` from the variant columns without updating the `Variant` type would make the
+-- columns and the types in `KeyCondition::tryPrepareSetColumnsForIndex` disagree.
 -- https://github.com/ClickHouse/ClickHouse/issues/97854
 SET enable_analyzer=1;
 SET use_index_for_in_with_subqueries = 1;

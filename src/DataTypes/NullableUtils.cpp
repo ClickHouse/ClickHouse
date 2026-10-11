@@ -111,6 +111,15 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
         if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column))
         {
             null_map_holder = mergeNullMaps(std::move(null_map_holder), column_nullable->getNullMapColumnPtr());
+
+            /** Only the top-level null map says whether the key of a row is NULL. Folding in the null
+              * maps of the elements of a `Nullable(Tuple(Nullable(T), ...))` would make a row whose tuple
+              * merely *contains* a NULL a NULL key: the hash-family joins would drop it, while the merge
+              * algorithms - which compare the nested tuples - keep it, so the result of a join would depend
+              * on `join_algorithm`, and `IN` would never match such a row. The NULLs of the elements are
+              * part of the key and are compared as any other value, exactly as they are for a
+              * `Tuple(Nullable(T), ...)` that is not wrapped in `Nullable`.
+              */
             column = &column_nullable->getNestedColumn();
         }
     }

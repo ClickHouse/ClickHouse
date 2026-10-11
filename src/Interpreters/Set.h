@@ -151,6 +151,11 @@ public:
     /** With `transform_null_in = 0`, an outer NULL in any key component excludes the row from the set
       * and never matches on lookup. With `transform_null_in = 1`, NULLs match in nullable key components.
       * A NULL field inside a non-null tuple is part of that component's value in either mode.
+      *
+      * A more standard-compliant behavior would return NULL if the left-hand side is NULL and the set is not
+      * empty, or if the left-hand side is not in the set but the set contains at least one NULL. It is more
+      * complicated with tuples: `(1, NULL, 2) IN ((1, NULL, 3))` must return 0, but
+      * `(1, NULL, 2) IN ((1, 1111, 2))` must return NULL. Such behavior is not implemented.
       */
     const bool transform_null_in;
 
