@@ -114,56 +114,6 @@ DataTypePtr tryBuildExactArrayType(const std::vector<VariantValue> & elements)
     return std::make_shared<DataTypeArray>(element_type);
 }
 
-DataTypePtr getLogicalTypedValueType(const DataTypePtr & type)
-{
-    if (!type)
-        return {};
-
-    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-    {
-        auto dictionary_type = getLogicalTypedValueType(low_cardinality->getDictionaryType());
-        if (!dictionary_type)
-            return {};
-        return std::make_shared<DataTypeLowCardinality>(dictionary_type);
-    }
-
-    if (auto wrapper = tryGetVariantWrapperLayout(type))
-        return getLogicalTypedValueType(wrapper->typed_value_type);
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-    {
-        auto nested_type = getLogicalTypedValueType(array_type->getNestedType());
-        if (!nested_type)
-            return {};
-        return std::make_shared<DataTypeArray>(nested_type);
-    }
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        if (!tuple_type->hasExplicitNames())
-            return {};
-
-        DataTypes field_types;
-        Names field_names;
-        field_types.reserve(tuple_type->getElements().size());
-        field_names.reserve(tuple_type->getElements().size());
-
-        for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
-        {
-            auto child_type = getLogicalTypedValueType(tuple_type->getElement(i));
-            if (!child_type)
-                return {};
-
-            field_types.emplace_back(makeNullableSafe(child_type));
-            field_names.emplace_back(tuple_type->getNameByPosition(i + 1));
-        }
-
-        return std::make_shared<DataTypeTuple>(field_types, field_names);
-    }
-
-    return type;
-}
-
 bool hasVariantWrapperResidualValue(const IColumn & column, size_t row, const VariantWrapperLayout &)
 {
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
@@ -614,7 +564,6 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
 
         std::vector<std::vector<std::pair<String, VariantValue>>> tuple_rows(num_rows);
         std::vector<bool> has_values(num_rows, false);
-        std::vector<std::vector<DataTypePtr>> tuple_field_exact_types(num_rows, std::vector<DataTypePtr>(tuple_type->getElements().size()));
         for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
         {
             const auto & child_name = tuple_type->getNameByPosition(i + 1);
@@ -635,7 +584,6 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
                 if (!child_results[row].present)
                     continue;
 
-                tuple_field_exact_types[row][i] = child_results[row].value.exact_type;
                 tuple_rows[row].emplace_back(child_name, std::move(child_results[row].value));
                 has_values[row] = true;
             }
@@ -650,36 +598,11 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
             if (!has_values[row] && !tuple_type->getElements().empty())
                 continue;
 
-            DataTypes exact_field_types;
-            Names exact_field_names;
-            exact_field_types.reserve(tuple_type->getElements().size());
-            exact_field_names.reserve(tuple_type->getElements().size());
-            bool has_exact_type = true;
-            for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
-            {
-                DataTypePtr field_exact_type = tuple_field_exact_types[row][i];
-                if (!field_exact_type)
-                {
-                    if (auto logical_type = getLogicalTypedValueType(tuple_type->getElement(i)))
-                    {
-                        field_exact_type = makeNullableSafe(logical_type);
-                    }
-                    else
-                    {
-                        has_exact_type = false;
-                        break;
-                    }
-                }
-
-                exact_field_types.emplace_back(std::move(field_exact_type));
-                exact_field_names.emplace_back(tuple_type->getNameByPosition(i + 1));
-            }
-
             bool tuple_is_empty = tuple_rows[row].empty();
             result[row] = finalizeConvertedContainer(
-                makeTupleValue(
-                    std::move(tuple_rows[row]),
-                    has_exact_type ? std::make_shared<DataTypeTuple>(std::move(exact_field_types), std::move(exact_field_names)) : DataTypePtr {}),
+                /// A shredded object is the same logical value as an unshredded one, so it gets no
+                /// exact `Tuple` type and is materialized as `JSON`, like an object in `value`.
+                makeTupleValue(std::move(tuple_rows[row]), /*exact_type=*/ {}),
                 tuple_is_empty,
                 field_name,
                 *metadata_by_row[row],
