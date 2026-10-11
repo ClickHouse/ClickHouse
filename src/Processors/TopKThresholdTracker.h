@@ -24,8 +24,12 @@ public:
     int getNullsDirection() const { return sort_desc.nulls_direction; }
     const std::shared_ptr<Collator> & getCollator() const { return sort_desc.collator; }
 
+    /// Changes every time a new threshold value is stored.
+    UInt64 getVersion() const { return version.load(std::memory_order_relaxed); }
+
 protected:
     SortColumnDescription sort_desc;
+    std::atomic<UInt64> version{0};
 };
 
 /// Lock-free tracker for types whose values are represented in a `Field` by a plain

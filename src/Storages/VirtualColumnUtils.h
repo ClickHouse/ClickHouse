@@ -83,6 +83,7 @@ bool isDeterministic(const ActionsDAG::Node * node);
 /// of the threshold's exact trajectory through the run — such granules may be recorded in the
 /// query condition cache, provided the cache key is salted with the TopK plan parameters
 /// (`TopKFilterInfo::condition_hash`) so the entries are only reused under the same TopK plan.
+/// A read whose filter drops the rows equal to the threshold records nothing from then on.
 /// All query condition cache write and read sites for TopK reads must use this same gate,
 /// otherwise their keys diverge.
 bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node);

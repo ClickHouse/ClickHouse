@@ -641,6 +641,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
        {"use_streaming_marks_compression", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
+       {"use_top_k_dynamic_filtering_for_single_string_sort_column", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering_for_variable_length_types", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
