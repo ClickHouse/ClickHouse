@@ -97,6 +97,13 @@ if (ENABLE_FUZZING)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+# The fuzzer sources are ordinary translation units until the `FUZZER` loop below attaches libFuzzer,
+# so the clang-tidy build checks them without the fuzzing toolchain switches above. Without libFuzzer
+# they have no `main`, so only a tidy build with the dummy launchers, which link nothing, can add them.
+if (ENABLE_FUZZING OR (USE_CLANG_TIDY AND ENABLE_DUMMY_LAUNCHERS))
+    set (ENABLE_FUZZER_TARGETS 1)
+endif()
+
 if (ENABLE_BUZZHOUSE)
     set (ENABLE_SSL 1)
     set (ENABLE_PROTOBUF 1)

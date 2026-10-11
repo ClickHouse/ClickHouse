@@ -1018,7 +1018,8 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, and the docs examples). Only
+    `amd_binary` build, the `arm_tidy` shards, the stateless flaky check, and the
+    docs examples). Only
     the flaky check is conditional: it reruns the PR's new/changed stateless
     tests as a drift guard, so a PR that changes no stateless tests has nothing
     for it to do. Filter it out here, at config time, so such a PR does not
