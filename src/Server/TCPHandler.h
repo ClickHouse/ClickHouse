@@ -118,6 +118,8 @@ struct QueryState
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
+    /// `executeQuery` is preparing the query: the client has not received the header of an `INSERT` yet.
+    bool preparing_query = false;
     /// Data was read.
     bool read_all_data = true;
 

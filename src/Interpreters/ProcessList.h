@@ -271,6 +271,8 @@ public:
 
     bool isKilled() const { return is_killed; }
 
+    IAST::QueryKind getQueryKind() const { return query_kind; }
+
     /// Returns the reason `cancelQuery` was called with, or `UNDEFINED` if the query has not been cancelled.
     /// Always returns `UNDEFINED` when `isKilled` is false, so consult `isKilled` first.
     CancelReason getCancelReason() const;

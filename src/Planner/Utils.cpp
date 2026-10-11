@@ -35,6 +35,7 @@
 #include <WindowFunctions/IWindowFunction.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -54,6 +55,7 @@
 
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
 #include <Planner/PlannerActionsVisitor.h>
 
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -90,6 +92,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
@@ -840,6 +843,58 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets)
                 }
             }
         }
+    }
+}
+
+void buildPreparedSetsInplace(const PlannerContextPtr & planner_context, const ContextPtr & context)
+{
+    auto subqueries = planner_context->getPreparedSets().getSubqueries();
+    if (subqueries.empty())
+        return;
+
+    auto subquery_options = SelectQueryOptions{}.subquery();
+    /// A set subquery may read a materialized CTE; nothing materialized it yet, because there is no
+    /// outer query plan to do that, so make the set's own plan materialize the CTEs it uses.
+    subquery_options.forceMaterializeCTE();
+    subquery_options.ignore_limits = false;
+
+    for (auto & subquery : subqueries)
+    {
+        if (subquery->get())
+            continue;
+
+        /// A set registered from a query tree carries no plan yet - `Planner` normally builds it in
+        /// `addBuildSubqueriesForSetsStepIfNeeded`. An already planned set keeps the plan it has.
+        if (!subquery->getQueryPlan())
+        {
+            auto query_tree = subquery->detachQueryTree();
+            if (!query_tree)
+                continue;
+
+            /// The set subquery is planned standalone with its own `GlobalPlannerContext`, so its
+            /// table expressions must carry unique aliases, otherwise two table expressions exposing
+            /// a column with the same name both produce a bare column identifier and
+            /// `GlobalPlannerContext::createColumnIdentifier` throws "already registered".
+            createUniqueAliasesIfNecessary(query_tree, context);
+            Planner subquery_planner(
+                query_tree,
+                subquery_options,
+                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+            subquery_planner.buildQueryPlanIfNeeded();
+            subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+        }
+
+        subquery->buildSetInplace(context);
+
+        /// The pipeline may stop without an exception and without creating the set, for example on a
+        /// subquery timeout with `timeout_overflow_mode = 'break'`. `build` has consumed the plan, so the
+        /// set can never be built afterwards, and `FunctionIn` would report "Not-ready Set is passed as the
+        /// second argument" later. Report the real reason instead. This is checked here rather than in
+        /// `buildSetInplace`, because its other callers, such as index analysis, tolerate an uncreated set.
+        if (!subquery->get())
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                "Building a set for subquery stopped before the set was created, "
+                "probably because a limit with the `break` overflow mode was reached");
     }
 }
 

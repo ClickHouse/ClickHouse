@@ -233,6 +233,14 @@ struct ResolvedExpressionList
 ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
 {
     auto execution_context = Context::createCopy(context);
+
+    /// A column default containing `x IN table` has its set built in place (see `buildPreparedSetsInplace`),
+    /// by a standalone plan with no initial query around it. Reading old parts passes the global context of
+    /// the storage, which never went through `makeQueryContext` and so carries a zero client version, which a
+    /// distributed set subquery refuses to send. Do as for the scalar subqueries of a standalone expression.
+    execution_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+    execution_context->setInitiatorVersionIfUnset();
+
     auto expression = buildQueryTree(expr_list, execution_context);
 
     ColumnsDescription fake_column_descriptions{};
@@ -268,6 +276,13 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
+
+    /// The actions are executed as a standalone `ExpressionActions` over a block, with no query plan
+    /// to carry a `CreatingSet` step, so a column default containing `IN <table>` has to have its set
+    /// filled here. This must come after the actions are built: planning a set subquery renames the
+    /// table expressions it reads, and the renamed node is the very `IN` right-hand side the actions
+    /// look the set up by, so building first would make the lookup miss.
+    buildPreparedSetsInplace(planner_context, execution_context);
 
     NamesWithAliases result_columns;
     for (size_t i = 0; i < expression->getChildren().size(); ++i)
