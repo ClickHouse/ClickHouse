@@ -36,6 +36,7 @@ namespace
             case ViewTarget::Inner:   return Keyword::INNER;   /// INNER ENGINE = MergeTree()
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
             case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
+            case ViewTarget::Histograms: return Keyword::HISTOGRAMS; /// HISTOGRAMS mydb.myhistograms
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
             case ViewTarget::MetricFamilies: return Keyword::METRIC_FAMILIES; /// METRIC FAMILIES mydb.mymetricfamilies
         }
