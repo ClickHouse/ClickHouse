@@ -52,10 +52,10 @@ ExecutingProcessor * getSlot(const auto & buffer, UInt32 index)
 
 LocalQueue::LocalQueue(std::string name)
 {
-    Wyrd::setName(head, fmt::format("{}.head", name));
-    Wyrd::setName(bounds, fmt::format("{}.bounds", name));
+    Wyrd::setName(head, "{}.head", name);
+    Wyrd::setName(bounds, "{}.bounds", name);
     for (UInt32 index = 0; index < capacity; ++index)
-        Wyrd::setName(buffer[index].value, fmt::format("{}.slot[{}]", name, index));
+        Wyrd::setName(buffer[index].value, "{}.slot[{}]", name, index);
 }
 
 UInt32 LocalQueue::pushManyLifo(std::span<ExecutingProcessor * const> many)

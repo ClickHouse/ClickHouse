@@ -61,7 +61,7 @@ Worker::Worker(WorkerPool & pool_, size_t worker_id_)
     , runner(pool.pipeline, pool.options, worker_id)
     , local_tasks(fmt::format("worker[{}].local_tasks", worker_id))
 {
-    Wyrd::setName(wakeups, fmt::format("worker[{}].wakeups", worker_id));
+    Wyrd::setName(wakeups, "worker[{}].wakeups", worker_id);
 }
 
 bool Worker::keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag)

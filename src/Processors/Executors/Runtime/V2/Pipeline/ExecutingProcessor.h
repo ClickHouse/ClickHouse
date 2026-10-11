@@ -29,7 +29,7 @@ struct ExecutingProcessor
         Finished,
     };
 
-    void setName(std::string name);
+    void setProcessor(IProcessor & processor_);
     std::unique_lock<Wyrd::Mutex> lockRound();
 
     IProcessor * processor = nullptr;

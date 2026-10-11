@@ -8,10 +8,11 @@
 #include <type_traits>
 #include <utility>
 
+#include <fmt/format.h>
+
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/InjectFault.h>
 #    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
-#    include <fmt/format.h>
 #elif defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/InjectFault.h>
 #endif
@@ -145,10 +146,10 @@ private:
     std::string name = fmt::format("{}", fmt::ptr(this));
 };
 
-template <typename T>
-void setName(Atomic<T> & atomic, std::string name)
+template <typename T, typename... Args>
+void setName(Atomic<T> & atomic, fmt::format_string<Args...> format, Args &&... args)
 {
-    atomic.setName(std::move(name));
+    atomic.setName(fmt::format(format, std::forward<Args>(args)...));
 }
 
 #elif defined(WYRD_ADVERSARY)
@@ -239,8 +240,8 @@ private:
     std::atomic<T> impl{};
 };
 
-template <typename T>
-void setName(Atomic<T> &, std::string)
+template <typename T, typename... Args>
+void setName(Atomic<T> &, fmt::format_string<Args...>, Args &&...)
 {
 }
 
@@ -249,8 +250,8 @@ void setName(Atomic<T> &, std::string)
 template <typename T>
 using Atomic = std::atomic<T>;
 
-template <typename T>
-void setName(Atomic<T> &, std::string)
+template <typename T, typename... Args>
+void setName(Atomic<T> &, fmt::format_string<Args...>, Args &&...)
 {
 }
 

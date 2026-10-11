@@ -51,11 +51,6 @@ void Mutex::setName(std::string name)
     locked.setName(std::move(name));
 }
 
-void setName(Mutex & mutex, std::string name)
-{
-    mutex.setName(std::move(name));
-}
-
 #elif defined(WYRD_ADVERSARY)
 
 void Mutex::lock(std::source_location location)
@@ -80,16 +75,6 @@ void Mutex::unlock(std::source_location location)
 {
     locked.store(0, std::memory_order::seq_cst, location);
     futexWakeOne(locked, location);
-}
-
-void setName(Mutex &, std::string)
-{
-}
-
-#else
-
-void setName(Mutex &, std::string)
-{
 }
 
 #endif

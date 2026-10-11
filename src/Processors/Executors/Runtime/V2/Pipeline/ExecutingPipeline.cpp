@@ -99,8 +99,7 @@ ExecutingProcessor & addRecord(Records & records, IProcessor * processor)
     if (!inserted)
         Wyrd::abort("Processor {} was already added to pipeline", processor->getName());
 
-    it->second.processor = processor;
-    it->second.setName(fmt::format("processor[{}]", processor->getUniqID()));
+    it->second.setProcessor(*processor);
     return it->second;
 }
 

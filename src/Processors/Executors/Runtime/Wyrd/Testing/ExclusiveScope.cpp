@@ -24,7 +24,7 @@ ExclusiveScope::Section::~Section()
 ExclusiveScope::ExclusiveScope(std::string name_)
     : name(std::move(name_))
 {
-    setName(inside, name);
+    setName(inside, "{}", name);
 }
 
 ExclusiveScope::Section ExclusiveScope::enter(const std::string & section_name)
