@@ -113,6 +113,8 @@ the boundary stops filtering when it drops almost nothing
 1	100
 3	100
 2	100
+0	59940
+1	22
 a row policy and a PREWHERE after the boundary
 0	534	267067
 1	532	797734
@@ -144,11 +146,13 @@ a linked run without a boundary keeps a larger record
 05361_low	1
 05361_low_order	1
 05361_low_prewhere	1
+low_hash	1
 05361_stats_mt_1	1
 05361_stats_mt_2	1
 05361_stats_pq_1	1
 05361_stats_pq_2	1
 05361_count_s3	1
+05361_steps	1
 few_1	1
 few_2	0
 seed_3	1

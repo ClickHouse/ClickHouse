@@ -168,10 +168,15 @@ SELECT k, count() FROM file('${DIR}/low.parquet') PREWHERE c % 1000 != 999 GROUP
 SELECT k, count() FROM file('${DIR}/low.parquet') GROUP BY k ORDER BY k DESC LIMIT 2;
 -- ORDER BY ... LIMIT does not stop.
 SELECT k FROM file('${DIR}/low.parquet') ORDER BY k LIMIT 10 FORMAT Null SETTINGS log_comment = '05361_low_order';
+-- The PREWHERE keeps whole row groups, but statistics cannot tell which.
+SELECT k, count() FROM file('${DIR}/low.parquet') PREWHERE cityHash64(intDiv(c, 10000)) % 10 = 0 GROUP BY k ORDER BY k LIMIT 2
+SETTINGS log_comment = '05361_low_hash_on';
+SELECT k, count() FROM file('${DIR}/low.parquet') PREWHERE cityHash64(intDiv(c, 10000)) % 10 = 0 GROUP BY k ORDER BY k LIMIT 2
+FORMAT Null SETTINGS log_comment = '05361_low_hash_off', enable_group_by_top_k_dynamic_filtering = 0;
 
 SELECT 'a row policy and a PREWHERE after the boundary';
 CREATE ROW POLICY p_05361_steps ON t_05361_steps USING c % 3 != 1 TO ALL;
-SELECT a, count(), sum(c) FROM t_05361_steps PREWHERE c % 5 != 2 GROUP BY a LIMIT 5;
+SELECT a, count(), sum(c) FROM t_05361_steps PREWHERE c % 5 != 2 GROUP BY a LIMIT 5 SETTINGS log_comment = '05361_steps';
 DROP ROW POLICY p_05361_steps ON t_05361_steps;
 
 SELECT 'the row count of a file is not cached from a read with the boundary';
@@ -228,14 +233,20 @@ SELECT log_comment, multiIf(
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05361_low', '05361_low_order', '05361_low_prewhere') AND type = 'QueryFinish'
 ORDER BY log_comment;
+-- Once the threshold step stopped, k is read only in the row groups the PREWHERE keeps, as without the boundary.
+SELECT 'low_hash', sumIf(ProfileEvents['ParquetReadPages'], log_comment = '05361_low_hash_on')
+    < 1.25 * sumIf(ProfileEvents['ParquetReadPages'], log_comment = '05361_low_hash_off')
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment IN ('05361_low_hash_on', '05361_low_hash_off') AND type = 'QueryFinish';
 SELECT log_comment, ProfileEvents['SelectedRows'] < if(log_comment LIKE '05361_stats_pq_%', 1000, 100000)
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05361_stats_%' AND type = 'QueryFinish'
 ORDER BY log_comment;
--- The object storage read is linked too.
+-- The object storage read and the read under a row policy are linked too.
 SELECT log_comment, ProfileEvents['ParquetTopKSkippedRowGroups'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '05361_count_s3' AND type = 'QueryFinish';
+WHERE current_database = currentDatabase() AND log_comment IN ('05361_count_s3', '05361_steps') AND type = 'QueryFinish'
+ORDER BY log_comment;
 -- Two threads hold the 3 groups each, and 6 <= 5 * 1.5 drops the heap and its sort from the second run.
 SELECT 'few_1', countDistinct(name) > 0 FROM system.processors_profile_log
 WHERE event_date >= yesterday() AND name LIKE '%Sorting%' AND query_id IN (SELECT query_id FROM system.query_log

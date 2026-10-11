@@ -1488,6 +1488,9 @@ void Reader::preparePrewhere()
                 {
                     if (primitive_columns[primitive_idx].first_step_to_calculate == 0)
                         primitive_columns[primitive_idx].first_step_to_calculate = steps.size() + 1;
+                    else if (has_top_k_step && primitive_columns[primitive_idx].first_step_to_calculate == 1
+                             && primitive_columns[primitive_idx].first_step_without_top_k == 0)
+                        primitive_columns[primitive_idx].first_step_without_top_k = steps.size() + 1;
                     primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
                 }
             }
@@ -3850,7 +3853,7 @@ size_t Reader::firstStepOfRowSubgroup(RowSubgroup & row_subgroup) const
 size_t Reader::firstStepToReadColumn(const PrimitiveColumnInfo & column_info, const RowSubgroup & row_subgroup) const
 {
     if (row_subgroup.skip_top_k_step && column_info.first_step_to_calculate == 1)
-        return stepAfterTopKStep();
+        return column_info.first_step_without_top_k;
     return column_info.first_step_to_calculate;
 }
 
