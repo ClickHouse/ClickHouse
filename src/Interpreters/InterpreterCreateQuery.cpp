@@ -291,6 +291,52 @@ bool isShortAttach(const ASTCreateQuery & create)
     return create.attach && (!create.storage || !create.storage->engine) && !has_columns;
 }
 
+/// The short-ATTACH path overwrites `create` with the stored metadata, so any clause here would be
+/// silently dropped. Session settings are already hoisted out of `create.storage->settings` by
+/// `InterpreterSetQuery::applySettingsFromQuery`.
+void rejectClausesDroppedByShortAttach(const ASTCreateQuery & create)
+{
+    bool has_dropped_clauses = false;
+
+    if (create.storage)
+    {
+        const auto & storage = *create.storage;
+        has_dropped_clauses
+            = storage.partition_by != nullptr
+            || storage.primary_key != nullptr
+            || storage.order_by != nullptr
+            || storage.sample_by != nullptr
+            || storage.ttl_table != nullptr
+            || storage.unique_key != nullptr
+            || storage.settings != nullptr;
+    }
+
+    has_dropped_clauses = has_dropped_clauses
+        || create.comment != nullptr
+        || create.refresh_strategy != nullptr
+        || create.sql_security != nullptr
+        || create.select != nullptr
+        || create.targets != nullptr
+        || create.as_table_function != nullptr
+        || create.aliases_list != nullptr
+        || create.is_create_empty
+        || create.is_clone_as
+        || !create.as_database.empty()
+        || !create.as_table.empty()
+        || create.has_attach_from_path
+        || create.has_uuid_clause
+        || create.has_inner_uuid_clause;
+
+    if (has_dropped_clauses)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ATTACH applies the table definition from stored metadata and can't be changed in the query itself. "
+            "Use 'ATTACH TABLE {0};' to re-attach with stored metadata, or 'ALTER TABLE {0} MODIFY SETTING ...' "
+            "(or 'MODIFY ORDER BY ...') after ATTACH to change settings.",
+            backQuoteIfNeed(create.getTable()));
+    }
+}
+
 /// A short ATTACH is authorized only once the stored definition has been read, which happens on the
 /// node that executes the query. A distributed route enqueues before that read, and the worker
 /// replaying the entry runs with no user, hence full access.
@@ -1936,53 +1982,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (is_short_attach)
     {
-        /// First, reject any user-supplied storage clauses or top-level fields that the
-        /// short-ATTACH path below would silently drop by overwriting `create` with the
-        /// stored table metadata. `InterpreterSetQuery::applySettingsFromQuery` (called from
-        /// `executeQueryImpl` before this interpreter) has already hoisted session settings
-        /// out of `create.storage->settings`, so anything still here is either engine-specific
-        /// (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`, `UNIQUE KEY`, MergeTree
-        /// `SETTINGS`) or a top-level `ASTCreateQuery` field (`COMMENT`, `REFRESH`, `SQL SECURITY`,
-        /// `TO target`, `EMPTY`, `CLONE`, `AS SELECT`, `UUID`, etc.).
-        bool has_dropped_clauses = false;
-
-        if (create.storage)
-        {
-            const auto & storage = *create.storage;
-            has_dropped_clauses
-                = storage.partition_by != nullptr
-                || storage.primary_key != nullptr
-                || storage.order_by != nullptr
-                || storage.sample_by != nullptr
-                || storage.ttl_table != nullptr
-                || storage.unique_key != nullptr
-                || storage.settings != nullptr;
-        }
-
-        has_dropped_clauses = has_dropped_clauses
-            || create.comment != nullptr
-            || create.refresh_strategy != nullptr
-            || create.sql_security != nullptr
-            || create.select != nullptr
-            || create.targets != nullptr
-            || create.as_table_function != nullptr
-            || create.aliases_list != nullptr
-            || create.is_create_empty
-            || create.is_clone_as
-            || !create.as_database.empty()
-            || !create.as_table.empty()
-            || create.has_attach_from_path
-            || create.has_uuid_clause
-            || create.has_inner_uuid_clause;
-
-        if (has_dropped_clauses)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ATTACH applies the table definition from stored metadata and can't be changed in the query itself. "
-                "Use 'ATTACH TABLE {0};' to re-attach with stored metadata, or 'ALTER TABLE {0} MODIFY SETTING ...' "
-                "(or 'MODIFY ORDER BY ...') after ATTACH to change settings.",
-                backQuoteIfNeed(create.getTable()));
-        }
+        rejectClausesDroppedByShortAttach(create);
 
         // In case of an ON CLUSTER query, the database may not be present on the initiator node
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
@@ -3895,7 +3895,11 @@ BlockIO InterpreterCreateQuery::execute()
 
         if (!create.cluster.empty()
             || (attach_database && attach_database->shouldReplicateQuery(getContext(), query_ptr)))
+        {
+            /// Same precedence as in `createTable`.
+            rejectClausesDroppedByShortAttach(create);
             rejectShortAttachViewOutsideOneNode(create);
+        }
     }
 
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

@@ -27,6 +27,11 @@ for version in 1 5; do
         | grep -q "INCORRECT_QUERY" && echo "INCORRECT_QUERY" || echo "NO ERROR"
 done
 
+# A query that carries a definition is not the short form, so it keeps the error about the clauses
+# the stored metadata would replace.
+${CLICKHOUSE_CLIENT} --query "ATTACH MATERIALIZED VIEW ${db}.mv TO ${db}.dst AS SELECT k FROM ${db}.src" 2>&1 \
+    | grep -q "BAD_ARGUMENTS" && echo "BAD_ARGUMENTS" || echo "NO ERROR"
+
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${db}' AND name IN ('v', 'mv')"
 
 # A temporary object belongs to no database, so it must keep the rejection that names it rather than
