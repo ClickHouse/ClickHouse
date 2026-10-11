@@ -233,8 +233,11 @@ void LocalConnection::sendQuery(
     const UInt64 parse_time_max_ast_depth = parse_time_settings[Setting::max_ast_depth];
     const UInt64 parse_time_max_ast_elements = parse_time_settings[Setting::max_ast_elements];
 
+    /// Apply only what the client changed, like `TCPHandler` does. Replacing the whole `Settings`
+    /// would drop what the session context holds beyond the client's copy, e.g. the settings of
+    /// a `SET profile`, which the client does not track.
     if (query_settings)
-        query_context->setSettings(*query_settings);
+        query_context->applySettingsChanges(query_settings->changes());
 
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);
