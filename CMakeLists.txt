@@ -630,7 +630,8 @@ include(cmake/dbms_glob_sources.cmake)
 # compile without -fPIC. That only breaks with compilers that do not default to PIE
 # (clang with CLANG_DEFAULT_PIE_ON_LINUX=OFF, as configured by some distributions), because then the
 # non-relocatable objects of those libraries cannot be linked into the PIE executable.
-if (NOT (ENABLE_THINLTO AND CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO") AND (ARCH_AMD64 OR ARCH_AARCH64))
+if (NOT (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE AND CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+    AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 
     # -fPIC only makes the code relocatable; whether the executable itself is position independent is
