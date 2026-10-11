@@ -25,7 +25,8 @@ struct TimeSeriesColumnNames
     /// and without the metric name, so reading must be able to handle both cases.)
     static constexpr const char * Tags = "tags";
 
-    /// Contains the time range of a time series.
+    /// Contains the time range of a time series. The columns are in the "tags" table in tables of versions
+    /// before `MIN_WITH_SEPARATE_TAGS_MIN_MAX`, and in the "tags min max" table from that version.
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
