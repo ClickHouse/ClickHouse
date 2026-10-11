@@ -181,17 +181,21 @@ bool WorkloadEntityImplicitStorage::removeEntity(
     const String & entity_name,
     bool throw_if_not_exists)
 {
+    // An entity of this kind and name stored in an inner layer, visible or hidden, is dropped there
+    if (getNextStorage()->removeEntity(current_context, entity_type, entity_name, /* throw_if_not_exists = */ false))
+        return true;
+
     // An implicit entity cannot be dropped even while shadowed: it stays defined by the server settings and becomes
-    // visible again when the shadowing entity goes away. An entity of the same kind and name in an inner layer is
-    // dropped instead.
-    auto inner_entity = getNextStorage()->tryGet(entity_name);
-    const bool inner_has_kind = inner_entity
-        && (typeid_cast<ASTCreateResourceQuery *>(inner_entity.get()) != nullptr) == (entity_type == WorkloadEntityType::Resource);
-    if (definesEntity(entity_name, entity_type) && !inner_has_kind)
+    // visible again when the shadowing entity goes away
+    if (definesEntity(entity_name, entity_type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Workload entity '{}' cannot be dropped: it is an implicit entity defined by the server setting `{}`",
             entity_name, getImplicitEntitySetting(entity_name));
-    return getNextStorage()->removeEntity(current_context, entity_type, entity_name, throw_if_not_exists);
+
+    if (throw_if_not_exists)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' doesn't exist",
+            entity_type == WorkloadEntityType::Resource ? "Resource" : "Workload", entity_name);
+    return false;
 }
 
 void WorkloadEntityImplicitStorage::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, WorkloadEntityType entity_type) const

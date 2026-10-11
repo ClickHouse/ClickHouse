@@ -2799,6 +2799,13 @@ TEST(SchedulerWorkloadResourceManager, ImplicitEntitiesCannotBeReferenced)
     t.query("DROP RESOURCE default");
     EXPECT_EQ(t.storage.getEntitySource("default"), "implicit");
 
+    // An operator `default` workload hidden by a configuration resource `default` is still dropped
+    t.query("CREATE WORKLOAD default");
+    t.loadConfig("CREATE RESOURCE default (READ DISK d)");
+    t.query("DROP WORKLOAD default");
+    t.loadConfig("");
+    EXPECT_EQ(t.storage.getEntitySource("default"), "implicit");
+
     // Once the setting is off, the name is just absent
     t.setImplicitEntities({});
     EXPECT_THROW(t.query("DROP RESOURCE __server_cpu__"), DB::Exception);
