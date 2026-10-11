@@ -375,6 +375,12 @@ def test_s3_path_filter_and_hive_partitioning_use_visible_path():
         ).strip()
         == "20"
     )
+    # Schema inference in the `file` table function must also derive hive columns from the
+    # visible path: the disk root `.../tenant=a/` must not add a `tenant` column.
+    description = node_s3.query(
+        f"DESCRIBE TABLE file('s3_hive/k=v1/data.csv', 'CSV') {settings}"
+    )
+    assert [line.split("\t")[0] for line in description.splitlines()] == ["c1", "k"]
 
 
 def test_local_embedded_nul_rejected():
@@ -776,6 +782,8 @@ def test_s3_filesystem_database_relative_path_starting_with_disk_root_prefix():
     assert not disk_path.startswith("/"), f"unexpected absolute disk path: {disk_path}"
 
     long_rel_dir = disk_path.rstrip("/") + "/prefix_db_collision"
+    # The disk prefix contains a `key=value` segment (see `remote_storage_configuration.xml`)
+    # which is part of the user-visible path here, so the reads below disable hive partitioning.
 
     # The directory the database must point at: <disk_root>/<prefix>/prefix_db_collision.
     node_s3.query(
@@ -792,7 +800,9 @@ def test_s3_filesystem_database_relative_path_starting_with_disk_root_prefix():
         f"CREATE DATABASE test_fs_db_prefix_collision ENGINE = Filesystem('{long_rel_dir}')"
     )
     assert (
-        node_s3.query("SELECT * FROM test_fs_db_prefix_collision.`t.csv`").strip()
+        node_s3.query(
+            "SELECT * FROM test_fs_db_prefix_collision.`t.csv` SETTINGS use_hive_partitioning = 0"
+        ).strip()
         == "777"
     )
 
@@ -809,7 +819,9 @@ def test_s3_filesystem_database_relative_path_starting_with_disk_root_prefix():
     node_s3.query("DETACH DATABASE test_fs_db_prefix_collision")
     node_s3.query("ATTACH DATABASE test_fs_db_prefix_collision")
     assert (
-        node_s3.query("SELECT * FROM test_fs_db_prefix_collision.`t.csv`").strip()
+        node_s3.query(
+            "SELECT * FROM test_fs_db_prefix_collision.`t.csv` SETTINGS use_hive_partitioning = 0"
+        ).strip()
         == "777"
     )
     node_s3.query("DROP DATABASE test_fs_db_prefix_collision")
