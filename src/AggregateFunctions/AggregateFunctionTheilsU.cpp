@@ -57,7 +57,8 @@ FROM (
             return std::make_shared<AggregateFunctionCrossTab<TheilsUData>>(argument_types);
         },
         documentation,
-        {},
+        /// See the note on `Variant` arguments in CrossTab.h.
+        {.is_distinctness_sensitive = true},
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertBinary(name, argument_types);

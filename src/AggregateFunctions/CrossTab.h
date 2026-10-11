@@ -33,8 +33,10 @@ extern const int CORRUPTED_DATA;
 /// Note: the CrossTab family (`contingency`, `cramersV`, `cramersVBiasCorrected`, `theilsU`) hashes its arguments
 /// through UniqVariadicHash, which relies on IColumn::getDataAt. ColumnVariant does not implement getDataAt, so the
 /// creators reject Variant and Dynamic arguments at resolution with assertNoDynamicOrVariantArguments (see
-/// FactoryHelpers.h); a lossless supertype yields a concrete column getDataAt can hash,
-/// e.g. Variant(UInt8, UInt64) -> UInt64.
+/// FactoryHelpers.h). The family is also registered as `is_distinctness_sensitive`, so a Variant argument is not
+/// routed through AggregateFunctionVariantAdapter either: the result keys on the exact identity of each category,
+/// and `Variant` values with different alternative types are distinct categories (`1::UInt8` and `1::UInt64` in a
+/// `Variant(UInt8, UInt64)`), which a cast to the common supertype would collapse into one bucket.
 
 struct CrossTabPhiSquaredWindowData;
 
