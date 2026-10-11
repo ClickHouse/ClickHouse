@@ -1704,8 +1704,14 @@ static NestedMergeJoinOrder findNestedMergeJoinOrder(const QueryPlan::Node & inp
     result.join_node = join_node;
     for (size_t i = 0; i < key_names.size() && i < output_order.size(); ++i)
     {
+        /// Besides aliases, look through `toNullable`: under `join_use_nulls` the visible key of the nested
+        /// join (e.g. a `USING` key of a `RIGHT` join) can be `toNullable(x)` of its output column. It keeps
+        /// every value and introduces no NULLs, so the rows stay sorted by it exactly as by `x`.
         const auto * node = dag.tryFindInOutputs(key_names[i]);
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        while (node
+            && (node->type == ActionsDAG::ActionType::ALIAS
+                || (node->type == ActionsDAG::ActionType::FUNCTION && node->children.size() == 1 && node->function_base
+                    && node->function_base->getName() == "toNullable")))
             node = node->children.front();
         if (!node || node->type != ActionsDAG::ActionType::INPUT || !join_output_nodes.contains(node))
             break;
