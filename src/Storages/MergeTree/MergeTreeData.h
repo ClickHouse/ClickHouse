@@ -628,7 +628,8 @@ public:
         virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
         virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
-        virtual NameSet getAllUpdatedColumns() const = 0;
+        /// Columns changed on the fly by patches, data mutations and alter mutations of the whole snapshot.
+        virtual NameSet getColumnsChangedOnFly() const = 0;
 
         virtual bool hasPatchParts() const = 0;
         virtual bool hasDataMutations() const = 0;
@@ -665,6 +666,9 @@ public:
         /// `IN PARTITION` applies to the partitions it names alone. Reads the partition ids resolved
         /// on the command itself (`MutationCommand::partition_ids`) and evaluates nothing.
         void filterCommandsOutsidePartition(MutationCommands & commands, const String & partition_id) const;
+
+        /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
+        void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
     };
 
     using MutationsSnapshotPtr = std::shared_ptr<const IMutationsSnapshot>;
@@ -1483,6 +1487,11 @@ public:
         , const EnabledMaskingPoliciesPtr & enabled_masking_policies
 #endif
         );
+
+#if CLICKHOUSE_CLOUD
+    /// Commands that apply the enabled masking policies on the fly.
+    static MutationCommands getMaskingPolicyCommands(const StorageID & storage_id, const EnabledMaskingPoliciesPtr & enabled_masking_policies);
+#endif
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
