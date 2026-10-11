@@ -18,3 +18,6 @@ plain filter	94
 plain result filter
 1
 2
+tuple matcher in a result filter
+(1,0)
+(2,0)

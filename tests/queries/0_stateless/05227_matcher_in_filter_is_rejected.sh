@@ -137,6 +137,9 @@ SELECT 'plain filter', count() FROM t_05227 WHERE 1 SETTINGS additional_table_fi
 -- additional_result_filter is applied on top of the rows the LIMIT has already selected.
 SELECT 'plain result filter';
 SELECT a FROM t_05227 ORDER BY a LIMIT 3 SETTINGS additional_result_filter = 'a > 0';
+-- A result column named dummy is not shadowed by the internal table of additional_result_filter.
+SELECT 'tuple matcher in a result filter';
+SELECT tuple(number, 0) AS dummy FROM numbers(3) SETTINGS additional_result_filter = 'greatest(dummy.*) > 0', analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
 DROP TABLE t_05227;
 DROP TABLE allowed_05227;
