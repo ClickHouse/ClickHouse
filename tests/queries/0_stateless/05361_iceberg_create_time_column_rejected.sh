@@ -31,4 +31,9 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --enable_time_time64_type=1 \
     --query "ALTER TABLE t_time ADD COLUMN tm Nullable(Time)" 2>&1 \
     | grep -o "Unsupported type for iceberg Time" | head -n1
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
+    --query "ALTER TABLE t_time ADD COLUMN c Nullable(Int64)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --enable_time_time64_type=1 \
+    --query "ALTER TABLE t_time MODIFY COLUMN c Nullable(Time)" 2>&1 \
+    | grep -o "Unsupported type for iceberg Time" | head -n1
 ${CLICKHOUSE_CLIENT} --query "DESCRIBE TABLE t_time FORMAT TSV" | cut -f1,2
