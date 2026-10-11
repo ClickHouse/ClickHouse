@@ -39,14 +39,20 @@ an INTERVAL step clamps at the calendar boundary of Date32 and DateTime64, so an
 4	2020-01-01 00:00:00	2020-01-04 00:00:00
 3	2026-03-05	2028-03-05
 bounds between the calendar boundary and the storage boundary of Date32 and DateTime64 are invalid
+2	0000-01-01 00:00:00	2000-01-01 00:00:00
+100	2000-01-01 00:00:00	9999-12-31 23:59:59
 2
 1
 2
 3
 a numeric step over DateTime64 must not generate ticks beyond the calendar
 1	9999-12-31 23:59:58	9999-12-31 23:59:58
-2	9999-12-31 23:59:59.998	9999-12-31 23:59:59.999
-2	9999-12-31 23:59:58	9999-12-31 23:59:59
+1	0000-01-01 00:00:01	0000-01-01 00:00:01
+1	9999-12-31 23:59:59.998	9999-12-31 23:59:59.998
+1	9999-12-31 23:59:58	9999-12-31 23:59:58
+1	9999-12-31 23:59:58	9999-12-31 23:59:58
+1	9999-12-31 23:59:59.998	9999-12-31 23:59:59.998
+1	9999-12-31 23:59:58	9999-12-31 23:59:58
 an INTERVAL step that stagnates at the calendar boundary before an in-range TO stops there
 1	9999-06-01 00:00:00	9999-06-01 00:00:00
 3	9995-06-01 00:00:00	9999-06-01 00:00:00

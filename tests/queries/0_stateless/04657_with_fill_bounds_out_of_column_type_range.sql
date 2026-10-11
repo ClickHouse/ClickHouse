@@ -120,8 +120,12 @@ SELECT 'bounds between the calendar boundary and the storage boundary of Date32 
 -- [-62167219200, 253402300799] shifted by the UTC offset of the column's time zone.
 SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM -719529 TO -719528 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d DESC WITH FILL FROM 2932897 TO 2932800 STEP INTERVAL -1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM -62167219201 TO -62167219199 STEP INTERVAL 1 SECOND) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL FROM 253402300800 TO 253402300700 STEP INTERVAL -1 SECOND) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- A numeric bound of a DateTime64 key is converted to the key type as CAST converts it, following
+-- date_time_overflow_behavior: by default a bound beyond the calendar is clamped to its boundary, with 'throw' it is rejected.
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM -62167219201 TO -62167219199 STEP INTERVAL 1 SECOND);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL FROM 253402300800 TO 253402300700 STEP INTERVAL -1 SECOND);
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM -62167219201 TO -62167219199 STEP INTERVAL 1 SECOND) FORMAT Null SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL FROM 253402300800 TO 253402300700 STEP INTERVAL -1 SECOND) FORMAT Null SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 -- The window is taken in the local civil calendar of the column's time zone: local 0000-01-01 00:00:00 in
 -- Etc/GMT+12 is -62167176000 in raw ticks, so a FROM below it is rejected even though it fits the UTC window.
 SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'Etc/GMT+12') AS t ORDER BY t ASC WITH FILL FROM -62167176001 TO -62167175999 STEP INTERVAL 1 SECOND) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
@@ -144,16 +148,15 @@ SELECT count() FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t O
 
 SELECT 'a numeric step over DateTime64 must not generate ticks beyond the calendar';
 
--- The DateTime64 bounds are carried as Decimal64 in the column's scale, and with FROM and a plain numeric step
--- the last generated raw tick is just as knowable as for the Int64-carried types. Ticks beyond the calendar
--- window do not wrap, but they are equally invalid: they all serialize as the clamped boundary date.
-SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:58', 0, 'UTC') TO 253402300805 STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT t FROM (SELECT toDateTime64('0000-01-01 00:00:01', 0, 'UTC') AS t ORDER BY t DESC WITH FILL FROM toDateTime64('0000-01-01 00:00:01', 0, 'UTC') TO -62167219202 STEP -2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- A numeric TO beyond the calendar is clamped to its last tick (see above), so the fill stops within the calendar;
+-- with date_time_overflow_behavior = 'throw' such a TO is rejected. The exclusive TO bound one step beyond the
+-- calendar boundary is clamped as well, so the last tick of the calendar itself is not generated.
 -- The arithmetic is performed in raw ticks of the column's scale: at scale 3 the step 0.001 is one tick.
-SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') TO 253402300800.001 STEP 0.001) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- Without FROM the query is rejected when the fill reaches a tick beyond the calendar.
-SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300805 STEP 2) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- The exclusive TO bound may be one step beyond the calendar boundary: these stop at the last representable tick.
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:58', 0, 'UTC') TO 253402300805 STEP 2);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64(-62167219199, 0, 'UTC') AS t ORDER BY t DESC WITH FILL FROM toDateTime64(-62167219199, 0, 'UTC') TO -62167219202 STEP -2);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') TO 253402300800.001 STEP 0.001);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300805 STEP 2);
+SELECT t FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300805 STEP 2) FORMAT Null SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:58', 0, 'UTC') TO 253402300800 STEP 2);
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') TO 253402300800 STEP 0.001);
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP 1);
