@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <type_traits>
@@ -437,11 +438,113 @@ struct AggregateFunctionSumKahanData
 };
 
 
+template <typename T>
+struct AggregateFunctionSumPrometheusData
+{
+    static_assert(is_floating_point<T>);
+
+    T sum{};
+    T correction{};
+
+    /// Keep this arithmetic equivalent to Prometheus's kahansum.Inc.
+    /// The order of operations is intentional and affects floating-point results.
+    template <typename Value>
+    void ALWAYS_INLINE addImpl(Value value)
+    {
+        const T increment = static_cast<T>(value);
+        const T new_sum = sum + increment;
+
+        if (std::isinf(new_sum))
+            correction = 0;
+        else if (std::abs(sum) >= std::abs(increment))
+            correction += (sum - new_sum) + increment;
+        else
+            correction += (increment - new_sum) + sum;
+
+        sum = new_sum;
+    }
+
+    void ALWAYS_INLINE add(T value)
+    {
+        addImpl(value);
+    }
+
+    template <typename Value>
+    void NO_INLINE addMany(const Value * __restrict ptr, size_t start, size_t end)
+    {
+        ptr += start;
+        const auto * end_ptr = ptr + (end - start);
+        while (ptr < end_ptr)
+        {
+            addImpl(*ptr);
+            ++ptr;
+        }
+    }
+
+    template <typename Value, bool add_if_zero>
+    void NO_INLINE addManyConditionalInternal(
+        const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+    {
+        ptr += start;
+        condition_map += start;
+        const auto * end_ptr = ptr + (end - start);
+        while (ptr < end_ptr)
+        {
+            if ((!*condition_map) == add_if_zero)
+                addImpl(*ptr);
+            ++ptr;
+            ++condition_map;
+        }
+    }
+
+    template <typename Value>
+    void ALWAYS_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t start, size_t end)
+    {
+        addManyConditionalInternal<Value, true>(ptr, null_map, start, end);
+    }
+
+    template <typename Value>
+    void ALWAYS_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+    {
+        addManyConditionalInternal<Value, false>(ptr, condition_map, start, end);
+    }
+
+    void merge(const AggregateFunctionSumPrometheusData & rhs)
+    {
+        addImpl(rhs.sum);
+        if (!std::isinf(sum))
+            correction += rhs.correction;
+    }
+
+    static constexpr size_t serialized_size_bound = sizeof(T) * 2;
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out) const
+    {
+        writeBinary(sum, out);
+        writeBinary(correction, out);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readBinary(sum, buf);
+        readBinary(correction, buf);
+    }
+
+    T get() const
+    {
+        return sum + correction;
+    }
+};
+
+
 enum AggregateFunctionSumType
 {
     AggregateFunctionTypeSum,
     AggregateFunctionTypeSumWithOverflow,
     AggregateFunctionTypeSumKahan,
+    AggregateFunctionTypeSumPrometheus,
 };
 /// Counts the sum of the numbers.
 template <typename T, typename TResult, typename Data, AggregateFunctionSumType Type>
@@ -461,6 +564,8 @@ public:
             return "sumWithOverflow";
         else if constexpr (Type == AggregateFunctionTypeSumKahan)
             return "sumKahan";
+        else if constexpr (Type == AggregateFunctionTypeSumPrometheus)
+            return "sumPrometheus";
     }
 
     explicit AggregateFunctionSum(const DataTypes & argument_types_)
@@ -607,7 +712,7 @@ public:
 
     bool isCompilable() const override
     {
-        if constexpr (Type == AggregateFunctionTypeSumKahan)
+        if constexpr (Type == AggregateFunctionTypeSumKahan || Type == AggregateFunctionTypeSumPrometheus)
             return false;
 
         bool can_be_compiled = true;

@@ -355,6 +355,13 @@ def send_test_data():
         ]
     )
 
+    send_data(
+        [
+            ({"__name__": "fractional_values", "id": str(i)}, {120: 0.1})
+            for i in range(10)
+        ]
+    )
+
     # Groups with a NaN or an infinite sample for `stddev` and `stdvar`: such a group is NaN, even with one sample.
     send_data(
         [
@@ -849,6 +856,52 @@ def test_at_start_and_end_modifiers():
         120,
         '{"resultType": "vector", "result": []}',
         [],
+    )
+
+
+def test_sum_prometheus_aggregate():
+    assert (
+        node.query(
+            "SELECT sumPrometheus(value) "
+            "FROM (SELECT arrayJoin([2, 8, 1e100, -1e100]::Array(Float64)) AS value)"
+        )
+        == "10\n"
+    )
+
+    # Prometheus's serial accumulation overflows to +Inf for this input order.
+    assert (
+        node.query(
+            "SELECT isInfinite(sumPrometheus(value)) "
+            "FROM (SELECT arrayJoin([1e308, 1e308, -1e308]::Array(Float64)) AS value)"
+        )
+        == "1\n"
+    )
+
+    # Verify that corrections from independently accumulated states survive merging.
+    assert (
+        node.query(
+            "SELECT sumPrometheusMerge(state) FROM "
+            "("
+            "    SELECT arrayReduce('sumPrometheusState', [2, 1e100]::Array(Float64)) AS state "
+            "    UNION ALL "
+            "    SELECT arrayReduce('sumPrometheusState', [8, -1e100]::Array(Float64)) AS state"
+            ")"
+        )
+        == "10\n"
+    )
+
+    # Partial-state merging cannot preserve Prometheus's original serial sample order.
+    # This partition therefore differs from the serial +Inf result above.
+    assert (
+        node.query(
+            "SELECT sumPrometheusMerge(state) = 1e308 FROM "
+            "("
+            "    SELECT arrayReduce('sumPrometheusState', [1e308]::Array(Float64)) AS state "
+            "    UNION ALL "
+            "    SELECT arrayReduce('sumPrometheusState', [1e308, -1e308]::Array(Float64)) AS state"
+            ")"
+        )
+        == "1\n"
     )
 
 
@@ -5067,6 +5120,37 @@ def test_aggregation_operators():
         120,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "73"]}]}',
         [["[]", "1970-01-01 00:02:00.000", 73]],
+    )
+
+    # Prometheus uses compensated summation, so ten 0.1 samples sum to exactly 1.
+    do_query_test(
+        "sum(fractional_values)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "1"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # Repeated infinities keep their sign instead of poisoning the compensation.
+    do_query_test(
+        "sum(bar / 0)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "inf"]],
+    )
+
+    do_query_test(
+        "sum(-bar / 0)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    # Opposite infinities must still produce NaN.
+    do_query_test(
+        "sum((bar - 20) / 0)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "nan"]],
     )
 
     do_query_test(
