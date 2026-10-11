@@ -1,0 +1,11 @@
+-- results in four configurations
+4 0 22000 1 22001 2 22002
+4 79999 57999 79998 57998 79997 57997
+4 1000 23000 1001 23001 1002 23002
+-- row groups excluded while their data waits are not read
+0 1 2, skipped plus read pages: 40
+000000 000001 000002, skipped plus read pages: 40
+-- the query condition cache after a read that skipped row groups late
+1000 23000 1001 23001 1002 23002; 1000 23000 1001 23001 1002 23002, cache hit: 1
+-- a String key at the default settings: the query condition cache after the reads
+skipped by statistics: 0
