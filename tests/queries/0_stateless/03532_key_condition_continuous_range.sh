@@ -23,6 +23,9 @@ ENGINE = MergeTree
 ORDER BY (i, timestamp);
 INSERT INTO test VALUES (1, '2025-06-05 01:00:00');"
 
+# `toDate` of a `DateTime64` wraps outside the `Date` range at the default
+# `date_time_overflow_behavior = 'ignore'`, so the chain does not describe an exactly continuous key
+# range and the generic exclusion search is used instead of the binary search (see #116946).
 $CLICKHOUSE_CLIENT -n -q "SELECT * FROM test WHERE i = 1 and toDate(timestamp) = '2025-06-05' SETTINGS use_primary_key = 1 FORMAT Null;" --query-id="${query_prefix}_binary1"
 $CLICKHOUSE_CLIENT -n -q "SELECT * FROM test WHERE i in (1) and toDate(timestamp) > '2025-06-05' SETTINGS use_primary_key = 1 FORMAT Null;" --query-id="${query_prefix}_binary2"
 $CLICKHOUSE_CLIENT -n -q "SELECT * FROM test WHERE toDate(i) = '2025-06-05' and timestamp = '2025-06-05 01:00:00' SETTINGS use_primary_key = 1 FORMAT Null;" --query-id="${query_prefix}_generic1"
