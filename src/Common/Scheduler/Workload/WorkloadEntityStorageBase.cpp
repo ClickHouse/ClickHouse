@@ -614,24 +614,11 @@ bool WorkloadEntityStorageBase::validateAndStoreEntity(
         }
 
         // References are resolved within own and inherited entities, inherited first, so entities of outer layers
-        // cannot be referenced. A restore into non-replicated storage recreates entities one by one and treats
-        // references like a load of persisted data: a missing or wrong-kind target or a parent cycle hides the workload
-        // instead of failing the restore, as references of the whole backup are checked before anything is created
-        // (see `restoreEntities`). Replicated storage has no such pre-check, so it validates every reference here.
-        const bool lenient_references = restore && !isReplicated();
+        // cannot be referenced. A restore validates them like a statement: a backup with broken references fails.
         forEachReference(create_entity_query,
-            [this, workload, lenient_references] (const String & target, const String & source, ReferenceType type)
+            [this, workload] (const String & target, const String & source, ReferenceType type)
             {
                 ASTPtr target_entity = findKnownEntity(target, own_entities);
-                if (lenient_references)
-                {
-                    if (type == ReferenceType::ForResource && typeid_cast<ASTCreateResourceQuery *>(target_entity.get()))
-                    {
-                        WorkloadSettings validator;
-                        validator.initFromChanges(workload->changes, target);
-                    }
-                    return;
-                }
                 if (!target_entity)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' references another workload entity '{}' that doesn't exist", source, target);
 
@@ -1614,13 +1601,6 @@ void WorkloadEntityStorageBase::restoreEntities(
     if (to_restore.empty())
         return;
 
-    /// On non-replicated storage the pre-check below is the only validation of references, so the state lock is held
-    /// from the pre-check until the last entity is created: concurrent statements and reloads of inner layers wait
-    /// and cannot change the checked references in between. Subscribers are notified under this lock meanwhile.
-    std::unique_lock<std::recursive_mutex> restore_lock;
-    if (!isReplicated())
-        restore_lock = getLock();
-
     /// Every entity a restored workload references (its parent workload, and the RESOURCEs used in a
     /// `SETTINGS ... FOR ...` clause) must exist once the restore completes: either it is part of this backup
     /// or it is already present on the server. Otherwise creating the workload fails with an opaque
@@ -1696,6 +1676,23 @@ void WorkloadEntityStorageBase::restoreEntities(
                     type == ReferenceType::ForResource ? "resource" : "parent workload",
                     target);
             });
+        }
+
+        // Parent cycles through restored workloads, possibly with existing ones
+        std::unordered_map<String, ASTPtr> after_restore = inherited_entities;
+        for (const auto & [entity_name, entity] : own_entities)
+            after_restore.emplace(entity_name, entity);
+        for (const auto & [entity_name, entity] : to_restore)
+        {
+            if (replace_if_exists || !own_entities.contains(entity_name))
+                after_restore[entity_name] = entity;
+        }
+        auto on_cycle = findParentCycles(after_restore);
+        for (const auto & [entity_name, entity] : to_restore)
+        {
+            if (on_cycle.contains(entity_name))
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                    "Cannot restore workload entities: workload '{}' would be on a parent cycle", entity_name);
         }
     }
 

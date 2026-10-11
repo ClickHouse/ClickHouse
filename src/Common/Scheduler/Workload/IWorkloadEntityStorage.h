@@ -99,9 +99,8 @@ class RestorerFromBackup;
  * Transactions of a layer, including the initial snapshot passed to a new subscriber, are delivered one at
  * a time in the order they were produced (see `notify_mutex` in WorkloadEntityStorageBase.h). Handlers are
  * called without the layer's state lock, except on the Keeper refresh paths (the watching thread, loading,
- * and the retry of `storeEntity`), where `WorkloadEntityKeeperStorage` still holds its lock, and during a
- * restore into non-replicated storage, which holds the lock from its reference check to its last entity. So a
- * handler must not call back into the layer that notifies it.
+ * and the retry of `storeEntity`), where `WorkloadEntityKeeperStorage` still holds its lock. So a handler
+ * must not call back into the layer that notifies it.
  *
  * References. A workload references its parent workload and the resources named in its `FOR` clauses.
  * A name resolves to the inherited entity first, as the user sees it, then to the own entity; an own entity
@@ -131,9 +130,9 @@ class RestorerFromBackup;
  * layer. Unlike SQL statements, it resolves overlap with inherited entities of the same kind and conflicts
  * between own entities by hiding, so such an entity that was hidden when it was backed up is restored
  * hidden. An entity of another kind than the inherited entity of the same name fails the restore, as does a
- * reference to a missing entity or to an entity of the wrong kind. Non-replicated storage checks references of
- * the whole backup before anything is created, then hides workloads on a parent cycle like a load does.
- * Replicated storage checks every reference as it recreates the entities one by one, like SQL statements.
+ * reference to a missing entity or to an entity of the wrong kind, or a parent cycle: references are checked
+ * like SQL statements. Non-replicated storage also checks references of the whole backup before anything is
+ * created.
  *
  * Source. `getEntitySource` returns the name of the layer that owns a visible entity, e.g. `implicit`,
  * `keeper`, `disk` or `configuration`. It is shown in the `source` column of `system.workloads` and

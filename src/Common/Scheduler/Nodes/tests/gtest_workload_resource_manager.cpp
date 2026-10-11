@@ -3042,21 +3042,25 @@ TEST(SchedulerWorkloadResourceManager, ReplicatedRestoreValidatesReferences)
     EXPECT_TRUE(t.storage.has("w"));
 }
 
-// Workloads on a parent cycle, hidden in persisted data and backed up, are restored hidden again
-TEST(SchedulerWorkloadResourceManager, RestoreRecreatesHiddenParentCycle)
+// A backup with a parent cycle fails the restore before anything is created
+TEST(SchedulerWorkloadResourceManager, RestoreRejectsParentCycle)
 {
     ResourceTest t;
-    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated(
-        "CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a IN b; CREATE WORKLOAD b IN a; CREATE WORKLOAD c"));
-    EXPECT_TRUE(t.storage.has("io"));
-    EXPECT_TRUE(t.storage.has("c"));
-    EXPECT_FALSE(t.storage.has("a"));
-    EXPECT_FALSE(t.storage.has("b"));
+    EXPECT_THROW(t.sql_storage->restoreAccumulated(
+        "CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a IN b; CREATE WORKLOAD b IN a; CREATE WORKLOAD c"), DB::Exception);
+    EXPECT_FALSE(t.storage.has("io"));
+    EXPECT_FALSE(t.storage.has("c"));
 
-    // Breaking the cycle makes them visible
-    t.query("CREATE OR REPLACE WORKLOAD b");
-    EXPECT_TRUE(t.storage.has("a"));
-    EXPECT_TRUE(t.storage.has("b"));
+    // Also a cycle through an existing workload
+    t.query("CREATE WORKLOAD p");
+    t.query("CREATE WORKLOAD q IN p");
+    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD p IN q", /* replace_if_exists = */ true), DB::Exception);
+    EXPECT_EQ(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get("p").get())->getWorkloadParent(), "");
+
+    // And on replicated storage, where the restore fails on the entity closing the cycle
+    t.sql_storage->setReplicated(true);
+    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD p IN q", /* replace_if_exists = */ true), DB::Exception);
+    EXPECT_EQ(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get("p").get())->getWorkloadParent(), "");
 }
 
 // A restore rejects an entity of another kind than the inherited entity of the same name, before creating anything.
