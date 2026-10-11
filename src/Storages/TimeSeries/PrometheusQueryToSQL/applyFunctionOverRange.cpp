@@ -248,6 +248,21 @@ SQLQueryPiece applyFunctionOverRange(
 
     checkArgumentTypes(function_name, arguments, context);
 
+    return applyAggregateFunctionOverRange(
+        node, impl_info->ch_function_name, drop_metric_name.value_or(impl_info->drop_metric_name), impl_info->needs_cast_to_float64,
+        std::move(arguments[0]), {}, context);
+}
+
+
+SQLQueryPiece applyAggregateFunctionOverRange(
+    const Node * node,
+    std::string_view ch_function_name,
+    bool drop_metric_name,
+    bool needs_cast_to_float64,
+    SQLQueryPiece && argument_,
+    ASTs extra_aggregate_arguments,
+    ConverterContext & context)
+{
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
         return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
@@ -257,12 +272,14 @@ SQLQueryPiece applyFunctionOverRange(
     auto step = node_range.step;
     auto window = node_range.window;
 
-    auto argument = std::move(arguments[0]);
+    auto argument = std::move(argument_);
 
     if (argument.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY}; /// The range vector is empty, so is the result.
 
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(argument, context);
+    for (auto & extra_argument : extra_aggregate_arguments)
+        aggregate_function_arguments.push_back(std::move(extra_argument));
 
     const auto * fixed_at_node = getFixedAtModifier(argument);
     const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
@@ -276,15 +293,15 @@ SQLQueryPiece applyFunctionOverRange(
     if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-    /// <aggregate_function>(<timestamps>, <values>) AS values
+    /// <aggregate_function>(<timestamps>, <values>[, <extra_arguments>]) AS values
     ASTPtr aggregate_values = addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(aggregate_function_arguments)),
+        makeASTFunction(ch_function_name, std::move(aggregate_function_arguments)),
         timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
         timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
         timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
         timeSeriesDurationToAST(window, context.result_timestamp_type));
 
-    if (impl_info->needs_cast_to_float64)
+    if (needs_cast_to_float64)
     {
         /// CAST(<aggregate_function>(timestamp, value), 'Array(Nullable(Float64))')
         /// See `needs_cast_to_float64`; a timestamp becomes seconds since 1970-01-01 as in Prometheus. The cast does nothing
@@ -320,7 +337,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
+    if (has_group && drop_metric_name)
         res = dropMetricName(std::move(res), context);
 
     return res;
