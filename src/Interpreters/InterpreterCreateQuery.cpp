@@ -2096,11 +2096,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
-        /// A definition replayed from metadata was bounded when it was created. A full `ATTACH ... AS SELECT`
-        /// is user input, so it is bounded as well.
+        /// A definition replayed from metadata or restored from a backup was bounded when it was created.
+        /// A full `ATTACH ... AS SELECT` is user input, so it is bounded as well, and so is a fresh `CREATE`
+        /// executed on a follower replica of a `Replicated` database: it carries the settings of the initial
+        /// query, and no earlier pass on this replica has expanded it.
+        const bool is_fresh_secondary_create = mode == LoadingStrictnessLevel::SECONDARY_CREATE && is_secondary_query
+            && !is_restore_from_backup && !getContext()->isRecoveryFromStoredMetadata();
         ApplyWithSubqueryVisitor::visit(
             *create.select,
-            isFreshTableDefinition(mode, create.attach_short_syntax)
+            isFreshTableDefinition(mode, create.attach_short_syntax) || is_fresh_secondary_create
                 ? getContext()->getSettingsRef()[Setting::max_expanded_ast_elements].value
                 : 0);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
