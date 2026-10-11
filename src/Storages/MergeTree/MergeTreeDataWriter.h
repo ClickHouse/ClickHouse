@@ -158,6 +158,7 @@ private:
         const ProjectionDescription & projection,
         CompressionCodecPtr compression_codec,
         MergeTreeIndices indices,
+        const WriteSettings & write_settings,
         bool merge_is_needed,
         bool try_adaptive_codec,
         bool use_selected_codec = false);

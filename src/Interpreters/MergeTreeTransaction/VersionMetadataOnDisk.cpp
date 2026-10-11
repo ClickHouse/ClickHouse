@@ -391,7 +391,7 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
             /// so we create empty file at first (expecting that createFile throws if file already exists)
             /// and then overwrite it.
             data_part_storage.createFile(tmp_filename);
-            auto write_settings = mt_data.getContext()->getWriteSettings();
+            auto write_settings = getWriteSettings();
             auto buf = data_part_storage.writeFile(tmp_filename, 256, write_settings);
             new_info.writeToBuffer(*buf, /*one_line=*/false);
             buf->finalize();

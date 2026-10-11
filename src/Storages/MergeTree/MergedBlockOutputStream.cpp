@@ -366,14 +366,16 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
         if (new_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            if (auto file = new_part->partition.store(metadata_snapshot, new_part->storage.getContext(), new_part->getDataPartStorage(), checksums))
+            if (auto file = new_part->partition.store(
+                    metadata_snapshot, new_part->storage.getContext(), new_part->getDataPartStorage(), checksums, writer_settings.query_write_settings))
             {
                 written_files.emplace_back(std::move(file));
             }
 
             if (new_part->getMinMaxIndex()->initialized)
             {
-                auto files = new_part->getMinMaxIndex()->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
+                auto files = new_part->getMinMaxIndex()->store(
+                    metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings, writer_settings.query_write_settings);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
