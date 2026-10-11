@@ -163,7 +163,7 @@ public:
             const Float64 diff = props_x - props_y;
             const UInt64 trials_total = trials_x + trials_y;
 
-            if (successes_x == 0 || successes_y == 0 || successes_x > trials_x || successes_y > trials_y || trials_total == 0
+            if (successes_x > trials_x || successes_y > trials_y || trials_total == 0
                 || !std::isfinite(confidence_level) || confidence_level < 0.0 || confidence_level > 1.0)
             {
                 insert_values_into_result(nan, nan, nan, nan);
