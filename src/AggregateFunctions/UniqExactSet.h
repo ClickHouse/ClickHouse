@@ -207,7 +207,11 @@ public:
             for (size_t i = 0; i < places.size(); ++i)
                 total_size += accessor(places[i])->size();
 
-            if (worthConvertingToTwoLevel(total_size))
+            /// The scattered merge costs an extra pass over the keys of the single-level sets, which only pays off
+            /// if other threads of the pool help. When the pool is already busy (e.g. many groups of similar size
+            /// are merged concurrently, each one by its own thread), merge serially instead.
+            /// `active` counts the running and the queued jobs; the check is racy, but it is only a heuristic.
+            if (worthConvertingToTwoLevel(total_size) && thread_pool.active() < thread_pool.getMaxThreads())
             {
                 parallelizeMergeMultiScattered(places, accessor, thread_pool, is_cancelled);
                 return;
