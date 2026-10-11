@@ -4,6 +4,7 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <Interpreters/TemporaryFileFrameReader.h>
+#include <Common/CacheLine.h>
 #include <Common/ProfileEvents.h>
 
 #include <algorithm>
@@ -82,8 +83,9 @@ public:
 
     /// Returns the keys of `block`, which is one of the blocks of the reader. The keys stay valid until the
     /// next call. Calls come in ascending order of blocks, so that one read of the file can serve several
-    /// missing blocks (see `TemporaryFileFrameReader`). Calling again for the block of the previous call
-    /// returns its keys without another read.
+    /// missing blocks (see `TemporaryFileFrameReader`), and the next cached block can load while the lookups
+    /// search the current one (see `prefetchNextCachedBlock`). Calling again for the block of the previous
+    /// call returns its keys without another read.
     std::span<const Key> read(size_t block)
     {
         /// Consecutive lookups often need the same block, which is decoded only once.
@@ -100,6 +102,7 @@ public:
         {
             ReadBufferFromMemory body(cached_block->body.data(), cached_block->body.size());
             current_keys = decoder.decode(cached_block->header, body, set.directory.getFirstKey(block));
+            prefetchNextCachedBlock();
             return current_keys;
         }
 
@@ -121,6 +124,7 @@ public:
         }
         ++read_blocks;
         current_keys = decoder.decode(header, block_in, set.directory.getFirstKey(block));
+        prefetchNextCachedBlock();
         return current_keys;
     }
 
@@ -133,6 +137,17 @@ public:
     }
 
 private:
+    /// Starts loading the body of the block after the one at `position` into the caches of the CPU, if the
+    /// cache of the set holds that block.
+    void prefetchNextCachedBlock() const
+    {
+        if (position + 1 == blocks.size())
+            return;
+        if (const auto & next_block = cached_blocks[position + 1])
+            for (size_t offset = 0; offset < next_block->body.size(); offset += CH_CACHE_LINE_SIZE)
+                __builtin_prefetch(next_block->body.data() + offset);
+    }
+
     /// The set whose file, directory and cache the reader uses. The set outlives the reader, which serves a
     /// single call.
     const DiskSetImpl & set;
