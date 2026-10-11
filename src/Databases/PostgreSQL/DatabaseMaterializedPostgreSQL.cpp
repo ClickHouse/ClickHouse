@@ -750,7 +750,8 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
             /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
             configuration = StoragePostgreSQL::processNamedCollectionResult(
-                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false);
+                *named_collection, /*storage_settings=*/ nullptr, args.context,
+                globCaller(fmt::format("Database engine '{}'", engine_name)), /*require_table=*/ false);
         }
         else
         {
