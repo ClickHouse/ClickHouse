@@ -25,10 +25,11 @@ SETTINGS
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_ttl_delete = 1,
     ratio_of_defaults_for_sparse_serialization = 1.0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1,
+    ttl_clear_index_merges = 0;
 
--- The table has two parts, so the merge reads through the merging algorithm. The size limit keeps
--- background merges off the parts. Even rows are past the rows TTL, and every row is past the
+-- The table has two parts, so the merge reads through the merging algorithm. The size limit and
+-- `ttl_clear_index_merges = 0` keep background merges off the parts. Even rows are past the rows TTL, and every row is past the
 -- `CLEAR INDEX` rule.
 SYSTEM STOP TTL MERGES ttl_clear_index_vertical;
 INSERT INTO ttl_clear_index_vertical

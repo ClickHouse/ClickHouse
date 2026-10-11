@@ -435,7 +435,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         const PartProperties & part = parts.front();
 
         /// FIXME? Probably we should check expired ttls here, not only calculated.
-        if (part.info.level > 0 && (!metadata_snapshot->hasAnyTTL() || part.all_ttl_calculated_if_any))
+        if (part.info.level > 0 && (!metadata_snapshot->hasAnyTTL() || (part.all_ttl_calculated_if_any && !part.next_index_clear_ttl)))
         {
             return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::NOTHING_TO_MERGE,
