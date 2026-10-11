@@ -1250,6 +1250,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
             source_filter,
             output_header,
+            nullptr /* block start rows */,
             nested_arrays));
     }
 
