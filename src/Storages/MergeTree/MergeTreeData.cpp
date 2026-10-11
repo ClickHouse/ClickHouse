@@ -1979,7 +1979,7 @@ void checkSpecialColumnWithDataType(const std::string_view column_meta_name, con
                 column_meta_name,
                 command.column_name,
                 command.data_type->getName(),
-                TypeName<TMustHaveDataType>);
+                TMustHaveDataType().getName());
         }
     }
 };
@@ -2157,8 +2157,17 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
     if (!columns_to_sum.empty() && mode != MergingParams::Summing && mode != MergingParams::Coalescing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of columns to sum for MergeTree cannot be specified in all modes except Summing.");
 
+    /// The sign, version and is_deleted columns may be subcolumns, except in VersionedCollapsing mode,
+    /// which adds its version column to the sorting key.
+    auto find_column = [this, &metadata](const String & column_name)
+    {
+        if (mode == MergingParams::VersionedCollapsing)
+            return metadata.getColumns().tryGetPhysical(column_name);
+        return metadata.getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    };
+
     /// Check that if the sign column is needed, it exists and is of type Int8.
-    auto check_sign_column = [this, & columns](bool is_optional, const std::string & storage)
+    auto check_sign_column = [this, &find_column](bool is_optional, const std::string & storage)
     {
         if (sign_column.empty())
         {
@@ -2168,24 +2177,17 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sign column for storage {} is empty", storage);
         }
 
-        bool miss_column = true;
-        for (const auto & column : columns)
-        {
-            if (column.name == sign_column)
-            {
-                if (!typeid_cast<const DataTypeInt8 *>(column.type.get()))
-                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Sign column ({}) for storage {} must have type Int8. "
-                            "Provided column of type {}.", sign_column, storage, column.type->getName());
-                miss_column = false;
-                break;
-            }
-        }
-        if (miss_column)
+        auto column = find_column(sign_column);
+        if (!column)
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Sign column {} does not exist in table declaration.", sign_column);
+
+        if (!typeid_cast<const DataTypeInt8 *>(column->type.get()))
+            throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Sign column ({}) for storage {} must have type Int8. "
+                    "Provided column of type {}.", sign_column, storage, column->type->getName());
     };
 
     /// that if the version_column column is needed, it exists and is of unsigned integer type.
-    auto check_version_column = [this, & columns](bool is_optional, const std::string & storage)
+    auto check_version_column = [this, &find_column](bool is_optional, const std::string & storage)
     {
         if (version_column.empty())
         {
@@ -2195,26 +2197,19 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Version column for storage {} is empty", storage);
         }
 
-        bool miss_column = true;
-        for (const auto & column : columns)
-        {
-            if (column.name == version_column)
-            {
-                if (!column.type->canBeUsedAsVersion())
-                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-                                    "The column {} cannot be used as a version column for storage {} because it is "
-                                    "of type {} (must be of an integer type or of type Date/DateTime/DateTime64)",
-                                    version_column, storage, column.type->getName());
-                miss_column = false;
-                break;
-            }
-        }
-        if (miss_column)
+        auto column = find_column(version_column);
+        if (!column)
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Version column {} does not exist in table declaration.", version_column);
+
+        if (!column->type->canBeUsedAsVersion())
+            throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                            "The column {} cannot be used as a version column for storage {} because it is "
+                            "of type {} (must be of an integer type or of type Date/DateTime/DateTime64)",
+                            version_column, storage, column->type->getName());
     };
 
     /// Check that if the is_deleted column is needed, it exists and is of type UInt8. If exist, version column must be defined too but version checks are not done here.
-    auto check_is_deleted_column = [this, & columns](bool is_optional, const std::string & storage)
+    auto check_is_deleted_column = [this, &find_column](bool is_optional, const std::string & storage)
     {
         if (is_deleted_column.empty())
         {
@@ -2228,21 +2223,13 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Version column ({}) for storage {} is empty while is_deleted ({}) is not.",
                             version_column, storage, is_deleted_column);
 
-        bool miss_is_deleted_column = true;
-        for (const auto & column : columns)
-        {
-            if (column.name == is_deleted_column)
-            {
-                if (!typeid_cast<const DataTypeUInt8 *>(column.type.get()))
-                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "is_deleted column ({}) for storage {} must have type UInt8. Provided column of type {}.",
-                                    is_deleted_column, storage, column.type->getName());
-                miss_is_deleted_column = false;
-                break;
-            }
-        }
-
-        if (miss_is_deleted_column)
+        auto column = find_column(is_deleted_column);
+        if (!column)
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "is_deleted column {} does not exist in table declaration.", is_deleted_column);
+
+        if (!typeid_cast<const DataTypeUInt8 *>(column->type.get()))
+            throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "is_deleted column ({}) for storage {} must have type UInt8. Provided column of type {}.",
+                            is_deleted_column, storage, column->type->getName());
     };
 
 
@@ -5606,6 +5593,94 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
+/// A sign, version or is_deleted column of the merging algorithm which is a subcolumn.
+struct SpecialSubcolumn
+{
+    std::string_view column_meta_name;
+    NameAndTypePair subcolumn;
+};
+
+/// Storage column -> its subcolumns which are special columns of the merging algorithm.
+std::unordered_map<String, std::vector<SpecialSubcolumn>> getColumnsWithSpecialSubcolumns(
+    const MergeTreeData::MergingParams & merging_params, const ColumnsDescription & columns)
+{
+    std::unordered_map<String, std::vector<SpecialSubcolumn>> result;
+    auto add = [&](std::string_view column_meta_name, const String & column_name)
+    {
+        if (column_name.empty())
+            return;
+
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        if (column && column->isSubcolumn())
+            result[column->getNameInStorage()].push_back({column_meta_name, *column});
+    };
+
+    add("sign", merging_params.sign_column);
+    add("version", merging_params.version_column);
+    add("is_deleted", merging_params.is_deleted_column);
+    return result;
+}
+
+/// Check that the ALTER of a column keeps its subcolumns usable as special columns of the merging algorithm.
+void checkColumnWithSpecialSubcolumns(const AlterCommand & command, const std::vector<SpecialSubcolumn> & special_subcolumns)
+{
+    const auto & [first_meta_name, first_subcolumn] = special_subcolumns.front();
+
+    if (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN)
+    {
+        const char * verb = command.type == AlterCommand::RENAME_COLUMN ? "RENAME" : (command.clear ? "CLEAR" : "DROP");
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Trying to ALTER {} column {} whose subcolumn {} is the {} column",
+            verb,
+            backQuoteIfNeed(command.column_name),
+            backQuoteIfNeed(first_subcolumn.name),
+            first_meta_name);
+    }
+
+    if (command.type != AlterCommand::MODIFY_COLUMN)
+        return;
+
+    if (command.default_kind == ColumnDefaultKind::Ephemeral || command.default_kind == ColumnDefaultKind::Alias)
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Cannot modify column {} whose subcolumn {} is the {} column to {}",
+            backQuoteIfNeed(command.column_name),
+            backQuoteIfNeed(first_subcolumn.name),
+            first_meta_name,
+            toString(command.default_kind));
+
+    if (!command.data_type)
+        return;
+
+    for (const auto & [column_meta_name, subcolumn] : special_subcolumns)
+    {
+        auto new_type = command.data_type->tryGetSubcolumnType(subcolumn.getSubcolumnName());
+        if (!new_type)
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Cannot alter column {} to type {} because it has no subcolumn {}, which is the {} column",
+                backQuoteIfNeed(command.column_name),
+                command.data_type->getName(),
+                backQuoteIfNeed(subcolumn.name),
+                column_meta_name);
+
+        /// The sign and is_deleted columns must have exactly one type, so they cannot be changed.
+        if (column_meta_name == "version")
+            checkVersionColumnTypesConversion(subcolumn.type.get(), new_type.get(), subcolumn.name);
+        else if (!new_type->equals(*subcolumn.type))
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Cannot alter column {} to type {} because it changes the type of its subcolumn {}, which is the {} column, from {} to {}",
+                backQuoteIfNeed(command.column_name),
+                command.data_type->getName(),
+                backQuoteIfNeed(subcolumn.name),
+                column_meta_name,
+                subcolumn.type->getName(),
+                new_type->getName());
+    }
+}
+
 /// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
 /// table. keep_alias_columns=false expands ALIAS chains to their base columns.
 Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
@@ -5814,6 +5889,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     std::unordered_map<String, std::vector<String>> column_to_subcolumns_used_in_keys;
 
     const auto & old_columns = old_metadata.getColumns();
+    const auto columns_with_special_subcolumns = getColumnsWithSpecialSubcolumns(merging_params, old_columns);
 
     if (old_metadata.hasPartitionKey())
     {
@@ -5889,6 +5965,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             checkSpecialColumn("sign", command);
         else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
             checkSpecialColumn("columns to sum", command, /* allow_clear = */ true);
+
+        if (auto it = columns_with_special_subcolumns.find(command.column_name); it != columns_with_special_subcolumns.end())
+            checkColumnWithSpecialSubcolumns(command, it->second);
 
         if (columns_in_keys.contains(command.column_name))
         {
@@ -6236,6 +6315,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
 
+        if (auto it = columns_with_special_subcolumns.find(command.column_name); it != columns_with_special_subcolumns.end())
+            checkColumnWithSpecialSubcolumns(command, it->second);
+
         if (command.column_name == merging_params.version_column)
         {
             /// Some type changes for version column is allowed despite it's a part of sorting key
@@ -6260,7 +6342,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
         else if (command.column_name == merging_params.sign_column)
         {
-            checkSpecialColumnWithDataType<DataTypeUInt8>("sign", command);
+            checkSpecialColumnWithDataType<DataTypeInt8>("sign", command);
         }
         else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
         {
