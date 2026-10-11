@@ -5,10 +5,12 @@
 -- the result deterministic, so the preserved structure can be asserted exactly.
 
 -- Hexadecimal integers: the 0x / 0X prefix is kept verbatim and every hex digit is replaced
--- by a hex digit, so the number of digits does not change.
-SELECT match(obfuscateQueryWithSeed('SELECT 0xFF', 1), '^SELECT 0x[0-9A-F]{2}$') AS hex_prefix_lower,
-       match(obfuscateQueryWithSeed('SELECT 0XAB', 1), '^SELECT 0X[0-9A-F]{2}$') AS hex_prefix_upper,
-       obfuscateQueryWithSeed('SELECT 0xFF', 1) != 'SELECT 0xFF' AS hex_value_changed;
+-- by a hex digit, so the number of digits does not change. The replacement digits are always
+-- taken from the upper-case table "0123456789ABCDEF", so lower-case input digits make the
+-- regexes reject a literal that was passed through unchanged, without depending on any
+-- particular obfuscated value.
+SELECT match(obfuscateQueryWithSeed('SELECT 0xff', 1), '^SELECT 0x[0-9A-F]{2}$') AS hex_prefix_lower,
+       match(obfuscateQueryWithSeed('SELECT 0Xab', 1), '^SELECT 0X[0-9A-F]{2}$') AS hex_prefix_upper;
 
 -- Hexadecimal floats keep the fraction point, the binary exponent marker and its sign.
 SELECT match(obfuscateQueryWithSeed('SELECT 0x1.8p+3', 1), '^SELECT 0x[0-9A-F]\\.[0-9A-F]p\\+[0-9]$') AS hex_float_plus_exponent,
@@ -33,15 +35,20 @@ SELECT match(obfuscateQueryWithSeed('SELECT ''AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEE
 
 -- A `YYYY-MM-DD` literal keeps both dashes and the 4-2-2 digit groups and stays a valid date.
 -- A `YYYY-MM-DD HH:MM:SS` literal keeps the space, both colons and the 2-2-2 digit groups of
--- the time, and the replacement is a valid wall clock time.
+-- the time, and the replacement is a valid wall clock time: the shape test of the time only
+-- looks at the positions of the digits and the colons, so the impossible input time `99:99:99`
+-- is accepted there and rewritten to an hour below 24 and a minute and a second below 60.
+-- `parseDateTimeOrNull` is strict about the ranges, so it returns NULL for the input and a
+-- value for the obfuscated literal only if the time was really rewritten. No assertion
+-- compares the obfuscated value with the input: the date arm shifts the day by `hash % 256`
+-- and the time arm draws from the whole day, so either may legitimately return the input.
 WITH obfuscateQueryWithSeed('SELECT ''2023-04-05''', 1) AS d,
-     obfuscateQueryWithSeed('SELECT ''2023-04-05 06:07:08''', 1) AS dt
+     obfuscateQueryWithSeed('SELECT ''2023-04-05 99:99:99''', 1) AS dt
 SELECT match(d, '^SELECT ''[0-9]{4}-[0-9]{2}-[0-9]{2}''$') AS date_shape_kept,
        toDateOrNull(extract(d, '[0-9-]{10}')) IS NOT NULL AS date_still_parses,
-       d != 'SELECT ''2023-04-05''' AS date_value_changed,
        match(dt, '^SELECT ''[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}''$') AS datetime_shape_kept,
-       toDateTimeOrNull(extract(dt, '[0-9-]{10} [0-9:]{8}')) IS NOT NULL AS datetime_still_parses,
-       dt != 'SELECT ''2023-04-05 06:07:08''' AS datetime_value_changed;
+       parseDateTimeOrNull(extract(dt, '[0-9-]{10} [0-9:]{8}'), '%Y-%m-%d %H:%i:%S') IS NOT NULL AS datetime_still_parses,
+       parseDateTimeOrNull('2023-04-05 99:99:99', '%Y-%m-%d %H:%i:%S') IS NULL AS input_time_is_not_a_valid_time;
 
 -- A real IPv4 address keeps its four groups, and the octets 0, 1 and 255 are kept as is.
 SELECT match(obfuscateQueryWithSeed('SELECT ''192.168.1.255''', 1),
