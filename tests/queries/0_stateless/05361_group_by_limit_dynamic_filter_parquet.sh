@@ -254,10 +254,16 @@ WHERE event_date >= yesterday() AND name LIKE '%Sorting%' AND query_id IN (SELEC
 SELECT 'few_2', countDistinct(name) > 0 FROM system.processors_profile_log
 WHERE event_date >= yesterday() AND name LIKE '%Sorting%' AND query_id IN (SELECT query_id FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment = '05361_few_2' AND type = 'QueryFinish');
--- The first run records 3 groups per thread; the second, linked and without a boundary, must not lower that to 6.
-SELECT 'seed_3', countDistinct(name) > 0 FROM system.processors_profile_log
-WHERE event_date >= yesterday() AND name LIKE '%Sorting%' AND query_id IN (SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment = '05361_seed_3' AND type = 'QueryFinish');
+-- The first run records 3 groups per thread that read rows (its AggregatingTransform takes in more rows than it passes on),
+-- and the heap stays while the record is above 5 * 1.5. The second, linked and without a boundary, must not lower it to 6
+-- when both its threads read rows; with one, it records the true 3.
+SELECT 'seed_3', (countIf(q.log_comment = '05361_seed_3' AND p.name LIKE '%Sorting%') > 0)
+    = (countIf(q.log_comment = '05361_seed_1' AND p.name = 'AggregatingTransform' AND p.input_rows > p.output_rows) >= 3
+        AND countIf(q.log_comment = '05361_seed_2' AND p.name = 'AggregatingTransform' AND p.input_rows > p.output_rows) = 2)
+FROM system.processors_profile_log AS p
+INNER JOIN (SELECT query_id, log_comment FROM system.query_log WHERE event_date >= yesterday()
+    AND current_database = currentDatabase() AND log_comment LIKE '05361_seed_%' AND type = 'QueryFinish') AS q USING (query_id)
+WHERE p.event_date >= yesterday();
 
 DROP TABLE t_05361_few;
 DROP TABLE t_05361_seed;
