@@ -496,8 +496,13 @@ class PullRequestPushYamlGen:
                 ENV_CHECKOUT_REFERENCE = (
                     YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
                 )
-                # github.event.pull_request is null on a push.
-                format_kwargs["CONCURRENCY"] = ""
+                # A fixed group serializes overlapping push runs; cancel-in-progress is left at its default false, so a running apply is never interrupted mid-tofu.
+                format_kwargs["CONCURRENCY"] = (
+                    "concurrency:\n"
+                    f"  group: {self.parser.config.concurrency_group}\n\n"
+                    if self.parser.config.concurrency_group
+                    else ""
+                )
         elif self.workflow_config.event in (Workflow.Event.SCHEDULE,):
             base_template = YamlGenerator.Templates.TEMPLATE_SCHEDULE
             format_kwargs = {

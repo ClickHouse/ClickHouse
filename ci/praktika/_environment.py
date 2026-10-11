@@ -109,6 +109,8 @@ class _Environment(MetaClasses.Serializable):
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)
             EVENT_ACTION = github_event.get("action", "")
+            # The triggering actor, present on every event; the pull_request branch overrides it with the PR author.
+            USER_LOGIN = github_event.get("sender", {}).get("login", "")
             if "pull_request" in github_event:
                 FORK_NAME = github_event["pull_request"]["head"]["repo"]["full_name"]
                 EVENT_TYPE = Workflow.Event.PULL_REQUEST
