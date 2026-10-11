@@ -141,7 +141,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, SkewedInOrderStatesAreMeasuredExact
     const size_t cache_key = 0x111985;
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
 
         Block header;
         header.insert(ColumnWithTypeAndName{
@@ -190,7 +190,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, WrappedStatesAreSizedFromSerialized
     const size_t cache_key = 0x111985 + 1;
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
 
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeTuple>(DataTypes{state_type}), "wrapped_state"});
@@ -245,7 +245,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, MixedWrapperSamplesNonStatePayloadC
     const size_t cache_key = 0x111985 + 2;
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
 
         Block header;
         header.insert(ColumnWithTypeAndName{
@@ -316,7 +316,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, VariantWithStateAlternativeSamplesN
     const size_t cache_key = 0x111985 + 4;
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
 
         Block header;
         header.insert(ColumnWithTypeAndName{
@@ -396,7 +396,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, VariantWithoutSampledStateValuesDoe
     const size_t cache_key = 0x111985 + 8;
     size_t exact_compressed_bytes = 0;
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, string_rows + state_rows * state_blocks);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, string_rows + state_rows * state_blocks));
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, variant_type, "variant_state_or_string"});
 
@@ -489,7 +489,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, ForcedStateSerializationSamplesNonS
     const size_t cache_key = 0x111985 + 14;
     size_t exact_compressed_bytes = 0;
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, first_block_rows + state_rows + string_rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, first_block_rows + state_rows + string_rows));
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, variant_type, "variant_state_or_string"});
 
@@ -578,7 +578,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, ForcedStateSerializationSamplesStat
     const size_t cache_key = 0x111985 + 16;
     size_t exact_compressed_bytes = 0;
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, first_block_rows + rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, first_block_rows + rows));
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, variant_type, "state"});
         header.insert(ColumnWithTypeAndName{nullptr, string_type, "payload"});
@@ -632,7 +632,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantSparseStateSamplesRepeatedP
     const auto exact_compressed_bytes
         = compressedColumnSize({std::move(materialized), state_type, "constant_sparse_state"});
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, state_type, "constant_sparse_state"});
         updater.recordOutputChunk(Chunk(Columns{std::move(constant)}, rows), header);
@@ -680,7 +680,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseStateArenaIsNotCountedAsPlain
     const size_t cache_key = 0x111985 + 13;
     const auto exact_compressed_bytes = compressedColumnSize({std::move(materialized), state_type, "sparse_state_arena"});
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, state_type, "sparse_state_arena"});
         updater.recordOutputChunk(Chunk(Columns{std::move(constant)}, rows), header);
@@ -723,7 +723,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseArrayStateDoesNotSkipFirstNes
 
     const size_t cache_key = 0x111985 + 11;
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*total_rows_to_read_=*/1);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, /*total_rows_to_read_=*/1));
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, array_type, "sparse_array_state"});
         updater.recordOutputChunk(Chunk(Columns{std::move(sparse)}, /*num_rows=*/1), header);
@@ -768,7 +768,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseMapStateDoesNotSkipFirstNeste
 
     const size_t cache_key = 0x111985 + 12;
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*total_rows_to_read_=*/1);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, /*total_rows_to_read_=*/1));
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, map_type, "sparse_map_state"});
         updater.recordOutputChunk(Chunk(Columns{std::move(sparse)}, /*num_rows=*/1), header);
@@ -837,7 +837,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, DynamicWithStateAlternativeSamplesN
     const size_t cache_key = 0x111985 + 5;
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
 
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, std::make_shared<DataTypeDynamic>(), "dynamic_state_or_string"});
@@ -896,7 +896,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantCarrierCountsEveryRowOfTheB
     const size_t cache_key = 0x111985 + 3;
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
 
         Block header;
         header.insert(ColumnWithTypeAndName{
@@ -956,7 +956,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantStateCompressesAcrossRepeti
     const size_t cache_key = 0x111985 + 6;
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
 
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, state_type, "constant_state"});
@@ -1026,7 +1026,7 @@ static void checkConstantNestedPayloadCompression(size_t rows, size_t cache_key)
     ASSERT_LT(exact_compressed_bytes * 8, rows * elements_in_array * string_size);
 
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows));
 
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, array_type, "constant_array_of_states"});
@@ -1087,7 +1087,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantStateCompressionFollowsTheW
     const size_t cache_key = 0x111985 + 15;
     const auto exact_compressed_bytes = compressedColumnSize({std::move(materialized), state_type, "constant_state"}, lz4);
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows, lz4);
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, rows, lz4));
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, state_type, "constant_state"});
         updater.recordOutputChunk(Chunk(Columns{std::move(constant)}, rows), header);

@@ -128,6 +128,7 @@ namespace Setting
     extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
+    extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -405,6 +406,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     network_compression_method = from[Setting::network_compression_method].toString();
     network_zstd_compression_level = from[Setting::network_zstd_compression_level];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
+    automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];

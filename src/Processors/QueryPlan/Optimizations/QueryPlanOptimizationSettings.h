@@ -269,6 +269,7 @@ struct QueryPlanOptimizationSettings
     Int64 network_zstd_compression_level = 1;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
+    float automatic_parallel_replicas_max_duplicated_read_ratio;
 
     bool query_plan_optimize_primary_key = true;
 
