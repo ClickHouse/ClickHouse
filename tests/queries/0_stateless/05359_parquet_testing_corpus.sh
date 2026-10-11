@@ -74,7 +74,7 @@ do
     $CLICKHOUSE_LOCAL --input_format_with_names_use_header=0 --query "
         CREATE TABLE actual ENGINE = Memory AS SELECT * FROM file('$CORPUS_DIR/$file', Parquet);
         CREATE TABLE expected AS actual;
-        INSERT INTO expected FROM INFILE '$CORPUS_DIR/$expected' FORMAT CSVWithNames;
+        INSERT INTO expected SELECT * FROM file('$CORPUS_DIR/$expected', CSVWithNames);
         SELECT '$file',
             (SELECT count() FROM actual),
             (SELECT count() FROM expected),
