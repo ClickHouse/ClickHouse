@@ -361,17 +361,7 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
         /// Analyze partition and primary-key ranges before estimating the relation so column
         /// statistics come only from parts that can satisfy the query. Reuse the result for
         /// the index-based fallback below.
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
-        if (!analyzed_result)
-        {
-            /// Range analysis normally enforces throwing read limits and memoizes its result.
-            /// At this stage, however, later planning may make the executed read exempt from those
-            /// limits. In that case use an estimation-only analysis; execution will analyze again
-            /// after its final read mode is known.
-            analyzed_result = reading->hasThrowingReadRowLimit()
-                ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
-                : reading->selectRangesToRead();
-        }
+        const ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResultForEstimation();
 
         /// An exact empty range selection proves that the relation is empty. Other empty
         /// analysis results can be placeholders for deferred work, so only propagate zero

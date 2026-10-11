@@ -1017,7 +1017,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         /// rows and the row width come from the estimator, as for the right side of a broadcast
         /// join: a hint or column statistics widen a row beyond what its types alone say.
         /// TODO: implement better logic for choosing number of parallel readers
-        auto analysis_result = read_from_merge_tree_step->getOrCreateAnalyzedResult();
+        auto analysis_result = read_from_merge_tree_step->getAnalyzedResultForEstimation();
         if (analysis_result)
         {
             const auto stats = estimateReadRowsCount(node);

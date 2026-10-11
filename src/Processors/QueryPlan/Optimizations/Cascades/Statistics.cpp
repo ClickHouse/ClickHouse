@@ -350,8 +350,7 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
                     .value_or(std::numeric_limits<UInt64>::max()));
             stats->max_row_count = std::max(stats->estimated_row_count, bound);
 
-            auto analyzed_result = read_step->getAnalyzedResult();
-            analyzed_result = analyzed_result ? analyzed_result : read_step->selectRangesToRead();
+            const auto analyzed_result = read_step->getAnalyzedResultForEstimation();
             fillPhysicalReadBytes(*stats,
                 analyzed_result ? Float64(analyzed_result->selected_rows) : 0);
         }
