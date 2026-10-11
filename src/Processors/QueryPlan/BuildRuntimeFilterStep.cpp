@@ -71,8 +71,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
     bool track_key_range_,
-    std::optional<UInt64> distinct_keys_hint_,
-    bool distinct_keys_hint_matches_filter_key_)
+    std::optional<UInt64> distinct_keys_hint_)
     : ITransformingStep(
         input_header_,
         input_header_,
@@ -90,7 +89,6 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
     , track_key_range(track_key_range_)
     , distinct_keys_hint(distinct_keys_hint_)
-    , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
 {
     if (!bloom_filter_bytes)
         bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
@@ -142,7 +140,6 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             allow_to_use_not_exact_filter,
             track_key_range,
             distinct_keys_hint,
-            distinct_keys_hint_matches_filter_key,
             query_context);
     });
 }

@@ -1,6 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
--- grammar requires it.
+-- grammar requires it. The experimental TimeSeries table engine does not
+-- round-trip through DatabaseReplicated.
 
 -- The `tags` column of the tags target table contains all the tags, including the metric name
 -- (the `__name__` tag) and the tags with dedicated columns from the `tags_to_columns` setting.

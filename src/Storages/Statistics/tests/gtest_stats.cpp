@@ -762,6 +762,91 @@ TEST(Statistics, BasicDefaultCountRoundTrip)
     auto eq0 = restored->estimateEqual(Field(Int64(0)));
     ASSERT_TRUE(eq0.has_value());
     EXPECT_DOUBLE_EQ(*eq0, 4.0);
+
+    /// `basic` statistics written by 26.6 and 26.7 store the default-value count only for `Nullable` columns, as
+    /// the NULL count (bit 2 of the feature mask, then called `NullCount`). For other columns it is absent, so it
+    /// is unknown, and it must stay unknown when the loaded statistics are written again, as a mutation does for
+    /// the columns it does not change. Check each layout these versions wrote.
+    constexpr UInt8 numeric_min_max = 1u << 0;
+    constexpr UInt8 string_length_sum = 1u << 1;
+    constexpr UInt8 null_count = 1u << 2;
+
+    auto load_legacy_and_rewrite = [](const DataTypePtr & type, UInt8 feature_mask, std::function<void(WriteBuffer &)> write_features)
+    {
+        /// `StatisticsBasic::serialize` of 26.7.
+        String payload;
+        {
+            WriteBufferFromString buf(payload);
+            writeIntBinary(static_cast<UInt64>(1000), buf); /// row_count
+            writeIntBinary(feature_mask, buf);
+            write_features(buf);
+            buf.finalize();
+        }
+
+        /// `ColumnStatistics::serialize` of 26.7 (`V4`) with the single `Basic` statistic.
+        String file;
+        {
+            WriteBufferFromString buf(file);
+            writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+            writeIntBinary(static_cast<UInt64>(1ULL << static_cast<UInt8>(StatisticsType::Basic)), buf);
+            writeStringBinary(type->getName(), buf);
+            writeIntBinary(static_cast<UInt64>(1000), buf); /// rows
+            writeIntBinary(static_cast<UInt64>(payload.size()), buf);
+            buf.write(payload.data(), payload.size());
+            buf.finalize();
+        }
+
+        ReadBufferFromString file_rb(file);
+        auto loaded = ColumnStatistics::deserialize(file_rb, type);
+        WriteBufferFromOwnString rewritten_wb;
+        loaded->serialize(rewritten_wb);
+        ReadBufferFromString rewritten_rb(rewritten_wb.str());
+        return ColumnStatistics::deserialize(rewritten_rb, type);
+    };
+
+    /// A numeric column: min and max.
+    {
+        auto rewritten = load_legacy_and_rewrite(data_type, numeric_min_max, [](WriteBuffer & buf)
+        {
+            writeFieldBinary(Field(Int64(0)), buf);
+            writeFieldBinary(Field(Int64(999)), buf);
+        });
+        auto estimate = rewritten->getEstimate();
+        EXPECT_FALSE(estimate.estimated_default_count.has_value());
+        /// Without the count there is no estimate for `x = 0`, rather than an estimate of zero rows.
+        EXPECT_FALSE(rewritten->estimateEqual(Field(Int64(0))).has_value());
+        ASSERT_TRUE(estimate.estimated_min.has_value());
+        ASSERT_TRUE(estimate.estimated_max.has_value());
+        EXPECT_EQ(*estimate.estimated_min, Field(Int64(0)));
+        EXPECT_EQ(*estimate.estimated_max, Field(Int64(999)));
+    }
+
+    /// A `String` column: the total byte length of the values.
+    {
+        auto string_type = DataTypeFactory::instance().get("String");
+        auto rewritten = load_legacy_and_rewrite(string_type, string_length_sum, [](WriteBuffer & buf)
+        {
+            writeIntBinary(static_cast<UInt64>(2890), buf);
+        });
+        EXPECT_FALSE(rewritten->getEstimate().estimated_default_count.has_value());
+        EXPECT_FALSE(rewritten->estimateEqual(Field(String(""))).has_value());
+        const auto & basic = assert_cast<const StatisticsBasic &>(*rewritten->getStats().at(StatisticsType::Basic));
+        EXPECT_EQ(basic.getStringTotalBytes(), 2890u);
+    }
+
+    /// A `Nullable` column: min, max and the NULL count, which is the default-value count of a `Nullable` column.
+    {
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        auto rewritten = load_legacy_and_rewrite(nullable_type, numeric_min_max | null_count, [](WriteBuffer & buf)
+        {
+            writeFieldBinary(Field(Int64(1)), buf);
+            writeFieldBinary(Field(Int64(999)), buf);
+            writeIntBinary(static_cast<UInt64>(250), buf);
+        });
+        EXPECT_TRUE(rewritten->hasNullCount());
+        EXPECT_EQ(rewritten->getNullCount(), 250u);
+        EXPECT_EQ(rewritten->estimateDefaults(), 250u);
+    }
 }
 
 TEST(Statistics, BasicDefaultCountArray)

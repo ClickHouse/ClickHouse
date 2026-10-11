@@ -158,8 +158,6 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
         auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
-        PaddedPODArray<Int64> timestamps;
-        extractTimestamps(ttl_column.get(), timestamps);
 
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
@@ -167,7 +165,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            Int64 cur_ttl = timestamps[i];
+            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             bool where_filter_passed = !where_column || where_column->getBool(i);
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
@@ -242,13 +240,11 @@ void TTLAggregationAlgorithm::execute(Block & block)
     {
         auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
         auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
-        PaddedPODArray<Int64> timestamps;
-        extractTimestamps(ttl_column_after_aggregation.get(), timestamps);
         for (size_t i = 0; i < block.rows(); ++i)
         {
             bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
             if (where_filter_passed)
-                new_ttl_info.update(timestamps[i]);
+                new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
         }
     }
 }

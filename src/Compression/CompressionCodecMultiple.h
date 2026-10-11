@@ -17,9 +17,6 @@ public:
 
     static VectorWithMemoryTracking<uint8_t> getCodecsBytesFromData(const char * source);
 
-    /// The pipeline stages, in application order (the generic-compression stage, if any, is among them).
-    const Codecs & getCodecs() const { return codecs; }
-
     void updateHash(SipHash & hash) const override;
 
 protected:

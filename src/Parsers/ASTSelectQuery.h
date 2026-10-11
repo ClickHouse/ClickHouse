@@ -36,8 +36,6 @@ public:
         LIMIT_BY,
         LIMIT_OFFSET,
         LIMIT_LENGTH,
-        LIMIT_AFTER,
-        LIMIT_UNTIL,
         SETTINGS,
         INTERPOLATE
     };
@@ -80,10 +78,6 @@ public:
                 return "LIMIT OFFSET";
             case Expression::LIMIT_LENGTH:
                 return "LIMIT LENGTH";
-            case Expression::LIMIT_AFTER:
-                return "LIMIT AFTER";
-            case Expression::LIMIT_UNTIL:
-                return "LIMIT UNTIL";
             case Expression::SETTINGS:
                 return "SETTINGS";
             case Expression::INTERPOLATE:
@@ -108,7 +102,6 @@ public:
     bool order_by_all = false;
     bool limit_with_ties = false;
     bool limit_by_all = false;
-    bool limit_after_all = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
     ASTPtr & refTables()    { return getExpression(Expression::TABLES); }
@@ -136,8 +129,6 @@ public:
     ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }
     ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
     ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
-    ASTPtr limitAfter()     const { return getExpression(Expression::LIMIT_AFTER); }
-    ASTPtr limitUntil()     const { return getExpression(Expression::LIMIT_UNTIL); }
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
     ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
 
@@ -171,8 +162,8 @@ public:
     void setFinal();
 
     /// Reorder children to match the canonical order used by ParserSelectQuery.
-    /// A parser that fills the expressions in a different order would otherwise
-    /// produce a tree hash that does not match the same query reparsed from SQL.
+    /// The KQL parser may add children in a different order, which causes
+    /// tree hash mismatches when comparing with a reparsed SQL representation.
     void normalizeChildrenOrder();
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
@@ -205,9 +196,5 @@ private:
 
     ASTPtr & getExpression(Expression expr);
 };
-
-/// Whether the AST subtree contains an `arrayJoin` function call, without descending into nested
-/// SELECTs (their `arrayJoin` belongs to a different scope).
-bool astContainsArrayJoinFunction(const ASTPtr & ast);
 
 }

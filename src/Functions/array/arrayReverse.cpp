@@ -106,7 +106,7 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
 {
     size_t size = src_array_offsets.size();
-    res_data.reserve(src_data.size());
+    res_data.reserve(size);
 
     ColumnArray::Offset src_prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
@@ -250,10 +250,10 @@ REGISTER_FUNCTION(ArrayReverse)
     FunctionDocumentation::Description description = R"(
 Reverses the order of elements of a given array.
 
-<Note>
+:::note
 Function `reverse(arr)` performs the same functionality but works on other data-types
 in addition to Arrays.
-</Note>
+:::
 )";
     FunctionDocumentation::Syntax syntax = "arrayReverse(arr)";
     FunctionDocumentation::Arguments arguments = {

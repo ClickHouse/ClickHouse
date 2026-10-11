@@ -147,10 +147,8 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(
-    const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const
+std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
 {
-    out_not_in_schema = false;
     if (!column_mapper)
         return element.name;
     const auto & map = column_mapper->getFieldIdToClickHouseName();
@@ -164,30 +162,19 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     auto it = map.find(element.field_id);
     if (it == map.end())
     {
-        /// Reserved field ids (https://iceberg.apache.org/spec/#reserved-field-ids) are not part of
-        /// the table schema, e.g. the v3 row-lineage fields `_row_id` (2147483540) and
-        /// `_last_updated_sequence_number` (2147483539) that spec-compliant writers materialize
-        /// into data files. Those are requested by their physical name, so they are matched by name.
-        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
+        /// Iceberg reserves field ids greater than 2147483447 (Integer.MAX_VALUE - 200) for metadata
+        /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
+        /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
+        /// write these into data files, but they are not part of the table schema. Per the Iceberg
+        /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
+        /// reserved-range field ids they don't recognize rather than failing. Such a column is
+        /// never requested, so returning its physical name lets the existing "unrequested column"
+        /// path skip it.
+        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
         if (element.field_id > iceberg_max_user_field_id)
             return element.name;
 
-        /// An id at or below `last-column-id` of the table metadata belongs to a column dropped
-        /// from the table: `DROP COLUMN` is metadata-only, so data files keep the column. Any other
-        /// id means the file does not belong to this table, or its schema was resolved to a wrong
-        /// one, which is reported rather than silently ignored.
-        const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
-        if (element.field_id < 1 || !last_assigned_field_id.has_value() || element.field_id > *last_assigned_field_id)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
-                "assigned that field id: the highest field id it ever assigned is {}",
-                element.name,
-                element.field_id,
-                last_assigned_field_id.has_value() ? std::to_string(*last_assigned_field_id) : String("unknown"));
-
-        out_not_in_schema = true;
-        return element.name;
+        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
     }
 
     /// At top level (empty path), return the full mapped name. For nested
@@ -234,13 +221,9 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        bool not_in_schema = false;
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
 
-        /// A column that is not in the data lake schema is never requested, and its physical name
-        /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
-        /// later re-added `x` have different field ids), so it must not be matched by name.
-        if (sample_block && !not_in_schema)
+        if (sample_block)
         {
             /// Doing this lookup on each schema element to support reading individual tuple elements.
             /// E.g.:
@@ -728,20 +711,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
             nullable_group = true;
         }
     }
-    /// Case 2 in schema inference mode (sample_block is null only there), where only the type is
-    /// named: the read gets that type as its hint and re-derives nullable_group above. Excluded: a
-    /// Map key_value tuple (DataTypeMap requires Tuple(keys, values)) and a Map key (never Nullable).
-    const bool infer_nullable_group =
-        !sample_block
-        && !node.type_hint
-        && node.requested
-        && group_is_optional
-        && !has_optional_ancestor
-        && node.schema_context != SchemaContext::MapTuple
-        && node.schema_context != SchemaContext::MapKey
-        && options.format.schema_inference_allow_nullable_tuple_type
-        && !options.schema_inference_force_not_nullable
-        && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1);
 
     /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
     nullable_tuple_group_depth += nullable_group ? 1 : 0;
@@ -801,15 +770,11 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        bool not_in_schema = false;
-        const String & element_name = element_names_in_file.emplace_back(
-            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
+        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
-            idx_in_output_tuple = std::nullopt;
-            if (!not_in_schema)
-                idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
+            idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
 
             if (idx_in_output_tuple.has_value() && elements.at(idx_in_output_tuple.value()) != UINT64_MAX)
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", node.getNameForLogging(), element_name);
@@ -897,10 +862,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     else
     {
         output_type = std::make_shared<DataTypeTuple>(types, names);
-        /// The group null map is reconstructed from a physical leaf's definition levels, so a group
-        /// with no leaf below it cannot be Nullable(Tuple(...)) and stays a plain Tuple.
-        if (infer_nullable_group && primitive_start != primitive_columns.size())
-            output_type = makeNullable(output_type);
     }
 
     /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
@@ -1489,10 +1450,8 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
         out_inferred_type = std::make_shared<DataTypeUUID>();
+        out_decoder.allow_stats = true; // UUIDs support min/max stats
         out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-        /// (Parquet's sort order for `uuid` is unsigned big-endian byte comparison, while ClickHouse
-        ///  sorts `UUID` by its second half, so the min/max pair is not an interval in the column's
-        ///  own order. Leaving allow_stats == false.)
         return;
     }
     else if (logical.__isset.FLOAT16)
@@ -1597,7 +1556,7 @@ void SchemaConverter::processPrimitiveColumn(
                 {
                     out_inferred_type = type_hint;
                     out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                    /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                    out_decoder.allow_stats = true;
                     return;
                 }
 
@@ -1616,7 +1575,7 @@ void SchemaConverter::processPrimitiveColumn(
             {
                 out_inferred_type = std::make_shared<DataTypeUUID>();
                 out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
+                out_decoder.allow_stats = true;
                 return;
             }
 

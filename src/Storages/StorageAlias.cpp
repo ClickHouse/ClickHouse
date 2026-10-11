@@ -283,11 +283,24 @@ void StorageAlias::truncate(
     const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    TableExclusiveLockHolder & table_lock_holder)
+    TableExclusiveLockHolder & /*table_lock_holder*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
+
+    /// The target is what executes the truncate, so it carries the lock its own engine needs, and the
+    /// caller's holder is the alias's, not the target's. A MergeTree removes its data under its own
+    /// locks; every other engine needs its readers excluded while its data goes away.
+    TableExclusiveLockHolder target_excl_lock;
+    TableLockHolder target_shared_lock;
+    if (target_storage->isMergeTree())
+        target_shared_lock = target_storage->lockForShare(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    else
+        target_excl_lock = target_storage->lockExclusively(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
+    target_storage->truncate(query, target_metadata, local_context, target_excl_lock);
 }
 
 bool StorageAlias::optimize(
@@ -596,18 +609,18 @@ CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_db, target_table)
 ```
 
-<Note>
+:::note
 The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
-</Note>
+:::
 
 ## Engine Parameters {#engine-parameters}
 
 - **`target_db (optional)`** — Name of the database containing the target table.
 - **`target_table`** — Name of the target table.
 
-<Note>
+:::note
 When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Alias('my_table')`), the target is resolved to the same database as the alias itself, not the session's current database.
-</Note>
+:::
 
 ## Supported Operations {#supported-operations}
 

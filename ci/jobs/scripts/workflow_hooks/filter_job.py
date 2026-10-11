@@ -8,7 +8,6 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
-from ci.praktika.utils import Shell
 
 
 def only_docs(changed_files):
@@ -113,14 +112,9 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
     "ci/jobs/scripts/print_uncovered_code.py",
-    "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
-    # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
-    # are continuous-mode kill-safe.
-    "ci/jobs/scripts/clickhouse_proc.py",
-    "tests/integration/helpers/cluster.py",
     "ci/defs/job_configs.py",
     "ci/defs/defs.py",
     "tests/clickhouse-test",
@@ -194,35 +188,6 @@ def _is_bugfix_pr():
     return any(lb in _info_cache.pr_labels for lb in _BUGFIX_LABELS)
 
 
-def _is_empty_merge_commit(sha):
-    """True if `sha` is a merge commit (>=2 parents) that introduced no changes -
-    i.e. its diff against the first parent is empty.
-
-    This is the commit produced by merging the base branch into the PR branch when
-    the merge brings nothing new (e.g. the GitHub "Update branch" button on a branch
-    that is already effectively up to date). The reviewed code is then identical to
-    the previous head, so re-running the AI `Code Review` job would only repeat the
-    previous review.
-
-    Resolved via the GitHub API rather than local git: the CI checkout may be a
-    shallow clone that lacks the merge commit's parents, and the commits endpoint
-    reports `.files` for a merge commit relative to its first parent. Returns False
-    on any uncertainty (not a merge, API error, unparseable output) so that we
-    prefer to run the review rather than silently skip it.
-    """
-    out = Shell.get_output(
-        f"gh api repos/{_info_cache.repo_name}/commits/{sha} "
-        "--jq '\"\\(.parents | length) \\(.files | length)\"'",
-        verbose=True,
-        retries=3,
-    ).split()
-    if len(out) != 2 or not all(s.isdigit() for s in out):
-        print(f"WARNING: could not determine parents/files for commit {sha}")
-        return False
-    num_parents, num_files = int(out[0]), int(out[1])
-    return num_parents >= 2 and num_files == 0
-
-
 def should_skip_job(job_name):
     global _info_cache
     if _info_cache is None:
@@ -237,17 +202,6 @@ def should_skip_job(job_name):
         or Labels.RELEASE_LTS in _info_cache.pr_labels
     ):
         return True, "Skipped for release PR"
-
-    # The AI `Code Review` job reviews the PR's code. When the PR's latest commit is
-    # an empty merge commit (base branch merged in with no net change - e.g. the
-    # GitHub "Update branch" button), the code is identical to the previous head and
-    # a fresh review would only repeat itself, so skip it.
-    if (
-        job_name == JobNames.CODE_REVIEW
-        and _info_cache.pr_number > 0
-        and _is_empty_merge_commit(_info_cache.sha)
-    ):
-        return True, "Skipped, PR latest commit is an empty merge commit"
 
     changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
@@ -492,21 +446,20 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, the stateless flaky check, and the docs examples). Only
-    the flaky check is conditional: it reruns the PR's new/changed stateless
-    tests as a drift guard, so a PR that changes no stateless tests has nothing
-    for it to do. Filter it out here, at config time, so such a PR does not
-    schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
-    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
-    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
-    build/style/fast-test/docs-examples jobs the queue always needs. The skip
-    condition matches the in-job selection in `functional_tests.py` (both rely
-    on `Targeting.get_changed_tests`), so the early exit and the config-time
-    skip never disagree. `get_changed_tests` resolves data fixtures (a
-    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
-    subdirectory) back to the tests that consume them, so a fixture-only PR
-    still reruns the affected test surface instead of being skipped here as
-    "no changed tests".
+    `amd_binary` build, and the stateless flaky check). Only the flaky check is
+    conditional: it reruns the PR's new/changed stateless tests as a drift guard,
+    so a PR that changes no stateless tests has nothing for it to do. Filter it
+    out here, at config time, so such a PR does not schedule the runner, restore
+    `CH_AMD_BINARY`, and enter the test container only to exit `SKIPPED`. This is
+    the merge-queue counterpart to the `flaky` branch of `should_skip_job`, kept
+    deliberately minimal so it cannot skip the build/style/fast-test jobs the
+    queue always needs. The skip condition matches the in-job selection in
+    `functional_tests.py` (both rely on `Targeting.get_changed_tests`), so the
+    early exit and the config-time skip never disagree. `get_changed_tests`
+    resolves data fixtures (a `.parquet`/`.tsv` under `tests/queries/0_stateless/`,
+    even one nested in a subdirectory) back to the tests that consume them, so a
+    fixture-only PR still reruns the affected test surface instead of being
+    skipped here as "no changed tests".
     """
     global _info_cache
     if _info_cache is None:

@@ -293,10 +293,10 @@ However `SELECT count(nullable_column) FROM table` query can be optimized by ena
 With `optimize_functions_to_subcolumns = 1` the function reads only [`null`](/reference/data-types/nullable#finding-null) subcolumn instead of reading and processing the whole column data.
 The query `SELECT count(n) FROM table` transforms to `SELECT sum(NOT n.null) FROM table`.
 
-<Tip title="Improving COUNT(DISTINCT expr) performance">
+:::tip Improving COUNT(DISTINCT expr) performance
 If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/reference/statements/select/group-by) clause as this improves parallelization.
 You can also use a [projection](/reference/statements/alter/projection) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
-</Tip>
+:::
     )";
     FunctionDocumentation::Syntax syntax = "count([expr])";
     FunctionDocumentation::Arguments arguments = {
@@ -308,9 +308,6 @@ You can also use a [projection](/reference/statements/alter/projection) to creat
     {
         "Basic row count",
         R"(
-CREATE TABLE t (num UInt8) ENGINE = Memory;
-INSERT INTO t VALUES (1), (1), (2), (2), (3);
-
 SELECT count() FROM t
         )",
         R"(
@@ -330,9 +327,9 @@ SELECT count(DISTINCT num) FROM t
 ┌─name──────────────────────────┬─value─────┐
 │ count_distinct_implementation │ uniqExact │
 └───────────────────────────────┴───────────┘
-┌─countDistinct(num)─┐
-│                  3 │
-└────────────────────┘
+┌─uniqExact(num)─┐
+│              3 │
+└────────────────┘
         )"
     }
     };

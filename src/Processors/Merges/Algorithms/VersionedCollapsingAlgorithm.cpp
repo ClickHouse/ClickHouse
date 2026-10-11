@@ -65,7 +65,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
     /// Take rows in correct order and put them into `merged_columns` until the rows no more than `max_block_size`
     while (queue.isValid())
     {
-        SortCursor current = *queue.current().first;
+        SortCursor current = queue.current();
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -130,7 +130,7 @@ IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next(1);
+            queue.next();
         }
         else
         {

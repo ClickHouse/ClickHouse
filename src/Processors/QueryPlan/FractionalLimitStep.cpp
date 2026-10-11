@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
@@ -54,10 +53,6 @@ void FractionalLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         pipeline.getSharedHeader(), limit_fraction, offset_fraction, offset, pipeline.getNumStreams(), with_ties, description);
 
     pipeline.addTransform(std::move(transform));
-
-    if (dataflow_cache_updater)
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void FractionalLimitStep::describeActions(FormatSettings & settings) const
