@@ -295,9 +295,13 @@ private:
 
     /// Returns whether the set in memory has to spill while it is used, which `execute` checks after each
     /// lookup in memory: the set is large enough to spill, and query memory exceeds the spill threshold with
-    /// the directory and the Bloom filters of the disk set (see `estimateDiskSetMemory`), which the set takes
-    /// besides the table until the disk set is complete. Call it under `rwlock`.
+    /// the directory and the Bloom filters of the disk set (see `estimateMemoryOfDiskSet`), which the set
+    /// takes besides the table until the disk set is complete. Call it under `rwlock`.
     bool isSpillNeededAfterBuild() const;
+
+    /// Returns the memory that the directory and Bloom filters of the set on disk take for the table's exact
+    /// key count (see `estimateDiskSetMemory`).
+    size_t estimateMemoryOfDiskSet() const;
 
     /// Moves the keys of the table to a `DiskSetBuilder`, which takes later insertions, and frees the table.
     void spill(std::string_view reason);

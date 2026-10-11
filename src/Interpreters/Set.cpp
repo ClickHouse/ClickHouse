@@ -14,6 +14,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <fmt/format.h>
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
@@ -159,15 +160,16 @@ bool Set::isSpillNeeded() const
 
 bool Set::isSpillNeededAfterBuild() const
 {
-    if (!spill_settings.max_bytes_before_external_set || !isLargeEnoughToSpill())
-        return false;
+    return spill_settings.max_bytes_before_external_set && isLargeEnoughToSpill()
+        && getCurrentQueryMemoryUsage() + static_cast<Int64>(estimateMemoryOfDiskSet())
+        > static_cast<Int64>(spill_settings.max_bytes_before_external_set);
+}
 
-    /// The directory and Bloom filters of the set on disk take this memory for the table's exact key count.
-    const size_t disk_set_memory = data->callOnMethod(
+size_t Set::estimateMemoryOfDiskSet() const
+{
+    return data->callOnMethod(
         [&]<typename Method>(const Method &)
         { return estimateDiskSetMemory<DiskSetKey<Method>>(data->getTotalRowCount(), spill_settings.max_bytes_for_bloom_filter); });
-    return getCurrentQueryMemoryUsage() + static_cast<Int64>(disk_set_memory)
-        > static_cast<Int64>(spill_settings.max_bytes_before_external_set);
 }
 
 void Set::spillAfterBuild() const
@@ -184,7 +186,11 @@ void Set::spillAfterBuild() const
 
         /// Only the lookup that started the spill replaces the table, so the table is still in memory here.
         chassert(data && !disk_set);
-        logSpill("while it is used", "query memory with the memory of the set on disk exceeds the spill threshold");
+        logSpill(
+            "while it is used",
+            fmt::format(
+                "query memory with the {} of the set on disk exceeds the spill threshold",
+                formatReadableSizeWithBinarySuffix(estimateMemoryOfDiskSet())));
 
         data->callOnMethod([&]<typename Method>(const Method & method)
         {
