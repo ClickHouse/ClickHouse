@@ -1,0 +1,36 @@
+Date32 TTL shortened so every row expires
+1000
+0
+DateTime64 TTL shortened so every row expires
+0
+MODIFY TTL whose result type becomes DateTime64 must not throw (was a logical error)
+0
+Calendar month interval falls back and still expires the right rows
+0
+Column-dependent TTL falls back and still expires the right rows
+500
+Day interval in a DST time zone falls back and still expires the right rows
+0
+Column TTL in the table forces fallback and still expires the right rows
+0
+Batched ALTER with another TTL change falls back and materializes the column TTL
+1000	1000
+Batched ALTER adding a column with a TTL falls back to the regular rewrite
+1000
+Batched ALTER adding the column the new TTL references falls back instead of throwing
+0
+Batched ALTER changing the default of the TTL column falls back to the regular rewrite
+0
+Part lagging a standalone metadata-only DEFAULT change of the TTL column falls back
+1000
+1000
+1
+Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows
+1000
+materialize_ttl_recalculate_only must not delete rows, only refresh the TTL metadata
+1000
+The fast path reads no data at all
+1000
+0
+MATERIALIZE TTL IN PARTITION must not touch the other partitions
+100
