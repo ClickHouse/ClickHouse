@@ -1794,6 +1794,7 @@ static void removeGeneratedFiles(
     const std::vector<String> & pre_existing,
     const std::vector<String> & plan_paths)
 {
+    auto log = getLogger("IcebergCompaction");
     std::unordered_set<String> keep(pre_existing.begin(), pre_existing.end());
     for (const auto & path : plan_paths)
     {
@@ -1801,12 +1802,12 @@ static void removeGeneratedFiles(
             continue;
         try
         {
+            LOG_DEBUG(log, "Removing orphaned Iceberg compaction file {}", path);
             object_storage->removeObjectIfExists(StoredObject(path));
         }
         catch (...)
         {
-            tryLogCurrentException(
-                __PRETTY_FUNCTION__, "Failed to remove an orphaned Iceberg compaction file");
+            tryLogCurrentException(log, "Failed to remove an orphaned Iceberg compaction file");
         }
     }
 }
