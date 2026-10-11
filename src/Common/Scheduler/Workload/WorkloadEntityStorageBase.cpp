@@ -997,7 +997,14 @@ void WorkloadEntityStorageBase::setOwnEntities(const std::vector<std::pair<Strin
         // Persisted data written by older versions may use a reserved name: such an entity is hidden, not rejected
         if (!(on_conflict == OnOwnConflict::Hide && isReservedEntityName(entity_name)))
             checkUserEntityName(entity_name);
-        new_own_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
+        // Two definitions of one name conflict, as they share the name claim key
+        auto [it, inserted] = new_own_entities.try_emplace(entity_name, normalizeCreateWorkloadEntityQuery(*create_query));
+        if (!inserted)
+        {
+            if (on_conflict == OnOwnConflict::Throw)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' is defined more than once", entity_name);
+            LOG_ERROR(log, "Workload entity '{}' of the {} storage is defined more than once, the first definition is used", entity_name, getName());
+        }
     }
 
     // Conflicts between own entities reject the load, or are resolved in `updateVisibleEntities` for persisted

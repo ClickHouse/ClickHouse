@@ -2853,6 +2853,12 @@ TEST(SchedulerWorkloadResourceManager, PersistedLoadResolvesConflicts)
     EXPECT_EQ(t.storage.getWorkerThreadResourceName(), "");
 
     EXPECT_THROW(t.loadConfig("CREATE RESOURCE c2 (QUERY); CREATE RESOURCE c1 (QUERY)"), DB::Exception);
+
+    // Two definitions of one name conflict as well
+    EXPECT_THROW(t.loadConfig("CREATE WORKLOAD x; CREATE RESOURCE x (QUERY)"), DB::Exception);
+    EXPECT_THROW(t.loadConfig("CREATE RESOURCE y (READ DISK d); CREATE RESOURCE y (WRITE DISK d)"), DB::Exception);
+    EXPECT_FALSE(t.storage.has("x"));
+    EXPECT_FALSE(t.storage.has("y"));
 }
 
 // A workload whose parent is shadowed by a resource of the same name is hidden together with the parent,
