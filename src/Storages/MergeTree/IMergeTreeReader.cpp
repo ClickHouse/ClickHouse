@@ -498,6 +498,16 @@ std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String
 {
     auto name_in_part = Nested::concatenateName(name_in_storage, subcolumn_name);
 
+    /// The lookup goes through subcolumns because for a wide part the flattened columns of a `Nested`
+    /// column are collected back into one column, whose subcolumns they become. A column that the table
+    /// declares in its own right must not be answered that way: a column named like a subcolumn of
+    /// another column (`a.size0` next to an `Array` column `a`) is missing from every part written
+    /// before `ALTER TABLE ... ADD COLUMN` added it, and the generated subcolumn of the other column
+    /// would answer with the array's sizes where the column's own default belongs. A column the part
+    /// really stores - under its own name, flattened or not - is unaffected.
+    if (subcolumn_name.empty() && !data_part_info_for_read->getColumnsDescription().hasPhysical(name_in_part))
+        return {};
+
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns();
     if (auto column_in_part = part_columns.tryGetColumn(options, name_in_part))
         return column_in_part;

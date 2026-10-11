@@ -1,0 +1,6 @@
+a	Array(UInt64)
+k	UInt64
+a	Array(UInt64)
+a.size0	Nullable(UInt64)
+k	UInt64
+1	[1,2,3]	0	Nullable(UInt64)

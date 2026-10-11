@@ -85,6 +85,17 @@ public:
     /// Look up a (sub)column present in the part, if any.
     virtual std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const = 0;
 
+    /// Like `tryGetColumn`, but a name that `table_columns` declares as a column in its own right is answered
+    /// only by a column that the part stores under that name, never by a same-named subcolumn of another column.
+    /// See `IMergeTreeDataPart::tryGetColumnForTable`.
+    std::optional<NameAndTypePair> tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const
+    {
+        if (table_columns.hasPhysical(column_name))
+            return getColumnsDescription().tryGetPhysical(column_name);
+
+        return tryGetColumn(column_name);
+    }
+
     virtual bool isSystemColumnInvalidated(const String & column_name) const = 0;
 
     virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;

@@ -345,7 +345,7 @@ static bool projectionPartHasRequiredColumns(
     for (const auto & name : required_column_names)
     {
         /// (1) Stored by the projection part.
-        if (projection_part.tryGetColumn(name))
+        if (projection_part.tryGetColumnForTable(name, parent_table_columns))
             continue;
 
         /// (2) Virtual column, provided by the reading step.
@@ -354,7 +354,7 @@ static bool projectionPartHasRequiredColumns(
 
         /// (3) Drift: the parent part still stores the column, or it is not a stored table column,
         /// so the projection part is stale for it and must not be read.
-        if (parent_part.tryGetColumn(name)
+        if (parent_part.tryGetColumnForTable(name, parent_table_columns)
             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
             return false;
 

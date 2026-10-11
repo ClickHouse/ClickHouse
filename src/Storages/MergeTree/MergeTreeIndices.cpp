@@ -318,7 +318,11 @@ bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & p
 
     for (const auto & [column, metadata_type] : skip_index.getColumnsWithTypesRequiredForIndexCalc())
     {
-        auto part_column = part.tryGetColumn(column);
+        /// A name that the metadata declares as a column in its own right is held by the part only
+        /// under that exact name, never by a same-named subcolumn of another column: after
+        /// `ADD COLUMN `a.size0`` next to an `Array` column `a`, a granule written over the sizes of
+        /// `a` in an older part must not be taken for a granule of the new column.
+        auto part_column = metadata_columns.hasPhysical(column) ? part_columns.tryGetByName(column) : part.tryGetColumn(column);
 
         /// The column is in the metadata but not in this part's column list, so there is no
         /// part-side type to compare against. That does NOT mean the part holds no granule: a part

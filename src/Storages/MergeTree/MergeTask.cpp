@@ -1582,8 +1582,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             {
                 for (const auto & column : projection_columns)
                 {
-                    if (!it->second->tryGetColumn(column.name)
-                        && (part->tryGetColumn(column.name)
+                    if (!it->second->tryGetColumnForTable(column.name, parent_table_columns)
+                        && (part->tryGetColumnForTable(column.name, parent_table_columns)
                             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
                     {
                         projection_part_misses_column = true;
