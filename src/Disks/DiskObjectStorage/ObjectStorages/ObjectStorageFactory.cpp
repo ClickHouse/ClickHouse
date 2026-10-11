@@ -14,6 +14,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #endif
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
@@ -198,7 +199,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
-        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
+        bool run_remote_host_filter_check) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -214,6 +215,21 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
             .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
         };
+
+        if (run_remote_host_filter_check)
+        {
+            auto check_host = [&](const String & url)
+            {
+                Poco::URI uri(url);
+                /// The query can carry a SAS token, which the error must not quote.
+                uri.setPathEtc("");
+                context->getRemoteHostFilter().checkURL(uri);
+            };
+            check_host(params.getConnectionURL());
+            /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
+            if (isAdlsGen2Endpoint(params.endpoint))
+                check_host(getAdlsGen2Url(params.endpoint, params.auth_method));
+        }
 
         return std::make_shared<AzureObjectStorage>(
             name,
