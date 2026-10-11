@@ -77,7 +77,13 @@ namespace
             {"avg",
              {
                 [](ASTPtr && v) -> ASTPtr
-                { return makeASTFunction("avgForEach", std::move(v)); },
+                {
+                    /// Prometheus averages the series in the order of their tags, and the rounding depends on that order.
+                    return makeASTFunction(
+                        "timeSeriesAvgOverGroup",
+                        makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+                        std::move(v));
+                },
             }},
 
             {"count",
