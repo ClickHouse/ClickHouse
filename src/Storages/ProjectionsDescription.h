@@ -27,6 +27,8 @@ struct KeyDescription;
 
 class ASTProjectionSelectQuery;
 
+class IMergeTreeDataPart;
+
 struct MergeTreeSettings;
 
 /// Description of projections for Storage
@@ -136,6 +138,10 @@ struct ProjectionDescription
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+
+    /// Does the part of this projection inside @parent_part record a column the sorting key reads in a type the key
+    /// does not decode identically now (for an expression key: any other type)? Then its row order and primary index are stale.
+    bool isSortingKeyStaleInPart(const IMergeTreeDataPart & parent_part) const;
 
     /**
      * @brief Calculates the projection result for a given input block.
