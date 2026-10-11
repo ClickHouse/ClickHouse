@@ -132,6 +132,9 @@ protected:
     InputPorts inputs;
     OutputPorts outputs;
 
+    /// True if an unfinished output asks for data.
+    bool isAnyOutputNeeded() const;
+
 public:
 
     IProcessor();
