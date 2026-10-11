@@ -177,7 +177,7 @@ Use `divideExact` for expressions that may also have floating-point or `Decimal`
         {"Mixed signed and unsigned arguments", "SELECT __divideIntegers(toInt32(-5), toUInt64(2)) AS quotient, toTypeName(quotient)", "-2\tInt32"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Internal;
     factory.registerFunction<FunctionExactDivide>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 
