@@ -21,7 +21,7 @@ from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
     PER_TEST_COVERAGE_SKIP_PREFIXES,
-    force_heavy_modules_sequential,
+    force_exclusive_modules_sequential,
     get_optimal_test_batch,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -1892,18 +1892,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
         )
     )
 
-    if is_flaky_check:
-        # The flaky parallel bucket runs `--dist=each`: every worker runs
-        # every parallel module at once. TEST_CONFIGS `dist_each_sequential` modules
-        # would start one cluster per worker and OOM small runners, so move them to
-        # the looped sequential phase. Normal `--dist=loadfile` runs do not call this.
+    if is_flaky_check or is_targeted_check:
         before = list(parallel_test_modules)
-        parallel_test_modules, sequential_test_modules = force_heavy_modules_sequential(
-            parallel_test_modules, sequential_test_modules
+        parallel_test_modules, sequential_test_modules = force_exclusive_modules_sequential(
+            parallel_test_modules, sequential_test_modules, dist_each=is_flaky_check
         )
         moved = [m for m in before if m not in parallel_test_modules]
         if moved:
-            print(f"Forced heavy modules to the sequential phase (avoid concurrent --dist=each clusters): {moved}")
+            print(f"Moved to the sequential phase: {moved}")
 
     if is_sequential:
         parallel_test_modules = []
