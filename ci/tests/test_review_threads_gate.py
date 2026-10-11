@@ -1209,3 +1209,60 @@ def test_workflow_run_event_resolves_the_pr_of_its_own_branch():
     assert _run_pr_resolution(
         [payload_pr(100, "feature", 1), payload_pr(700, "feature", 1)], [], "feature", *main
     ) is None
+
+
+def _retry_pr_candidates(anchor, payload, **args):
+    """Run a PR-resolution filter of `retry_infra_failures.yml`."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/retry_infra_failures.yml"
+    ).read_text()
+    assert anchor in workflow, "the retry PR resolution moved - update this test"
+    jq_filter = workflow[workflow.index(anchor) :].split("'")[1]
+    command = ["jq", "-c"]
+    for name, value in args.items():
+        command += ["--arg", name, value]
+    result = subprocess.run(
+        command + [jq_filter],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(result.stdout)
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_retry_resolves_the_pr_of_the_run_by_head_branch_and_repository():
+    """Regression: two open PRs share the head commit of a run, and
+    `.pull_requests[0]` names the other one. The retry workflow must not read
+    that PR's artifacts or markers as the run's own."""
+
+    def pull(number, ref, repo_id, full_name, state="open"):
+        return {
+            "number": number,
+            "state": state,
+            "head": {"ref": ref, "repo": {"id": repo_id, "full_name": full_name}},
+        }
+
+    run = {
+        "pull_requests": [
+            pull(1, "other-branch", 10, "ClickHouse/ClickHouse"),
+            pull(2, "my-branch", 10, "ClickHouse/ClickHouse"),
+        ]
+    }
+    run_filter = 'pr_candidates=$(echo "$run_data" | jq -c'
+    assert _retry_pr_candidates(run_filter, run, ref="my-branch", repo_id="10") == [2]
+    assert _retry_pr_candidates(run_filter, run, ref="my-branch", repo_id="11") == []
+    # A fork run has no `.pull_requests`.
+    assert _retry_pr_candidates(run_filter, {"pull_requests": []}, ref="x", repo_id="10") == []
+
+    commit_filter = 'pr_candidates=$(echo "$commit_pulls" | jq -c'
+    pulls = [
+        pull(3, "fix", 20, "someone/ClickHouse"),
+        pull(4, "fix", 21, "another/ClickHouse"),
+        pull(5, "fix", 20, "someone/ClickHouse", state="closed"),
+    ]
+    assert _retry_pr_candidates(
+        commit_filter, pulls, ref="fix", repo="someone/ClickHouse"
+    ) == [3]

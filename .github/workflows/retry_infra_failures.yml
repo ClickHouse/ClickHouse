@@ -171,10 +171,44 @@ jobs:
             fi
 
             # Fetch run metadata once for all checks below
-            run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
-              --jq '{pr: .pull_requests[0].number, sha: .head_sha}')
-            pr_number=$(echo "$run_data" | jq -r '.pr // empty')
-            run_sha=$(echo "$run_data" | jq -r '.sha')
+            run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id")
+            run_sha=$(echo "$run_data" | jq -r '.head_sha')
+            run_head_branch=$(echo "$run_data" | jq -r '.head_branch // ""')
+            run_head_repo=$(echo "$run_data" | jq -r '.head_repository.full_name // ""')
+            run_head_repo_id=$(echo "$run_data" | jq -r '.head_repository.id // ""')
+
+            # Resolve the PR of the run the same way as rerun_on_review_threads.yml.
+            # Several open PRs can share the head commit of a run, so `.pull_requests[0]`
+            # may name another PR; match the candidates against the run's own head branch
+            # and repository instead. `.pull_requests` is empty for fork PRs, so then look
+            # the PRs up through the head commit. An ambiguous or unresolved run gets no PR
+            # number, so no PR-scoped artifact or marker is read for it.
+            pr_candidates=$(echo "$run_data" | jq -c \
+              --arg ref "$run_head_branch" --arg repo_id "$run_head_repo_id" '
+              [(.pull_requests // [])[] |
+               select(.head.ref == $ref and (.head.repo.id | tostring) == $repo_id) |
+               .number] | unique
+            ')
+            if [ "$(echo "$pr_candidates" | jq 'length')" -eq 0 ]; then
+              # Failing closed: without the PR lookup the run cannot be attributed, so
+              # do not rerun it on this tick; the next one re-examines it.
+              if ! commit_pulls=$(gh api "repos/$GH_REPO/commits/$run_sha/pulls"); then
+                echo "::warning::Skipping run $run_id: the PRs of commit $run_sha could not be listed."
+                continue
+              fi
+              pr_candidates=$(echo "$commit_pulls" | jq -c \
+                --arg ref "$run_head_branch" --arg repo "$run_head_repo" '
+                [.[] |
+                 select(.state == "open" and .head.ref == $ref and .head.repo.full_name == $repo) |
+                 .number] | unique
+              ')
+            fi
+            pr_number=""
+            if [ "$(echo "$pr_candidates" | jq 'length')" -eq 1 ]; then
+              pr_number=$(echo "$pr_candidates" | jq -r '.[0]')
+            elif [ "$(echo "$pr_candidates" | jq 'length')" -gt 1 ]; then
+              echo "  Run belongs to several PRs ($pr_candidates) - not using a PR number."
+            fi
 
             # If the job-level heuristic didn't trigger, check Praktika result JSONs
             # on S3 for infrastructure-related failures:
