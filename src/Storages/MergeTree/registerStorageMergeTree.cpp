@@ -1283,7 +1283,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 
-    factory.registerStorage("MergeTree", create, features, Documentation{
+    factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = String(R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -1501,9 +1501,11 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads).
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. To reorder the rows of every inserted block to improve compressibility, enable the `optimize_row_order_if_no_order_by` setting. It applies to ordinary `MergeTree`-family tables, including `ReplicatedMergeTree`. Specialized engines of the family, e.g. `ReplacingMergeTree` or `AggregatingMergeTree`, are never row-order optimized and keep the order of the inserted rows.
 
-To select data in the initial order, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries.
+To enable reordering, set `optimize_row_order_if_no_order_by = 1` in the table's `SETTINGS` clause. When inserting data with `INSERT ... SELECT` queries, also set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads) to preserve the optimized order.
+
+When reordering is disabled, use [single-threaded](/reference/settings/session-settings/max-threads#max_threads) `SELECT` queries to select data in the insertion order. When reordering is enabled, a single-threaded `SELECT` query preserves the on-disk order.
 
 ### Choosing a primary key that differs from the sorting key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
@@ -1852,6 +1854,8 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
 | [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyCaseInsensitive](/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitive)            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyCaseInsensitiveUTF8)    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
@@ -2689,7 +2693,7 @@ ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
         .syntax = "ENGINE = MergeTree() ORDER BY expr [PARTITION BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [TTL expr] [SETTINGS ...]",
         .related = {"ReplicatedMergeTree"}});
 
-    factory.registerStorage("CollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("CollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 ## Description {#description}
 
@@ -3052,7 +3056,7 @@ SELECT * FROM UAct
         .syntax = "ENGINE = CollapsingMergeTree(sign) ORDER BY expr",
         .related = {"MergeTree", "VersionedCollapsingMergeTree", "ReplicatedCollapsingMergeTree"}});
 
-    factory.registerStorage("ReplacingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine differs from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
@@ -3273,7 +3277,7 @@ For further details on `FINAL`, including how to optimize `FINAL` performance, w
         .syntax = "ENGINE = ReplacingMergeTree([ver [, is_deleted]]) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedReplacingMergeTree"}});
 
-    factory.registerStorage("CoalescingMergeTree", create, features, Documentation{
+    factory.registerStorage("CoalescingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 <Note title="Available from version 25.6">
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
@@ -3441,7 +3445,7 @@ SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tupl
         .syntax = "ENGINE = CoalescingMergeTree([columns]) ORDER BY expr",
         .related = {"MergeTree", "SummingMergeTree", "AggregatingMergeTree", "ReplicatedCoalescingMergeTree"}});
 
-    factory.registerStorage("AggregatingMergeTree", create, features, Documentation{
+    factory.registerStorage("AggregatingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
@@ -3667,7 +3671,7 @@ SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY 
         .syntax = "ENGINE = AggregatingMergeTree() ORDER BY expr",
         .related = {"MergeTree", "SummingMergeTree", "ReplicatedAggregatingMergeTree"}});
 
-    factory.registerStorage("SummingMergeTree", create, features, Documentation{
+    factory.registerStorage("SummingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
@@ -3901,7 +3905,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
         .syntax = "ENGINE = SummingMergeTree([columns]) ORDER BY expr",
         .related = {"MergeTree", "AggregatingMergeTree", "ReplicatedSummingMergeTree"}});
 
-    factory.registerStorage("GraphiteMergeTree", create, features, Documentation{
+    factory.registerStorage("GraphiteMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
@@ -4167,7 +4171,7 @@ Data rollup is performed during merges. Usually, for old partitions, merges are 
         .syntax = "ENGINE = GraphiteMergeTree(config_section) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedGraphiteMergeTree"}});
 
-    factory.registerStorage("VersionedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("VersionedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 This engine:
 
@@ -4403,7 +4407,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
 
-    factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 <Note>
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
@@ -4744,37 +4748,37 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .syntax = "ENGINE = ReplicatedMergeTree('zoo_path', 'replica_name') ORDER BY expr",
         .related = {"MergeTree"}});
 
-    factory.registerStorage("ReplicatedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the CollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCollapsingMergeTree('zoo_path', 'replica_name', sign) ORDER BY expr",
         .related = {"CollapsingMergeTree"}});
 
-    factory.registerStorage("ReplicatedReplacingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the ReplacingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedReplacingMergeTree('zoo_path', 'replica_name'[, ver [, is_deleted]]) ORDER BY expr",
         .related = {"ReplacingMergeTree"}});
 
-    factory.registerStorage("ReplicatedAggregatingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedAggregatingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the AggregatingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedAggregatingMergeTree('zoo_path', 'replica_name') ORDER BY expr",
         .related = {"AggregatingMergeTree"}});
 
-    factory.registerStorage("ReplicatedSummingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedSummingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the SummingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedSummingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"SummingMergeTree"}});
 
-    factory.registerStorage("ReplicatedCoalescingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedCoalescingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the CoalescingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCoalescingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"CoalescingMergeTree"}});
 
-    factory.registerStorage("ReplicatedGraphiteMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedGraphiteMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the GraphiteMergeTree engine.",
         .syntax = "ENGINE = ReplicatedGraphiteMergeTree('zoo_path', 'replica_name', config_section) ORDER BY expr",
         .related = {"GraphiteMergeTree"}});
 
-    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the VersionedCollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedVersionedCollapsingMergeTree('zoo_path', 'replica_name', sign, version) ORDER BY expr",
         .related = {"VersionedCollapsingMergeTree"}});
