@@ -1,0 +1,29 @@
+Case A: File wrong row count
+1000
+Case B: File reverse order
+1000
+NOT_1000
+Case C: File schema inference
+CANNOT_DECOMPRESS
+Case D: File same-mode reuse
+50
+50
+Case E: File auto vs explicit matching
+100
+100
+Case F: Same-URL row count collision
+50
+50
+CANNOT_DECOMPRESS
+Case G: Same-URL schema inference collision
+c1	Nullable(Int64)
+c1	Nullable(Int64)
+CANNOT_DECOMPRESS
+Case H: Positive URL gzip caching
+50
+50
+c1	Nullable(Int64)
+Case I: Schema cache system table inspection
+URL	CSV		50
+URL	CSV	gzip	50
+File	LineAsString	gzip	50
