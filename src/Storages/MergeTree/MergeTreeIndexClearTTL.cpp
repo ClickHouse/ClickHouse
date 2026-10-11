@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexClearTTL.h>
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -120,6 +121,22 @@ UInt64 estimateDiskSpaceForIndexClear(const MergeTreeDataPartPtr & part)
     /// packed skip index archive, which is rewritten when it holds an expired index.
     const auto it = part->checksums.files.find(String(SKIP_INDICES_PACKED_FILENAME));
     return it == part->checksums.files.end() ? 0 : it->second.file_size;
+}
+
+bool futurePartMatchesSourcePart(const FutureMergedMutatedPart & future_part)
+{
+    if (future_part.parts.size() != 1 || !future_part.patch_parts.empty())
+        return false;
+
+    const auto & source_part = future_part.parts.front();
+
+    /// The result keeps the source's files, columns, and metadata version, so pending ALTER
+    /// conversions still apply to it by data version. A raised data version (`StorageMergeTree` raises
+    /// it over a pending `RENAME COLUMN`) would claim a conversion the copied files do not contain.
+    return future_part.part_info.getDataVersion() == source_part->info.getDataVersion()
+        && future_part.part_format.part_type == source_part->getType()
+        && future_part.part_format.storage_type == source_part->getDataPartStorage().getType()
+        && future_part.uuid == source_part->uuid;
 }
 
 bool canHardlinkFilesForIndexClear(const MergeTreeDataPartPtr & part)

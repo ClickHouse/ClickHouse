@@ -1891,6 +1891,11 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                                 sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
                     }
                 }
+
+                /// A `TTLClearIndex` merge is selected only for parts whose files can be hardlinked, so the size
+                /// limit doesn't apply, even on a replica that has to copy them (see `MergeFromLogEntryTask::prepare`).
+                if (entry.merge_type == MergeType::TTLClearIndex)
+                    ignore_max_size = true;
             }
 
             if (isMergeOfPatchPartsBlocked(entry, out_postpone_reason, state_lock))
