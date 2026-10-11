@@ -57,14 +57,20 @@ SELECT match(o, '^SELECT [0-9]{1,20}$') AS still_a_decimal_number,
        toUInt64OrNull(extract(o, '[0-9]+')) IS NOT NULL AS replacement_fits_uint64,
        toUInt64OrNull('36893488147419103232') IS NULL AS input_does_not_fit_uint64;
 
--- Multi-byte UTF-8 inside a string literal is obfuscated byte by byte: a leading byte is
--- replaced by a leading byte of the same width and a continuation byte by a continuation
--- byte. The payload is U+00E9, U+20AC and U+1F600, that is a two-, a three- and a four-byte
--- sequence between two ASCII letters, so the byte length and the width of every code point
--- must survive the obfuscation.
+-- Non-ASCII bytes in a string literal are obfuscated byte by byte, and only the byte class is
+-- preserved: a continuation byte (0x80..0xBF) stays a continuation byte, and a leading byte
+-- stays a leading byte of the same width bucket (0xC0..0xDF, 0xE0..0xEF, 0xF0..0xF7). The
+-- obfuscated bytes need not form valid UTF-8, so this is asserted on the raw bytes only.
+-- The payload is U+00E9, U+20AC and U+1F600, that is a two-, a three- and a four-byte sequence
+-- between two ASCII letters, so all three leading-byte buckets occur.
 WITH concat('SELECT ''a', unhex('C3A9E282ACF09F9880'), 'b''') AS q,
-     obfuscateQueryWithSeed(q, 1) AS o
+     obfuscateQueryWithSeed(q, 1) AS o,
+     arrayMap(i -> reinterpretAsUInt8(substring(q, i, 1)), range(1, length(q) + 1)) AS q_bytes,
+     arrayMap(i -> reinterpretAsUInt8(substring(o, i, 1)), range(1, length(o) + 1)) AS o_bytes,
+     arrayMap(b -> multiIf(b < 0x80, 0, b < 0xC0, 1, b < 0xE0, 2, b < 0xF0, 3, 4), q_bytes) AS q_classes,
+     arrayMap(b -> multiIf(b < 0x80, 0, b < 0xC0, 1, b < 0xE0, 2, b < 0xF0, 3, 4), o_bytes) AS o_classes
 SELECT length(o) = length(q) AS same_byte_length,
-       arrayMap(i -> length(substringUTF8(o, i, 1)), range(1, lengthUTF8(o) + 1))
-           = arrayMap(i -> length(substringUTF8(q, i, 1)), range(1, lengthUTF8(q) + 1)) AS same_code_point_widths,
-       o != q AS utf8_value_changed;
+       arrayFilter(c -> c != 0, q_classes) = [2, 1, 3, 1, 1, 4, 1, 1, 1] AS input_has_all_three_lead_widths,
+       o_classes = q_classes AS same_byte_classes,
+       startsWith(o, 'SELECT ''') AND endsWith(o, '''') AS quoting_kept_verbatim,
+       o != q AS non_ascii_bytes_changed;
