@@ -1935,6 +1935,7 @@ class SettingsRandomizer:
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "optimize_move_to_prewhere_if_final": lambda: random.randint(0, 1),
         # Default-false optimize_* settings: enable with 0.5 probability
+        "apply_string_filters_during_scan": lambda: random.random() < 0.5,
         "optimize_rewrite_array_exists_to_has": lambda: random.random() < 0.5,
         "optimize_skip_unused_shards": lambda: random.random() < 0.5,
         "optimize_trivial_approximate_count_query": lambda: random.random() < 0.5,
@@ -1970,7 +1971,6 @@ class SettingsRandomizer:
         "optimize_use_implicit_projections": lambda: random.random() > 0.05,
         "optimize_use_projection_filtering": lambda: random.random() > 0.05,
         "query_plan_optimize_lazy_materialization": lambda: random.random() > 0.05,
-        "query_plan_optimize_prewhere": lambda: random.random() > 0.05,
         "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
@@ -2015,6 +2015,10 @@ class SettingsRandomizer:
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
+        # Columns cache settings - randomize with 0.5 probability each
+        "use_columns_cache": lambda: random.randint(0, 1),
+        "enable_reads_from_columns_cache": lambda: random.randint(0, 1),
+        "enable_writes_to_columns_cache": lambda: random.randint(0, 1),
         # More query plan optimizations
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
@@ -2089,6 +2093,18 @@ class SettingsRandomizer:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
+        # With parallel replicas, `optimize_aggregation_in_order` rejects every projection, including the implicit
+        # `_minmax_count_projection` behind trivial `count()`, so tests asserting on projections, exact counts
+        # or read limits break under the `ParallelReplicas` configuration: https://github.com/ClickHouse/ClickHouse/issues/123061
+        if args.no_parallel_replicas:
+            random_settings["optimize_aggregation_in_order"] = 0
+            # With `parallel_replicas_local_plan = 0` the local replica is queried like a remote one, so plan- and
+            # log-based assertions of ~100 tests break under the `ParallelReplicas` configuration without finding
+            # anything about the default setup. Other configurations keep randomizing it.
+            random_settings["parallel_replicas_local_plan"] = 1
+            # `automatic_parallel_replicas_mode = 2` only collects statistics and never switches to parallel replicas,
+            # so the `ParallelReplicas` configuration would run such a test without them.
+            random_settings["automatic_parallel_replicas_mode"] = 0
 
     @staticmethod
     def get_random_settings(args, tags):
