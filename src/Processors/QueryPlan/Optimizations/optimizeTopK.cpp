@@ -311,8 +311,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
     /// when the column's lex-min value dominates and few granules can be skipped. Gate that
     /// path behind an explicit opt-in. Nullable and Tuple of fixed-length types are still
     /// considered fixed-length (haveMaximumSizeOfValue forwards through them).
-    /// A single `String` sort column has its own setting: there the filter also drops the rows equal to a
-    /// threshold that most rows of a block are equal to.
     const bool sort_column_is_variable_length = !sort_column.type->haveMaximumSizeOfValue();
     const bool single_string_sort_column = num_sort_columns == 1 && settings.use_top_k_dynamic_filtering_for_single_string_sort_column
         && isString(removeNullable(sort_column.type));

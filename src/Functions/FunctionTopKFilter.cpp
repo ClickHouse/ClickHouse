@@ -168,7 +168,6 @@ public:
     }
 
 private:
-    /// Which rows to keep: those not worse than the threshold, those better than it, or those equal to it.
     enum class Mode : uint8_t
     {
         NotWorse,
@@ -176,7 +175,6 @@ private:
         Equal,
     };
 
-    /// Returns a full `UInt8` column.
     ColumnPtr compare(const ColumnWithTypeAndName & argument, const Field & current_threshold, size_t input_rows_count, Mode mode) const
     {
         /// The stored values of a sparse column start with its default value.
