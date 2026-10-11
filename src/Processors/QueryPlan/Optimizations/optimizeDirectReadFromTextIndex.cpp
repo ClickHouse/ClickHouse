@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -155,12 +156,32 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     return result;
 }
 
+/// Columns changed on the fly by patches, mutations and masking policies. The index is not used for them in the
+/// whole query: the preprocessor rewrite and the on-fly mutation steps do not depend on the part. They are taken
+/// from the whole snapshot to avoid looking up the patches of each part.
+NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step)
+{
+    NameSet updated_columns = read_from_merge_tree_step.getMutationsSnapshot()->getColumnsChangedOnFly();
+
+#if CLICKHOUSE_CLOUD
+    /// Masking policies are the same for all parts.
+    const auto & context = read_from_merge_tree_step.getContext();
+    const auto & storage_id = read_from_merge_tree_step.getMergeTreeData().getStorageID();
+
+    for (const auto & command : MergeTreeData::getMaskingPolicyCommands(storage_id, context->getAccess()->getEnabledMaskingPolicies()))
+        AlterConversions::addUpdatedColumns(command, updated_columns);
+#endif
+
+    return updated_columns;
+}
+
 /// Helper function.
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
 void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
 {
+    /// Everything below is needed only for text indexes.
     const auto & indexes = read_from_merge_tree_step->getIndexes();
-    if (!indexes || indexes->skip_indexes.useful_indices.empty())
+    if (!indexes || std::ranges::none_of(indexes->skip_indexes.useful_indices, [](const auto & index) { return index.index->isTextIndex(); }))
         return;
 
     const RangesInDataParts & parts_with_ranges = read_from_merge_tree_step->getParts();
@@ -169,35 +190,19 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
-    auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
-    auto context = read_from_merge_tree_step->getContext();
 
     std::unordered_set<DataPartPtr> unique_parts;
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
-    /// Compute the union of updated columns only across the parts that will actually be read by this step.
-    /// Using `mutations_snapshot->getAllUpdatedColumns()` directly would include pending updates from
-    /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
-    /// the queried parts have no on-the-fly updates for the index columns.
-    NameSet all_updated_columns;
-    for (const auto & part : unique_parts)
-    {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
-#if CLICKHOUSE_CLOUD
-            , context->getAccess()->getEnabledMaskingPolicies()
-#endif
-        );
-        const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
-        all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
-    }
+    auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step);
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (!index.index->isTextIndex())
             continue;
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns); !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
             continue;
