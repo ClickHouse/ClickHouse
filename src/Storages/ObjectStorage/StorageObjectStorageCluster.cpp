@@ -250,7 +250,7 @@ bool StorageObjectStorageCluster::optimize(
 
 void StorageObjectStorageCluster::mutate(const MutationCommands & commands, ContextPtr context)
 {
-    updateExternalDynamicMetadataIfExists(context);
+    /// The external metadata has already been refreshed by the caller, see `StorageObjectStorage::mutate`.
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     configuration->mutate(commands, context, shared_from_this(), getStorageID(), metadata_snapshot, catalog, format_settings);
 }

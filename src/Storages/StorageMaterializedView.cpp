@@ -522,8 +522,8 @@ void StorageMaterializedView::readImpl(
     /// before reading. Without this call the storage snapshot will lack the
     /// datalake_table_state, causing a LOGICAL_ERROR in iterate().
     /// Normally updateExternalDynamicMetadataIfExists is called by the analyzer/interpreter
-    /// on the outermost storage, but for materialized views that is the view itself
-    /// (which is a no-op), not the target table.
+    /// on the outermost storage (the view, which forwards it to the target), but some paths
+    /// reach `read` without it.
     storage->updateExternalDynamicMetadataIfExists(context);
 
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
@@ -1039,7 +1039,19 @@ void StorageMaterializedView::checkAlterPartitionIsPossible(
 void StorageMaterializedView::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
+    /// The external metadata of the target has already been refreshed through
+    /// `updateExternalDynamicMetadataIfExists` before the mutation was validated, see `StorageObjectStorage::mutate`.
     getTargetTable()->mutate(commands, local_context);
+}
+
+void StorageMaterializedView::updateExternalDynamicMetadataIfExists(ContextPtr local_context)
+{
+    /// The analyzer and the interpreters refresh the external metadata of the outermost storage, which is the
+    /// view itself, so forward the refresh to the target (e.g. `IcebergLocal`). In particular, `ALTER ... UPDATE/DELETE`
+    /// has to validate the mutation against the same state of the target that `mutate` executes it against.
+    /// The refresh is a hook of the engine that a lazy-load stand-in does not forward.
+    if (auto target = tryGetTargetTable())
+        resolveStorageProxyLoading(target)->updateExternalDynamicMetadataIfExists(local_context);
 }
 
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)

@@ -46,6 +46,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageTableProxy.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -399,11 +400,15 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
                 cache->clear();
             }
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-            alter_commands->validate(table, context);
+            /// A lazy-load stand-in that has not been materialized yet knows only the columns of the
+            /// `CREATE TABLE` query and hides the engine from the downcast below, while `alter` below
+            /// materializes it in any case. Prepare the commands against the real storage.
+            StoragePtr engine_table = resolveStorageProxyLoading(table);
+            auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            alter_commands->validate(engine_table, context);
 
             bool share_nested = true;
-            if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
+            if (auto * merge_tree = castStorage<MergeTreeData>(engine_table, DeferredTable::Load).get())
                 share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             alter_commands->prepare(*metadata_snapshot, share_nested);
@@ -415,15 +420,23 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
                 auto share_lock = table->lockForShare(context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
-                table->checkMutationIsPossible(*mutation_commands, settings);
+                /// Validate against the real storage: `MutationsInterpreter` reads the MergeTree settings of
+                /// the table through a downcast, which a lazy-load stand-in defeats, and `mutate` below
+                /// materializes the stand-in in any case.
+                StoragePtr engine_table = resolveStorageProxyLoading(table);
+                /// Pin the current state of an external table (e.g. Iceberg) before validating, as
+                /// `InterpreterDeleteQuery` does: `mutate` executes the mutation against this same state
+                /// and does not refresh it again.
+                engine_table->updateExternalDynamicMetadataIfExists(context);
+                auto metadata_snapshot = engine_table->getInMemoryMetadataPtr(context, true);
+                engine_table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Checked ahead of the full validation below, which repeats it, so that a
                 /// nondeterministic mutation is reported as such even when the predicate also
                 /// fails to analyze.
-                MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
+                MutationsInterpreter::validateNonDeterministicMutationsForStorage(engine_table, *mutation_commands, context);
                 MutationsInterpreter::Settings mutation_settings(false);
-                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
-                table->mutate(*mutation_commands, context);
+                MutationsInterpreter(engine_table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                engine_table->mutate(*mutation_commands, context);
             }
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
@@ -738,7 +751,11 @@ InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsCo
     /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
     if (!storage)
         return RowExistsColumnKind::Unknown;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
+    /// A lazy-load stand-in that has not been materialized yet answers from the columns of the
+    /// `CREATE TABLE` query alone, without the virtual columns of the engine, so it would hide the
+    /// marker and turn `_row_exists = 0` into a regular update. Every caller is about to mutate the
+    /// table or a mutation of it, so ask the real storage.
+    const auto metadata_snapshot = resolveStorageProxyLoading(storage)->getInMemoryMetadataPtr(context_, false);
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
         ? RowExistsColumnKind::LightweightDeleteMarker
         : RowExistsColumnKind::Regular;

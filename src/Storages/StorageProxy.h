@@ -3,6 +3,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB
@@ -58,6 +59,9 @@ public:
     /// database's `lazy_load_tables` setting. Both are only queried while validating an ALTER,
     /// which materializes the nested table anyway.
     bool supportsTTL() const override { return getNested()->supportsTTL(); }
+    /// Asked by every interpreter inside a transaction before the operation, which materializes the
+    /// nested table anyway - a lazy `MergeTree` table must not be rejected as an engine without them.
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
     bool supportsStatistics() const override { return getNested()->supportsStatistics(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
@@ -162,6 +166,54 @@ public:
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
+
+    /// Answered together with `supportsLightweightUpdate` below: forwarding only the predicate would let
+    /// `UPDATE` pass the check and then fail with `Lightweight updates are not supported by storage TableProxy`.
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
+    {
+        return getNested()->updateLightweight(commands, context);
+    }
+
+    /// The capability predicates have to be forwarded as well: they are answered before the operation
+    /// that would materialize the nested storage, so a lazy stand-in that keeps the `IStorage` defaults
+    /// rejects `DELETE` and every mutation for the whole lifetime of the server process.
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
+
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
+
+    /// Not forwarding these makes `BACKUP` write the table definition with no data at all, and the
+    /// restore of such a backup silently succeeds with an empty table. `supportsBackupPartition` is
+    /// answered by `BackupEntriesCollector` and `RestorerFromBackup` before they reach the two data
+    /// methods below, so it has to be forwarded as well - otherwise `BACKUP TABLE ... PARTITION ...`
+    /// is rejected with `Table engine TableProxy doesn't support partitions`.
+    bool supportsBackupPartition() const override { return getNested()->supportsBackupPartition(); }
+
+    /// `DatabaseWithOwnTablesBase::getTablesForBackup` calls it on the catalog object before the data is
+    /// collected, e.g. `ReplicatedMergeTree` puts the current metadata from ZooKeeper into the backed up
+    /// `CREATE TABLE` query here.
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
+    {
+        getNested()->applyMetadataChangesToCreateQueryForBackup(create_query);
+    }
+
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    }
+
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    }
+
+    /// `RestorerFromBackup` calls it on the same object it restored the data into, after the data of all
+    /// tables has been restored, e.g. `EmbeddedRocksDB` reopens its read-only handles here.
+    void finalizeRestoreFromBackup() override { getNested()->finalizeRestoreFromBackup(); }
 
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 

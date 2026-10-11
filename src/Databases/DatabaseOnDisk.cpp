@@ -31,6 +31,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
@@ -436,6 +437,8 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         {
             table->drop();
             table->is_dropped = true;
+            /// Also mark the storage behind a materialized lazy-load stand-in, which the database iterator hands out directly.
+            unwrapMaterializedLazyTable(table)->is_dropped = true;
         }
         std::lock_guard lock(mutex);
         snapshot_detached_tables.erase(table_name);
