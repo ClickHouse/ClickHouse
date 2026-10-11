@@ -1,0 +1,15 @@
+non-MergeTree left: reads from replicas
+1
+10	45
+the join is shipped to the replicas
+0
+view left: reads from replicas
+1
+10	45
+the join is shipped to the replicas
+1
+materialized view left: reads from replicas
+1
+10	45
+the join is shipped to the replicas
+1

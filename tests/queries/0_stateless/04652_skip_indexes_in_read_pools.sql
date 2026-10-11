@@ -13,6 +13,13 @@ SET max_rows_to_read = 0;
 -- Pin the plain pools by default (the prefetched and parallel-replicas pools are
 -- enabled explicitly in dedicated queries below).
 SET enable_parallel_replicas = 0;
+-- The mark counts asserted at the end are sensitive to how a parallel-replicas read is split:
+-- they have never failed on `master`, they fail on the branch that enables
+-- `parallel_replicas_plan_based` by default, and
+-- https://github.com/ClickHouse/ClickHouse/pull/71028 breaks the same assertions by
+-- randomizing `parallel_replicas_min_number_of_rows_per_replica`. Pin the implementation for
+-- the whole test; pinning only the two read-in-order queries was not enough.
+SET parallel_replicas_plan_based = 0;
 SET allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
 
 DROP TABLE IF EXISTS t_skip_idx_pools;
