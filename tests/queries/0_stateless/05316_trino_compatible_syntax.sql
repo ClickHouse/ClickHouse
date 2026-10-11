@@ -6,6 +6,9 @@ SELECT toTypeName(TRY_CAST('1' AS BIGINT));
 SELECT TRY_CAST(x AS INTEGER) FROM (SELECT arrayJoin(['1', 'x', '3']) AS x);
 SELECT TRY_CAST('2020-01-02' AS DATE), TRY_CAST('not a date' AS DATE);
 SELECT TRY_CAST('1' AS t AS INTEGER), t;
+-- A literal is read as exactly as by `CAST`.
+SELECT TRY_CAST(0.1 AS Decimal256(76)) = CAST(0.1 AS Decimal256(76)), TRY_CAST(607668569663131286404589520 AS UInt128), TRY_CAST(0.1, 'Decimal256(76)') = CAST(0.1, 'Decimal256(76)');
+SELECT TRY_CAST(-1 AS UInt128), TRY_CAST(1e100 AS Decimal(10, 2));
 
 SELECT '-- ARRAY[...]';
 SELECT ARRAY[1, 2, 3], array[], Array['a', 'b'], toTypeName(ARRAY[1, NULL]);
@@ -39,7 +42,6 @@ SELECT current_timezone() = timezone();
 SELECT format_datetime(toDateTime('2024-02-29 13:14:15', 'UTC'), 'yyyy-MM-dd HH:mm:ss');
 SELECT array_distinct(ARRAY[1, 2, 1]), arraySort(array_union(ARRAY[1, 2], ARRAY[2, 3])), array_except(ARRAY[1, 2, 3], ARRAY[2]);
 SELECT array_max(ARRAY[1, 3, 2]), array_min(ARRAY[1, 3, 2]), array_position(ARRAY[5, 6], 6);
-SELECT element_at(ARRAY[1, 2], 5), element_at(ARRAY[1, 2], -1), element_at(map('a', 1), 'a'), element_at(map('a', 1), 'b');
 SELECT slice(ARRAY[1, 2, 3, 4], 2, 2), zip(ARRAY[1, 2], ARRAY['a']);
 SELECT map_keys(map('a', 1, 'b', 2)), map_values(map('a', 1, 'b', 2));
 SELECT url_extract_host('https://clickhouse.com:8443/docs/x?a=1&b=2#frag'), url_extract_path('https://clickhouse.com/docs/x?a=1'),

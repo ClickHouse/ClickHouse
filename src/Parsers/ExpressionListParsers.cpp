@@ -1621,20 +1621,14 @@ public:
 
                 ASTPtr argument = elements[0];
 
-                if (is_try)
-                {
-                    elements = {makeASTFunction("accurateCastOrNull", std::move(argument), elements[1])};
-                    finished = true;
-                    return true;
-                }
-
                 /// The functional form carries the type as an ordinary argument, so the type is only
                 /// known here when it is spelled out as a string.
                 if (const auto * type_literal = elements[1]->as<ASTLiteral>();
                     type_literal && type_literal->value.getType() == Field::Types::String)
                     argument = exactArgument(argument, type_literal->value.safeGet<String>(), pos);
 
-                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), std::move(argument), elements[1])};
+                const String function_name = is_try ? "accurateCastOrNull" : toString(toStringView(Keyword::CAST));
+                elements = {makeASTFunction(function_name, std::move(argument), elements[1])};
                 finished = true;
                 return true;
             }
@@ -1678,12 +1672,12 @@ private:
         return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 
-    /// `TRY_CAST(x AS T)` is `accurateCastOrNull(x, 'T')`.
+    /// `TRY_CAST(x AS T)` is `accurateCastOrNull(x, 'T')`. It reads a literal argument as exactly as `CAST` does.
     ASTPtr makeCast(const ASTPtr & argument, String type_text, const IParser::Pos & pos) const
     {
-        if (is_try)
-            return makeASTFunction("accurateCastOrNull", argument, make_intrusive<ASTLiteral>(std::move(type_text)));
         auto exact_argument = exactArgument(argument, type_text, pos);
+        if (is_try)
+            return makeASTFunction("accurateCastOrNull", std::move(exact_argument), make_intrusive<ASTLiteral>(std::move(type_text)));
         return createFunctionCast(exact_argument, std::move(type_text));
     }
 
