@@ -18,6 +18,7 @@ namespace DB
 {
 
 class UncompressedCache;
+class ColumnsCache;
 class MarkCache;
 
 struct MergeTreeBlockSizePredictor;
@@ -45,6 +46,9 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
+struct TextSearchQuery;
+using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
+
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -68,9 +72,20 @@ enum class MergeTreeReadType : uint8_t
 /// Some indexes (e.g. inverted text index) may read special virtual columns.
 struct IndexReadTask
 {
-    NamesAndTypesList columns;
+    /// A virtual column filled by the index reader and the text search query it is filled from.
+    /// Default expression is evaluated by the main reader in parts where the index is not materialized.
+    struct Column
+    {
+        String name;
+        DataTypePtr type;
+        TextSearchQueryPtr search_query;
+        ASTPtr default_expression;
+    };
+
+    std::vector<Column> columns;
     MergeTreeIndexWithCondition index;
-    bool is_final = false;
+
+    NamesAndTypesList getNamesAndTypesList() const;
 };
 
 /// Ordered map to ensure deterministic iteration order.
@@ -79,7 +94,6 @@ struct IndexReadTask
 /// `std::unordered_map` does not guarantee the same iteration order after copy,
 /// which leads to mismatched prewhere readers and actions.
 using IndexReadTasks = std::map<String, IndexReadTask>;
-using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -133,6 +147,10 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
+    /// All mark ranges the query reads from this part.
+    MarkRangesPtr read_request_map;
+    /// The same for each of `patch_parts`; empty = the whole patch parts.
+    std::vector<MarkRangesPtr> patch_read_request_maps;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -145,6 +163,7 @@ public:
     struct Extras
     {
         UncompressedCache * uncompressed_cache = nullptr;
+        ColumnsCache * columns_cache = nullptr;
         MarkCache * mark_cache = nullptr;
         PatchJoinCache * patch_join_cache = nullptr;
         MergeTreeReaderSettings reader_settings;
@@ -161,6 +180,7 @@ public:
         MergeTreeReaderPtr prepared_index;
 
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
+        void updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
     };
 
     struct BlockSizeParams
@@ -219,7 +239,9 @@ public:
     /// `read_mark_ranges` with `row_count == 0` may have been filtered before PREWHERE evaluated
     /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
     /// See Issue #104781.
-    bool readersChainCanSkipMarksBeforePrewhere() const;
+    /// With `prewhere_filters_by_top_k_threshold`, the PREWHERE holds the `__topKFilter` of the read as a conjunct, and
+    /// the marks skipped by the primary key against the same top-K threshold do not count.
+    bool readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const;
 
     /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
     /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
@@ -231,11 +253,14 @@ public:
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
 
+    /// `read_request_map` narrows the part's map; `patch_read_request_maps` then holds the matching patch maps.
     static Readers createReaders(
         const MergeTreeReadTaskInfoPtr & read_info,
         const Extras & extras,
         const MarkRanges & ranges,
-        const std::vector<MarkRanges> & patches_ranges);
+        const std::vector<MarkRanges> & patches_ranges,
+        const MarkRangesPtr & read_request_map = nullptr,
+        const std::vector<MarkRangesPtr> & patch_read_request_maps = {});
 
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,

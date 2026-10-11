@@ -6,7 +6,9 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Common/HiddenSecret.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
@@ -31,6 +33,10 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
+
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 
 #include <Access/ContextAccess.h>
 
@@ -569,6 +575,70 @@ void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextP
     BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
 }
 
+namespace
+{
+
+void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
+{
+    const auto & function = finder.function;
+    auto & result = finder.result;
+
+    /// `Backup(database_name, locator)` is the only valid shape, a locator carrying credentials can be
+    /// written in either position, and the query is formatted for logging before validation rejects it.
+    if (function->arguments->size() != 2 || !function->arguments->at(0)->tryGetLiteralText(nullptr))
+    {
+        finder.maskEveryArgument();
+        return;
+    }
+
+    auto storage_arg = function->arguments->at(1);
+    auto storage_function = storage_arg->getFunction();
+
+    /// A locator that is not a function - a string literal holding its text, or an expression - carries
+    /// the destination as text this finder cannot parse, and that text can hold an access key, a secret
+    /// access key or a presigned URL. The engine accepts such a locator only while replaying its own
+    /// metadata, but a statement carrying it is formatted before the engine rejects it: by `PARALLEL WITH`,
+    /// by the distributed DDL queue, and by `query_log`. Hide it whole rather than let it through verbatim.
+    if (!storage_function)
+    {
+        result.start = 1;
+        result.count = 1;
+        result.replacement = HIDDEN_SECRET_LITERAL;
+        result.quote_replacement = false;
+        return;
+    }
+
+    /// A parsed `S3` locator normally masks itself as `BACKUP_NAME` (see `backupS3LocatorMasksItself`). This rule
+    /// handles the locators that cannot delegate safely, including untagged JSON ASTs: hide the locator whole.
+    if (storage_function->name() == "S3")
+    {
+        finder.markSecretArgument(1);
+        return;
+    }
+
+    /// Judged by the backup engine's own rules: a locator they find a secret in holds a credential no rule
+    /// here masks (`AzureBlobStorage` holds `account_key` and connection-string material), so it is hidden
+    /// whole; its engine name and arity are not secrets.
+    if (!SecretArgumentsRegistry::instance().find(ASTFunction::Kind::BACKUP_NAME, *storage_function).hasSecrets())
+        return;
+
+    std::string replacement = backQuoteIfNeed(storage_function->name()) + "(";
+    for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
+    {
+        if (i > 0)
+            replacement += ", ";
+        replacement += HIDDEN_SECRET_LITERAL;
+    }
+    replacement += ")";
+
+    result.start = 1;
+    result.count = 1;
+    result.replacement = std::move(replacement);
+    result.quote_replacement = false;
+}
+
+}
+
 void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
@@ -604,7 +674,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true}, Documentation{
+    factory.registerDatabase("Backup", create_fn, {.custom = findBackupDatabaseSecretArguments}, {.supports_arguments = true, .is_external = true}, Documentation{
         .description = R"DOCS_MD(
 Database backup allows to instantly attach table/database from [backups](/concepts/features/backup-restore/overview) in read-only mode.
 

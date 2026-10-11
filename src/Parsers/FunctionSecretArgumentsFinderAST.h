@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/FieldVisitorToString.h>
-#include <Parsers/FunctionSecretArgumentsFinder.h>
+#include <Parsers/SecretArguments.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -92,51 +92,47 @@ private:
     const ASTFunction * function = nullptr;
 };
 
-/// Finds arguments of a specified function which should not be displayed for most users for security reasons.
-/// That involves passwords and secret keys.
-class FunctionSecretArgumentsFinderAST : public FunctionSecretArgumentsFinder
+/// Whether the locator of `Backup(database_name, S3(...))` is tagged as `BACKUP_NAME` and therefore masks
+/// itself with the `BACKUP ... TO` rule when it is formatted.
+inline bool backupS3LocatorMasksItself(const ASTFunction & backup)
 {
-public:
-    explicit FunctionSecretArgumentsFinderAST(const ASTFunction & function_)
-        : FunctionSecretArgumentsFinder(std::make_unique<FunctionAST>(function_))
+    if (!backup.arguments || backup.arguments->children.size() != 2 || !backup.arguments->children[0]->as<ASTLiteral>())
+        return false;
+
+    const auto * locator = backup.arguments->children[1]->as<ASTFunction>();
+    return locator && locator->name == "S3" && locator->getKind() == ASTFunction::Kind::BACKUP_NAME
+        && !locator->parameters && locator->tryGetAlias().empty() && !locator->isWindowFunction()
+        && locator->getNullsAction() == NullsAction::EMPTY;
+}
+
+/// The secret arguments of a function as the installed finder sees them.
+inline SecretArgumentsResult findSecretArguments(const ASTFunction & function)
+{
+    /// The `Backup` database rule is chosen by name rather than by kind, so that the kind tags of a JSON AST
+    /// supplied by a client cannot bypass it. A tagged `S3` locator masks itself as `BACKUP_NAME`.
+    if (function.name == "Backup" && function.arguments && !function.arguments->children.empty())
     {
-        if (!function->hasArguments())
-            return;
-
-        if (function_.name == "Backup")
-        {
-            if (!backupS3LocatorMasksItself(function_))
-                findBackupDatabaseSecretArguments();
-            return;
-        }
-
-        switch (function_.getKind())
-        {
-            case ASTFunction::Kind::ORDINARY_FUNCTION: findOrdinaryFunctionSecretArguments(); break;
-            case ASTFunction::Kind::WINDOW_FUNCTION: break;
-            case ASTFunction::Kind::LAMBDA_FUNCTION: break;
-            case ASTFunction::Kind::CODEC: break;
-            case ASTFunction::Kind::STATISTICS: break;
-            case ASTFunction::Kind::TABLE_ENGINE: findTableEngineSecretArguments(); break;
-            case ASTFunction::Kind::DATABASE_ENGINE: findDatabaseEngineSecretArguments(); break;
-            case ASTFunction::Kind::BACKUP_NAME: findBackupNameSecretArguments(); break;
-        }
+        if (backupS3LocatorMasksItself(function))
+            return {};
+        return getSecretArgumentsFinder().find(ASTFunction::Kind::DATABASE_ENGINE, FunctionAST(function));
     }
 
-    FunctionSecretArgumentsFinder::Result getResult() const { return result; }
-
-private:
-    static bool backupS3LocatorMasksItself(const ASTFunction & backup)
+    /// Codecs, statistics, window functions and lambdas take no secrets, so the programs that format only
+    /// those (`keeper` and `compressor` format codecs) need no finder.
+    switch (function.getKind())
     {
-        if (backup.arguments->children.size() != 2 || !backup.arguments->children[0]->as<ASTLiteral>())
-            return false;
-
-        const auto * locator = backup.arguments->children[1]->as<ASTFunction>();
-        return locator && locator->name == "S3" && locator->getKind() == ASTFunction::Kind::BACKUP_NAME
-            && !locator->parameters && locator->tryGetAlias().empty() && !locator->isWindowFunction()
-            && locator->getNullsAction() == NullsAction::EMPTY;
+        case ASTFunction::Kind::ORDINARY_FUNCTION:
+        case ASTFunction::Kind::TABLE_ENGINE:
+        case ASTFunction::Kind::DATABASE_ENGINE:
+        case ASTFunction::Kind::BACKUP_NAME:
+            break;
+        case ASTFunction::Kind::WINDOW_FUNCTION:
+        case ASTFunction::Kind::LAMBDA_FUNCTION:
+        case ASTFunction::Kind::CODEC:
+        case ASTFunction::Kind::STATISTICS:
+            return {};
     }
-};
-
+    return getSecretArgumentsFinder().find(function.getKind(), FunctionAST(function));
+}
 
 }
