@@ -471,3 +471,6 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/parquet-testing"]
+	path = contrib/parquet-testing
+	url = https://github.com/apache/parquet-testing
