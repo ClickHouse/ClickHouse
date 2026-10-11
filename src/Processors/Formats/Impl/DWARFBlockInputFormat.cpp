@@ -7,7 +7,7 @@
 #include <llvm/DebugInfo/DWARF/DWARFDebugRangeList.h>
 #include <llvm/BinaryFormat/Dwarf.h>
 
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
