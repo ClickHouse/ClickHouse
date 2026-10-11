@@ -1,9 +1,19 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexClearTTL.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsBool ttl_clear_index_merges;
+}
 
 namespace
 {
@@ -64,6 +74,42 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
     return std::nullopt;
 }
 
+time_t buildNextIndexClearTTL(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part, time_t current_time)
+{
+    if (!metadata_snapshot->hasAnyIndexClearTTL())
+        return 0;
+
+    time_t next_index_clear_ttl = 0;
+    for (const auto & [index_name, ttl] : getIndexesWithExpiredClearTTL(*metadata_snapshot, part->ttl_infos, current_time))
+        if ((!next_index_clear_ttl || ttl < next_index_clear_ttl) && partHasSkipIndexFiles(*part, index_name, *metadata_snapshot))
+            next_index_clear_ttl = ttl;
+
+    return next_index_clear_ttl;
+}
+
+/// A `TTLClearIndex` merge reserves space on the part's own disk. A part on a full disk would be selected on every pass
+/// and fail, which blocks the table's other merges.
+bool hasSpaceForIndexClear(const MergeTreeDataPartPtr & part)
+{
+    /// `MergeTreeData` never reserves less than 1 MiB.
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part->getDataPartStorage());
+    const auto unreserved = disk_storage ? disk_storage->getDisk()->getUnreservedSpace() : std::nullopt;
+    return !unreserved || *unreserved >= std::max<UInt64>(estimateDiskSpaceForIndexClear(part), 1024 * 1024);
+}
+
+/// Whether a `TTLClearIndex` merge may take the part on this replica.
+bool canClearIndexes(const MergeTreeDataPartPtr & part)
+{
+    /// The new part is one level higher than the source part. For engines that merge rows, `FINAL` and
+    /// `OPTIMIZE` treat a part above level 0 as already merged, which a level-0 part may not be.
+    return part->getDataPartStorage().getType() == MergeTreeDataPartStorageType::Full
+        && part->uuid == UUIDHelpers::Nil
+        && !(*part->storage.getSettings())[MergeTreeSetting::assign_part_uuids]
+        && (part->info.level > 0 || part->storage.merging_params.mode == MergeTreeData::MergingParams::Ordinary)
+        && canHardlinkFilesForIndexClear(part)
+        && hasSpaceForIndexClear(part);
+}
+
 std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & part)
 {
     std::set<std::string> projection_names;
@@ -83,6 +129,8 @@ PartProperties buildPartProperties(
     const StoragePolicyPtr & storage_policy,
     time_t current_time)
 {
+    const time_t next_index_clear_ttl = buildNextIndexClearTTL(metadata_snapshot, part, current_time);
+
     return PartProperties{
         .name = part->name,
         .info = part->info,
@@ -94,6 +142,9 @@ PartProperties buildPartProperties(
         .rows = part->rows_count,
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
+        .next_index_clear_ttl = next_index_clear_ttl,
+        .can_clear_indexes = next_index_clear_ttl != 0 && (*part->storage.getSettings())[MergeTreeSetting::ttl_clear_index_merges]
+            && canClearIndexes(part),
     };
 }
 

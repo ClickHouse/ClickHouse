@@ -1,4 +1,4 @@
--- `TTL ... CLEAR INDEX` cleared by regular merges.
+-- `TTL ... CLEAR INDEX` with `ttl_clear_index_merges = 0`. Only regular merges clear indexes here.
 
 DROP TABLE IF EXISTS ttl_clear_index;
 DROP TABLE IF EXISTS ttl_clear_index_same_expr;
@@ -27,6 +27,7 @@ ENGINE = MergeTree
 ORDER BY k
 TTL d + INTERVAL 1 DAY CLEAR INDEX idx_v
 SETTINGS
+    ttl_clear_index_merges = 0,
     index_granularity = 2,
     index_granularity_bytes = '10Mi',
     min_bytes_for_wide_part = 0,

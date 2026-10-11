@@ -29,7 +29,15 @@ struct ExpiredIndexFiles
 ExpiredIndexFiles getExpiredIndexFiles(
     const IMergeTreeDataPart & part, const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot, time_t current_time);
 
+/// Return whether the part has a checksummed or packed file of the skip index. Does no storage IO
+/// unless the part has `skp_idx.packed`.
+bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const String & index_name, const StorageInMemoryMetadata & metadata);
+
 /// Whether a `TTLClearIndex` merge can hardlink the part's files on this replica rather than copy them.
 bool canHardlinkFilesForIndexClear(const MergeTreeDataPartPtr & part);
+
+/// Disk space a `TTLClearIndex` merge of the part writes on this replica. A merge that copies the part's files
+/// writes the whole part. Otherwise the estimate is the size of `skp_idx.packed`, which the merge may rewrite. The other files it writes are small.
+UInt64 estimateDiskSpaceForIndexClear(const MergeTreeDataPartPtr & part);
 
 }
