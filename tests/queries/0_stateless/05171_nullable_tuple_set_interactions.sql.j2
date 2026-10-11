@@ -83,15 +83,17 @@ SETTINGS transform_null_in = {{ mode }}, use_index_for_in_with_subqueries = {{ i
 {% endfor %}
 DROP TABLE nullable_tuple_index;
 
--- Low-cardinality nullable keys follow the outer-null policy of plain nullable keys against a non-nullable
--- set: an outer NULL never matches and is not converted to the set type, while the values are.
+-- Low-cardinality nullable keys follow the outer-null policy of plain nullable keys. Against a non-nullable
+-- set, an outer NULL never matches and is not converted to the set type, while the values are. Against a
+-- nullable set, it matches the NULL of the set with `transform_null_in = 1`.
 DROP TABLE IF EXISTS nullable_tuple_low_cardinality;
 CREATE TABLE nullable_tuple_low_cardinality (id UInt8, k LowCardinality(Nullable(String))) ENGINE = Memory;
 INSERT INTO nullable_tuple_low_cardinality VALUES (1, '1'), (2, '2'), (3, NULL), (4, '1');
 {% for mode in [0, 1] %}
 SELECT 'low cardinality, {{ mode }}', id, k,
     (k, 1) IN (SELECT '1', 1), (k, 1) NOT IN (SELECT '1', 1),
-    (k, 1) IN (SELECT 1, 1), (k, 1) NOT IN (SELECT 1, 1)
+    (k, 1) IN (SELECT 1, 1), (k, 1) NOT IN (SELECT 1, 1),
+    (k, 1) IN (SELECT CAST(NULL, 'Nullable(String)'), 1)
 FROM nullable_tuple_low_cardinality
 ORDER BY id
 SETTINGS transform_null_in = {{ mode }}, max_block_size = 2;

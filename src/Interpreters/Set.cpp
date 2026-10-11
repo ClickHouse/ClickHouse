@@ -583,8 +583,13 @@ Columns Set::getSetElements() const
 
 ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const
 {
-    /// The constant columns to the left of `IN` are not supported directly, so they are materialized.
-    const ColumnWithTypeAndName probe = {column.column->convertToFullColumnIfConst(), column.type, column.name};
+    /// The constant columns to the left of `IN` are not supported directly, so they are materialized. The key
+    /// types have no top-level `LowCardinality`, see `setHeader`, and without it the NULLs of a
+    /// `LowCardinality(Nullable)` probe are those of a `Nullable` one.
+    const ColumnWithTypeAndName probe = {
+        column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality(),
+        removeLowCardinality(column.type),
+        column.name};
     const DataTypePtr & key_type = data_types[key];
 
     ColumnPtr result;
