@@ -772,7 +772,8 @@ void considerEnablingParallelReplicas(
     /// The boundary is where the replicas' share of the work ends: `replicas_plan_boundary` in the replicas plan,
     /// `single_replica_plan_boundary` its counterpart in this, single-replica, plan. An earlier execution that
     /// matched them left the latter's key under the single-replica plan's root, so no replicas plan has to be
-    /// built to find it again. Mode 2 recollects, so it always matches against a fresh replicas plan.
+    /// built to find it again. Mode 2 recollects, so it always matches against a fresh replicas plan, and with
+    /// `automatic_parallel_replicas_remember_boundary` off every query does.
     const auto nopr_node_hashes = calculateHashTableCacheKeys(root);
     auto & stats_cache = getRuntimeDataflowStatisticsCache();
     /// Where the replicas' half ends also depends on settings that leave the single-replica plan as it is, so the
@@ -780,7 +781,8 @@ void considerEnablingParallelReplicas(
     const auto root_key = sipHash64Of(nopr_node_hashes.at(&root), optimization_settings.parallel_replicas_boundary_settings_hash);
     QueryPlan::Node * single_replica_plan_boundary = nullptr;
     size_t single_replica_plan_boundary_hash = 0;
-    if (optimization_settings.automatic_parallel_replicas_mode != 2)
+    const bool remember_boundary = optimization_settings.automatic_parallel_replicas_remember_boundary;
+    if (remember_boundary && optimization_settings.automatic_parallel_replicas_mode != 2)
         std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash)
             = findCorrespondingNodeInSingleNodePlan(stats_cache.getBoundaryHash(root_key), root, nopr_node_hashes);
 
@@ -829,7 +831,8 @@ void considerEnablingParallelReplicas(
         = findCorrespondingNodeInSingleNodePlan(pr_node_hashes.at(replicas_plan_boundary), root, nopr_node_hashes);
     if (!single_replica_plan_boundary)
         return;
-    stats_cache.setBoundaryHash(root_key, single_replica_plan_boundary_hash);
+    if (remember_boundary)
+        stats_cache.setBoundaryHash(root_key, single_replica_plan_boundary_hash);
 
     /// The replicas plan exists now, so the decision cannot ask for it again.
     [[maybe_unused]] const bool needs_replicas_plan = decideAtBoundary(
