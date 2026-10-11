@@ -99,8 +99,9 @@ class RestorerFromBackup;
  * Transactions of a layer, including the initial snapshot passed to a new subscriber, are delivered one at
  * a time in the order they were produced (see `notify_mutex` in WorkloadEntityStorageBase.h). Handlers are
  * called without the layer's state lock, except on the Keeper refresh paths (the watching thread, loading,
- * and the retry of `storeEntity`), where `WorkloadEntityKeeperStorage` still holds its lock. So a handler
- * must not call back into the layer that notifies it.
+ * and the retry of `storeEntity`), where `WorkloadEntityKeeperStorage` still holds its lock, and during a
+ * restore into non-replicated storage, which holds the lock from its reference check to its last entity. So a
+ * handler must not call back into the layer that notifies it.
  *
  * References. A workload references its parent workload and the resources named in its `FOR` clauses.
  * A name resolves to the inherited entity first, as the user sees it, then to the own entity; an own entity

@@ -1614,6 +1614,13 @@ void WorkloadEntityStorageBase::restoreEntities(
     if (to_restore.empty())
         return;
 
+    /// On non-replicated storage the pre-check below is the only validation of references, so the state lock is held
+    /// from the pre-check until the last entity is created: concurrent statements and reloads of inner layers wait
+    /// and cannot change the checked references in between. Subscribers are notified under this lock meanwhile.
+    std::unique_lock<std::recursive_mutex> restore_lock;
+    if (!isReplicated())
+        restore_lock = getLock();
+
     /// Every entity a restored workload references (its parent workload, and the RESOURCEs used in a
     /// `SETTINGS ... FOR ...` clause) must exist once the restore completes: either it is part of this backup
     /// or it is already present on the server. Otherwise creating the workload fails with an opaque
