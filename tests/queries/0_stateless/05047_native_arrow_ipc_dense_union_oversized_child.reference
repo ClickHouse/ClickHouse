@@ -1,0 +1,12 @@
+--- Arrow: only the referenced child values surface ---
+0	10
+1	30
+2	a
+3	50
+4	70
+--- ArrowStream: only the referenced child values surface ---
+0	10
+1	30
+2	a
+3	50
+4	70

@@ -1,0 +1,14 @@
+--- Arrow: duplicate dictionary entries decode to the same value ---
+0	a	LowCardinality(Nullable(String))	['a','a']
+1	a	LowCardinality(Nullable(String))	[]
+2	b	LowCardinality(Nullable(String))	[NULL,'b']
+3	\N	LowCardinality(Nullable(String))	[]
+4	\N	LowCardinality(Nullable(String))	[]
+5	b	LowCardinality(Nullable(String))	[]
+--- ArrowStream: duplicate dictionary entries decode to the same value ---
+0	a	LowCardinality(Nullable(String))	['a','a']
+1	a	LowCardinality(Nullable(String))	[]
+2	b	LowCardinality(Nullable(String))	[NULL,'b']
+3	\N	LowCardinality(Nullable(String))	[]
+4	\N	LowCardinality(Nullable(String))	[]
+5	b	LowCardinality(Nullable(String))	[]
