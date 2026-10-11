@@ -90,6 +90,7 @@ ExpireSnapshotsOptions buildOptions(const ExecuteCommandArgs::Result & parsed)
         ReadBufferFromString buf(ts);
         time_t expire_time = 0;
         readDateTimeText(expire_time, buf);
+        assertEOF(buf); // reject trailing characters, e.g. '2024 April 4'
         options.expire_before_ms = static_cast<Int64>(expire_time) * 1000;
     }
 
