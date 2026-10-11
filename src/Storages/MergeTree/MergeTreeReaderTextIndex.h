@@ -41,7 +41,7 @@ public:
         size_t current_range_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        MutableColumns & res_columns) override;
+        MutableColumns & res_columns, Columns & shared_columns) override;
 
     /// The virtual columns are resolved from per-mark posting lists addressed
     /// by absolute row number, so a read may start or stop inside a mark.

@@ -168,6 +168,15 @@ public:
         cache_policy->set(key, mapped);
     }
 
+    /// `set`, and whether `mapped` is in the cache right after it: the policy can refuse it or evict it at once.
+    /// Unlike a `contains` after `set`, nothing else can replace it in between.
+    bool setAndContains(const Key & key, const MappedPtr & mapped)
+    {
+        std::lock_guard lock(mutex);
+        cache_policy->set(key, mapped);
+        return cache_policy->contains(key);
+    }
+
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
     /// produce it, saves the result in the cache and returns it.
     /// Only one of several concurrent threads calling getOrSet() will call load_func(),

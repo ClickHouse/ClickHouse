@@ -290,7 +290,8 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     size_t max_rows,
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
-    const DataflowCacheUpdateCallback & dataflow_cache_update_cb)
+    const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
+    size_t max_block_size_rows)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -304,7 +305,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     try
     {
-        read_result = first_reader.startReadingChain(max_rows, ranges);
+        read_result = first_reader.startReadingChain(max_rows, ranges, max_block_size_rows);
         LOG_TEST(log, "First reader returned: {}, requested columns: {}", read_result.dumpInfo(), first_reader.getSampleBlock().dumpNames());
     }
     catch (Exception & e)
