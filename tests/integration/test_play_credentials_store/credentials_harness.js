@@ -101,7 +101,17 @@ function makeContext(storage) {
         /// What the page computes without `CSS.supports`: no field is ever reported as autofilled, so
         /// `dropAutofilledStalePassword` (called by `storeCredentials`) keeps every password here.
         AUTOFILL_SELECTOR: null,
+        /// The page state `restampPendingImplicitUser` writes again once this visit learns the
+        /// implicit name: the current history entry, the tabs, and recorders for the two writers.
+        history: { state: null },
+        tabs: [],
+        activeTab: null,
+        refreshed: [],
+        saves: 0,
     };
+    ctx.getActiveTab = () => ctx.activeTab;
+    ctx.refreshCurrentHistoryEntry = tab => { ctx.refreshed.push(tab); };
+    ctx.scheduleSave = () => { ++ctx.saves; };
     ctx.PasswordCredential = class PasswordCredential {
         constructor({ id, password, name }) {
             /// Mirrors the browser: an empty `id` or `password` is a `TypeError`.
@@ -128,7 +138,7 @@ function makeContext(storage) {
 
 const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
     'resolvedImplicitUser', 'durableImplicitUserStamp', 'durableResultSnapshot', 'runEntryUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
-    'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser',
+    'serverIdentityKey', 'learnedImplicitUser', 'rememberImplicitUser', 'restampPendingImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword'];
 
@@ -382,6 +392,46 @@ scenario('run-link-names-implicit-account', async js => {
     assertEqual(runUser(), 'bob', 'an explicit user is kept');
     ctx.entry = { server: 'http://dave@host:8123/', user: '', implicitUser: '' };
     assertEqual(runUser(), '', 'a userinfo connection keeps the empty field');
+});
+
+/// A fast run can finish, and be recorded with its marker, before this visit learns the implicit name.
+/// Learning the name then writes the current history entry and the persisted snapshots again, so the
+/// `run=1` URL names the account and the snapshot is stored with the name (`durableResultSnapshot`).
+/// Nothing is written when no state carries a marker of this visit, or when the name was already known.
+scenario('learned-implicit-user-restamps-recorded-run', async js => {
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.url_elem.value = 'http://host:8123/';
+    ctx.user_elem.value = '';
+    ctx.password_elem.value = 'secret';
+    const run = stampConnection(ctx);
+    const result = { url: run.server, user: '', implicitUser: run.implicitUser, query: 'SELECT 1' };
+    const tab = { id: 't1', cells: [{ type: 'query', result }] };
+    ctx.tabs = [tab, { id: 't2', cells: [{ type: 'text' }] }];
+    ctx.activeTab = tab;
+    ctx.history.state = { tabId: 't1', connectionServer: run.server, connectionUser: '',
+        connectionImplicitUser: run.implicitUser, result };
+    await store(ctx);
+    assertEqual(ctx.refreshed.length, 1, 'the current entry recorded with the marker is refreshed');
+    assertEqual(ctx.refreshed[0] === tab, true, 'the active tab is refreshed');
+    assertEqual(ctx.saves, 1, 'the snapshots recorded with the marker are saved again');
+    ctx.entry = run;
+    assertEqual(vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', ctx), 'alice',
+        'the refreshed `run=1` URL names the account');
+    await store(ctx);
+    assertEqual(ctx.refreshed.length + ctx.saves, 2, 'nothing is written again once the name is known');
+
+    const other = boot(js);
+    other.implicit_user = 'alice';
+    other.url_elem.value = 'http://host:8123/';
+    other.user_elem.value = '';
+    other.password_elem.value = 'secret';
+    const stale = { url: 'http://host:8123/', user: '', implicitUser: '\u0000pending:earlier-visit' };
+    other.activeTab = { id: 't1', cells: [{ type: 'query', result: stale }] };
+    other.tabs = [other.activeTab];
+    other.history.state = { tabId: 't1', connectionImplicitUser: stale.implicitUser, result: stale };
+    await store(other);
+    assertEqual(other.refreshed.length + other.saves, 0, 'state carrying no marker of this visit is not written');
 });
 
 /// A result snapshot taken before the implicit user is known carries a marker of this visit; it is

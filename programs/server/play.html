@@ -16894,8 +16894,30 @@ function rememberImplicitUser(server_address, user) {
     const key = serverIdentityKey(server_address);
     if (key === null || !user) return;
     const state = implicitUserVisitState();
-    if (!Object.hasOwn(state.first, key)) state.first[key] = user;
+    const resolves_markers = !Object.hasOwn(state.first, key);
+    if (resolves_markers) state.first[key] = user;
     state.latest[key] = user;
+    if (resolves_markers) restampPendingImplicitUser();
+}
+
+/// The markers of this visit (`pendingImplicitUserStamp`) have just resolved to a name. A run that
+/// finished before the name was learned has already been recorded with its marker: the current
+/// history entry (its `run=1` URL then has no `user=`, see `runEntryUser`) and possibly the persisted
+/// result snapshots. Write them again, so the durable form (`durableImplicitUserStamp`) replaces the
+/// marker: the current entry is refreshed in place (`refreshCurrentHistoryEntry`, keeping `run=1` only
+/// under the usual conditions), and the snapshots are saved again (`durableResultSnapshot`). Only
+/// state that carries a marker of this visit is touched, so nothing is written during the startup
+/// reconciliation unless a run of this visit already recorded it. Older history entries are not
+/// reachable without navigating; their markers never resolve on a later visit and fail closed.
+function restampPendingImplicitUser() {
+    const marker = pendingImplicitUserStamp();
+    const tab = getActiveTab();
+    const cur = history.state;
+    if (tab && cur && cur.tabId === tab.id
+        && (cur.connectionImplicitUser === marker || (cur.result && cur.result.implicitUser === marker)))
+        refreshCurrentHistoryEntry(tab);
+    if (tabs.some(t => t.cells.some(c => c.result && c.result.implicitUser === marker)))
+        scheduleSave();
 }
 
 /// Has the live target moved away from the connection/selection the query that produced this run
