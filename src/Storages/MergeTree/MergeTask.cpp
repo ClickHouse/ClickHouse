@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
@@ -636,11 +637,8 @@ bool MergeTask::isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time)
     return part.ttl_infos.table_ttl.min != 0 && part.ttl_infos.table_ttl.max <= time;
 }
 
-bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
+void MergeTask::createNewDataPart(const GlobalRuntimeContextPtr & global_ctx, const LoggerPtr & log)
 {
-    ProfileEvents::increment(ProfileEvents::Merge);
-    ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
-
     // projection parts have different prefix and suffix compared to normal parts.
     // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
     String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
@@ -648,28 +646,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Honor an explicitly supplied suffix for top-level merges too, not only projections.
     /// Real top-level merges pass an empty suffix; `OPTIMIZE ... DRY RUN` passes a unique one.
     const String local_tmp_suffix = global_ctx->suffix;
-
-    global_ctx->checkOperationIsNotCanceled();
-
-    /// We don't want to perform merge assigned with TTL as normal merge, so
-    /// throw exception
-    if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
-        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
-
-    LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {} with storage {}",
-        global_ctx->future_part->parts.size(),
-        global_ctx->future_part->parts.front()->name,
-        global_ctx->future_part->parts.back()->name,
-        global_ctx->future_part->part_format.part_type.toString(),
-        global_ctx->future_part->part_format.storage_type.toString());
-
-    if (global_ctx->deduplicate)
-    {
-        if (global_ctx->deduplicate_by_columns.empty())
-            LOG_DEBUG(ctx->log, "DEDUPLICATE BY all columns");
-        else
-            LOG_DEBUG(ctx->log, "DEDUPLICATE BY ('{}')", fmt::join(global_ctx->deduplicate_by_columns, "', '"));
-    }
 
     global_ctx->disk = global_ctx->space_reservation->getDisk();
     auto local_tmp_part_basename = buildTempPartBasename(local_tmp_prefix, global_ctx->future_part->name, local_tmp_suffix);
@@ -684,7 +660,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
 
-    LOG_TRACE(ctx->log, "Reserved temporary directory {} for the merge", local_tmp_part_basename);
+    LOG_TRACE(log, "Reserved temporary directory {} for the merge", local_tmp_part_basename);
 
     /// Test-only: widen the window between reserving the temporary merge directory and the rest
     /// of the merge, to deterministically race two `OPTIMIZE ... DRY RUN` over the same parts.
@@ -715,6 +691,182 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         global_ctx->new_data_part = std::move(*builder).build();
     }
+}
+
+MergeTask::Stages MergeTask::makeStages(MergeType merge_type)
+{
+    if (merge_type == MergeType::TTLClearIndex)
+        return {std::make_shared<ClearExpiredIndexesStage>()};
+
+    return {
+        std::make_shared<ExecuteAndFinalizeHorizontalPart>(),
+        std::make_shared<VerticalMergeStage>(),
+        std::make_shared<MergeTextIndexStage>(),
+        std::make_shared<MergeProjectionsStage>(),
+    };
+}
+
+/// The result is the source part with the expired skip index files left out. It depends only on the
+/// source part's checksummed files and the merge time, so every replica produces the same part.
+bool MergeTask::ClearExpiredIndexesStage::execute()
+{
+    ProfileEvents::increment(ProfileEvents::Merge);
+    ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
+
+    const auto check_not_cancelled = [&]
+    {
+        global_ctx->checkOperationIsNotCanceled();
+        if (global_ctx->ttl_merges_blocker->isCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
+    };
+    check_not_cancelled();
+
+    const auto & source_part = global_ctx->future_part->parts.front();
+    LOG_DEBUG(log, "Clearing expired indexes of part {} into {}", source_part->name, global_ctx->future_part->name);
+
+    createNewDataPart(global_ctx, log);
+    auto & new_part = global_ctx->new_data_part;
+    auto & dst_storage = new_part->getDataPartStorage();
+    const auto & src_storage = source_part->getDataPartStorage();
+    dst_storage.beginTransaction();
+
+    const auto clear_index_files = getExpiredIndexFiles(*source_part, global_ctx->metadata_snapshot, global_ctx->time_of_merge);
+
+    /// Copy the files and projections listed in the source's checksums, apart from the files written below.
+    /// Anything else in the directory, such as a leftover `.tmp_proj`, is not part of the part.
+    NameSet files_to_copy = source_part->getFileNamesWithoutChecksums();
+    Names projection_dirs;
+    for (const auto & [file, _] : source_part->checksums.files)
+    {
+        if (file.ends_with(".proj"))
+            projection_dirs.push_back(file);
+        else
+            files_to_copy.insert(file);
+    }
+
+    for (const auto & file : clear_index_files.files)
+        files_to_copy.erase(file);
+    files_to_copy.erase("checksums.txt");
+    files_to_copy.erase(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+    if (clear_index_files.packed_archive_dirty)
+        files_to_copy.erase(String(SKIP_INDICES_PACKED_FILENAME));
+    /// `metadata_version.txt` is written below when the source counts as having none, which includes an
+    /// empty file. Hardlinking that file first would make the write change the source part's copy.
+    if (source_part->old_part_with_no_metadata_version_on_disk)
+        files_to_copy.erase(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+
+    const bool need_sync = global_ctx->data_settings->needSyncPart(source_part->rows_count, source_part->getBytesOnDisk());
+    const auto & write_settings = global_ctx->context->getWriteSettings();
+
+    dst_storage.createDirectories();
+    /// Copies are made outside the transaction, into the directory it creates.
+    dst_storage.checkpointTransaction();
+    new_part->version->setAndStoreCreationTID(global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID, nullptr);
+    const bool copy_instead_of_hardlinks = !canHardlinkFilesForIndexClear(source_part);
+    /// Copying the files of a large part can take a while, so check for cancellation before each file.
+    const auto copy_file = [&](const IDataPartStorage & src, IDataPartStorage & dst, const String & name)
+    {
+        check_not_cancelled();
+        if (copy_instead_of_hardlinks)
+            dst.copyFileFrom(src, name, name);
+        else
+            dst.createHardLinkFrom(src, name, name);
+    };
+    for (const auto & file : files_to_copy)
+        copy_file(src_storage, dst_storage, file);
+    new_part->checksums = source_part->checksums;
+    for (const auto & projection_dir : projection_dirs)
+    {
+        dst_storage.createProjection(projection_dir);
+        dst_storage.checkpointTransaction();
+        auto projection_src = src_storage.getProjection(projection_dir);
+        auto projection_dst = dst_storage.getProjection(projection_dir);
+        for (auto it = projection_src->iterate(); it->isValid(); it->next())
+            if (it->isFile())
+                copy_file(*projection_src, *projection_dst, it->name());
+    }
+    check_not_cancelled();
+
+    for (const auto & file : clear_index_files.files)
+        new_part->checksums.remove(file);
+
+    if (clear_index_files.packed_archive_dirty)
+        dynamic_cast<const DataPartStorageOnDiskBase &>(src_storage).filterPackedSkipIndicesArchiveTo(
+            clear_index_files.files, dst_storage, write_settings, global_ctx->context->getReadSettings(), new_part->checksums, need_sync);
+
+    /// A level-0 part synthesizes its `_block_number` and `_block_offset` ranges from its name when loaded,
+    /// which the new part no longer does. Store the repaired ranges, as mutations that hardlink a part do.
+    /// `store` writes only the files the part doesn't have yet, so it never writes through a hardlink.
+    if (source_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING
+        && source_part->rows_count
+        && source_part->getMinMaxIndex()->initialized)
+    {
+        auto minmax_index = std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex());
+        minmax_index->repairInheritedBlockColumns(*source_part, global_ctx->metadata_snapshot);
+        for (auto & file : minmax_index->store(global_ctx->metadata_snapshot, dst_storage, new_part->checksums, new_part->storage.getSettings()))
+        {
+            file->finalize();
+            if (need_sync)
+                file->sync();
+        }
+    }
+
+    /// Without `metadata_version.txt`, loading would take the table's current metadata version, which is newer
+    /// than the source part's version if an ALTER ran since the source part was loaded.
+    if (source_part->old_part_with_no_metadata_version_on_disk)
+    {
+        auto out = dst_storage.writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
+        writeText(source_part->getMetadataVersion(), *out);
+        out->finalize();
+        if (need_sync)
+            out->sync();
+    }
+
+    writeChecksumsFile(dst_storage, new_part->checksums, write_settings, need_sync);
+    auto sync_guard = need_sync ? dst_storage.getDirectorySyncGuard() : nullptr;
+
+    /// Load the new part from its files, as a fetch does. On object storage the files are readable only once
+    /// the transaction is checkpointed. `existing_rows_count` is kept only in memory.
+    dst_storage.checkpointTransaction();
+    new_part->existing_rows_count = source_part->existing_rows_count;
+    new_part->loadColumnsChecksumsIndexes(/*require_columns_checksums=*/true, /*check_consistency=*/true);
+    new_part->modification_time = time(nullptr);
+
+    check_not_cancelled();
+    dst_storage.precommitTransaction();
+
+    global_ctx->promise.set_value(std::exchange(new_part, nullptr));
+    return false;
+}
+
+bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
+{
+    ProfileEvents::increment(ProfileEvents::Merge);
+    ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
+
+    global_ctx->checkOperationIsNotCanceled();
+
+    /// We don't want to perform merge assigned with TTL as normal merge, so
+    /// throw exception
+    if (isTTLMergeType(global_ctx->future_part->merge_type) && global_ctx->ttl_merges_blocker->isCancelled())
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with TTL");
+
+    LOG_DEBUG(ctx->log, "Merging {} parts: from {} to {} into {} with storage {}",
+        global_ctx->future_part->parts.size(),
+        global_ctx->future_part->parts.front()->name,
+        global_ctx->future_part->parts.back()->name,
+        global_ctx->future_part->part_format.part_type.toString(),
+        global_ctx->future_part->part_format.storage_type.toString());
+
+    if (global_ctx->deduplicate)
+    {
+        if (global_ctx->deduplicate_by_columns.empty())
+            LOG_DEBUG(ctx->log, "DEDUPLICATE BY all columns");
+        else
+            LOG_DEBUG(ctx->log, "DEDUPLICATE BY ('{}')", fmt::join(global_ctx->deduplicate_by_columns, "', '"));
+    }
+
+    createNewDataPart(global_ctx, ctx->log);
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
     /// Top-level merges are covered by the claim above. A projection merge writes into a directory this
