@@ -5,10 +5,13 @@
 #include <Common/quoteString.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
+#include <Poco/Exception.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
 
 #include <array>
+#include <optional>
+#include <utility>
 
 
 namespace DB
@@ -48,7 +51,15 @@ Strings splitPathComponents(const String & path)
         if (!current.empty())
         {
             String decoded;
-            Poco::URI::decode(current, decoded);
+            try
+            {
+                Poco::URI::decode(current, decoded);
+            }
+            catch (const Poco::Exception &)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Malformed percent-encoded component in HTTP URL path");
+            }
             result.push_back(decoded);
             current.clear();
         }
@@ -123,10 +134,91 @@ String unquoteBackQuotedComponent(const String & component)
     return unquoted;
 }
 
+std::optional<size_t> findBackQuotedComponentEnd(const String & component)
+{
+    if (component.size() < 2 || component.front() != '`')
+        return {};
+
+    for (size_t i = 1; i < component.size(); ++i)
+    {
+        if (component[i] != '`')
+            continue;
+
+        if (i + 1 < component.size() && component[i + 1] == '`')
+        {
+            ++i;
+            continue;
+        }
+
+        return i;
+    }
+
+    return {};
+}
+
+std::optional<size_t> findBackQuotedComponentEndWithSuffix(const String & component)
+{
+    const auto closing_backquote = findBackQuotedComponentEnd(component);
+    if (!closing_backquote || *closing_backquote + 2 >= component.size() || component[*closing_backquote + 1] != '.')
+        return {};
+
+    return closing_backquote;
+}
+
+struct BackQuotedComponentWithSuffix
+{
+    size_t closing_backquote;
+    String format;
+    String compression;
+};
+
+/// Recognize a quoted identifier followed by a format and optional compression suffix, for example
+/// `` `a=1`.CSV `` or `` `a=1`.CSV.gz ``. This must happen before filter parsing because the quoted table
+/// identifier itself may contain comparison operators. Once the quoted-identifier-plus-suffix shape is
+/// present, an unknown suffix is rejected instead of being treated as part of the table name.
+std::optional<BackQuotedComponentWithSuffix> tryParseBackQuotedComponentWithSuffix(const String & component)
+{
+    const auto closing_backquote = findBackQuotedComponentEndWithSuffix(component);
+    if (!closing_backquote)
+        return {};
+
+    const String suffix = component.substr(*closing_backquote + 2);
+
+    String format_candidate = suffix;
+    String compression;
+    const auto last_dot = suffix.rfind('.');
+    if (last_dot != String::npos)
+    {
+        compression = canonicalizeCompressionExtension(suffix.substr(last_dot + 1));
+        if (compression.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unknown compression extension '{}' in URL path.", suffix.substr(last_dot + 1));
+        format_candidate = suffix.substr(0, last_dot);
+    }
+
+    String format = findFormatCaseInsensitive(format_candidate);
+    if (format.empty())
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format '{}' in URL path.", format_candidate);
+
+    return BackQuotedComponentWithSuffix{*closing_backquote, std::move(format), std::move(compression)};
+}
+
+bool isLiteralTableComponent(const String & component)
+{
+    /// Keep any syntactically valid backquoted identifier with a suffix out of filter parsing. Format and
+    /// compression validation happens later when the table component is converted into a query.
+    return isFullyBackQuotedComponent(component) || findBackQuotedComponentEndWithSuffix(component).has_value();
+}
+
 }
 
 
-HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_table, bool allow_filters)
+HTTPPathInfo parseHTTPPath(
+    const String & path,
+    bool allow_database,
+    bool allow_table,
+    bool allow_filters,
+    bool allow_table_after_database)
 {
     HTTPPathInfo result;
     if (path.empty() || path == "/")
@@ -149,7 +241,7 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
     for (size_t i = 0; i < components.size(); ++i)
     {
         String filter_expr;
-        if (allow_filters && !isFullyBackQuotedComponent(components[i]))
+        if (allow_filters && !isLiteralTableComponent(components[i]))
             filter_expr = tryParseFilterComponent(components[i]);
 
         if (!filter_expr.empty())
@@ -167,6 +259,12 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
     int table_index = -1;
     if (allow_table && last_non_filter_index >= 0)
     {
+        table_index = last_non_filter_index;
+    }
+    else if (allow_table_after_database && allow_database && non_filter_indices.size() >= 2)
+    {
+        /// PUT path uploads may opt into the final table component only after a database component.
+        /// Keep the ordinary table-as-file setting scoped to unqualified paths.
         table_index = last_non_filter_index;
     }
 
@@ -209,16 +307,18 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
             /// Parse table[.format[.compression]] from the last component.
             const String & raw = components[table_index];
 
-            /// A fully back-quoted component is a *literal* table name: its dots are part of the name
-            /// and no format/compression suffix is stripped from it. This mirrors SQL identifier quoting
-            /// (where `db.table` is always `database.identifier` and a dotted name must be back-quoted)
-            /// and is the escape hatch for a table whose name ends in (or contains) a registered format
-            /// or compression token. For example `` /db/`events.JSON` `` reads the table named
-            /// `events.JSON`, whereas the unquoted `/db/events.JSON` reads table `events` with format
-            /// `JSON`. When the name is back-quoted, specify the format/compression via the `format` /
-            /// `compression` URL parameters (or the `format` setting) instead of a path suffix.
-            /// A backtick travels in a URL percent-encoded as `%60`; `HTTPHandler` URL-decodes the path
-            /// before calling this, so `/db/%60events.JSON%60` arrives here as `` `events.JSON` ``.
+            /// A fully back-quoted component with no suffix is a *literal* table name: its dots are part of the
+            /// name and no format/compression suffix is stripped from it. This mirrors SQL identifier quoting
+            /// (where `db.table` is always `database.identifier`) and is the escape hatch for a table whose name
+            /// ends in (or contains) a registered format or compression token. A known format suffix outside the
+            /// closing backquote is also supported, so `` /db/`a=1`.CSV `` means table `a=1` with format `CSV`.
+            /// For example `` /db/`events.JSON` `` reads the table named `events.JSON`, whereas the unquoted
+            /// `/db/events.JSON` reads table `events` with format `JSON`. When the name is fully back-quoted,
+            /// specify the format/compression via the `format` / `compression` URL parameters (or the `format`
+            /// setting) when no path suffix is present.
+            /// A backtick travels in a URL percent-encoded as `%60`; `parseHTTPPath` splits the raw path and
+            /// percent-decodes each component afterwards, so `/db/%60events.JSON%60` arrives here as
+            /// `` `events.JSON` ``.
             if (isFullyBackQuotedComponent(raw))
             {
                 const String unquoted = unquoteBackQuotedComponent(raw);
@@ -226,6 +326,15 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
                 result.format = {};
                 result.compression = {};
                 result.filename_for_disposition = unquoted;
+            }
+            else if (const auto quoted_with_suffix = tryParseBackQuotedComponentWithSuffix(raw))
+            {
+                result.table = unquoteBackQuotedComponent(raw.substr(0, quoted_with_suffix->closing_backquote + 1));
+                result.format = quoted_with_suffix->format;
+                result.compression = quoted_with_suffix->compression;
+                result.filename_for_disposition = result.table + "." + result.format;
+                if (!result.compression.empty())
+                    result.filename_for_disposition += "." + result.compression;
             }
             else
             {
@@ -296,6 +405,44 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
             result.path_filters.push_back(per_component_filter[i]);
 
     return result;
+}
+
+
+bool hasHTTPPathFormatSuffix(const String & path)
+{
+    String path_only = path;
+    if (const auto query_start = path_only.find('?'); query_start != String::npos)
+        path_only.resize(query_start);
+
+    const auto last_slash = path_only.rfind('/');
+    const size_t component_start = last_slash == String::npos ? 0 : last_slash + 1;
+    if (component_start >= path_only.size())
+        return false;
+
+    String decoded_component;
+    try
+    {
+        Poco::URI::decode(path_only.substr(component_start), decoded_component);
+    }
+    catch (const Poco::Exception &)
+    {
+        /// A malformed percent-encoded path cannot be a valid path upload. Do not let routing turn it into a
+        /// server error, especially when this helper is used before the request reaches the path handler.
+        return false;
+    }
+
+    /// Dots inside a quoted identifier are part of the table name, not a format suffix. A dot after the
+    /// closing quote is a suffix even when the format is unknown, so the request reaches the path handler
+    /// and receives its normal unknown-format error.
+    if (const auto closing_backquote = findBackQuotedComponentEnd(decoded_component))
+    {
+        if (*closing_backquote + 1 >= decoded_component.size() || decoded_component[*closing_backquote + 1] != '.')
+            return false;
+        return *closing_backquote + 2 < decoded_component.size();
+    }
+
+    const auto last_dot = decoded_component.rfind('.');
+    return last_dot != String::npos && last_dot + 1 < decoded_component.size();
 }
 
 
@@ -400,10 +547,8 @@ String canonicalizeCompressionExtension(const String & ext)
         return "bz2";
     if (lower == "deflate")
         return "deflate";
-    /// NOTE: Snappy is intentionally not listed: it has only a read wrapper
-    /// (`HadoopSnappyReadBuffer`), and `wrapWriteBufferWithCompressionMethod` throws
-    /// `NOT_IMPLEMENTED` for it. Advertising `.snappy` as a response-compression extension would let
-    /// `/table.CSV.snappy` parse as valid and then fail only at response-buffer setup.
+    if (lower == "snappy")
+        return "snappy";
     return {};
 }
 

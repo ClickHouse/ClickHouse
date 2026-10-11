@@ -7,6 +7,23 @@ namespace DB
 {
 
 class ASTCreateHandlerQuery;
+class IAST;
+
+/// Whether the query itself reads the HTTP request body as its data: a plain `INSERT`, or an
+/// `INSERT ... SELECT` reading from the `input` table function. Used both for SQL-defined handlers and for the
+/// config-defined `predefined_query_handler`, whose query is equally known in advance, so that the HTTP layer
+/// knows whether an unframed body-carrying request can be accepted (see `HTTPHandler::handleRequest`).
+bool queryConsumesRequestBody(const IAST & query);
+
+/// Whether the query cannot run under `readonly` and therefore needs a mutating HTTP method. Used both for
+/// SQL-defined handlers and for the config-defined `predefined_query_handler`: the latter runs `PUT` and `DELETE`
+/// in `readonly` mode (see `setReadOnlyIfHTTPMethodIdempotent`), so only `POST` can execute such a query.
+bool queryRequiresMutatingHTTPMethod(const IAST & query);
+
+/// Whether the query wraps a statement that reads the HTTP request body inside `EXECUTE AS` or `PARALLEL WITH`.
+/// Those wrappers execute their child statements without the request body, so such a handler would silently lose
+/// its uploaded data.
+bool queryWrapsBodyConsumingStatement(const IAST & query);
 
 /// Build a ready-to-match handler from a CREATE HANDLER AST.
 /// Fills in defaults (METHODS -> GET, TYPE -> query), validates the type and the URL regexp,

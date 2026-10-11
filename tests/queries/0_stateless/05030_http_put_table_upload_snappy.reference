@@ -1,0 +1,5 @@
+===== PUT table upload with Snappy =====
+-- snappy compression suffix decompresses the request body
+-- an explicit HTTP Snappy header keeps framed mode
+-- matching path-table reads and uploads use the same default Snappy mode
+-- snappy compression suffix supports the framed mode
