@@ -103,8 +103,11 @@ class RestorerFromBackup;
  * Writes, backup and restore. `storeEntity`, `removeEntity`, `backup` and `restore` are served by the SQL
  * layer: the implicit layer forwards them, and the configuration is read-only. Implicit entities cannot be
  * dropped: they are defined by the server settings. A backup contains only the
- * own entities of the SQL layer: configuration entities belong to the server configuration, and implicit
- * entities are synthesized from it.
+ * own entities of the SQL layer, hidden ones included: configuration entities belong to the server
+ * configuration, and implicit entities are synthesized from it. A restore recreates own entities of the SQL
+ * layer and validates them like a load of persisted data, not like SQL statements: overlap with inherited
+ * entities and conflicts between own entities are resolved by hiding, and references are resolved within
+ * own entities first. So an entity that was hidden when it was backed up is restored hidden.
  *
  * Source. `getEntitySource` returns the name of the layer that owns a visible entity, e.g. `implicit`,
  * `keeper`, `disk` or `configuration`. It is shown in the `source` column of `system.workloads` and

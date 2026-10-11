@@ -487,7 +487,22 @@ bool WorkloadEntityStorageBase::storeEntity(
     bool replace_if_exists,
     const Settings & settings)
 {
+    return validateAndStoreEntity(
+        current_context, entity_type, entity_name, create_entity_query, throw_if_exists, replace_if_exists, settings, StoreMode::Statement);
+}
+
+bool WorkloadEntityStorageBase::validateAndStoreEntity(
+    const ContextPtr & current_context,
+    WorkloadEntityType entity_type,
+    const String & entity_name,
+    ASTPtr create_entity_query,
+    bool throw_if_exists,
+    bool replace_if_exists,
+    const Settings & settings,
+    StoreMode mode)
+{
     checkUserEntityName(entity_name);
+    const bool restore = mode == StoreMode::Restore;
 
     create_entity_query = normalizeCreateWorkloadEntityQuery(*create_entity_query);
     auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(create_entity_query.get());
@@ -497,8 +512,9 @@ bool WorkloadEntityStorageBase::storeEntity(
     {
         std::unique_lock lock{mutex};
 
-        // An entity with this name may be stored in this layer (possibly shadowed) or in an inner one
-        ASTPtr old_entity = findKnownEntity(entity_name, own_entities); // entity to be REPLACED
+        // An entity with this name may be stored in this layer (possibly shadowed) or in an inner one.
+        // A restore recreates own entities only, so an inherited entity with this name just shadows it.
+        ASTPtr old_entity = restore ? findOwnEntity(entity_name) : findKnownEntity(entity_name, own_entities); // entity to be REPLACED
         if (old_entity)
         {
             if (throw_if_exists)
@@ -516,7 +532,7 @@ bool WorkloadEntityStorageBase::storeEntity(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a workload", entity_name);
             if (resource && !old_resource)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' already exists, but it is not a resource", entity_name);
-            if (inherited_entities.contains(entity_name))
+            if (!restore && inherited_entities.contains(entity_name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to replace workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
         }
 
@@ -540,14 +556,19 @@ bool WorkloadEntityStorageBase::storeEntity(
                     entity_name);
         }
 
-        // Conflicts with own and inherited entities: a role must be served by at most one resource
-        checkClaimConflicts(entity_name, create_entity_query);
+        // Conflicts with own and inherited entities: a role must be served by at most one resource.
+        // A restore resolves them like a load of persisted data, by hiding.
+        if (!restore)
+            checkClaimConflicts(entity_name, create_entity_query);
 
-        // References are resolved within own and inherited entities, so entities of outer layers cannot be referenced
+        // References are resolved within own and inherited entities, so entities of outer layers cannot be referenced.
+        // A restore resolves them within own entities first: they are what is being recreated.
         forEachReference(create_entity_query,
-            [this, workload] (const String & target, const String & source, ReferenceType type)
+            [this, workload, restore] (const String & target, const String & source, ReferenceType type)
             {
-                ASTPtr target_entity = findKnownEntity(target, own_entities);
+                ASTPtr target_entity = restore ? findOwnEntity(target) : nullptr;
+                if (!target_entity)
+                    target_entity = findKnownEntity(target, own_entities);
                 if (!target_entity)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' references another workload entity '{}' that doesn't exist", source, target);
 
@@ -744,6 +765,13 @@ void WorkloadEntityStorageBase::updateRoleResources()
             }
         }
     }
+}
+
+ASTPtr WorkloadEntityStorageBase::findOwnEntity(const String & entity_name) const
+{
+    if (auto it = own_entities.find(entity_name); it != own_entities.end())
+        return it->second;
+    return nullptr;
 }
 
 ASTPtr WorkloadEntityStorageBase::findKnownEntity(const String & entity_name, const std::unordered_map<String, ASTPtr> & own) const
@@ -1224,7 +1252,8 @@ void WorkloadEntityStorageBase::backup(
     {
         std::lock_guard lock{mutex};
 
-        /// Back up only entities defined via SQL and stored in this storage (`own_entities`).
+        /// Back up only entities defined via SQL and stored in this storage (`own_entities`), including hidden
+        /// ones: a restore recreates them hidden again (see `StoreMode::Restore`).
         /// Entities provided through the server configuration are kept in the next storage in the
         /// chain (WorkloadEntityConfigStorage) and must NOT be backed up: the configuration is
         /// assumed to be backed up and restored separately together with all its entities.
@@ -1450,14 +1479,15 @@ void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
     {
         /// throw_if_exists / replace_if_exists come from the create_workloads_and_resources restore setting and are
         /// applied uniformly to every workload and resource (see restore()).
-        storeEntity(
+        validateAndStoreEntity(
             context,
             event.type,
             event.name,
             event.entity,
             throw_if_exists,
             replace_if_exists,
-            context->getSettingsRef());
+            context->getSettingsRef(),
+            StoreMode::Restore);
     }
 }
 

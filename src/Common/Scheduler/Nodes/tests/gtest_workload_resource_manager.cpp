@@ -202,6 +202,16 @@ public:
         executeWorkloadEntityQuery(*this, query);
     }
 
+    // Recreates own entities the way a RESTORE does, in the order of a backup
+    void restoreFromString(const String & data)
+    {
+        for (const auto & [entity_name, entity] : parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")))
+            {
+            auto type = typeid_cast<ASTCreateResourceQuery *>(entity.get()) ? WorkloadEntityType::Resource : WorkloadEntityType::Workload;
+            validateAndStoreEntity(nullptr, type, entity_name, entity, false, false, Settings{}, StoreMode::Restore);
+        }
+    }
+
 private:
     WorkloadEntityStorageBase::OperationResult storeEntityImpl(
         const ContextPtr & current_context,
@@ -2802,6 +2812,35 @@ TEST(SchedulerWorkloadResourceManager, CycleCheckWalksHiddenEntities)
     t.loadConfig("");
     EXPECT_TRUE(t.storage.has("y"));
     EXPECT_TRUE(t.storage.has("x"));
+}
+
+// A restore recreates own SQL entities that were hidden when backed up: shadowed by a configuration entity,
+// conflicting with another own entity or under a shadowed parent. They are hidden again instead of failing.
+TEST(SchedulerWorkloadResourceManager, RestoreRecreatesHiddenEntities)
+{
+    ResourceTest t;
+    t.loadConfig("CREATE RESOURCE cfg_cpu (MASTER THREAD, WORKER THREAD); CREATE RESOURCE p (READ DISK d)");
+
+    EXPECT_NO_THROW(t.sql_storage->restoreFromString(
+        "CREATE RESOURCE sql_cpu (MASTER THREAD);"
+        "CREATE RESOURCE q2 (QUERY); CREATE RESOURCE q1 (QUERY);"
+        "CREATE WORKLOAD p; CREATE WORKLOAD c IN p SETTINGS max_concurrent_threads = 1 FOR sql_cpu"));
+    EXPECT_FALSE(t.storage.has("sql_cpu"));
+    EXPECT_FALSE(t.storage.has("q2"));
+    EXPECT_TRUE(t.storage.has("q1"));
+    EXPECT_EQ(t.storage.getEntitySource("p"), "configuration");
+    EXPECT_FALSE(t.storage.has("c"));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cfg_cpu");
+
+    // Hidden entities become visible once the configuration drops what hides them
+    t.loadConfig("");
+    EXPECT_TRUE(t.storage.has("sql_cpu"));
+    EXPECT_EQ(t.storage.getEntitySource("p"), "sql");
+    EXPECT_TRUE(t.storage.has("c"));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "sql_cpu");
+
+    // A reference to an entity that exists in no layer still fails the restore
+    EXPECT_THROW(t.sql_storage->restoreFromString("CREATE WORKLOAD orphan IN missing"), DB::Exception);
 }
 
 // With the memory limit enabled and no `MEMORY RESERVATION` resource declared, an implicit resource is
