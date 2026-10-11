@@ -1638,10 +1638,14 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
-        /// Check the limit before moving the metadata file: a table that cannot be attached must
-        /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
+        /// Check the limits before moving the metadata file: a table that cannot be attached must
+        /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot or rows.
         if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
+        {
             database_on_disk->checkTablesLimit();
+            if (dropped_table.table)
+                database_on_disk->checkRowsLimit(dropped_table.table, dropped_table.table_id.table_name);
+        }
 
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);

@@ -1,0 +1,18 @@
+-- r: fill the database to the limit
+10
+-- r: retrying the same INSERT is deduplicated, not rejected
+10
+-- r: an INSERT of new rows is rejected
+TOO_MANY_ROWS
+-- r: so is a repeated INSERT with deduplication disabled
+TOO_MANY_ROWS
+10
+-- m: fill the database to the limit
+10
+-- m: retrying the same INSERT is deduplicated, not rejected
+10
+-- m: an INSERT of new rows is rejected
+TOO_MANY_ROWS
+-- m: so is a repeated INSERT with deduplication disabled
+TOO_MANY_ROWS
+10

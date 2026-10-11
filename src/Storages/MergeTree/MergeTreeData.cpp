@@ -445,6 +445,7 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
+    extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int BAD_TTL_EXPRESSION;
@@ -8666,7 +8667,12 @@ void MergeTreeData::throwIfTemporaryTableSizeLimitsExceededForReplacement(
             ReadableSize(total_bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
 }
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(
+    Poco::Event * until,
+    const ContextPtr & query_context,
+    bool allow_throw,
+    bool allow_delay,
+    bool check_database_rows_limit) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
@@ -8689,6 +8695,17 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             "Too many parts ({}) in all partitions in total in table '{}'. This indicates wrong choice of partition key. The threshold can be modified "
             "with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.",
             parts_count_in_total, getLogName());
+    }
+
+    /// Check the owning database's `max_rows` limit. Like `max_parts_in_total` above, it is
+    /// checked before the write, so a single batch may overshoot and the next INSERT throws.
+    if (allow_throw && check_database_rows_limit)
+    {
+        if (auto exception = getDatabaseRowsLimitReachedException())
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            std::rethrow_exception(exception);
+        }
     }
 
     size_t outdated_parts_over_threshold = 0;
@@ -8833,6 +8850,61 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         until->tryWait(delay_milliseconds);
     else
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
+}
+
+std::exception_ptr MergeTreeData::getDatabaseRowsLimitReachedException() const
+{
+    const String database_name = getStorageID().getDatabaseName();
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    const UInt64 limit = database ? database->getMaxRows() : 0;
+    if (limit == 0)
+        return nullptr;
+
+    const UInt64 current_rows = database->getCurrentRowCount().value_or(0);
+    if (current_rows < limit)
+        return nullptr;
+
+    return std::make_exception_ptr(Exception(
+        ErrorCodes::TOO_MANY_ROWS,
+        "Too many rows in database {}. The limit (database setting `max_rows`) is set to {}, the current number of rows is {}",
+        backQuote(database_name), limit, current_rows));
+}
+
+bool MergeTreeData::hasDatabaseRowsLimit() const
+{
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(getStorageID().getDatabaseName());
+    return database && database->getMaxRows() != 0;
+}
+
+void MergeTreeData::checkDatabaseRowsLimit(UInt64 incoming_rows, UInt64 outgoing_rows) const
+{
+    if (auto exception = getDatabaseRowsLimitException(incoming_rows, outgoing_rows))
+        std::rethrow_exception(exception);
+}
+
+std::exception_ptr MergeTreeData::getDatabaseRowsLimitException(UInt64 incoming_rows, UInt64 outgoing_rows) const
+{
+    /// This is a best-effort snapshot check, not a reservation spanning the commit: concurrent
+    /// operations may each observe free headroom and transiently overshoot the limit together.
+    /// The `max_rows` setting is documented accordingly.
+    if (incoming_rows <= outgoing_rows)
+        return nullptr;
+
+    const String database_name = getStorageID().getDatabaseName();
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    const UInt64 limit = database ? database->getMaxRows() : 0;
+    if (limit == 0)
+        return nullptr;
+
+    const UInt64 current_rows = database->getCurrentRowCount().value_or(0);
+    const UInt64 remaining_rows = current_rows > outgoing_rows ? current_rows - outgoing_rows : 0;
+    if (incoming_rows > limit || remaining_rows > limit - incoming_rows)
+        return std::make_exception_ptr(Exception(
+            ErrorCodes::TOO_MANY_ROWS,
+            "Adding {} rows to table {} would exceed the row limit (database setting `max_rows`) of {}: current {} - removing {} + adding {} rows",
+            incoming_rows, getStorageID().getNameForLogs(), limit, current_rows, outgoing_rows, incoming_rows));
+
+    return nullptr;
 }
 
 void MergeTreeData::delayMutationOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context) const
@@ -10069,6 +10141,14 @@ private:
             parts.begin(),
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
+
+        /// `RESTORE` adds rows like `ATTACH PARTITION`, so it is checked against the database `max_rows`
+        /// limit for all restored parts of the table together, before any of them is committed.
+        /// The check is done here rather than in `attachRestoredParts` so that it covers every engine.
+        UInt64 incoming_rows = 0;
+        for (const auto & part : parts)
+            incoming_rows += part->rows_count;
+        storage->checkDatabaseRowsLimit(incoming_rows);
 
         storage->attachRestoredParts(std::move(parts), query_context, zookeeper_retries_info);
         parts.clear();
