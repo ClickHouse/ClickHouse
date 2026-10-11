@@ -572,9 +572,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
                 if (!left || !right)
                 {
-                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
-                    /// form can still be a value the column holds, so this is not on its own a malformed
-                    /// manifest and stays out of the warning log.
+                    /// A bound that does not decode is wider than the storage of its type, or a decimal
+                    /// bound beyond the precision of its type on the inner side of the range. Pruning is
+                    /// skipped either way, so this stays out of the warning log.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "
