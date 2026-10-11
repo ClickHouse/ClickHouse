@@ -1,0 +1,7 @@
+0
+<html><head></head><body></body></html>
+<html><head><title>t</title></head><body><p>hi</p></body></html>
+<html><head></head><body><p>unclosed</p></body></html>
+<html><head></head><body><p>bare</p></body></html>
+1
+100
