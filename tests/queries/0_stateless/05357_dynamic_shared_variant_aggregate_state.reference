@@ -1,0 +1,9 @@
+['x']	['y']
+['x']	['y']
+1
+['Tuple(Bool, AggregateFunction(count, UInt8))','Tuple(Bool, AggregateFunction(count, UInt8))']
+['x']	['y']
+[['0'],['1']]
+010025000A67726F7570417272617900011503010178
+['false','true']	['Bool','Bool']
+1	1
