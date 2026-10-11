@@ -6,6 +6,7 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropHistogramValues.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -60,9 +61,8 @@ SQLQueryPiece applyFunctionScalar(
     {
         case StoreMethod::EMPTY:
         {
-            /// PromQL: scalar() returns NaN if its argument is an empty vector, so an argument which is known
-            /// to be empty at this point (e.g. scalar(clamp(v, 1, -1))) makes the result a NaN constant.
-            /// (If the evaluation range is empty then there is nothing to evaluate and the result stays empty.)
+            /// PromQL: `scalar` of a vector known empty here (e.g. `scalar(clamp(v, 1, -1))`) is a NaN constant
+            /// (unless the evaluation range itself is empty, in which case the result stays empty).
             auto node_range = context.node_range_getter.get(function_node);
             if (node_range.empty())
                 return res;
@@ -81,6 +81,14 @@ SQLQueryPiece applyFunctionScalar(
         {
             /// These store methods are already compatible with scalars, so we do nothing here.
             return res;
+        }
+
+        case StoreMethod::HISTOGRAM_GRID:
+        {
+            /// scalar() reads only the float values; the histogram payloads of a combined grid are dropped
+            /// (a series holding a histogram sample at the evaluation time counts as having no float value).
+            argument = dropHistogramValues(std::move(argument), context);
+            [[fallthrough]];
         }
 
         case StoreMethod::VECTOR_GRID:
@@ -114,12 +122,8 @@ SQLQueryPiece applyFunctionScalar(
             }
             else
             {
-                /// SELECT arrayResize(arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)),
-                ///                    <count_of_time_steps>, NaN) AS values
-                /// FROM <vector_grid>
-                ///
-                /// arrayResize() here handles the case when <vector_grid> contains no rows at all:
-                /// the aggregate functions then return empty arrays, and the result must be NaN at each time step.
+                /// SELECT arrayResize(arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)), <steps>, NaN) AS `values`
+                /// FROM <vector_grid>; `arrayResize` yields NaN at every step when <vector_grid> has no rows at all.
                 builder.select_list.push_back(makeASTFunction(
                     "arrayResize",
                     makeASTFunction(
@@ -150,6 +154,7 @@ SQLQueryPiece applyFunctionScalar(
 
         case StoreMethod::CONST_STRING:
         case StoreMethod::RAW_DATA:
+        case StoreMethod::HISTOGRAM_RAW_DATA:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
             /// (see checkArgumentTypes()).
