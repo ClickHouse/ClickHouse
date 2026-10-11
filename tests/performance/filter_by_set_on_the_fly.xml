@@ -1,0 +1,45 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+    </settings>
+
+    <query>
+        SELECT sum(length(l.payload1) + length(l.payload2) + length(l.payload3))
+        FROM
+        (
+            SELECT
+                number % 100000 AS k,
+                concat(toString(number), repeat('a', 64)) AS payload1,
+                concat(toString(number + 1), repeat('b', 64)) AS payload2,
+                concat(toString(number + 2), repeat('c', 64)) AS payload3
+            FROM numbers(2000000)
+        ) AS l
+        INNER JOIN (SELECT number AS k FROM numbers(100000)) AS r ON l.k = r.k
+        FORMAT Null
+        SETTINGS
+            join_algorithm = 'full_sorting_merge',
+            max_rows_in_set_to_optimize_join = 1000000,
+            query_plan_join_swap_table = 0
+    </query>
+
+    <query>
+        SELECT sum(length(l.payload1) + length(l.payload2) + length(l.payload3))
+        FROM
+        (
+            SELECT
+                number % 100000 AS k,
+                concat(toString(number), repeat('a', 64)) AS payload1,
+                concat(toString(number + 1), repeat('b', 64)) AS payload2,
+                concat(toString(number + 2), repeat('c', 64)) AS payload3
+            FROM numbers(2000000)
+        ) AS l
+        INNER JOIN (SELECT number * 2 AS k FROM numbers(100000)) AS r ON l.k = r.k
+        FORMAT Null
+        SETTINGS
+            join_algorithm = 'full_sorting_merge',
+            max_rows_in_set_to_optimize_join = 1000000,
+            query_plan_join_swap_table = 0
+    </query>
+</test>

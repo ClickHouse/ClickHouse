@@ -20,6 +20,11 @@ SELECT count() FROM t1 JOIN t2 ON t1.x = t2.x WHERE t2.x % 2 == 0;
 SELECT count() FROM t1 JOIN t2 ON t1.x = t2.x WHERE t1.y % 2 == 0 AND t2.y % 2 == 0;
 SELECT count() FROM t1 JOIN t2 ON t1.x = t2.x WHERE t1.x % 2 == 0 AND t2.x % 2 == 0 AND t1.y % 2 == 0 AND t2.y % 2 == 0;
 
+SELECT '-- all rows match the on-the-fly set';
+SELECT count()
+FROM (SELECT number % 100 AS x FROM numbers(5000)) AS l
+INNER JOIN (SELECT number AS x FROM numbers(100)) AS r ON l.x = r.x;
+
 SELECT 'bug with constant columns in join keys';
 
 SELECT * FROM ( SELECT 'a' AS key ) AS t1
@@ -40,5 +45,4 @@ SELECT count() == 0 FROM (EXPLAIN PIPELINE
     ON t1.key = t2.key
 ) WHERE explain ilike '%FilterBySetOnTheFlyTransform%'
 ;
-
 
