@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, replica, no-parallel, no-fasttest, no-msan
+# Tags: long, replica, no-parallel, no-fasttest
 # long: 5-replica parallel-ALTER stress + teardown drain legitimately exceeds the 180s flaky-check cap
 
 # This test checks mutations concurrent execution with concurrent inserts.

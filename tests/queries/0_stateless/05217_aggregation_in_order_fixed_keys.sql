@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- `long` because the file builds four MergeTree tables of 300000-800000 rows and runs five timed
 -- guards, eight `EXPLAIN PIPELINE` mirrors and three identity checks over them: 5.9 s on a debug build
 -- with the CI jemalloc profiler config armed
