@@ -18,3 +18,6 @@ fun:rd_kafka_broker_set_nodename
 # SQLite's own PRNG mutex, which the reader in `unixOpen` does not take. Two concurrent SQLite
 # queries, one opening a database and one writing, are enough to report it.
 fun:*unixOpen*
+# `cpuid_state` in aws-c-common caches the AVX2 check of the base64 codec without synchronization;
+# every thread stores the same value, so the race is benign.
+fun:aws_common_private_has_avx2
