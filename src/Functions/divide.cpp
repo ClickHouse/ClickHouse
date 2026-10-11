@@ -230,7 +230,32 @@ Floating-point division by `0` returns `inf`, `-inf`, or `nan`. `Decimal` divisi
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDivideLegacy>(documentation);
-    factory.registerFunction<FunctionDivideExact>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+
+    FunctionDocumentation::Description exact_description = R"(
+Calculates the quotient of `x` and `y`. When both arguments are integers, the quotient is computed without conversion to floating point and truncated toward zero.
+The result has the width of `x` and is signed if either argument is signed. Integer types through 256 bits are supported, including mixed signed and unsigned arguments.
+Division by zero or a quotient outside the result type's range throws `ILLEGAL_DIVISION`. Nullable arguments propagate `NULL`.
+
+For floating-point or `Decimal` arguments, the function follows the same rules as `divide` with `exact_division_for_integers = 0`.
+
+The function's behavior does not depend on `exact_division_for_integers`.
+When that setting is enabled, newly submitted `/` and `divide` expressions are rewritten to `divideExact`.
+This explicit name is preserved in stored expressions, such as table metadata and views, so changing the setting later does not change their division semantics.
+Existing stored `/` and `divide` expressions retain their historical behavior.
+    )";
+    FunctionDocumentation::Syntax exact_syntax = "divideExact(x, y)";
+    FunctionDocumentation::ReturnedValue exact_returned_value = {"The quotient of `x` and `y`, truncated toward zero when both arguments are integers."};
+    FunctionDocumentation::Examples exact_examples =
+    {
+        {"Integer division", "SELECT divideExact(toUInt64(5), toUInt8(2)) AS quotient, toTypeName(quotient)", "2\tUInt64"},
+        {"Mixed signed and unsigned arguments", "SELECT divideExact(toInt32(-5), toUInt64(2)) AS quotient, toTypeName(quotient)", "-2\tInt32"},
+        {"Floating-point division", "SELECT divideExact(5.0, 2) AS quotient, toTypeName(quotient)", "2.5\tFloat64"}
+    };
+    FunctionDocumentation::IntroducedIn exact_introduced_in = {26, 10};
+    FunctionDocumentation exact_documentation =
+    {
+        exact_description, exact_syntax, arguments, {}, exact_returned_value, exact_examples, exact_introduced_in, category};
+    factory.registerFunction<FunctionDivideExact>(exact_documentation);
 }
 
 struct NameDivideOrNull { static constexpr auto name = "divideOrNull"; };
