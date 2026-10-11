@@ -17,6 +17,17 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
 elseif (CMAKE_SYSTEM_NAME MATCHES "SunOS")
     set (OS_SUNOS 1)
     add_definitions(-D OS_SUNOS)
+
+    # Disable features that aren't currently supported on illumos.
+    set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE BOOL "Enable Azure Blob Storage")
+    set (ENABLE_HDFS OFF CACHE BOOL "Enable HDFS")
+    set (ENABLE_LDAP OFF CACHE BOOL "Enable LDAP")
+    set (ENABLE_LIBPQXX OFF CACHE BOOL "Enable libpqxx")
+    set (USE_MONGODB OFF CACHE BOOL "Enable MongoDB")
+    set (ENABLE_PARQUET OFF CACHE BOOL "Enable parquet")
+    set (ENABLE_ROCKSDB OFF CACHE BOOL "Enable RocksDB")
+    set (ENABLE_SSH OFF CACHE BOOL "Enable support for libssh")
+    set (ENABLE_RUST OFF CACHE BOOL "Enable rust")
 elseif (CMAKE_SYSTEM_NAME MATCHES "Emscripten")
     # WebAssembly, through the Emscripten toolchain. Configure with `emcmake cmake ...`, which
     # sets CMAKE_SYSTEM_NAME and points CMAKE_TOOLCHAIN_FILE at Emscripten's own toolchain file.
@@ -195,6 +206,8 @@ if (CMAKE_CROSSCOMPILING)
         # FIXME: broken dependencies
         set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
         set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
+    elseif (OS_SUNOS)
+        # The SunOS toolchain supplies the cross compiler and sysroot.
     elseif (OS_WASM)
         # Handled in the OS_WASM block above: it has to run before this one, because the
         # `CMAKE_CROSSCOMPILING` check below it needs `OS_WASM` to already be set.
