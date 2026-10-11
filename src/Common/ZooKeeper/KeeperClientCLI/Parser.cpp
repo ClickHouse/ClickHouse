@@ -133,7 +133,7 @@ bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto query = make_intrusive<ASTKeeperQuery>();
 
-    for (const auto & pair : KeeperClientBase::commands)
+    for (const auto & pair : KeeperClientBase::getCommands())
         expected.add(pos, pair.first.data());
 
     for (const auto & four_letter_word_command : four_letter_word_commands)
@@ -145,8 +145,8 @@ bool KeeperParser::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String command_name(pos->begin, pos->end);
     Command command;
 
-    auto iter = KeeperClientBase::commands.find(command_name);
-    if (iter == KeeperClientBase::commands.end())
+    auto iter = KeeperClientBase::getCommands().find(command_name);
+    if (iter == KeeperClientBase::getCommands().end())
     {
         if (command_name.size() == 4)
         {
