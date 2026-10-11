@@ -12,6 +12,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -19,6 +20,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -36,6 +39,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
@@ -127,6 +131,41 @@ void IStorageCluster::read(
     /// `formatWithSecretsOneLine()` with its `SETTINGS` clause intact, which would otherwise leak those
     /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+
+    /// Replicas match `additional_table_filters` (first matching entry wins) against the forwarded query, whose table
+    /// expression has a generated alias. At `FetchColumns` the initiator applies `additional_filter_ast` itself.
+    if (query_info.additional_filter_ast && processed_stage != QueryProcessingStage::FetchColumns)
+    {
+        if (const auto * table_function = extractTableFunctionFromSelectQuery(query_to_send))
+        {
+            /// Replicas resolve unqualified table names against their own current database.
+            ASTPtr filter_ast = query_info.additional_filter_ast->clone();
+            AddDefaultDatabaseVisitor(context, context->getCurrentDatabase()).visitTableExpressions(*filter_ast);
+
+            /// A replica names the storage after the canonical name of the function, not after its spelling in the query.
+            String function_name = table_function->name;
+            if (auto resolved_function = TableFunctionFactory::instance().tryGet(function_name, context))
+                function_name = resolved_function->getName();
+
+            Tuple resolved_filter;
+            resolved_filter.push_back(StorageID(ITableFunction::getDatabaseName(), function_name).getFullNameNotQuoted());
+            resolved_filter.push_back(filter_ast->formatWithSecretsOneLine());
+
+            Map forwarded_filters;
+            forwarded_filters.push_back(std::move(resolved_filter));
+            for (const auto & entry : context->getSettingsRef()[Setting::additional_table_filters].value)
+                forwarded_filters.push_back(entry);
+
+            query_to_send = query_to_send->clone();
+            static constexpr std::string_view additional_table_filters_name[] = {"additional_table_filters"};
+            removeSettingsFromQueryTopLevel(query_to_send, additional_table_filters_name);
+
+            auto forwarded_context = Context::createCopy(context);
+            forwarded_context->setSetting("additional_table_filters", Field(std::move(forwarded_filters)));
+            query_plan.addInterpreterContext(forwarded_context);
+            context = std::move(forwarded_context);
+        }
+    }
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
