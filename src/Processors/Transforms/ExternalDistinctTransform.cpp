@@ -490,9 +490,7 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
 
         auto chunk = spill_layout->prepareSuppressionChunk(std::move(key_columns));
         Block block = spill_layout->getSuppressionRunHeader()->cloneWithColumns(chunk.detachColumns());
-
-        /// Stable sorting preserves binary representatives of sort-equivalent keys. The emitted flag
-        /// and optional arrival number are constant within this chunk, so key order satisfies run order.
+        /// Stable sorting preserves binary representatives of sort-equivalent keys.
         sortBlock(block, spill_layout->getKeySortDescription(), /*limit=*/ 0, IColumn::PermutationSortStability::Stable);
         const auto rows = block.rows();
         Chunk sorted(block.detachColumns(), rows);
@@ -512,7 +510,7 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
     }
 
     auto run = prepareRun(spill_layout->getSuppressionRunHeader(), std::move(chunks), bytes,
-        spill_layout->getRunSortDescription(), MergeSorter::Mode::PreserveRows);
+        spill_layout->getKeySortDescription(), MergeSorter::Mode::PreserveRows);
     auto keys = std::move(extracting.keys);
     auto & connecting = state.emplace<ConnectingSuppressionRun>(std::move(run), std::move(keys));
     FailPointInjection::pauseFailPoint(FailPoints::external_distinct_suppression_run_prepared_pause);
@@ -896,21 +894,26 @@ Pipe ExternalDistinctTransform::createMergePipe(Chunks tail)
             ordinary_header, std::move(tail), spill_layout->getKeySortDescription(),
             max_block_size_rows, /*limit=*/ 0, MergeSorter::Mode::MergeUniqueChunks, preferred_block_bytes);
 
-    const auto description = spill_layout->getRunSortDescription();
-    const auto num_key_columns = spill_layout->getKeySortDescription().size();
+    const auto & key_description = spill_layout->getKeySortDescription();
+    const auto & flag_column_name = spill_layout->getFlagColumnName();
+    /// Files are merged by size, so source order cannot identify the earliest ordinary row. When input order
+    /// is preserved, the merges compare arrival numbers after the already-emitted flag instead.
+    const auto & arrival_number_description = spill_layout->getArrivalNumberSortDescription();
     const auto block_size = max_block_size_rows;
 
     /// Intermediate files use the runs' byte target, so their readers fit the budget of
     /// `selectTailSpillPrefix`.
     const auto intermediate_block_size = maxRowsInIntermediateMergeBlock();
-    auto suppression_merge = [header = spill_layout->getSuppressionRunHeader(), description, intermediate_block_size]
+    /// The emitted flag and the optional arrival number are constant in suppression runs, so key order is
+    /// also the order of the final merge.
+    auto suppression_merge = [header = spill_layout->getSuppressionRunHeader(), key_description, intermediate_block_size]
         (const SharedHeaders & headers) -> ProcessorPtr
     {
         return std::make_shared<MergingSortedTransform>(
-            header, headers.size(), description, intermediate_block_size, /*max_block_size_bytes=*/ 0,
+            header, headers.size(), key_description, intermediate_block_size, /*max_block_size_bytes=*/ 0,
             /*max_dynamic_subcolumns=*/ std::nullopt, SortingQueueStrategy::Batch);
     };
-    auto ordinary_merge = [ordinary_header, description, num_key_columns, intermediate_block_size]
+    auto ordinary_merge = [ordinary_header, key_description, flag_column_name, arrival_number_description, intermediate_block_size]
         (const SharedHeaders & headers) -> ProcessorPtr
     {
 
@@ -918,11 +921,13 @@ Pipe ExternalDistinctTransform::createMergePipe(Chunks tail)
         /// the emitted flag, and arrival numbers when present so later passes can compare their rows.
         /// Keys already emitted before spilling are suppressed when both groups enter the final merge.
         return std::make_shared<DistinctSortedTransform>(
-            headers, ordinary_header, description, num_key_columns, intermediate_block_size);
+            headers, ordinary_header, key_description, flag_column_name, arrival_number_description, intermediate_block_size);
     };
-    auto final_merge = [merged_header, description, num_key_columns, block_size](const SharedHeaders & headers) -> ProcessorPtr
+    auto final_merge = [merged_header, key_description, flag_column_name, arrival_number_description, block_size]
+        (const SharedHeaders & headers) -> ProcessorPtr
     {
-        return std::make_shared<DistinctSortedTransform>(headers, merged_header, description, num_key_columns, block_size);
+        return std::make_shared<DistinctSortedTransform>(
+            headers, merged_header, key_description, flag_column_name, arrival_number_description, block_size);
     };
     std::vector<ExternalMergeSource::Group> groups;
     groups.emplace_back(std::move(suppression_runs), std::move(suppression_merge));
@@ -933,8 +938,6 @@ Pipe ExternalDistinctTransform::createMergePipe(Chunks tail)
 
     if (spill_layout->preservesInputOrder())
     {
-        const auto & arrival_number_description = spill_layout->getArrivalNumberSortDescription();
-
         /// Restore arrival order under the same spill policy as input runs. Deduplication and
         /// suppression leave only new distinct rows, so the sort can safely retain a hinted prefix.
         /// Rows admitted during hashing already form the result's prefix and reduce the remaining hint.

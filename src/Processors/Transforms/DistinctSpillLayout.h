@@ -29,7 +29,7 @@ public:
     const SharedHeader & getSuppressionRunHeader() const { return suppression_run_header; }
     const SharedHeader & getMergedHeader() const { return merged_header; }
     const SortDescription & getKeySortDescription() const { return key_sort_description; }
-    const SortDescription & getRunSortDescription() const { return run_sort_description; }
+    const String & getFlagColumnName() const { return flag_column_name; }
     const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
     bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
 
@@ -61,10 +61,7 @@ private:
     SharedHeader suppression_run_header;
     SharedHeader merged_header;
     SortDescription key_sort_description;
-
-    /// Run ordering gives suppression rows precedence. When preserving input order, arrival numbers
-    /// select the earliest ordinary row. Key equality ignores the emitted flag and arrival numbers.
-    SortDescription run_sort_description;
+    String flag_column_name;
     SortDescription arrival_number_sort_description;
 };
 

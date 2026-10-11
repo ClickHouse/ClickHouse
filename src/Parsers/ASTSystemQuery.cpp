@@ -230,6 +230,20 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             ostr << " PATH " << quoteString(queue_path);
             break;
         }
+        case Type::RESET_FILELOG:
+        {
+            ostr << ' ';
+            print_database_table();
+            if (filelog_file)
+            {
+                ostr << " FILE " << quoteString(*filelog_file);
+                if (filelog_offset)
+                    ostr << " OFFSET " << *filelog_offset;
+                else if (filelog_to_end)
+                    ostr << " TO END";
+            }
+            break;
+        }
         case Type::RESTART_REPLICA:
         case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
@@ -742,6 +756,12 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeString("schema_cache_format", schema_cache_format);
     if (!queue_path.empty())
         w.writeString("queue_path", queue_path);
+    if (filelog_file)
+        w.writeString("filelog_file", *filelog_file);
+    if (filelog_offset)
+        w.writeUInt("filelog_offset", *filelog_offset);
+    if (filelog_to_end)
+        w.writeBool("filelog_to_end", true);
     if (!fail_point_name.empty())
         w.writeString("fail_point_name", fail_point_name);
     if (fail_point_action != FailPointAction::UNSPECIFIED)
@@ -929,6 +949,11 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     schema_cache_storage = r.getString("schema_cache_storage");
     schema_cache_format = r.getString("schema_cache_format");
     queue_path = r.getString("queue_path");
+    if (r.has("filelog_file"))
+        filelog_file = r.getString("filelog_file");
+    if (r.has("filelog_offset"))
+        filelog_offset = r.getUInt("filelog_offset");
+    filelog_to_end = r.getBool("filelog_to_end");
     fail_point_name = r.getString("fail_point_name");
     if (r.has("fail_point_action"))
     {
@@ -981,6 +1006,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'scheduled_merge_parts' during AST JSON deserialization");
             break;
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        case Type::RESET_FILELOG:
         case Type::REFRESH_VIEW:
         case Type::START_VIEW:
         case Type::START_REPLICATED_VIEW:

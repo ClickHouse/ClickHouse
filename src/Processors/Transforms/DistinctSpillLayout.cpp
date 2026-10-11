@@ -106,17 +106,10 @@ DistinctSpillLayout::DistinctSpillLayout(
         suppression.insert(ordinary.getByPosition(*arrival_number_column_pos));
 
     auto flag_type = std::make_shared<DataTypeUInt8>();
-    const auto flag_name = uniqueColumnName(ordinary, FLAG_COLUMN_NAME);
-    ordinary.insert({flag_type->createColumn(), flag_type, flag_name});
+    flag_column_name = uniqueColumnName(ordinary, FLAG_COLUMN_NAME);
+    ordinary.insert({flag_type->createColumn(), flag_type, flag_column_name});
     suppression.insert(ordinary.getByPosition(ordinary.columns() - 1));
 
-    /// Compare the already-emitted flag first so suppression rows precede ordinary rows with equal
-    /// keys. When preserving input order, compare arrival numbers next; files are merged by size,
-    /// so source order cannot identify the earliest ordinary row.
-    run_sort_description = key_sort_description;
-    run_sort_description.emplace_back(flag_name, -1, 1);
-    if (preserve_input_order)
-        run_sort_description.push_back(arrival_number_sort_description.front());
     input_run_header = std::make_shared<const Block>(std::move(ordinary));
     suppression_run_header = std::make_shared<const Block>(std::move(suppression));
 }

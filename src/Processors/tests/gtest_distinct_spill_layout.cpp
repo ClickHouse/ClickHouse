@@ -35,7 +35,7 @@ TEST(DistinctSpillLayout, KeepsEmittedFlagConstantThroughSorting)
                 ? layout.prepareSuppressionChunk(std::move(columns))
                 : layout.prepareInputChunk(Chunk(std::move(columns), keys.size()), /*first_arrival_number=*/ 0);
             const auto & header = suppression ? layout.getSuppressionRunHeader() : layout.getInputRunHeader();
-            const size_t flag_pos = header->getPositionByName(layout.getRunSortDescription()[layout.getKeySortDescription().size()].column_name);
+            const size_t flag_pos = header->getPositionByName(layout.getFlagColumnName());
             const ColumnPtr initial_flag = chunk.getColumns()[flag_pos];
             EXPECT_EQ(initial_flag->size(), keys.size());
 
@@ -58,7 +58,7 @@ TEST(DistinctSpillLayout, KeepsEmittedFlagConstantThroughSorting)
 
             Chunks runs;
             runs.emplace_back(block.getColumns(), block.rows());
-            MergeSorter sorter(header, std::move(runs), layout.getRunSortDescription(), 65536, 0);
+            MergeSorter sorter(header, std::move(runs), layout.getKeySortDescription(), 65536, 0);
             auto merged = sorter.read();
             const auto & merged_keys = assert_cast<const ColumnUInt64 &>(*merged.getColumns()[0]).getData();
             EXPECT_EQ((std::vector<UInt64>{merged_keys.begin(), merged_keys.end()}), (std::vector<UInt64>{1, 2, 3}));
@@ -103,7 +103,7 @@ TEST(DistinctSpillLayout, SuppressionContainsOnlyRetainedKeys)
                 for (size_t row = 0; row < ordinary.getNumRows(); ++row)
                     EXPECT_EQ(arrivals->getUInt(row), 10 + row);
             }
-            EXPECT_EQ(layout.getRunSortDescription().size(), layout.getKeySortDescription().size() + 1 + preserve_input_order);
+            EXPECT_EQ(layout.getArrivalNumberSortDescription().size(), preserve_input_order);
             EXPECT_EQ(layout.getMergedHeader()->columns(), header->columns() + preserve_input_order);
             EXPECT_EQ(layout.preservesInputOrder(), preserve_input_order);
             Columns merged_columns;

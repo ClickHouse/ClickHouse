@@ -9,21 +9,25 @@
 namespace DB
 {
 
-/// Merges sorted external `DISTINCT` runs and removes duplicate keys. Suppression rows identify keys
-/// already emitted before spilling; they suppress matching ordinary rows and are never emitted.
-/// The sort description contains the distinct keys without collators, followed by the already-emitted
-/// flag descending and an optional arrival number ascending. Key equality excludes the flag and
-/// arrival number. When arrival numbers are present, equal ordinary keys retain the earliest row
-/// independently of source order. Otherwise, any representative can survive.
-/// Each input contains only ordinary rows or only suppression rows. Suppression inputs need only the
-/// sort columns; ordinary inputs also provide every output column by name. Ordinary chunks are unique
-/// under the key sort order; suppression chunks may contain sort-equal keys.
+/// Merges inputs sorted by `key_description`, which contains the distinct keys without collators, into one
+/// row per key. If set, `already_emitted_flag_column` names the `UInt8` column that marks suppression rows,
+/// as in external `DISTINCT` runs, and each input then contains only ordinary rows or only suppression rows.
+/// Without it, all rows are ordinary. Suppression rows identify keys already emitted before spilling; they
+/// suppress matching ordinary rows and are never emitted. Suppression inputs need only the keys, the flag and
+/// the columns of `arrival_number_description`; ordinary inputs also provide every output column by name.
+/// Ordinary chunks are unique under the key sort order; suppression chunks may contain sort-equal keys.
+/// Equal ordinary keys retain the first row in source order. With a nonempty `arrival_number_description`,
+/// they retain the row that sorts first by it instead, independently of source order.
 class DistinctSortedAlgorithm final : public IMergingAlgorithm
 {
 public:
     DistinctSortedAlgorithm(
-        SharedHeaders input_headers, SharedHeader output_header_, SortDescription description_,
-        size_t num_key_columns_, size_t max_block_size_rows_);
+        SharedHeaders input_headers,
+        SharedHeader output_header_,
+        SortDescription key_description,
+        const std::optional<String> & already_emitted_flag_column,
+        const SortDescription & arrival_number_description,
+        size_t max_block_size_rows_);
 
     const char * getName() const override { return "DistinctSortedAlgorithm"; }
     void addInput(SharedHeader header);
@@ -39,6 +43,8 @@ private:
 
     /// Returns the accumulated output and resets the consumed-row count.
     Chunk pull();
+    /// Without the already-emitted flag, no row is a suppression row.
+    bool isSuppressionRow(const SortCursorImpl & cursor, size_t row) const;
 
     /// Selects output columns while retaining chunk information and ownership of their values.
     Chunk projectOutput(Chunk chunk, size_t source_num) const;
@@ -51,7 +57,9 @@ private:
     };
 
     const SharedHeader output_header;
+    /// The keys, the already-emitted flag descending if there is one, and `arrival_number_description`.
     SortDescription description;
+    const bool has_already_emitted_flag;
     const size_t num_key_columns;
     const size_t max_block_size_rows;
     Inputs current_inputs;
