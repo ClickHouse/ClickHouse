@@ -269,6 +269,11 @@ bool tryBuildPrewhereSteps(
     if (!prewhere_info)
         return true;
 
+    /// Steps pass columns to each other by name, which cannot tell an input from a computed node
+    /// that reuses its name (e.g. a `Buffer` converting its destination's column).
+    if (prewhere_info->prewhere_actions.hasInputNameShadowedByComputedNode())
+        return false;
+
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
     const auto & condition_root = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");

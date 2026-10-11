@@ -574,9 +574,6 @@ DictionaryBlockRanges blocksMatchingTokenKeyRanges(
     return merged_ranges;
 }
 
-/// The read buffer size of the dictionary stream.
-constexpr size_t dictionary_buffer_size = 16 * 1024;
-
 /// Unique identifier of the text index of a data part in the text index caches.
 String makeIndexIdForCaches(const IMergeTreeDataPartInfoForReader & part_info, const IMergeTreeIndex & index)
 {
@@ -684,6 +681,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     /// The stream opens its file on the first read, so a granule answered from the caches does not open it.
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
+    constexpr size_t dictionary_buffer_size = 16 * 1024;
 
     auto dictionary_stream = makeTextIndexInputStream(
         state.part_info,

@@ -113,6 +113,8 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
+#include "config.h"
+
 
 namespace CurrentMetrics
 {
@@ -126,6 +128,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -152,6 +155,7 @@ namespace Setting
     extern const SettingsBool materialized_views_populate_atomically;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_temporary_tables;
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
@@ -1833,6 +1837,26 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+/// Blocks dictionary creation in case `enable_xgboost` is disabled, or when ClickHouse wasn't built
+/// with XGBoost support
+void checkXGBoostLayoutIsAllowed(const ASTCreateQuery & create, [[maybe_unused]] const ContextPtr & context)
+{
+    if (!(create.is_dictionary && create.dictionary && create.dictionary->layout
+          && Poco::toLower(create.dictionary->layout->layout_type) == "xgboost"))
+        return;
+
+#if USE_XGBOOST
+    if (!context->getSettingsRef()[Setting::enable_xgboost])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The XGBOOST dictionary layout is experimental. Set `enable_xgboost = 1` to enable it");
+#else
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "The XGBOOST dictionary layout is unavailable, because ClickHouse was built without XGBoost support");
+#endif
+}
+
 /// The drop privilege matching the kind of an existing table.
 AccessType getDropAccessType(const IStorage & table)
 {
@@ -1867,6 +1891,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
+
+    /// A full-definition `ATTACH DICTIONARY` is user input as well, so it is gated like `CREATE DICTIONARY`.
+    /// A short `ATTACH` carries no layout here (the stored definition is read below), and a restore or a
+    /// replay on a secondary replica runs under `SECONDARY_CREATE`, so both stay exempt.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        checkXGBoostLayoutIsAllowed(create, getContext());
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
@@ -2380,6 +2410,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
+/// Enforces `max_temporary_tables` before a temporary table named `table_name` is added to the session.
+void checkTemporaryTablesLimit(const ContextPtr & context, const String & table_name)
+{
+    const UInt64 max_temporary_tables = context->getSettingsRef()[Setting::max_temporary_tables];
+    if (!max_temporary_tables)
+        return;
+
+    const Tables tables = context->getSessionContext()->getExternalTables();
+
+    /// Replacing an existing temporary table does not change the number of tables.
+    if (tables.contains(table_name))
+        return;
+
+    if (tables.size() >= max_temporary_tables)
+        throw Exception(ErrorCodes::TOO_MANY_TABLES,
+            "Too many temporary tables in the session: {}, the maximum is {} (the `max_temporary_tables` setting)",
+            tables.size(), max_temporary_tables);
+}
+
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
@@ -2457,6 +2506,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
+
+        checkTemporaryTablesLimit(getContext(), create.getTable());
 
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -3200,6 +3251,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
                                                                 const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    /// Bare `REPLACE` requires the target to exist, so it never adds a table.
+    if (create.create_or_replace)
+        checkTemporaryTablesLimit(getContext(), create.getTable());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();
@@ -3230,6 +3285,17 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     return fillTableIfNeeded(create);
 }
 
+namespace
+{
+/// The population's own `SETTINGS` are reapplied on top of its context under the names they were written with.
+constexpr std::array<std::string_view, 3> settings_sending_population_to_other_servers
+{
+    "allow_experimental_parallel_reading_from_replicas",
+    "enable_parallel_replicas",
+    "parallel_distributed_insert_select",
+};
+}
+
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, const String & published_table_name)
 {
     /// A non-empty `published_table_name` means `create.getTable()` is the internal temporary name of
@@ -3245,10 +3311,22 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         insert->select = create.select->clone();
 
+        ContextMutablePtr insert_context = getContext();
+        /// Every replica of a `Replicated` database executes this entry and fills its own copy of the table, so the population
+        /// must neither read through parallel replicas nor be sent to other servers as a distributed `INSERT`.
+        if (getContext()->getZooKeeperMetadataTransaction())
+        {
+            auto local_context = Context::createCopy(getContext());
+            local_context->setSetting("parallel_distributed_insert_select", Field{0});
+            local_context->setSetting("enable_parallel_replicas", Field{0});
+            removeSettingsFromQuery(insert->select, settings_sending_population_to_other_servers);
+            insert_context = local_context;
+        }
+
         InterpreterInsertQuery interpreter(
             insert,
-            getContext(),
-            getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            insert_context,
+            insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
             /* no_squash */ false,
             /* no_destination */ false,
             /* async_isnert */ false);
@@ -3342,6 +3420,20 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
             backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
         return false;
     }
+
+#if CLICKHOUSE_CLOUD
+    /// In a Shared database the view is committed to the catalog only after the population, so no replica can
+    /// subscribe to it in time and the local cut cannot deliver rows exactly once.
+    if (SharedDatabaseCatalog::isInitialQuery(getContext()))
+    {
+        LOG_INFO(getLogger("InterpreterCreateQuery"),
+            "Populating materialized view {}.{} non-atomically because it is created in a Shared database, "
+            "where the population cannot be cut consistently across replicas. "
+            "Rows inserted into the source during the population may be missed.",
+            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        return false;
+    }
+#endif
 
     return true;
 }
@@ -3878,7 +3970,9 @@ void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
 
 void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage)
 {
-    if (create.is_dictionary || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
+    if (create.is_dictionary
+        || storage->getName() == "Alias"
+        || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
         return;
 
     auto ast_storage = make_intrusive<ASTStorage>();

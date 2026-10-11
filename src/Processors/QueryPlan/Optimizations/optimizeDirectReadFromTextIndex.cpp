@@ -37,6 +37,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -67,7 +68,6 @@ struct TextIndexReadInfo
     MergeTreeIndexPtr index_helper = nullptr;
     bool is_materialized = false;
     bool is_fully_materialized = false;
-    bool has_patched_parts = false;
 };
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
@@ -156,17 +156,17 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     return node;
 }
 
-String optimizationInfoToString(const IndexReadColumns & added_columns, const Names & removed_columns)
+String optimizationInfoToString(const IndexReadTasks & index_read_tasks, const Names & removed_columns)
 {
-    chassert(!added_columns.empty());
+    chassert(!index_read_tasks.empty());
 
     String result = "Added: [";
 
     /// This will list the index and the new associated columns
     size_t idx = 0;
-    for (const auto & [_, added_virtual_columns] : added_columns)
+    for (const auto & [_, index_read_task] : index_read_tasks)
     {
-        for (const auto & added_virtual_column : added_virtual_columns)
+        for (const auto & added_virtual_column : index_read_task.columns)
         {
             if (++idx > 1)
                 result += ", ";
@@ -189,14 +189,34 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     return result;
 }
 
+/// Columns changed on the fly by patches, mutations and masking policies. The index is not used for them in the
+/// whole query: the preprocessor rewrite and the on-fly mutation steps do not depend on the part. They are taken
+/// from the whole snapshot to avoid looking up the patches of each part.
+NameSet getColumnsUpdatedOnFly(const ReadFromMergeTree & read_from_merge_tree_step)
+{
+    NameSet updated_columns = read_from_merge_tree_step.getMutationsSnapshot()->getColumnsChangedOnFly();
+
+#if CLICKHOUSE_CLOUD
+    /// Masking policies are the same for all parts.
+    const auto & context = read_from_merge_tree_step.getContext();
+    const auto & storage_id = read_from_merge_tree_step.getMergeTreeData().getStorageID();
+
+    for (const auto & command : MergeTreeData::getMaskingPolicyCommands(storage_id, context->getAccess()->getEnabledMaskingPolicies()))
+        AlterConversions::addUpdatedColumns(command, updated_columns);
+#endif
+
+    return updated_columns;
+}
+
 /// Helper function.
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
 void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
 {
     auto component_guard = Coordination::setCurrentComponent("optimizeDirectReadFromTextIndex");
 
+    /// Everything below is needed only for text indexes.
     const auto & indexes = read_from_merge_tree_step->getIndexes();
-    if (!indexes || indexes->skip_indexes.useful_indices.empty())
+    if (!indexes || std::ranges::none_of(indexes->skip_indexes.useful_indices, [](const auto & index) { return index.index->isTextIndex(); }))
         return;
 
     const RangesInDataParts & parts_with_ranges = read_from_merge_tree_step->getParts();
@@ -205,40 +225,19 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
-    auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
-    auto context = read_from_merge_tree_step->getContext();
 
     std::unordered_set<DataPartPtr> unique_parts;
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
 
-    /// Compute the union of updated columns only across the parts that will actually be read by this step.
-    /// Using `mutations_snapshot->getAllUpdatedColumns()` directly would include pending updates from
-    /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
-    /// the queried parts have no on-the-fly updates for the index columns.
-    NameSet all_updated_columns;
-    bool has_patched_parts = false;
-    for (const auto & part : unique_parts)
-    {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
-#if CLICKHOUSE_CLOUD
-            , context->getAccess()->getEnabledMaskingPolicies()
-#endif
-        );
-        const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
-        all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
-        has_patched_parts |= alter_conversions->hasPatches();
-    }
-
-    if (has_patched_parts)
-        LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: a part has a pending patch");
+    auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step);
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (!index.index->isTextIndex())
             continue;
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns); !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
             continue;
@@ -256,7 +255,6 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
             .is_fully_materialized = num_materialized_parts == unique_parts.size(),
-            .has_patched_parts = has_patched_parts
         };
     }
 }
@@ -467,9 +465,7 @@ public:
         , require_index_analyzed_predicate(require_index_analyzed_predicate_)
     {
         /// Register the text-index virtual column inputs that are already present in this DAG from a previous
-        /// optimization pass. This prevents them from being re-added to `added_columns` when the same DAG is processed again.
-        ///
-        /// See: https://github.com/ClickHouse/ClickHouse/issues/101913#issuecomment-4198784580
+        /// optimization pass. This prevents them from being re-added to `index_read_tasks` when the same DAG is processed again.
         for (const auto * input : actions_dag.getInputs())
         {
             if (input->result_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
@@ -479,9 +475,8 @@ public:
 
     struct ResultReplacement
     {
-        IndexReadColumns added_columns;
+        IndexReadTasks index_read_tasks;
         Names removed_columns;
-        /// `nullptr` if `filter_column_name` is empty.
         const ActionsDAG::Node * filter_node = nullptr;
     };
 
@@ -536,11 +531,11 @@ public:
 
         /// A virtual column is read only if its input survived `removeUnusedActions`: the rewrite can
         /// keep a different index's virtual (or the original expression) instead, leaving this one unused.
-        for (auto & [index_name, columns] : added_virtual_columns)
+        for (auto & [index_name, index_read_task] : index_read_tasks)
         {
-            std::erase_if(columns, [&](const auto & column) { return !replaced_columns_set.contains(column.name); });
-            if (!columns.empty())
-                result.added_columns.emplace(index_name, std::move(columns));
+            std::erase_if(index_read_task.columns, [&](const auto & column) { return !replaced_columns_set.contains(column.name); });
+            if (!index_read_task.columns.empty())
+                result.index_read_tasks.emplace(index_name, std::move(index_read_task));
         }
 
         return result;
@@ -569,8 +564,8 @@ private:
     std::unordered_map<String, NameSet> index_analyzed_predicate_names;
     /// Input nodes of the virtual columns in the DAG, by column name.
     std::unordered_map<String, const ActionsDAG::Node *> virtual_column_inputs;
-    /// Virtual columns added to the DAG, by index name. `replace` keeps only those still used after the rewrite.
-    IndexReadColumns added_virtual_columns;
+    /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
+    IndexReadTasks index_read_tasks;
 
     /// True if index analysis saw this exact predicate, i.e. it also appears in a filter that was not deferred.
     bool isIndexAnalyzedPredicate(const String & index_name, const TextIndexReadInfo & info, const ActionsDAG::Node & predicate)
@@ -660,10 +655,11 @@ private:
                 .virtual_column = {},
             };
 
-            /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`) and has no
-            /// patched parts. Otherwise just inject the tokenizer/preprocessor/postprocessor (no virtual column),
-            /// same as None mode.
-            if (direct_read_from_text_index && info.index && !info.has_patched_parts && !drops_nullable
+            /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise
+            /// just inject the tokenizer/preprocessor/postprocessor (no virtual column), same as None mode.
+            if (direct_read_from_text_index
+                && info.index
+                && !drops_nullable
                 && search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
             {
                 auto virtual_column_name = text_index_condition.tryGetVirtualColumnName(*search_query, index_name);
@@ -765,7 +761,8 @@ private:
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
             {
-                new_children[0] = haystack;
+                /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
+                new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);
 
                 if (apply_postprocessor)
                 {
@@ -774,7 +771,9 @@ private:
                 else
                 {
                     ActionsDAG::NodeRawConstPtrs merged_outputs;
-                    actions_dag.mergeNodes(preprocessor_dag.clone(), &merged_outputs);
+                    actions_dag.mergeNodes(
+                        preprocessor->getActionsDAGForColumn(new_children[0]->result_name, new_children[0]->result_type),
+                        &merged_outputs);
 
                     chassert(merged_outputs.size() == 1);
                     new_children[0] = merged_outputs.front();
@@ -812,8 +811,8 @@ private:
                 VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
-                /// Skip compaction when a postprocessor is applied: it is unsound afterwards and can drop a token.
-                if (!apply_postprocessor)
+                /// Compaction is valid only for hasAllTokens and is unsound before a postprocessor.
+                if (function_name == "hasAllTokens" && !apply_postprocessor)
                     needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
@@ -977,14 +976,19 @@ private:
                 /// Create a default expression for the virtual column.
                 /// It will be executed by merge tree reader when index is not materialized in the data part.
                 /// Shared, not cloned: a stored default expression is immutable, `addDefaultRequiredExpressionsRecursively` clones it before use.
+                /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
                 if (column.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
                     column.default_expression = exact_default_expression;
-                /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
                 else if (column.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     column.default_expression = make_intrusive<ASTLiteral>(Field(1));
 
                 it->second = &actions_dag.addInput(column.name, column.type);
-                added_virtual_columns[condition.index_name].push_back(std::move(column));
+                auto [task_it, task_inserted] = index_read_tasks.try_emplace(condition.index_name);
+
+                if (task_inserted)
+                    task_it->second.index = *condition.info->index;
+
+                task_it->second.columns.push_back(std::move(column));
             }
 
             return it->second;
@@ -1040,12 +1044,12 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     if (!result)
         return nullptr;
 
-    /// Even when no virtual columns are added (added_columns is empty),
+    /// Even when no virtual columns are added (index_read_tasks is empty),
     /// the DAG may have been modified by text index preprocessing
     /// (e.g. applying tokenizer/preprocessor to hasAnyTokens).
     /// In that case, we must return the filter node
     /// so the caller can update the filter column name to match the modified DAG.
-    if (result->added_columns.empty())
+    if (result->index_read_tasks.empty())
         return result->filter_node;
 
     /// Keep columns the PREWHERE or row-level filter still read, so this filter DAG's removal does not drop them from the shared read set.
@@ -1074,7 +1078,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     }
 
     auto logger = getLogger("processAndOptimizeTextIndexFunctions");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(result->added_columns, result->removed_columns));
+    LOG_DEBUG(logger, "{}", optimizationInfoToString(result->index_read_tasks, result->removed_columns));
 
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
@@ -1083,8 +1087,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
             LOG_DEBUG(logger, "Text index '{}' is not fully materialized. In some parts, direct read from text index cannot be used.", index_name);
     }
 
-    const auto & indexes = read_from_merge_tree_step.getIndexes();
-    read_from_merge_tree_step.createReadTasksForTextIndex(indexes->skip_indexes, result->added_columns, result->removed_columns);
+    read_from_merge_tree_step.createReadTasksForTextIndex(std::move(result->index_read_tasks), result->removed_columns);
     return result->filter_node;
 }
 

@@ -81,7 +81,6 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeDataPartInfoForReader & part_info;
     const IMergeTreeIndex & index;
     const MarkRanges * readable_ranges = nullptr;
-    /// Whether the analysis of a text index granule reads the posting lists of the tokens.
     bool text_index_read_postings = true;
     const MergeTreeReaderSettings & reader_settings;
 };

@@ -201,11 +201,19 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
+    /// `m['key'] IN (...)`: one pair token per set element, searched as one `Any` query.
+    bool traverseMapElementKeyValueSetNode(
+        const RPNBuilderTreeNode & lhs,
+        const RPNBuilderTreeNode & rhs,
+        const String & function_name,
+        RPNElement & out) const;
+
     /// `mapContainsKeyValue(m, 'key', 'value')`: both pair tokens, searched as one `Any` query.
     bool traverseMapContainsKeyValueNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
-    VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
-    VectorWithMemoryTracking<String> stringToTokens(std::string_view raw) const;
+    /// `compact` is valid only for `All` queries; `Any` queries must keep covered tokens.
+    VectorWithMemoryTracking<String> stringToTokens(const Field & field, bool compact) const;
+    VectorWithMemoryTracking<String> stringToTokens(std::string_view raw, bool compact) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
 
