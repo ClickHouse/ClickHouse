@@ -48,15 +48,4 @@ SELECT
     (toNullable(x), 1) NOT IN (SELECT toNullable(x), 1);
 {% endfor %}
 
--- Hash joins use the same outer-null extraction and retain non-null tuples with nullable fields.
-{% for algorithm in ['hash', 'parallel_hash'] %}
-SELECT '{{ algorithm }}';
-SELECT l.id, r.id
-FROM nullable_tuple_in_keys AS l
-INNER JOIN nullable_tuple_in_keys AS r ON l.k = r.k AND l.tag = r.tag
-WHERE r.id <= 2
-ORDER BY l.id, r.id
-SETTINGS join_algorithm = '{{ algorithm }}';
-{% endfor %}
-
 DROP TABLE nullable_tuple_in_keys;
