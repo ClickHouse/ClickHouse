@@ -13,6 +13,11 @@
         The second query is a control: the same 10 regexps with no typed paths at all. The
         cross-check loop has nothing to iterate, so it compiles 10 patterns per block both
         before and after, and should stay flat while the first query speeds up.
+
+        Both queries read a subcolumn rather than `count()`. A `count()` requests no columns,
+        so `optimize_count_from_files` answers it from the row count cached by
+        `use_cache_for_count_from_files` and never opens the file, let alone parses a block
+        header.
     -->
 
     <settings>
@@ -166,8 +171,8 @@
     <fill_query>INSERT INTO json_type_skip_regexp_control_src SELECT materialize('{{}}') FROM numbers(2000) SETTINGS max_block_size = 100, max_insert_block_size = 100, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0</fill_query>
     <fill_query>INSERT INTO FUNCTION file(json_type_skip_regexp_control.native, Native) SELECT * FROM json_type_skip_regexp_control_src SETTINGS max_block_size = 100, engine_file_truncate_on_insert = 1</fill_query>
 
-    <query>SELECT count() FROM file(json_type_skip_regexp.native, Native) FORMAT Null</query>
-    <query>SELECT count() FROM file(json_type_skip_regexp_control.native, Native) FORMAT Null</query>
+    <query>SELECT json.http.status_code FROM file(json_type_skip_regexp.native, Native) FORMAT Null</query>
+    <query>SELECT json.http.status_code FROM file(json_type_skip_regexp_control.native, Native) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS json_type_skip_regexp_src</drop_query>
     <drop_query>DROP TABLE IF EXISTS json_type_skip_regexp_control_src</drop_query>
