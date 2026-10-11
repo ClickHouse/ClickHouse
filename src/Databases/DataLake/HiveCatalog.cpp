@@ -10,8 +10,10 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Settings.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Common/RemoteHostFilter.h>
 #include <Databases/DataLake/Common.h>
 #include <Common/FailPoint.h>
 
@@ -74,8 +76,9 @@ std::pair<String, Int32> parseHostPort(const String & url)
 
 }
 
-HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr)
+HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr context_)
     : ICatalog(warehouse_)
+    , DB::WithContext(context_)
     , base_url(base_url_)
 {
     std::lock_guard lock(client_mutex);
@@ -97,6 +100,8 @@ void HiveCatalog::reconnectUnlocked() const TSA_REQUIRES(client_mutex)
     }
 
     auto [host, port] = parseHostPort(base_url);
+
+    getContext()->getRemoteHostFilter().checkHostAndPort(host, std::to_string(port));
 
     socket = std::make_shared<apache::thrift::transport::TSocket>(host, port);
     transport = std::make_shared<apache::thrift::transport::TBufferedTransport>(socket);
