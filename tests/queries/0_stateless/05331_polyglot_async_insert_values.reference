@@ -1,0 +1,4 @@
+--- async insert (expect: 10 4) ---
+10	4
+--- distributed insert (expect: 21 6) ---
+21	6
