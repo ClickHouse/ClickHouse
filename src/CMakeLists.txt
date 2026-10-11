@@ -355,6 +355,7 @@ endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::heks)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
 endif()
@@ -1075,7 +1076,8 @@ if (ENABLE_TESTS)
         readpassphrase
         # `gtest_lz4_decompress_branchless` includes `<lz4.h>` directly; the include path only
         # propagates transitively in full-library builds, so declare the dependency explicitly.
-        ch_contrib::lz4)
+        ch_contrib::lz4
+        ch_contrib::heks)
 
     foreach (flavour adversary simulation)
         set(executor_tests executor_${flavour}_tests)
