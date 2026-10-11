@@ -541,7 +541,8 @@ public:
         StorageID view_id_, StoragePtr view_storage_, StorageMetadataPtr view_metadata_,
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
         ContextPtr context_,
-        bool async_insert_)
+        bool async_insert_,
+        size_t num_squashing_pipelines_)
         : ExceptionKeepingTransform(input_header, output_header)
         , select_query(select_query_)
         , source_id(source_id_)
@@ -555,6 +556,7 @@ public:
         , inner_storage(inner_storage_)
         , context(context_)
         , async_insert(async_insert_)
+        , num_squashing_pipelines(num_squashing_pipelines_)
     {
     }
 
@@ -600,6 +602,8 @@ private:
     StoragePtr inner_storage;
     ContextPtr context;
     bool async_insert = false;
+    /// See `InsertDependenciesBuilder::getNumSquashingPipelines`.
+    size_t num_squashing_pipelines = 1;
 
     struct State
     {
@@ -719,7 +723,7 @@ private:
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
             settings[Setting::min_insert_block_size_rows],
-            capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], getNumSquashingPipelines()),
+            capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes], num_squashing_pipelines),
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -1670,7 +1674,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
-            async_insert);
+            async_insert,
+            getNumSquashingPipelines());
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
@@ -1685,7 +1690,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
             select_context,
-            async_insert);
+            async_insert,
+            getNumSquashingPipelines());
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
