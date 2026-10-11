@@ -86,6 +86,11 @@ for parallel_replicas_prefer_local_join in 1 0; do
         set automatic_parallel_replicas_mode=0;
         set parallel_replicas_prefer_local_join=${parallel_replicas_prefer_local_join};
         set parallel_replicas_local_plan=${prefer_local_plan};
+        -- The assertion below extracts the shipped query text out of the reading step description,
+        -- which only the query-based implementation produces. Backticks are avoided in this comment
+        -- on purpose: it sits inside a double-quoted shell string, where they would be command
+        -- substitution.
+        set parallel_replicas_plan_based=0;
         set allow_experimental_parallel_reading_from_replicas=${enable_parallel_replicas}, cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=100, parallel_replicas_for_non_replicated_merge_tree=1;
 
         --SELECT '----- enable_parallel_replicas=$enable_parallel_replicas prefer_local_plan=$prefer_local_plan parallel_replicas_prefer_local_join=$parallel_replicas_prefer_local_join -----';
