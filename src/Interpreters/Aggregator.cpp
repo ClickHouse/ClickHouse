@@ -30,6 +30,7 @@
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -187,7 +188,7 @@ void updateStatistics(
     const DB::ManyAggregatedDataVariants & data_variants,
     DB::AdaptiveAggregationSession * adaptive_session,
     const DB::StatsCollectingParams & params,
-    size_t linked_top_k)
+    const DB::Aggregator::Params::TopKParams * linked_top_k)
 {
     if (!params.isCollectionAndUseEnabled())
         return;
@@ -203,9 +204,17 @@ void updateStatistics(
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
 
-    /// A linked read drops rows beyond the boundary once a heap holds `k` keys, so then the tables may hold only the top groups.
-    if (linked_top_k && sum_of_sizes >= linked_top_k)
+    /// A linked read drops the rows beyond a published boundary, so the tables may hold only the top groups.
+    if (linked_top_k && linked_top_k->threshold_tracker->isSet())
         return;
+
+    /// Without a boundary, only query condition cache entries of earlier runs can have dropped rows: never lower the record then.
+    if (linked_top_k && sum_of_sizes >= linked_top_k->k)
+    {
+        const auto prev = DB::getHashTablesStatistics<DB::AggregationEntry>().getSizeHint(params);
+        if (prev && sum_of_sizes < prev->sum_of_sizes)
+            return;
+    }
 
     /// A run that staged enough records to trust the thaw sampler records the measured verdict;
     /// any other run carries the stored verdict over, so that runs without an adaptive
@@ -5195,7 +5204,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
         data_variants,
         adaptive_session,
         params.stats_collecting_params,
-        params.top_k && params.top_k->threshold_tracker ? params.top_k->k : 0);
+        params.top_k && params.top_k->threshold_tracker ? &*params.top_k : nullptr);
 
     ManyAggregatedDataVariants non_empty_data;
     non_empty_data.reserve(data_variants.size());

@@ -95,6 +95,10 @@ INSERT INTO FUNCTION file('${DIR}/stats.parquet', Parquet) SELECT intDiv(number,
 SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
 CREATE TABLE t_05361_stats (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
 INSERT INTO t_05361_stats SELECT intDiv(number, 100), number % 10, number % 2 FROM numbers(100000);
+CREATE TABLE t_05361_few (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_05361_few SELECT number % 3 FROM numbers(100000);
+CREATE TABLE t_05361_seed (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1000;
+INSERT INTO t_05361_seed SELECT number % 3 FROM numbers(100000);
 
 CREATE TABLE t_05361_random (a UInt64, c UInt64) ENGINE = File(Parquet, '${DIR}/random.parquet');
 CREATE TABLE t_05361_tuple (s Tuple(a UInt64, b Nullable(UInt64))) ENGINE = File(Parquet, '${DIR}/tuple.parquet');
@@ -187,7 +191,26 @@ SETTINGS log_comment = '05361_stats_mt_1', max_block_size = 100, optimize_aggreg
 SELECT 'h2', groupArray((a, b, x)) FROM (SELECT a, b, count() AS x FROM t_05361_stats GROUP BY a, b LIMIT 10)
 SETTINGS log_comment = '05361_stats_mt_2', max_block_size = 100, optimize_aggregation_in_order = 0, collect_hash_table_stats_during_aggregation = 1;
 
-SYSTEM FLUSH LOGS query_log;
+SELECT 'a run whose threads see the same few groups records them';
+SELECT k, count() FROM t_05361_few GROUP BY k LIMIT 5 FORMAT Null
+SETTINGS log_comment = '05361_few_1', max_threads = 2, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
+    collect_hash_table_stats_during_aggregation = 1, log_processors_profiles = 1;
+SELECT k, count() FROM t_05361_few GROUP BY k LIMIT 5 FORMAT Null
+SETTINGS log_comment = '05361_few_2', max_threads = 2, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
+    collect_hash_table_stats_during_aggregation = 1, log_processors_profiles = 1;
+
+SELECT 'a linked run without a boundary keeps a larger record';
+SELECT k, count() FROM t_05361_seed GROUP BY k LIMIT 5 FORMAT Null
+SETTINGS log_comment = '05361_seed_1', max_threads = 16, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
+    collect_hash_table_stats_during_aggregation = 1, log_processors_profiles = 1;
+SELECT k, count() FROM t_05361_seed GROUP BY k LIMIT 5 FORMAT Null
+SETTINGS log_comment = '05361_seed_2', max_threads = 2, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
+    collect_hash_table_stats_during_aggregation = 1, log_processors_profiles = 1;
+SELECT k, count() FROM t_05361_seed GROUP BY k LIMIT 5 FORMAT Null
+SETTINGS log_comment = '05361_seed_3', max_threads = 2, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1,
+    collect_hash_table_stats_during_aggregation = 1, log_processors_profiles = 1;
+
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
 SELECT log_comment, ProfileEvents['ParquetRowsFilterExpression'] > 0, ProfileEvents['ParquetTopKSkippedRowGroups'] > 0,
     ProfileEvents['SelectedRows'] < 100000
 FROM system.query_log
@@ -213,7 +236,20 @@ ORDER BY log_comment;
 SELECT log_comment, ProfileEvents['ParquetTopKSkippedRowGroups'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05361_count_s3' AND type = 'QueryFinish';
+-- Two threads hold the 3 groups each, and 6 <= 5 * 1.5 drops the heap and its sort from the second run.
+SELECT 'few_1', countDistinct(name) > 0 FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name LIKE '%Sorting%' AND query_id IN (SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment = '05361_few_1' AND type = 'QueryFinish');
+SELECT 'few_2', countDistinct(name) > 0 FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name LIKE '%Sorting%' AND query_id IN (SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment = '05361_few_2' AND type = 'QueryFinish');
+-- The first run records 3 groups per thread; the second, linked and without a boundary, must not lower that to 6.
+SELECT 'seed_3', countDistinct(name) > 0 FROM system.processors_profile_log
+WHERE event_date >= yesterday() AND name LIKE '%Sorting%' AND query_id IN (SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND log_comment = '05361_seed_3' AND type = 'QueryFinish');
 
+DROP TABLE t_05361_few;
+DROP TABLE t_05361_seed;
 DROP TABLE t_05361_stats;
 DROP TABLE t_05361_random;
 DROP TABLE t_05361_tuple;
