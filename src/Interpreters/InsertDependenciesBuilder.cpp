@@ -795,7 +795,10 @@ bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StorageP
     /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and
     /// `Buffer` forward the write through a separate (remote or background) `INSERT` that may end up
     /// in a deduplicating `MergeTree`, and a `TimeSeries` opens nested `INSERT`s into its inner
-    /// `Tags` / `Samples` / `Metrics` tables (which are themselves usually `MergeTree`).
+    /// `Tags` / `Samples` / `Metrics` tables (which are themselves usually `MergeTree`). A `Buffer`
+    /// over a plain destination is the exception, see `bufferWriteIsInsensitiveToFanOut`.
+    if (bufferWriteIsInsensitiveToFanOut(storage))
+        return false;
     if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
         || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
@@ -881,7 +884,9 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
     /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and `Buffer`
     /// forward the write through a separate (remote or background) `INSERT` that may reach a dependent view,
     /// and a `TimeSeries` opens nested `INSERT`s into its inner tables, which may have dependent views of
-    /// their own.
+    /// their own. A `Buffer` over a plain destination without dependent views reaches none.
+    if (bufferWriteIsInsensitiveToFanOut(storage))
+        return false;
     if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
         || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
@@ -911,7 +916,9 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     /// `Distributed` and `Buffer` forward the write through a separate (remote or background) `INSERT`
     /// whose destination is not cheaply known here, and a `TimeSeries` expands the dependent-view graph
     /// of its inner tables only inside the nested `INSERT`s `TimeSeriesSink` opens at execution time:
-    /// fail closed.
+    /// fail closed. A `Buffer` over a plain destination without dependent views hides none.
+    if (bufferWriteIsInsensitiveToFanOut(storage))
+        return false;
     if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
         || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
@@ -1015,7 +1022,11 @@ bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const Sto
     /// forwards the write to a remote shard whose table is not cheaply known here and may itself be (or
     /// forward to) such a `Buffer`: this query's settings do travel to the shard, but the shard's `Buffer`
     /// would then flush in its own context. In both cases disabling deduplication for this `INSERT` does
-    /// not make the write fan-out safe, so fail closed.
+    /// not make the write fan-out safe, so fail closed. A `Buffer` over a destination that never
+    /// deduplicates and has no dependent views is the exception: its own context has nothing to apply
+    /// to the flush that the fan-out could break, see `bufferWriteIsInsensitiveToFanOut`.
+    if (bufferWriteIsInsensitiveToFanOut(storage))
+        return false;
     if (dynamic_cast<const StorageBuffer *>(storage.get()) || dynamic_cast<const StorageDistributed *>(storage.get()))
         return true;
 

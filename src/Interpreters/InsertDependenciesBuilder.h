@@ -186,6 +186,8 @@ public:
     /// destination resolves to a `MergeTree`-family table that never deduplicates and has no dependent
     /// views at all - then neither the deduplication guard nor `parallel_view_processing = 0` has anything
     /// to protect, and `max_insert_threads` keeps applying. Anything else fails closed (returns false).
+    /// The deduplication and hidden-view probes above treat such a `Buffer` as a plain sink, so this also
+    /// applies when it is reached through a forwarding hop (`Alias`, a materialized view `TO` it).
     static bool bufferWriteIsInsensitiveToFanOut(const StoragePtr & storage);
 
     /// Whether `storage` has a dependent materialized view which the nested `INSERT` will execute.
