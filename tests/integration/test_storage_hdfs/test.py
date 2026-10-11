@@ -714,6 +714,82 @@ def test_multiple_inserts(started_cluster):
     node1.query("drop table test_multiple_inserts")
 
 
+def test_split_on_write_by_size(started_cluster):
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+    id = uuid.uuid4()
+    fs.mkdirs(f"/{id}/", permission=777)
+
+    # Every block is exactly 100 numbers, and a new file is started as soon as 1000 bytes are written,
+    # so the resulting files are the same on every run.
+    settings = (
+        "max_threads = 1, max_insert_threads = 1, max_block_size = 100, "
+        "min_insert_block_size_rows = 100, min_insert_block_size_bytes = 0, "
+        "hdfs_split_on_write_by_size_bytes = 1000"
+    )
+    table_function = f"hdfs('hdfs://hdfs1:9000/{id}/data.tsv', 'TSV', 'x UInt64')"
+    wildcard = f"hdfs('hdfs://hdfs1:9000/{id}/data*.tsv', 'TSV', 'x UInt64')"
+    node1.query(f"create table test_split_on_write as {table_function}")
+
+    def files():
+        return sorted(fs.listdir(f"/{id}/"))
+
+    # A split insert: 1000 numbers of ~3.9 bytes each are written into 4 files.
+    node1.query(
+        f"insert into test_split_on_write select number from numbers(1000) settings {settings}"
+    )
+    assert files() == ["data.1.tsv", "data.2.tsv", "data.3.tsv", "data.tsv"]
+    assert node1.query(
+        "select count(), min(x), max(x) from test_split_on_write"
+    ) == TSV([[1000, 0, 999]])
+    assert node1.query(f"select count() from {wildcard}") == TSV([[1000]])
+
+    # A smaller truncating rewrite: the numbered tail of the previous insert is deleted,
+    # both the table and a wildcard over the same prefix see only the new rows.
+    node1.query(
+        f"insert into test_split_on_write select number from numbers(1000, 300) settings {settings}, hdfs_truncate_on_insert = 1"
+    )
+    assert files() == ["data.1.tsv", "data.tsv"]
+    assert node1.query(
+        "select count(), min(x), max(x) from test_split_on_write"
+    ) == TSV([[300, 1000, 1299]])
+    assert node1.query(f"select count() from {wildcard}") == TSV([[300]])
+
+    # `TRUNCATE TABLE`: all the files are gone, and the next split insert starts the numbering over.
+    node1.query("truncate table test_split_on_write")
+    assert files() == []
+
+    node1.query(
+        f"insert into test_split_on_write select number from numbers(500) settings {settings}"
+    )
+    assert files() == ["data.1.tsv", "data.tsv"]
+    assert node1.query(
+        "select count(), min(x), max(x) from test_split_on_write"
+    ) == TSV([[500, 0, 499]])
+
+    node1.query("drop table test_split_on_write")
+
+    # The table function keeps no list of the files written by a previous insert, so a truncating
+    # split insert into it claims the whole numbered sequence of its name: the files it does not
+    # rewrite are deleted by their numbers.
+    node1.query(
+        f"insert into table function {table_function} select number from numbers(1000) settings {settings}, hdfs_truncate_on_insert = 1"
+    )
+    assert files() == ["data.1.tsv", "data.2.tsv", "data.3.tsv", "data.tsv"]
+    assert node1.query(f"select count(), min(x), max(x) from {wildcard}") == TSV(
+        [[1000, 0, 999]]
+    )
+
+    node1.query(
+        f"insert into table function {table_function} select number from numbers(1000, 300) settings {settings}, hdfs_truncate_on_insert = 1"
+    )
+    assert files() == ["data.1.tsv", "data.tsv"]
+    assert node1.query(f"select count(), min(x), max(x) from {wildcard}") == TSV(
+        [[300, 1000, 1299]]
+    )
+
+    fs.delete(f"/{id}/", recursive=True)
+
+
 def test_format_detection_from_file_name(started_cluster):
     node1.query(
         "create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')"

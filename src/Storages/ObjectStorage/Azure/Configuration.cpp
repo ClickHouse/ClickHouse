@@ -31,6 +31,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool azure_create_new_file_on_insert;
+    extern const SettingsUInt64 azure_split_on_write_by_size_bytes;
     extern const SettingsBool azure_ignore_file_doesnt_exist;
     extern const SettingsUInt64 azure_list_object_keys_size;
     extern const SettingsBool azure_skip_empty_files;
@@ -80,6 +81,7 @@ StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(co
     return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::azure_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::azure_create_new_file_on_insert],
+        .split_on_write_by_size_bytes = settings[Setting::azure_split_on_write_by_size_bytes],
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_azure],
         .schema_inference_mode = settings[Setting::schema_inference_mode],
         .skip_empty_files = settings[Setting::azure_skip_empty_files],

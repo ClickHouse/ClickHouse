@@ -1,0 +1,33 @@
+--- The table remembers its numbered tail
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+CANNOT_OPEN_FILE
+CANNOT_OPEN_FILE
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+--- The table function claims the numbered sequence
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+FILE_DOESNT_EXIST
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+--- A partitioned insert claims the numbered sequence of the partition
+data_p.1.tsv
+data_p.2.tsv
+data_p.3.tsv
+data_p.tsv
+FILE_DOESNT_EXIST
+data_p.1.tsv
+data_p.2.tsv
+data_p.3.tsv
+data_p.tsv
+--- The path of the table function expands into no files
+INCORRECT_FILE_NAME

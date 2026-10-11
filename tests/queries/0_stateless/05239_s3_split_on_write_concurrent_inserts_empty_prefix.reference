@@ -1,0 +1,17 @@
+=== The inserts are not split by size: each of them writes exactly one object
+--- Every row of both inserts is there
+200	200
+--- No key holds the rows of both inserts
+1
+--- The table reads every object it has written
+200	200
+--- The second insert stepped aside into the first numbered key
+data.1.tsv	100
+data.tsv	100
+=== The inserts are split by size on every block
+--- Every row of both inserts is there
+200	200
+--- No key holds the rows of both inserts
+1
+--- The table reads every object it has written
+200	200

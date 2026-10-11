@@ -1,0 +1,8 @@
+--- The second file of the insert cannot be created
+FILE_DOESNT_EXIST
+--- The table reads the file that was written, and not the one that could not be created
+300	0
+--- The rest of the data is written after the obstacle is gone
+500	1199
+data.1.tsv
+data.tsv

@@ -1,0 +1,19 @@
+--- A split insert
+1000	0	999
+data.1.tsv
+data.2.tsv
+data.3.tsv
+data.tsv
+--- The table is truncated: the numbered files are gone, the first one is empty
+0
+data.tsv
+0
+--- The next split insert starts the numbering over
+500	1000	1499
+data.1.tsv
+data.2.tsv
+data.tsv
+--- Truncated again, and read both from the table and by a glob over the directory
+300	0	299
+300	0	299
+data.tsv
