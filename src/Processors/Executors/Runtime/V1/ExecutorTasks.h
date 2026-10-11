@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Executors/Runtime/V1/ExecutionThreadContext.h>
 #include <Processors/Executors/Runtime/V1/PollingQueue.h>
 #include <Processors/Executors/Runtime/V1/ThreadsQueue.h>
 #include <Processors/Executors/Runtime/V1/TasksQueue.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ISlotControl.h>
 #include <Common/Logger.h>
 
@@ -14,7 +15,6 @@
 #include <queue>
 #include <vector>
 
-#include <boost/container/devector.hpp>
 
 namespace DB
 {
@@ -32,7 +32,7 @@ class ExecutorTasks
     std::atomic_bool finished = false;
 
     /// Contexts for every executing thread.
-    std::vector<std::unique_ptr<ExecutionThreadContext>> executor_contexts;
+    VectorWithMemoryTracking<std::unique_ptr<ExecutionThreadContext>> executor_contexts;
     /// This mutex protects only executor_contexts vector. Needed to avoid race between init() and finish().
     std::mutex executor_contexts_mutex;
 
@@ -60,7 +60,7 @@ class ExecutorTasks
     size_t use_threads = 0;
 
     /// Reference counters for thread CPU slots to handle race conditions between upscale/downscale.
-    std::vector<size_t> slot_count;
+    VectorWithMemoryTracking<size_t> slot_count;
 
     /// Total number of non-preempted slots.
     size_t total_slots = 0;
@@ -75,10 +75,9 @@ class ExecutorTasks
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
 
 public:
-    /// This queue can grow a lot and lead to OOM. That is why we use non-default
-    /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
-    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
+    /// This queue can grow a lot and lead to OOM, so it is allocated through a tracking
+    /// allocator that throws instead of overcommitting.
+    using Queue = DevectorQueueWithMemoryTracking<IProcessor *>;
 
     void finish();
     bool isFinished() const { return finished; }
