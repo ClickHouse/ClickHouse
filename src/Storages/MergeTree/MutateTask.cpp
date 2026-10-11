@@ -2894,9 +2894,10 @@ static bool isIndexResolvableFromOwnFiles(
     return false;
 }
 
-/// Does the part hold a file of `index` on disk, under any substream it declares? Wider than
-/// `hasSecondaryIndex`, which probes only the base `.idx` / `.idx2`: repair must also see a part
-/// left with just its side streams. Read-time callers keep the narrower predicate.
+/// Does the part hold a file of `index` on disk, under any substream any version of it could have
+/// written (`getPotentialSubstreams`)? Wider than `hasSecondaryIndex`, which probes only the base
+/// `.idx` / `.idx2`: repair must also see a part left with just its side streams, including one the
+/// current definition does not write. Read-time callers keep the narrower predicate.
 static bool hasAnyIndexFileOnDisk(
     const IMergeTreeIndex & index,
     const MergeTreeDataPartPtr & source_part,
@@ -2909,7 +2910,7 @@ static bool hasAnyIndexFileOnDisk(
 
     const auto & storage = source_part->getDataPartStorage();
     const String file_name = index.getFileName();
-    for (const auto & substream : index.getSubstreams())
+    for (const auto & substream : index.getPotentialSubstreams())
     {
         const String stream_name = file_name + substream.suffix;
         if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, storage))
@@ -4188,12 +4189,13 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             if (resolvable_from_checksums)
                 continue;
 
-            /// Walk every declared substream, taking only the extension it declares plus minmax's
-            /// legacy `.idx` for a `.idx2` substream. A file registered in `checksums.txt` is not an
-            /// orphan: index names can share an on-disk name, and the registered owner may be an
+            /// Walk every substream any version of the index could have written (`getPotentialSubstreams`
+            /// covers minmax's legacy `.idx` and a text index's `.pos` the current definition does not
+            /// write), taking only the extension it declares. A file registered in `checksums.txt` is not
+            /// an orphan: index names can share an on-disk name, and the registered owner may be an
             /// index this same mutation drops, so it is absent from the post-drop metadata.
             const String file_name = index_ptr->getFileName();
-            for (const auto & index_substream : index_ptr->getSubstreams())
+            for (const auto & index_substream : index_ptr->getPotentialSubstreams())
             {
                 const String stream_name = file_name + index_substream.suffix;
                 auto collect = [&](const String & extension)
@@ -4206,8 +4208,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 };
 
                 collect(index_substream.extension);
-                if (index_substream.extension == ".idx2")
-                    collect(".idx");
                 collect(ctx->mrk_extension);
             }
         }

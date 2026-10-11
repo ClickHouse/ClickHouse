@@ -4403,6 +4403,39 @@ SELECT arrayZipUnaligned(['a'], [1, 2, 3]);
 [('a',1),(NULL,2),(NULL,3)]
 ```
 
+## array_position {#array_position}
+
+Introduced in: v26.8.0
+
+PostgreSQL compatibility function. Returns the 1-based position of the first occurrence of the element in the array, or `NULL` when the element does not occur. A `NULL` element searches for the first `NULL` of the array, as in PostgreSQL. The native ClickHouse counterpart is `indexOf`, which returns 0 instead of `NULL`.
+
+**Syntax**
+
+```sql
+array_position(array, element)
+```
+
+**Arguments**
+
+- `array` — The array to search. [`Array(T)`](/reference/data-types/array)
+- `element` — The element to search for. [`Any`](/reference/data-types/index)
+
+**Returned value**
+
+The 1-based position of the first occurrence, or `NULL` when the element does not occur. [`Nullable(UInt64)`](/reference/data-types/nullable)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT array_position(['a', 'b'], 'b')
+```
+
+```response title=Response
+2
+```
+
 ## countEqual {#countEqual}
 
 Introduced in: v1.1.0
