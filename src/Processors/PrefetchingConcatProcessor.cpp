@@ -55,13 +55,18 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     /// flight on the port after a previous `setNotNeeded` (ports hold one chunk, which would
     /// otherwise push the buffer one past the limit). The current input is always drained
     /// because its chunks are emitted immediately and never accumulate.
+    ///
+    /// A chunk can be in flight on a port that was made not needed since (the budget was spent
+    /// or the inputs were stopped after a virtual row), so pull with `set_not_needed`: it is
+    /// allowed for a port that is not needed and leaves it not needed. Whether the input is
+    /// needed is decided below on every call.
     {
         size_t idx = 0;
         for (auto & input : inputs)
         {
             if (input.hasData()
                 && (idx == current_input_idx || buffers[idx].hasRoom(max_rows_to_buffer, max_bytes_to_buffer)))
-                buffers[idx].push(input.pull());
+                buffers[idx].push(input.pull(/* set_not_needed = */ true));
             ++idx;
         }
     }
@@ -120,7 +125,16 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
             stopAllInputs();
         }
         else
+        {
             demanded = true;
+
+            /// Keep the current input reading while downstream consumes this chunk, unless a
+            /// virtual row is still buffered: nothing may be read behind it before it is forwarded.
+            auto it = inputs.begin();
+            std::advance(it, current_input_idx);
+            if (!it->isFinished() && buffers[current_input_idx].num_virtual_rows == 0)
+                it->setNeeded();
+        }
 
         return Status::PortFull;
     }
@@ -133,6 +147,26 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     }
 
     return Status::NeedData;
+}
+
+void PrefetchingConcatProcessor::Buffer::push(Chunk && chunk)
+{
+    num_rows += chunk.getNumRows();
+    num_bytes += chunk.bytes();
+    if (isVirtualRow(chunk))
+        ++num_virtual_rows;
+    chunks.push_back(std::move(chunk));
+}
+
+Chunk PrefetchingConcatProcessor::Buffer::pop()
+{
+    auto chunk = std::move(chunks.front());
+    chunks.pop_front();
+    num_rows -= chunk.getNumRows();
+    num_bytes -= chunk.bytes();
+    if (isVirtualRow(chunk))
+        --num_virtual_rows;
+    return chunk;
 }
 
 void PrefetchingConcatProcessor::stopAllInputs()

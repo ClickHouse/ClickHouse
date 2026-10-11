@@ -61,24 +61,17 @@ private:
         std::deque<Chunk> chunks;
         size_t num_rows = 0;
         size_t num_bytes = 0;
+        size_t num_virtual_rows = 0;
 
-        bool hasRoom(size_t max_rows, size_t max_bytes) const { return num_rows < max_rows || num_bytes < max_bytes; }
-
-        void push(Chunk && chunk)
+        /// A buffered virtual row has no rows, but it announces the boundary of everything that
+        /// follows it, so nothing may be read behind it until it is forwarded.
+        bool hasRoom(size_t max_rows, size_t max_bytes) const
         {
-            num_rows += chunk.getNumRows();
-            num_bytes += chunk.bytes();
-            chunks.push_back(std::move(chunk));
+            return num_virtual_rows == 0 && (num_rows < max_rows || num_bytes < max_bytes);
         }
 
-        Chunk pop()
-        {
-            auto chunk = std::move(chunks.front());
-            chunks.pop_front();
-            num_rows -= chunk.getNumRows();
-            num_bytes -= chunk.bytes();
-            return chunk;
-        }
+        void push(Chunk && chunk);
+        Chunk pop();
     };
 
     void stopAllInputs();
