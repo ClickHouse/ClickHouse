@@ -1,0 +1,6 @@
+SystemTestType1	UInt64	\N	CREATE TYPE SystemTestType1 AS UInt64
+SystemTestType2	Array(String)	\N	CREATE TYPE SystemTestType2 AS Array(String)
+SystemTestType3	Map(K, V)	K, V	CREATE TYPE SystemTestType3(K, V) AS Map(K, V)
+SystemTestType1
+SystemTestType2
+SystemTestType3
