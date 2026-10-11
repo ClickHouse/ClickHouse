@@ -1,0 +1,26 @@
+wrapped read results
+1
+1
+1
+1
+1
+1
+wrapped read steps	1	1
+ns empty
+0	0	0
+3	0	0
+ns nonempty
+2	legacy	6
+5	modern	6
+ns null
+1	1
+4	1
+t.value empty
+0	0	0
+3	0	0
+t.value nonempty
+2	legacy	6
+5	modern	6
+t.value null
+1	1
+4	1

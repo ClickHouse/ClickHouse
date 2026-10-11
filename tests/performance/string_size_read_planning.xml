@@ -1,0 +1,96 @@
+<test run_all_queries="1">
+    <!-- Small parts emphasize per-part read planning rather than payload decoding.
+         Use explicit subcolumns so both reference and patched binaries can run
+         these queries without the new opt-in analyzer setting. -->
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+        <optimize_functions_to_subcolumns>0</optimize_functions_to_subcolumns>
+        <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
+        <enable_multiple_prewhere_read_steps>1</enable_multiple_prewhere_read_steps>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>serialization</name>
+            <values>
+                <value>single_stream</value>
+                <value>with_size_stream</value>
+            </values>
+        </substitution>
+    </substitutions>
+    <create_query>
+        CREATE TABLE string_size_read_planning_{serialization}
+        (
+            id UInt64,
+            s String
+        )
+        ENGINE = MergeTree
+        PARTITION BY id % 64
+        ORDER BY id
+        SETTINGS
+            serialization_info_version = 'with_types',
+            string_serialization_version = '{serialization}',
+            ratio_of_defaults_for_sparse_serialization = 0,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+    <fill_query>
+        INSERT INTO string_size_read_planning_{serialization}
+        SELECT number, repeat('x', number % 32)
+        FROM numbers(4096)
+    </fill_query>
+
+    <!-- No early steps: all requested columns already share one reader. -->
+    <query tag="String size planning without early reads">
+        SELECT s, s.size FROM string_size_read_planning_{serialization} FORMAT Null
+    </query>
+    <!-- No full `String` consumer: do not resolve a legacy co-read companion. -->
+    <query tag="String size-only PREWHERE planning">
+        SELECT id FROM string_size_read_planning_{serialization} PREWHERE s.size &gt; 0 FORMAT Null
+    </query>
+    <!-- The parent is needed only by a later filter, not by the result. -->
+    <query tag="String size planning with a full-String filter">
+        SELECT id FROM string_size_read_planning_{serialization}
+        PREWHERE s.size &gt; 0 AND position(s, 'x') = 1 FORMAT Null
+    </query>
+    <!-- Control: no `String` size subcolumn at all. -->
+    <query tag="Full String read planning control">
+        SELECT s FROM string_size_read_planning_{serialization} FORMAT Null
+    </query>
+    <!-- A single predicate reads the parent and size together, even with multiple steps enabled. -->
+    <query tag="String size planning in the same PREWHERE step">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size + position(s, 'x') &gt; 0 FORMAT Null
+    </query>
+    <!-- An unrelated early filter leaves both String columns in the same main reader. -->
+    <query tag="String size planning in the same main reader">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE id % 3 != 0 FORMAT Null
+    </query>
+    <!-- Repeated size inputs must not repeat modern serialization inspection per part. -->
+    <query tag="String size planning with repeated size inputs">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size &gt; 0 AND id % 3 != 0 AND position(s, 'x') = 1
+            AND s.size + id &gt; 0 FORMAT Null
+    </query>
+    <!-- Repeated size inputs must not pull an output-only String into PREWHERE. -->
+    <query tag="Repeated size inputs with an output-only String">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size &gt; 0 AND id % 3 != 0 AND s.size + id &gt; 1 FORMAT Null
+    </query>
+    <!-- The first String reader already reads its size; later size inputs need no companion. -->
+    <query tag="Repeated size inputs after a shared String reader">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size + position(s, 'x') &gt; 0 AND id % 3 != 0
+            AND s.size + id &gt; 1 FORMAT Null
+    </query>
+    <!-- A shared later reader still needs pairing when an earlier step reads only the size. -->
+    <query tag="Size input before a shared String reader">
+        SELECT s, s.size FROM string_size_read_planning_{serialization}
+        PREWHERE s.size &gt; 0 AND id % 3 != 0
+            AND s.size + position(s, 'x') &gt; 1 FORMAT Null
+    </query>
+    <drop_query>DROP TABLE IF EXISTS string_size_read_planning_{serialization}</drop_query>
+</test>
