@@ -173,7 +173,7 @@ DROP ROW POLICY p_05361_steps ON t_05361_steps;
 SELECT 'the row count of a file is not cached from a read with the boundary';
 SELECT k, count() FROM file('${DIR}/count_{1,2}.parquet') GROUP BY k LIMIT 3;
 SELECT _file, count() FROM file('${DIR}/count_{1,2}.parquet') GROUP BY _file ORDER BY _file;
-SELECT k, count() FROM s3(s3_conn, filename = '${DIR}_count_{1,2}.parquet', format = Parquet) GROUP BY k LIMIT 3;
+SELECT k, count() FROM s3(s3_conn, filename = '${DIR}_count_{1,2}.parquet', format = Parquet) GROUP BY k LIMIT 3 SETTINGS log_comment = '05361_count_s3';
 SELECT replaceOne(_file, '${DIR}', '') AS f, count() FROM s3(s3_conn, filename = '${DIR}_count_{1,2}.parquet', format = Parquet)
 GROUP BY f ORDER BY f;
 
@@ -209,6 +209,10 @@ SELECT log_comment, ProfileEvents['SelectedRows'] < if(log_comment LIKE '05361_s
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05361_stats_%' AND type = 'QueryFinish'
 ORDER BY log_comment;
+-- The object storage read is linked too.
+SELECT log_comment, ProfileEvents['ParquetTopKSkippedRowGroups'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05361_count_s3' AND type = 'QueryFinish';
 
 DROP TABLE t_05361_stats;
 DROP TABLE t_05361_random;
