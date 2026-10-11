@@ -145,6 +145,11 @@ UInt64 getMaxSourcePartsBytesForMerge(
     return std::min(max_size, static_cast<UInt64>(static_cast<double>(max_unreserved_free_space) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
+UInt64 estimateNeededDiskSpaceForMutation(const MergeTreeDataPartPtr & source_part)
+{
+    return static_cast<UInt64>(static_cast<double>(source_part->getBytesOnDisk()) * DISK_USAGE_COEFFICIENT_TO_RESERVE);
+}
+
 UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out_log_comment)
 {
     const auto data_settings = data.getSettings();
