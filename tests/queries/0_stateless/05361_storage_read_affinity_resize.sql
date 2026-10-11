@@ -34,6 +34,18 @@ SELECT countIf(trimLeft(explain) LIKE 'AffinityResize%') FROM (EXPLAIN PIPELINE 
 SET input_format_parquet_preserve_order = 0, parallelize_output_from_storages = 0;
 SELECT countIf(trimLeft(explain) LIKE 'AffinityResize%') FROM (EXPLAIN PIPELINE SELECT k % 7 AS g, count() FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g);
 SET parallelize_output_from_storages = 1;
+-- So does `input_format_parquet_preserve_order` in the `SETTINGS` of a table, which its reader uses instead of the query setting.
+CREATE TABLE t_preserve_order (k UInt64) ENGINE = File(Parquet) SETTINGS input_format_parquet_preserve_order = 1;
+INSERT INTO t_preserve_order SELECT number FROM numbers(1000) SETTINGS engine_file_truncate_on_insert = 0, engine_file_allow_create_multiple_files = 1;
+INSERT INTO t_preserve_order SELECT number FROM numbers(10) SETTINGS engine_file_truncate_on_insert = 0, engine_file_allow_create_multiple_files = 1;
+INSERT INTO t_preserve_order SELECT number FROM numbers(10) SETTINGS engine_file_truncate_on_insert = 0, engine_file_allow_create_multiple_files = 1;
+SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order);
+SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order) SETTINGS max_threads = 8;
+CREATE TABLE t_preserve_order_s3 (k UInt64) ENGINE = S3(s3_conn, filename = currentDatabase() || '_05361/data_*.parquet', format = Parquet) SETTINGS input_format_parquet_preserve_order = 1;
+SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order_s3);
+SELECT countIf(trimLeft(explain) LIKE '%Resize%') FROM (EXPLAIN PIPELINE SELECT k FROM t_preserve_order_s3) SETTINGS max_threads = 8;
+DROP TABLE t_preserve_order;
+DROP TABLE t_preserve_order_s3;
 
 SELECT 'file';
 SELECT arraySort(groupArray((g, c, s))) FROM (SELECT k % 7 AS g, count() AS c, sum(k) AS s FROM file(currentDatabase() || '_05361_*.parquet') GROUP BY g);

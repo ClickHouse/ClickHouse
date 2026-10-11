@@ -1379,7 +1379,7 @@ bool StorageFile::prefersLargeBlocks() const
 
 bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
 {
-    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
+    return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context, format_settings);
 }
 
 size_t StorageFile::getMaxReadStreams(size_t num_streams, ContextPtr)

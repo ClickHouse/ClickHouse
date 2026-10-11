@@ -193,7 +193,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     /// `max_num_streams` is a read-parallelism request, not a thread budget.
     const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
     /// A table with a sorting key may be read in order, which needs each stream kept.
-    if (parallelize_output && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context))
+    if (parallelize_output && parallelize_output_after_reading
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context))
         resizeOutputAfterReading(
             pipe,
             resize_to,
