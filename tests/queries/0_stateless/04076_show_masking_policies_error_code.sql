@@ -1,0 +1,3 @@
+-- Verify that SHOW MASKING POLICIES returns SUPPORT_IS_DISABLED (344)
+-- instead of UNKNOWN_TABLE (60) in OSS builds.
+SHOW MASKING POLICIES; -- { serverError SUPPORT_IS_DISABLED }
