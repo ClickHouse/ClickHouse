@@ -327,6 +327,10 @@ struct FormatSettings
         bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
+        /// Set from `json_extract_named_tuples_as_objects` by the JSON functions only, not by
+        /// `getFormatSettings`: the setting governs the `JSONExtract` family, and the `JSON` data
+        /// type must keep filling named tuples from arrays positionally.
+        bool extract_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
         bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;
@@ -399,6 +403,8 @@ struct FormatSettings
         size_t footer_read_size = 0;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
+        /// Copied from the `apply_string_filters_during_scan` query setting.
+        bool apply_string_filters = false;
 
         bool enable_json_parsing = true;
         bool preserve_order = false;
@@ -433,6 +439,7 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool detect_variant_by_structure = true;
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
@@ -448,6 +455,7 @@ struct FormatSettings
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
         bool highlight_trailing_spaces = true;
+        bool display_control_characters = true;
         bool multiline_fields = true;
         /// Set to 2 for auto
         UInt64 color = 2;
