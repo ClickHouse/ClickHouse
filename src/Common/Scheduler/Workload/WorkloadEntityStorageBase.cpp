@@ -1438,6 +1438,12 @@ void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
             to_restore = std::move(node.mapped());
     }
 
+    restoreEntities(context, to_restore, throw_if_exists, replace_if_exists);
+}
+
+void WorkloadEntityStorageBase::restoreEntities(
+    const ContextMutablePtr & context, const std::unordered_map<String, ASTPtr> & to_restore, bool throw_if_exists, bool replace_if_exists)
+{
     if (to_restore.empty())
         return;
 
@@ -1461,8 +1467,28 @@ void WorkloadEntityStorageBase::restoreEntitiesAccumulatedFromBackup(
         {
             forEachReference(entry.second, [&](const String & target, const String & source, ReferenceType type)
             {
-                if (to_restore.contains(target) || findKnownEntity(target, own_entities))
-                    return;
+                // The entity the reference resolves to once restored: an existing own entity is kept unless replaced
+                ASTPtr target_entity = replace_if_exists ? nullptr : findOwnEntity(target);
+                if (!target_entity)
+                {
+                    if (auto it = to_restore.find(target); it != to_restore.end())
+                        target_entity = it->second;
+                    else if (!(target_entity = findOwnEntity(target)))
+                        target_entity = findKnownEntity(target, own_entities);
+                }
+                if (target_entity)
+                {
+                    const bool is_resource = typeid_cast<ASTCreateResourceQuery *>(target_entity.get()) != nullptr;
+                    if (is_resource == (type == ReferenceType::ForResource))
+                        return;
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Cannot restore workload entities: workload '{}' references '{}' as a {}, but it is a {}",
+                        source,
+                        target,
+                        type == ReferenceType::ForResource ? "resource" : "parent workload",
+                        is_resource ? "resource" : "workload");
+                }
                 throw Exception(
                     ErrorCodes::CANNOT_RESTORE_TABLE,
                     "Cannot restore workload entities: workload '{}' references {} '{}' which is neither included "

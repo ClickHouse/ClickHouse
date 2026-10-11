@@ -114,6 +114,11 @@ protected:
         const Settings & settings,
         StoreMode mode);
 
+    /// Recreates own entities from a backup: checks that every reference resolves to an entity of the right kind,
+    /// then stores the entities in dependency order with `StoreMode::Restore`
+    void restoreEntities(
+        const ContextMutablePtr & context, const std::unordered_map<String, ASTPtr> & to_restore, bool throw_if_exists, bool replace_if_exists);
+
     /// Replaces own entities with loaded `new_entities` (configuration, Keeper or disk) and notifies subscribers
     /// with one transaction. Throws on invalid entities; conflicts between them are handled by `on_conflict`;
     /// entities overlapping inherited entities are shadowed.

@@ -202,6 +202,15 @@ public:
         executeWorkloadEntityQuery(*this, query);
     }
 
+    // Runs the restore of entities found in a backup (pre-check, then creation in dependency order)
+    void restoreAccumulated(const String & data)
+    {
+        std::unordered_map<String, ASTPtr> to_restore;
+        for (const auto & [entity_name, entity] : parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")))
+            to_restore.emplace(entity_name, entity);
+        restoreEntities(Context::createCopy(Context::getGlobalContextInstance()), to_restore, false, false);
+    }
+
     // Recreates own entities the way a RESTORE does, in the order of a backup
     void restoreFromString(const String & data)
     {
@@ -2861,6 +2870,23 @@ TEST(SchedulerWorkloadResourceManager, RestoreRecreatesHiddenEntities)
 
     // A reference to an entity that exists in no layer still fails the restore
     EXPECT_THROW(t.sql_storage->restoreFromString("CREATE WORKLOAD orphan IN missing"), DB::Exception);
+}
+
+// The restore pre-check rejects references to an entity of the wrong kind before creating anything.
+TEST(SchedulerWorkloadResourceManager, RestorePreCheckValidatesReferenceKind)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE parent (READ DISK d)");
+    t.query("CREATE WORKLOAD cpu");
+
+    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD a; CREATE WORKLOAD child IN parent"), DB::Exception);
+    EXPECT_FALSE(t.storage.has("a"));
+    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD a; CREATE WORKLOAD w SETTINGS max_concurrent_threads = 1 FOR cpu"), DB::Exception);
+    EXPECT_FALSE(t.storage.has("a"));
+
+    // A reference to an entity of the right kind, existing or restored together, passes
+    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated("CREATE RESOURCE r (READ DISK d); CREATE WORKLOAD p; CREATE WORKLOAD c IN p SETTINGS max_io_requests = 1 FOR r"));
+    EXPECT_TRUE(t.storage.has("c"));
 }
 
 // With the memory limit enabled and no `MEMORY RESERVATION` resource declared, an implicit resource is
