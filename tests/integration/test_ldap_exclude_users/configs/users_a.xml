@@ -1,0 +1,26 @@
+<clickhouse>
+    <users>
+        <!-- The harness's `default` user (from `0_common_instance_users.xml`) is deliberately kept:
+             the readiness probe run by `start_clickhouse` queries as `default`. Its empty password
+             is rejected by the LDAP directory without contacting the server, so the login falls
+             through to `users_xml` as for any other integration test. -->
+        <common_user>
+            <password>qwerty</password>
+            <access_management>1</access_management>
+            <readonly>0</readonly>
+        </common_user>
+        <!-- `janedoe` also exists in the LDAP fixture (password `qwerty`). The LDAP directory
+             excludes her, so this local definition is the only one that may authenticate her. -->
+        <janedoe>
+            <password>local</password>
+            <access_management>0</access_management>
+            <readonly>0</readonly>
+        </janedoe>
+        <!-- Application account with a locally managed secret, excluded from the LDAP directory. -->
+        <app_user1>
+            <password>vault-secret</password>
+            <access_management>0</access_management>
+            <readonly>0</readonly>
+        </app_user1>
+    </users>
+</clickhouse>

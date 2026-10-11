@@ -1,0 +1,27 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=person)(cn={user_name}))</search_filter>
+            </user_dn_detection>
+        </openldap>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <!-- Reference a server name that has no `<ldap_servers>` block at all
+                 (typo / forgotten rename). Before the fix `findLDAPUser` silently
+                 returned `false` on this path, so `EXECUTE AS` collapsed to
+                 `UNKNOWN_USER`. After the fix the missing server surfaces as a
+                 query-time `BAD_ARGUMENTS` exception, mirroring what
+                 `checkLDAPCredentials` already does on the LDAP login path. -->
+            <server>openldap_typo</server>
+        </ldap>
+    </user_directories>
+</clickhouse>
