@@ -12,18 +12,20 @@ SELECT count() FROM format(Native, 'x AggregateFunction(nothing, UInt8)', unhex(
 SETTINGS max_memory_usage = '1Gi'; -- { serverError CANNOT_READ_ALL_DATA }
 
 -- A state of 2^40 bytes with 2^24 rows: the product of the two is exactly 2^64 and used to wrap
--- around to zero, so the states were created outside of the allocated block.
+-- around to zero, so the states were created outside of the allocated block. Such a state can no longer be
+-- constructed: nested -Resample combinators are bounded to 2^20 nested states in total (ARGUMENT_OUT_OF_BOUND),
+-- which also keeps the size below the overflow; the bulk-deserialization check stays as defense in depth.
 SELECT count() FROM format(Native, 'x AggregateFunction(countResampleIfResample(0, 1048576, 1, 0, 131072, 1), UInt64, UInt8, UInt64)', unhex('018080800801785E41676772656761746546756E6374696F6E28636F756E74526573616D706C654966526573616D706C6528302C20313034383537362C20312C20302C203133313037322C2031292C2055496E7436342C2055496E74382C2055496E743634290000000000000000'))
-SETTINGS max_memory_usage = '1Gi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SETTINGS max_memory_usage = '1Gi'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- Here the product lands just below the maximum of `size_t` (it is `2^64 - 16`) instead, and then
 -- the padding and the rounding that the arena adds on top of it are what wraps around.
 SELECT count() FROM format(Native, 'x AggregateFunction(countResampleIfResample(0, 19065, 1, 0, 121146, 1), UInt64, UInt8, UInt64)', unhex('01E3CB86DC0301785C41676772656761746546756E6374696F6E28636F756E74526573616D706C654966526573616D706C6528302C2031393036352C20312C20302C203132313134362C2031292C2055496E7436342C2055496E74382C2055496E743634290000000000000000'))
-SETTINGS max_memory_usage = '1Gi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SETTINGS max_memory_usage = '1Gi'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- The number of states can also come from the offsets of an array instead of the row count.
 SELECT count() FROM format(Native, 'x Array(AggregateFunction(countResampleIfResample(0, 19065, 1, 0, 121146, 1), UInt64, UInt8, UInt64))', unhex('010101786341727261792841676772656761746546756E6374696F6E28636F756E74526573616D706C654966526573616D706C6528302C2031393036352C20312C20302C203132313134362C2031292C2055496E7436342C2055496E74382C2055496E7436342929E3A5813B000000000000000000000000'))
-SETTINGS max_memory_usage = '1Gi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SETTINGS max_memory_usage = '1Gi'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 -- Reading a column of states back is not affected.
 DROP TABLE IF EXISTS t_aggregate_states;
