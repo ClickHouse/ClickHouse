@@ -8,6 +8,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <Common/quoteString.h>
 #include <Common/saturatedDuration.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -32,6 +34,11 @@
 #include <chrono>
 
 
+namespace ProfileEvents
+{
+    extern const Event PrometheusRemoteWriteSkippedSeries;
+}
+
 namespace DB
 {
 
@@ -45,7 +52,6 @@ namespace ErrorCodes
 {
     extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -78,11 +84,26 @@ void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
         column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
 }
 
+/// Formats labels like Prometheus does, for example {job="a", instance="b"}.
+String formatLabels(const google::protobuf::RepeatedPtrField<prometheus::Label> & labels)
+{
+    String res = "{";
+    for (const auto & label : labels)
+    {
+        if (res.size() > 1)
+            res += ", ";
+        res += label.name() + "=" + doubleQuoteString(label.value());
+    }
+    return res + "}";
+}
+
 Block makeTimeSeriesBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     size_t num_metadata_rows,
     const StorageInMemoryMetadata & metadata,
-    const String & samples_column_name)
+    const String & samples_column_name,
+    size_t & num_skipped_series,
+    String & first_skipped_labels)
 {
     const size_t num_rows = time_series.size() + num_metadata_rows;
 
@@ -111,26 +132,30 @@ Block makeTimeSeriesBlock(
 
     for (const auto & element : time_series)
     {
-        std::string_view metric_name;
-        bool has_metric_name = false;
-        for (const auto & label : element.labels())
+        const auto & labels = element.labels();
+        const auto metric_name_it = std::find_if(labels.begin(), labels.end(), [](const auto & label)
+            { return label.name() == TimeSeriesTagNames::MetricName && !label.value().empty(); });
+
+        /// A series without a metric name gets an empty row, which `TimeSeriesSink` ignores.
+        if (metric_name_it == labels.end())
         {
-            if (!has_metric_name && label.name() == TimeSeriesTagNames::MetricName && !label.value().empty())
-            {
-                metric_name = label.value();
-                has_metric_name = true;
-            }
-            else
-            {
-                tags_names->insertData(label.name().data(), label.name().size());
-                tags_values->insertData(label.value().data(), label.value().size());
-            }
+            if (!num_skipped_series)
+                first_skipped_labels = formatLabels(labels);
+            metric_name_column->insertDefault();
+            tags_offsets->insert(tags_names->size());
+            time_series_offsets->insert(timestamps->size());
+            ++num_skipped_series;
+            continue;
         }
-        if (metric_name.empty())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TIME_SERIES_TAGS,
-                "Metric name is missing: a time series has no `{}` label with a non-empty value",
-                TimeSeriesTagNames::MetricName);
+
+        const auto & metric_name = metric_name_it->value();
+        for (const auto & label : labels)
+        {
+            if (&label == &*metric_name_it)
+                continue;
+            tags_names->insertData(label.name().data(), label.name().size());
+            tags_values->insertData(label.value().data(), label.value().size());
+        }
         metric_name_column->insertData(metric_name.data(), metric_name.size());
         tags_offsets->insert(tags_names->size());
 
@@ -220,14 +245,17 @@ Block makeBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
     const StorageInMemoryMetadata & metadata,
-    const String & samples_column_name)
+    const String & samples_column_name,
+    size_t & num_skipped_series,
+    String & first_skipped_labels)
 {
     Block block;
     if (!time_series.empty())
     {
         appendBlock(
             block,
-            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata, samples_column_name));
+            makeTimeSeriesBlock(
+                time_series, metrics_metadata.size(), metadata, samples_column_name, num_skipped_series, first_skipped_labels));
     }
     if (!metrics_metadata.empty())
     {
@@ -326,7 +354,24 @@ void PrometheusRemoteWriteProtocol::write(
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
+    size_t num_skipped_series = 0;
+    String first_skipped_labels;
+    insertBlock(
+        makeBlock(time_series, metrics_metadata, *metadata, samples_column_name, num_skipped_series, first_skipped_labels),
+        *time_series_storage,
+        getContext());
+
+    if (num_skipped_series)
+    {
+        ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteSkippedSeries, num_skipped_series);
+        LOG_WARNING(
+            log,
+            "{}: Skipped {} time series without a `{}` label, the first one has labels {}",
+            storage_id.getNameForLogs(),
+            num_skipped_series,
+            TimeSeriesTagNames::MetricName,
+            first_skipped_labels);
+    }
 
     LOG_TRACE(
         log,
