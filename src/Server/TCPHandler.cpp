@@ -1150,9 +1150,7 @@ void TCPHandler::runImpl()
             }
             catch (const Exception & e)
             {
-                /// Only continue to the exception if the failed log packet was rolled back.
-                /// sendLogs cancels the stream when part of the packet had already been flushed,
-                /// and a connection carrying half a packet must not be preserved for reuse.
+                /// A canceled stream holds part of the log packet, so no exception may follow it.
                 if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED && !out->isCanceled())
                 {
                     tryLogCurrentException(log, "Can't send logs to client. But we will try to send the exception.");
@@ -3290,14 +3288,12 @@ bool TCPHandler::rollbackPartialPacket(
     if (state.compression == Protocol::Compression::Enable && state.maybe_compressed_out
         && !rewind(*state.maybe_compressed_out, prev_bytes_written_compressed_out))
     {
-        /// A flush past the snapshot moved everything written before it out of this buffer, so
-        /// what is still pending belongs to the aborted packet. It has to go: finalize() would
-        /// otherwise compress it onto the stream behind the packet that replaces this one.
+        /// The flush moved everything before the snapshot out, so what is pending is the aborted packet;
+        /// finalize() would otherwise compress it behind the packet that replaces this one.
         state.maybe_compressed_out->position() -= state.maybe_compressed_out->offset();
     }
 
-    /// Only out writes to the socket, the compressed buffer writes through it, so only out can
-    /// tell whether any of this packet is beyond recall.
+    /// Only out writes to the socket (the compressed buffer writes through it), so only out decides.
     bool restored = true;
     if (out)
     {
@@ -3425,8 +3421,7 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
     {
         writeVarUInt(Protocol::Server::TableColumns, *out);
 
-        /// The packet type is on the buffer but its two strings are not: the state in which a
-        /// throw leaves a partial packet behind.
+        /// Throws with the packet type written but not its two strings.
         fiu_do_on(FailPoints::tcp_handler_throw_memory_limit_in_table_columns, {
             throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory tracker: fault injected");
         });

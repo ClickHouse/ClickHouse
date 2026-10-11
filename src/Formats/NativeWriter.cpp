@@ -135,9 +135,7 @@ void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 
     setVersionToAggregateFunctions(type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 }
 
-/// The schema of the internal text log block (InternalTextLogsQueue::getSampleBlock). An ordinary
-/// result block may well carry a column named "text" or "event_time_microseconds", so the
-/// failpoints below match on the whole schema rather than on a column name alone.
+/// The whole schema of InternalTextLogsQueue::getSampleBlock, since a result block may have a "text" column too.
 /// maybe_unused: fiu_do_on expands to nothing when libfiu is disabled.
 [[maybe_unused]] static bool isInternalTextLogBlock(const Block & block)
 {
@@ -203,8 +201,7 @@ size_t NativeWriter::write(const Block & block)
         /// Name
         writeStringBinary(column.name, ostr);
 
-        /// The column name is on the buffer but the type is not: the exact state in which a
-        /// throw leaves a half-serialized block behind.
+        /// Throws with the column name written but not its type, leaving a half-serialized block.
         fiu_do_on(FailPoints::native_writer_throw_memory_limit_mid_block, {
             if (isInternalTextLogBlock(block) && column.name == "event_time_microseconds")
                 throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Memory tracker: fault injected");
@@ -260,8 +257,7 @@ size_t NativeWriter::write(const Block & block)
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
             writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
 
-        /// Same as above, but only once the block has grown past the output buffer and been
-        /// partly flushed, so that the write can no longer be rolled back.
+        /// Same, but once the block is partly flushed and can no longer be rolled back.
         fiu_do_on(FailPoints::native_writer_throw_memory_limit_after_flush, {
             if (isInternalTextLogBlock(block) && column.name == "text"
                 && ostr.count() - written_before > ostr.internalBuffer().size())

@@ -335,9 +335,8 @@ private:
 
     void sendHello();
 
-    /// Undo a packet write that threw part-way through, so that the next packet is not appended
-    /// to a partial one. Returns false if part of it already reached the socket and cannot be
-    /// unwritten; the stream is then canceled and no further packet may be written to it.
+    /// Undoes a packet write that threw part-way, so the next packet is not appended to it.
+    /// Returns false if part of it already reached the socket; the stream is then canceled.
     static bool rollbackPartialPacket(
         QueryState & state,
         std::shared_ptr<TCPHandlerPocoChunkedWriter> & out,
