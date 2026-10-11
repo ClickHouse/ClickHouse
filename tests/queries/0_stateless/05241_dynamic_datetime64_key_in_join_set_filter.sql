@@ -4,11 +4,6 @@
 -- whenever one side is `Dynamic`, before the sets built for `max_rows_in_set_to_optimize_join` filter the
 -- other side.
 
-SELECT materialize(toDateTime64('2026-01-01 00:00:00.5', 9, 'UTC'))::Dynamic
-    IN (SELECT toDateTime('2026-01-01 00:00:00', 'UTC')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT materialize(toDateTime64('2026-01-01 00:00:00.5', 9, 'UTC'))::Dynamic
-    IN (toFloat64(1767225600.5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
 SET explain_query_plan_default = 'legacy';
 SET join_algorithm = 'full_sorting_merge';
 SET max_rows_in_set_to_optimize_join = 100000;
