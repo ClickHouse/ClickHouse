@@ -531,9 +531,27 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
 
-    /// Write each statistics blob with a length prefix, by serializing into a temp buffer first.
+    /// Write each statistics blob with a length prefix. Statistics that can compute their exact
+    /// serialized size can stream directly to the destination; the others keep the temp-buffer
+    /// fallback needed for the V4 prefix.
     for (const auto & [type, stat_ptr] : stats)
     {
+        if (std::optional<UInt64> serialized_size = stat_ptr->getSerializedSize())
+        {
+            writeIntBinary(*serialized_size, buf);
+
+            const auto count_before = buf.count();
+            stat_ptr->serialize(buf);
+            const auto written = static_cast<UInt64>(buf.count() - count_before);
+            if (written != *serialized_size)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Statistics serialization for type {} wrote {} bytes but declared {} bytes",
+                    statisticsTypeToString(type), written, *serialized_size);
+
+            continue;
+        }
+
         String temp_data;
         WriteBufferFromString temp_buf(temp_data);
         stat_ptr->serialize(temp_buf);
