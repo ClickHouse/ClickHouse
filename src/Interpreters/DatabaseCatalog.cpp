@@ -855,7 +855,7 @@ StorageID DatabaseCatalog::resolveHierarchicalName(const StorageID & table_id, c
 
 bool DatabaseCatalog::hasTablesWithPrefix(const IDatabase & database, const String & prefix, ContextPtr context_)
 {
-    TablesFilter filter{.kind = TablesFilter::Kind::Like, .pattern = prefix + "%"};
+    auto filter = TablesFilter::createLike(prefix + "%");
     auto iterator = database.getTablesIteratorWithHint(
         context_, [&](const String & table_name) { return table_name.starts_with(prefix); }, /*skip_not_loaded*/ false, filter);
     return iterator->isValid();
