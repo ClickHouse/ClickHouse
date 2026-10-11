@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <Common/transformEndianness.h>
 #include <base/types.h>
 
@@ -8,6 +10,11 @@
 
 /// Shared constants and types for the Parquet Variant (V3) binary encoding format.
 /// Used by both the read path (`VariantBinaryDecoder.cpp`) and write path (`VariantWrite.cpp`).
+
+namespace DB
+{
+struct FormatSettings;
+}
 
 namespace DB::Parquet
 {
@@ -78,5 +85,15 @@ void appendVariantPOD(T value, String & out)
     transformEndianness<std::endian::little>(value);
     out.append(reinterpret_cast<const char *>(&value), sizeof(value));
 }
+
+/// `output` must be a column of `output_type`, which is either `Dynamic` or `JSON`.
+void decodeVariantColumn(
+    const IColumn & metadata,
+    const IColumn & value,
+    IColumn & output,
+    const DataTypePtr & output_type,
+    const String & column_name,
+    size_t num_rows,
+    const FormatSettings & format_settings);
 
 }

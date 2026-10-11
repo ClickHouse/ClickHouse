@@ -207,6 +207,7 @@ private:
     bool processSubtreeArrayOuter(TraversalNode & node, size_t depth);
     bool processSubtreeArrayInner(TraversalNode & node, size_t depth);
     void processSubtreeTuple(TraversalNode & node, size_t depth);
+    bool processSubtreeDynamic(TraversalNode & node, size_t depth);
 
     void skipSchemaSubtree(size_t depth);
     size_t addVariantPrimitiveColumn(

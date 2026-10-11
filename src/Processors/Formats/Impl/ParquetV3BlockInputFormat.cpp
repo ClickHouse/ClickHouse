@@ -688,6 +688,8 @@ For some Parquet types there's no closely matching ClickHouse type. We read them
 
 ClickHouse can read and write Parquet columns annotated with the `VARIANT` logical type.
 
+Spark 4.0 writes variant columns without this annotation, so a group with just a `metadata` and a `value` field of type `BYTE_ARRAY` is also read as a variant (into `Dynamic`, or into `JSON` if that type is requested). This can be disabled with the setting `input_format_parquet_detect_variant_by_structure`, then such a group is read as a `Tuple` of the two raw fields, as before; requesting the `Dynamic` or `JSON` type for the column explicitly reads it as a variant regardless of the setting. Shredded variants (with a `typed_value` field) are only supported when the group is annotated with the `VARIANT` logical type.
+
 Parquet `VARIANT` is not the same thing as the ClickHouse [`Variant(T1, T2, ...)`](/reference/data-types/variant) data type. Parquet `VARIANT` is meant for semi-structured JSON-like data, while ClickHouse `Variant(T1, T2, ...)` is for values that can have one of several pre-defined types.
 
 ### Schema inference {#parquet-variant-schema-inference}

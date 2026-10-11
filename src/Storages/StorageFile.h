@@ -503,7 +503,7 @@ public:
     LazyFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
 private:
-    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;

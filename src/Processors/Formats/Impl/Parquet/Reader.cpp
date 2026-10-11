@@ -11,6 +11,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
@@ -45,10 +46,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Processors/Formats/Impl/Parquet/VariantReader.h>
 #include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 #include <Storages/SelectQueryInfo.h>
@@ -264,11 +265,10 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher, size_t foot
     if (file_size <= 8)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file too short: {} bytes", file_size);
 
-    /// Read a tail sized to the file (1%, clamped to [128 KiB, 2 MiB]) so it usually covers the whole
-    /// footer - FileMetaData for wider range of layouts - in one read. A non-zero
-    /// `footer_read_size` overrides this adaptive size with a fixed read size.
+    /// A second read of a local file is cheap. Elsewhere a tail sized to the file (1%, clamped to [128 KiB, 2 MiB])
+    /// usually covers the whole footer in one round trip. A non-zero `footer_read_size` is a fixed read size.
     if (footer_read_size == 0)
-        footer_read_size = std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
+        footer_read_size = prefetcher.isLocalFile() ? 64ul << 10 : std::clamp<size_t>(file_size / 100, 128ul << 10, 2ul << 20);
     /// The read must cover at least the 8-byte trailer (metadata size + magic) so the offsets below
     /// don't underflow; an explicit `footer_read_size` smaller than that is bumped up to 8.
     size_t initial_read_size = std::min(file_size, std::max<size_t>(footer_read_size, 8));
@@ -4079,9 +4079,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
     }
 
-    TypeIndex kind = output_info.nullable_group
-        ? removeNullable(output_info.input_type)->getColumnType()
-        : output_info.input_type->getColumnType();
+    /// Nullable wraps the type of a physically nullable tuple group and of a variant read as `Nullable(JSON)`.
+    TypeIndex kind = removeNullable(output_info.input_type)->getColumnType();
 
     if (output_info.is_primitive)
     {
@@ -4180,6 +4179,16 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
             res = ColumnTuple::create(num_rows);
         else
             res = ColumnTuple::create(std::move(columns));
+    }
+    else if (kind == TypeIndex::Dynamic || kind == TypeIndex::Object)
+    {
+        chassert(output_info.nested_columns.size() == 2);
+        MutableColumnPtr metadata = formOutputColumn(row_subgroup, output_info.nested_columns[0], num_rows);
+        MutableColumnPtr value = formOutputColumn(row_subgroup, output_info.nested_columns[1], num_rows);
+
+        res = output_info.input_type->createColumn();
+        res->reserve(num_rows);
+        decodeVariantColumn(*metadata, *value, *res, output_info.input_type, output_info.name, num_rows, options.format);
     }
     else
     {
