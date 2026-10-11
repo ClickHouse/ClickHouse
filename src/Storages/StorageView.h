@@ -9,6 +9,12 @@
 namespace DB
 {
 
+/// Returns `true` if there is a `Nullable` column in `src_block` whose namesake in `dst_block` is not `Nullable`.
+bool changedNullabilityOneWay(const Block & src_block, const Block & dst_block);
+
+/// Returns `true` if the query contains `LEFT ARRAY JOIN` at any level of nesting.
+bool hasLeftArrayJoin(const IAST & ast);
+
 class StorageView final : public StorageWithCommonVirtualColumns
 {
     static VirtualColumnsDescription createVirtuals();
