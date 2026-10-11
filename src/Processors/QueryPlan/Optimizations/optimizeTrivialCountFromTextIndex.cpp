@@ -35,7 +35,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
 }
@@ -61,6 +60,10 @@ std::optional<String> matchBareCount(const AggregatingStep & aggregating)
 
     const auto & params = aggregating.getParams();
     if (!params.keys.empty() || params.aggregates.size() != 1)
+        return {};
+
+    /// Also set for constant `GROUP BY` keys; the count source would emit a `0` row instead of no row.
+    if (params.empty_result_for_aggregation_by_empty_set)
         return {};
 
     const auto & desc = params.aggregates.front();
@@ -219,10 +222,6 @@ bool guardsHold(const ReadFromMergeTree & reading)
 
     /// A transaction may see Outdated parts that the cardinalities do not reflect.
     if (context->getCurrentTransaction())
-        return false;
-
-    /// An empty set must then yield an empty result, not a 0 row.
-    if (context->getSettingsRef()[Setting::empty_result_for_aggregation_by_empty_set])
         return false;
 
     if (reading.isQueryWithFinal() || reading.isQueryWithSampling())
