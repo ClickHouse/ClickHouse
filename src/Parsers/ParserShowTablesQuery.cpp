@@ -253,8 +253,10 @@ This statement prints a list of all databases.
 ### Syntax {#syntax-1}
 
 ```sql title="Syntax"
-SHOW DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+SHOW [FULL] DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
+
+The `FULL` keyword currently has no effect.
 
 It is identical to the query:
 
@@ -333,6 +335,8 @@ SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>
 If the `FROM` clause is not specified, the query returns a list of tables from the current database.
 
 The database name may be hierarchical (`a.b`, see the `USE` statement): the query then lists the tables of the database `a.b`, the tables `b.*` of the database `a` (as `*`), and the tables of the databases `a.b.*` (as `*.table`).
+
+With the `FULL` keyword, the result also contains the `engine` column.
 
 This statement is identical to the query:
 
@@ -459,10 +463,12 @@ The `SHOW DICTIONARIES` statement displays a list of [Dictionaries](/reference/s
 ### Syntax {#syntax-4}
 
 ```sql title="Syntax"
-SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [FULL] DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of dictionaries from the current database.
+
+The `FULL` keyword currently has no effect.
 
 You can get the same results as the `SHOW DICTIONARIES` query in the following way:
 
@@ -944,9 +950,9 @@ SHOW CREATE MASKING POLICY name ON [database.]table
         .syntax = R"(
 SHOW [CREATE] TABLE | DICTIONARY | VIEW | DATABASE [db.]name [INTO OUTFILE filename] [FORMAT format]
 SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
-SHOW DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [FULL] DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 SHOW [EXTENDED] [FULL] COLUMNS {FROM | IN} <table> [{FROM | IN} <db>] [{[NOT] {LIKE | ILIKE} '<pattern>' | WHERE <expr>}] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
-SHOW DICTIONARIES [{FROM | IN} <db>] [LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [FULL] DICTIONARIES [{FROM | IN} <db>] [LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]

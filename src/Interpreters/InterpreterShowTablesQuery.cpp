@@ -218,7 +218,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     WriteBufferFromOwnString rewritten_query;
 
     String system_table = query.dictionaries ? "system.dictionaries" : "system.tables";
-    String engine_column = query.full ? ", engine" : "";
+    /// `system.dictionaries` has no `engine` column.
+    String engine_column = (query.full && !query.dictionaries) ? ", engine" : "";
 
     if (query.temporary)
     {
