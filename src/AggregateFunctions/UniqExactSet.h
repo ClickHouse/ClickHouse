@@ -163,7 +163,10 @@ public:
                             accessor(places[i])->convertToTwoLevel();
                     }
                 };
-                for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
+                const size_t num_jobs = std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num);
+                /// Reserve upfront, so `enqueueAndKeepTrack` cannot throw after a task is scheduled but before it is tracked.
+                runner.reserve(num_jobs);
+                for (size_t i = 0; i < num_jobs; ++i)
                     runner.enqueueAndKeepTrack(thread_func, Priority{});
             }
             catch (...)
@@ -257,6 +260,7 @@ public:
 
             /// The calling thread takes part in the work too, so one job less is enqueued (`i` starts from 1).
             const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
+            runner.reserve(max_threads_to_enqueue);
             for (size_t i = 1; i < max_threads_to_enqueue
                  && next_bucket_to_merge->load(std::memory_order_relaxed) < NUM_BUCKETS; ++i)
                 runner.enqueueAndKeepTrack(thread_func, Priority{});
@@ -327,6 +331,7 @@ public:
                     };
 
                     const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                    runner.reserve(max_threads_to_enqueue);
                     for (size_t i = 0; i < max_threads_to_enqueue
                          && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
                         runner.enqueueAndKeepTrack(thread_func, Priority{});
@@ -539,6 +544,7 @@ private:
                 /// The calling thread takes part in the work too: when the pool is busy (e.g. with the merges
                 /// of other groups), it does not wait idle for the jobs to be picked up. So one job less is enqueued.
                 const size_t num_jobs = std::min<size_t>(thread_pool.getMaxThreads(), single_level_sources.size());
+                runner.reserve(num_jobs);
                 for (size_t i = 1; i < num_jobs && next_source->load(std::memory_order_relaxed) < single_level_sources.size(); ++i)
                     runner.enqueueAndKeepTrack(thread_func, Priority{});
 
@@ -585,6 +591,7 @@ private:
 
             /// The calling thread takes part in the work too, so one job less is enqueued (`i` starts from 1).
             const size_t num_jobs = std::min<size_t>(thread_pool.getMaxThreads(), NUM_BUCKETS);
+            runner.reserve(num_jobs);
             for (size_t i = 1; i < num_jobs && next_bucket->load(std::memory_order_relaxed) < NUM_BUCKETS; ++i)
                 runner.enqueueAndKeepTrack(thread_func, Priority{});
 
