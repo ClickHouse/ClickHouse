@@ -292,6 +292,7 @@ RelationStats ExpressionStatistics::toRelationStats() const
     relation_stats.avg_row_bytes = estimated_bytes_per_row;
     relation_stats.column_stats = column_statistics;
     relation_stats.estimate_from_defaults = estimate_from_defaults;
+    relation_stats.source = source;
     return relation_stats;
 }
 
@@ -299,6 +300,7 @@ void ExpressionStatistics::applyRelationStats(const RelationStats & relation_sta
 {
     rows_unknown = !relation_stats.estimated_rows;
     estimate_from_defaults = relation_stats.estimate_from_defaults;
+    source = relation_stats.source;
     estimated_row_count = Float64(relation_stats.estimated_rows ? *relation_stats.estimated_rows : relation_stats.max_rows.value_or(0));
     if (relation_stats.max_rows)
         max_row_count = Float64(*relation_stats.max_rows);

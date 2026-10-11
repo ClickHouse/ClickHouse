@@ -168,6 +168,7 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
             result.rows_unknown |= input_statistics(input_index).rows_unknown;
             result.estimate_from_defaults |= input_statistics(input_index).estimate_from_defaults;
         }
+        result.source = RowEstimateSource::NoSource;
         const auto op = intersect_or_except_step->getOperator();
         if (op == IntersectOrExceptStep::Operator::INTERSECT_ALL
             || op == IntersectOrExceptStep::Operator::INTERSECT_DISTINCT)
@@ -240,6 +241,8 @@ void StatisticsDerivation::deriveGroupStatistics(GroupId group_id)
             group->statistics->rows_unknown |= input_statistics(input_index).rows_unknown;
             group->statistics->estimate_from_defaults |= input_statistics(input_index).estimate_from_defaults;
         }
+        if (expression->inputs.size() > 1)
+            group->statistics->source = RowEstimateSource::NoSource;
     }
     else
     {
@@ -370,9 +373,11 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     {
         statistics.estimated_row_count = Float64(analyzed_result->selected_rows);
         statistics.max_row_count = Float64(analyzed_result->selected_rows);
+        statistics.source = RowEstimateSource::PrimaryIndex;
     }
     else
     {
+        statistics.source = RowEstimateSource::NoStatistics;
         /// Nothing was analyzed, so there is no estimate. The table size bounds the read when the
         /// storage knows it; otherwise the largest known leaf of the query is the search value.
         statistics.rows_unknown = true;
@@ -404,6 +409,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                     : Float64(relation_profile.rows);
             /// A default in the profile makes the rows a guess, which the replication gate must not take as proven.
             statistics.estimate_from_defaults |= relation_profile.estimate_from_defaults;
+            statistics.source = RowEstimateSource::Statistics;
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
             {
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
@@ -433,6 +439,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     {
         statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, Float64(*cardinality_hint));
         statistics.rows_unknown = false;
+        statistics.source = RowEstimateSource::Hint;
     }
 
     fillReadColumnWidths(statistics, read_step, table_name);
@@ -700,6 +707,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
 
     ExpressionStatistics aggregation_statistics;
     aggregation_statistics.estimate_from_defaults = shared.estimate_from_defaults;
+    aggregation_statistics.source = shared.source;
     /// The keys with their NDVs, value sizes and domains.
     aggregation_statistics.column_statistics = shared.column_stats;
     aggregation_statistics.min_row_count = 0;

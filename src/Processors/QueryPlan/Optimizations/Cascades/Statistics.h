@@ -2,6 +2,7 @@
 
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Common/EquivalenceClasses.h>
 #include <Core/Block.h>
 #include <base/types.h>
@@ -34,6 +35,9 @@ struct ExpressionStatistics
     /// does not price a gather of such a result on it. Kept by the operators that copy their
     /// input's statistics, dropped by the ones that derive their own.
     bool search_value_is_join_product = false;
+    /// Where `estimated_row_count` comes from, for `EXPLAIN estimates = 1` and the profile log. An
+    /// operator that copies its input's statistics keeps it; a join or a set operation has none.
+    RowEstimateSource source = RowEstimateSource::NoSource;
     /// Proven minimum number of rows
     Float64 min_row_count = 0;
     /// Proven maximum number of rows. E.g. after a `LIMIT` step
