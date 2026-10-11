@@ -1,0 +1,18 @@
+<!--
+    ORDER BY ... LIMIT over a glob of 64 Parquet files of 5 row groups each. The ranges of `k` are disjoint and
+    not in the order of the file names, and every file holds every value of `m`, so opening the files with the
+    best statistics first lets the top-K threshold skip more row groups for `k`, and changes nothing for `m`.
+-->
+<test>
+    <fill_query>
+        INSERT INTO FUNCTION file('test_parquet_top_k_file_order_{{_partition_id}}.parquet', Parquet) PARTITION BY intDiv(toUInt64(s), 250000)
+        SELECT (number % 250000) + 250000 * ((intDiv(number, 250000) * 37 + 11) % 64) AS k, sipHash64(number) AS v, number % 1000 AS m, toString(number) AS s
+        FROM numbers(16000000)
+        SETTINGS output_format_parquet_row_group_size = 50000, max_block_size = 50000, max_threads = 1, max_insert_threads = 1,
+            engine_file_truncate_on_insert = 1
+    </fill_query>
+
+    <query>SELECT k, s FROM file('test_parquet_top_k_file_order_*.parquet') ORDER BY k LIMIT 10 SETTINGS max_threads = 4, max_parsing_threads = 4 FORMAT Null</query>
+    <query>SELECT k, s FROM file('test_parquet_top_k_file_order_*.parquet') ORDER BY k DESC LIMIT 10 SETTINGS max_threads = 4, max_parsing_threads = 4 FORMAT Null</query>
+    <query>SELECT m, s FROM file('test_parquet_top_k_file_order_*.parquet') ORDER BY m LIMIT 10 SETTINGS max_threads = 4, max_parsing_threads = 4 FORMAT Null</query>
+</test>

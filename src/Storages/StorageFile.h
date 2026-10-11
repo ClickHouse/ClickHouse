@@ -273,6 +273,8 @@ public:
         /// The files `next` returns, if they are known before reading: not with distributed processing,
         /// from an archive, or with a `_path` / `_file` filter that can only be applied while reading.
         std::optional<Strings> tryGetFiles() const;
+        /// Replaces the files `tryGetFiles` returned. Must be called before the first `next`.
+        void setFiles(Strings files_);
 
         bool isReadFromArchive() const
         {
@@ -504,6 +506,10 @@ public:
 
 private:
     StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
+
+    /// For `ORDER BY <column> LIMIT n` over several Parquet files: hands out first the files whose statistics
+    /// hold the best values of the sort column, so that the top-K threshold tightens on the first files read.
+    void orderFilesByTopKBound(const FormatFilterInfoPtr & format_filter_info, size_t num_streams);
 
     std::shared_ptr<StorageFile> storage;
     const Strings paths_snapshot;

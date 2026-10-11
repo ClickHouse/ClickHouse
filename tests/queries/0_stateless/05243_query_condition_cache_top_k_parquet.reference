@@ -89,3 +89,22 @@ gate_2	0	0
 999
 998
 101
+--- the order of the files
+0
+1
+2
+0
+1
+2
+34999
+34998
+34997
+34999
+34998
+34997
+order_asc_pass	1	0
+order_asc_no_pass	1	1
+order_desc_pass	1	0
+order_desc_no_pass	1	1
+order_asc_pass	1
+order_desc_pass	1

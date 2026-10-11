@@ -150,5 +150,32 @@ ${CLICKHOUSE_CLIENT} --query "SELECT matching_marks FROM system.query_condition_
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243_single"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}_single"
 
+echo "--- the order of the files"
+# With one stream, the footer pass opens the files by their best values first, f_4 to f_1 ascending and f_1 to f_4
+# descending, so each read reads one row group. With a stream per file the pass does not run and the files are read in
+# the order of the directory listing, which matches at most one of the two. The key must not depend on the order, so
+# both reads without the pass reuse the entries.
+inserts=""
+for j in 1 2 3 4; do
+    inserts+="INSERT INTO FUNCTION file('${DATA_DIR}_order/f_$j.parquet') SELECT number + $(((4 - j) * 10000)) AS k
+        FROM numbers(5000) SETTINGS output_format_parquet_row_group_size = 1000, engine_file_truncate_on_insert = 1;"
+done
+${CLICKHOUSE_CLIENT} --query "$inserts"
+touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DATA_DIR}_order"/*.parquet
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05243_order (k UInt64) ENGINE = File(Parquet, '${DATA_DIR}_order/*.parquet')"
+ORDER_SETTINGS=", max_threads_min_free_memory_per_thread = 0, max_parsing_threads = 1, max_threads"
+run order_asc_pass "SELECT k FROM t_05243_order ORDER BY k LIMIT 3" "${ORDER_SETTINGS} = 1"
+run order_asc_no_pass "SELECT k FROM t_05243_order ORDER BY k LIMIT 3" "${ORDER_SETTINGS} = 4"
+run order_desc_pass "SELECT k FROM t_05243_order ORDER BY k DESC LIMIT 3" "${ORDER_SETTINGS} = 1"
+run order_desc_no_pass "SELECT k FROM t_05243_order ORDER BY k DESC LIMIT 3" "${ORDER_SETTINGS} = 4"
+events order_asc_pass order_asc_no_pass order_desc_pass order_desc_no_pass
+${CLICKHOUSE_CLIENT} --query "
+    SELECT replaceOne(query_id, '${CLICKHOUSE_TEST_UNIQUE_NAME}_', ''), read_rows <= 1000 FROM system.query_log
+    WHERE query_id IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_order_asc_pass', '${CLICKHOUSE_TEST_UNIQUE_NAME}_order_desc_pass')
+        AND current_database = currentDatabase() AND type = 'QueryFinish'
+    ORDER BY query_id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243_order"
+rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}_order"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05243"
 rm -rf "${USER_FILES_PATH:?}/${DATA_DIR}"

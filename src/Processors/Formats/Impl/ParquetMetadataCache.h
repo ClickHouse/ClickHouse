@@ -70,6 +70,12 @@ public:
     template <typename LoadFunc>
     parquet::format::FileMetaData getOrSetMetadata(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
     {
+        return getOrSetMetadataCell(key, std::forward<LoadFunc>(load_fn))->metadata;
+    }
+
+    template <typename LoadFunc>
+    MappedPtr getOrSetMetadataCell(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
+    {
         auto load_fn_wrapper = [&]()
         {
             auto metadata = load_fn();
@@ -87,7 +93,7 @@ public:
             LOG_TRACE(log, "cache hit {} | {}", key.file_path, key.etag);
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
         }
-        return result.first->metadata;
+        return result.first;
     }
 
 private:
