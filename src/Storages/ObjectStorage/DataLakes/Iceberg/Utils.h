@@ -85,13 +85,15 @@ bool writeMetadataFileAndVersionHint(
 /// with `files_to_take_back` (the files published by the same operation) and throws
 /// `UNSUPPORTED_METHOD`. Otherwise the table would become uncommittable on its first later write,
 /// which refuses to advance a hint without a tag. Nothing is removed when the hint cannot be read
-/// back or no longer holds `version`, the one this operation wrote.
+/// back or no longer holds `version`, the one this operation wrote - unless `no_concurrent_writer`
+/// is set, in which case a failed read also removes the files before the error propagates.
 void takeBackVersionHintWithoutETag(
     const DB::ObjectStoragePtr & object_storage,
     const std::string & storage_version_hint_path,
     Int32 version,
     const std::vector<std::string> & files_to_take_back,
-    const DB::ContextPtr & context);
+    const DB::ContextPtr & context,
+    bool no_concurrent_writer);
 
 struct TransformAndArgument
 {
