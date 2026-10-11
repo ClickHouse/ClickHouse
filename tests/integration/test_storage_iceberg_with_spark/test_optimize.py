@@ -336,6 +336,28 @@ def test_optimize_multi_partition_manifest(started_cluster_iceberg_with_spark):
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
 
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+
+    def list_manifests():
+        return set(
+            instance.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
+                    f"-not -name 'snap-*.avro' -type f",
+                ]
+            )
+            .strip()
+            .splitlines()
+        )
+
+    # Spark's own manifest already has per-file partitions and bounds, so only the manifests
+    # OPTIMIZE writes can show whether compaction keeps them.
+    spark_manifests = list_manifests()
+
     instance.query(
         f"OPTIMIZE TABLE {TABLE_NAME};",
         settings={"allow_experimental_iceberg_compaction": 1},
@@ -353,22 +375,12 @@ def test_optimize_multi_partition_manifest(started_cluster_iceberg_with_spark):
         "SELECT number FROM numbers(100, 50)"
     )
 
-    metadata_dir = (
-        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
-    )
-    manifest_files = (
-        instance.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
-                f"-not -name 'snap-*.avro' -type f",
-            ]
-        )
-        .strip()
-        .splitlines()
-    )
-    assert manifest_files
+    manifests_after = list_manifests()
+    # The old generation is deleted only after the commit is published, so the reads above came
+    # from the rewritten files.
+    assert not manifests_after & spark_manifests, "OPTIMIZE kept Spark's manifests"
+    manifest_files = sorted(manifests_after - spark_manifests)
+    assert manifest_files, "OPTIMIZE wrote no new manifest"
 
     # A data-file manifest entry exposes its own partition value and its own bounds. Collect,
     # per manifest, the (partition, lower_bounds) of every DATA entry. Per-manifest aggregation
