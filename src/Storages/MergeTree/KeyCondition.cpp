@@ -3817,8 +3817,6 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 
     chassert(set_types.size() == set_columns.size());
 
-    bool repacked_only_by_transform_input = false;
-
     /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
     /// `key_tuple IN ((a, b), (c, d), ...)`.
     ///
@@ -3835,29 +3833,10 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         {
             if (key_tuple_type->getElements().size() == set_types.size())
             {
-                /// The key expression result type re-packs a tuple of the same arity by itself, so only
-                /// a layout it rejects reaches index analysis here for the first time.
-                const auto * result_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(data_types[0]).get());
-                repacked_only_by_transform_input
-                    = key_is_transformed && !(result_tuple_type && result_tuple_type->getElements().size() == set_types.size());
-
                 set_columns = {ColumnTuple::create(set_columns)};
                 set_types = {std::make_shared<DataTypeTuple>(set_types)};
             }
         }
-    }
-
-    /// A layout the key expression result type rejects has never reached index analysis before, so it is
-    /// unknown whether the transform maps distinct key values onto distinct transformed ones: `toString`
-    /// claims that for every type, yet it folds NaN payloads and fall-back hours.
-    if (repacked_only_by_transform_input)
-    {
-        const auto & function_name = func.getFunctionName();
-        if (function_name == "notIn" || function_name == "notNullIn" || function_name == "globalNotIn"
-            || function_name == "globalNotNullIn")
-            return false;
-
-        out.relaxed = true;
     }
 
     bool set_is_exact = true;
