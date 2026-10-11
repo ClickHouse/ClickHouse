@@ -29,6 +29,7 @@ public:
         const ProfileEvents::Event reused = ProfileEvents::end();
         const ProfileEvents::Event reset = ProfileEvents::end();
         const ProfileEvents::Event preserved = ProfileEvents::end();
+        const ProfileEvents::Event drained = ProfileEvents::end();
         const ProfileEvents::Event expired = ProfileEvents::end();
         const ProfileEvents::Event errors = ProfileEvents::end();
         const ProfileEvents::Event elapsed_microseconds = ProfileEvents::end();
