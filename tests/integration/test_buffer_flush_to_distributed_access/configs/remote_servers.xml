@@ -1,0 +1,14 @@
+<clickhouse>
+    <remote_servers>
+        <!-- node1 is the initiator and is deliberately not part of the cluster: the only way
+             for a table on node1 to reach `default.secret_data` is over the network, through
+             the interserver secret. -->
+        <secure>
+            <secret>foo</secret>
+            <node>
+                <host>node2</host>
+                <port>9000</port>
+            </node>
+        </secure>
+    </remote_servers>
+</clickhouse>
