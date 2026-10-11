@@ -1324,10 +1324,10 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
     QueryTreeNodes new_or_arguments;
     bool has_completely_extracted_and_expression = false;
 
-    for (auto & or_argument : or_argument_nodes)
+    for (const auto & original_or_argument : or_argument_nodes)
     {
-        if (auto it = flattened_ands.find(or_argument); it != flattened_ands.end())
-            or_argument = it->second;
+        auto it = flattened_ands.find(original_or_argument);
+        const auto & or_argument = it != flattened_ands.end() ? it->second : original_or_argument;
 
         // Avoid changing the original tree, it might be used later
         const auto & and_node = or_argument->as<FunctionNode &>();
@@ -1791,6 +1791,19 @@ public:
         return result;
     }
 
+    /// Shared nodes (identifier resolve cache) are rewritten once, after their arguments, and every reference reuses the result.
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> visited_nodes;
+
+    bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    {
+        auto it = visited_nodes.find(child);
+        if (it == visited_nodes.end())
+            return true;
+
+        child = it->second;
+        return false;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
@@ -1801,9 +1814,11 @@ public:
                 JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(*join_node, getContext());
                 join_on_visitor.visit(join_node->getJoinExpression());
             }
-            return;
         }
+    }
 
+    void rewriteFunction(QueryTreeNodePtr & node)
+    {
         auto * function_node = node->as<FunctionNode>();
 
         if (!function_node)
@@ -1835,6 +1850,10 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        auto original_node = node;
+        rewriteFunction(node);
+        visited_nodes.emplace(std::move(original_node), node);
+
         if (!getSettings()[Setting::optimize_extract_common_expressions])
             return;
 
@@ -2376,10 +2395,7 @@ private:
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
         /// Conjuncts already present in the AND, used to keep this optimization idempotent: a derived
-        /// transitive conjunct is appended only if an equal one is not already there. The identifier
-        /// resolve cache can hand the same node to several use sites, and the pass visitor is not
-        /// deduplicating, so a shared AND would otherwise accumulate the same derived conjunct once per
-        /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
+        /// transitive conjunct is appended only if an equal one is not already there.
         /// `indexHint(X)` is not interchangeable with plain `X`: a hint dedupes only hint-destined
         /// derivations, while contradictions and cross-source conjuncts must still materialize.
         QueryTreeNodePtrWithHashSet existing_plain_conjuncts;
