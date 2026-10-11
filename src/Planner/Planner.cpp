@@ -2357,15 +2357,10 @@ void addReadFromQueryResultCacheStep(
     std::unique_ptr<SourceFromChunks> source_totals,
     std::unique_ptr<SourceFromChunks> source_extremes)
 {
-    auto pipe = Pipe();
-    if (source)
-        pipe.addSource(std::shared_ptr<SourceFromChunks>(source.release()));
-    if (source_totals)
-        pipe.addTotalsSource(std::shared_ptr<SourceFromChunks>(source_totals.release()));
-    if (source_extremes)
-        pipe.addExtremesSource(std::shared_ptr<SourceFromChunks>(source_extremes.release()));
-
-    auto read_from_query_result_cache_step = std::make_unique<ReadFromQueryResultCacheStep>(std::move(pipe));
+    auto read_from_query_result_cache_step = std::make_unique<ReadFromQueryResultCacheStep>(
+        std::shared_ptr<SourceFromChunks>(std::move(source)),
+        std::shared_ptr<SourceFromChunks>(std::move(source_totals)),
+        std::shared_ptr<SourceFromChunks>(std::move(source_extremes)));
     query_plan.addStep(std::move(read_from_query_result_cache_step));
 }
 
@@ -2418,6 +2413,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
             findTableUnionForParallelReplicas(query_tree, select_query_options),
             collectFiltersForAnalysis(query_tree, select_query_options, post_filter_))))
 {
+    markDistributedPlanContext();
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
@@ -2427,6 +2423,7 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree_, select_query_options, std::move(global_planner_context_)))
 {
+    markDistributedPlanContext();
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
@@ -2436,6 +2433,18 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
     , select_query_options(select_query_options_)
     , planner_context(std::move(planner_context_))
 {
+    markDistributedPlanContext();
+}
+
+/// Make the distributed-planning context sticky: once any query in the planning recursion runs
+/// with `make_distributed_plan` enabled, every nested plan (subqueries inherit the options via
+/// `SelectQueryOptions::subquery`) knows it may end up inside a plan that
+/// `QueryPlan::convertToDistributed` splits into fragments, even when the subquery's own SETTINGS
+/// clause turned the setting off for its local context. See `shouldReadFromQueryCacheForSubquery`.
+void Planner::markDistributedPlanContext()
+{
+    if (planner_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan])
+        select_query_options.building_distributed_plan = true;
 }
 
 void Planner::buildQueryPlanIfNeeded()
@@ -2502,7 +2511,13 @@ void Planner::buildPlanForUnionNode()
 
     for (const auto & query_node : union_queries_nodes)
     {
-        Planner query_planner(query_node, select_query_options, planner_context->getGlobalPlannerContext());
+        /// Every branch of a `UNION` has its own context with its own SETTINGS clause, so branches
+        /// must stay isolated from each other: the `Planner` mutates the options it is given (see
+        /// `markDistributedPlanContext`), and sharing one object would let a branch-local
+        /// `make_distributed_plan` of an earlier branch ban the query result cache reads of its
+        /// siblings. Sticky options still travel downwards, because the copy carries them in.
+        SelectQueryOptions branch_select_query_options = select_query_options;
+        Planner query_planner(query_node, branch_select_query_options, planner_context->getGlobalPlannerContext());
 
         query_planner.buildQueryPlanIfNeeded();
         for (const auto & row_policy : query_planner.getUsedRowPolicies())
@@ -2512,6 +2527,12 @@ void Planner::buildPlanForUnionNode()
         auto query_node_plan = std::make_unique<QueryPlan>(std::move(query_planner).extractQueryPlan());
         query_plans_headers.push_back(query_node_plan->getCurrentHeader());
         query_plans.push_back(std::move(query_node_plan));
+
+        /// The quota and limit exemptions of the system tables are a property of the whole query -
+        /// `InterpreterSelectQueryAnalyzer` reads them back from the options after the plan is
+        /// built - so they keep propagating upwards out of the branch.
+        select_query_options.ignore_quota |= branch_select_query_options.ignore_quota;
+        select_query_options.ignore_limits |= branch_select_query_options.ignore_limits;
     }
 
     Block union_common_header = buildCommonHeaderForUnion(
@@ -2608,14 +2629,36 @@ void Planner::buildPlanForUnionNode()
 /// executed by a replica as part of a distributed query). Caching in those kinds would write/read
 /// per-replica or per-internal entries that the outer query already manages or that bypass the
 /// safety gate `executeQuery` applies via `Context::setCanUseQueryResultCache`.
+///
+/// Also never use the cache in plans that are serialized for remote execution: logical plans are
+/// shipped to another node by parallel replicas with `serialize_query_plan = 1` (see
+/// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
+/// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized
+/// representation. The cache is populated and read by the plan the initiator executes itself.
+///
+/// `make_distributed_plan` is not such a kind: whether the plan is really split into fragments is
+/// decided only later, by `QueryPlan::convertToDistributed`, which falls back to one local stage for
+/// a plan that has no exchange. The write path therefore stays enabled here - the fragment split
+/// drops `StreamInQueryResultCacheStep`, so nothing non-serializable reaches a worker, and the local
+/// fallback keeps the cache working. Only the read path is disabled for a distributed plan, see
+/// `shouldReadFromQueryCacheForSubquery`.
 static bool shouldUseQueryCacheForSubquery(
-    const QueryNode & query_node, bool outer_can_use_cache, const Settings & settings, bool is_subquery, const ContextPtr & query_context)
+    const QueryNode & query_node,
+    bool outer_can_use_cache,
+    const Settings & settings,
+    const SelectQueryOptions & select_query_options,
+    const ContextPtr & query_context)
 {
     /// Gate every Planner-level cache use by the query kind, so explicit `SETTINGS use_query_cache`
     /// on a subquery cannot bypass the safety check that `executeQuery` performs for the outer query.
     if (query_context->isInternalQuery()
         || query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
+
+    if (select_query_options.build_logical_plan)
+        return false;
+
+    const bool is_subquery = select_query_options.is_subquery;
 
     /// Only check explicit per-node `use_query_cache` for actual subqueries.
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
@@ -2636,6 +2679,44 @@ static bool shouldUseQueryCacheForSubquery(
         return true;
 
     return false;
+}
+
+/// A cache hit replaces the whole subquery plan with a `ReadFromQueryResultCacheStep`, a node-local
+/// source of the cached chunks. Unlike the write step, it cannot be dropped when the plan is split
+/// into fragments - there is no subplan left behind it to run instead - so a hit would either fail
+/// serialization or make the query fall back to local execution depending on what the cache happens
+/// to hold. Do not read the cache while a distributed plan is being built, so the plan shape never
+/// depends on cache contents.
+///
+/// The ban is keyed to the sticky `building_distributed_plan` option rather than to the local
+/// `make_distributed_plan` setting: the subquery context applies the subquery's own SETTINGS
+/// changes (see `QueryTreeBuilder::buildSelectExpression`), so a subquery could otherwise escape
+/// the ban - and make the outer distributed plan's shape depend on cache contents again - just by
+/// specifying `SETTINGS make_distributed_plan = 0` while the outer query is still planned
+/// distributed.
+///
+/// There is no exception for the in-process local plans of a distributed query
+/// (`is_local_plan_for_distributed_query`, e.g. the local shard plan of a `Distributed` table): that
+/// flag only means nothing unmarshalls the blocks of the plan. The local plan is still united into
+/// the enclosing plan, which `QueryPlan::convertToDistributed` may split into fragments, so a cache
+/// hit there would make the shape of the outer plan depend on cache contents as well.
+///
+/// The sticky option only travels through `SelectQueryOptions::subquery`, but some storages plan a
+/// generated query with fresh options (e.g. `StorageView`, `loop`, `StorageExecutable`, `TimeSeries`
+/// and PromQL storages). So the setting of the query-level context is consulted as well: it is the
+/// one the outer interpreter optimizes the top-level plan under, and no SETTINGS clause of a subquery
+/// or of a generated query can change it.
+static bool shouldReadFromQueryCacheForSubquery(
+    const Settings & settings,
+    const QueryResultCacheOnDiskPtr & query_result_cache_on_disk,
+    const SelectQueryOptions & select_query_options,
+    const ContextPtr & query_context)
+{
+    if (!settings[Setting::enable_reads_from_query_cache] && !(query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled()))
+        return false;
+    if (settings[Setting::make_distributed_plan] || select_query_options.building_distributed_plan)
+        return false;
+    return !query_context->hasQueryContext() || !query_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan];
 }
 
 void Planner::buildPlanForQueryNode()
@@ -2666,7 +2747,7 @@ void Planner::buildPlanForQueryNode()
     /// 2. `query_cache_for_subqueries` propagates from outer query (applies to all Planner invocations)
     /// 3. By default, `use_query_cache` does NOT propagate from outer query to subqueries
     bool should_cache = shouldUseQueryCacheForSubquery(query_node, can_use_query_result_cache, settings,
-        select_query_options.is_subquery, query_context);
+        select_query_options, query_context);
 
     /// Query result cache must actually exist
     if (should_cache && !query_result_cache)
@@ -2691,7 +2772,7 @@ void Planner::buildPlanForQueryNode()
         query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
-    if (should_cache && (settings[Setting::enable_reads_from_query_cache] || (query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled())))
+    if (should_cache && shouldReadFromQueryCacheForSubquery(settings, query_result_cache_on_disk, select_query_options, query_context))
     {
         QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
 
