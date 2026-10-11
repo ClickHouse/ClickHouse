@@ -1040,7 +1040,13 @@ void WorkloadEntityStorageBase::setOwnEntities(const std::vector<std::pair<Strin
                     // A `... FOR <resource>` clause must reference an existing resource (not a
                     // workload, not a missing entity) — the same contract storeEntity enforces via
                     // forEachReference.
-                    ASTPtr target = findKnownEntity(setting_change.resource, new_own_entities);
+                    // Resolved within own entities first, as for a restore: an own resource stays the
+                    // target even while shadowed by an inherited entity of the same name
+                    ASTPtr target;
+                    if (auto own_it = new_own_entities.find(setting_change.resource); own_it != new_own_entities.end())
+                        target = own_it->second;
+                    else
+                        target = findKnownEntity(setting_change.resource, new_own_entities);
                     if (!target)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Workload entity '{}' references another workload entity '{}' that doesn't exist",

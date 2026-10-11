@@ -2675,6 +2675,23 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByName)
     EXPECT_FALSE(t.storage.has("res"));
 }
 
+// A load resolves `FOR` references within own entities first: a resource shadowed by an inherited workload of the
+// same name is still a valid target, and its settings apply to no resource meanwhile.
+TEST(SchedulerWorkloadResourceManager, LoadResolvesReferencesWithinOwnEntitiesFirst)
+{
+    ResourceTest t;
+    t.loadConfig("CREATE WORKLOAD r");
+    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString(
+        "CREATE RESOURCE r (READ DISK d); CREATE WORKLOAD w SETTINGS max_io_requests = 1 FOR r"));
+    EXPECT_EQ(t.storage.getEntitySource("r"), "configuration");
+    EXPECT_EQ(t.storage.getEntitySource("w"), "sql");
+    EXPECT_FALSE(t.manager->hasResource("r"));
+
+    t.loadConfig("");
+    EXPECT_TRUE(t.manager->hasResource("r"));
+    EXPECT_EQ(t.storage.getEntitySource("w"), "sql");
+}
+
 // DROP addresses the own entity of the requested kind only: an own entity of the other kind shadowed by name is
 // not removed by it.
 TEST(SchedulerWorkloadResourceManager, DropChecksKindOfShadowedEntity)
