@@ -6416,6 +6416,8 @@ A `Variant` is not `Nullable`, so the `-Null` combinator is never applied to it,
 
 Set this to `false` (or `SET compatibility = '26.9'`) to restore the pre-26.10 behavior. This setting does not affect `-SimpleState` or declared `SimpleAggregateFunction(..., Variant(...))` columns: they always retain their historical behavior so their raw values can be safely re-aggregated during table loading and background merges. Note that this setting only controls how new values are aggregated; it cannot change the meaning of an `AggregateFunction(f, Variant(...))` state that has already been written, because the state representation is the same in both modes.
 
+The merges that aggregate rows (`CoalescingMergeTree` and `TTL ... GROUP BY`) take this setting from the settings profile for background operations, like the other settings of background merges, and not from the `OPTIMIZE` query that triggered the merge, so local and replicated tables aggregate the same rows the same way.
+
 Window functions handle their argument types themselves, so the `RESPECT NULLS` forms are not affected by this setting.
 )", 0, \
         {"26.10", false, true, "From 26.10, the aggregate functions that accept a `Variant` argument natively (`count`, `any`, `groupArray`, `groupConcat`, the `uniq` family, ...) skip the rows where the `Variant` holds a NULL value, like they skip the NULL values of a `Nullable` argument. The `-SimpleState` combinator and declared `SimpleAggregateFunction(..., Variant(...))` columns are excluded and retain the previous behavior, where those rows were aggregated as ordinary values. Set this to `false` (or `SET compatibility = '26.9'`) to restore that previous behavior for other aggregate functions."}) \

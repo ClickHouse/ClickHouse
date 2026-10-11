@@ -63,8 +63,9 @@ SELECT 'respect nulls', anyRespectNulls(v), last_value_respect_nulls(v) FROM t_v
 -- interchangeable with plain count().
 SELECT 'count', count(v) FROM t_variant_skip_nulls;
 
--- Background CoalescingMergeTree merges must use the settings from the OPTIMIZE query when resolving
--- last_value. Without these settings the background merge uses the default NULL-skipping behavior.
+-- CoalescingMergeTree merges resolve last_value with the server settings for background operations, which
+-- skip the Variant NULLs by default. The settings of the OPTIMIZE query that triggered the merge do not apply,
+-- so a local and a replicated table (whose replicas execute the merge from the replication log) agree.
 DROP TABLE IF EXISTS t_variant_skip_nulls_coalescing;
 CREATE TABLE t_variant_skip_nulls_coalescing (k UInt64, v Variant(String)) ENGINE = CoalescingMergeTree ORDER BY k SETTINGS optimize_on_insert = 0;
 INSERT INTO t_variant_skip_nulls_coalescing VALUES (1, 'x');

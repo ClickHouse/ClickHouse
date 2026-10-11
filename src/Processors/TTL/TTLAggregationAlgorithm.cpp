@@ -93,8 +93,8 @@ bool containsVariant(const IDataType & type)
 
 /// The explicit `GROUP BY ... SET` aggregates are cached in the table metadata with the settings that were
 /// active when the metadata was built (`CREATE`/`ATTACH`), but the settings that define how new values are
-/// aggregated belong to the merge that executes them: `aggregate_functions_skip_variant_nulls` must be takeable
-/// from the merge context (which `OPTIMIZE` fills from the query settings), not frozen at `CREATE` time.
+/// aggregated belong to the merge that executes them: `aggregate_functions_skip_variant_nulls` must be taken
+/// from the merge context (the server settings for background operations), not frozen at `CREATE` time.
 /// Re-resolving by name is safe here: the Variant NULL-skipping wrapper changes neither the result type nor the
 /// state representation, so the cached post-aggregation expressions still apply. Only aggregates over a Variant
 /// argument are re-resolved -- for any other type the settings cannot affect the resolution.
@@ -137,14 +137,20 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     time_t current_time_,
     bool force_,
     const Block & header_,
-    const ContextPtr & context,
+    const MergeTreeData & storage_,
+    const ContextPtr & merge_context,
     const StorageMetadataPtr & metadata_snapshot_)
     : ITTLAlgorithm(
         ttl_expressions_,
-        addImplicitlyAggregatedColumns(rebuildAggregatesForCurrentSettings(description_, context), header_, context),
+        addImplicitlyAggregatedColumns(rebuildAggregatesForCurrentSettings(description_, merge_context), header_, merge_context),
         old_ttl_info_, current_time_, force_)
     , header(header_)
 {
+    /// The merge context is used only to resolve the aggregate functions above. How the rows are grouped
+    /// (`max_rows_to_group_by`, `group_by_overflow_mode`, the external aggregation limits, ...) is a property of
+    /// the persisted `TTL GROUP BY` rollup and keeps following the settings of the table's context.
+    const auto & context = storage_.getContext();
+
     const auto & sorting_key = metadata_snapshot_->getSortingKey();
     if (!sorting_key.column_names.empty())
     {
