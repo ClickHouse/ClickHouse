@@ -95,7 +95,6 @@ static void unifyConvertedColumnsNullability(std::initializer_list<VectorWithMem
                 column = makeNullable(column);
 }
 
-
 ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
