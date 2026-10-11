@@ -1,0 +1,5 @@
+1	(1,'Hello')
+1	(2,'World')
+2	(2,'World')
+id	UInt8		
+c	Nullable(Tuple(a UInt8, s String))	DEFAULT	tuple(2, \'World\')

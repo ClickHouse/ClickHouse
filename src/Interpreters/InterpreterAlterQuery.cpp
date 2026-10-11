@@ -509,6 +509,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
 
+    /// `ON CLUSTER` and replicated DDL serialize `query_ptr` before `AlterCommand::parse` runs.
+    /// Normalize this AST on the initiator so all workers receive ordinary column defaults.
+    /// It must run before the `data_type_default_nullable` rewrite below, which builds the data type
+    /// from the declaration and would reject a type that still carries element defaults.
+    pullUpTupleElementDefaultsInAlterQuery(query_ptr->as<ASTAlterQuery &>());
+
     if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
         && !getContext()->getClientInfo().is_shared_catalog_internal)
         applyDataTypeDefaultNullableToColumnDeclarations(query_ptr->as<ASTAlterQuery &>());
@@ -523,10 +529,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// the columns-only metadata a lazily loaded table reports.
         table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     }
-
-    /// `ON CLUSTER` and replicated DDL serialize `query_ptr` before `AlterCommand::parse` runs.
-    /// Normalize this AST on the initiator so all workers receive ordinary column defaults.
-    pullUpTupleElementDefaultsInAlterQuery(query_ptr->as<ASTAlterQuery &>());
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
