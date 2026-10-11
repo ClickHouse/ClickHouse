@@ -63,8 +63,8 @@ public:
     using CachePtr = std::shared_ptr<Cache>;
 
     RuntimeDataflowStatisticsCache()
-        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
-        , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), max_boundaries, max_boundaries))
+        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
+        , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 100_MiB, 1'000'000))
     {
     }
 
@@ -92,10 +92,6 @@ public:
 
 private:
     using BoundaryCache = DB::CacheBase<UInt64, RememberedBoundary>;
-
-    /// One entry per distinct single-replica plan and settings, each weighing one, so the size and the count
-    /// limits are the same number.
-    static constexpr size_t max_boundaries = 1'000'000;
 
     CachePtr stats_cache;
     std::shared_ptr<BoundaryCache> boundary_cache;
