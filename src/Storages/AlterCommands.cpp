@@ -1998,6 +1998,8 @@ void AlterCommands::apply(
         }
     }
 
+    metadata_copy.validateTTLIndexClearTargets();
+
     metadata = std::move(metadata_copy);
 }
 
