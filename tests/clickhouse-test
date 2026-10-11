@@ -2096,6 +2096,15 @@ class SettingsRandomizer:
         # name can be randomized here under the other. That is how the randomizer silently put back a
         # threshold the profile had disabled, for 84% of the queries in a run, without colliding by
         # name with anything.
+        # With parallel replicas, `optimize_aggregation_in_order` rejects every projection, including the implicit
+        # `_minmax_count_projection` behind trivial `count()`, so tests asserting on projections, exact counts
+        # or read limits break under the `ParallelReplicas` configuration: https://github.com/ClickHouse/ClickHouse/issues/123061
+        # That holds however the configuration turned parallel replicas on, so it is pinned above the automatic
+        # mode's own path below - which must not inherit the rest of the `no_parallel_replicas` block, because
+        # forcing `automatic_parallel_replicas_mode` to 0 there would leave the automatic half testing nothing.
+        if args.no_parallel_replicas:
+            random_settings["optimize_aggregation_in_order"] = 0
+
         if args.autopr:
             for setting in (
                 "automatic_parallel_replicas_mode",
@@ -2116,11 +2125,7 @@ class SettingsRandomizer:
             random_settings["cluster_for_parallel_replicas"] = "parallel_replicas"
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
-        # With parallel replicas, `optimize_aggregation_in_order` rejects every projection, including the implicit
-        # `_minmax_count_projection` behind trivial `count()`, so tests asserting on projections, exact counts
-        # or read limits break under the `ParallelReplicas` configuration: https://github.com/ClickHouse/ClickHouse/issues/123061
         if args.no_parallel_replicas:
-            random_settings["optimize_aggregation_in_order"] = 0
             # With `parallel_replicas_local_plan = 0` the local replica is queried like a remote one, so plan- and
             # log-based assertions of ~100 tests break under the `ParallelReplicas` configuration without finding
             # anything about the default setup. Other configurations keep randomizing it.
