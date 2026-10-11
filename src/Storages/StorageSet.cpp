@@ -2,11 +2,18 @@
 #include <optional>
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledRowPolicies.h>
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryWrappedWith.h>
+#include <Backups/BackupSettings.h>
+#include <Backups/IBackup.h>
+#include <Backups/RestorerFromBackup.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Disks/IDisk.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -306,11 +313,29 @@ void StorageSetOrJoinBase::restore()
         return;
     }
 
+    /// Restore in the same order as blocks were written
+    /// It may be important for storage Join, user expect to get the first row (unless `join_any_take_last_row` setting is set)
+    /// but after restart we may have different order of blocks in memory.
+    for (const auto & [file_num, file_path] : listDataFiles())
+    {
+        /// Calculate the maximum number of available files with a backup to add the following files with large numbers.
+        if (file_num > increment)
+            increment = file_num;
+
+        restoreFromFile(file_path);
+    }
+}
+
+
+std::vector<std::pair<UInt64, String>> StorageSetOrJoinBase::listDataFiles() const
+{
     static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
 
-    using FilePriority = std::pair<UInt64, String>;
-    std::priority_queue<FilePriority, std::vector<FilePriority>, std::greater<>> backup_files;
+    std::vector<std::pair<UInt64, String>> files;
+    if (!disk->existsDirectory(path))
+        return files;
+
     for (auto dir_it{disk->iterateDirectory(path)}; dir_it->isValid(); dir_it->next())
     {
         const auto & name = dir_it->name();
@@ -320,31 +345,27 @@ void StorageSetOrJoinBase::restore()
             && endsWith(name, file_suffix)
             && disk->getFileSize(file_path) > 0)
         {
-            /// Calculate the maximum number of available files with a backup to add the following files with large numbers.
             UInt64 file_num = parse<UInt64>(name.substr(0, name.size() - file_suffix_size));
-            if (file_num > increment)
-                increment = file_num;
-
-            backup_files.push({file_num, file_path});
+            files.emplace_back(file_num, file_path);
         }
     }
 
-    /// Restore in the same order as blocks were written
-    /// It may be important for storage Join, user expect to get the first row (unless `join_any_take_last_row` setting is set)
-    /// but after restart we may have different order of blocks in memory.
-    while (!backup_files.empty())
-    {
-        restoreFromFile(backup_files.top().second);
-        backup_files.pop();
-    }
+    std::sort(files.begin(), files.end());
+    return files;
 }
 
 
 void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
-    ContextPtr ctx = nullptr;
     auto backup_buf = disk->readFile(file_path, getReadSettings());
-    CompressedReadBuffer compressed_backup_buf(*backup_buf);
+    restoreFromBuffer(*backup_buf, file_path);
+}
+
+
+void StorageSetOrJoinBase::restoreFromBuffer(ReadBuffer & in, const String & source)
+{
+    ContextPtr ctx = nullptr;
+    CompressedReadBuffer compressed_backup_buf(in);
     NativeReader backup_stream(compressed_backup_buf, 0);
 
     ProfileInfo info;
@@ -358,7 +379,89 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(getLogger("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
-        file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
+        source, info.rows, ReadableSize(info.bytes), getSize(ctx));
+}
+
+
+void StorageSetOrJoinBase::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    /// The data files are what a restart loads, so they are what the backup holds.
+    /// A table with `persistent = 0` writes none, and its backup has only the metadata, as after a restart.
+    auto files = listDataFiles();
+    if (files.empty())
+        return;
+
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
+
+    /// Hardlink the files: TRUNCATE or a Join mutation can remove them before the backup reads them.
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
+    fs::path temp_dir = temp_dir_owner->getRelativePath();
+    disk->createDirectories(temp_dir);
+
+    fs::path data_path_in_backup_fs = data_path_in_backup;
+    for (const auto & [file_num, file_path] : files)
+    {
+        String file_name = fs::path(file_path).filename();
+        String hardlink_file_path = temp_dir / file_name;
+        disk->createHardLink(file_path, hardlink_file_path);
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(
+            disk, hardlink_file_path, copy_encrypted, std::nullopt, std::nullopt, allow_checksums_from_remote_paths);
+        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
+        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / file_name, std::move(backup_entry));
+    }
+}
+
+
+void StorageSetOrJoinBase::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+{
+    auto backup = restorer.getBackup();
+    if (!backup->hasFiles(data_path_in_backup))
+        return;
+
+    if (!restorer.isNonEmptyTableAllowed() && getSize(restorer.getContext()))
+        RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+
+    restorer.addDataRestoreTask(
+        [storage = std::static_pointer_cast<StorageSetOrJoinBase>(shared_from_this()), backup, data_path_in_backup]
+        { storage->restoreDataImpl(backup, data_path_in_backup); });
+}
+
+
+void StorageSetOrJoinBase::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
+{
+    static const char * file_suffix = ".bin";
+    static const auto file_suffix_size = strlen(".bin");
+
+    std::vector<std::pair<UInt64, String>> files_in_backup;
+    for (const auto & name : backup->listFiles(data_path_in_backup, /* recursive= */ false))
+    {
+        if (endsWith(name, file_suffix))
+            files_in_backup.emplace_back(parse<UInt64>(name.substr(0, name.size() - file_suffix_size)), name);
+    }
+    std::sort(files_in_backup.begin(), files_in_backup.end());
+
+    /// Load the files in the order they were written. A persistent table also keeps them as its own data files,
+    /// numbered after the ones it already has, the same way an INSERT writes them.
+    fs::path data_path_in_backup_fs = data_path_in_backup;
+    for (const auto & [file_num, name] : files_in_backup)
+    {
+        String file_path_in_backup = data_path_in_backup_fs / name;
+        if (!persistent)
+        {
+            auto in = backup->readFile(file_path_in_backup);
+            restoreFromBuffer(*in, file_path_in_backup);
+            continue;
+        }
+
+        String file_name = toString(++increment) + ".bin";
+        String tmp_file_path = fs::path(path) / "tmp" / file_name;
+        String file_path = fs::path(path) / file_name;
+        backup->copyFileToDisk(file_path_in_backup, disk, tmp_file_path, WriteMode::Rewrite, /* sync= */ false);
+        disk->replaceFile(tmp_file_path, file_path);
+        restoreFromFile(file_path);
+    }
 }
 
 
