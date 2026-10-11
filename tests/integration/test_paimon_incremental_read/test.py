@@ -772,6 +772,31 @@ def test_paimon_incremental_read_reused_snapshot_id_at_cursor(started_cluster):
 
         _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=200, rows_per_commit=10, commit_times=1)
         _wait_until_query_result(count_query, "10\n", database="default")
+
+        committed_path = f"{keeper_path}/committed_snapshot"
+        identity_path = f"{keeper_path}/committed_snapshot_identity"
+
+        def assert_identity_bound():
+            assert zk.exists(identity_path).mzxid == zk.exists(committed_path).mzxid, (
+                "the read that advanced the cursor did not record which snapshot it points at"
+            )
+
+        # The read that advanced a cursor set by hand records its snapshot again.
+        assert_identity_bound()
+
+        # Deleting the cursor means a full re-read: 1 + 2 * 10 + 10 rows.
+        zk.delete(committed_path)
+        out, error = node.query_and_get_answer_with_error(count_query)
+        assert not error and out == "31\n", f"deleting the cursor did not give a full re-read: {(out, error)!r}"
+        assert zk.get(committed_path)[0] == b"4"
+        assert_identity_bound()
+
+        # A cursor written by an older version has no identity node.
+        zk.delete(identity_path)
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=300, rows_per_commit=10, commit_times=1)
+        _wait_until_query_result(count_query, "10\n", database="default")
+        assert zk.get(committed_path)[0] == b"5"
+        assert_identity_bound()
     finally:
         zk.stop()
 

@@ -183,6 +183,7 @@ PaimonCommittedSnapshot PaimonStreamState::readCommittedSnapshot(const PaimonPro
     };
 
     PaimonCommittedSnapshot result;
+    result.identity_node_exists = node_exists(1, identity_path);
     if (!node_exists(0, committed_path))
         return result;
 
@@ -190,7 +191,6 @@ PaimonCommittedSnapshot PaimonStreamState::readCommittedSnapshot(const PaimonPro
     result.snapshot_id = parse<Int64>(committed.data);
     result.version = committed.stat.version;
 
-    result.identity_node_exists = node_exists(1, identity_path);
     /// Any other write to the watermark, such as an operator's `set`, changes its mzxid and
     /// leaves the identity describing a value the watermark no longer has.
     if (result.identity_node_exists && responses[1].stat.mzxid == committed.stat.mzxid)

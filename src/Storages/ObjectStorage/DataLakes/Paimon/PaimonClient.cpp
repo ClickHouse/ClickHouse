@@ -371,7 +371,8 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
     /// read snapshot and parse
     RelativePathWithMetadata snapshot_object(latest_snapshot_path);
     auto context = getContext();
-    auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false);
+    /// A rewound warehouse rewrites snapshot files at the same path.
+    auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/true);
     auto snapshot_buf = createReadBuffer(snapshot_object, object_storage, context, log, read_settings);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);
