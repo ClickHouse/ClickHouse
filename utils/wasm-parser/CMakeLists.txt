@@ -186,11 +186,24 @@ else ()
     set (AST_JSON_SOURCES)
 endif ()
 
+# The `partial_ast` of a failed `ch_parse` (`CLICKHOUSE_PARSER_PARTIAL_AST`, below): the capture
+# hook that `Parsers/PartialASTCapture.h` declares, and the `Error` node it puts into the tree. The
+# tree is only ever reported as AST JSON, so a build without formatting has no use for either.
+if (ENABLE_FORMATTING)
+    set (PARTIAL_AST_SOURCES
+        ASTError.cpp
+        PartialASTCapture.cpp
+    )
+else ()
+    set (PARTIAL_AST_SOURCES)
+endif ()
+
 add_executable (parser
     ${PARSER_SOURCES}
     ${SUPPORT_SOURCES}
     ${DOUBLE_CONVERSION_SOURCES}
     ${AST_JSON_SOURCES}
+    ${PARTIAL_AST_SOURCES}
     wasm_parser.cpp
     wasm_runtime.cpp
     wasm_sjlj.c
@@ -243,6 +256,9 @@ target_compile_definitions (parser PRIVATE
     _WASI_EMULATED_PROCESS_CLOCKS
     _WASI_EMULATED_GETPID
     CLICKHOUSE_PARSER_MINIMAL_BUILD
+    # Statement parsers capture the tree built so far before failing; see
+    # `Parsers/PartialASTCapture.h`. Nothing else defines it, so the server parser is unchanged.
+    $<$<BOOL:${ENABLE_FORMATTING}>:CLICKHOUSE_PARSER_PARTIAL_AST>
     FMT_USE_LOCALE=0
     # `NumericString.cpp` spells `std::auto_ptr` without it; the server build gets it from
     # `base/poco/Foundation/CMakeLists.txt`.

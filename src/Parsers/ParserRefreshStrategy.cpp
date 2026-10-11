@@ -7,6 +7,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTimeInterval.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/PartialASTCapture.h>
 
 namespace DB
 {
@@ -32,7 +33,10 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         refresh->schedule_kind = RefreshScheduleKind::AFTER;
         ASTPtr period;
         if (!ParserTimeInterval{ParserTimeInterval::Options {.allow_zero = true}}.parse(pos, period, expected))
+        {
+            PARTIAL_AST_FRAGMENT(expected, refresh, pos, "period");
             return false;
+        }
 
         refresh->set(refresh->period, period);
     }
@@ -41,13 +45,19 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         refresh->schedule_kind = RefreshScheduleKind::EVERY;
         ASTPtr period;
         if (!ParserTimeInterval{{.allow_mixing_calendar_and_clock_units = false}}.parse(pos, period, expected))
+        {
+            PARTIAL_AST_FRAGMENT(expected, refresh, pos, "period");
             return false;
+        }
         refresh->set(refresh->period, period);
         if (s_offset.ignore(pos, expected))
         {
             ASTPtr periodic_offset;
             if (!ParserTimeInterval{{.allow_zero = true}}.parse(pos, periodic_offset, expected))
+            {
+                PARTIAL_AST_FRAGMENT(expected, refresh, pos, "offset");
                 return false;
+            }
 
             if (periodic_offset->as<ASTTimeInterval>()->interval.maxSeconds()
                     >= period->as<ASTTimeInterval>()->interval.minSeconds())
@@ -62,7 +72,10 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         ASTPtr spread;
         if (!ParserTimeInterval{{.allow_zero = true}}.parse(pos, spread, expected))
+        {
+            PARTIAL_AST_FRAGMENT(expected, refresh, pos, "spread");
             return false;
+        }
 
         refresh->set(refresh->spread, spread);
     }
@@ -77,7 +90,10 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             std::make_unique<ParserToken>(TokenType::Comma),
             /*allow_empty*/ false};
         if (!list_parser.parse(pos, dependencies, expected))
+        {
+            PARTIAL_AST_FRAGMENT(expected, refresh, pos, "dependencies");
             return false;
+        }
         refresh->set(refresh->dependencies, dependencies);
     }
 
@@ -85,7 +101,11 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (refresh->schedule_kind == RefreshScheduleKind::UNKNOWN)
     {
         if (!refresh->dependencies)
+        {
+            /// After `RANDOMIZE FOR`, which parsed, `DEPENDS ON` is what is missing.
+            PARTIAL_AST_FRAGMENT(expected, refresh->spread ? ASTPtr(refresh) : nullptr, pos, "dependencies");
             return false;
+        }
 
         /// `REFRESH DEPENDS ON` is a shorthand for `REFRESH AFTER 0 SECOND DEPENDS ON`.
         refresh->schedule_kind = RefreshScheduleKind::AFTER;
@@ -97,7 +117,10 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         /// Settings are written like SET query, so parse them with ParserSetQuery
         ASTPtr settings;
         if (!ParserSetQuery{true}.parse(pos, settings, expected))
+        {
+            PARTIAL_AST_FRAGMENT(expected, refresh, pos, "settings");
             return false;
+        }
         refresh->set(refresh->settings, settings);
     }
 
