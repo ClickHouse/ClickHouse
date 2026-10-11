@@ -15,6 +15,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsBool parallel_replicas_plan_based;
 }
 
@@ -28,6 +29,16 @@ namespace ErrorCodes
 static bool mayShipPlanFragmentToParallelReplicas(const ContextPtr & context)
 {
     return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
+}
+
+/// A plan built with `make_distributed_plan` may be split into fragments by
+/// `QueryPlan::convertToDistributed` and shipped to workers. The setting is checked on the local
+/// context; the sticky `SelectQueryOptions::building_distributed_plan` (or the parent planner
+/// context) covers a subquery that turned the setting off in its own SETTINGS clause while the
+/// enclosing query is still planned distributed.
+static bool mayShipPlanFragmentToDistributedWorkers(const ContextPtr & context)
+{
+    return context->getSettingsRef()[Setting::make_distributed_plan];
 }
 
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const QueryTreeNodePtr & column_node)
@@ -92,14 +103,19 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerCo
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
     , is_ast_level_optimization_allowed(!(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY || select_query_options_.ignore_ast_optimizations))
-    , may_be_serialized_for_remote_execution(select_query_options_.build_logical_plan || mayShipPlanFragmentToParallelReplicas(query_context))
+    , may_be_serialized_for_remote_execution(select_query_options_.build_logical_plan
+        || select_query_options_.building_distributed_plan
+        || mayShipPlanFragmentToDistributedWorkers(query_context)
+        || mayShipPlanFragmentToParallelReplicas(query_context))
 {}
 
 PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_)
     : query_context(std::move(query_context_))
     , global_planner_context(planner_context_->global_planner_context)
     , is_ast_level_optimization_allowed(planner_context_->is_ast_level_optimization_allowed)
-    , may_be_serialized_for_remote_execution(planner_context_->may_be_serialized_for_remote_execution || mayShipPlanFragmentToParallelReplicas(query_context))
+    , may_be_serialized_for_remote_execution(planner_context_->may_be_serialized_for_remote_execution
+        || mayShipPlanFragmentToDistributedWorkers(query_context)
+        || mayShipPlanFragmentToParallelReplicas(query_context))
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
