@@ -17,7 +17,7 @@ enum class StoreMethod
     EMPTY,
 
     /// A const scalar value stored in `SQLQueryPiece::scalar_value`.
-    /// CONST_SCALAR is produced by a float literal in a prometheus query.
+    /// CONST_SCALAR is produced by a float literal or a constant expression in a prometheus query.
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     CONST_SCALAR,
 
