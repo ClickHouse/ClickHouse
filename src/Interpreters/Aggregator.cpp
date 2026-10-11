@@ -203,8 +203,7 @@ void updateStatistics(
     ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
 
-    /// A read linked to the top-K heap drops the rows beyond its boundary, which is published only once a heap holds
-    /// `k` keys, so from `k` keys on the tables may hold only the top groups.
+    /// A linked read drops rows beyond the boundary once a heap holds `k` keys, so then the tables may hold only the top groups.
     if (linked_top_k && sum_of_sizes >= linked_top_k)
         return;
 

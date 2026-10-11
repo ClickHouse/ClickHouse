@@ -87,8 +87,6 @@ static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, cons
     return node->result_name;
 }
 
-/// The query condition cache salt of a read linked to the top-K heap of the aggregation, see its use in
-/// `tryAttachDynamicFilter`.
 static UInt64 groupByTopKConditionHash(
     const String & key_name,
     const DataTypePtr & key_type,
@@ -129,9 +127,7 @@ static UInt64 groupByTopKConditionHash(
     return hash.get64();
 }
 
-/// The link of `tryAttachDynamicFilter` for a step that reads a data format, through `FormatTopKFilterInfo`
-/// as for `ORDER BY column LIMIT n` (see `tryTopKForFormatSource`). The format keeps the rows equal to the
-/// boundary, which a group at the boundary needs.
+/// The format keeps the rows equal to the boundary, which a group at the boundary needs.
 static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
     SourceStepWithFilterBase & source_step,
     const String & key_name,
@@ -215,8 +211,7 @@ static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
     return threshold_tracker;
 }
 
-/// Links the top-K heap of the aggregation to the `ReadFromMergeTree` step below it, or to a step reading a
-/// data format (see `tryAttachFormatDynamicFilter`).
+/// Links the top-K heap of the aggregation to the `ReadFromMergeTree` or data format reading step below it.
 ///
 /// The heap admits only keys not worse than its boundary once it holds `LIMIT` of them, so a row whose
 /// first ranked key column is beyond the boundary can never reach the result. When that column is a

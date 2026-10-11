@@ -600,9 +600,7 @@ struct Reader
     bool row_groups_ordered_by_top_k = false;
     /// TopN dynamic filtering: the first of `steps` compares the sort column with the threshold.
     bool has_top_k_step = false;
-    /// `FormatTopKFilterInfo::stop_when_unprofitable` is set. Then, once the threshold step has checked
-    /// `top_k_step_rows_to_observe` rows and the rows it dropped, counted once more for every column read after it,
-    /// are under a tenth of them, it is not run for the rest of the file (`top_k_step_unprofitable`).
+    /// `stop_when_unprofitable`: the threshold step stops for the rest of the file once it drops too few rows (`applyPrewhere`).
     bool top_k_step_may_stop = false;
     static constexpr size_t top_k_step_rows_to_observe = 1 << 13;
     size_t top_k_step_columns_after = 0;
@@ -701,12 +699,9 @@ struct Reader
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
-    /// The step to start the row subgroup with: the first step, or the step after the TopN threshold step once that
-    /// step stopped paying off (the subgroup is then marked to skip it; it only drops rows, so skipping it changes
-    /// no result).
+    /// The TopN threshold step only drops rows, so a row subgroup may skip it once it stops paying off.
     size_t firstStepOfRowSubgroup(RowSubgroup & row_subgroup) const;
     size_t stepAfterTopKStep() const { return steps.size() > 1 ? 2 : 0; }
-    /// The step whose stage reads the column for this row subgroup.
     size_t firstStepToReadColumn(const PrimitiveColumnInfo & column_info, const RowSubgroup & row_subgroup) const;
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);

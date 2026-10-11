@@ -3860,8 +3860,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         chassert(!(has_top_k_step && step_idx == 1 && row_subgroup.skip_top_k_step));
         const Step & step = steps.at(step_idx - 1);
 
-        /// Every row passes the threshold step until the threshold is set, and in a row group whose worst value by
-        /// its statistics (a range only for a row group without NULLs) is inside the threshold.
+        /// Every row passes the threshold step until the threshold is set, and in a row group whose worst value is inside it.
         if (has_top_k_step && step_idx == 1)
         {
             const auto & tracker = *format_filter_info->top_k_filter->threshold_tracker;

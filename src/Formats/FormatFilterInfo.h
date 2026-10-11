@@ -20,12 +20,12 @@ using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 class ITopKThresholdTracker;
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
 
-/// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`, and `GROUP BY x LIMIT n`,
-/// see `tryOptimizeGroupByTopK`): the format may drop rows that cannot enter the query's top-K, and
-/// skip whole row groups / pages whose statistics prove the same, by comparing the sort column
-/// against the running threshold of the top-K heap (published into the shared tracker by the
-/// sorting transforms or by the top-K heap of the aggregation). The tracker carries the sort
+/// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
+/// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove
+/// the same, by comparing the sort column against the running threshold of the top-K heap
+/// (published by the sorting transforms into the shared tracker). The tracker carries the sort
 /// direction, NULLS FIRST/LAST and collation. Only supported by the Parquet format.
+/// `GROUP BY x LIMIT n` (see `tryOptimizeGroupByTopK`) publishes the boundary of its top-K heap the same way.
 struct FormatTopKFilterInfo
 {
     /// Name of the first `ORDER BY` column or ranked `GROUP BY` key in the format's output block.
