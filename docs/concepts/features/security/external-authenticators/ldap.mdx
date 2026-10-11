@@ -80,10 +80,14 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 | `tls_ca_cert_dir` | — | Path to the directory containing CA certificates. |
 | `tls_cipher_suite` | — | Allowed cipher suite (in OpenSSL notation). |
 | `search_limit` | `256` | Maximum number of entries that can be returned by LDAP search queries performed by this server definition (for user DN detection and role mapping). |
+| `lookup_bind_dn` | — | Optional. DN of a service account used to resolve user names without the user's own password. Required by `EXECUTE AS` so an LDAP-backed user can be impersonated before they have authenticated against this server. Requires `user_dn_detection` to also be configured, and the `user_dn_detection` query must be target-specific — its `base_dn` or `search_filter` must depend on the requested user, either directly via `{user_name}`, or transitively via `{bind_dn}` / `{user_dn}` when the `bind_dn` template itself contains `{user_name}`. A static `user_dn_detection` query that returns the same DN for every requested user is rejected at parse time with `BAD_ARGUMENTS`. Must be provided together with `lookup_password`. |
+| `lookup_password` | — | Password for `lookup_bind_dn`. Cannot be empty when `lookup_bind_dn` is set; an empty value is rejected with `BAD_ARGUMENTS` to avoid issuing an LDAP unauthenticated (anonymous) simple bind. |
 
 **`user_dn_detection` sub-parameters**
 
 Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated to the actual detected user DN value.
+
+When `user_dn_detection` is used together with `lookup_bind_dn`, the search must be target-specific: `base_dn` or `search_filter` must depend on the requested user via `{user_name}`, or via `{bind_dn}` / `{user_dn}` whose underlying `bind_dn` template contains `{user_name}`. A static query that returns the same single entry for every requested user is rejected at parse time, because it would let the service-bind path resolve `EXECUTE AS some_other_name` to an unrelated entry's DN.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -152,14 +156,22 @@ Goes into `config.xml`.
             </role_mapping>
         </ldap>
 
-        <!- Typical Active Directory with role mapping that relies on the detected user DN. -->
+        <!- Typical Active Directory: the user's own `memberOf` attribute lists the DNs of the groups,
+             the CN of each allow-listed group becomes the role name. Relies on the detected user DN. -->
         <ldap>
             <server>my_ad_server</server>
             <role_mapping>
-                <base_dn>CN=Users,DC=example,DC=com</base_dn>
-                <attribute>CN</attribute>
-                <scope>subtree</scope>
-                <search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
+                <base_dn>{user_dn}</base_dn>
+                <scope>base</scope>
+                <search_filter>(objectClass=*)</search_filter>
+                <attribute>memberOf</attribute>
+                <rdn_attribute>cn</rdn_attribute>
+                <groups>
+                    <!- DN form: pins the container (recommended for Active Directory). -->
+                    <group>CN=clickhouse_analysts,OU=ClickHouse,DC=example,DC=com</group>
+                    <!- Plain form: matched against the extracted CN in any container. -->
+                    <group>clickhouse_admins</group>
+                </groups>
                 <prefix>clickhouse_</prefix>
             </role_mapping>
         </ldap>
@@ -178,12 +190,52 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
 
 **`role_mapping` sub-parameters**
 
-Section with LDAP search parameters and mapping rules. When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/reference/statements/create/role) statement. There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
+Section with LDAP search parameters and mapping rules. When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/reference/statements/create/role) statement. Values can additionally be reduced to an RDN with `rdn_attribute` (for example, the CN of an Active Directory `memberOf` group DN) and filtered with a `groups` allow-list; see [Mapping pipeline](#ldap-role-mapping-pipeline) for the exact order. There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `base_dn` | — | Template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{user_dn}` substrings of the template with the actual user name, bind DN, and user DN during each LDAP search. |
 | `scope` | `subtree` | Scope of the LDAP search. Accepted values: `base`, `one_level`, `children`, `subtree`. |
 | `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN, and base DN during each LDAP search. Note that special characters must be escaped properly in XML. |
-| `attribute` | `cn` | Attribute name whose values will be returned by the LDAP search. |
-| `prefix` | empty | Prefix expected in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. |
+| `attribute` | `cn` | Attribute name whose values will be returned by the LDAP search. The special value `dn` returns the DN of each found entry instead of an attribute. |
+| `prefix` | empty | Prefix expected in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. Compared case-sensitively. |
+| `rdn_attribute` | empty | If set, each value returned by the LDAP search is parsed as a DN and replaced by the value of its first RDN whose attribute type equals `rdn_attribute` (compared case-insensitively). For example, with `rdn_attribute` set to `cn`, the Active Directory `memberOf` value `CN=clickhouse_admins,OU=Groups,DC=example,DC=com` becomes `clickhouse_admins`. Values that are not DNs or have no such RDN are ignored. Requires a non-empty `groups` list or a non-empty `prefix`. |
+| `groups` | empty | Optional allow-list of `<group>` entries; when non-empty, only values matching one of the entries are mapped and all others are ignored. An entry containing `=` is a full group DN: it is compared against the raw search result before `rdn_attribute` extraction, ignoring differences in letter case, whitespace and escaping, and the role name is derived from the `rdn_attribute` value of the configured DN (requires `rdn_attribute`). Any other entry is a plain group name compared ASCII-case-insensitively against the value after `rdn_attribute` extraction; the spelling configured here is used as the role name. `prefix` is removed from that spelling afterwards, so every entry (for a DN-form entry: its `rdn_attribute` value) must start with the configured `prefix`. Empty and duplicate entries, entries that are not valid DNs or lack the `rdn_attribute` RDN, and entries that do not carry the prefix are rejected at startup. See [Mapping pipeline](#ldap-role-mapping-pipeline). |
+
+### Mapping pipeline {#ldap-role-mapping-pipeline}
+
+Each value returned by the LDAP search of a `role_mapping` section goes through the following steps. A value dropped at any step grants no role.
+
+1. If `groups` contains DN-form entries and the value, normalized as a DN, equals one of them, the value is replaced by the `rdn_attribute` value of that configured DN, spelled as in the configuration, and step 2 is skipped.
+2. Otherwise, if `rdn_attribute` is set, the value is parsed as a DN and replaced by the unescaped value of its first RDN of that type; values that are not DNs or have no such RDN are dropped. Then, if `groups` is non-empty, the value must equal a plain-form entry ASCII-case-insensitively and is replaced by the configured spelling; otherwise it is dropped.
+3. If the value starts with `prefix`, the prefix is removed; otherwise the value is dropped. `prefix` is compared case-sensitively. Since a `groups` entry is matched with the configured spelling, an allow-listed entry that does not start with the prefix (or has nothing after it) could never grant a role; such entries are rejected when the configuration is loaded.
+4. The result is the name of a local role, which is expected to exist (see [CREATE ROLE](/reference/statements/create/role)). Missing roles are skipped with a warning in the server log.
+
+Because the configured spelling wins in both forms of `groups` entries, the ClickHouse role name is deterministic even though LDAP servers usually match attribute values case-insensitively.
+
+**Two forms of `<group>` entries**
+
+- A plain name, for example `<group>clickhouse_admins</group>`, matches a group with that name in any container. In Active Directory the CN of a group is unique only within its container, so a group `CN=clickhouse_admins,OU=Other,DC=example,DC=com` created elsewhere in the forest would match as well.
+- A full DN, for example `<group>CN=clickhouse_admins,OU=ClickHouse,DC=example,DC=com</group>`, pins the container and is the recommended form for Active Directory. It requires `rdn_attribute`, which selects the RDN whose value becomes the role name.
+
+**Reading `memberOf`**
+
+The example above reads the `memberOf` attribute of the user's own entry: `base_dn` is `{user_dn}`, so `user_dn_detection` must be configured for the server, `scope` is `base` and `search_filter` is `(objectClass=*)`. The search runs under whichever identity ClickHouse is bound with when it performs the role searches: the user's own bind, or the service account `lookup_bind_dn` where it is used (see [LDAP server definition](#ldap-server-definition)). That identity must be allowed to read the user's `memberOf` attribute; Active Directory lets users read their own `memberOf` by default.
+
+**Nested groups in Active Directory**
+
+`memberOf` lists direct memberships only. To grant roles through nested groups, search the groups with the `LDAP_MATCHING_RULE_IN_CHAIN` matching rule (`1.2.840.113556.1.4.1941`) instead. With `attribute` set to `dn` the search returns the DNs of the matching groups, which are then mapped exactly like `memberOf` values:
+
+```xml
+<role_mapping>
+    <base_dn>OU=ClickHouse,DC=example,DC=com</base_dn>
+    <scope>subtree</scope>
+    <search_filter>(&amp;(objectClass=group)(member:1.2.840.113556.1.4.1941:={user_dn}))</search_filter>
+    <attribute>dn</attribute>
+    <rdn_attribute>cn</rdn_attribute>
+    <groups>
+        <group>CN=clickhouse_admins,OU=ClickHouse,DC=example,DC=com</group>
+    </groups>
+    <prefix>clickhouse_</prefix>
+</role_mapping>
+```

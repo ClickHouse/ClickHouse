@@ -1,0 +1,12 @@
+<clickhouse>
+    <users>
+        <!-- The harness's `default` user (from `0_common_instance_users.xml`) is kept: the readiness
+             probe run by `start_clickhouse` queries as `default`, so removing it makes every restart
+             in the test look like a failed start. -->
+        <common_user>
+            <password>qwerty</password>
+            <access_management>1</access_management>
+            <readonly>0</readonly>
+        </common_user>
+    </users>
+</clickhouse>
