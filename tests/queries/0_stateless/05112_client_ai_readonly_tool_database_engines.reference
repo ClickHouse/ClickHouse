@@ -1,0 +1,14 @@
+select_local: OK
+select_foreign_database: BLOCKED
+show_tables_local: OK
+show_tables_current: OK
+show_tables_foreign_database: BLOCKED
+show_dictionaries_foreign_database: BLOCKED
+show_create_local: OK
+show_create_foreign_database: BLOCKED
+exists_local: OK
+exists_foreign_database: BLOCKED
+show_columns_local: OK
+show_columns_foreign_database: BLOCKED
+system_tables: OK
+show_databases: OK

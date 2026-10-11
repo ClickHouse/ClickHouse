@@ -3,12 +3,30 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <cstdlib>
+#include <limits>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// Read an API key from the environment, treating an empty value as unset: a stale
+/// `export OPENAI_API_KEY=""` in a shell profile must not hijack the provider selection
+/// from a real `ANTHROPIC_API_KEY` (and vice versa), and an empty key can never
+/// authenticate anyway.
+const char * getKeyFromEnvironment(const char * name)
+{
+    const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+    return (value != nullptr && *value != '\0') ? value : nullptr;
+}
+
 }
 
 AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
@@ -20,22 +38,30 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
     if (config.provider.empty())
     {
         LOG_DEBUG(logger, "No AI provider specified, trying environment-based fallbacks");
-        auto client = ai::openai::try_create_client();
-        if (client.has_value())
+        if (const char * openai_key = getKeyFromEnvironment("OPENAI_API_KEY"))
         {
-            result.client = std::move(client);
+#if defined(AI_SDK_HAS_OPENAI)
+            result.client = ai::openai::create_client(openai_key, /*base_url=*/ "");
             result.inferred_from_env = true;
             result.provider = "openai";
+            if (getKeyFromEnvironment("ANTHROPIC_API_KEY"))
+                result.unused_environment_key = "ANTHROPIC_API_KEY";
             return result;
+#else
+            LOG_DEBUG(logger, "Ignoring OPENAI_API_KEY because OpenAI support is not compiled in");
+#endif
         }
 
-        client = ai::anthropic::try_create_client();
-        if (client.has_value())
+        if (const char * anthropic_key = getKeyFromEnvironment("ANTHROPIC_API_KEY"))
         {
-            result.client = std::move(client);
+#if defined(AI_SDK_HAS_ANTHROPIC)
+            result.client = ai::anthropic::create_client(anthropic_key, /*base_url=*/ "");
             result.inferred_from_env = true;
             result.provider = "anthropic";
             return result;
+#else
+            LOG_DEBUG(logger, "Ignoring ANTHROPIC_API_KEY because Anthropic support is not compiled in");
+#endif
         }
 
         result.no_configuration_found = true;
@@ -81,10 +107,11 @@ AIConfiguration AIClientFactory::loadConfiguration(const Poco::Util::AbstractCon
         ai_config.temperature = config.getDouble("ai.temperature");
 
     if (config.has("ai.max_tokens"))
+    {
         ai_config.max_tokens = config.getUInt64("ai.max_tokens");
-
-    if (config.has("ai.timeout_seconds"))
-        ai_config.timeout_seconds = config.getUInt64("ai.timeout_seconds");
+        if (ai_config.max_tokens == 0 || ai_config.max_tokens > static_cast<size_t>(std::numeric_limits<int>::max()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `ai.max_tokens` setting must be between 1 and {}", std::numeric_limits<int>::max());
+    }
 
     if (config.has("ai.max_steps"))
         ai_config.max_steps = config.getUInt64("ai.max_steps");
