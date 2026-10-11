@@ -48,6 +48,9 @@ SET use_statistics_cache = 1;
 SET max_threads = 1;
 SET merge_tree_min_bytes_per_task_for_remote_reading = 1024;
 SET automatic_parallel_replicas_min_bytes_per_replica = 0;
+-- Unless the join swaps, the coordinated read is the small table and every replica reads the big one in
+-- full, so nearly all of the reading is duplicated. That gate is not what this test is about.
+SET automatic_parallel_replicas_max_duplicated_read_ratio = 1;
 
 -- What the query answers without parallel replicas, so the adopted plan can be checked against it.
 INSERT INTO t_plan_based_baseline
