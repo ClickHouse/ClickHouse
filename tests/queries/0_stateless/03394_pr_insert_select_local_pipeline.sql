@@ -1,5 +1,10 @@
 SET enable_analyzer=1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET parallel_distributed_insert_select=2;
+-- Pinned to the query-based implementation: with `parallel_replicas_plan_based` the insert is not
+-- distributed at all, because the probe in `isSuitableForInsertSelectWithParallelReplicas` looks
+-- for the query-based reading step in the unoptimized plan. The data stays correct, only the
+-- insert stops being distributed. See https://github.com/ClickHouse/ClickHouse/issues/118276.
+SET parallel_replicas_plan_based = 0;
 
 DROP TABLE IF EXISTS t_mt_source;
 DROP TABLE IF EXISTS t_rmt_target SYNC;
