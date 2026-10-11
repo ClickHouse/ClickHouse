@@ -36,9 +36,10 @@ class QuerySlot;
 /// A query can run several distributed plans (e.g. one per distributed subquery). The tasks of all of
 /// them carry the id of the initiator's group, so on every server they join one group per query.
 ///
-/// A part of the query always joins the query's group, also when it sets its own `workload` or
-/// scheduling settings: those settings of a part are ignored, so that all parts of a query share its
-/// resources and changing a setting of a part does not split the query.
+/// A part of the query always joins the query's group, under the query's `workload` and scheduling
+/// settings, so that all parts of a query share its resources and the query is never split. A part
+/// cannot set its own values of them: such a query is rejected before it runs, see
+/// `Context::checkSchedulingSettingsOfQueryPart`.
 class QuerySchedulingGroup : private boost::noncopyable
 {
 public:

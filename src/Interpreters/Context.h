@@ -1034,8 +1034,8 @@ public:
     /// NOTE: Workload cannot be changed after the group is created.
     QuerySchedulingGroupPtr getSchedulingGroup() const;
     /// Makes this query context a part of the query that owns `group`: the query is scheduled together
-    /// with the other parts of `group`, under the workload and scheduling settings of `group`. Its own
-    /// `workload` and scheduling settings are not used for scheduling.
+    /// with the other parts of `group`, under the workload and scheduling settings of `group`. A part
+    /// whose own values of them differ is rejected, see `checkSchedulingSettingsOfQueryPart`.
     /// Call after `makeQueryContext` and before the group is created.
     void setParentSchedulingGroup(QuerySchedulingGroupPtr group);
     /// Throws if this context is a part of a query (a copy of a query context, or a query context with a
