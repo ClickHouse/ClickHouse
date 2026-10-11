@@ -786,7 +786,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// first command scan so their MATERIALIZED closure can be seeded into dependency analysis
     /// below, before the per-command stage loop runs.
     NameSet clear_column_names;
-    bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
+    bool materialize_ttl_recalculate_only = settings.materialize_ttl_recalculate_only
+        ? *settings.materialize_ttl_recalculate_only : source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
     bool has_rewrite_parts = false;
     bool has_clear_column = false;
@@ -1431,9 +1432,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
 
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = source.getMergeTreeData()
-                && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
-                && metadata_snapshot->hasOnlyRowsTTL();
+            const bool ttl_only_drop_parts = settings.ttl_only_drop_parts
+                ? *settings.ttl_only_drop_parts
+                : source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
+            const bool suitable_for_ttl_optimization = ttl_only_drop_parts && metadata_snapshot->hasOnlyRowsTTL();
 
             if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
             {

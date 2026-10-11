@@ -85,6 +85,9 @@ public:
         bool apply_deleted_mask = true;
         /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
         bool recalculate_dependencies_of_updated_columns = true;
+        /// TTL settings captured by the mutation task, instead of rereading the table settings.
+        std::optional<bool> materialize_ttl_recalculate_only;
+        std::optional<bool> ttl_only_drop_parts;
         /// Whether the actions only apply pending mutations while reading a part. Such an interpreter
         /// writes nothing, so diagnostics about what a mutation leaves on disk do not apply to it.
         bool apply_on_fly_for_read = false;
