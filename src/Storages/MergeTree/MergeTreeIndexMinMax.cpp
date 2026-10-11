@@ -211,8 +211,7 @@ bool needsTotalOrderExtremes(const IDataType & type)
             tag_stable = false;
     };
 
-    visit(type);
-    type.forEachChild(visit);
+    forEachInTypeTree(type, visit);
 
     return tag_stable && has_float;
 }
