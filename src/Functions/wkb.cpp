@@ -12,11 +12,33 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
 {
+
+/// `wkb` serializes exactly the named geometry types it has a transform for. Returns `nullptr` for
+/// anything else, including `Ring` and the anonymous structural types (`Array(Tuple(Float64,
+/// Float64))` and friends) that the geometry dispatch otherwise reads: they have no WKB
+/// representation. Shared by `getReturnTypeImpl` and `executeImpl` so the domain is one predicate.
+std::shared_ptr<IWKBTransform> tryGetWKBTransform(const DataTypePtr & type)
+{
+    const auto & name = type->getName();
+    if (name == WKBPointTransform::name)
+        return std::make_shared<WKBPointTransform>();
+    if (name == WKBLineStringTransform::name)
+        return std::make_shared<WKBLineStringTransform>();
+    if (name == WKBPolygonTransform::name)
+        return std::make_shared<WKBPolygonTransform>();
+    if (name == WKBMultiPointTransform::name)
+        return std::make_shared<WKBMultiPointTransform>();
+    if (name == WKBMultiLineStringTransform::name)
+        return std::make_shared<WKBMultiLineStringTransform>();
+    if (name == WKBMultiPolygonTransform::name)
+        return std::make_shared<WKBMultiPolygonTransform>();
+    return nullptr;
+}
 
 class FunctionWKB final : public IFunction
 {
@@ -31,7 +53,20 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        /// Stated here, so an argument `wkb` cannot serialize is refused during analysis rather than
+        /// only once a row reaches `executeImpl`. `ILLEGAL_TYPE_OF_ARGUMENT` is the code
+        /// `FunctionBaseVariantAdaptor` reads as type incompatibility, so a `Variant` alternative
+        /// `wkb` refuses is skipped instead of failing the query.
+        if (!tryGetWKBTransform(arguments[0]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "{} function is not supported for type {}",
+                getName(),
+                arguments[0]->getName());
+        return std::make_shared<DataTypeString>();
+    }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
@@ -42,21 +77,13 @@ public:
     {
         auto res_column = ColumnString::create();
 
-        std::shared_ptr<IWKBTransform> transform;
-        if (arguments[0].type->getName() == WKBPointTransform::name)
-            transform = std::make_shared<WKBPointTransform>();
-        else if (arguments[0].type->getName() == WKBLineStringTransform::name)
-            transform = std::make_shared<WKBLineStringTransform>();
-        else if (arguments[0].type->getName() == WKBPolygonTransform::name)
-            transform = std::make_shared<WKBPolygonTransform>();
-        else if (arguments[0].type->getName() == WKBMultiPointTransform::name)
-            transform = std::make_shared<WKBMultiPointTransform>();
-        else if (arguments[0].type->getName() == WKBMultiLineStringTransform::name)
-            transform = std::make_shared<WKBMultiLineStringTransform>();
-        else if (arguments[0].type->getName() == WKBMultiPolygonTransform::name)
-            transform = std::make_shared<WKBMultiPolygonTransform>();
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "wkb function is not supported for type {}", arguments[0].type->getName());
+        auto transform = tryGetWKBTransform(arguments[0].type);
+        if (!transform)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "{} function is not supported for type {}",
+                getName(),
+                arguments[0].type->getName());
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
