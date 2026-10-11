@@ -134,10 +134,22 @@ def test_install_rpm(image: DockerImage) -> List[Result]:
     tests = {
         "Install server rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{server,client,common}*rpm
+systemctl is-enabled clickhouse-server
 echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
-bash -ex /packages/server_test.sh""",
+bash -ex /packages/server_test.sh
+# RPM installs the unit under /usr/lib/systemd/system. The init script must
+# delegate to it instead of starting a second, daemonized server.
+/etc/init.d/clickhouse-server start
+/etc/init.d/clickhouse-server status
+systemctl stop clickhouse-server
+# A stale pid file distinguishes systemctl status from the legacy status command,
+# which exits successfully after reading a stale pid.
+mkdir -p /run/clickhouse-server
+echo "$(( $(cat /proc/sys/kernel/pid_max) + 1 ))" > /run/clickhouse-server/clickhouse-server.pid
+! /etc/init.d/clickhouse-server status""",
         "Install keeper rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
+systemctl is-enabled clickhouse-keeper
 bash -ex /packages/keeper_test.sh""",
     }
     return test_install(image, tests)
