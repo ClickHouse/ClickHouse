@@ -5650,6 +5650,18 @@ def run_tests_array(
             try:
                 if isinstance(all_tests, ParallelTestScheduler):
                     case = all_tests.pop_for_worker(process_index)
+                    if case is None:
+                        # Every pending test belongs to a group another worker is
+                        # running. Leaving the pool now would put the rest of that
+                        # group, and everything queued behind it, on the group's
+                        # worker alone, and on nobody if that worker dies; so wait
+                        # for the group to be released, unless the run is stopping.
+                        if stop_testing.is_set() or (
+                            args.stop_time and time() > args.stop_time
+                        ):
+                            raise IndexError
+                        sleep(0.1)
+                        continue
                 else:
                     case = all_tests.pop(0)
             except IndexError:
@@ -6609,6 +6621,9 @@ class ParallelTestScheduler:
             self.active_groups.pop(group, None)
 
     def pop_for_worker(self, worker_index):
+        """Take the next runnable test. Returns `None` while tests are pending but
+        every one of them is held back by a group another worker is running, and
+        raises `IndexError` only once the queue is empty."""
         with self.lock:
             for index, test_name in enumerate(self.pending_tests):
                 group = self.test_groups.get(test_name)
@@ -6624,6 +6639,9 @@ class ParallelTestScheduler:
                     self.active_groups[group] = True
                     self.worker_groups[worker_index] = group
                 return test_name
+
+            if self.pending_tests:
+                return None
 
         raise IndexError
 
@@ -6771,6 +6789,7 @@ def do_run_tests(
                         ),
                     ),
                 )
+                process.worker_index = process_index
                 processes.append(process)
                 process.start()
                 worker_pids.add(process.pid)
@@ -6809,6 +6828,9 @@ def do_run_tests(
             def reap_finished_workers():
                 for p in processes[:]:
                     if not p.is_alive():
+                        # A worker that died mid-test still holds its group in the
+                        # scheduler; release it so the group's other tests can run.
+                        shared_queue.finish_previous_test(p.worker_index)
                         # Check if process was killed with exception
                         if p.exitcode is not None and p.exitcode != 0:
                             print(
