@@ -59,6 +59,11 @@ protected:
     /// and the default output format, so it maps to the bidirectional `format` setting.
     std::string_view mappedFormatOptionSetting() const override { return "format"; }
 
+    std::string_view dumpSchemaConflicts() const override
+    {
+        return "`--query`, `--queries-file`, `--file`, `--structure`, `--input-format` or a file, pipe or socket on stdin";
+    }
+
     void printHelpMessage(const OptionsDescription & options_description) override;
 
     void addExtraOptions(OptionsDescription & options_description) override;
