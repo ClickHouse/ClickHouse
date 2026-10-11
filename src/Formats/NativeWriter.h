@@ -35,6 +35,9 @@ public:
 
     static std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column);
 
+    /// Sets the state versions of the aggregate functions in `type` to the ones announced to a peer at `client_revision`.
+    static void setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision);
+
     static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision);
 
 private:
