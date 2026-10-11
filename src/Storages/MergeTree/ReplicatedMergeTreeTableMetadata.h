@@ -63,6 +63,9 @@ struct ReplicatedMergeTreeTableMetadata
 
     struct Diff
     {
+        bool partition_key_changed = false;
+        String new_partition_key;
+
         bool sorting_key_changed = false;
         String new_sorting_key;
 
@@ -83,7 +86,7 @@ struct ReplicatedMergeTreeTableMetadata
 
         bool empty() const
         {
-            return !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
+            return !partition_key_changed && !sorting_key_changed && !sampling_expression_changed && !skip_indices_changed && !projections_changed
                 && !ttl_table_changed && !constraints_changed;
         }
 

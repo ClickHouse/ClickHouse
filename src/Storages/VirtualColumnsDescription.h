@@ -40,6 +40,7 @@ public:
     VirtualColumnsDescription() = default;
 
     void add(VirtualColumnDescription desc);
+    void remove(const String & name);
     void addEphemeral(String name, DataTypePtr type, String comment, VirtualsMaterializationPlace place, bool deterministic = true);
     void addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment);
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
