@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
+#include <Core/Names.h>
 
 namespace DB
 {
@@ -79,12 +80,15 @@ struct PatchReadResultToApply
 /// Builds patches of all modes from patch read results and applies them to result_block.
 /// Patches updating the same set of columns are combined and applied together.
 /// `key_columns` supplies the sorting key columns used for MergeOnKey key comparisons.
+/// If `patched_columns` is set, the names of the columns of `result_block` in which
+/// at least one row was updated are added to it.
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const Block & key_columns,
     const std::vector<PatchReadResultToApply> & patch_read_results,
-    UInt64 source_data_version);
+    UInt64 source_data_version,
+    NameSet * patched_columns = nullptr);
 
 /// Helpers defined in applyPatches.cpp, shared with the legacy formats (applyPatchesLegacy.cpp).
 const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const String & column_name);
@@ -92,6 +96,8 @@ PaddedPODArray<UInt64> & getColumnUInt64Data(Block & block, const String & colum
 bool canApplyPatchInplace(const IColumn & column);
 IColumn::Versions & addDataVersionForColumn(Block & block, const String & column_name, UInt64 num_rows, UInt64 data_version);
 Block getUpdatedHeader(const PatchesIndices & patches);
+/// Adds to `patched_columns` the columns of `result_block` with data that `patches` update in at least one row.
+void addPatchedColumns(const Block & result_block, const PatchesIndices & patches, NameSet & patched_columns);
 
 /// Applies each patch as-is, without combining row indices across patches.
 /// Patches may have multiple source blocks (e.g. built by applyPatchesMergeOnKey).

@@ -147,6 +147,26 @@ Block getUpdatedHeader(const PatchesIndices & patches)
     return headers.front();
 }
 
+void addPatchedColumns(const Block & result_block, const PatchesIndices & patches, NameSet & patched_columns)
+{
+    for (const auto & patch : patches)
+    {
+        /// A patch read for a range may match no row of the result block.
+        if (patch->patch_blocks.empty() || patch->getNumRows() == 0)
+            continue;
+
+        for (const auto & column : patch->patch_blocks.front())
+        {
+            if (isPatchPartSystemColumn(column.name) || !column.column)
+                continue;
+
+            const auto * result_column = result_block.findByName(column.name);
+            if (result_column && result_column->column)
+                patched_columns.insert(column.name);
+        }
+    }
+}
+
 /// Applies each patch as-is, without combining row indices across patches.
 /// Patches may have multiple source blocks (e.g. built by applyPatchesMergeOnKey).
 void applyPatchesIndices(
@@ -789,9 +809,10 @@ void applyPatchesToBlock(
     Block & versions_block,
     const Block & key_columns,
     const std::vector<PatchReadResultToApply> & patch_read_results,
-    UInt64 source_data_version)
+    UInt64 source_data_version,
+    NameSet * patched_columns)
 {
-    applyPatchesToBlockLegacy(result_block, versions_block, patch_read_results, source_data_version);
+    applyPatchesToBlockLegacy(result_block, versions_block, patch_read_results, source_data_version, patched_columns);
     std::vector<MergeOnKeyGroup> merge_on_key_groups;
 
     for (const auto & [patch, read_result, updated_columns] : patch_read_results)
@@ -830,6 +851,10 @@ void applyPatchesToBlock(
 
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
             PatchesIndices patches{std::move(patch_indices)};
+
+            if (patched_columns)
+                addPatchedColumns(result_block, patches, *patched_columns);
+
             applyPatchesIndices(result_block, versions_block, patches, getUpdatedHeader(patches), source_data_version);
         }
     }
