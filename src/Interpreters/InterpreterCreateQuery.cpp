@@ -1337,7 +1337,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// `CLONE AS` and restoring from a backup attach existing data parts, which are physically laid out
     /// in the original order. Flipping the stored `ORDER BY` to `DESC` for them would make the metadata
     /// disagree with the data on disk, so the rewrite is skipped for these.
-    if (!internal && !create.is_clone_as && !is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE
+    /// Internal queries are skipped too, because they create hidden inner tables from definitions which
+    /// the outer query has already rewritten. The exception is an internal `TimeSeries` table, e.g. the one
+    /// behind `CREATE MATERIALIZED VIEW ... ENGINE = TimeSeries`: the default engines of its own inner tables
+    /// are added only above by `normalizeTimeSeriesDefinition`, so the outer query could not rewrite them.
+    /// `StorageMaterializedView` disables the setting for that internal query when restoring from a backup.
+    if ((!internal || create.is_time_series_table) && !create.is_clone_as && !is_restore_from_backup
+        && mode <= LoadingStrictnessLevel::CREATE
         && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
     {
         applyForceReverseOrder(create);
@@ -3961,6 +3967,8 @@ BlockIO InterpreterCreateQuery::execute()
             /// engine: it is resolved only on the worker hosts (the source table may not even exist on the
             /// initiator), so such queries are left as is. This is a testing setting, so the gap is accepted
             /// rather than rejecting these queries, which would break randomized tests on this legacy path.
+            /// The same applies to the default engines of the inner tables of `TimeSeries`: they are added by
+            /// `normalizeTimeSeriesDefinition` only on the worker hosts, so only explicitly specified ones are rewritten.
             if (!is_create_database && !internal && !create.attach && !create.is_clone_as && !is_restore_from_backup
                 && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
                 applyForceReverseOrder(create);
