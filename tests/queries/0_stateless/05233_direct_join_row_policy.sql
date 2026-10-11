@@ -39,7 +39,7 @@ SELECT '-- left anti';
 SELECT p.key FROM probe_rls AS p LEFT ANTI JOIN kv_rls AS kv ON kv.key = p.key ORDER BY p.key;
 
 SELECT '-- join table';
-SELECT p.key, j.secret FROM probe_rls AS p LEFT ANY JOIN join_rls AS j ON j.key = p.key ORDER BY p.key;
+SELECT p.key, j.secret FROM probe_rls AS p LEFT ANY JOIN join_rls AS j ON j.key = p.key ORDER BY p.key; -- { serverError ACCESS_DENIED }
 
 DROP ROW POLICY kv_rls_public ON kv_rls;
 DROP ROW POLICY join_rls_public ON join_rls;

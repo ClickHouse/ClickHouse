@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageJoin.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
@@ -146,6 +147,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
 }
 
 namespace
@@ -1718,6 +1720,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     JoinClausesAndActions & join_clauses_and_actions,
     UsefulSets & left_useful_sets,
     const QueryTreeNodePtr & right_table_expression,
+    bool right_table_has_row_policy,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context,
     const SelectQueryInfo & select_query_info,
@@ -1824,8 +1827,19 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             set_used_column_with_duplicates(columns_from_right_table, JoinTableSide::Right);
     }
 
-    trySetStorageInTableJoin(right_table_expression, table_join);
+    /// A prepared storage replaces the right-side plan, and with it the `FilterStep` applying the
+    /// table's row policy, so such a table is joined as a stream. A `Join` table is a prebuilt
+    /// hash table read as is, so it cannot be filtered at all.
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
+    if (prepared_join_storage.storage_join && right_table_has_row_policy)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot join table {} with the Join engine because a row policy is applied on it",
+            prepared_join_storage.storage_join->getStorageID().getNameForLogs());
+
+    if (right_table_has_row_policy)
+        prepared_join_storage = {};
+    else
+        trySetStorageInTableJoin(right_table_expression, table_join);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
     JoinAlgorithmParams params(*planner_context->getQueryContext());
     params.hash_table_key_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
@@ -2112,6 +2126,7 @@ JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
             join_clauses_and_actions,
             left_join_tree_query_plan.useful_sets,
             cross_join_node.getTableExpressions()[i],
+            !right_join_tree_query_plan.used_row_policies.empty(),
             outer_scope_columns,
             planner_context,
             select_query_info,
@@ -2467,6 +2482,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
         join_clauses_and_actions,
         left_join_tree_query_plan.useful_sets,
         join_node.getRightTableExpression(),
+        !right_join_tree_query_plan.used_row_policies.empty(),
         outer_scope_columns,
         planner_context,
         select_query_info,
@@ -2602,12 +2618,22 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
-    PreparedJoinStorage prepared_join;
-    bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
+    /// A prepared storage replaces the right-side plan, and with it the `FilterStep` applying the
+    /// table's row policy, so such a table is joined as a stream. A `Join` table is a prebuilt
+    /// hash table read as is, so it cannot be filtered at all.
+    bool right_table_has_row_policy = !right_join_tree_query_plan.used_row_policies.empty();
+
+    PreparedJoinStorage prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
+    if (prepared_join.storage_join && right_table_has_row_policy)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot join table {} with the Join engine because a row policy is applied on it",
+            prepared_join.storage_join->getStorageID().getNameForLogs());
+
+    bool allow_storage_join = !right_table_has_row_policy
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
-    if (allow_storage_join)
-        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
+    if (!allow_storage_join)
+        prepared_join = {};
     if (prepared_join)
     {
         bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());
