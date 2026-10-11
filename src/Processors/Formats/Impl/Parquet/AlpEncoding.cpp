@@ -148,7 +148,7 @@ struct AlpPage
             const size_t first_offset = unalignedLoadLittleEndian<UInt32>(body);
             if (first_offset != num_vectors * 4)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Invalid offset of the first ALP vector: {}, expected {}", first_offset, num_vectors * 4);
+                    "Invalid offset of ALP vector 0: {}, expected {}", first_offset, num_vectors * 4);
         }
     }
 
