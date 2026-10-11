@@ -3891,6 +3891,64 @@ public:
         if (isCompoundForMonotonicity(type) || (return_type && isCompoundForMonotonicity(*return_type)))
             return {false, true, false, false};
 
+        /** A `divide` or `multiply` by a constant that can turn a legal input into `NaN` is not monotonic
+          * even when the endpoints of the range are unknown - which is how the read-in-order match asks,
+          * with Null points. `ORDER BY x / inf` over a key holding `-inf` returned that `NaN` row first,
+          * because the forward read of the key was kept while the transformed value sorts last, and under
+          * `LIMIT` the `NaN` row displaced a correct one.
+          *
+          * The constants that can do it are exactly `0` and `±inf`, plus a `NaN` constant, which maps
+          * every input to `NaN`. Which inputs reach the `NaN` depends on the operation: `0 / 0` and
+          * `±inf * 0` happen at a zero input, which any numeric domain contains; `±inf / ±inf`,
+          * `±inf * 0` with the constant `0`, and `c / ±inf` need an infinite input, which only a `Float`
+          * domain contains. So `UInt64 / inf` and `UInt64 * 0.` keep their (constant) monotonicity, and
+          * the key stays readable in order.
+          *
+          * With concrete endpoints (`KeyCondition` passes the bounds of a range of marks), the range itself
+          * tells whether it reaches those inputs: a closed range with finite endpoints holds no `±inf`, and
+          * one on either side of zero holds no zero. Such a range keeps its monotonicity, so `x / inf` over
+          * the `Float64` range `[1, 10]` still prunes.
+          */
+        if ((name_view == "divide" || name_view == "multiply") && return_type
+            && isFloat(*removeNullable(recursiveRemoveLowCardinality(return_type))))
+        {
+            const bool left_is_const = left.column && isColumnConst(*left.column);
+            const bool right_is_const = right.column && isColumnConst(*right.column);
+
+            if (left_is_const || right_is_const)
+            {
+                const Field constant = left_is_const ? (*left.column)[0] : (*right.column)[0];
+                const bool constant_is_number = isNumber(removeNullable(recursiveRemoveLowCardinality(left_is_const ? left.type : right.type)));
+                const auto varying_type = removeNullable(recursiveRemoveLowCardinality(left_is_const ? right.type : left.type));
+                bool varying_can_be_inf = isFloat(varying_type);
+                bool varying_can_be_zero = true;
+
+                /// The endpoints are compared with a numeric `0` only for a numeric domain: native numbers, `BFloat16`
+                /// (whose points are `Float64`) and `Decimal` (whose `DecimalField` points compare with an integer).
+                /// The points of an `IPv4` key do not compare with it, so such a range is assumed to hold zero.
+                if (!left_point.isNull() && !right_point.isNull() && isNumber(varying_type))
+                {
+                    const bool ordered = accurateLessOrEqual(left_point, right_point);
+                    const Field & range_min = ordered ? left_point : right_point;
+                    const Field & range_max = ordered ? right_point : left_point;
+
+                    varying_can_be_inf = varying_can_be_inf && (range_min.isInf() || range_max.isInf());
+                    varying_can_be_zero = accurateLessOrEqual(range_min, Field(0)) && accurateLessOrEqual(Field(0), range_max);
+                }
+
+                bool yields_nan = false;
+                if (constant.isNaN())
+                    yields_nan = true;
+                else if (constant.isInf())
+                    yields_nan = name_view == "multiply" ? varying_can_be_zero : varying_can_be_inf; /// `±inf * 0`, `±inf / ±inf`
+                else if (constant_is_number && accurateEquals(constant, Field(0)))
+                    yields_nan = name_view == "divide" ? varying_can_be_zero : varying_can_be_inf; /// `0 / 0`, `±inf * 0`
+
+                if (yields_nan)
+                    return {false, true, false, false};
+            }
+        }
+
         if ((name_view == "divide" || name_view == "intDiv") && left.column && isColumnConst(*left.column))
         {
             // `const / variable` monotonicity is modelled only for plain numeric operands. `IPv4`/`IPv6`
@@ -4113,6 +4171,10 @@ public:
                     return {false, true, false, false};
                 }
 
+                /// `±inf / variable` is `±inf` for every finite nonzero `variable`: not strict.
+                if (constant.isInf())
+                    is_strict = false;
+
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 if (name_view == "intDiv"
                     && intDivConstDividendReinterpretsNegative(const_type, arg_type, constant))
@@ -4132,6 +4194,12 @@ public:
                 auto constant = (*right.column)[0];
                 if (accurateEquals(constant, Field(0)))
                     return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
+
+                /// `variable / ±inf` is `0` for every finite `variable` (an infinite one is declined above),
+                /// so it is monotonic but collapses all values into one: not strict, otherwise the
+                /// read-in-order match would keep taking the next `ORDER BY` terms from the key.
+                if (constant.isInf())
+                    is_strict = false;
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
 

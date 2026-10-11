@@ -126,6 +126,7 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
+    extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -156,7 +157,6 @@ namespace Setting
     extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
     extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
-    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
@@ -358,7 +358,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     max_block_size = from[Setting::max_block_size];
-    use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
+    set_settings = FutureSetSettings(from);
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];
     use_top_k_dynamic_filtering_for_variable_length_types = from[Setting::use_top_k_dynamic_filtering_for_variable_length_types];
@@ -402,6 +402,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
+    automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
