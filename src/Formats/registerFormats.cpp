@@ -115,6 +115,7 @@ void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatFreeform(FormatFactory & factory);
 void registerInputFormatPuffin(FormatFactory & factory);
+void registerOutputFormatPuffin(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
 
@@ -293,6 +294,7 @@ void registerFormats()
 
     registerInputFormatParquetMetadata(factory);
     registerInputFormatPuffin(factory);
+    registerOutputFormatPuffin(factory);
     registerInputFormatDWARF(factory);
     registerInputFormatOne(factory);
 
