@@ -1,6 +1,8 @@
--- Tags: zookeeper, no-shared-merge-tree
+-- Tags: zookeeper, no-shared-merge-tree, no-replicated-database
 -- no-shared-merge-tree: the second half exercises `StorageReplicatedMergeTree::alter`, which
 -- SharedMergeTree replaces with its own implementation.
+-- no-replicated-database: the second half mixes replicated and non-replicated `ALTER` commands in
+-- one query, which a `Replicated` database prohibits (`QUERY_IS_PROHIBITED`).
 
 -- Tests that a mixed `ALTER` that includes `MODIFY SETTING escape_index_filenames` takes effect
 -- immediately. In such batches `changeSettings` commits the new policy, but the metadata copy that
