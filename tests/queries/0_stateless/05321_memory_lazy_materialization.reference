@@ -59,3 +59,10 @@ Lazily read columns: k
 0	0	0	
 47318	1	79	
 -- an empty table
+-- a member of a Nested added after the blocks were inserted
+9	[]
+8	['','']
+7	['']
+9	[]	[]
+8	[0,1]	['','']
+7	[0]	['']

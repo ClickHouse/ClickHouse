@@ -56,5 +56,13 @@ SELECT '-- an empty table';
 TRUNCATE TABLE t_memory_lazy;
 SELECT * FROM t_memory_lazy ORDER BY v LIMIT 5;
 
+SELECT '-- a member of a Nested added after the blocks were inserted';
+CREATE TABLE t_memory_lazy_nested (k UInt64, n Nested(a UInt64)) ENGINE = Memory;
+INSERT INTO t_memory_lazy_nested SELECT number, range(number % 3) FROM numbers(10);
+ALTER TABLE t_memory_lazy_nested ADD COLUMN `n.b` Array(String);
+SELECT k, n.b FROM t_memory_lazy_nested ORDER BY k DESC LIMIT 3;
+SELECT k, n.a, n.b FROM t_memory_lazy_nested ORDER BY k DESC LIMIT 3;
+DROP TABLE t_memory_lazy_nested;
+
 DROP TABLE t_memory_lazy;
 DROP TABLE t_memory_lazy_compressed;
