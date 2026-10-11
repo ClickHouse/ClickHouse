@@ -459,6 +459,9 @@ struct Reader
 
         std::vector<OutputColumnState> output; // parallel to extended_sample_block
 
+        /// The TopN threshold step does not run for this subgroup; its columns are read by the main step.
+        bool skip_top_k_step = false;
+
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
@@ -594,6 +597,17 @@ struct Reader
     std::optional<size_t> top_k_best_value_column_pos;
     /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
     bool row_groups_ordered_by_top_k = false;
+    /// TopN dynamic filtering: the first of `steps` compares the sort column with the threshold.
+    bool has_top_k_step = false;
+    /// The threshold step is the only step and `FormatTopKFilterInfo::stop_when_unprofitable` is set. Then, once
+    /// it has checked `top_k_step_rows_to_observe` rows and the rows it dropped, counted once more for every column
+    /// read after it, are under a tenth of them, it is not run for the rest of the file (`top_k_step_unprofitable`).
+    bool top_k_step_may_stop = false;
+    static constexpr size_t top_k_step_rows_to_observe = 1 << 13;
+    size_t top_k_step_columns_after = 0;
+    std::atomic<size_t> top_k_step_rows_checked {0};
+    std::atomic<size_t> top_k_step_rows_dropped {0};
+    std::atomic<bool> top_k_step_unprofitable {false};
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
@@ -684,6 +698,12 @@ struct Reader
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
+
+    /// The step to start the row subgroup with: 1 if there are prewhere steps, else 0. Marks the subgroup to skip
+    /// the TopN threshold step once it stopped paying off; it only drops rows, so skipping it changes no result.
+    size_t firstStepOfRowSubgroup(RowSubgroup & row_subgroup) const;
+    /// The step whose stage reads the column for this row subgroup.
+    size_t firstStepToReadColumn(const PrimitiveColumnInfo & column_info, const RowSubgroup & row_subgroup) const;
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 

@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-parallel-replicas
+# - no-fasttest: Parquet and S3
+# - no-parallel-replicas: reads the profile events of the local read
+
+# The top-K heap of GROUP BY ... LIMIT filters the rows of a Parquet read and skips its row groups by the heap
+# boundary (enable_group_by_top_k_dynamic_filtering). Every result below is the one without the boundary.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+DIR="${CLICKHOUSE_DATABASE}_05360"
+mkdir -p "${USER_FILES_PATH:?}/${DIR}"
+trap 'rm -rf "${USER_FILES_PATH:?}/${DIR}"' EXIT
+
+# One reading thread, so that the first row groups read set the boundary for the others. No hash table statistics,
+# with which a later run of a query may skip the top-K heap.
+SET_ALL="
+SET enable_group_by_top_k_optimization = 1, enable_group_by_top_k_dynamic_filtering = 1;
+SET query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 1;
+SET max_rows_to_group_by = 0, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+SET use_top_k_dynamic_filtering_for_variable_length_types = 0, use_query_condition_cache = 0;
+SET optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
+SET allow_suspicious_types_in_group_by = 1, allow_suspicious_types_in_order_by = 1;
+SET max_threads = 1, max_parsing_threads = 1;
+SET collect_hash_table_stats_during_aggregation = 0;
+SET engine_file_truncate_on_insert = 1, s3_truncate_on_insert = 1;
+"
+
+# The blocks of every INSERT are as large as its row groups, which then hold exactly that many rows.
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${SET_ALL}
+INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}_count_1.parquet', format = Parquet) SELECT number AS k FROM numbers(10000)
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+INSERT INTO FUNCTION s3(s3_conn, filename = '${DIR}_count_2.parquet', format = Parquet) SELECT 10000 + number AS k FROM numbers(10000)
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+INSERT INTO FUNCTION file('${DIR}/main.parquet', Parquet)
+SELECT intDiv(number, 3) AS a, toString(number % 7) AS b, number AS c, intHash64(number) % 1000 AS r,
+    if(number % 5 = 0, NULL, intDiv(number, 2) % 101) AS n
+FROM numbers(100000) SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+INSERT INTO FUNCTION file('${DIR}/glob_0.parquet', Parquet) SELECT intDiv(number, 2) AS a FROM numbers(10000) WHERE number % 2 = 0
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+INSERT INTO FUNCTION file('${DIR}/glob_1.parquet', Parquet) SELECT intDiv(number, 2) AS a FROM numbers(10000) WHERE number % 2 = 1
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+INSERT INTO FUNCTION file('${DIR}/random.parquet', Parquet) SELECT intHash64(number) % 100000 AS a, number AS c FROM numbers(100000)
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+INSERT INTO FUNCTION file('${DIR}/json_0.parquet', Parquet) SELECT toJSONString(map('a', number + 1000)) AS j FROM numbers(2000) WHERE number % 2 = 0
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+INSERT INTO FUNCTION file('${DIR}/json_1.parquet', Parquet) SELECT toJSONString(map('a', number + 1000)) AS j FROM numbers(2000) WHERE number % 2 = 1
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+INSERT INTO FUNCTION file('${DIR}/array_json_0.parquet', Parquet) SELECT [toJSONString(map('a', number + 1000))] AS j FROM numbers(2000) WHERE number % 2 = 0
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+INSERT INTO FUNCTION file('${DIR}/array_json_1.parquet', Parquet) SELECT [toJSONString(map('a', number + 1000))] AS j FROM numbers(2000) WHERE number % 2 = 1
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+-- Row group 0 holds (1, 5) and (1000000, NULL), row group 1 holds (0, 0), (1, NULL), (1000000, 7) and (1000000, 3).
+INSERT INTO FUNCTION file('${DIR}/tuple.parquet', Parquet) SELECT CAST(multiIf(
+    number = 0, (1, 5), number = 1, (1000000, NULL), number < 1000, (100 + number, number),
+    number = 1000, (0, 0), number = 1001, (1, NULL), number = 1002, (1000000, 7), number = 1003, (1000000, 3),
+    (200 + number, number)), 'Tuple(a UInt64, b Nullable(UInt64))') AS s
+FROM numbers(2000) SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+INSERT INTO FUNCTION file('${DIR}/string.parquet', Parquet) SELECT toString(number % 1000 + 1000) AS s FROM numbers(100000)
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+-- Row group i holds a = i, in which b has 10 values and c 2.
+INSERT INTO FUNCTION file('${DIR}/cache.parquet', Parquet) SELECT intDiv(number, 100) AS a, number % 10 AS b, number % 2 AS c FROM numbers(10000)
+SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
+
+INSERT INTO FUNCTION file('${DIR}/low.parquet', Parquet) SELECT if(number % 1000 = 7, 1 + number % 3, 0) AS k FROM numbers(300000)
+SETTINGS max_block_size = 10000, output_format_parquet_row_group_size = 10000;
+
+-- Ten row groups for each value of a.
+INSERT INTO FUNCTION file('${DIR}/steps.parquet', Parquet) SELECT intDiv(number, 1000) AS a, number AS c FROM numbers(100000)
+SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
+
+-- Row group 0 holds k = 0..9 and sets the boundary 9, the next 49 hold k = 1..8, and the last one holds one row
+-- with k = 9 and larger values.
+INSERT INTO FUNCTION file('${DIR}/tie.parquet', Parquet)
+SELECT multiIf(number < 1000, number % 10, number < 50000, 1 + number % 8, number = 50000, 9, number) AS k FROM numbers(51000)
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+-- The first file sets the boundary, and every row group of the second one is beyond it.
+INSERT INTO FUNCTION file('${DIR}/count_1.parquet', Parquet) SELECT number AS k FROM numbers(10000)
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+INSERT INTO FUNCTION file('${DIR}/count_2.parquet', Parquet) SELECT 10000 + number AS k FROM numbers(10000)
+SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
+
+CREATE TABLE t_05360_random (a UInt64, c UInt64) ENGINE = File(Parquet, '${DIR}/random.parquet');
+CREATE TABLE t_05360_tuple (s Tuple(a UInt64, b Nullable(UInt64))) ENGINE = File(Parquet, '${DIR}/tuple.parquet');
+CREATE TABLE t_05360_cache (a UInt64, b UInt64, c UInt64) ENGINE = File(Parquet, '${DIR}/cache.parquet');
+CREATE TABLE t_05360_steps (a UInt64, c UInt64) ENGINE = File(Parquet, '${DIR}/steps.parquet');
+EOF
+
+# The query condition cache and the row count cache use a file only once its last modification is in the past.
+touch -d '2020-01-01 00:00:00' "${USER_FILES_PATH}/${DIR}"/*.parquet
+sleep 1
+
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+${SET_ALL}
+SELECT 'results';
+SELECT a, b, count(), sum(c) FROM file('${DIR}/main.parquet') GROUP BY a, b LIMIT 10;
+SELECT a, count(), max(c) FROM file('${DIR}/main.parquet') GROUP BY a ORDER BY a DESC LIMIT 5;
+SELECT r, count(), min(c) FROM file('${DIR}/main.parquet') GROUP BY r LIMIT 7;
+SELECT n, count() FROM file('${DIR}/main.parquet') GROUP BY n ORDER BY n NULLS FIRST LIMIT 3;
+SELECT n, count() FROM file('${DIR}/main.parquet') GROUP BY n ORDER BY n DESC NULLS LAST LIMIT 3;
+SELECT a, count() FROM file('${DIR}/main.parquet') WHERE b != '3' GROUP BY a LIMIT 4;
+SELECT a, count() FROM file('${DIR}/glob_{0,1}.parquet') GROUP BY a LIMIT 5;
+SELECT a, count(), sum(c) FROM remote('127.0.0.{1,2}', currentDatabase(), t_05360_random) GROUP BY a ORDER BY a LIMIT 5;
+
+SELECT 'a row group that starts at the boundary';
+SELECT k, count() FROM file('${DIR}/tie.parquet') GROUP BY k LIMIT 10;
+
+SELECT 'the boundary filters rows and skips row groups';
+SELECT a, count() FROM file('${DIR}/main.parquet') GROUP BY a LIMIT 3 FORMAT Null SETTINGS log_comment = '05360_on';
+SELECT a, count() FROM file('${DIR}/main.parquet') GROUP BY a LIMIT 3 FORMAT Null
+SETTINGS log_comment = '05360_off', enable_group_by_top_k_dynamic_filtering = 0;
+
+SELECT 'keys the boundary cannot be used for';
+SELECT j, count() FROM file('${DIR}/json_{0,1}.parquet', Parquet, 'j JSON') GROUP BY j ORDER BY j LIMIT 3
+SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1;
+SELECT j, count() FROM file('${DIR}/array_json_{0,1}.parquet', Parquet, 'j Array(JSON)') GROUP BY j ORDER BY j LIMIT 3
+SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1;
+SELECT s, count() FROM t_05360_tuple GROUP BY s ORDER BY s LIMIT 3 SETTINGS use_query_condition_cache = 1;
+SELECT s, count() FROM t_05360_tuple GROUP BY s ORDER BY s LIMIT 3 SETTINGS use_query_condition_cache = 1;
+SELECT s, count() FROM t_05360_tuple GROUP BY s ORDER BY s DESC NULLS FIRST LIMIT 2 SETTINGS use_query_condition_cache = 1;
+SELECT s, count() FROM t_05360_tuple GROUP BY s ORDER BY s DESC NULLS FIRST LIMIT 2 SETTINGS use_query_condition_cache = 1;
+SELECT s, count() FROM file('${DIR}/string.parquet') GROUP BY s LIMIT 3 SETTINGS log_comment = '05360_string_off';
+SELECT s, count() FROM file('${DIR}/string.parquet') GROUP BY s LIMIT 3
+SETTINGS log_comment = '05360_string_on', use_top_k_dynamic_filtering_for_variable_length_types = 1;
+
+SELECT 'a PREWHERE or row policy that depends on its block';
+SELECT r, count() FROM file('${DIR}/main.parquet') PREWHERE rowNumberInBlock() % 2 = 0 GROUP BY r ORDER BY r LIMIT 5;
+SELECT r, count() FROM file('${DIR}/main.parquet') PREWHERE arrayExists(y -> rowNumberInBlock() % 2 = y, [0]) GROUP BY r ORDER BY r DESC LIMIT 5;
+CREATE ROW POLICY p_05360 ON t_05360_random USING arrayExists(y -> rowNumberInBlock() % 3 = y, [0]) TO ALL;
+SELECT a, count() FROM t_05360_random GROUP BY a ORDER BY a LIMIT 5;
+DROP ROW POLICY p_05360 ON t_05360_random;
+
+SELECT 'the query condition cache';
+SET use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1;
+SELECT count(), sum(x), max(a) FROM (SELECT a, b, count() AS x FROM t_05360_cache GROUP BY a, b LIMIT 10);
+SELECT count(), sum(x), max(a) FROM (SELECT a, c, count() AS x FROM t_05360_cache GROUP BY a, c LIMIT 10);
+SELECT count(), sum(x), max(a) FROM (SELECT a, b, count() AS x FROM t_05360_cache GROUP BY a, b LIMIT 10);
+SET use_query_condition_cache = 0;
+
+SELECT 'the boundary stops filtering when it drops almost nothing';
+SELECT k, count() FROM file('${DIR}/low.parquet') GROUP BY k ORDER BY k LIMIT 2 SETTINGS log_comment = '05360_low';
+SELECT k, count() FROM file('${DIR}/low.parquet') GROUP BY k ORDER BY k DESC LIMIT 2;
+-- ORDER BY ... LIMIT does not stop.
+SELECT k FROM file('${DIR}/low.parquet') ORDER BY k LIMIT 10 FORMAT Null SETTINGS log_comment = '05360_low_order';
+
+SELECT 'a row policy and a PREWHERE after the boundary';
+CREATE ROW POLICY p_05360_steps ON t_05360_steps USING c % 3 != 1 TO ALL;
+SELECT a, count(), sum(c) FROM t_05360_steps PREWHERE c % 5 != 2 GROUP BY a LIMIT 5;
+DROP ROW POLICY p_05360_steps ON t_05360_steps;
+
+SELECT 'the row count of a file is not cached from a read with the boundary';
+SELECT k, count() FROM file('${DIR}/count_{1,2}.parquet') GROUP BY k LIMIT 3;
+SELECT _file, count() FROM file('${DIR}/count_{1,2}.parquet') GROUP BY _file ORDER BY _file;
+SELECT k, count() FROM s3(s3_conn, filename = '${DIR}_count_{1,2}.parquet', format = Parquet) GROUP BY k LIMIT 3;
+SELECT replaceOne(_file, '${DIR}', '') AS f, count() FROM s3(s3_conn, filename = '${DIR}_count_{1,2}.parquet', format = Parquet)
+GROUP BY f ORDER BY f;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['ParquetRowsFilterExpression'] > 0, ProfileEvents['ParquetTopKSkippedRowGroups'] > 0,
+    ProfileEvents['SelectedRows'] < 100000
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment IN ('05360_on', '05360_off') AND type = 'QueryFinish'
+ORDER BY log_comment;
+SELECT log_comment, ProfileEvents['ParquetRowsFilterExpression'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment IN ('05360_string_off', '05360_string_on') AND type = 'QueryFinish'
+ORDER BY log_comment;
+SELECT log_comment,
+    if(log_comment = '05360_low', ProfileEvents['ParquetRowsFilterExpression'] < 100000, ProfileEvents['ParquetRowsFilterExpression'] > 200000)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment IN ('05360_low', '05360_low_order') AND type = 'QueryFinish'
+ORDER BY log_comment;
+
+DROP TABLE t_05360_random;
+DROP TABLE t_05360_tuple;
+DROP TABLE t_05360_cache;
+DROP TABLE t_05360_steps;
+EOF

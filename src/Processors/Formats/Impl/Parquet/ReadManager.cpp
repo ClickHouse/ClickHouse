@@ -404,7 +404,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
 
         for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
         {
-            if (reader.primitive_columns[i].first_step_to_calculate != step_idx)
+            if (reader.firstStepToReadColumn(reader.primitive_columns[i], row_subgroup) != step_idx)
                 continue;
 
             ColumnChunk & c = row_group.columns.at(i);
@@ -482,8 +482,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
     {
         case ReadStage::NotStarted:
         {
-            /// 1 if there are prewhere steps, 0 otherwise
-            size_t first_step = reader.steps.empty() ? 0 : 1;
+            size_t first_step = reader.firstStepOfRowSubgroup(row_subgroup);
             if (first_step < reader.steps.size() + 1)
             {
                 addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, first_step, diff);
@@ -581,7 +580,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
         if (next_subgroup.filter.rows_pass > 0)
         {
-            size_t first_step = reader.steps.empty() ? 0 : 1;
+            size_t first_step = reader.firstStepOfRowSubgroup(next_subgroup);
             addTasksToReadColumns(row_group_idx, main_ptr, ReadStage::OffsetIndex, first_step, diff);
             break;
         }
