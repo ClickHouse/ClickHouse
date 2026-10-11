@@ -1632,7 +1632,7 @@ Possible values:
 
 - 1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues.
+    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues. On a read, if *every* shard was skipped before returning any data there is no partial data left to return, so the query throws `ALL_CONNECTION_TRIES_FAILED` instead of returning an empty result. This check covers reads only; `INSERT` has its own handling of a fully unavailable destination cluster.
 
 - 0 — skipping disabled.
 
@@ -1656,7 +1656,7 @@ Possible values:
 When `skip_unavailable_shards` is enabled, limits the maximum number of shards that can be silently skipped.
 If the number of unavailable shards exceeds this value, an exception is thrown instead of silently skipping.
 
-A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
+A value of 0 means no limit on the count. On a read, skipping *every* shard before any of them returned data still throws `ALL_CONNECTION_TRIES_FAILED`, because such a query has no partial result to return. This limit applies to reads only.
 )", 0, \
         {"26.3", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."}) \
     \
@@ -1664,7 +1664,7 @@ A value of 0 means no limit (default behavior — all unavailable shards can be 
 When `skip_unavailable_shards` is enabled, limits the maximum ratio (0 to 1) of shards that can be silently skipped.
 If the ratio of unavailable shards to total shards exceeds this value, an exception is thrown instead of silently skipping.
 
-A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
+A value of 0 means no limit on the ratio. On a read, skipping *every* shard before any of them returned data still throws `ALL_CONNECTION_TRIES_FAILED`, because such a query has no partial result to return. This limit applies to reads only.
 )", 0, \
         {"26.3", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."}) \
     \
@@ -5723,6 +5723,15 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_min_max_from_files, true, R"(
+Enables or disables computing `min` and `max` of columns from the statistics stored in data files instead of reading the data, for queries whose only aggregate functions are `min` and `max` of table columns, without `GROUP BY` and without filters. It applies to the table function/engine `file` with the `Parquet` format (not to files inside archives), for integer (up to 64 bits), date, date-time and decimal columns whose column chunk statistics are present in every row group.
+
+Possible values:
+
+- 0 - Optimization disabled.
+- 1 - Optimization enabled.
+)", 0, \
+        {"26.10", false, true, "New setting to compute `min` / `max` from Parquet column chunk statistics."}) \
     DECLARE(Bool, use_cache_for_count_from_files, true, R"(
 Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -7484,6 +7493,23 @@ Connect timeout in seconds. Now supported only for MySQL
     DECLARE(UInt64, external_storage_rw_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
+    DECLARE(Bool, external_storage_push_down_limit, true, R"(
+Allow to push the query's `LIMIT` clause down into the query sent to an external database (such as MySQL, PostgreSQL or SQLite).
+
+The push-down is not performed for the generic ODBC/JDBC bridges, because they do not expose the remote `LIMIT` syntax, and some of the supported databases do not accept a `LIMIT` clause at all.
+
+The `LIMIT` is pushed down only when it is guaranteed to be safe, i.e. when every clause that logically applies before it is copied to the external query without changes. Precisely, the query must be a plain single-table `SELECT`:
+
+- there is no `JOIN`, `ARRAY JOIN`, `SAMPLE` or `FINAL` (otherwise rows could be dropped or transformed locally, so pre-limiting is unwanted);
+- the `WHERE` clause, if any, is fully compatible and copied into the rewritten query unchanged (otherwise filtering after the remote `LIMIT` would drop some rows);
+- there is no other clause or modifier (like `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT BY`, `WITH TIES`, etc.) that may break the remote pre-limiting logic due to data reordering, aggregation or filtration;
+- an `OFFSET` is allowed: it is applied locally, so the rows it skips have to be read as well, and the limit sent to the external database is `offset + length`;
+- the `SELECT` list maps one source row to one result row, i.e. it contains no aggregate functions, window functions or `arrayJoin` (also spelled `unnest`) (they are evaluated locally over all the rows read from the external table);
+- there is no filter that is applied locally on top of the rows read from the external table, such as a row policy or `additional_table_filters` (such a filter runs before the `LIMIT`, so pre-limiting remotely could discard rows that it would have kept).
+
+This reduces the amount of data read from and sent by the external database. Disable this setting to restore the previous behavior in case of compatibility issues.
+)", 0, \
+        {"26.10", false, true, "New setting to push the query's `LIMIT` down into the query sent to an external database when it is safe. previous_value=false so `compatibility` with versions before 26.10 restores the pre-existing behavior (no push-down)."})  \
     \
     DECLARE_WITH_ALIAS(Bool, allow_correlated_subqueries, true, R"(
 Allow to execute correlated subqueries.
@@ -12048,11 +12074,16 @@ void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
 NameToNameMap readQueryParameters(ReadBuffer & in)
 {
     NameToNameMap parameters;
+    size_t num_parameters = 0;
     while (true)
     {
-        String name = BaseSettingsHelpers::readString(in);
+        String name = BaseSettingsHelpers::readName(in);
         if (name.empty())
             break;
+
+        if (++num_parameters > MAX_SETTINGS_IN_A_SEQUENCE)
+            BaseSettingsHelpers::throwTooManySettings("query parameters");
+
         std::ignore = BaseSettingsHelpers::readFlags(in);
         String value;
         ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));
