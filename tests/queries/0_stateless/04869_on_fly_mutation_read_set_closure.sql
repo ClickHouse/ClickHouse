@@ -72,10 +72,6 @@ SELECT 'subcolumn identifiers in commands';
 -- The read set is keyed on storage columns while identifiers collected from a command are as
 -- written, so `t.a` has to be recorded under `t` or every read of the table fails while the
 -- mutation is pending. Once for a predicate, once for an assignment expression.
---
--- One command per table on purpose: a command reading a subcolumn of a column an earlier command
--- writes gets the pre-update value even when materialized, which is a defect of the mutation chain
--- rather than of the read set.
 
 DROP TABLE IF EXISTS t_subcolumn_in_predicate;
 
