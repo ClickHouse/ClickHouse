@@ -31,6 +31,6 @@ SETTINGS max_bytes_before_external_set = 0, max_bytes_ratio_before_external_set 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['SetsSpilledToDisk']
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment != ''
+WHERE type = 'QueryFinish' AND log_comment != '' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 SQL
