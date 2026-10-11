@@ -398,7 +398,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 *abstract_dictionary_configuration, "dictionary.source." + source_type, local_context);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")
+            bool lazy_load = external_dictionaries_loader.getObjectLazyLoadOverride(*abstract_dictionary_configuration, "dictionary")
                 .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
@@ -429,6 +429,7 @@ void registerStorageDictionary(StorageFactory & factory)
         return std::make_shared<StorageDictionary>(
             args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
     },
+    SecretArgumentsSpec{},
     {},
     Documentation{
         .description = R"DOCS_MD(

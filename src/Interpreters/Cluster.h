@@ -334,6 +334,9 @@ public:
     /// shards, so the name cannot serve this purpose. Empty identifies nothing and never compares equal.
     const String & getShardScopeIdentity() const { return shard_scope_identity; }
 
+    /// Every replica of the original cluster became a shard of its own, as `clusterAllReplicas` does.
+    bool replicasAsShards() const { return replicas_as_shards; }
+
 private:
     SlotToShard slot_to_shard;
 
@@ -404,6 +407,7 @@ private:
 
     String name;
     String shard_scope_identity;
+    bool replicas_as_shards = false;
 };
 
 using ClusterPtr = std::shared_ptr<Cluster>;

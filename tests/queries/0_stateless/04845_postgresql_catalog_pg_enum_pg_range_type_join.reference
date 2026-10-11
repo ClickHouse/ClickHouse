@@ -1,0 +1,13 @@
+--- every enum label resolves through the pg_enum -> pg_type join
+mood|e|E|sad
+mood|e|E|ok
+mood|e|E|happy
+--- every range resolves through the pg_range -> pg_type joins: rngtypid, rngmultitypid and rngsubtype
+daterange|r|datemultirange|m|date
+int4range|r|int4multirange|m|int4
+int8range|r|int8multirange|m|int8
+numrange|r|nummultirange|m|numeric
+tsrange|r|tsmultirange|m|timestamp
+tstzrange|r|tstzmultirange|m|timestamptz
+--- no pg_enum or pg_range type OID is left without a pg_type row
+0
