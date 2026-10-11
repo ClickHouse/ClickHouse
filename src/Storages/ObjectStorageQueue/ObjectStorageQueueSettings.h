@@ -74,6 +74,11 @@ struct ObjectStorageQueueSettings
 
     static bool hasBuiltin(std::string_view name);
 
+    /// Strips the `s3queue_` prefix and maps an old setting name to the current one, as `loadFromQuery` does.
+    static std::string resolveName(std::string_view name);
+
+    static Field castValueUtil(std::string_view name, const Field & value);
+
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;
 };

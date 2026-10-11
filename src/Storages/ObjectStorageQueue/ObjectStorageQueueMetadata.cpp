@@ -84,6 +84,9 @@ namespace
     {
         /// Use more or less random interval for unordered mode cleanup task.
         /// So that distributed processing cleanup tasks would not schedule cleanup at the same time.
+        /// `min` can exceed `max`: tables with the same `keeper_path` share the bounds, and `ALTER` changes one of them.
+        if (min > max)
+            return min;
         pcg64 rng(randomSeed());
         size_t interval = min + rng() % (max - min + 1);
         LOG_TEST(getLogger("ObjectStorageQueueMetadata"), "Reschedule interval: {}", interval);
