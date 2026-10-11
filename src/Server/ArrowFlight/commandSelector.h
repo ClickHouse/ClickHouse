@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
@@ -14,7 +15,9 @@ namespace DB
 namespace ArrowFlight
 {
 
-using SchemaModifier = std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(std::shared_ptr<arrow::Schema>)>;
+using SchemaModifier = std::function<arrow::Result<std::shared_ptr<arrow::Schema>>(
+    std::shared_ptr<arrow::Schema>,
+    const ColumnsWithTypeAndName &)>;
 using BlockModifier = std::function<void(ContextPtr, Block &)>;
 
 struct SQLSet
