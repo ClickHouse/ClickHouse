@@ -7,3 +7,4 @@ string skip index	1
 nullable idx	2
 nullable scan	2
 nullable skip index	0
+nullable without null skip index	0
