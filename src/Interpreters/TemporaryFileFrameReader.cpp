@@ -77,10 +77,11 @@ void TemporaryFileFrameReader::readFile(char * to, size_t bytes, size_t offset)
 
 std::string_view TemporaryFileFrameReader::unwrapFrame(std::string_view frame)
 {
+    const auto checksum = CompressedReadBufferBase::readChecksum(frame.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     const std::string_view data = frame.substr(sizeof(CompressedReadBufferBase::Checksum)); /// The header of the codec and the data
-    CompressedReadBufferBase::validateChecksum(
-        data.data(), data.size(), CompressedReadBufferBase::readChecksum(frame.data()), /*external_data=*/false);
+    CompressedReadBufferBase::validateChecksum(data.data(), data.size(), checksum, /*external_data=*/false);
 
+    /// NOLINTNEXTLINE(bugprone-suspicious-stringview-data-usage)
     chassert(ICompressionCodec::readMethod(data.data()) == static_cast<UInt8>(CompressionMethodByte::NONE));
     return data.substr(ICompressionCodec::getHeaderSize());
 }
