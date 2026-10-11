@@ -195,10 +195,18 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 /// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
 using NodeHashes = std::unordered_map<const QueryPlan::Node *, UInt64>;
 
+/// Hashes `args` one after another, like a sequence of `SipHash::update`. Not an overload of `sipHash64`: its
+/// `(const char *, size_t)` form would lose to a variadic template for calls like `sipHash64(",", 1)`.
+template <typename... Args>
+UInt64 sipHash64Of(const Args &... args)
+{
+    SipHash hash;
+    (hash.update(args), ...);
+    return hash.get64();
+}
+
 QueryPlan::Node * findSingleReplicaPlanBoundary(
-    QueryPlan::Node & single_replica_plan_root,
-    const NodeHashes & nopr_node_hashes,
-    UInt64 wanted_hash)
+    /* const */ QueryPlan::Node & single_replica_plan_root, const NodeHashes & nopr_node_hashes, UInt64 wanted_hash)
 {
     /// A step that contributes nothing to the key adopts its child's key (see
     /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
@@ -262,7 +270,7 @@ QueryPlan::Node * findSingleReplicaPlanBoundary(
 
 std::pair<QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & replicas_plan_boundary,
-    QueryPlan::Node & parallel_replicas_plan_root,
+    const QueryPlan::Node & parallel_replicas_plan_root,
     QueryPlan::Node & single_replica_plan_root,
     const NodeHashes & nopr_node_hashes)
 {
@@ -614,7 +622,7 @@ static bool decideAtBoundary(
     QueryPlan & query_plan,
     QueryPlan::Node * single_replica_plan_boundary,
     size_t single_replica_plan_boundary_hash,
-    QueryPlanPtr & plan_with_parallel_replicas,
+    const QueryPlanPtr & plan_with_parallel_replicas,
     const QueryPlan::Node * replicas_plan_boundary);
 
 void considerEnablingParallelReplicas(
@@ -770,6 +778,42 @@ void considerEnablingParallelReplicas(
         }
     }
 
+    /// The boundary is where the replicas' share of the work ends: `replicas_plan_boundary` in the replicas plan,
+    /// `single_replica_plan_boundary` its counterpart in this, single-replica, plan. An earlier execution that
+    /// matched them left the latter's key under the single-replica plan's root, so no replicas plan has to be
+    /// built to find it again. Mode 2 recollects, so it always matches against a fresh replicas plan.
+    const auto nopr_node_hashes = calculateHashTableCacheKeys(root);
+    auto & stats_cache = getRuntimeDataflowStatisticsCache();
+    /// Where the replicas' half ends also depends on settings that leave the single-replica plan as it is, so the
+    /// key carries them beside the root's hash.
+    const auto root_key = sipHash64Of(nopr_node_hashes.at(&root), optimization_settings.parallel_replicas_boundary_settings_hash);
+    QueryPlan::Node * single_replica_plan_boundary = nullptr;
+    size_t single_replica_plan_boundary_hash = 0;
+    if (optimization_settings.automatic_parallel_replicas_mode != 2)
+    {
+        if (const auto boundary_hash = stats_cache.getBoundaryHash(root_key))
+        {
+            single_replica_plan_boundary_hash = *boundary_hash;
+            single_replica_plan_boundary = findSingleReplicaPlanBoundary(root, nopr_node_hashes, *boundary_hash);
+        }
+    }
+
+    /// A boundary remembered from an earlier execution lets the statistics decline without building the replicas
+    /// plan. Everything else - adopting, collecting, or no remembered boundary - needs that plan: the cached key
+    /// cannot see everything that decides where the replicas' half ends, so the plan names the boundary and the
+    /// decision is taken again there.
+    QueryPlanPtr plan_with_parallel_replicas;
+    const QueryPlan::Node * replicas_plan_boundary = nullptr;
+    if (single_replica_plan_boundary
+        && !decideAtBoundary(
+            optimization_settings,
+            query_plan,
+            single_replica_plan_boundary,
+            single_replica_plan_boundary_hash,
+            plan_with_parallel_replicas,
+            replicas_plan_boundary))
+        return;
+
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
     ///
@@ -779,96 +823,38 @@ void considerEnablingParallelReplicas(
     /// `buildOrderedSetInplace` for every `IN` whose left argument maps to key columns. The
     /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
     /// adds no set that collecting later would catch.
-    QueryPlanPtr plan_with_parallel_replicas;
-    const QueryPlan::Node * replicas_plan_boundary = nullptr;
-    const auto build_replicas_plan = [&]
+    plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
+    if (!plan_with_parallel_replicas)
     {
-        plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
-        if (!plan_with_parallel_replicas)
-        {
-            LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
-            return false;
-        }
-
-        replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
-        if (!replicas_plan_boundary)
-        {
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
-                "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
-            return false;
-        }
-        LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
-        return true;
-    };
-
-    /// The boundary is where the replicas' share of the work ends: `replicas_plan_boundary` in the replicas plan,
-    /// `single_replica_plan_boundary` its counterpart in this, single-replica, plan. An earlier execution that
-    /// matched them left the latter's key under the single-replica plan's root, so no replicas plan has to be
-    /// built to find it again. Mode 2 recollects, so it always matches against a fresh replicas plan.
-    const auto nopr_node_hashes = calculateHashTableCacheKeys(root);
-    auto & stats_cache = getRuntimeDataflowStatisticsCache();
-    /// Where the replicas' half ends also depends on settings that leave the single-replica plan as it is, so the
-    /// key carries them beside the root's hash.
-    std::optional<UInt64> root_key;
-    if (const auto root_hash_it = nopr_node_hashes.find(&root); root_hash_it != nopr_node_hashes.end())
-    {
-        SipHash hash;
-        hash.update(root_hash_it->second);
-        hash.update(optimization_settings.parallel_replicas_boundary_settings_hash);
-        root_key = hash.get64();
-    }
-    QueryPlan::Node * single_replica_plan_boundary = nullptr;
-    size_t single_replica_plan_boundary_hash = 0;
-    if (optimization_settings.automatic_parallel_replicas_mode != 2 && root_key)
-    {
-        if (const auto boundary_hash = stats_cache.getBoundaryHash(*root_key))
-        {
-            single_replica_plan_boundary_hash = *boundary_hash;
-            single_replica_plan_boundary = findSingleReplicaPlanBoundary(root, nopr_node_hashes, *boundary_hash);
-        }
-    }
-
-    /// Build the replicas plan and match its boundary into the single-replica plan.
-    const auto match_boundary_in_replicas_plan = [&]
-    {
-        if (!build_replicas_plan())
-            return false;
-        std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash) = findCorrespondingNodeInSingleNodePlan(
-            *replicas_plan_boundary, *plan_with_parallel_replicas->getRootNode(), root, nopr_node_hashes);
-        if (!single_replica_plan_boundary)
-            return false;
-        if (root_key)
-            stats_cache.setBoundaryHash(*root_key, single_replica_plan_boundary_hash);
-        return true;
-    };
-
-    if (!single_replica_plan_boundary && !match_boundary_in_replicas_plan())
+        LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
         return;
+    }
 
-    const bool needs_replicas_plan = decideAtBoundary(
+    replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
+    if (!replicas_plan_boundary)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
+        return;
+    }
+    LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
+
+    std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash) = findCorrespondingNodeInSingleNodePlan(
+        *replicas_plan_boundary, *plan_with_parallel_replicas->getRootNode(), root, nopr_node_hashes);
+    if (!single_replica_plan_boundary)
+        return;
+    stats_cache.setBoundaryHash(root_key, single_replica_plan_boundary_hash);
+
+    /// The replicas plan exists now, so the decision cannot ask for it again.
+    [[maybe_unused]] const bool needs_replicas_plan = decideAtBoundary(
         optimization_settings,
         query_plan,
         single_replica_plan_boundary,
         single_replica_plan_boundary_hash,
         plan_with_parallel_replicas,
         replicas_plan_boundary);
-
-    /// The cached boundary comes from a key that cannot see everything that decides where the replicas' half ends.
-    /// Adopting needs the replicas plan anyway, and so does collecting, so that statistics are never gathered at a
-    /// wrong node; let it name the boundary and decide again. It exists by then, so the second decision cannot ask
-    /// for it again.
-    if (needs_replicas_plan && match_boundary_in_replicas_plan())
-    {
-        [[maybe_unused]] const bool asked_again = decideAtBoundary(
-            optimization_settings,
-            query_plan,
-            single_replica_plan_boundary,
-            single_replica_plan_boundary_hash,
-            plan_with_parallel_replicas,
-            replicas_plan_boundary);
-        chassert(!asked_again);
-    }
+    chassert(!needs_replicas_plan);
 }
 
 /// Prices the query at `single_replica_plan_boundary` and then parallelizes it, leaves it alone, or
@@ -878,10 +864,10 @@ void considerEnablingParallelReplicas(
 static bool decideAtBoundary(
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & query_plan,
-    QueryPlan::Node * single_replica_plan_boundary,
+    QueryPlan::Node * const single_replica_plan_boundary,
     size_t single_replica_plan_boundary_hash,
-    QueryPlanPtr & plan_with_parallel_replicas,
-    const QueryPlan::Node * replicas_plan_boundary)
+    const QueryPlanPtr & plan_with_parallel_replicas,
+    const QueryPlan::Node * const replicas_plan_boundary)
 {
     /// Now we need to identify the reading step that should be instrumented for statistics collection
     LazilyReadFromMergeTree * lazy_reading_step = nullptr;
