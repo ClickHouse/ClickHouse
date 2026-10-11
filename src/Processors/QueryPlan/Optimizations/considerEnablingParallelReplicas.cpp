@@ -53,6 +53,7 @@ extern const Event AutoParallelReplicasCostModelEvaluated;
 extern const Event AutoParallelReplicasApplied;
 extern const Event AutoParallelReplicasSkippedEarly;
 extern const Event AutoParallelReplicasRejectedByThreshold;
+extern const Event AutoParallelReplicasRejectedByDuplicatedReads;
 extern const Event AutoParallelReplicasRejectedByCostModel;
 extern const Event AutoParallelReplicasBytesPerReplica;
 }
@@ -912,7 +913,9 @@ static bool declineFromRememberedBoundary(
         ProfileEvents::AutoParallelReplicasBytesPerReplica, stats->input_bytes / optimization_settings.max_parallel_replicas);
     if (!estimate.replicasWin())
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
-    else if (!too_much_duplicated)
+    else if (too_much_duplicated)
+        ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByDuplicatedReads);
+    else
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByThreshold);
 
     logReplicasCostFormula(*stats, estimate, optimization_settings);
@@ -1325,6 +1328,7 @@ void considerEnablingParallelReplicas(
                 && duplicated_read_ratio
                     > static_cast<double>(optimization_settings.automatic_parallel_replicas_max_duplicated_read_ratio))
             {
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByDuplicatedReads);
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
                     "Parallel replicas are not used: {}x of the {} bytes read are read by every replica "
