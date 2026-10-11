@@ -3892,19 +3892,13 @@ BlockIO InterpreterCreateQuery::execute()
 
     /// Rejected here as well, so the error names the cluster the user wrote before
     /// `maybeRemoveOnCluster` below can drop it. A temporary object belongs to no database, so it
-    /// keeps the rejection `createTable` already has for it.
-    if (!is_create_database && !create.isTemporary() && create.isView() && isShortAttach(create))
+    /// keeps the rejection `createTable` already has for it. The database is not looked up here,
+    /// because this runs before the access check: `createTable` rejects a Replicated one.
+    if (!create.cluster.empty() && !is_create_database && !create.isTemporary() && create.isView() && isShortAttach(create))
     {
-        auto attach_database = DatabaseCatalog::instance().tryGetDatabase(
-            create.database ? create.getDatabase() : getContext()->getCurrentDatabase());
-
-        if (!create.cluster.empty()
-            || (attach_database && attach_database->shouldReplicateQuery(getContext(), query_ptr)))
-        {
-            /// Same precedence as in `createTable`.
-            rejectClausesDroppedByShortAttach(create);
-            rejectShortAttachViewOutsideOneNode(create);
-        }
+        /// Same precedence as in `createTable`.
+        rejectClausesDroppedByShortAttach(create);
+        rejectShortAttachViewOutsideOneNode(create);
     }
 
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

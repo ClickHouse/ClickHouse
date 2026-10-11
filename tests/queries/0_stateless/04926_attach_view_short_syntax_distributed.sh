@@ -31,6 +31,15 @@ done
 # the stored metadata would replace.
 ${CLICKHOUSE_CLIENT} --query "ATTACH MATERIALIZED VIEW ${db}.mv TO ${db}.dst AS SELECT k FROM ${db}.src" 2>&1 \
     | grep -q "BAD_ARGUMENTS" && echo "BAD_ARGUMENTS" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --query "ATTACH MATERIALIZED VIEW ${db}.mv ON CLUSTER test_shard_localhost TO ${db}.dst AS SELECT k FROM ${db}.src" 2>&1 \
+    | grep -q "BAD_ARGUMENTS" && echo "BAD_ARGUMENTS" || echo "NO ERROR"
+
+# A user without grants is denied before the database is resolved, so the error does not reveal its engine.
+user="u04926_${CLICKHOUSE_DATABASE}_$RANDOM"
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${user} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} --user "${user}" --query "ATTACH VIEW ${db}.v" 2>&1 \
+    | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --query "DROP USER ${user}"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${db}' AND name IN ('v', 'mv')"
 
