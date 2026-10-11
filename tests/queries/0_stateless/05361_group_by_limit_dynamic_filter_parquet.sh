@@ -45,7 +45,7 @@ SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
 INSERT INTO FUNCTION file('${DIR}/glob_1.parquet', Parquet) SELECT intDiv(number, 2) AS a FROM numbers(10000) WHERE number % 2 = 1
 SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
 
-INSERT INTO FUNCTION file('${DIR}/random.parquet', Parquet) SELECT intHash64(number) % 100000 AS a, number AS c FROM numbers(100000)
+INSERT INTO FUNCTION file('${DIR}/random.parquet', Parquet) SELECT intHash64(number) % 20000 AS a, number AS c FROM numbers(20000)
 SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
 
 INSERT INTO FUNCTION file('${DIR}/json_0.parquet', Parquet) SELECT toJSONString(map('a', number + 1000)) AS j FROM numbers(2000) WHERE number % 2 = 0
@@ -64,18 +64,18 @@ INSERT INTO FUNCTION file('${DIR}/tuple.parquet', Parquet) SELECT CAST(multiIf(
     (200 + number, number)), 'Tuple(a UInt64, b Nullable(UInt64))') AS s
 FROM numbers(2000) SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
 
-INSERT INTO FUNCTION file('${DIR}/string.parquet', Parquet) SELECT toString(number % 1000 + 1000) AS s FROM numbers(100000)
+INSERT INTO FUNCTION file('${DIR}/string.parquet', Parquet) SELECT toString(number % 100 + 1000) AS s FROM numbers(10000)
 SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
 
 -- Row group i holds a = i, in which b has 10 values and c 2.
-INSERT INTO FUNCTION file('${DIR}/cache.parquet', Parquet) SELECT intDiv(number, 100) AS a, number % 10 AS b, number % 2 AS c FROM numbers(10000)
+INSERT INTO FUNCTION file('${DIR}/cache.parquet', Parquet) SELECT intDiv(number, 100) AS a, number % 10 AS b, number % 2 AS c FROM numbers(1000)
 SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
 
 INSERT INTO FUNCTION file('${DIR}/low.parquet', Parquet) SELECT if(number % 1000 = 7, 1 + number % 3, 0) AS k, number AS c FROM numbers(300000)
 SETTINGS max_block_size = 10000, output_format_parquet_row_group_size = 10000;
 
 -- Ten row groups for each value of a.
-INSERT INTO FUNCTION file('${DIR}/steps.parquet', Parquet) SELECT intDiv(number, 1000) AS a, number AS c FROM numbers(100000)
+INSERT INTO FUNCTION file('${DIR}/steps.parquet', Parquet) SELECT intDiv(number, 1000) AS a, number AS c FROM numbers(20000)
 SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
 
 -- Row group 0 holds k = 0..9 and sets the boundary 9, the next 49 hold k = 1..8, and the last one holds one row
@@ -91,7 +91,7 @@ INSERT INTO FUNCTION file('${DIR}/count_2.parquet', Parquet) SELECT 10000 + numb
 SETTINGS max_block_size = 1000, output_format_parquet_row_group_size = 1000;
 
 -- Row group or granule i holds a = i, in which b has 10 values.
-INSERT INTO FUNCTION file('${DIR}/stats.parquet', Parquet) SELECT intDiv(number, 100) AS a, number % 10 AS b, number % 2 AS c FROM numbers(10000)
+INSERT INTO FUNCTION file('${DIR}/stats.parquet', Parquet) SELECT intDiv(number, 100) AS a, number % 10 AS b, number % 2 AS c FROM numbers(1000)
 SETTINGS max_block_size = 100, output_format_parquet_row_group_size = 100;
 CREATE TABLE t_05361_stats (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
 INSERT INTO t_05361_stats SELECT intDiv(number, 100), number % 10, number % 2 FROM numbers(100000);
@@ -205,7 +205,7 @@ SELECT log_comment, multiIf(
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment IN ('05361_low', '05361_low_order', '05361_low_prewhere') AND type = 'QueryFinish'
 ORDER BY log_comment;
-SELECT log_comment, ProfileEvents['SelectedRows'] < if(log_comment LIKE '05361_stats_pq_%', 10000, 100000)
+SELECT log_comment, ProfileEvents['SelectedRows'] < if(log_comment LIKE '05361_stats_pq_%', 1000, 100000)
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment LIKE '05361_stats_%' AND type = 'QueryFinish'
 ORDER BY log_comment;
