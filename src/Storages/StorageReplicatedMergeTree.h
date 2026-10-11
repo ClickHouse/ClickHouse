@@ -196,7 +196,8 @@ public:
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
-    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
+    QueryPipeline updateLightweight(
+        const MutationCommands & commands, ContextPtr query_context, LightweightUpdateSettings settings) override;
     bool haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops) const;
     void waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops, size_t backoff_ms, size_t sync_timeout_ms);
 
