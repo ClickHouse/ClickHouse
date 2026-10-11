@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Logger_fwd.h>
+#include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -15,6 +16,7 @@ class StorageTimeSeries;
 class PrometheusQueryTree;
 class PullingAsyncPipelineExecutor;
 enum class PrometheusQueryResultType;
+struct PrometheusQueryEvaluationSettings;
 
 /// Helper class to support the query and metadata endpoints of the Prometheus HTTP API.
 /// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata
@@ -111,8 +113,22 @@ private:
         UInt64 limit,
         QueryFinishCallback query_finish_callback);
 
+    /// Copies the request context and sets the settings required by the SQL generated from PromQL.
+    ContextMutablePtr makeQueryContext() const;
+
+    /// Evaluates a range query in chunks split at multiples of the interval, one after another, and writes the merged result.
+    void executeRangeQueryInChunks(
+        WriteBuffer & response,
+        const std::shared_ptr<const PrometheusQueryTree> & query_tree,
+        const PrometheusQueryEvaluationSettings & evaluation_settings,
+        Int128 interval,
+        QueryFinishCallback query_finish_callback);
+
     /// Writes the result of a prometheus query as a JSON.
     void writeQueryResponse(WriteBuffer & response, PullingAsyncPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type);
+
+    /// Writes the series of the chunks of a range query, each sorted by tags, joining the samples of a series in chunk order.
+    void writeQueryResponseRangeVectorChunks(WriteBuffer & response, const std::vector<Blocks> & chunks);
 
     /// Helper methods.
     void writeQueryResponseHeader(WriteBuffer & response, PrometheusQueryResultType result_type);
@@ -122,6 +138,7 @@ private:
     void writeQueryResponseStringBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
     void writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first);
+    void writeSamples(WriteBuffer & response, const Block & result_block, size_t row_index, bool & need_comma);
     void writeTags(WriteBuffer & response, const Block & result_block, size_t row_index);
     void writeTimestamp(WriteBuffer & response, DateTime64 value, UInt32 scale);
     void writeScalar(WriteBuffer & response, Float64 value);
