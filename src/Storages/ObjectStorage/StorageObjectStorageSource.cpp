@@ -1188,7 +1188,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// Entries are only written by reads of files without TopN dynamic filtering (see `generate`), so
     /// they apply to a file read with it as well. Such a file consults them only while
     /// `use_query_condition_cache_for_top_k` is on: that setting makes TopK reads neither consult nor
-    /// populate the cache. A file that does not apply the filter is read as without TopN.
+    /// populate the cache. A file that does not apply the filter, or only to statistics, is read as without TopN.
     const bool use_query_condition_cache_for_top_k = context_->getSettingsRef()[Setting::use_query_condition_cache_for_top_k];
     QueryConditionCachePtr query_condition_cache;
     if (format_filter_info && format_filter_info->condition_hash)
@@ -1226,7 +1226,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             continue;
 
         if (query_condition_cache && !object_info->file_bucket_info
-            && (use_query_condition_cache_for_top_k || !is_top_k_filter_allowed(object_info)))
+            && (use_query_condition_cache_for_top_k || !is_top_k_filter_allowed(object_info)
+                || !format_filter_info->top_k_filter->filter_rows))
         {
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
