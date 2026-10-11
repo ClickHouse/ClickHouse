@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
+#include <DataTypes/Serializations/SerializationMap.h>
 #include <Storages/ColumnsDescription.h>
 
 
@@ -18,13 +19,15 @@ namespace ErrorCodes
 namespace
 {
 
+/// A storage column and the substreams cache key of the part of it that is read ("" for the whole column).
+using StorageColumnPart = std::pair<String, String>;
+
 /// Stores the list of columns required to compute a node in the DAG.
 struct NodeInfo
 {
     NameSet required_columns;
-    /// Column names resolved to their physical storage names (subcolumn suffix stripped).
-    /// Used for grouping: conditions on subcolumns of the same storage column are placed into one step.
-    NameSet required_storage_columns;
+    /// The columns the condition reads, a key subcolumn of a Map counted as the Map that owns it.
+    std::set<StorageColumnPart> required_storage_columns;
     /// True if computing this node may throw an exception, so it must not be evaluated on rows
     /// that a preceding condition rejects.
     bool may_throw = false;
@@ -42,17 +45,25 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     return types;
 }
 
-/// Resolves a column name to its storage (physical) name.
-/// For subcolumns like `map.key_k0`, returns `map`.
-/// For regular columns, returns the name unchanged.
-String resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns)
+/// A key subcolumn of a Map (`map.key_k0`) reads the keys and values of the whole Map, so it is identified
+/// with the Map that owns it. Any other column or subcolumn is identified by its own substreams.
+StorageColumnPart resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns)
 {
     if (columns)
     {
-        if (auto col = columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
-            return col->getNameInStorage();
+        auto column = columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        if (column && column->isSubcolumn())
+        {
+            if (auto subcolumn = column->getTypeInStorage()->tryGetSubcolumnInfo(column->getSubcolumnName()))
+            {
+                auto & path = subcolumn->substreams_path;
+                if (SerializationMap::isKeyValueSubcolumn(path))
+                    path.pop_back();
+                return {column->getNameInStorage(), ISerialization::getSubstreamsCacheKeyForStream(path)};
+            }
+        }
     }
-    return column_name;
+    return {column_name, ""};
 }
 
 /// Fills the list of required columns for a node in the DAG.
@@ -288,9 +299,8 @@ bool tryBuildPrewhereSteps(
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
-    /// 4. Group adjacent conditions that read from the same set of physical storage columns into a single step.
-    /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
-    /// when they appear next to each other in the condition list.
+    /// 4. Group adjacent conditions that read the same columns into a single step.
+    /// Conditions on key subcolumns of the same Map (e.g. `map.key_k0` and `map.key_k1`) read the same columns.
     ///
     /// The condition list is the flattened conjunction, so a nested AND contributes its own conditions
     /// rather than a single opaque one. The flattening keeps the original left to right order, for the
