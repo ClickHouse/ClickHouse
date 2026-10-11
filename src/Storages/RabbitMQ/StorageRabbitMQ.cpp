@@ -7,12 +7,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -34,6 +36,7 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 
@@ -770,7 +773,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
                  "Failed to declare queue. Probably queue settings are conflicting: "
                  "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
                  "or use a different queue_base or manually delete previously declared queues, "
-                 "which  were declared with the same names. ERROR reason: {}", std::string(message));
+                 "which were declared with the same names. ERROR reason: {}", std::string(message));
     });
 
     AMQP::Table queue_settings;
@@ -1012,7 +1015,7 @@ void StorageRabbitMQ::scheduleStreamingTasksImpl()
 }
 
 
-void StorageRabbitMQ::shutdown(bool)
+void StorageRabbitMQ::shutdown(bool is_drop)
 {
     /// Needed to make this method idempotent
     if (shutdown_called.exchange(true))
@@ -1062,8 +1065,14 @@ void StorageRabbitMQ::shutdown(bool)
             consumer->closeConnections();
         }
 
-        if (drop_table)
+        /// checkTableCanBeDropped() latches drop_table before the statement it guards can fail, and
+        /// nothing ever clears it, so the flag alone also marks a still-alive table whose TRUNCATE
+        /// or dependency check threw. Deleting the queues needs the shutdown to be a drop as well.
+        if (is_drop && drop_table)
+        {
+            waitForConsumerChannelsToClose(consumers_snapshot);
             cleanupRabbitMQ();
+        }
 
         /// It is important to close connection here - before removing consumers, because
         /// it will finish and clean callbacks, which might use those consumers data.
@@ -1094,6 +1103,51 @@ void StorageRabbitMQ::renameInMemory(const StorageID & new_table_id)
 }
 
 
+/// AMQP orders method completion per channel only, so a queue.delete issued on a fresh channel can
+/// be evaluated by the broker while the consumer is still registered on its own channel, and a
+/// classic queue then refuses AMQP::ifunused with PRECONDITION_FAILED. The broker deregisters a
+/// channel's consumers while handling its channel.close, before answering it, so waiting for that
+/// answer establishes the ordering the delete needs.
+void StorageRabbitMQ::waitForConsumerChannelsToClose(
+    const std::vector<std::weak_ptr<RabbitMQConsumer>> & consumers_snapshot) const
+{
+    if (use_user_setup || consumers_snapshot.empty() || !connection->isConnected())
+        return;
+
+    auto outstanding = [&consumers_snapshot]
+    {
+        for (const auto & consumer_weak : consumers_snapshot)
+            if (auto consumer = consumer_weak.lock(); consumer && !consumer->isChannelCloseCompleted())
+                return true;
+        return false;
+    };
+
+    /// Each close that completes stops the loop, so re-enter it while any consumer is outstanding.
+    /// The remaining time is read once per iteration, because computing it from a second reading
+    /// of the clock could underflow past the bound into an effectively unbounded wait.
+    Stopwatch watch;
+    while (outstanding())
+    {
+        const auto elapsed = watch.elapsedMilliseconds();
+        if (elapsed >= CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS)
+            break;
+        if (!connection->getHandler().startBlockingLoopWithTimeout(CONSUMER_CHANNEL_CLOSE_TIMEOUT_MS - elapsed))
+            break;
+    }
+
+    if (outstanding())
+    {
+        for (const auto & consumer_weak : consumers_snapshot)
+            if (auto consumer = consumer_weak.lock())
+                consumer->abandonChannelClose();
+
+        LOG_WARNING(log, "Timed out waiting for consumer channels to close after {} ms. "
+                         "Queue deletion may be refused while the consumers are still registered",
+                    watch.elapsedMilliseconds());
+    }
+}
+
+
 /// The only thing publishers are supposed to be aware of is _exchanges_ and queues are a responsibility of a consumer.
 /// Therefore, if a table is dropped, a clean up is needed.
 void StorageRabbitMQ::cleanupRabbitMQ() const
@@ -1116,7 +1170,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
             queue_names += queue;
         }
         LOG_WARNING(log,
-                    "RabbitMQ clean up not done, because there is no connection in table's shutdown."
+                    "RabbitMQ clean up not done, because there is no connection in table's shutdown. "
                     "There are {} queues ({}), which might need to be deleted manually. Exchanges will be auto-deleted",
                     queues.size(), queue_names);
         return;
@@ -1528,7 +1582,13 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     {
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings))
             rabbitmq_settings->loadFromNamedCollection(named_collection);
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");
@@ -1550,6 +1610,12 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     factory.registerStorage(
         "RabbitMQ",
         creator_fn,
+        SecretArgumentsSpec{
+            /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
+            .secret_settings = RabbitMQ::SETTINGS_TO_HIDE,
+            .settings_as_arguments = true,
+            .custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskPositionalsAfterCollectionName(); },
+        },
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,

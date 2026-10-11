@@ -40,6 +40,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -146,7 +150,15 @@ public:
                 continue;
             }
             budget.charge(size * sizeof(H3Index));
-            gridPathCells(start, end, ptr + current_offset);
+            /// The sizing pass above validates only the two endpoints, so this call can still fail on
+            /// an intermediate cell in pentagon distortion, leaving the rest of the row's slots unwritten.
+            H3Error err = gridPathCells(start, end, ptr + current_offset);
+            if (err)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
+                    start, end, err);
+
             current_offset += size;
         }
 

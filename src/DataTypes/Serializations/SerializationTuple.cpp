@@ -173,6 +173,11 @@ SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool h
     return ISerialization::pooled(hash, [e = std::move(elems_), has_explicit_names_]() mutable { return new SerializationTuple(std::move(e), has_explicit_names_); });
 }
 
+bool SerializationTuple::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
+{
+    return !path.empty() && path.back().type == Substream::TupleElement && path.back().name_of_substream == element_name;
+}
+
 void SerializationTuple::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     addElementSafe<void>(elems.size(), column, [&]

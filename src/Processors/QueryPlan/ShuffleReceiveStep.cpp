@@ -6,7 +6,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -17,17 +17,13 @@ void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, con
 {
     const String bucket_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
-    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
-
-    /// Read all shards
+    VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
     for (const String & shard_id : source_shards)
-    {
-        std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
-        pipeline_ptr->init(Pipe(settings.exchange_lookup->createSource(output_header, ExchangeStreamId(exchange_id, shard_id, bucket_id))));
-        pipelines.emplace_back(std::move(pipeline_ptr));
-    }
+        stream_ids.emplace_back(exchange_id, shard_id, bucket_id);
 
-    pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), 0, &processors);
+    /// The order of the chunks does not matter after a shuffle, so the receive runs on all threads.
+    pipeline = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ true);
+    processors = pipeline.getProcessors();
 }
 
 void ShuffleReceiveStep::serialize(Serialization & ctx) const

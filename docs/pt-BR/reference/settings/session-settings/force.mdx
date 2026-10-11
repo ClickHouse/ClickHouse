@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
+import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -28,6 +29,16 @@ Força o uso da otimização quando aplicável, mesmo que a heurística tenha de
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Essa configuração é usada pelo próprio servidor para dar suporte a consultas distribuídas. Não a altere manualmente, pois isso prejudicará o funcionamento normal. (Força o uso de agregação em ordem em nós remotos durante a agregação distribuída).
+
+<div id="force_creating_set_partitions_independently">
+  ## force_creating_set_partitions_independently
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para forçar a pré-desduplicação por partição na criação de conjuntos para `IN (subquery)`, mesmo quando a verificação de desequilíbrio entre partições a ignoraria."}]}]} />
+
+Força a pré-desduplicação por partição na criação de conjuntos para `IN (subquery)` quando aplicável, mesmo que a verificação de desequilíbrio entre partições (a maior partição é mais de duas vezes maior que a média) tenha decidido não utilizá-la. Ignora apenas a verificação de desequilíbrio de [allow&#95;creating&#95;set&#95;partitions&#95;independently](/pt-BR/reference/settings/session-settings/allow#allow_creating_set_partitions_independently); as demais condições ainda se aplicam.
 
 <div id="force_data_skipping_indices">
   ## force_data_skipping_indices
@@ -102,6 +113,18 @@ Funciona com tabelas da família MergeTree.
 
 Se `force_primary_key=1`, o ClickHouse verifica se a consulta tem uma condição de chave primária que possa ser usada para restringir os intervalos de dados. Se não houver uma condição adequada, ele lançará uma exceção. No entanto, ele não verifica se a condição reduz a quantidade de dados a serem lidos. Para mais informações sobre intervalos de dados em tabelas MergeTree, consulte [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 
+<div id="force_read_through_distributed_cache">
+  ## force_read_through_distributed_cache
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "auto"},{"label": "Nova configuração que substitui a configuração do servidor `enable_read_through_distributed_cache` em uma única consulta."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "auto"},{"label": "Nova configuração que substitui a configuração do servidor `enable_read_through_distributed_cache` em uma única consulta."}]}]} />
+
+Só tem efeito no ClickHouse Cloud. Substitui a configuração do servidor `enable_read_through_distributed_cache` em uma única consulta. `auto` (o padrão) significa usar a configuração do servidor.
+
 <div id="force_remove_data_recursively_on_drop">
   ## force_remove_data_recursively_on_drop
 </div>
@@ -109,5 +132,27 @@ Se `force_primary_key=1`, o ClickHouse verifica se a consulta tem uma condição
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Remove os dados recursivamente ao executar a consulta DROP. Evita o erro &#39;Directory not empty&#39;, mas pode remover silenciosamente dados desanexados
+
+<div id="force_window_partitions_independently">
+  ## force_window_partitions_independently
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para forçar a avaliação independente de funções de janela por partição, mesmo quando a heurística de custo a ignoraria."}]}]} />
+
+Força a avaliação independente de funções de janela por partição quando ela for aplicável, mas a heurística de custo tiver decidido não utilizá-la. Ignora apenas a heurística de custo de [allow&#95;window&#95;partitions&#95;independently](/pt-BR/reference/settings/session-settings/allow#allow_window_partitions_independently); as demais condições continuam sendo aplicadas.
+
+<div id="force_write_through_distributed_cache">
+  ## force_write_through_distributed_cache
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "auto"},{"label": "Nova configuração que substitui a configuração do servidor `enable_write_through_distributed_cache` em uma única consulta."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "auto"},{"label": "Nova configuração que substitui a configuração do servidor `enable_write_through_distributed_cache` em uma única consulta."}]}]} />
+
+Tem efeito somente no ClickHouse Cloud. Substitui a configuração do servidor `enable_write_through_distributed_cache` em uma única consulta. `auto` (o padrão) indica que a configuração do servidor deve ser seguida.
 
 {/*AUTOGENERATED_END*/}

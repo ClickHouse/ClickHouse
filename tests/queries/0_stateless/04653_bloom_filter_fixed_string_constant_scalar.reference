@@ -1,21 +1,11 @@
-A1 String idx vs FixedString(2)	1
-A2 String idx vs FixedString(3)	1
-A3 String idx vs FixedString(5)	1
-A4 FixedString(3) idx vs FixedString(4)	1
-A5 FixedString(3) idx vs FixedString(5)	1
-A11 FixedString(3) idx vs 4-byte String const	1
-A12 FixedString(3) idx vs 5-byte String const	1
-A6 LowCardinality(String) idx vs FixedString(3)	1
-A7 Nullable(String) idx vs FixedString(3)	1
-A8 LowCardinality(FixedString(3)) idx vs FixedString(5)	1
-A9 String idx vs LowCardinality(FixedString(3)) const	1
-A10 String idx vs LowCardinality(Nullable(FixedString(3))) const	1
-A13 String idx vs Variant(FixedString(3)) const	1
-A14 String idx vs Dynamic(FixedString(3)) const	1
-B1 String idx vs String const still prunes	1
-B2 FixedString(3) idx vs String const still prunes	1
-B3 FixedString(3) idx vs FixedString(2) const still prunes	1
-B4 FixedString(3) idx vs FixedString(3) const still prunes	1
-B6 FixedString(3) idx vs 3-byte String const still prunes	1
-B5 String idx vs FixedString(3) const does not prune	0
-B7 FixedString(3) idx vs 4-byte String const does not prune	0
+String index, wrapped FixedString constant	3
+String index, Variant constant	3
+String index, Dynamic constant	3
+LowCardinality(FixedString) index, wider String constant	1
+FixedString index, wider String constant	1
+FixedString index, wider FixedString constant	1
+String index used, String constant	1
+FixedString index used, narrower FixedString constant	1
+FixedString index used, equal width FixedString constant	1
+FixedString index used, plain String constant	1
+FixedString index prunes, equal width FixedString constant	1

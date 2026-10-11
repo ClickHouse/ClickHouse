@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- IEJoin edge cases: empty, single-row and NULL-key inputs, boundary row positions,
 -- block-size-aligned output, and shapes that must fall back to other join algorithms.
 

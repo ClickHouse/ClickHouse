@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-fasttest
 # Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/80648, the facet where the
 # renamed column has no default expression, so a merge that wrongly expires it loses the values for

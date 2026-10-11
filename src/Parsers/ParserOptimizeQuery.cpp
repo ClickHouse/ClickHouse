@@ -5,8 +5,6 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -109,9 +107,11 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     node = query;
 
     query->cluster = cluster_str;
-    if ((query->partition = partition))
+    query->partition = partition;
+    if (partition)
         query->children.push_back(partition);
-    if ((query->parts_list = parts_list))
+    query->parts_list = parts_list;
+    if (parts_list)
         query->children.push_back(parts_list);
     query->dry_run = dry_run;
     query->final = final;
@@ -131,15 +131,11 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     return true;
 }
 
-
-}
-
-namespace DB
+std::map<String, Documentation> ParserOptimizeQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementOptimize(StatementFactory & factory)
-{
-    factory.registerStatement("OPTIMIZE",
+    documentation["OPTIMIZE"] =
     {
         .description = R"DOCS_MD(
 This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/concepts/best-practices/avoid-optimize-final)) as its use case is meant for administration, not for daily operations.
@@ -160,7 +156,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 The `OPTIMIZE` query is supported for [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family (including [materialized views](/reference/statements/create/view#materialized-view)) and the [Buffer](/reference/engines/table-engines/special/buffer) engines. Other table engines aren't supported.
 
-When `OPTIMIZE` is used with the [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [alter_sync](/reference/settings/session-settings/alter#alter_sync) setting is set to `2`) or on current replica (if the [alter_sync](/reference/settings/session-settings/alter#alter_sync) setting is set to `1`).
+When `OPTIMIZE` is used with the [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [alter_sync](/reference/settings/session-settings/alter#alter_sync) setting is set to `2`), on the active replicas (if it is set to `3`) or on current replica (if it is set to `1`).
 
 - If `OPTIMIZE` does not perform a merge for any reason, it does not notify the client. To enable notifications, use the [optimize_throw_if_noop](/reference/settings/session-settings/optimize#optimize_throw_if_noop) setting.
 - If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](/reference/statements/alter/partition#how-to-set-partition-expression).
@@ -170,7 +166,7 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](/reference/engines/table-
 You can specify how long (in seconds) to wait for inactive replicas to execute `OPTIMIZE` queries by the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
 <Note>
-If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+If the `alter_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown. With `alter_sync = 3` the inactive replicas are not waited for, so no exception is thrown.
 </Note>
 
 ## DRY RUN {#dry-run}
@@ -413,7 +409,9 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
 )",
         .related = {"SYSTEM", "ALTER TABLE ... PARTITION", "CHECK TABLE"},
-    });
+    };
+
+    return documentation;
 }
 
 }
