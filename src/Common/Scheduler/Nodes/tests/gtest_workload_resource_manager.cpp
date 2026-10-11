@@ -178,9 +178,6 @@ public:
 
     std::string_view getName() const override { return name; }
 
-    bool isReplicated() const override { return replicated; }
-    void setReplicated(bool value) { replicated = value; }
-
     void loadEntities(const Poco::Util::AbstractConfiguration & config) override
     {
         WorkloadEntityStorageBase::loadEntities(config);
@@ -211,25 +208,6 @@ public:
         executeWorkloadEntityQuery(*this, query);
     }
 
-    // Runs the restore of entities found in a backup (pre-check, then creation in dependency order)
-    void restoreAccumulated(const String & data, bool replace_if_exists = false)
-    {
-        std::unordered_map<String, ASTPtr> to_restore;
-        for (const auto & [entity_name, entity] : parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")))
-            to_restore.emplace(entity_name, entity);
-        restoreEntities(Context::createCopy(Context::getGlobalContextInstance()), to_restore, false, replace_if_exists);
-    }
-
-    // Recreates own entities the way a RESTORE does, in the order of a backup
-    void restoreFromString(const String & data)
-    {
-        for (const auto & [entity_name, entity] : parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")))
-            {
-            auto type = typeid_cast<ASTCreateResourceQuery *>(entity.get()) ? WorkloadEntityType::Resource : WorkloadEntityType::Workload;
-            validateAndStoreEntity(nullptr, type, entity_name, entity, false, false, Settings{}, StoreMode::Restore);
-        }
-    }
-
 private:
     WorkloadEntityStorageBase::OperationResult storeEntityImpl(
         const ContextPtr & current_context,
@@ -258,7 +236,6 @@ private:
 
     const String name;
     const bool allows_parents_from_outer_layers;
-    bool replicated = false;
 };
 
 /// The storage chain of the server: implicit (outermost) -> SQL -> configuration (innermost).
@@ -2800,12 +2777,6 @@ TEST(SchedulerWorkloadResourceManager, ImplicitResourceNamesReserved)
     t.query("DROP RESOURCE __server_cpu__");
     EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE RESOURCE io (READ DISK d)"));
 
-    // A backup of such an entity is restored hidden again; SQL statements still reject the name
-    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD)"));
-    EXPECT_FALSE(t.storage.has(String(IMPLICIT_CPU_RESOURCE_NAME)));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
-    EXPECT_ANY_THROW(t.query("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION)"));
-    t.query("DROP RESOURCE __server_cpu__");
 }
 
 // Persisted entities cannot reference implicit entities: they live in an outer layer.
@@ -2978,36 +2949,6 @@ TEST(SchedulerWorkloadResourceManager, CycleCheckWalksHiddenEntities)
     EXPECT_EQ(t.storage.getEntitySource("b"), "sql");
 }
 
-// A restore recreates own SQL entities that were hidden when backed up: shadowed by a configuration entity of the
-// same kind or conflicting with another own entity. They are hidden again instead of failing.
-TEST(SchedulerWorkloadResourceManager, RestoreRecreatesHiddenEntities)
-{
-    ResourceTest t;
-    t.loadConfig("CREATE RESOURCE cfg_cpu (MASTER THREAD, WORKER THREAD); CREATE WORKLOAD p SETTINGS weight = 2");
-
-    EXPECT_NO_THROW(t.sql_storage->restoreFromString(
-        "CREATE RESOURCE sql_cpu (MASTER THREAD);"
-        "CREATE RESOURCE q2 (QUERY); CREATE RESOURCE q1 (QUERY);"
-        "CREATE WORKLOAD p; CREATE WORKLOAD c IN p SETTINGS max_concurrent_threads = 1 FOR sql_cpu"));
-    EXPECT_FALSE(t.storage.has("sql_cpu"));
-    EXPECT_FALSE(t.storage.has("q2"));
-    EXPECT_TRUE(t.storage.has("q1"));
-    EXPECT_EQ(t.storage.getEntitySource("p"), "configuration");
-    EXPECT_EQ(t.storage.getEntitySource("c"), "sql"); // attached to the configuration `p`
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "cfg_cpu");
-
-    // Hidden entities become visible once the configuration drops what hides them
-    t.loadConfig("");
-    EXPECT_TRUE(t.storage.has("sql_cpu"));
-    EXPECT_EQ(t.storage.getEntitySource("p"), "sql");
-    EXPECT_TRUE(t.storage.has("c"));
-    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "sql_cpu");
-
-    // A reference to an entity that exists in no layer still fails the restore
-    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD orphan IN missing"), DB::Exception);
-    EXPECT_FALSE(t.storage.has("orphan"));
-}
-
 // A configuration workload cannot have the implicit `default` as its parent: only an outer layer can provide a parent
 // the configuration does not have, and the SQL layer between them never provides an implicit entity
 TEST(SchedulerWorkloadResourceManager, ConfigWorkloadCannotHaveImplicitDefaultParent)
@@ -3025,105 +2966,6 @@ TEST(SchedulerWorkloadResourceManager, ConfigWorkloadCannotHaveImplicitDefaultPa
     EXPECT_TRUE(t.storage.has("child"));
     t.loadConfig("");
     t.query("DROP WORKLOAD default");
-}
-
-// Replicated storage has no pre-check of the whole backup, so a restore validates every reference as it goes
-TEST(SchedulerWorkloadResourceManager, ReplicatedRestoreValidatesReferences)
-{
-    ResourceTest t;
-    t.sql_storage->setReplicated(true);
-    t.query("CREATE WORKLOAD cpu");
-    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD orphan IN missing"), DB::Exception);
-    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD w SETTINGS max_memory = 1 FOR cpu"), DB::Exception);
-    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD w SETTINGS max_memory = 1 FOR absent"), DB::Exception);
-    EXPECT_FALSE(t.storage.has("orphan"));
-    EXPECT_FALSE(t.storage.has("w"));
-    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated("CREATE RESOURCE mem (MEMORY RESERVATION); CREATE WORKLOAD w SETTINGS max_memory = 1 FOR mem"));
-    EXPECT_TRUE(t.storage.has("w"));
-}
-
-// A backup with a parent cycle fails the restore before anything is created
-TEST(SchedulerWorkloadResourceManager, RestoreRejectsParentCycle)
-{
-    ResourceTest t;
-    EXPECT_THROW(t.sql_storage->restoreAccumulated(
-        "CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a IN b; CREATE WORKLOAD b IN a; CREATE WORKLOAD c"), DB::Exception);
-    EXPECT_FALSE(t.storage.has("io"));
-    EXPECT_FALSE(t.storage.has("c"));
-
-    // Also a cycle through an existing workload
-    t.query("CREATE WORKLOAD p");
-    t.query("CREATE WORKLOAD q IN p");
-    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD p IN q", /* replace_if_exists = */ true), DB::Exception);
-    EXPECT_EQ(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get("p").get())->getWorkloadParent(), "");
-
-    // And on replicated storage, where the restore fails on the entity closing the cycle
-    t.sql_storage->setReplicated(true);
-    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD p IN q", /* replace_if_exists = */ true), DB::Exception);
-    EXPECT_EQ(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get("p").get())->getWorkloadParent(), "");
-}
-
-// A restore rejects an entity of another kind than the inherited entity of the same name, before creating anything.
-TEST(SchedulerWorkloadResourceManager, RestoreRejectsConflictWithInheritedEntity)
-{
-    ResourceTest t;
-    t.loadConfig("CREATE RESOURCE r (READ DISK d); CREATE WORKLOAD w");
-
-    auto expect_cannot_restore = [&](const String & data)
-    {
-        try
-        {
-            t.sql_storage->restoreAccumulated(data);
-            ADD_FAILURE() << "No exception for: " << data;
-        }
-        catch (const DB::Exception & e)
-        {
-            EXPECT_EQ(e.code(), ErrorCodes::CANNOT_RESTORE_TABLE) << e.message();
-        }
-    };
-    expect_cannot_restore("CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD r");
-    expect_cannot_restore("CREATE RESOURCE io (READ DISK d); CREATE RESOURCE w (WRITE DISK d)");
-    EXPECT_FALSE(t.storage.has("io"));
-    EXPECT_EQ(t.storage.getEntitySource("r"), "configuration");
-    EXPECT_EQ(t.storage.getEntitySource("w"), "configuration");
-
-    // Without the pre-check (replicated storage), storing the entity rejects it as well
-    EXPECT_THROW(t.sql_storage->restoreFromString("CREATE WORKLOAD r"), DB::Exception);
-    t.loadConfig("CREATE WORKLOAD w");
-    EXPECT_FALSE(t.storage.has("r"));
-    t.loadConfig("CREATE RESOURCE r (READ DISK d); CREATE WORKLOAD w");
-
-    // An entity of the same kind is restored shadowed
-    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated("CREATE RESOURCE r (WRITE DISK d); CREATE WORKLOAD w"));
-    t.loadConfig("");
-    EXPECT_EQ(t.storage.getEntitySource("r"), "sql");
-    EXPECT_EQ(t.storage.getEntitySource("w"), "sql");
-}
-
-// The restore pre-check rejects references to an entity of the wrong kind before creating anything.
-TEST(SchedulerWorkloadResourceManager, RestorePreCheckValidatesReferenceKind)
-{
-    ResourceTest t;
-    t.query("CREATE RESOURCE parent (READ DISK d)");
-    t.query("CREATE WORKLOAD cpu");
-
-    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD a; CREATE WORKLOAD child IN parent"), DB::Exception);
-    EXPECT_FALSE(t.storage.has("a"));
-    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD a; CREATE WORKLOAD w SETTINGS max_concurrent_threads = 1 FOR cpu"), DB::Exception);
-    EXPECT_FALSE(t.storage.has("a"));
-
-    // Replacing an existing entity by one of another kind or cost unit fails before creating anything
-    EXPECT_THROW(t.sql_storage->restoreAccumulated(
-        "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD); CREATE RESOURCE r (READ DISK d);"
-        "CREATE WORKLOAD w SETTINGS max_concurrent_threads = 1 FOR cpu", /* replace_if_exists = */ true), DB::Exception);
-    EXPECT_FALSE(t.storage.has("r"));
-    EXPECT_THROW(t.sql_storage->restoreAccumulated(
-        "CREATE RESOURCE parent (MEMORY RESERVATION); CREATE RESOURCE r (READ DISK d)", /* replace_if_exists = */ true), DB::Exception);
-    EXPECT_FALSE(t.storage.has("r"));
-
-    // A reference to an entity of the right kind, existing or restored together, passes
-    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated("CREATE RESOURCE r (READ DISK d); CREATE WORKLOAD p; CREATE WORKLOAD c IN p SETTINGS max_io_requests = 1 FOR r"));
-    EXPECT_TRUE(t.storage.has("c"));
 }
 
 /// Whether the manager has a scheduler node of workload `child` below a node of workload `parent`

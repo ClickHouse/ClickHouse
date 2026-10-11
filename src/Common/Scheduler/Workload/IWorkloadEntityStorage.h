@@ -64,8 +64,7 @@ class RestorerFromBackup;
  * Conflict. Two own entities of one layer that share a claim key, an own entity and an inherited entity of
  * another kind with the same name, or a SQL statement whose entity shares a claim key with an inherited
  * entity. `storeEntity` rejects conflicts with an exception: it checks the new entity against all own
- * entities (hidden ones included) and inherited entities. A restore rejects an entity of another kind than
- * the inherited entity of the same name. Loading the configuration rejects conflicts between its entities
+ * entities (hidden ones included) and inherited entities. Loading the configuration rejects conflicts between its entities
  * with an exception, so a bad configuration reload is not applied. Persisted layers (Keeper, disk) may hold
  * conflicting entities written by older versions, so loading them never fails because of a conflict: of the
  * conflicting own entities the one with the lexicographically smaller name wins, the others are hidden, and
@@ -81,8 +80,7 @@ class RestorerFromBackup;
  * conflict if it is of another kind (e.g. a user resource `default`). The names of the implicit
  * resources are reserved: user entities with these names are rejected by SQL statements and by the
  * configuration. A persisted layer (Keeper, disk) may hold such an entity written by an older version: it is
- * loaded hidden, with an error in the log, and can be dropped. A restore of such an entity recreates it
- * hidden as well.
+ * loaded hidden, with an error in the log, and can be dropped.
  *
  * Root workload. The workload entity with the empty name `""`. It is the parent of every workload without
  * an explicit parent, and its settings are the per-resource root limits (e.g. `max_concurrent_threads =
@@ -126,13 +124,9 @@ class RestorerFromBackup;
  * layer: the implicit layer forwards them, and the configuration is read-only. Implicit entities cannot be
  * dropped, even while shadowed: they are defined by the server settings. A backup contains only the
  * own entities of the SQL layer, hidden ones included: configuration entities belong to the server
- * configuration, and implicit entities are synthesized from it. A restore recreates own entities of the SQL
- * layer. Unlike SQL statements, it resolves overlap with inherited entities of the same kind and conflicts
- * between own entities by hiding, so such an entity that was hidden when it was backed up is restored
- * hidden. An entity of another kind than the inherited entity of the same name fails the restore, as does a
- * reference to a missing entity or to an entity of the wrong kind, or a parent cycle: references are checked
- * like SQL statements. Non-replicated storage also checks references of the whole backup before anything is
- * created.
+ * configuration, and implicit entities are synthesized from it. A restore recreates the entities of a backup
+ * in the SQL layer through `storeEntity`, as SQL statements, so a backed up entity that is rejected by a SQL
+ * statement now (for example a hidden one) fails the restore.
  *
  * Source. `getEntitySource` returns the name of the layer that owns a visible entity, e.g. `implicit`,
  * `keeper`, `disk` or `configuration`. It is shown in the `source` column of `system.workloads` and

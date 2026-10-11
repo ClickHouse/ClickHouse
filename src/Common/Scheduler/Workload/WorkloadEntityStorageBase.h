@@ -96,29 +96,6 @@ protected:
         Hide, /// The entity with the smaller name wins, the others are hidden (persisted data written earlier)
     };
 
-    /// How `validateAndStoreEntity` treats an entity (see "Conflict" in IWorkloadEntityStorage.h)
-    enum class StoreMode
-    {
-        Statement, /// A SQL statement: conflicts with own and inherited entities are rejected
-        Restore, /// An own entity recreated from a backup: overlap is resolved by shadowing or hiding, conflicts with inherited entities are rejected
-    };
-
-    /// Validates `create_entity_query` according to `mode`, stores it through `storeEntityImpl` and notifies subscribers
-    bool validateAndStoreEntity(
-        const ContextPtr & current_context,
-        WorkloadEntityType entity_type,
-        const String & entity_name,
-        ASTPtr create_entity_query,
-        bool throw_if_exists,
-        bool replace_if_exists,
-        const Settings & settings,
-        StoreMode mode);
-
-    /// Recreates own entities from a backup: checks that every reference resolves to an entity of the right kind,
-    /// then stores the entities in dependency order with `StoreMode::Restore`
-    void restoreEntities(
-        const ContextMutablePtr & context, const std::unordered_map<String, ASTPtr> & to_restore, bool throw_if_exists, bool replace_if_exists);
-
     /// Replaces own entities with loaded `new_entities` (configuration, Keeper or disk) and notifies subscribers
     /// with one transaction. Throws on invalid entities; conflicts and broken references between them are handled
     /// by `on_conflict`; overlap with inherited entities is resolved by shadowing or hiding.
@@ -162,9 +139,6 @@ private:
 
     /// Sets the resource names of access-mode roles from visible entities
     void updateRoleResources();
-
-    /// Returns own entity by name, possibly hidden
-    ASTPtr findOwnEntity(const String & entity_name) const;
 
     /// Returns own or inherited entity by name, inherited one first (it is visible if both exist)
     ASTPtr findKnownEntity(const String & entity_name, const std::unordered_map<String, ASTPtr> & own) const;
