@@ -27,6 +27,28 @@
 namespace DB
 {
 
+namespace
+{
+
+/// If the next value in `istr` has a simple type, which is encoded by one byte, skips this byte and returns
+/// the cached type and serialization. Otherwise returns `nullptr` and leaves `istr` as is.
+const SimpleDataTypesCache::Element * tryReadSimpleType(ReadBuffer & istr)
+{
+    char type_index = 0;
+    if (!istr.peek(type_index))
+        return nullptr;
+
+    const auto & cache = getSimpleDataTypesCache();
+    const auto binary_type_index = static_cast<BinaryTypeIndex>(static_cast<UInt8>(type_index));
+    if (!cache.hasElement(binary_type_index))
+        return nullptr;
+
+    istr.ignore();
+    return &cache.getElement(binary_type_index);
+}
+
+}
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
@@ -737,6 +759,17 @@ void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, c
     /// the input bounds the depth of the recursion.
     checkStackSize();
 
+    /// The type of a value of a simple type is encoded by one byte. Take its serialization from the cache instead of
+    /// decoding the type and looking up the serialization by the name of the type, which is slow for many small values.
+    if (const auto * element = tryReadSimpleType(istr))
+    {
+        if (isNothing(element->type))
+            field = Null();
+        else
+            element->serialization->deserializeBinary(field, istr, settings);
+        return;
+    }
+
     auto field_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(field_type))
     {
@@ -864,14 +897,27 @@ void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, Rea
     /// See the comment in the Field overload: this is the same recursion on the column-building path.
     checkStackSize();
 
-    auto variant_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
+    DataTypePtr variant_type;
+    String variant_type_name;
+    /// See the comment in the Field overload.
+    if (const auto * element = tryReadSimpleType(istr))
+    {
+        variant_type = element->type;
+        variant_type_name = element->name;
+    }
+    else
+    {
+        variant_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
+        if (!isNothing(variant_type))
+            variant_type_name = variant_type->getName();
+    }
+
     if (isNothing(variant_type))
     {
         dynamic_column.insertDefault();
         return;
     }
 
-    auto variant_type_name = variant_type->getName();
     const auto & variant_serialization = dynamic_column.getVariantSerialization(variant_type, variant_type_name);
     const auto & variant_info = dynamic_column.getVariantInfo();
     auto it = variant_info.variant_name_to_discriminator.find(variant_type_name);
