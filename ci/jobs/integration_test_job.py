@@ -21,7 +21,7 @@ from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
     PER_TEST_COVERAGE_SKIP_PREFIXES,
-    force_heavy_modules_sequential,
+    force_exclusive_modules_sequential,
     get_optimal_test_batch,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -1892,18 +1892,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
         )
     )
 
-    if is_flaky_check:
-        # The flaky parallel bucket runs `--dist=each`: every worker runs
-        # every parallel module at once. TEST_CONFIGS `dist_each_sequential` modules
-        # would start one cluster per worker and OOM small runners, so move them to
-        # the looped sequential phase. Normal `--dist=loadfile` runs do not call this.
+    if is_flaky_check or is_targeted_check:
         before = list(parallel_test_modules)
-        parallel_test_modules, sequential_test_modules = force_heavy_modules_sequential(
-            parallel_test_modules, sequential_test_modules
+        parallel_test_modules, sequential_test_modules = force_exclusive_modules_sequential(
+            parallel_test_modules, sequential_test_modules, dist_each=is_flaky_check
         )
         moved = [m for m in before if m not in parallel_test_modules]
         if moved:
-            print(f"Forced heavy modules to the sequential phase (avoid concurrent --dist=each clusters): {moved}")
+            print(f"Moved to the sequential phase: {moved}")
 
     if is_sequential:
         parallel_test_modules = []
@@ -1929,11 +1925,28 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not args.test
     ):
         changed_files = info.get_changed_files()
-        if changed_files and all(
-            Targeting.is_functional_test_file(f)
-            or Targeting.is_integration_test_file(f)
-            or Targeting.is_ci_job_script(f)
-            for f in changed_files
+        # The `arm_binary` jobs replacing the LLVM coverage jobs in pull requests must run in full
+        # when a CI job script changes: `filter_job.py` lets them through for that very reason.
+        is_coverage_replacement_with_ci_script_changes = False
+        if info.pr_number > 0 and any(
+            Targeting.is_ci_job_script(f) for f in changed_files or []
+        ):
+            # Not at module scope: `ci.defs.job_configs` needs a bare `praktika` on `sys.path`.
+            from ci.defs.job_configs import JobConfigs
+
+            is_coverage_replacement_with_ci_script_changes = info.job_name in [
+                j.name for j in JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
+            ]
+        if (
+            changed_files
+            and not is_coverage_replacement_with_ci_script_changes
+            and all(
+                Targeting.is_functional_test_file(f)
+                or Targeting.is_integration_test_file(f)
+                or Targeting.is_ci_job_script(f)
+                or Targeting.is_documentation_file(f)
+                for f in changed_files
+            )
         ):
             changed_integration_modules = {
                 f.removeprefix("tests/integration/")
