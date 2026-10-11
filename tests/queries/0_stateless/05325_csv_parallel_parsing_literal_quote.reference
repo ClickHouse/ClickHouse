@@ -1,0 +1,16 @@
+literal	0	12" pizza
+literal	0	x\ny\nz\nw
+after_delimiter	0	a	x\ny\nz\nw
+after_delimiter	0	b	p\nq\nr\ns
+after_space	0	a	x\ny\nz\nw
+literal	1	12" pizza
+literal	1	x\ny\nz\nw
+after_delimiter	1	a	x\ny\nz\nw
+after_delimiter	1	b	p\nq\nr\ns
+after_space	1	a	x\ny\nz\nw
+count_literal	0	2
+count_after_delimiter	0	2
+count_after_space	0	1
+count_literal	1	2
+count_after_delimiter	1	2
+count_after_space	1	1
