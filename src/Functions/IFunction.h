@@ -203,6 +203,15 @@ public:
 
     virtual bool isStateful() const { return false; }
 
+    /** Returns true if evaluating the function is observable outside of the value it returns: it spends a
+      * noticeable amount of time, performs an external request, or accounts profile events that a user can
+      * read back. `sleep` and `sleepEachRow` are the in-tree examples.
+      * Such a function still returns the same value for the same arguments, so it is neither
+      * non-deterministic nor stateful, but an optimization that changes how many times or on how many rows
+      * an expression is evaluated changes what an observer sees, so it has to leave the expression alone.
+      */
+    virtual bool hasObservableSideEffects() const { return false; }
+
     /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
       * to a small fixed-size result, so that computing it early and carrying the result instead of the
       * argument strictly reduces the volume of data flowing through the query plan.
@@ -647,6 +656,8 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    /// See `IFunctionBase::hasObservableSideEffects`.
+    virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
     virtual bool isVolumeReducing() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
