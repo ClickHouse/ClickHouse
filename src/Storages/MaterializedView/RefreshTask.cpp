@@ -29,9 +29,9 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <base/EnumReflection.h>
-#include <base/hex.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Hex.h>
 #include <Common/SipHash.h>
 #include <Common/QueryScope.h>
 #include <Common/FailPoint.h>
