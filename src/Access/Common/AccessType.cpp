@@ -51,11 +51,28 @@ namespace
 
         Strings access_type_to_string_mapping;
     };
+
+    /// Indexed by the access type, like the table above.
+#define ACCESS_TYPE_NOT_OBSOLETE_TABLE_ENTRY(name, aliases, node_type, parent_group_name) false,
+#define ACCESS_TYPE_OBSOLETE_TABLE_ENTRY(name, aliases, node_type, parent_group_name) true,
+
+    constexpr std::array obsolete_access_types
+    {
+        APPLY_FOR_REGULAR_AND_OBSOLETE_ACCESS_TYPES(ACCESS_TYPE_NOT_OBSOLETE_TABLE_ENTRY, ACCESS_TYPE_OBSOLETE_TABLE_ENTRY)
+    };
+
+#undef ACCESS_TYPE_NOT_OBSOLETE_TABLE_ENTRY
+#undef ACCESS_TYPE_OBSOLETE_TABLE_ENTRY
 }
 
 std::string_view toString(AccessType type)
 {
     return AccessTypeToStringConverter::instance().convert(type);
+}
+
+bool isObsolete(AccessType type)
+{
+    return obsolete_access_types[static_cast<size_t>(type)];
 }
 
 }
