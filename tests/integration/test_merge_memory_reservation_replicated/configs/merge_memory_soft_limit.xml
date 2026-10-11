@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- Overwritten at runtime by the test (see set_soft_limit) and applied with SYSTEM RELOAD CONFIG.
+         Zero means "no limit", so the node starts out behaving exactly like a default one. -->
+    <merges_mutations_memory_usage_soft_limit>0</merges_mutations_memory_usage_soft_limit>
+</clickhouse>

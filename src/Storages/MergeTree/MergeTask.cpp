@@ -679,26 +679,32 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// Snapshot of pending mutations for the source parts, fetched once and reused for
     /// `alter_conversions` below, so the expired-columns check observes the same mutations.
-    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
-
-    Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
-    for (const auto & patch : patch_parts)
-        min_patch_metadata_version = std::min<Int64>(min_patch_metadata_version, patch->getMetadataVersion());
-
-    MergeTreeData::IMutationsSnapshot::Params params
+    /// When the caller froze the snapshot it priced the memory reservation against, use that one:
+    /// a mutation registered after the reservation must not be applied on the fly by this merge.
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot = global_ctx->frozen_mutations_snapshot;
+    if (!mutations_snapshot)
     {
-        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = parts_info.min_metadata_version,
-        .min_patch_metadata_version = min_patch_metadata_version,
-        .min_part_data_versions = nullptr,
-        .max_mutation_versions = nullptr,
-        .need_data_mutations = false,
-        .need_alter_mutations = !patch_parts.empty(),
-        .need_patch_parts = false,
-        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
-    };
+        auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
 
-    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+        Int64 min_patch_metadata_version = std::numeric_limits<Int64>::max();
+        for (const auto & patch : patch_parts)
+            min_patch_metadata_version = std::min<Int64>(min_patch_metadata_version, patch->getMetadataVersion());
+
+        MergeTreeData::IMutationsSnapshot::Params params
+        {
+            .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
+            .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_patch_metadata_version = min_patch_metadata_version,
+            .min_part_data_versions = nullptr,
+            .max_mutation_versions = nullptr,
+            .need_data_mutations = false,
+            .need_alter_mutations = !patch_parts.empty(),
+            .need_patch_parts = false,
+            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+        };
+
+        mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+    }
     const auto & merge_tree_settings = global_ctx->data_settings;
 
     /// Alter conversions must include patch parts before they are cached below. Patch application
@@ -1307,7 +1313,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams,
-        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
+        global_ctx->context);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -1727,9 +1734,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
-            global_ctx->compression_codec, ++ctx->projection_block_num,
-            /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
+            *global_ctx->data,
+            result,
+            projection,
+            global_ctx->new_data_part.get(),
+            global_ctx->compression_codec,
+            ++ctx->projection_block_num,
+            /*use_selected_codec=*/ false,
+            global_ctx->is_explicit_recompression,
+            global_ctx->context,
+            global_ctx->base_data_settings);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1771,9 +1785,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
-                global_ctx->compression_codec, ++ctx->projection_block_num,
-                /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
+                *global_ctx->data,
+                result,
+                projection,
+                global_ctx->new_data_part.get(),
+                global_ctx->compression_codec,
+                ++ctx->projection_block_num,
+                /*use_selected_codec=*/ false,
+                global_ctx->is_explicit_recompression,
+                global_ctx->context,
+                global_ctx->base_data_settings);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -1819,6 +1840,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
         global_ctx->time_of_merge,
         global_ctx->new_data_part,
         global_ctx->space_reservation,
+        global_ctx->base_data_settings,
         !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr
     );
 }
@@ -2271,7 +2293,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
-        global_ctx->to->getSkipIndicesPackedWriter());
+        global_ctx->to->getSkipIndicesPackedWriter(),
+        global_ctx->context);
 
     ctx->column_elems_written = 0;
 }
@@ -2403,7 +2426,11 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection_parts.back()->name);
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
-        projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {}, projection);
+        /// The already existing projection parts are merged with the same frozen settings snapshot this
+        /// merge runs with, so the format of the merged projection part - and therefore the per-stream
+        /// buffers the nested merge allocates - is the one the memory reservation priced.
+        projection_future_part->assign(
+            std::move(projection_parts), /*patch_parts_=*/ {}, projection, global_ctx->base_data_settings);
         projection_future_part->name = projection->name;
         projection_future_part->path = global_ctx->future_part->path + "/" + projection->name + ".proj/";
         projection_future_part->part_info = MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION;
@@ -2438,7 +2465,8 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->data,
             global_ctx->mutator,
             global_ctx->merges_blocker,
-            global_ctx->ttl_merges_blocker));
+            global_ctx->ttl_merges_blocker,
+            global_ctx->base_data_settings));
     }
 
     /// merge projections with _part_offset first so that we can release offset mapping earlier.
@@ -3323,9 +3351,9 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
     addSkipIndexesExpressionSteps(plan, description_to_build, global_ctx);
 
     MergeTreeWriterSettings writer_settings(
-        global_ctx->data->getContext()->getSettingsRef(),
+        global_ctx->context->getSettingsRef(),
         global_ctx->context->getWriteSettings(),
-        global_ctx->data->getSettings(),
+        global_ctx->data_settings,
         global_ctx->new_data_part,
         global_ctx->new_data_part->index_granularity_info.mark_type.adaptive,
         /*rewrite_primary_key=*/ false,
@@ -3342,7 +3370,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         std::move(writer_settings),
         global_ctx->compression_codec,
         global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension(),
-        *global_ctx->data->getSettings());
+        *global_ctx->data_settings);
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.

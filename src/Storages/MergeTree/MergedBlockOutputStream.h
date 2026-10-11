@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <IO/WriteSettings.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/Statistics/Statistics.h>
 
 
@@ -28,7 +29,12 @@ public:
         bool blocks_are_granules_size,
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
-        bool try_adaptive_codec);
+        bool try_adaptive_codec,
+        /// The context whose settings decide the writer's compression block sizes and serialization
+        /// versions (the ones a table snapshot leaves at zero fall back to it). A merge passes the
+        /// context its memory reservation was priced against, so the writer cannot resolve different
+        /// settings than the admission gate did; an empty pointer means the table's live context.
+        const ContextPtr & writer_context = nullptr);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
