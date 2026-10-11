@@ -8,7 +8,11 @@
 
 #include <Core/Settings.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
@@ -36,6 +40,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 
 #include <fmt/ranges.h>
 
@@ -186,6 +191,7 @@ public:
         MaterializedCTEPtr materialized_cte_ = {},
         MemorySourceFilterPtr filter_ = {},
         SharedHeader filtered_header_ = {},
+        Names nested_arrays_ = {},
         MemorySourceDefaultsPtr defaults_ = {})
         : ISource(filter_ ? filtered_header_ : std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
@@ -195,6 +201,7 @@ public:
         , initializer_func(std::move(initializer_func_))
         , materialized_cte(std::move(materialized_cte_))
         , filter(std::move(filter_))
+        , nested_arrays(std::move(nested_arrays_))
         , defaults(std::move(defaults_))
     {
         if (filter && !virtual_columns.empty())
@@ -303,6 +310,86 @@ private:
         return result;
     }
 
+    /// Only dotted names are members of a `Nested`, and the members of one `Nested` are checked to have equal sizes on insert.
+    const ColumnWithTypeAndName * findSizesSource(const Block & src, const NameAndTypePair & column) const
+    {
+        if (nested_arrays.empty() || !isArray(column.getTypeInStorage()))
+            return nullptr;
+
+        const String name_in_storage = column.getNameInStorage();
+        const auto [nested_name, member_name] = Nested::splitName(name_in_storage);
+        if (member_name.empty() || src.has(name_in_storage))
+            return nullptr;
+
+        /// A member with a default expression is left for `evaluateDefaults`.
+        if (defaults && defaults->storage_snapshot->getDefault(name_in_storage))
+            return nullptr;
+
+        for (const auto & array_name : nested_arrays)
+        {
+            if (Nested::splitName(std::string_view(array_name)).first != nested_name)
+                continue;
+
+            const auto * stored = src.findByName(array_name);
+            if (stored && stored->column && isArray(stored->type))
+                return stored;
+        }
+
+        return nullptr;
+    }
+
+    /// Each missing entry is filled from `src` alone, independently of the other columns of the read, for the `num_rows`
+    /// rows selected by `mask`. With `defaults`, an entry that has a default expression is left null for `evaluateDefaults`.
+    void fillColumnsMissingFromBlock(
+        const Block & src, const NamesAndTypesList & columns_to_read, const IColumn::Filter * mask, size_t num_rows, Columns & columns) const
+    {
+        NamesAndTypesList columns_without_sizes;
+        std::vector<size_t> positions_without_sizes;
+        std::unordered_map<const ColumnWithTypeAndName *, ColumnPtr> decompressed_sources;
+
+        auto column_it = columns_to_read.begin();
+        for (size_t i = 0; i < columns.size(); ++i, ++column_it)
+        {
+            if (columns[i])
+                continue;
+
+            const ColumnArray * source_array = nullptr;
+            if (const auto * source = findSizesSource(src, *column_it))
+            {
+                auto & source_column = decompressed_sources[source];
+                if (!source_column)
+                    source_column = source->column->decompress();
+                source_array = typeid_cast<const ColumnArray *>(source_column.get());
+            }
+
+            if (!source_array)
+            {
+                columns_without_sizes.push_back(*column_it);
+                positions_without_sizes.push_back(i);
+                continue;
+            }
+
+            /// Only the outer sizes: the deeper levels of a member are its own.
+            const auto & type_in_storage = column_it->getTypeInStorage();
+            const auto & offsets = source_array->getOffsets();
+            auto elements = assert_cast<const DataTypeArray &>(*type_in_storage).getNestedType()
+                ->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())->convertToFullColumnIfConst();
+            ColumnPtr column = ColumnArray::create(elements, source_array->getOffsetsPtr());
+            if (mask)
+                column = column->filter(*mask, num_rows);
+            columns[i] = column_it->isSubcolumn() ? type_in_storage->getSubcolumn(column_it->getSubcolumnName(), column) : column;
+        }
+
+        if (!positions_without_sizes.empty())
+        {
+            Columns filled(positions_without_sizes.size());
+            fillMissingColumns(
+                filled, num_rows, columns_without_sizes, columns_without_sizes, {}, defaults ? defaults->storage_snapshot : nullptr);
+            for (size_t j = 0; j < positions_without_sizes.size(); ++j)
+                columns[positions_without_sizes[j]] = std::move(filled[j]);
+        }
+    }
+
     void fillPhysicalColumns(const Block & src, Columns & result_columns, size_t & read_bytes)
     {
         result_columns = readColumns(src, physical_columns, {MemorySourceColumnList::Physical, 0}, nullptr, src.rows(), read_bytes);
@@ -324,8 +411,7 @@ private:
         for (size_t i = 0; i < result.size(); ++i)
             was_read[i] = result[i] != nullptr;
 
-        /// With the snapshot, the columns that have a default expression are left for `evaluateDefaults`.
-        fillMissingColumns(result, num_rows, columns, columns, {}, defaults ? defaults->storage_snapshot : nullptr);
+        fillColumnsMissingFromBlock(src, columns, mask, num_rows, result);
 
         bool has_missing = false;
         for (size_t i = 0; i < result.size(); ++i)
@@ -622,6 +708,8 @@ private:
     InitializerFunc initializer_func;
     MaterializedCTEPtr materialized_cte;
     MemorySourceFilterPtr filter;
+    /// The arrays of the table that are members of the `Nested` of a requested member; see `findSizesSource`.
+    const Names nested_arrays;
     MemorySourceDefaultsPtr defaults;
 };
 
@@ -856,6 +944,30 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     return result;
 }
 
+static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot)
+{
+    NameSet nested_names;
+    for (const auto & column : physical_columns)
+    {
+        auto [nested_name, member_name] = Nested::splitName(column.getNameInStorage());
+        if (isArray(column.getTypeInStorage()) && !member_name.empty())
+            nested_names.insert(std::move(nested_name));
+    }
+
+    Names result;
+    if (nested_names.empty())
+        return result;
+
+    for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+    {
+        auto [nested_name, member_name] = Nested::splitName(column.name);
+        if (isArray(column.type) && !member_name.empty() && nested_names.contains(nested_name))
+            result.push_back(column.name);
+    }
+
+    return result;
+}
+
 MemorySourceDefaultsPtr ReadFromMemoryStorageStep::makeSourceDefaults(const NamesAndTypesList & physical_columns) const
 {
     bool has_default = false;
@@ -888,6 +1000,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     auto source_filter = makeSourceFilter(physical_columns);
     auto source_defaults = makeSourceDefaults(physical_columns);
+    auto nested_arrays = getArraysOfRequestedNested(physical_columns, storage_snapshot);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;
@@ -915,6 +1028,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
             source_filter,
             output_header,
+            nested_arrays,
             source_defaults));
     }
 
@@ -928,7 +1042,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     {
         auto source = std::make_shared<MemorySource>(
             physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header,
-            source_defaults);
+            nested_arrays, source_defaults);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows);
         pipes.emplace_back(std::move(source));
