@@ -47,6 +47,20 @@ SELECT joinGet(join_table_renamed, 'value', toUInt64(5));
 INSERT INTO log_table_renamed VALUES (6, 'log2');
 SELECT count() FROM log_table_renamed;
 
+-- `StorageSetOrJoinBase::rename` is a separate code path: a persistent `INSERT` after the move must
+-- write its backup under the new path, which `DETACH`/`ATTACH` replays.
+INSERT INTO set_table_renamed VALUES (7);
+SELECT number FROM numbers(10) WHERE number IN set_table_renamed ORDER BY number;
+INSERT INTO join_table_renamed VALUES (8, 'join2');
+SELECT key, joinGet(join_table_renamed, 'value', key) FROM (SELECT arrayJoin([5, 8])::UInt64 AS key) ORDER BY key;
+
+DETACH TABLE set_table_renamed;
+ATTACH TABLE set_table_renamed;
+SELECT number FROM numbers(10) WHERE number IN set_table_renamed ORDER BY number;
+DETACH TABLE join_table_renamed;
+ATTACH TABLE join_table_renamed;
+SELECT key, joinGet(join_table_renamed, 'value', key) FROM (SELECT arrayJoin([5, 8])::UInt64 AS key) ORDER BY key;
+
 DROP TABLE log_table_renamed;
 DROP TABLE tiny_log_table_renamed;
 DROP TABLE stripe_log_table_renamed;
