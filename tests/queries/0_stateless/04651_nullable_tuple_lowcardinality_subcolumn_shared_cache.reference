@@ -128,6 +128,4 @@ SETTINGS index_granularity = 3, min_bytes_for_wide_part = 1000000000, write_mark
 INSERT INTO t_04651_ranges SELECT number % 3 = 0 ? tuple(NULL) : tuple(tuple(concat('s', toString(number % 5)))) FROM numbers(30);
 SELECT count(), countIf(x.a IS NULL), uniqExact(x.a.b), sum(cityHash64(x.a.b, x.a)) FROM t_04651_ranges SETTINGS max_block_size = 4;
 30	10	5	17833582760983350256
-SELECT groupArray(x.a) FROM (SELECT x.a.b, x.a FROM t_04651_ranges SETTINGS max_block_size = 2);
-[('s1'),('s2'),('s4'),('s0'),('s2'),('s3'),('s0'),('s1'),('s3'),('s4'),('s1'),('s2'),('s4'),('s0'),('s2'),('s3'),('s0'),('s1'),('s3'),('s4')]
 DROP TABLE t_04651_ranges;

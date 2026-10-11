@@ -9,6 +9,7 @@
 #include <Common/HashTable/Prefetching.h>
 
 #include <cstring>
+#include <limits>
 
 namespace DB
 {
@@ -60,6 +61,26 @@ struct LastElementCacheStats
         misses += num_misses;
     }
 };
+
+/// The rows of the block a hashing state will be asked about. A `SubRangeState` skips whole-column
+/// precomputation outside them, so a caller building one state per sub-range of a block does not pay
+/// whole-block work per sub-range; other states ignore it. `end` defaults to the whole block.
+struct RowRange
+{
+    size_t begin = 0;
+    size_t end = std::numeric_limits<size_t>::max();
+};
+
+/// The state type to build over a sub-range of a block. It differs from `State` only where `State` does
+/// whole-block work in its constructor, so whole-block callers keep a key path that never checks a range.
+template <typename State>
+struct SubRangeStateOf
+{
+    using Type = State;
+};
+
+template <typename State>
+using SubRangeState = typename SubRangeStateOf<State>::Type;
 
 namespace columns_hashing_impl
 {
