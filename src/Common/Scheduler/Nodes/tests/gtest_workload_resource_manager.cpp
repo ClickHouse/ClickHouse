@@ -212,12 +212,13 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
 {
     WorkloadEntityTestStorage storage;
 
-    explicit ResourceTest(size_t thread_count = 1)
+    explicit ResourceTest(size_t thread_count = 1, bool query_slot_admission_uses_priority = true)
         : ResourceTestManager(thread_count, DoNotInitManager)
     {
         /// The test owns `storage` on the stack, so pass a non-owning shared_ptr.
         manager = std::make_shared<WorkloadResourceManager>(
-            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}));
+            std::shared_ptr<IWorkloadEntityStorage>(&storage, [](IWorkloadEntityStorage *) {}),
+            query_slot_admission_uses_priority);
     }
 
     void query(const String & query_str)
@@ -4349,21 +4350,26 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotMaxWaitingQueries)
     waiting.reset();
 }
 
-TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionFollowsPriority)
+namespace
 {
-    ResourceTest t;
+
+/// Two sibling workloads with opposite `priority` and `precedence`. A query of each waits for the only slot;
+/// returns the order in which they were admitted.
+std::vector<String> querySlotAdmissionOrder(bool query_slot_admission_uses_priority)
+{
+    ResourceTest t(1, query_slot_admission_uses_priority);
 
     t.query("CREATE RESOURCE query (QUERY)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_queries = 1");
-    t.query("CREATE WORKLOAD admin IN all SETTINGS priority = 0");
-    t.query("CREATE WORKLOAD user IN all SETTINGS priority = 1");
+    t.query("CREATE WORKLOAD a IN all SETTINGS priority = 0, precedence = 1");
+    t.query("CREATE WORKLOAD b IN all SETTINGS priority = 1, precedence = 0");
 
-    ClassifierPtr c_admin = t.manager->acquire("admin");
-    ClassifierPtr c_user = t.manager->acquire("user");
-    ResourceLink admin = c_admin->get("query");
-    ResourceLink user = c_user->get("query");
+    ClassifierPtr c_a = t.manager->acquire("a");
+    ClassifierPtr c_b = t.manager->acquire("b");
+    ResourceLink a = c_a->get("query");
+    ResourceLink b = c_b->get("query");
 
-    auto holder = std::make_unique<QuerySlot>(user, std::chrono::steady_clock::time_point::max(), "holder");
+    auto holder = std::make_unique<QuerySlot>(a, std::chrono::steady_clock::time_point::max(), "holder");
 
     std::mutex order_mutex;
     std::vector<String> order;
@@ -4373,22 +4379,35 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionFollowsPriority)
         std::scoped_lock lock{order_mutex};
         order.push_back(name);
     };
+    auto wait_pending = [] (ResourceLink link)
+    {
+        while (static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    };
 
-    // The low-priority query starts waiting first, the high-priority one second
-    auto * t_user = t.async([&] { run(user, "user"); });
-    while (static_cast<AllocationQueue *>(user.allocation_queue)->getQueueLengthAndSize().first == 0)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    auto * t_admin = t.async([&] { run(admin, "admin"); });
-    while (static_cast<AllocationQueue *>(admin.allocation_queue)->getQueueLengthAndSize().first == 0)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    auto * t_a = t.async([&] { run(a, "a"); });
+    wait_pending(a);
+    auto * t_b = t.async([&] { run(b, "b"); });
+    wait_pending(b);
 
     holder.reset();
-    t_user->join();
-    t_admin->join();
+    t_a->join();
+    t_b->join();
+    return order;
+}
 
-    ASSERT_EQ(order.size(), 2);
-    EXPECT_EQ(order[0], "admin");
-    EXPECT_EQ(order[1], "user");
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionFollowsPriority)
+{
+    // Compatibility mode (default): admission between sibling workloads follows `priority`
+    EXPECT_EQ(querySlotAdmissionOrder(/*query_slot_admission_uses_priority=*/ true), (std::vector<String>{"a", "b"}));
+}
+
+TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionFollowsPrecedence)
+{
+    // Admission between sibling workloads follows `precedence`, as for memory reservations
+    EXPECT_EQ(querySlotAdmissionOrder(/*query_slot_admission_uses_priority=*/ false), (std::vector<String>{"b", "a"}));
 }
 
 TEST(SchedulerWorkloadResourceManager, QuerySlotMaxQueriesPerSecond)

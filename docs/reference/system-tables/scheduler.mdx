@@ -44,11 +44,11 @@ This table can be used for monitoring. The table contains a row for every schedu
 - `inflight_requests` ([Nullable(Int64)](/reference/data-types/nullable)) — For `inflight_limit` nodes only. The number of resource requests dequeued from this node, that are currently in consumption state.
 - `inflight_cost` ([Nullable(Int64)](/reference/data-types/nullable)) — For `inflight_limit` nodes only. The sum of costs (e.g. bytes) of all resource requests dequeued from this node, that are currently in consumption state.
 - `max_requests` ([Nullable(Int64)](/reference/data-types/nullable)) — For `inflight_limit` nodes only. Upper limit for inflight_requests leading to constraint violation.
-- `max_cost` ([Nullable(Int64)](/reference/data-types/nullable)) — For `inflight_limit` nodes only. Upper limit for inflight_cost leading to constraint violation.
-- `max_speed` ([Nullable(Float64)](/reference/data-types/nullable)) — For `bandwidth_limit` nodes only. Upper limit for bandwidth in tokens per second.
-- `max_burst` ([Nullable(Float64)](/reference/data-types/nullable)) — For `bandwidth_limit` nodes only. Upper limit for tokens available in token-bucket throttler.
-- `throttling_us` ([Nullable(Int64)](/reference/data-types/nullable)) — For `bandwidth_limit` nodes only. Total number of microseconds this node was in throttling state.
-- `tokens` ([Nullable(Float64)](/reference/data-types/nullable)) — For `bandwidth_limit` nodes only. Number of tokens currently available in token-bucket throttler.
+- `max_cost` ([Nullable(Int64)](/reference/data-types/nullable)) — For `inflight_limit` nodes, upper limit for inflight_cost leading to constraint violation. For `allocation_limit` nodes, upper limit for `allocated`.
+- `max_speed` ([Nullable(Float64)](/reference/data-types/nullable)) — For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for bandwidth in tokens per second.
+- `max_burst` ([Nullable(Float64)](/reference/data-types/nullable)) — For `bandwidth_limit` and `allocation_rate_limit` nodes only. Upper limit for tokens available in token-bucket throttler.
+- `throttling_us` ([Nullable(Int64)](/reference/data-types/nullable)) — For `bandwidth_limit` and `allocation_rate_limit` nodes only. Total number of microseconds this node was in throttling state.
+- `tokens` ([Nullable(Float64)](/reference/data-types/nullable)) — For `bandwidth_limit` and `allocation_rate_limit` nodes only. Number of tokens currently available in token-bucket throttler.
 - `allocated` ([Nullable(Int64)](/reference/data-types/nullable)) — For space-shared nodes only. The currently allocated amount of resource under this node.
 - `allocations` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The current number of running resource allocations under this node.
 - `updates` ([Nullable(UInt64)](/reference/data-types/nullable)) — For space-shared nodes only. The total number of updates propagated through this node.
