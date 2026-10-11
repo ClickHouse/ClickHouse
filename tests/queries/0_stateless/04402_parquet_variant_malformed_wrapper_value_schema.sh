@@ -110,8 +110,8 @@ out=$("${CLICKHOUSE_LOCAL}" --query "
 # Without the `ClickHouse.variant_wrapper_paths` footer key, a nested group named
 # `typed_value` whose `value` child is a typed primitive (not `BYTE_ARRAY`) cannot be
 # a synthetic residual/typed wrapper — it is read as ordinary object payload, so the
-# column resolves to `JSON` instead of being rejected.
-if [[ $status -eq 0 ]] && grep -q $'^v\tJSON' <<< "$out"; then
+# column resolves to `Dynamic` instead of being rejected.
+if [[ $status -eq 0 ]] && grep -q $'^v\tDynamic' <<< "$out"; then
     echo "wrapper-named nested group with typed value child: read as object payload"
 else
     echo "wrapper-named nested group with typed value child: unexpected result"

@@ -58,7 +58,8 @@ SETTINGS input_format_parquet_use_native_reader_v3 = 1;
 "
 
 echo '-- foreign file, schema inference'
+# The column is inferred as `Dynamic`, which is not allowed in `ORDER BY`.
 ${CLICKHOUSE_LOCAL} -q "
-SELECT v FROM file('${FOREIGN_FILE}', Parquet) ORDER BY 1
+SELECT v FROM file('${FOREIGN_FILE}', Parquet) ORDER BY toString(v)
 SETTINGS input_format_parquet_use_native_reader_v3 = 1;
 "

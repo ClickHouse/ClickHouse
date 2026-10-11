@@ -626,7 +626,7 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `INT96` | [DateTime64(9, 'UTC')](/reference/data-types/datetime64) |
 | `BYTE_ARRAY`, `UTF8`, `ENUM`, `BSON` | [String](/reference/data-types/string) |
 | `JSON` | [JSON](/reference/data-types/newjson) |
-| `VARIANT` | [JSON](/reference/data-types/newjson) by default when `input_format_parquet_enable_json_parsing = 1`; ClickHouse type-hint metadata can preserve [Dynamic](/reference/data-types/dynamic) for files written from `Dynamic`; can also be read into [String](/reference/data-types/string) |
+| `VARIANT` | [Dynamic](/reference/data-types/dynamic); ClickHouse type-hint metadata can preserve [JSON](/reference/data-types/newjson) for files written from `JSON`; can also be read into [JSON](/reference/data-types/newjson) or [String](/reference/data-types/string) |
 | `FIXED_LEN_BYTE_ARRAY` | [FixedString](/reference/data-types/fixedstring) |
 | `DECIMAL` | [Decimal](/reference/data-types/decimal) |
 | `LIST` | [Array](/reference/data-types/array) |
@@ -694,10 +694,7 @@ Parquet `VARIANT` is not the same thing as the ClickHouse [`Variant(T1, T2, ...)
 
 ### Schema inference {#parquet-variant-schema-inference}
 
-When schema inference is used and the file has no ClickHouse type-hint metadata, a Parquet `VARIANT` column is inferred as:
-
-* [`Dynamic`](/reference/data-types/dynamic) if `input_format_parquet_enable_json_parsing = 0`.
-* [`JSON`](/reference/data-types/newjson) if `input_format_parquet_enable_json_parsing = 1`.
+When schema inference is used and the file has no ClickHouse type-hint metadata, a Parquet `VARIANT` column is inferred as [`Dynamic`](/reference/data-types/dynamic), not [`JSON`](/reference/data-types/newjson), because a variant value is not necessarily an object.
 
 Files written by ClickHouse can store `ClickHouse.variant_type_hints` metadata. This metadata preserves whether a Parquet `VARIANT` column came from `Dynamic`, `JSON`, or a full `JSON(...)` type with declared paths and settings.
 

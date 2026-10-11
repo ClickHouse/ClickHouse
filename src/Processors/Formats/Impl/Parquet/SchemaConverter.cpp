@@ -160,18 +160,6 @@ DataTypePtr makeExplicitParsedObjectTypeFromTypeHint(const DataTypePtr & type_hi
     return type;
 }
 
-DataTypePtr getDefaultVariantInferredType(const ReadOptions & options, bool nullable = false)
-{
-    DataTypePtr type = options.format.parquet.enable_json_parsing
-        ? DataTypePtr(std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON))
-        : DataTypePtr(std::make_shared<DataTypeDynamic>());
-
-    if (nullable)
-        return makeNullableSafe(type);
-
-    return type;
-}
-
 }
 
 SchemaConverter::SchemaConverter(
@@ -1289,17 +1277,9 @@ bool SchemaConverter::processSubtreeVariant(TraversalNode & node, size_t depth)
 
     if (node.requested)
     {
-        bool variant_output_nullable = false;
-        if (!options.schema_inference_force_not_nullable)
-        {
-            if (!levels.back().is_array || value_output_nullable)
-                variant_output_nullable = true;
-            else if (options.schema_inference_force_nullable)
-                variant_output_nullable = !options.format.parquet.enable_json_parsing || options.format.schema_inference_make_json_columns_nullable;
-        }
-
-        DataTypePtr inferred_type = getDefaultVariantInferredType(options, variant_output_nullable);
-        DataTypePtr output_type = node.type_hint ? node.type_hint : inferred_type;
+        /// Without a type hint, a variant is read as `Dynamic`, not `JSON`, because a top-level
+        /// variant value is not necessarily an object. `Dynamic` can represent `NULL` by itself.
+        DataTypePtr output_type = node.type_hint ? node.type_hint : std::make_shared<DataTypeDynamic>();
         if (!isVariantLikeType(output_type.get()))
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is `VARIANT`, requested type is {}", node.getNameForLogging(), output_type->getName());
 
