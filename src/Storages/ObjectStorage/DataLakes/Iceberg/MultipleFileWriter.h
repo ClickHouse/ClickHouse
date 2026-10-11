@@ -67,13 +67,13 @@ private:
     UInt64 max_data_file_num_rows;
     UInt64 max_data_file_num_bytes;
     Poco::JSON::Array::Ptr schema;
-    DataFileStatistics stats;
-    DataFileStatisticsPtr current_file_stats;
-    std::vector<DataFileStatisticsPtr> completed_file_stats;
     /// Pre-built ColumnMapper for `startNewFile`. Traversing the Iceberg schema is invariant
     /// for the lifetime of the writer, so we compute the mapping once and reuse it across
     /// every rolled-over data file instead of recomputing it on each rollover.
     ColumnMapperPtr column_mapper;
+    DataFileStatistics stats;
+    DataFileStatisticsPtr current_file_stats;
+    std::vector<DataFileStatisticsPtr> completed_file_stats;
     std::optional<size_t> current_file_num_rows = std::nullopt;
     std::optional<size_t> current_file_num_bytes = std::nullopt;
     std::vector<Iceberg::IcebergPathFromMetadata> data_file_names;
