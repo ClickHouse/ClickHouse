@@ -29,8 +29,9 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>
-#include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/parseQuery.h>
 
 #include <Access/Common/SQLSecurityDefs.h>
@@ -62,6 +63,7 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/HiddenSecret.h>
 #include <Common/JSONBuilder.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
@@ -302,7 +304,20 @@ namespace
         {
             if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
             {
-                auto secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node).getResult();
+                auto settings_changes = table_function_node->getSettingsChanges();
+                bool has_secret_settings = false;
+                for (auto & change : settings_changes)
+                {
+                    if (renderSecretChangeValue(change))
+                    {
+                        change.value = String(HIDDEN_SECRET);
+                        has_secret_settings = true;
+                    }
+                }
+                if (has_secret_settings)
+                    table_function_node->setSettingsChanges(std::move(settings_changes));
+
+                auto secret_arguments = findSecretArguments(*table_function_node);
                 if (!secret_arguments.hasSecrets())
                     return;
 
@@ -317,12 +332,12 @@ namespace
                         if (auto * constant = node->as<ConstantNode>())
                             constant->setMaskId();
                         else
-                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                            node = std::make_shared<ConstantNode>(Field(String(HIDDEN_SECRET)));
                     });
             }
             else if (auto * function_node = query_tree_node->as<FunctionNode>())
             {
-                auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node).getResult();
+                auto secret_arguments = findSecretArguments(*function_node);
                 if (!secret_arguments.hasSecrets())
                     return;
 
@@ -341,7 +356,7 @@ namespace
     /// Replace a node with a single `'[HIDDEN]'` literal, keeping its alias.
     void hideWholeNode(ASTPtr & node)
     {
-        auto hidden = make_intrusive<ASTLiteral>(Field("[HIDDEN]"));
+        auto hidden = make_intrusive<ASTLiteral>(Field(String(HIDDEN_SECRET)));
         hidden->setAlias(node->tryGetAlias());
         node = std::move(hidden);
     }
@@ -360,12 +375,11 @@ namespace
             hideLiteralsInSubtree(child);
     }
 
-    /// Keep in sync with the names `FunctionSecretArgumentsFinder` sends to `findEncryptionFunctionSecretArguments`
-    /// and `findHMACSecretArguments`. A name missing here only makes the dump stricter: its span is hidden whole.
-    bool isEncryptionOrHMACFunction(const ASTFunction & function)
+    /// A function (not a table function or an engine) with a secret argument: `encrypt`, `HMAC`, ...
+    bool isFunctionWithSecretArguments(const ASTFunction & function)
     {
-        return function.name == "encrypt" || function.name == "decrypt" || function.name == "aes_encrypt_mysql"
-            || function.name == "aes_decrypt_mysql" || function.name == "tryDecrypt" || equalsCaseInsensitive(function.name, "HMAC");
+        return function.getKind() == ASTFunction::Kind::ORDINARY_FUNCTION
+            && FunctionFactory::instance().tryGetSecretArgumentsSpec(function.name);
     }
 
     bool isKeyValueArgument(const IAST & node)
@@ -435,7 +449,7 @@ namespace
             if (!function || !function->arguments)
                 return;
 
-            auto secret_arguments = FunctionSecretArgumentsFinderAST(*function).getResult();
+            auto secret_arguments = SecretArgumentsRegistry::instance().find(function->getKind(), FunctionAST(*function));
             if (!secret_arguments.hasSecrets())
                 return;
 
@@ -443,7 +457,7 @@ namespace
             for (size_t i = 0; i < arguments.size(); ++i)
             {
                 if (auto * map = arguments[i]->as<ASTFunction>();
-                    map && map->arguments && std::ranges::contains(secret_arguments.nested_maps, map->name))
+                    map && map->arguments && secret_arguments.nested_maps.contains(map->name))
                 {
                     for (auto & entry : map->arguments->children)
                         hideWholeNode(secretValueSlot(entry));
@@ -483,7 +497,7 @@ namespace
                 /// Only the span of `encrypt` / `HMAC` keeps its structure. Any other unnamed span without a
                 /// replacement, such as an unreadable url in `mongodb(concat(...), 'c')`, is hidden whole. So is a
                 /// `key = value` in the span: it is a positional secret written as a comparison.
-                if (isEncryptionOrHMACFunction(*function) && !isKeyValueArgument(*arguments[i]))
+                if (isFunctionWithSecretArguments(*function) && !isKeyValueArgument(*arguments[i]))
                     hideLiteralsInSubtree(arguments[i]);
                 else
                     hideWholeNode(arguments[i]);
@@ -1011,7 +1025,6 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     const auto analyze_settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
     result->query_plan_options = analyze_settings.query_plan_options;
-    result->query_plan_options.show_secrets = canDisplaySecrets(getContext());
     result->time = analyze_settings.query_plan_options.time;
 
     /// This is the only place that turns join statistics on, and it must happen before any interpreter
@@ -1176,7 +1189,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 }
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast_settings, pretty_version);
-            settings.query_plan_options.show_secrets = canDisplaySecrets(query_context);
 
             QueryPlan plan;
 
@@ -1413,7 +1425,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// Build the per-plan pretty-names registry now: buildQueryPipeline below moves the ActionsDAGs
             /// out of the plan steps, so the names must be snapshotted before the pipeline consumes the plan.
             /// EXPLAIN ANALYZE rejects distributed plans above, so this covers the whole plan tree.
-            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan, analyzed.query_plan_options.show_secrets);
+            PrettyNamesPerPlan precomputed_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(plan);
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
