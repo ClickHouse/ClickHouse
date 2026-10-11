@@ -10,6 +10,10 @@
 #include <immintrin.h>
 #endif
 
+#if USE_ARM_MULTITARGET_CODE
+#include <arm_sve.h>
+#endif
+
 namespace DB::GatherUtils
 {
 
@@ -557,6 +561,185 @@ NO_INLINE bool sliceHasImplAnyAllImplInt8(
 
 #endif
 
+#if USE_ARM_MULTITARGET_CODE
+DECLARE_ARM_SVE_SPECIFIC_CODE(
+
+/// Maps an integer type to its SVE vector type, null-map vector type, and scalar type.
+template <typename T> struct SVEVecTypes;
+template <> struct SVEVecTypes<Int8>   { using Vec = svint8_t;   using NullVec = svuint8_t;  using Scalar = int8_t;   };
+template <> struct SVEVecTypes<UInt8>  { using Vec = svuint8_t;  using NullVec = svuint8_t;  using Scalar = uint8_t;  };
+template <> struct SVEVecTypes<Int16>  { using Vec = svint16_t;  using NullVec = svuint16_t; using Scalar = int16_t;  };
+template <> struct SVEVecTypes<UInt16> { using Vec = svuint16_t; using NullVec = svuint16_t; using Scalar = uint16_t; };
+template <> struct SVEVecTypes<Int32>  { using Vec = svint32_t;  using NullVec = svuint32_t; using Scalar = int32_t;  };
+template <> struct SVEVecTypes<UInt32> { using Vec = svuint32_t; using NullVec = svuint32_t; using Scalar = uint32_t; };
+template <> struct SVEVecTypes<Int64>  { using Vec = svint64_t;  using NullVec = svuint64_t; using Scalar = int64_t;  };
+template <> struct SVEVecTypes<UInt64> { using Vec = svuint64_t; using NullVec = svuint64_t; using Scalar = uint64_t; };
+
+/// SVE intrinsics used by sliceHasImplAnyAllImplSVE, selected by sizeof(T).
+template <typename T>
+struct SliceHasSVETraits
+{
+    using Vec = typename SVEVecTypes<T>::Vec;
+    using NullVec = typename SVEVecTypes<T>::NullVec;
+    using Scalar = typename SVEVecTypes<T>::Scalar;
+
+    /// Predicate for lanes in [pos, size).
+    static ALWAYS_INLINE svbool_t whilelt(size_t pos, size_t size)
+    {
+        if constexpr (sizeof(T) == 1)
+            return svwhilelt_b8(UInt64(pos), UInt64(size));
+        if constexpr (sizeof(T) == 2)
+            return svwhilelt_b16(UInt64(pos), UInt64(size));
+        if constexpr (sizeof(T) == 4)
+            return svwhilelt_b32(UInt64(pos), UInt64(size));
+        if constexpr (sizeof(T) == 8)
+            return svwhilelt_b64(UInt64(pos), UInt64(size));
+    }
+
+    /// Elements per SVE register.
+    static ALWAYS_INLINE size_t lanes()
+    {
+        if constexpr (sizeof(T) == 1)
+            return svcntb();
+        if constexpr (sizeof(T) == 2)
+            return svcnth();
+        if constexpr (sizeof(T) == 4)
+            return svcntw();
+        if constexpr (sizeof(T) == 8)
+            return svcntd();
+    }
+
+    static ALWAYS_INLINE Vec load(svbool_t pg, const T * ptr)
+    {
+        return svld1(pg, reinterpret_cast<const Scalar *>(ptr));
+    }
+
+    static ALWAYS_INLINE svbool_t cmpeq(svbool_t pg, Vec data, T value)
+    {
+        return svcmpeq(pg, data, static_cast<Scalar>(value));
+    }
+
+    /// Predicate marking lanes whose element is null.
+    static ALWAYS_INLINE svbool_t loadNullMask(svbool_t pg, const UInt8 * ptr)
+    {
+        const auto * p = reinterpret_cast<const uint8_t *>(ptr);
+        NullVec nulls;
+        if constexpr (sizeof(T) == 1)
+            nulls = svld1(pg, p);
+        if constexpr (sizeof(T) == 2)
+            nulls = svld1ub_u16(pg, p);
+        if constexpr (sizeof(T) == 4)
+            nulls = svld1ub_u32(pg, p);
+        if constexpr (sizeof(T) == 8)
+            nulls = svld1ub_u64(pg, p);
+        return svcmpne(pg, nulls, 0);
+    }
+};
+
+/// SVE ArraySearchType::All: true if every non-null element of `second` is in `first`.
+/// Outer loop hand-unrolled 4x: each scan of `first` tests 4 needles from `second` at once.
+template <typename IntType>
+requires (
+    std::is_same_v<IntType, Int8> || std::is_same_v<IntType, UInt8>
+    || std::is_same_v<IntType, Int16> || std::is_same_v<IntType, UInt16>
+    || std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>
+    || std::is_same_v<IntType, Int64> || std::is_same_v<IntType, UInt64>)
+NO_INLINE bool sliceHasImplAnyAllImplSVE(
+    const NumericArraySlice<IntType> & first,
+    const NumericArraySlice<IntType> & second,
+    const UInt8 * first_null_map,
+    const UInt8 * second_null_map)
+{
+    if (second.size == 0)
+        return true;
+
+    if (!hasNull(first_null_map, first.size) && hasNull(second_null_map, second.size))
+        return false;
+
+    const bool has_first_null_map = first_null_map != nullptr;
+    const bool has_second_null_map = second_null_map != nullptr;
+
+    using Traits = SliceHasSVETraits<IntType>;
+    const size_t lanes = Traits::lanes();
+    size_t j = 0;
+
+    for (; j + 3 < second.size; j += 4)
+    {
+        const IntType needle0 = second.data[j];
+        const IntType needle1 = second.data[j + 1];
+        const IntType needle2 = second.data[j + 2];
+        const IntType needle3 = second.data[j + 3];
+
+        bool found0 = has_second_null_map && second_null_map[j];
+        bool found1 = has_second_null_map && second_null_map[j + 1];
+        bool found2 = has_second_null_map && second_null_map[j + 2];
+        bool found3 = has_second_null_map && second_null_map[j + 3];
+
+        for (size_t i = 0; i < first.size; i += lanes)
+        {
+            const svbool_t pg = Traits::whilelt(i, first.size);
+            svbool_t pg_valid = pg;
+            const auto first_vec = Traits::load(pg, first.data + i);
+
+            if (has_first_null_map)
+                pg_valid = svbic_b_z(pg, pg, Traits::loadNullMask(pg, first_null_map + i));
+
+            if (!found0)
+                found0 = svptest_any(pg_valid, Traits::cmpeq(pg_valid, first_vec, needle0));
+
+            if (!found1)
+                found1 = svptest_any(pg_valid, Traits::cmpeq(pg_valid, first_vec, needle1));
+
+            if (!found2)
+                found2 = svptest_any(pg_valid, Traits::cmpeq(pg_valid, first_vec, needle2));
+
+            if (!found3)
+                found3 = svptest_any(pg_valid, Traits::cmpeq(pg_valid, first_vec, needle3));
+
+            if (found0 && found1 && found2 && found3)
+                break;
+        }
+
+        if (!(found0 && found1 && found2 && found3))
+            return false;
+    }
+
+    /// Tail: leftover elements of `second`.
+    for (; j < second.size; ++j)
+    {
+        if (has_second_null_map && second_null_map[j])
+            continue;
+
+        const IntType needle = second.data[j];
+        bool found = false;
+
+        for (size_t i = 0; i < first.size; i += lanes)
+        {
+            const svbool_t pg = Traits::whilelt(i, first.size);
+            svbool_t pg_valid = pg;
+            const auto first_vec = Traits::load(pg, first.data + i);
+
+            if (has_first_null_map)
+                pg_valid = svbic_b_z(pg, pg, Traits::loadNullMask(pg, first_null_map + i));
+
+            const svbool_t match = Traits::cmpeq(pg_valid, first_vec, needle);
+            if (svptest_any(pg_valid, match))
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+            return false;
+    }
+
+    return true;
+}
+) /// DECLARE_ARM_SVE_SPECIFIC_CODE
+
+#endif
+
 template <
     ArraySearchType search_type,
     typename FirstSliceType,
@@ -616,9 +799,9 @@ template <
     bool (*isEqual)(const FirstSliceType &, const SecondSliceType &, size_t, size_t)>
 inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & second, const UInt8 * first_null_map, const UInt8 * second_null_map)
 {
-#if defined(__AVX2__)
     if constexpr (search_type == ArraySearchType::All && std::is_same_v<FirstSliceType, SecondSliceType>)
     {
+#if defined(__AVX2__)
         if constexpr (std::is_same_v<FirstSliceType, NumericArraySlice<Int8>> || std::is_same_v<FirstSliceType, NumericArraySlice<UInt8>>)
         {
             return sliceHasImplAnyAllImplInt8(first, second, first_null_map, second_null_map);
@@ -635,8 +818,24 @@ inline ALWAYS_INLINE bool sliceHasImplAnyAll(const FirstSliceType & first, const
         {
             return sliceHasImplAnyAllImplInt64(first, second, first_null_map, second_null_map);
         }
-    }
+#elif USE_ARM_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::ARM_SVE))
+        {
+            if constexpr (
+                std::is_same_v<FirstSliceType, NumericArraySlice<Int8>> ||
+                std::is_same_v<FirstSliceType, NumericArraySlice<UInt8>> ||
+                std::is_same_v<FirstSliceType, NumericArraySlice<Int16>> ||
+                std::is_same_v<FirstSliceType, NumericArraySlice<UInt16>> ||
+                std::is_same_v<FirstSliceType, NumericArraySlice<Int32>> ||
+                std::is_same_v<FirstSliceType, NumericArraySlice<UInt32>> ||
+                std::is_same_v<FirstSliceType, NumericArraySlice<Int64>> ||
+                std::is_same_v<FirstSliceType, NumericArraySlice<UInt64>>)
+            {
+                return TargetSpecific::ARM_SVE::sliceHasImplAnyAllImplSVE(first, second, first_null_map, second_null_map);
+            }
+        }
 #endif
+    }
 
     return sliceHasImplAnyAllGenericImpl<search_type, FirstSliceType, SecondSliceType, isEqual>(first, second, first_null_map, second_null_map);
 }
