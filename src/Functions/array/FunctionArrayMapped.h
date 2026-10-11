@@ -186,9 +186,21 @@ public:
     {
         /// When the Impl exposes a declarative `signature`, defer to the base
         /// IFunction path so that the DSL applies it (both argument validation
-        /// and result type come from the signature).
+        /// and result type come from the signature). The lambda result is
+        /// normalized with `removeLowCardinality` first, as in the legacy path
+        /// below: execution materializes low-cardinality lambda results into
+        /// full columns.
         if constexpr (requires { Impl::signature; })
-            return IFunction::getReturnTypeImpl(arguments);
+        {
+            const auto * lambda_type = arguments.empty() ? nullptr : checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
+            if (!lambda_type || !lambda_type->getReturnType() || !lambda_type->getReturnType()->lowCardinality())
+                return IFunction::getReturnTypeImpl(arguments);
+
+            ColumnsWithTypeAndName normalized_arguments = arguments;
+            normalized_arguments[0].type = std::make_shared<DataTypeFunction>(
+                lambda_type->getArgumentTypes(), removeLowCardinality(lambda_type->getReturnType()));
+            return IFunction::getReturnTypeImpl(normalized_arguments);
+        }
 
         size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params ;
         if (arguments.size() < min_args)
