@@ -1,0 +1,56 @@
+<test>
+    <!-- Exercise the row-wise fallback for a LowCardinality column where every
+         dictionary value is referenced only once. -->
+    <settings>
+        <allow_statistics>1</allow_statistics>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_countmin_low_reuse_src(
+            c1 UInt64,
+            c2 LowCardinality(UInt32))
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_low_reuse_none(
+            c1 UInt64,
+            c2 LowCardinality(UInt32))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_low_reuse_countmin(
+            c1 UInt64,
+            c2 LowCardinality(UInt32) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_countmin_low_reuse_src
+        SELECT number, toUInt32(number)
+        FROM numbers(1000000)
+        SETTINGS max_block_size = 1000000, max_threads = 1
+    </fill_query>
+
+    <fill_query>SYSTEM STOP MERGES t_countmin_low_reuse_none</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_low_reuse_countmin</fill_query>
+
+    <query>
+        INSERT INTO t_countmin_low_reuse_none
+        SELECT c1, c2 FROM t_countmin_low_reuse_src
+        SETTINGS materialize_statistics_on_insert = 1, max_block_size = 1000000
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_low_reuse_countmin
+        SELECT c1, c2 FROM t_countmin_low_reuse_src
+        SETTINGS materialize_statistics_on_insert = 1, max_block_size = 1000000
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_countmin_low_reuse_none</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_low_reuse_countmin</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_low_reuse_src</drop_query>
+</test>
