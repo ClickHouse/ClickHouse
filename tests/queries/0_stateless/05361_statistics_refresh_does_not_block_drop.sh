@@ -9,6 +9,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Each table has its own disk, which serves 2 GET requests per second, so a statistics refresh of its 120 parts takes
 # at least 60 seconds. Neither ALTER of `refresh_statistics_interval` nor DROP may wait for a refresh in flight.
+# HEAD requests count against that limit too, so the disk skips its access check (done under a server-wide lock) and
+# the inserts disable `s3_check_objects_after_upload` (enabled in the test profile).
 
 function create_table()
 {
@@ -17,12 +19,14 @@ function create_table()
         SETTINGS refresh_statistics_interval = 0, auto_statistics_types = '',
             disk = disk(name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_$1', type = object_storage, object_storage_type = s3,
                 metadata_type = local, endpoint = 'http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}/$1/',
-                access_key_id = clickhouse, secret_access_key = clickhouse, s3_max_get_rps = 2, s3_max_get_burst = 1)"
+                access_key_id = clickhouse, secret_access_key = clickhouse, s3_max_get_rps = 2, s3_max_get_burst = 1,
+                skip_access_check = 1)"
     $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES $1"
     $CLICKHOUSE_CLIENT -q "
         INSERT INTO $1 SELECT number, number FROM numbers(120)
         SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 0,
-            max_insert_threads = 1, materialize_statistics_on_insert = 1, materialize_statistics_on_insert_max_table_size = 0"
+            max_insert_threads = 1, materialize_statistics_on_insert = 1, materialize_statistics_on_insert_max_table_size = 0,
+            s3_check_objects_after_upload = 0"
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = '$1' AND active"
 }
 
