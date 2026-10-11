@@ -58,6 +58,7 @@ void reportMetrics(benchmark::State & state, const Runtime::V2::Metrics & total)
     state.counters["global_picks"] = average(total.global_picks);
     state.counters["poll_picks"] = average(total.poll_picks);
     state.counters["steal_picks"] = average(total.steal_picks);
+    state.counters["stolen_records"] = average(total.stolen_records);
     state.counters["offloads"] = average(total.offloads);
     state.counters["parks"] = average(total.parks);
     state.counters["steal_misses"] = average(total.steal_misses);
@@ -110,6 +111,12 @@ const std::vector<Shape> shapes
     {"FanIn", [](ContextPtr context, size_t threads) { return fanIn(context, threads, Load{}); }},
     {"Hub", [](ContextPtr context, size_t threads) { return hub(context, threads, Load{}); }},
     {"ShortQuery", [](ContextPtr context, size_t) { return chain(context, Load{.chunks = 5}); }},
+    {"FanInMerge", [](ContextPtr context, size_t threads) { return fanInMerge(context, 4 * threads, Load{}); }},
+    {"ManySources", [](ContextPtr context, size_t threads) { return manySources(context, 1000, threads, Load{.chunks = 1000, .rows_per_chunk = 8192}); }},
+    {"WideFanIn", [](ContextPtr context, size_t) { return fanIn(context, 64, Load{}); }},
+    {"Delayed", [](ContextPtr context, size_t) { return delayed(context, Load{}); }},
+    {"FanInAggregate", [](ContextPtr context, size_t threads) { return fanInAggregate(context, threads, Load{}); }},
+    {"ManyPartsInOrder", [](ContextPtr context, size_t threads) { return manyPartsInOrder(context, 1000, threads, Load{.rows_per_chunk = 8192}); }},
 };
 
 const std::vector<std::pair<std::string, Executor>> executors

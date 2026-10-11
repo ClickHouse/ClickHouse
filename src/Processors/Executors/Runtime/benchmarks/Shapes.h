@@ -18,5 +18,10 @@ std::shared_ptr<Processors> chain(ContextPtr context, Load load);
 std::shared_ptr<Processors> fanOut(ContextPtr context, size_t streams, Load load);
 std::shared_ptr<Processors> fanIn(ContextPtr context, size_t streams, Load load);
 std::shared_ptr<Processors> hub(ContextPtr context, size_t streams, Load load);
+std::shared_ptr<Processors> fanInMerge(ContextPtr context, size_t streams, Load load);
+std::shared_ptr<Processors> manySources(ContextPtr context, size_t sources, size_t threads, Load load);
+std::shared_ptr<Processors> delayed(ContextPtr context, Load load);
+std::shared_ptr<Processors> fanInAggregate(ContextPtr context, size_t streams, Load load);
+std::shared_ptr<Processors> manyPartsInOrder(ContextPtr context, size_t parts, size_t streams, Load load);
 
 }
