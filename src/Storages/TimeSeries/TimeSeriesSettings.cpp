@@ -36,6 +36,8 @@ namespace ErrorCodes
     DECLARE(ASTFunction, recent_samples_partition_by, String{}, "Partition key of the inner 'recent samples' table, for example 'toStartOfHour(timestamp)'. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, 'toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))' is used. Ignored for an external recent samples table. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, recent_samples_index_granularity, 8192, "Sets 'index_granularity' of the inner 'recent samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires 'recent_samples_ttl_seconds' to be non-zero", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
+    DECLARE(Bool, store_native_histograms, false, "If set to true then the table gets an additional target table 'histograms' storing Prometheus native histogram samples. An explicit HISTOGRAMS clause in the CREATE query enables it too", 0) \
+    DECLARE(UInt64, histograms_index_granularity, 8192, "Sets 'index_granularity' of the inner 'histograms' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external histograms table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, tags_deduplication_cache_expiration_seconds, 3600, "Time after which an entry of the deduplication cache of the 'tags' table expires, counted from the moment the time series was written. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by 'TRUNCATE TABLE' executed on it or by 'SYSTEM DROP TIME SERIES CACHES'. Used only when 'store_min_time_and_max_time' is disabled, see 'tags_deduplication_cache_size_bytes'. Set to 0 to disable the cache", 0) \
     DECLARE(UInt64, tags_deduplication_cache_size_bytes, 104857600, "Maximum size in bytes of the deduplication cache of the 'tags' table. The cache remembers the time series written recently, so their tags aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). The cache is used only when 'store_min_time_and_max_time' is disabled, because otherwise every insert changes 'min_time' and 'max_time': the default value is ignored then, and an explicit non-zero value is rejected. Set to 0 to disable the cache, see also 'tags_deduplication_cache_expiration_seconds'", 0) \
     DECLARE(UInt64, metric_families_deduplication_cache_expiration_seconds, 3600, "Time after which an entry of the deduplication cache of the 'metric families' table expires, counted from the moment the metric family was written. So every metric family is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by 'TRUNCATE TABLE' executed on it or by 'SYSTEM DROP TIME SERIES CACHES'. Set to 0 to disable the cache", 0) \
@@ -262,6 +264,16 @@ void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version)
     }
 
     query.storage->settings->changes.setSetting("version", Field{version});
+}
+
+bool getTimeSeriesSettingStoreNativeHistograms(const ASTCreateQuery & query)
+{
+    if (query.storage && query.storage->settings)
+    {
+        if (const auto * value = query.storage->settings->changes.tryGet("store_native_histograms"))
+            return SettingFieldBool{*value}.value;
+    }
+    return TimeSeriesSettings{}[TimeSeriesSetting::store_native_histograms];
 }
 
 }
