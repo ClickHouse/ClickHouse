@@ -48,6 +48,9 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
     if (reading->getMutationsSnapshot()->hasPatchParts())
         return false;
 
+    if (!reading->canComputeGlobalRowIndex())
+        return false;
+
     return true;
 }
 
