@@ -220,15 +220,16 @@ jobs:
           # it by retry_infra_failures.yml.
           #
           # Another PR can share this head commit, so keep only the runs of
-          # this PR: by `pull_requests` when GitHub fills it in, and by the
-          # head branch and repository for fork PRs, where it is empty.
+          # this PR: by the head branch and repository of the run, which is
+          # all there is for fork PRs (`pull_requests` is empty for them).
+          # `pull_requests` lists every PR that shares the head commit, so a
+          # match there alone would accept another PR's run; when it is
+          # filled in, it must also name this PR.
           runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
             | jq --argjson pr "$pr" --arg head_ref "$head_ref" --arg head_repo "$head_repo" \
               '[.workflow_runs[] | select(.name == "PR")
-                | select(if (.pull_requests | length) > 0
-                         then any(.pull_requests[]; .number == $pr)
-                         else .head_branch == $head_ref and .head_repository.full_name == $head_repo
-                         end)]')
+                | select(.head_branch == $head_ref and .head_repository.full_name == $head_repo)
+                | select((.pull_requests | length) == 0 or any(.pull_requests[]; .number == $pr))]')
           active=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
           if [ "$active" -gt 0 ]; then
             echo "A PR workflow run is still in progress - its finish step records the" \

@@ -1134,7 +1134,8 @@ def test_rerun_considers_only_the_runs_of_its_own_pr():
         run(6, [100], "feature", "ClickHouse/ClickHouse", name="Other"),
     ]
     assert _run_runs_filter(runs, 100, "feature", "ClickHouse/ClickHouse") == [1, 3]
-    assert _run_runs_filter(runs, 200, "feature-copy", "ClickHouse/ClickHouse") == [2, 3]
+    # Run 3 names both PRs but was triggered from the branch of PR 100.
+    assert _run_runs_filter(runs, 200, "feature-copy", "ClickHouse/ClickHouse") == [2]
     assert _run_runs_filter(runs, 300, "feature", "someone/ClickHouse") == [4]
 
 
