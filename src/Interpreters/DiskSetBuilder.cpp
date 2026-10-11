@@ -49,8 +49,8 @@ DiskSetBuilder::estimateMemoryToWriteRun(size_t max_bytes_before_external_set, s
 /// `DiskSetImpl` in batches of `max_block_size` keys. The builder checks the size limits after each batch. In
 /// the `break` mode, it stops the merge at the batch that reaches the limits. The builder also counts the
 /// distinct keys as they arrive. The sorter passes on no keys until all have arrived, so the builder creates
-/// the set with filters sized for them before the merge, and the merge counts the memory of the filters
-/// towards the spill threshold.
+/// the set before the merge, with filters sized for these keys, or for fewer when the size limits let the set
+/// write fewer. The merge counts the memory of the filters towards the spill threshold.
 template <typename Key>
 class DiskSetBuilderImpl final : public DiskSetBuilder
 {
@@ -74,6 +74,11 @@ private:
     /// `DiskSetImpl::getTotalByteCount`). In the `break` mode, a set that reaches the limits keeps the keys
     /// that reached them. A set in memory does the same with the block that reaches its limits.
     void checkLimits();
+
+    /// Returns the number of keys that the set is expected to write: the distinct keys that the builder
+    /// counted, but at most the keys that the set writes before the size limits stop the merge in the `break`
+    /// mode or make it throw in the `throw` mode.
+    size_t estimateKeysToWrite() const;
 
     /// Checks the time limit of the query, which throws in the `throw` overflow mode and when the query is
     /// cancelled. In the `break` mode, the limit stops the query without an exception, as the failpoint does,
@@ -145,6 +150,22 @@ void DiskSetBuilderImpl<Key>::checkLimits()
 }
 
 template <typename Key>
+size_t DiskSetBuilderImpl<Key>::estimateKeysToWrite() const
+{
+    const size_t distinct_keys = distinct_key_counter->getCount();
+    size_t max_keys = distinct_keys;
+    if (limits.max_rows)
+        max_keys = std::min<size_t>(max_keys, limits.max_rows);
+
+    /// The set counts `sizeof(Key)` bytes for each key (see `DiskSetImpl::getTotalByteCount`).
+    if (limits.max_bytes)
+        max_keys = std::min<size_t>(max_keys, limits.max_bytes / sizeof(Key));
+
+    /// The merge checks the limits after each batch, so the set writes at most one batch past them.
+    return std::min(distinct_keys, max_keys + max_block_size);
+}
+
+template <typename Key>
 void DiskSetBuilderImpl<Key>::checkTimeLimit() const
 {
     bool within_time_limit = !process_list_element || process_list_element->checkTimeLimit();
@@ -163,7 +184,7 @@ std::unique_ptr<DiskSet> DiskSetBuilderImpl<Key>::finish()
     set = std::make_unique<DiskSetImpl<Key>>(
         tmp_data,
         min_free_disk_space,
-        distinct_key_counter ? distinct_key_counter->getCount() : 0,
+        distinct_key_counter ? estimateKeysToWrite() : 0,
         max_bytes_for_bloom_filter,
         max_bytes_for_cache);
     sorter.merge(max_block_size, [&](std::span<const Key> keys)
