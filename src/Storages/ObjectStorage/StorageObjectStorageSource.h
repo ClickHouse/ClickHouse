@@ -39,6 +39,9 @@ struct ObjectStorageTopKQueryConditionCacheKey
     UInt64 condition_hash_without_files = 0;
     /// A printable description of the key for `system.query_condition_cache`.
     String condition;
+    /// The filter info to read a file that uses the key with: the one of the query, but with
+    /// `FormatTopKFilterInfo::track_row_group_best_values`.
+    FormatFilterInfoPtr format_filter_info_tracking_best_values;
 };
 using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
 

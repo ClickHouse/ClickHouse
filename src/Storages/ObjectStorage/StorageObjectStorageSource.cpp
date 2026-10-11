@@ -1322,6 +1322,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key)
 {
     ObjectInfoPtr object_info;
+    /// Replaced by `format_filter_info_tracking_best_values` of the TopK key for a file that uses the key.
+    const FormatFilterInfoPtr query_format_filter_info = format_filter_info;
     bool use_top_k_query_condition_cache_key = false;
     bool skipped_row_groups_by_top_k_entry = false;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -1408,6 +1410,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         use_top_k_query_condition_cache_key = top_k_query_condition_cache_key && top_k_query_condition_cache_key->condition_hash
             && !object_info->file_bucket_info;
         skipped_row_groups_by_top_k_entry = false;
+        format_filter_info = use_top_k_query_condition_cache_key && top_k_query_condition_cache_key->format_filter_info_tracking_best_values
+            ? top_k_query_condition_cache_key->format_filter_info_tracking_best_values
+            : query_format_filter_info;
 
         const bool consult_plain_condition = format_filter_info && format_filter_info->condition_hash
             && (use_query_condition_cache_for_top_k || !is_top_k_filter_allowed(object_info));

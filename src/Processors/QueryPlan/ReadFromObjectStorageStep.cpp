@@ -162,21 +162,29 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag,
-        context,
-        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
-        query_info.row_level_filter,
-        query_info.prewhere_info);
+    auto make_format_filter_info = [&]
+    {
+        return std::make_shared<FormatFilterInfo>(
+            info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag,
+            context,
+            configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+            query_info.row_level_filter,
+            query_info.prewhere_info);
+    };
+    auto format_filter_info = make_format_filter_info();
     format_filter_info->top_k_filter = top_k_filter;
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey(*format_filter_info);
     if (top_k_query_condition_cache_key)
     {
         /// The verdicts written under the key also cover row groups whose rows were all returned
-        /// before the threshold got tight enough to drop them.
+        /// before the threshold got tight enough to drop them. Tracking the best values costs work
+        /// per row group, so only the files that actually use the key are read with it (for plain
+        /// object storage, the key may turn out not to be made, see `createReader`).
         auto top_k_filter_tracking_best_values = std::make_shared<FormatTopKFilterInfo>(*top_k_filter);
         top_k_filter_tracking_best_values->track_row_group_best_values = true;
-        format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
+        auto format_filter_info_tracking_best_values = make_format_filter_info();
+        format_filter_info_tracking_best_values->top_k_filter = std::move(top_k_filter_tracking_best_values);
+        top_k_query_condition_cache_key->format_filter_info_tracking_best_values = std::move(format_filter_info_tracking_best_values);
     }
 
     auto file_iterator = iterator_wrapper;
