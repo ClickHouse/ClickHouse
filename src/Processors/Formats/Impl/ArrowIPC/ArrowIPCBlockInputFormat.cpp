@@ -1444,6 +1444,7 @@ cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMA
 | `output_format_arrow_unsupported_types_as_binary`                                                                        | Superseded by `output_format_arrow_unsupported_types`: `0` means `throw`, `1` means `binary`. Only consulted while that setting is left at its default. | `1`          |
 | `output_format_arrow_use_64_bit_indexes_for_dictionary`                                                                  | Always use 64 bit integers for dictionary indexes in Arrow format                                  | `0`          |
 | `output_format_arrow_use_signed_indexes_for_dictionary`                                                                  | Use signed integers for dictionary indexes in Arrow format                                         | `1`          |
+| `output_format_arrow_row_group_size`                                                                                     | Maximum rows per record batch from each ClickHouse block in Arrow and ArrowStream output formats   | `1000000`    |
 )DOCS_MD"});
 
     factory.setDocumentation("ArrowStream", Documentation{
