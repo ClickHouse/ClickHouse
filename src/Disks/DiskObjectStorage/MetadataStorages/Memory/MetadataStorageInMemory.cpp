@@ -270,6 +270,12 @@ bool MetadataStorageInMemory::hasPendingRemovalBlobs(const StoredObjects & blobs
     return false;
 }
 
+int64_t MetadataStorageInMemory::getDeadBlobsQueueEstimate()
+{
+    std::lock_guard guard(removed_objects_mutex);
+    return std::ssize(objects_to_remove);
+}
+
 /// ==================== Transaction ====================
 
 MetadataStorageInMemoryTransaction::MetadataStorageInMemoryTransaction(MetadataStorageInMemory & metadata_storage_)
