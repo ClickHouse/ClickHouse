@@ -481,7 +481,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta)
     catch (Exception & e)
     {
         e.addMessage(
-            "in column chunk statistics for TopN sort column '{}'; use use_top_k_dynamic_filtering=0 to ignore",
+            "in column chunk statistics for TopN sort column '{}'; use use_top_k_dynamic_filtering=0 (enable_group_by_top_k_dynamic_filtering=0 for GROUP BY ... LIMIT) to ignore",
             column_info.name);
         throw;
     }
@@ -1633,10 +1633,12 @@ void Reader::preparePrewhere()
             && pc.idx_in_output_block >= sample_block->columns())
             pc.first_step_to_calculate = SIZE_MAX;
 
-    if (has_top_k_step && steps.size() == 1 && format_filter_info->top_k_filter->stop_when_unprofitable)
+    if (has_top_k_step && format_filter_info->top_k_filter->stop_when_unprofitable)
     {
-        /// The main step of a subgroup that skips the threshold step reads its columns into `sample_block`.
-        chassert(extended_sample_block.columns() == sample_block->columns());
+        /// Without other steps, the main step of a subgroup that skips the threshold step reads its columns into
+        /// `sample_block`.
+        if (steps.size() == 1)
+            chassert(extended_sample_block.columns() == sample_block->columns());
         top_k_step_may_stop = true;
         for (const auto & pc : primitive_columns)
             if (pc.first_step_to_calculate != 1 && pc.first_step_to_calculate != SIZE_MAX)
@@ -3842,9 +3844,8 @@ size_t Reader::firstStepOfRowSubgroup(RowSubgroup & row_subgroup) const
 
     if (top_k_step_may_stop && top_k_step_unprofitable.load(std::memory_order_relaxed))
     {
-        chassert(steps.size() == 1);
         row_subgroup.skip_top_k_step = true;
-        return 0;
+        return stepAfterTopKStep();
     }
 
     return 1;
@@ -3853,10 +3854,7 @@ size_t Reader::firstStepOfRowSubgroup(RowSubgroup & row_subgroup) const
 size_t Reader::firstStepToReadColumn(const PrimitiveColumnInfo & column_info, const RowSubgroup & row_subgroup) const
 {
     if (row_subgroup.skip_top_k_step && column_info.first_step_to_calculate == 1)
-    {
-        chassert(steps.size() == 1);
-        return 0;
-    }
+        return stepAfterTopKStep();
     return column_info.first_step_to_calculate;
 }
 
@@ -3933,10 +3931,11 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
 
         if (top_k_step_may_stop && step_idx == 1)
         {
-            const size_t rows_dropped = filter.size() - rows_pass;
-            const size_t checked = top_k_step_rows_checked.fetch_add(filter.size(), std::memory_order_relaxed) + filter.size();
-            const size_t dropped = top_k_step_rows_dropped.fetch_add(rows_dropped, std::memory_order_relaxed) + rows_dropped;
-            if (checked >= top_k_step_rows_to_observe && dropped * 10 * (1 + top_k_step_columns_after) < checked)
+            std::lock_guard lock(top_k_step_stats_mutex);
+            top_k_step_rows_checked += filter.size();
+            top_k_step_rows_dropped += filter.size() - rows_pass;
+            if (top_k_step_rows_checked >= top_k_step_rows_to_observe
+                && top_k_step_rows_dropped * 10 * (1 + top_k_step_columns_after) < top_k_step_rows_checked)
                 top_k_step_unprofitable.store(true, std::memory_order_relaxed);
         }
 

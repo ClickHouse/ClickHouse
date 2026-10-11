@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/TypeTree.h>
 #include <Formats/FormatFilterInfo.h>
@@ -163,7 +164,8 @@ static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
     /// The threshold is a `Field`, which loses the runtime type of `Dynamic`, `Variant` and `JSON` values
     /// (https://github.com/ClickHouse/ClickHouse/issues/124960), and `nan` may be absent from Parquet statistics.
     const auto & key_type = key_column->type;
-    const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
+    const DataTypePtr unwrapped_key_type = removeNullable(key_type);
+    const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(unwrapped_key_type.get());
     if (anyInTypeTree(*key_type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); })
         || (key_tuple_type && key_tuple_type->getElements().empty())
         || (!key_type->haveMaximumSizeOfValue() && !settings.use_top_k_dynamic_filtering_for_variable_length_types)
@@ -173,10 +175,10 @@ static TopKThresholdTrackerPtr tryAttachFormatDynamicFilter(
         return nullptr;
     }
 
-    /// The query condition cache verdicts of a format read misorder a `NULL` nested in a container
-    /// (https://github.com/ClickHouse/ClickHouse/issues/124788).
-    if ((isTuple(key_type) || isArray(key_type) || isMap(key_type))
-        && anyInTypeTree(*key_type, [](const IDataType & node) { return node.isNullable(); }))
+    /// The query condition cache verdicts of a format read misorder a `NULL` nested in a container, also under
+    /// `Nullable` (https://github.com/ClickHouse/ClickHouse/issues/124788).
+    if ((isTuple(unwrapped_key_type) || isArray(unwrapped_key_type) || isMap(unwrapped_key_type))
+        && anyInTypeTree(*unwrapped_key_type, [](const IDataType & node) { return node.isNullable(); }))
     {
         LOG_TRACE(log, "No dynamic filter: the key {} has a nested Nullable", key_name);
         return nullptr;
