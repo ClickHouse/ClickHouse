@@ -94,9 +94,11 @@ echo "-- a duplicate series in a matched group is still an error"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i3\"} / on(instance) lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', '(lim / on(instance) req) / on(instance) req{instance=\"i1\"}', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
 
-echo "-- as in Prometheus, a duplicate series on the one side or after dropping the metric name is an error in any group"
-$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
-$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) group_left lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
+echo "-- a duplicate series on the one side is an error only at steps where the matched series has a value"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) lim', 100, 130, 10) ORDER BY tags"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) group_left lim', 100, 130, 10) ORDER BY tags"
+
+echo "-- as in Prometheus, a duplicate series after dropping the metric name is an error in any group"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'rate({__name__=~\"m1|m2\"}[30s]) / on(a) m1{a=\"1\"}', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
 
 echo "-- as in Prometheus, duplicate left series of a one-to-one match are an error only in a matched group"
