@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
@@ -54,6 +56,27 @@ split_topology_nodes = [
     cluster.add_instance(
         "split_node2",
         main_configs=["configs/clusters_split_topology.xml"],
+        with_zookeeper=True,
+    )
+]
+
+# Protocol 8 (26.7, 26.8) followers announce `#split_i` streams, so unlike 26.5 they reach the in-order coordinator.
+# Exact version: a later 26.8 may speak protocol 9.
+pv8_nodes = [
+    cluster.add_instance(
+        f"pv8_node{num}",
+        main_configs=["configs/clusters_pv8.xml"],
+        with_zookeeper=True,
+        image="clickhouse/clickhouse-server",
+        tag="26.8.18.2",
+        stay_alive=True,
+        with_installed_binary=True,
+    )
+    for num in range(2)
+] + [
+    cluster.add_instance(
+        "pv8_node2",
+        main_configs=["configs/clusters_pv8.xml"],
         with_zookeeper=True,
     )
 ]
@@ -253,3 +276,73 @@ def test_split_topology_rolling_upgrade(start_cluster):
 
     for node in split_topology_nodes:
         node.query("drop table ts sync")
+
+
+PRE_V9_SETTINGS = {
+    "cluster_for_parallel_replicas": "parallel_replicas",
+    "max_parallel_replicas": 3,
+    "allow_experimental_parallel_reading_from_replicas": 1,
+    "parallel_replicas_mark_segment_size": 128,
+    "merge_tree_min_read_task_size": 1,
+    "merge_tree_min_rows_for_concurrent_read": 0,
+    "merge_tree_min_bytes_for_concurrent_read": 0,
+    "max_threads": 1,
+}
+PRE_V9_DEFAULT_QUERY = (
+    "select count(), sum(a) from tsr where not ignore(sleepEachRow(0.00002))",
+    {},
+)
+PRE_V9_IN_ORDER_QUERY = (
+    "select count(), sum(a) from "
+    "(select a from tsr where not ignore(sleepEachRow(0.00002)) order by a limit 1000000)",
+    {"optimize_read_in_order": 1},
+)
+
+
+def check_pre_v9_followers_do_not_read(topology_nodes, queries):
+    # Followers older than parallel-replicas protocol 9 do not announce their patch parts and on-the-fly
+    # mutations, so a new initiator must not let them read parts of its snapshot.
+    zk_path = f"/test_backward_compatability/test_parallel_replicas_protocol/pre_v9/tsr_{uuid.uuid4().hex}"
+    for num, node in enumerate(topology_nodes):
+        node.query("drop table if exists tsr sync")
+        node.query(
+            f"""
+            create table tsr(a UInt64)
+            engine = ReplicatedMergeTree('{zk_path}', '{num}')
+            order by a
+            settings index_granularity = 64
+        """
+        )
+    topology_nodes[0].query("insert into tsr select number from numbers(262144)")
+    for node in topology_nodes:
+        node.query("system sync replica tsr")
+
+    for query, query_settings in queries:
+        query_id = "pre_v9_followers_" + uuid.uuid4().hex
+        assert (
+            topology_nodes[2].query(
+                query, settings={**PRE_V9_SETTINGS, **query_settings}, query_id=query_id
+            )
+            == "262144\t34359607296\n"
+        )
+
+        for node in topology_nodes[:2]:
+            node.query("system flush logs")
+            assert (
+                node.query(
+                    f"select max(read_rows) from system.query_log where initial_query_id = '{query_id}'"
+                )
+                == "0\n"
+            )
+
+    for node in topology_nodes:
+        node.query("drop table tsr sync")
+
+
+def test_pre_v9_followers_do_not_read(start_cluster):
+    # Not in order: 26.5 followers announce the bare table stream, which a new initiator drops for in-order reads.
+    check_pre_v9_followers_do_not_read(split_topology_nodes, [PRE_V9_DEFAULT_QUERY])
+
+
+def test_pre_v9_protocol_8_followers_do_not_read(start_cluster):
+    check_pre_v9_followers_do_not_read(pv8_nodes, [PRE_V9_DEFAULT_QUERY, PRE_V9_IN_ORDER_QUERY])
