@@ -39,6 +39,7 @@ public:
 
     Status prepare() override;
     void work() override;
+    void onCancel() noexcept override;
 
     bool hasFilter() const { return !filter_column_name.empty(); }
 
