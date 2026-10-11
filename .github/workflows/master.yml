@@ -1206,8 +1206,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (wasm_parser)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_asan_ubsan:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-large]
+    needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbik=') }}
     name: "Unit tests (asan_ubsan)"
     outputs:
@@ -1308,8 +1308,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (msan)' --workflow "MasterCI" --ci --timestamp
 
   unit_tests_asan_ubsan_function_prop_fuzzer:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
+    runs-on: [self-hosted, arm-large]
+    needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbiwgZnVuY3Rpb25fcHJvcF9mdXp6ZXIp') }}
     name: "Unit tests (asan_ubsan, function_prop_fuzzer)"
     outputs:
