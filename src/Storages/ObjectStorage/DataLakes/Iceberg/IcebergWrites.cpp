@@ -514,13 +514,21 @@ bool typesMatchThroughIcebergMapping(const DataTypePtr & input, const DataTypePt
     }
 }
 
+/// The Avro reader rejects a data file that lacks a field of its schema, while the Parquet and ORC
+/// readers return NULL for it.
+bool insertMayOmitFields(const String & write_format)
+{
+    return Poco::toLower(write_format) != "avro";
+}
+
 }
 
 void validateInputSchemaMatchesCurrentIcebergSchema(
     const Iceberg::IcebergSchemaProcessorPtr & schema_processor,
     Poco::JSON::Object::Ptr current_schema,
     Int32 current_schema_id,
-    const NamesAndTypesList & input_columns)
+    const NamesAndTypesList & input_columns,
+    bool allow_missing_fields)
 {
     /// Single choke point for the null-schema check so every call site is protected.
     if (!current_schema)
@@ -532,7 +540,7 @@ void validateInputSchemaMatchesCurrentIcebergSchema(
     /// Count alone misses a same-width RENAME/MODIFY; compare the full schema below.
     const auto schema_fields = current_schema->getArray(Iceberg::f_fields);
     const size_t schema_field_count = schema_fields ? schema_fields->size() : 0;
-    if (schema_field_count != input_columns.size())
+    if (input_columns.size() > schema_field_count || (!allow_missing_fields && input_columns.size() != schema_field_count))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot write into Iceberg table: the input has {} column(s) but the current table schema "
@@ -545,24 +553,39 @@ void validateInputSchemaMatchesCurrentIcebergSchema(
     if (input_columns.empty())
         return;
 
-    /// Compare names and types positionally via the shared schema processor (same converter
-    /// that produced the cached ClickHouse columns), avoiding converter-quirk false positives.
+    /// Compare names and types via the shared schema processor (same converter that produced the
+    /// cached ClickHouse columns), avoiding converter-quirk false positives.
     schema_processor->addIcebergTableSchema(current_schema);
     const auto expected_columns = schema_processor->getClickHouseTableSchemaById(current_schema_id);
-    auto input_it = input_columns.begin();
     auto expected_it = expected_columns->begin();
-    for (; input_it != input_columns.end(); ++input_it, ++expected_it)
+    for (const auto & input : input_columns)
     {
-        if (input_it->name != expected_it->name || !typesMatchThroughIcebergMapping(input_it->type, expected_it->type))
+        std::optional<NameAndTypePair> expected;
+        if (allow_missing_fields)
+            expected = expected_columns->tryGetByName(input.name);
+        else
+            expected = *expected_it++;
+
+        if (!expected)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot write into Iceberg table: input column '{}' of type {} has no field of that name in the current "
+                "table schema (schema-id {}). The cached table structure may be stale after a RENAME COLUMN; detach and "
+                "re-attach the table to refresh it.",
+                input.name,
+                input.type->getName(),
+                current_schema_id);
+
+        if (input.name != expected->name || !typesMatchThroughIcebergMapping(input.type, expected->type))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot write into Iceberg table: input column '{}' of type {} does not match field '{}' of type {} "
                 "in the current table schema (schema-id {}). The cached table structure may be stale after a RENAME or "
                 "MODIFY COLUMN; detach and re-attach the table to refresh it.",
-                input_it->name,
-                input_it->type->getName(),
-                expected_it->name,
-                expected_it->type->getName(),
+                input.name,
+                input.type->getName(),
+                expected->name,
+                expected->type->getName(),
                 current_schema_id);
     }
 }
@@ -1284,7 +1307,8 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.schema_processor,
         current_schema,
         static_cast<Int32>(current_schema_id),
-        sample_block->getNamesAndTypesList());
+        sample_block->getNamesAndTypesList(),
+        insertMayOmitFields(write_format));
 
     sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
 
@@ -1601,25 +1625,11 @@ bool IcebergStorageSink::initializeMetadata()
                 compression_method,
                 persistent_table_components.table_uuid);
 
-            /// Buffered files were partitioned under the pre-retry metadata; reusing them is only
-            /// safe if the refreshed metadata is still compatible. Reject any semantics-affecting
-            /// change (schema id, partition spec, or same-id rebind) rather than commit corruption.
-            auto new_partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 
             auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
             if (new_schema_id != current_schema_id)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata changed during write operation, try again");
-
-            /// A default-spec-id change (schema id unchanged) would misattribute buffered tuples.
-            if (new_partition_spec_id != partition_spec_id)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Iceberg default-spec-id changed from {} to {} during write operation (schema-id unchanged). "
-                    "The buffered data files were partitioned under the previous spec; retry the write.",
-                    partition_spec_id,
-                    new_partition_spec_id);
-            partition_spec_id = new_partition_spec_id;
 
             auto schemas = metadata->getArray(Iceberg::f_schemas);
             current_schema = nullptr;
@@ -1636,7 +1646,8 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.schema_processor,
                 current_schema,
                 static_cast<Int32>(current_schema_id),
-                sample_block->getNamesAndTypesList());
+                sample_block->getNamesAndTypesList(),
+                insertMayOmitFields(write_format));
 
             /// The partition spec stays as on the first attempt. The manifests are already written with it.
             /// Reject a same-id structural rebind or a dropped entry: buffered tuples follow the original layout.
@@ -1650,9 +1661,8 @@ bool IcebergStorageSink::initializeMetadata()
                     if (partititon_spec && stringifyJSON(current_partition_spec) != stringifyJSON(partititon_spec))
                         throw Exception(
                             ErrorCodes::NOT_IMPLEMENTED,
-                            "Iceberg partition spec (spec-id {}) was rebound during write operation while the "
-                            "default-spec-id stayed the same. The buffered data files were partitioned under the "
-                            "previous spec definition; retry the write.",
+                            "Iceberg partition spec (spec-id {}) was rebound during write operation. The buffered "
+                            "data files were partitioned under the previous spec definition; retry the write.",
                             partition_spec_id);
                     break;
                 }
@@ -1661,8 +1671,8 @@ bool IcebergStorageSink::initializeMetadata()
             if (!found_partition_spec)
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Iceberg metadata has no partition spec matching default-spec-id {} after a "
-                    "metadata refresh during write operation; retry the write.",
+                    "The partition spec (spec-id {}) the buffered data files were written with is missing from the "
+                    "Iceberg metadata after a refresh during write operation; retry the write.",
                     partition_spec_id);
         }
     };

@@ -1569,7 +1569,8 @@ void compactIcebergTable(
             persistent_table_components.schema_processor,
             current_schema,
             static_cast<Int32>(current_schema_id),
-            sample_block_->getNamesAndTypesList());
+            sample_block_->getNamesAndTypesList(),
+            /*allow_missing_fields=*/false);
 
         /// Reject files written under a schema id or partition spec that differs from the current default,
         /// per DATA entry (path_to_data_file/partitions collapse same-file entries). writeMetadataFiles

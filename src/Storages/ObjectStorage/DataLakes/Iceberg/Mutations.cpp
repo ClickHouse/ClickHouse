@@ -913,7 +913,8 @@ void mutate(
             persistent_table_components.schema_processor,
             current_schema,
             static_cast<Int32>(current_schema_id),
-            sample_block->getNamesAndTypesList());
+            sample_block->getNamesAndTypesList(),
+            /*allow_missing_fields=*/false);
 
         std::optional<ChunkPartitioner> chunk_partitioner;
         if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)

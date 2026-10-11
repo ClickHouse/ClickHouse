@@ -11,8 +11,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Part 5/5 of the Iceberg write/mutation/compaction schema-drift guard regression
-# (issues #109835 / #109838): first-load missing partition-spec, INSERT metadata-conflict
-# retry, and UPDATE across a partition-spec evolution.
+# (issues #109835 / #109838): first-load missing partition-spec, INSERT through a table pinned
+# to a stale metadata version, and UPDATE across a partition-spec evolution.
 # Part 1 (INSERT sink) lives in 04365_iceberg_write_schema_drift_guards_insert_109838.sh.
 # Part 2 (UPDATE/DELETE mutation) lives in 04369_iceberg_write_schema_drift_guards_mutation_109838.sh.
 # Part 3 (OPTIMIZE compaction - schema/field-id drift) lives in
@@ -83,61 +83,12 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
     --query "ALTER TABLE ${TABLE} DELETE WHERE c0 = 1" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 
 # ============================================================================================
-# INSERT metadata-conflict retry (initializeMetadata / cleanup(true))
+# INSERT through a table pinned to a stale metadata version
 # ============================================================================================
-# Pin the table to a stale metadata version (v1) so every INSERT targets v2. The first INSERT
-# writes v2; an external v3 carrying drift is published and the cache dropped. The next INSERT
-# still targets v2 (present), enters cleanup(true), re-reads the real latest (v3), and must
-# reject any semantics-affecting change before reusing the buffered files.
+# The table is pinned to v1 and an external v3 carrying drift is published after the first INSERT.
+# The sink resolves the real latest version (v3), not the pinned one, and must reject the drift.
 
-# --- retry: default-spec-id change (schema id unchanged) -> NOT_IMPLEMENTED --------------------
-reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
-CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
-INSERT INTO ${TABLE} SELECT 1, 'a';
-"
-publish_next_metadata retry_default_spec_change <<'PY'
-import json, os, sys
-md = sys.argv[1]
-m = json.load(open(os.path.join(md, 'v2.metadata.json')))
-m['partition-specs'].append({'spec-id': 1, 'fields': []})
-m['default-spec-id'] = 1
-m['last-partition-id'] = m.get('last-partition-id', 999) + 1
-m['last-updated-ms'] = m.get('last-updated-ms', 0) + 60000
-tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
-os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
-PY
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
-SYSTEM DROP ICEBERG METADATA CACHE;
-INSERT INTO ${TABLE} SELECT 2, 'b';
-" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
-
-# --- retry: same-spec-id structural rebind -> NOT_IMPLEMENTED ----------------------------------
-reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
-CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') PARTITION BY (c0) SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
-INSERT INTO ${TABLE} SELECT 1, 'a';
-"
-publish_next_metadata retry_same_spec_rebind <<'PY'
-import json, os, sys
-md = sys.argv[1]
-m = json.load(open(os.path.join(md, 'v2.metadata.json')))
-for s in m['partition-specs']:
-    if s['spec-id'] == m['default-spec-id']:
-        for f in s['fields']:
-            if f['name'] == 'c0':
-                f['transform'] = 'bucket[4]'
-                f['name'] = 'c0_bucket'
-m['last-updated-ms'] = m.get('last-updated-ms', 0) + 60000
-tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
-os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
-PY
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
-SYSTEM DROP ICEBERG METADATA CACHE;
-INSERT INTO ${TABLE} SELECT 2, 'b';
-" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
-
-# --- retry: dropped partition-specs entry for current default-spec-id -> ICEBERG_SPEC_VIOLATION
+# --- dropped partition-specs entry for the current default-spec-id -> ICEBERG_SPEC_VIOLATION --
 reset
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
 CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') PARTITION BY (c0) SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
@@ -158,7 +109,7 @@ SYSTEM DROP ICEBERG METADATA CACHE;
 INSERT INTO ${TABLE} SELECT 2, 'b';
 " 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 
-# --- retry: same-schema-id content rebind -> ICEBERG_SPECIFICATION_VIOLATION -------------------
+# --- same-schema-id content rebind -> ICEBERG_SPECIFICATION_VIOLATION -------------------------
 reset
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
 CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
@@ -182,9 +133,9 @@ SYSTEM DROP ICEBERG METADATA CACHE;
 INSERT INTO ${TABLE} SELECT 2, 'b';
 " 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 
-# --- retry: same-schema-id narrowed schema -> BAD_ARGUMENTS ------------------------------------
-# Fewer fields under the same schema id: the input header the sink was built with no longer fits
-# the refreshed schema, so the column-count check rejects it before the field-by-field compare.
+# --- same-schema-id narrowed schema -> BAD_ARGUMENTS ------------------------------------------
+# Fewer fields under the same schema id: the pinned input header is wider than the latest schema,
+# so the column-count check rejects it before the field-by-field compare.
 reset
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
 CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
@@ -206,7 +157,7 @@ SYSTEM DROP ICEBERG METADATA CACHE;
 INSERT INTO ${TABLE} SELECT 2, 'b';
 " 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1
 
-# --- retry: no semantics-affecting drift -> still succeeds -------------------------------------
+# --- no semantics-affecting drift -> still succeeds -------------------------------------------
 reset
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
 CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';

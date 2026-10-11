@@ -37,7 +37,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # write is mapped onto the CURRENT schema and the rows read back below are what lands. A MergeTree
 # target under the same ALTER stores the same rows, so the values are materialized-view semantics
 # rather than an Iceberg-specific narrowing. A sink that still sees a stale input header rejects
-# it; that path is exercised in part 5.
+# it; the pinned-structure scenarios at the end and part 5 exercise that path.
 
 # --- INSERT after a sibling DROP COLUMN: mapped onto the narrowed schema, no abort ------------
 INSERT_DIR="${CLICKHOUSE_TMP}/04365_insert_dropcol_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -124,3 +124,34 @@ INSERT INTO src VALUES (1);
 SELECT 'modify', toString(c0) FROM t ORDER BY c0;
 " -- --user_files_path="${MODIFY_DIR}" < /dev/null 2>&1 | grep -oE "^modify\s\S.*$"
 rm -rf "${MODIFY_DIR}"
+
+# --- INSERT through a structure pinned before ALTERs: may omit fields, not keep stale names ---
+# A table read through a remembered metadata version keeps that version's structure, while the
+# sink writes against the latest schema. Omitting a field added since is a valid write, but the
+# pinned column b no longer names a field after the RENAME. The rows are read back each time.
+stale_insert() {
+    local format="$1" alters="$2" label="$3"
+    local dir="${CLICKHOUSE_TMP}/04365_insert_stale_${label}_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+    rm -rf "${dir}"; mkdir -p "${dir}/t"
+    local local_cmd="${CLICKHOUSE_LOCAL} --allow_insert_into_iceberg=1 --async_insert=0 --multiquery"
+    ${local_cmd} -q "
+CREATE TABLE t (a Int32, b Int32) ENGINE = IcebergLocal('${dir}/t/', '${format}');
+INSERT INTO t VALUES (1, 1);
+" -- --user_files_path="${dir}" < /dev/null
+    local pin
+    pin="metadata/$(basename "$(ls "${dir}"/t/metadata/*.metadata.json | sort -V | tail -1)")"
+    ${local_cmd} -q "CREATE TABLE t ENGINE = IcebergLocal('${dir}/t/', '${format}'); ${alters}" \
+        -- --user_files_path="${dir}" < /dev/null
+    ${local_cmd} -q "
+CREATE TABLE t ENGINE = IcebergLocal('${dir}/t/', '${format}') SETTINGS iceberg_metadata_file_path = '${pin}';
+INSERT INTO t VALUES (2, 2);
+" -- --user_files_path="${dir}" < /dev/null 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1 | sed "s/^/${label}\t/"
+    ${local_cmd} -q "CREATE TABLE t ENGINE = IcebergLocal('${dir}/t/', '${format}'); SELECT '${label}', * FROM t ORDER BY a;" \
+        -- --user_files_path="${dir}" < /dev/null 2>&1
+    rm -rf "${dir}"
+}
+
+stale_insert ORC "ALTER TABLE t ADD COLUMN c Nullable(String);" stale_add
+stale_insert ORC "ALTER TABLE t RENAME COLUMN b TO b2; ALTER TABLE t ADD COLUMN c Nullable(String);" stale_rename
+# An Avro data file that lacks a field of its schema cannot be read back, so Avro is rejected.
+stale_insert Avro "ALTER TABLE t ADD COLUMN c Nullable(String);" stale_add_avro

@@ -8,3 +8,9 @@ ok_date	2020-01-02
 ok_dt64	2020-01-02 03:04:05.123456
 modify	0
 modify	1
+stale_add	1	1	\N
+stale_add	2	2	\N
+stale_rename	BAD_ARGUMENTS
+stale_rename	1	1	\N
+stale_add_avro	BAD_ARGUMENTS
+stale_add_avro	1	1	\N
