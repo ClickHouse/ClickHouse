@@ -152,6 +152,9 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'if [ "$desired_blocked" = "true" ]; then' in rerun_workflow
     assert 'post_status()' in rerun_workflow
     assert 'api_with_retries --method POST "repos/$GH_REPO/statuses/$head_sha"' in rerun_workflow
+    # The read-back must find the status of this PR, not one with the same
+    # context posted on a shared head commit by another PR.
+    assert 'select(.context == $context and .target_url == $url)' in rerun_workflow
     assert 'review threads: $unresolved unresolved review thread(s)' in rerun_workflow
     assert 'last_pr_conclusion' in rerun_workflow
     assert '"Failed: review threads only"' in rerun_workflow

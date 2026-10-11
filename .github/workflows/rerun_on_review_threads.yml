@@ -91,9 +91,12 @@ jobs:
               -f target_url="https://github.com/$GH_REPO/pull/$pr" >/dev/null
 
             # `gh api --jq` takes no `--arg`, so filter with a separate `jq`.
+            # Several PRs can share the head commit, so match the status of
+            # this PR by its `target_url`, not by the context alone.
             local posted posted_state posted_description
             posted=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
-              | jq --arg context "$context" '[.[] | select(.context == $context)] | first // {}')
+              | jq --arg context "$context" --arg url "https://github.com/$GH_REPO/pull/$pr" \
+                '[.[] | select(.context == $context and .target_url == $url)] | first // {}')
             posted_state=$(echo "$posted" | jq -r '.state // empty')
             posted_description=$(echo "$posted" | jq -r '.description // empty')
             if [ "$posted_state" != "$state" ] || [ "$posted_description" != "$description" ]; then
