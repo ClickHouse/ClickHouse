@@ -648,17 +648,19 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-# Position independent code is enabled on every amd64 and aarch64 build:
+# Position independent code is enabled on every amd64 and aarch64 build except the ones with -flto=thin:
 # 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
 # multiple sophisticated problems like linking with sanitizers or linking of rust.
-# 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
+# 2. A position independent executable is loaded at a random address, and in some processes some queries then run
+# 15-40% slower. The -flto=thin build is the release build, so it stays position dependent.
+# 3. -flto=thin leads to some other way of linkage. For example for rust libraries build
 # we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
 # -flto=thin we have relocation errors like:
 # rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
 #
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
-if (ARCH_AMD64 OR ARCH_AARCH64)
+if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 
     # -fPIC only makes the code relocatable; whether the executable itself is position independent is
