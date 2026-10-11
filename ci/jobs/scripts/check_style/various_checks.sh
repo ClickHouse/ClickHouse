@@ -227,6 +227,19 @@ for test_case in "${tests_with_global_cache_drop[@]}"; do
     grep -qP '(?:[Tt]ags:\s*|,\s*)no-parallel(?::[a-z0-9-]+)?(?=\s*(?:,|$))' "$test_case" || echo "Test with a global SYSTEM cache clear should have a no-parallel tag: $test_case"
 done
 
+# An unnamed `SYSTEM CLEAR FILESYSTEM CACHE` clears every filesystem cache on the server, including
+# the per-test cache disks (`disk = disk(type = cache, ...)`) of any concurrent test. A
+# `no-parallel:<group>` only serializes the members of the group, so a plain `no-parallel` is required.
+tests_with_unnamed_filesystem_cache_drop=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep -liP '^(?!\s*(?:--|#|['\''\"]?EXPLAIN\s+SYNTAX|SELECT\s+(?:format|parse|normalize)Query|\$\{?CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+filesystem\s+cache\s*(?:;|$|"|on\s+cluster\b|settings\b|--)' |
+        grep -v '/04836_system_cache_on_cluster_access_types\.sh$' |
+        sort -u
+) )
+for test_case in "${tests_with_unnamed_filesystem_cache_drop[@]}"; do
+    grep -qP '(?:[Tt]ags:\s*|,\s*)no-parallel(?=\s*(?:,|$))' "$test_case" || echo "Test with an unnamed SYSTEM CLEAR FILESYSTEM CACHE should have a plain no-parallel tag (a concurrency group is not enough): $test_case"
+done
+
 # Keep in sync with NO_PARALLEL_GROUPS in tests/clickhouse-test: a group this check
 # accepts but the runner does not know makes `clickhouse-test` raise while it builds
 # the suite, which is a much worse way to find out about a typo.
