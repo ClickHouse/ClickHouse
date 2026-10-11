@@ -9,6 +9,7 @@
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Common/StringValueFilter.h>
 
 #include <deque>
 #include <optional>
@@ -202,6 +203,11 @@ struct Reader
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
+        /// A filter extracted from a substring search condition on this column in PREWHERE.
+        /// String values that do not match it are decoded as empty strings (they are guaranteed
+        /// to be filtered out by PREWHERE afterwards). See `StringValueFilter`.
+        StringValueFilterPtr string_value_filter;
+
         bool used_by_key_condition = false;
         bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
@@ -374,7 +380,7 @@ struct Reader
         /// Note that older parquet writers may omit dictionary info in file metadata, so we don't
         /// necessarily know in advance whether the column chunk has a dictionary.
         Dictionary dictionary;
-        /// When the dictionary is decoded on the pruning path (`BloomFilterBlocksOrDictionary` stage),
+        /// When the dictionary is decoded on the pruning path (`Dictionary` stage),
         /// its decoded footprint is reserved live against the shared pruning-stage budget through this
         /// handle so it is visible to every row group pruning in parallel, not only after the batch
         /// flushes (see `PruningMemoryReservation`, `ReadManager::runTask` / `pruningMemoryReservation`,
@@ -482,6 +488,10 @@ struct Reader
         /// the row group when it provably contains no row that can enter the top-K
         /// (see topKShouldSkipRowGroup).
         std::optional<Range> top_k_sort_column_range;
+        /// TopN dynamic filtering: a single-row column with the best value of the sort column among
+        /// the rows delivered from this row group so far, in the query's order. Only maintained with
+        /// `FormatTopKFilterInfo::track_row_group_best_values` (see updateTopKBestValue).
+        ColumnPtr top_k_best_value;
 
         std::deque<RowSubgroup> subgroups;
 
@@ -495,6 +505,9 @@ struct Reader
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
+
+        /// Admitted by ReadManager::admitTopKRowGroups and not fully read yet.
+        std::atomic<bool> holds_top_k_admission {false};
     };
 
     struct Step
@@ -576,6 +589,11 @@ struct Reader
     /// the reader only produces type defaults for it while the threshold comes from the values the
     /// pipeline puts in their place, so the filter must not be applied at all.
     bool top_k_column_is_read = false;
+    /// TopN dynamic filtering: position of the sort column in `sample_block`, when the best value of
+    /// each row group is tracked (see RowGroup::top_k_best_value).
+    std::optional<size_t> top_k_best_value_column_pos;
+    /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
+    bool row_groups_ordered_by_top_k = false;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
@@ -591,7 +609,7 @@ struct Reader
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
     /// On the dictionary-filter pruning path, pass a bounded `reservation` (see
     /// `ReadManager::pruningMemoryReservation`): the decoded dictionary's full footprint is predicted
-    /// from the page header and reserved live against the shared `BloomFilterBlocksOrDictionary` stage
+    /// from the page header and reserved live against the shared `Dictionary` stage
     /// budget *before* anything is decoded, so a dictionary that would push the pruning memory past the
     /// reader's high watermark - across the several row groups pruning in parallel - is rejected before
     /// `Dictionary::decode` allocates anything and false is returned so the caller falls back to a full
@@ -610,9 +628,24 @@ struct Reader
     /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
     bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
-    /// Returns false if the row group was filtered out and should be skipped.
+    /// Returns false if the row group was filtered out and should be skipped, using only the bloom
+    /// filters whose blocks have been read (`BloomFilterBlocks` stage). Columns that have no bloom
+    /// filter, including the ones that will be checked against their dictionary page in the next
+    /// stage, are left out of the filter map and so treated as "may match"; a bloom filter has no
+    /// false negatives, so a `false` here is final and the dictionary pages need not be read at all.
+    /// When the row group is not ruled out, also clears `use_dictionary_filter` on every column whose
+    /// own bloom filter reported a definite miss for each of its atoms (e.g. `a` in `a = 1 OR b = 2`
+    /// where only `b = 2` keeps the row group alive): the dictionary of such a column can only confirm
+    /// the miss, so its page is not read and `applyBloomAndDictionaryFilters` uses the bloom filter
+    /// for it instead.
+    bool applyBloomFilters(RowGroup & row_group);
+
+    /// Returns false if the row group was filtered out and should be skipped. Runs after
+    /// `applyBloomFilters` on the row groups it did not rule out, and re-evaluates the whole
+    /// condition, this time preferring the exact dictionary filter for every column that has a
+    /// decoded dictionary page.
     /// `reservation` bounds the value sets built for dictionary filtering; it is the memory
-    /// still available for pruning, charged live to the shared `BloomFilterBlocksOrDictionary` stage
+    /// still available for pruning, charged live to the shared `Dictionary` stage
     /// counter for the lifetime of each value set, so several dictionary-filtered columns in this row
     /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
     /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
@@ -627,6 +660,8 @@ struct Reader
     /// top-K heap, so the row group can be skipped without reading its column data. The threshold
     /// only ever tightens, so a `false` result is safely revisited by the row filter later.
     bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
+    /// Folds the sort column of a chunk delivered from the row group into RowGroup::top_k_best_value.
+    void updateTopKBestValue(RowGroup & row_group, const IColumn & column) const;
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
@@ -658,9 +693,18 @@ private:
         Prefetcher & prefetcher;
         ColumnChunk & column;
 
+        /// Whether `findAnyHash` was called at all, and whether any call reported a possible match.
+        /// `probed && !found` means every atom on this column that was evaluated is definitely false
+        /// (a bloom filter has no false negatives), so its exact dictionary filter could only agree.
+        bool probed = false;
+        bool found = false;
+
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
 
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+
+    private:
+        bool probe(const std::vector<uint64_t> & hashes);
     };
 
     /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the

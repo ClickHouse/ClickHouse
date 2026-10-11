@@ -102,6 +102,9 @@ bool hasAggregateFunctionNodes(const QueryTreeNodePtr & node)
 
 void assertNoAggregateFunctionNodes(const QueryTreeNodePtr & node, const String & assert_no_aggregates_place_message, const String & hint)
 {
+    if (isQueryOrUnionNode(node))
+        return;
+
     CollectAggregateFunctionNodesVisitor visitor(assert_no_aggregates_place_message, hint);
     visitor.visit(node);
 }
