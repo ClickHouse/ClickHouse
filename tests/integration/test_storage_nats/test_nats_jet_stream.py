@@ -1424,6 +1424,70 @@ def test_nats_jet_stream_streaming_drains_local_backlog_after_in_source_recovery
     _publish_and_expect("test_subject", range(0, 25), 25)
 
 
+INJECTED_RESUBSCRIBE_FAILURE_LOG_LINE = "Injected failure of resubscribing within a running query"
+
+
+def test_nats_jet_stream_streaming_recovers_after_a_failed_in_source_resubscribe(nats_cluster):
+    # When the in-source recovery of a streaming cycle fails to subscribe again, the consumer goes
+    # back to the pool unsubscribed and no longer reports that it needs a resubscribe. The storage
+    # has to subscribe it again the way it subscribes consumers for the first time, keeping it
+    # subscribed across cycles. Otherwise every following cycle finds it unsubscribed, subscribes it
+    # itself and unsubscribes it at the end, so the local queue does not survive between cycles.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    created = nats_helpers.log_line_count(instance)
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n',
+                     nats_max_block_size = 5,
+                     nats_flush_interval_ms = 60000,
+                     nats_wait_for_flush_interval = 1;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume", anchor = created)
+
+    # The long flush interval makes the reconnect land mid-cycle, where the source recovers the
+    # subscription itself (see the test above); the failpoint fails that recovery once.
+    instance.query("SYSTEM ENABLE FAILPOINT nats_fail_resubscribe_within_query")
+    try:
+        anchor = nats_helpers.log_line_count(instance)
+        for _ in range(3):
+            _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                if nats_helpers.count_in_log_after(instance, INJECTED_RESUBSCRIBE_FAILURE_LOG_LINE, anchor) > 0:
+                    break
+                time.sleep(0.2)
+            else:
+                continue
+            break
+        else:
+            raise AssertionError("no streaming source attempted an in-source recovery")
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT nats_fail_resubscribe_within_query")
+
+    failed = nats_helpers.log_line_count(instance)
+
+    # More rows than one output block, so several cycles consume them.
+    _publish_and_expect("test_subject", range(0, 25), 25)
+
+    assert nats_helpers.count_in_log_after(instance, UNSUBSCRIBED_LOG_LINE, failed) == 0, (
+        "the consumer was unsubscribed between streaming cycles after the failed resubscribe")
+
+
 def _wait_for_ack_pending(expected, consumer_name = "test_consumer", time_limit_sec = 60):
     # Waits until the broker counts exactly `expected` messages as delivered and awaiting an
     # acknowledgement, which is how a message the streaming cycle is holding reads from outside.
@@ -1461,10 +1525,13 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
     # would undo the skip - the malformed message is delivered again and parsed again, and a
     # reconnect in front of the first good row can keep the table reprocessing the same bad input.
     #
-    # The broker's own delivery counter is the oracle: the consumer sequence counts every delivery,
-    # redeliveries included, so it stays at one per message exactly when nothing was handed back.
-    # The ACK deadline is far beyond every wait below, so a redelivery cannot come from anywhere
-    # else, and the run holds the flush interval open so the reconnect lands inside a cycle.
+    # The broker's own delivery counter is the oracle, and it is read while the malformed message is
+    # the only one published, so the count is a statement about that message alone: one delivery
+    # means the skip survived the reconnect, two mean it was handed back. Losing the recovery's
+    # publish can only keep the count at one, so this is asked on both arms; only the
+    # acknowledgement itself is asked where the guard below says. The ACK deadline is far beyond
+    # every wait here, so a redelivery cannot come from anywhere else, and the run holds the flush
+    # interval open so the reconnect lands inside a cycle.
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
 
     # Anchored before the table exists, so the first streaming cycle counts however quickly it
@@ -1499,13 +1566,51 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
         cluster, "test_stream", "test_subject", [json.dumps({"key": "not a number", "value": "neither"})]))
     _wait_for_ack_pending(1)
 
+    # Anchored immediately before the restart, so the recovery the wait below looks for is the one
+    # this restart provokes rather than an earlier one.
+    recovery_anchor = nats_helpers.log_line_count(instance)
+
     _restart_nats(nats_cluster, kill = kill)
 
     # The restart lands inside the same cycle, while the skipped message is still held: the wait
     # above read that state off the broker, and the flush interval is far longer than the restart
-    # takes. Nothing is asserted about the state afterwards - the recovery acknowledges a skipped
-    # message as soon as it runs, so the count seen here depends on how quickly the client
-    # reconnects. What the skip is worth is measured by the delivery counter at the end.
+    # takes.
+    #
+    # Only a recovery the source performs inside its own cycle holds a skipped message across the
+    # reconnect. The background task reaches a consumer between cycles instead, where the cycle it
+    # follows has already acknowledged what it held, so accepting that line would let the assertions
+    # below pass on a run that never reached the state under test. Retrying is not available for the
+    # same reason: a second restart would land after that acknowledgement.
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if nats_helpers.count_in_log_after(instance, IN_SOURCE_RESUBSCRIBE_LOG_LINE, recovery_anchor) > 0:
+            break
+        time.sleep(0.2)
+    else:
+        raise AssertionError("no streaming source performed an in-source recovery")
+
+    # The replacement subscription has its own request parked, so the recovery has finished rather
+    # than still being in flight when the counter is read.
+    _wait_for_parked_pull_request()
+
+    # Only the hard kill can be asked for the acknowledgement itself. It answers nothing on its way
+    # out, so the recovery runs after the client has reconnected and its acknowledgement reaches a
+    # live broker. A graceful shutdown answers the parked pull request as it exits, so the recovery
+    # publishes into a connection whose JetStream side is already down, and neither `natsMsg_Ack` nor
+    # `natsMsg_Nak` waits for the server, so the publish can be lost and the floor stay at zero.
+    if kill is nats_helpers.hard_kill_nats:
+        # The recovery acknowledged the skipped message and the broker has it, so the skip is
+        # committed rather than merely not redelivered yet.
+        _wait_for_ack_floor(1)
+
+    # A hand-back is a NAK, which the broker redelivers at once, so one delivery for the single
+    # message published so far means the skip survived the reconnect. This holds on both arms: the
+    # cycle consumed the message before the restart, so one delivery is the floor, and losing the
+    # recovery's publish can only keep the count there.
+    consumer_seq = asyncio.run(get_delivered_consumer_seq(cluster, "test_stream", "test_consumer"))
+    assert consumer_seq == 1, (
+        "the skipped message was handed back to the broker and delivered again: "
+        "{} deliveries for one message".format(consumer_seq))
 
     # A stale subscription consumes nothing, so the view holding this row also means the recovery
     # did happen - deferred to a cycle that holds nothing rather than skipped altogether. It waits
@@ -1519,11 +1624,6 @@ def test_nats_jet_stream_skipped_broken_message_is_not_redelivered_after_reconne
         check_callback = lambda num_rows: int(num_rows) == 1)
     assert int(result) == 1, "consumption did not resume, view holds {} rows".format(result)
 
-    consumer_seq = asyncio.run(get_delivered_consumer_seq(cluster, "test_stream", "test_consumer"))
-    assert consumer_seq == 2, (
-        "the skipped message was handed back to the broker and delivered again: "
-        "{} deliveries for two messages".format(consumer_seq))
-
 
 @pytest.mark.parametrize("kill", BROKER_RESTARTS)
 def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats_cluster, kill):
@@ -1533,11 +1633,13 @@ def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats
     # become a row, so the recovery hands it back to the broker instead of holding the resubscribe
     # up, and the rows published after the reconnect reach this query rather than leaving it to sit
     # on a stale subscription until `rabbitmq_max_wait_ms` runs out. With `nats_commit_on_select`
-    # the redelivery is skipped again and acknowledged where the query commits what it read, so the
-    # skip costs one extra delivery and nothing is left outstanding.
+    # the redelivery is skipped again and acknowledged where the query commits what it read, so
+    # after a hard kill the skip costs one extra delivery and nothing is left outstanding. A
+    # graceful shutdown can lose the hand-back on its way out, and then the broker never redelivers:
+    # the count stays at two and the skipped message stays outstanding until the ACK deadline.
     #
     # The ACK deadline is far beyond every wait below, so a redelivery can only come from the
-    # recovery handing the message back, which makes the broker's delivery counter the oracle.
+    # recovery handing the message back, which makes the broker's own counters the oracle.
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
 
     instance.query(
@@ -1575,21 +1677,14 @@ def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats
     asyncio.run(publish_messages(cluster, "test_stream", "test_subject", [json.dumps({"key": 42, "value": 42})]))
     assert TSV(select.get_answer()) == TSV("42")
 
-    # Three deliveries for two messages: the recovery handed the skipped message back instead of
-    # committing it on behalf of a query that had returned nothing yet, and the redelivery was
-    # skipped again straight away. Two would mean it was consumed before the query committed
-    # anything, which is what a cancelled query must not leave behind.
-    deadline = time.monotonic() + 60
-    consumer_seq = 0
-    while time.monotonic() < deadline:
-        consumer_seq = asyncio.run(get_delivered_consumer_seq(cluster, "test_stream", "test_consumer"))
-        if consumer_seq >= 3:
-            break
-        time.sleep(0.2)
-
-    assert consumer_seq >= 3, (
-        "the recovery acknowledged the skipped message before the query committed anything: "
-        "{} deliveries for two messages".format(consumer_seq))
+    # The query returned a row, so it committed what it read, and the message it passed over is not
+    # part of that: the recovery had to hand it back to the broker rather than commit it on behalf of
+    # a query that had returned nothing yet, which is what a cancelled query must not leave behind.
+    # A graceful shutdown answers the parked pull request as it exits, so there the recovery publishes
+    # into a connection whose JetStream side is already going down and the hand-back can be dropped;
+    # a hard kill answers nothing, so its recovery reaches a live broker.
+    _wait_for_the_skipped_message_not_to_be_committed(
+        hand_back_may_be_lost = kill is not nats_helpers.hard_kill_nats)
 
     # The query did commit, so the row it returned is consumed by the time it returns, and so is the
     # skipped message where its redelivery reached the query before that row did. It does not have
@@ -1598,6 +1693,32 @@ def test_nats_jet_stream_direct_select_resumes_after_skipped_broken_message(nats
     # it outstanding until the ACK deadline with nothing left to pull it. What must hold is that the
     # only thing the broker may still count as outstanding is that skipped message, never the row.
     _wait_for_nothing_but_the_first_message_outstanding()
+
+
+def _wait_for_the_skipped_message_not_to_be_committed(
+        hand_back_may_be_lost, consumer_name = "test_consumer", time_limit_sec = 60):
+    # A hand-back is a NAK, which the broker redelivers at once, so a third delivery for two messages
+    # is the skipped message going back and being skipped again. Where that NAK can be dropped there
+    # is no third delivery, and then what the broker holds is what says the message was not
+    # committed: a NAK it never saw leaves the message delivered and unacknowledged, so it is the one
+    # message outstanding with the acknowledgement floor still below it, while a commit moves that
+    # floor past it and so reaches neither state.
+    deadline = time.monotonic() + time_limit_sec
+    info = None
+    while time.monotonic() < deadline:
+        info = asyncio.run(get_consumer_info(cluster, "test_stream", consumer_name))
+        if info.delivered.consumer_seq >= 3:
+            return
+        if hand_back_may_be_lost and info.num_ack_pending == 1 and info.ack_floor.stream_seq == 0:
+            logging.debug("the hand-back did not reach the broker: {} deliveries, {} outstanding".format(
+                info.delivered.consumer_seq, info.num_ack_pending))
+            return
+        time.sleep(0.2)
+
+    raise AssertionError(
+        "the recovery acknowledged the skipped message before the query committed anything: "
+        "{} deliveries for two messages, {} outstanding, acknowledgement floor {}".format(
+            info.delivered.consumer_seq, info.num_ack_pending, info.ack_floor.stream_seq))
 
 
 def _wait_for_nothing_but_the_first_message_outstanding(consumer_name = "test_consumer", time_limit_sec = 60):
@@ -2117,17 +2238,10 @@ def test_nats_jet_stream_streams_to_a_fan_out_with_a_null_target(nats_cluster):
     _wait_for_ack_floor(total_expected)
 
 
-def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_left_subscribed(nats_cluster):
-    # Once the last materialized view is gone the streaming task unsubscribes the consumers, but it
-    # only reaches the ones in the pool at that moment. A direct `SELECT` issued right after the
-    # `DROP VIEW` takes the consumer out of the pool still subscribed and hands it back that way,
-    # and nothing unsubscribes it afterwards: everything published while no view is attached lands
-    # in its local queue. Attaching a view again must part with that backlog the way dropping a
-    # view does - by handing it back to the broker while the subscription it arrived on is still
-    # alive - rather than by clearing the queue under a live subscription, which the client can
-    # keep appending to and which the broker counts as delivered until the ACK deadline. The
-    # deadline here is far beyond every wait below, so the final count holds only if the backlog
-    # was returned.
+def _leave_a_subscribed_consumer_without_views(detached):
+    # Leaves the table with no view attached and a consumer that a direct `SELECT` handed back still
+    # subscribed, holding `detached` messages in its local queue. Returns the query that attaches
+    # the view again.
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
 
     # A short flush interval keeps the streaming cycles short, so the `SELECT` below gets the
@@ -2187,10 +2301,32 @@ def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_le
     # is delivered into the local queue of a table that is not streaming. The broker counting all
     # of it as awaiting an acknowledgement is what proves it got there.
     _wait_for_parked_pull_request()
-    detached = 100
     messages = [json.dumps({"key": key, "value": key}) for key in range(100, 100 + detached)]
     asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
     _wait_for_ack_pending(detached)
+
+    return create_view
+
+
+def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_left_subscribed(nats_cluster):
+    # Once the last materialized view is gone the streaming task unsubscribes the consumers, but it
+    # only reaches the ones in the pool at that moment. A direct `SELECT` issued right after the
+    # `DROP VIEW` takes the consumer out of the pool still subscribed and hands it back that way,
+    # and nothing unsubscribes it afterwards: everything published while no view is attached lands
+    # in its local queue. Attaching a view again must part with that backlog the way dropping a
+    # view does - by handing it back to the broker while the subscription it arrived on is still
+    # alive - rather than by clearing the queue under a live subscription, which the client can
+    # keep appending to and which the broker counts as delivered until the ACK deadline. The
+    # deadline here is far beyond every wait below, so the final count holds only if the backlog
+    # was returned.
+    detached = 100
+    create_view = _leave_a_subscribed_consumer_without_views(detached)
+
+    # Another direct `SELECT` takes the same subscribed consumer and returns a row from that backlog
+    # without committing it. The query leaves the consumer subscribed, so the row it read has to go
+    # back to the broker when it ends rather than wait for the ACK deadline.
+    read = instance.query("SELECT count() FROM test.consume SETTINGS rabbitmq_max_wait_ms = 5000")
+    assert int(read) >= 1, "the direct SELECT read nothing of a backlog of {} messages".format(detached)
 
     instance.query(create_view)
     nats_helpers.wait_for_mv_attached_to_table(instance, "test.consume")
@@ -2198,6 +2334,87 @@ def test_nats_jet_stream_hands_back_the_backlog_of_a_consumer_a_direct_select_le
     # Both what was buffered while detached and what arrives afterwards have to reach the view: a
     # backlog cleared locally instead of returned stays unreachable for the whole ACK deadline.
     _publish_and_expect("test_subject", range(20, 40), 20 + detached + 20)
+
+
+def test_nats_jet_stream_stop_unsubscribes_a_consumer_a_direct_select_left_subscribed(nats_cluster):
+    # A stopped table must hold no subscription, even with no view attached: `SYSTEM STOP` has to
+    # unsubscribe the consumer a direct `SELECT` handed back still subscribed, returning its backlog
+    # to the broker. Without that nothing unsubscribes it while no view is attached. A returned
+    # message still counts as awaiting an acknowledgement until a pull request takes it again, so
+    # the broker cannot show the return before a view is attached; the ACK deadline is far beyond
+    # every wait below, so the final count holds only if the backlog was returned.
+    detached = 100
+    create_view = _leave_a_subscribed_consumer_without_views(detached)
+
+    anchor = nats_helpers.log_line_count(instance)
+    instance.query("SYSTEM STOP test.consume")
+    deadline = time.monotonic() + 60
+    while nats_helpers.count_in_log_after(instance, UNSUBSCRIBED_LOG_LINE, anchor) == 0:
+        assert time.monotonic() < deadline, "SYSTEM STOP did not unsubscribe the consumer of a table with no view"
+        time.sleep(0.2)
+
+    instance.query("SYSTEM START test.consume")
+    instance.query(create_view)
+    nats_helpers.wait_for_mv_attached_to_table(instance, "test.consume")
+    _publish_and_expect("test_subject", range(20, 40), 20 + detached + 20)
+
+
+def test_nats_jet_stream_direct_select_hands_back_the_backlog_it_did_not_read(nats_cluster):
+    # A direct `SELECT` that finds its consumer unsubscribed subscribes it itself and unsubscribes
+    # it again when the query ends. `read` gives each of those sources `max_block_size = 1` while
+    # the pull subscription keeps unbounded pending limits, so the query returns its first row while
+    # the client has already delivered the rest of the backlog into the local queue. Those messages
+    # owe their rows to nothing - the query is over and has committed only what it returned - and
+    # the subscription they arrived on is about to be destroyed, so they have to go back to the
+    # broker while it is still alive. Destroying them instead leaves the broker counting them as
+    # delivered until the ACK deadline, which is far beyond every wait below, so both the
+    # acknowledgement count and the view attached afterwards hold only if the backlog was returned.
+    total_expected = 500
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        """
+    )
+    nats_helpers.wait_for_table_is_ready(instance, "test.consume")
+
+    # Published with no view attached, so the whole backlog is waiting when the query below
+    # subscribes and the client pulls far more of it than the single row the query returns.
+    messages = [json.dumps({"key": key, "value": key}) for key in range(total_expected)]
+    asyncio.run(publish_messages(cluster, "test_stream", "test_subject", messages))
+
+    read = instance.query("SELECT count() FROM test.consume SETTINGS rabbitmq_max_wait_ms = 5000")
+    assert int(read) >= 1, "the direct SELECT read nothing of a backlog of {} messages".format(total_expected)
+
+    logging.debug("consumer state after the direct SELECT: {}".format(
+        asyncio.run(get_consumer_info(cluster, "test_stream", "test_consumer"))))
+
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+
+    result = instance.query_with_retry(
+        "SELECT count(DISTINCT key) FROM test.view",
+        retry_count = 120,
+        sleep_time = 1,
+        check_callback = lambda num_rows: int(num_rows) == total_expected)
+    assert int(result) == total_expected, (
+        "the backlog the direct SELECT did not read was destroyed instead of returned to the broker, "
+        "view holds {} of {} keys".format(result, total_expected))
 
 
 def test_nats_jet_stream_resumes_consuming_after_two_broker_restarts(nats_cluster):

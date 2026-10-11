@@ -762,6 +762,12 @@ size_t ColumnNullable::estimateCardinalityInPermutedRange(const Permutation & pe
     if (range_size <= 1)
         return range_size;
 
+    /// Some nested column types (e.g. Tuple, Object, Array of non-fixed elements) do not implement getDataAt.
+    /// For them, return the upper-bound estimate from the base implementation - the same estimate
+    /// such columns produce when they are not wrapped in Nullable.
+    if (!nested_column->supportsGetDataAt())
+        return IColumn::estimateCardinalityInPermutedRange(permutation, equal_range);
+
     /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
     StringHashSet elements;
     bool has_null = false;
@@ -931,8 +937,10 @@ void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
             "Null map of size {} at offset {} does not match ColumnNullable of size {}",
             map.size(), offset, arr.size());
 
+    /// Any non-zero byte means NULL, so reduce the map before negating it: `negative ^ 2` would
+    /// yield 3 and mark a row the map leaves present.
     for (size_t i = 0, size = map.size(); i < size; ++i)
-        arr[offset + i] |= negative ^ map[i];
+        arr[offset + i] |= negative ^ !!map[i];
 }
 
 void ColumnNullable::applyNullMap(const NullMap & map)
@@ -1056,11 +1064,6 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
-}
-
-void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> *)
-{
-    getNestedColumn().fillFromRowRefsWithRowStore(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &getNullMapData());
 }
 
 void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
@@ -1217,4 +1220,10 @@ bool ColumnNullable::hasOnlyTypeDefaults() const
     return memoryIsByte(data.data(), 0, data.size(), 1);
 }
 
+ColumnPlanes ColumnNullable::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapData().data());
+    planes.children = {&getNestedColumn()};
+    return planes;
+}
 }

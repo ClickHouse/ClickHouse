@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-old-analyzer, no-parallel
-# no-old-analyzer: make_distributed_plan requires the analyzer.
+# Tags: no-fasttest, no-parallel
 # no-parallel: enables a global failpoint that would disrupt other distributed-plan queries.
 
 # Regression test: a worker status-check re-enqueue that throws (e.g. CANNOT_SCHEDULE_TASK on

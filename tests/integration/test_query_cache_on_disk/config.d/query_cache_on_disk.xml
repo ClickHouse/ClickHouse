@@ -1,0 +1,15 @@
+<clickhouse>
+    <filesystem_caches>
+        <cache_for_query_results>
+            <path>cache_for_query_results/</path>
+            <max_size>100Mi</max_size>
+        </cache_for_query_results>
+        <!-- The same, but a split filesystem cache (separate limits for data and system segments), which loads its metadata on
+             startup differently. -->
+        <split_cache_for_query_results>
+            <path>split_cache_for_query_results/</path>
+            <max_size>100Mi</max_size>
+            <use_split_cache>1</use_split_cache>
+        </split_cache_for_query_results>
+    </filesystem_caches>
+</clickhouse>

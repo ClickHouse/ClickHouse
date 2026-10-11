@@ -41,6 +41,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
@@ -161,10 +162,18 @@ void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
     buildSetsForDagImpl(dag, context, /* ordered = */ true);
 }
 
+void buildSetsForDAGKeepingElements(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// The ordered build leaves a set alone when the setting forbids it; the plain build then
+    /// creates it, and skips the sets the first pass already created.
+    buildSetsForDagImpl(dag, context, /* ordered = */ true);
+    buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
 {
     buildSetsForDAG(dag, context);
-    return std::make_shared<ExpressionActions>(std::move(dag));
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
 
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block)
@@ -671,6 +680,11 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
     return true;
 }
 
+/// Both walks below have to look at more than the `FUNCTION` nodes of this DAG. Constant folding turns a
+/// lambda whose captures are all constant into a `COLUMN` node holding a `ColumnFunction` carrier, and the
+/// interesting call - the one that takes the lambda argument - lives in that lambda's own `ActionsDAG`, not
+/// here. `allNodeFunctions` walks the carrier (and the lambdas nested in it) for exactly that reason.
+
 bool isDeterministic(const ActionsDAG::Node * node)
 {
     for (const auto * child : node->children)
@@ -679,16 +693,30 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministic())
+    /// For a `COLUMN` node this also rejects a constant folded from a non-deterministic expression (`now`).
+    if (!node->isDeterministic())
         return false;
 
-    return true;
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
+}
+
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+    {
+        if (!isDeterministicAllowingTopKFilter(child))
+            return false;
+    }
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "__topKFilter")
+        return true;
+
+    /// Same checks as `isDeterministic`, including the walk into a constant-folded lambda carrier: only a
+    /// top-level `__topKFilter` call is allowed, never a non-deterministic function hidden in a lambda body.
+    if (!node->isDeterministic())
+        return false;
+
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
 }
 
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
@@ -699,13 +727,20 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+}
 
-    if (!node->function_base->isDeterministicInScopeOfQuery())
-        return false;
-
-    return true;
+/// `splitFilterNodeForAllowedInputs` owns no DAG: it collects new nodes in `additional_nodes`.
+static const ActionsDAG::Node & addBooleanCondition(
+    const ActionsDAG::Node & node,
+    const DataTypePtr & result_type,
+    ActionsDAG::Nodes & additional_nodes,
+    const ContextPtr & context)
+{
+    ActionsDAG tmp_dag;
+    const auto & res = tmp_dag.addBooleanCondition(node, result_type, context);
+    additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+    return res;
 }
 
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
@@ -737,33 +772,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 /// Expression like (not_allowed AND 256) can't be reduced to (and(256)) because AND requires
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
                 if (!res->result_type->equals(*node->result_type))
-                {
-                    /// Convert to boolean via notEquals(x, 0) instead of a truncating numeric cast.
-                    /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
-                    /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
-                    ///
-                    /// Use removeLowCardinalityAndNullable to get the nested scalar type's default
-                    /// (zero, not NULL).  DataTypeNullable::getDefault() returns Null(), but
-                    /// notEquals(x, NULL) always returns NULL (SQL three-valued logic), which is
-                    /// treated as false and would incorrectly filter out all rows/parts. See
-                    /// #101433 and #103049.  A LowCardinality wrapper must be stripped as well —
-                    /// removeNullable alone leaves LowCardinality(Nullable(X)) unchanged because
-                    /// the outer type is LowCardinality (not Nullable), so its getDefault falls
-                    /// through to the dictionary type's default which is Null again. See #104393.
-                    /// Special case: Nullable(Nothing) — the child is a bare NULL literal.
-                    /// Nothing has no getDefault, so fall back to the Nullable default
-                    /// (Null field), which makes notEquals(x, NULL) -> NULL -> false.  Correct.
-                    ActionsDAG tmp_dag;
-                    auto nested_type = removeLowCardinalityAndNullable(res->result_type);
-                    auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
-                        ? res->result_type->getDefault()
-                        : nested_type->getDefault();
-                    auto zero_column = res->result_type->createColumnConst(0, zero_field);
-                    const auto & zero_node = tmp_dag.addColumn(std::move(zero_column), res->result_type, "0");
-                    auto ne_func = FunctionFactory::instance().get("notEquals", context);
-                    res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
-                    additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
-                }
+                    res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
 
                 return res;
             }
@@ -787,10 +796,15 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 {
                     auto index_hint_dag = index_hint->getActions().clone();
                     ActionsDAG::NodeRawConstPtrs atoms;
+                    /// An atom whose type has no boolean interpretation is dropped, so the hint
+                    /// contributes no filter rather than throwing or inventing a truth value.
                     for (const auto & output : index_hint_dag.getOutputs())
-                        if (const auto * child_copy
-                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result))
+                    {
+                        const auto * child_copy
+                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result);
+                        if (child_copy && child_copy->result_type->canBeUsedInBooleanContext())
                             atoms.push_back(child_copy);
+                    }
 
                     if (!atoms.empty())
                     {
@@ -803,10 +817,11 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                             res = &index_hint_dag.addFunction(func_builder_and, atoms, {});
                         }
 
-                        if (!res->result_type->equals(*node->result_type))
-                            res = &index_hint_dag.addCast(*res, node->result_type, {}, context);
-
                         additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(index_hint_dag)));
+
+                        if (!res->result_type->equals(*node->result_type))
+                            res = &addBooleanCondition(*res, node->result_type, additional_nodes, context);
+
                         return res;
                     }
                 }
@@ -846,26 +861,13 @@ void filterBlockWithPredicate(
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }
 
-std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
+std::optional<Strings> extractConstantStringValues(
+    const ActionsDAG::Node * predicate, const ActionsDAG::Node * column_node, const ContextPtr & context, size_t limit)
 {
-    if (!filter_dag)
-        return {};
-    if (filter_dag->getOutputs().size() != 1)
+    if (!predicate || !column_node)
         return {};
 
-    const ActionsDAG::Node * path_node = nullptr;
-    for (const auto * input : filter_dag->getInputs())
-    {
-        if (input->result_name == "_path")
-        {
-            path_node = input;
-            break;
-        }
-    }
-    if (!path_node)
-        return {};
-
-    auto variants = evaluateExpressionOverConstantCondition(filter_dag->getOutputs().at(0), {path_node}, context, limit);
+    auto variants = evaluateExpressionOverConstantCondition(predicate, {column_node}, context, limit);
 
     if (!variants)
         return {};
@@ -883,10 +885,70 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
 
         const auto & column = block.at(0).column;
         for (size_t i = 0; i < column->size(); ++i)
-            result.push_back((*column)[i].safeGet<String>());
+        {
+            Field field = (*column)[i];
+            /// A NULL variant (`col IN (NULL, 'a')` over a Nullable column) never matches a
+            /// String value, so dropping it keeps the result a valid over-approximation.
+            if (field.isNull())
+                continue;
+            result.push_back(field.safeGet<String>());
+        }
     }
 
     return result;
+}
+
+std::optional<Strings> extractConstantStringValuesForColumn(
+    const ActionsDAG::Node * predicate, const String & column_name, const ContextPtr & context, size_t limit)
+{
+    if (!predicate)
+        return {};
+
+    /// Find the input the column is read through. Looking inside the predicate rather than at
+    /// the whole DAG's inputs is equivalent - an input the predicate does not use constrains
+    /// nothing - and lets the caller pass a bare predicate node.
+    const ActionsDAG::Node * column_node = nullptr;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(predicate);
+    while (!nodes.empty() && !column_node)
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name)
+        {
+            column_node = node;
+            break;
+        }
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+    }
+
+    return extractConstantStringValues(predicate, column_node, context, limit);
+}
+
+std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
+{
+    if (!filter_dag)
+        return {};
+    if (filter_dag->getOutputs().size() != 1)
+        return {};
+
+    const ActionsDAG::Node * path_node = nullptr;
+    for (const auto * input : filter_dag->getInputs())
+    {
+        if (input->result_name == "_path")
+        {
+            path_node = input;
+            break;
+        }
+    }
+
+    return extractConstantStringValues(filter_dag->getOutputs().at(0), path_node, context, limit);
 }
 
 DataPartsVector filterDataPartsWithExpression(

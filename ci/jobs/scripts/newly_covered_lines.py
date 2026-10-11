@@ -8,10 +8,23 @@ input - but the global comparison is exactly what such a PR wants to see:
 which lines had zero hits on master and are executed now (what the new tests
 add), and which lines lost coverage (baseline noise or removed/disabled tests).
 
-Only `SF:`/`DA:` records are consulted. A line is compared only when both
-tracefiles instrument it; with an identical binary the instrumented line sets
-match, so lines present on one side only are reported as a diagnostic count
-rather than as coverage transitions.
+Only `SF:`/`DA:` records are consulted.
+
+Lines that fire only occasionally on master (background/async code) would show
+up as false transitions against a single baseline, so the analysis accepts
+extra older master baselines and requires every comparable baseline to agree:
+a line is newly covered only if it has 0 hits in all of them, and lost only if
+it has >0 hits in all of them.
+
+The extra baselines come from older master commits, whose source can differ
+from the PR's merge base, shifting line numbers. Instead of remapping, a
+baseline votes on a file only when its instrumented line set for that file is
+identical to the current run's: the DA line set comes from the static coverage
+mapping of the compiled code, not from execution, so equal sets mean the file
+did not change in between and the line numbers align; unequal sets mean the
+file changed and that baseline abstains for that file. Files on which no
+baseline can vote (including the primary one) are excluded and reported as a
+diagnostic count.
 """
 
 from pathlib import Path
@@ -86,55 +99,70 @@ def _render_transitions(title: str, per_file: dict[str, list[int]], out: list[st
     out.append("")
 
 
-def generate_report(current_info: str, baseline_info: str, output_path: str) -> dict:
+def generate_report(
+    current_info: str,
+    baseline_info: str,
+    output_path: str,
+    extra_baseline_infos: tuple[str, ...] = (),
+) -> dict:
     """Write the transitions report to output_path and return the totals.
 
     Returns {"newly_covered": N, "newly_covered_files": F,
              "lost_coverage": M, "lost_coverage_files": G,
-             "one_sided_lines": K}.
+             "baselines_used": B, "excluded_lines": K}.
     """
-    baseline = parse_tracefile(baseline_info)
+    baselines = [parse_tracefile(baseline_info)] + [
+        parse_tracefile(p) for p in extra_baseline_infos
+    ]
     current = parse_tracefile(current_info)
 
     newly_covered: dict[str, list[int]] = {}
     lost_coverage: dict[str, list[int]] = {}
-    one_sided_lines = 0
+    # Lines in files no baseline could vote on (changed between the baseline
+    # commits and the PR, or missing from every baseline).
+    excluded_lines = 0
 
     for source_file, current_lines in current.items():
-        baseline_lines = baseline.get(source_file)
-        if baseline_lines is None:
-            one_sided_lines += len(current_lines)
+        current_line_set = current_lines.keys()
+        voters = [
+            b[source_file]
+            for b in baselines
+            if source_file in b and b[source_file].keys() == current_line_set
+        ]
+        if not voters:
+            excluded_lines += len(current_lines)
             continue
         for lineno, count in current_lines.items():
-            base_count = baseline_lines.get(lineno)
-            if base_count is None:
-                one_sided_lines += 1
-            elif base_count == 0 and count > 0:
+            if count > 0 and all(v[lineno] == 0 for v in voters):
                 newly_covered.setdefault(source_file, []).append(lineno)
-            elif base_count > 0 and count == 0:
+            elif count == 0 and all(v[lineno] > 0 for v in voters):
                 lost_coverage.setdefault(source_file, []).append(lineno)
 
-    for source_file, baseline_lines in baseline.items():
-        current_lines = current.get(source_file)
-        if current_lines is None:
-            one_sided_lines += len(baseline_lines)
-        else:
-            one_sided_lines += len(baseline_lines.keys() - current_lines.keys())
-
     out: list[str] = [
-        "Line coverage transitions against the master baseline",
-        f"Baseline tracefile: {baseline_info}",
+        "Line coverage transitions against the master baselines",
         f"Current tracefile : {current_info}",
+        f"Baseline tracefiles ({len(baselines)}): "
+        + ", ".join([baseline_info, *extra_baseline_infos]),
+        "A transition is counted only when every baseline whose instrumented",
+        "line set matches the current run for that file agrees.",
         "",
     ]
-    _render_transitions("Newly covered (0 hits on master, >0 hits now)", newly_covered, out)
-    _render_transitions("Lost coverage (>0 hits on master, 0 hits now)", lost_coverage, out)
-    if one_sided_lines:
+    _render_transitions(
+        "Newly covered (0 hits in every master baseline, >0 hits now)",
+        newly_covered,
+        out,
+    )
+    _render_transitions(
+        "Lost coverage (>0 hits in every master baseline, 0 hits now)",
+        lost_coverage,
+        out,
+    )
+    if excluded_lines:
         out.append(
-            f"Diagnostic: {one_sided_lines} instrumented lines are present in only "
-            "one tracefile. With an identical binary this indicates path "
-            "normalization or instrumentation drift; these lines are not counted "
-            "as transitions."
+            f"Diagnostic: {excluded_lines} instrumented lines are in files no "
+            "baseline could vote on (instrumented line set differs from every "
+            "baseline, or the file is absent there); they are not counted as "
+            "transitions."
         )
     Path(output_path).write_text("\n".join(out) + "\n", encoding="utf-8")
 
@@ -143,5 +171,6 @@ def generate_report(current_info: str, baseline_info: str, output_path: str) -> 
         "newly_covered_files": len(newly_covered),
         "lost_coverage": sum(len(v) for v in lost_coverage.values()),
         "lost_coverage_files": len(lost_coverage),
-        "one_sided_lines": one_sided_lines,
+        "baselines_used": len(baselines),
+        "excluded_lines": excluded_lines,
     }

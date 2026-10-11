@@ -69,7 +69,9 @@ void DuplicateOrderByFromSubqueriesData::visit(ASTSelectQuery & select_query, AS
             || select_query.limitByOffset()
             || select_query.limitByLength()
             || select_query.limitLength()
-            || select_query.limitOffset())
+            || select_query.limitOffset()
+            || select_query.limitAfter()
+            || select_query.limitUntil())
         {
             return;
         }
