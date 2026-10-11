@@ -1137,6 +1137,25 @@ bool SchemaConverter::processSubtreeVariant(TraversalNode & node, size_t depth)
     if (!node.element->__isset.num_children || node.element->num_children < 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed `Parquet` `VARIANT` column {}: expected at least `metadata` and `value` children", node.getNameForLogging());
 
+    const auto & variant_logical_type = node.element->logicalType.VARIANT;
+    if ((node.requested || !requested_variant_subcolumns.empty())
+        && variant_logical_type.__isset.specification_version && variant_logical_type.specification_version != 1)
+    {
+        /// Like for unsupported primitive types, schema inference can skip the column. When reading,
+        /// a requested column must not silently come out empty.
+        if (!sample_block && options.format.parquet.skip_columns_with_unsupported_types_in_schema_inference)
+        {
+            for (Int32 i = 0; i < node.element->num_children; ++i)
+                skipSchemaSubtree(depth + 1);
+            return true;
+        }
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Parquet column {} is a variant with specification version {}, but only version 1 is supported",
+            node.getNameForLogging(),
+            Int16(variant_logical_type.specification_version));
+    }
+
     bool has_metadata = false;
     bool has_value = false;
     size_t metadata_primitive_idx = UINT64_MAX;
