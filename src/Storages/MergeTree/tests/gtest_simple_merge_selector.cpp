@@ -628,6 +628,38 @@ TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesSmallPartsMinCountAfterTrim
         << "min_age_to_force_merge must still override small_parts_min_count after trimming";
 }
 
+/// Same as above, but the force merge comes from `min_partition_age_to_force_merge` alone
+/// (`min_age_to_force_merge` is disabled). An idle partition passes `allow` through partition
+/// age, so the post-trim `small_parts_min_count` re-check must not filter the range back out
+/// until `small_parts_max_age` expires.
+TEST(SimpleMergeSelector, MinPartitionAgeToForceMergeOverridesSmallPartsMinCountAfterTrim)
+{
+    /// Same [9 MiB, 7 x 64 KiB] geometry, all parts have age 200: below `small_parts_max_age` (600).
+    std::vector<size_t> sizes{9 * MiB};
+    sizes.resize(8, 64 * 1024);
+    auto parts_range = makePartsRange(sizes, /*age=*/200);
+    /// The partition has not received inserts for 200 seconds: past `min_partition_age_to_force_merge` (100).
+    auto statistics = makeStatistics(parts_range, /*partition_min_age=*/200);
+
+    SimpleMergeSelector::Settings settings;
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
+    settings.base = 5;
+    settings.small_parts_threshold = 10 * MiB;
+    settings.small_parts_min_count = 8;
+    settings.small_parts_max_age = 600;
+    settings.min_age_to_force_merge = 0;
+    settings.min_partition_age_to_force_merge = 100;
+    settings.partitions_stats = &statistics;
+    settings.enable_heuristic_to_remove_small_parts_at_right = true;
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts_range}, constraints, nullptr);
+
+    ASSERT_FALSE(selected.empty())
+        << "min_partition_age_to_force_merge must still override small_parts_min_count after trimming";
+}
+
 
 /// Regression test for the *untrimmed* small-parts gate in `allow` (the `max_age` check).
 ///
