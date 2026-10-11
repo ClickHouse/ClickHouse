@@ -9,6 +9,9 @@
 namespace DB
 {
 
+/// Snapshot of the deduplication hashes stored in Keeper under `dir_name`.
+/// An insert checks its hashes here before the Keeper commit, because the commit reports only one duplicate.
+/// Each refresh makes a new snapshot with a larger version. `truncate` drops the snapshot and keeps the version.
 template <typename TStorage>
 class AsyncBlockIDsCache
 {
@@ -24,7 +27,16 @@ public:
 
     void stop();
 
-    std::vector<DeduplicationHash> detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 & last_version);
+    struct Conflicts
+    {
+        std::vector<DeduplicationHash> hashes;
+        /// Version of the checked snapshot.
+        UInt64 version = 0;
+    };
+
+    /// Returns the hashes from `deduplication_hashes` that are in the snapshot.
+    /// Waits up to `update_wait` for a snapshot newer than `wait_newer_than`. Pass 0 to take any loaded snapshot.
+    Conflicts detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 wait_newer_than);
 
     void triggerCacheUpdate();
 
