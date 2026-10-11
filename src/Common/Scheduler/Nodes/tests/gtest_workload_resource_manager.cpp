@@ -3000,7 +3000,25 @@ TEST(SchedulerWorkloadResourceManager, RestoreRecreatesHiddenEntities)
     EXPECT_EQ(t.storage.getMasterThreadResourceName(), "sql_cpu");
 
     // A reference to an entity that exists in no layer still fails the restore
-    EXPECT_THROW(t.sql_storage->restoreFromString("CREATE WORKLOAD orphan IN missing"), DB::Exception);
+    EXPECT_THROW(t.sql_storage->restoreAccumulated("CREATE WORKLOAD orphan IN missing"), DB::Exception);
+    EXPECT_FALSE(t.storage.has("orphan"));
+}
+
+// Workloads on a parent cycle, hidden in persisted data and backed up, are restored hidden again
+TEST(SchedulerWorkloadResourceManager, RestoreRecreatesHiddenParentCycle)
+{
+    ResourceTest t;
+    EXPECT_NO_THROW(t.sql_storage->restoreAccumulated(
+        "CREATE RESOURCE io (READ DISK d); CREATE WORKLOAD a IN b; CREATE WORKLOAD b IN a; CREATE WORKLOAD c"));
+    EXPECT_TRUE(t.storage.has("io"));
+    EXPECT_TRUE(t.storage.has("c"));
+    EXPECT_FALSE(t.storage.has("a"));
+    EXPECT_FALSE(t.storage.has("b"));
+
+    // Breaking the cycle makes them visible
+    t.query("CREATE OR REPLACE WORKLOAD b");
+    EXPECT_TRUE(t.storage.has("a"));
+    EXPECT_TRUE(t.storage.has("b"));
 }
 
 // A restore rejects an entity of another kind than the inherited entity of the same name, before creating anything.

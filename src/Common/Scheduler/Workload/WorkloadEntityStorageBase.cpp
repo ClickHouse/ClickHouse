@@ -614,11 +614,22 @@ bool WorkloadEntityStorageBase::validateAndStoreEntity(
         }
 
         // References are resolved within own and inherited entities, inherited first, so entities of outer layers
-        // cannot be referenced
+        // cannot be referenced. A restore recreates entities one by one and treats references like a load of persisted
+        // data: a missing or wrong-kind target or a parent cycle hides the workload instead of failing the restore
+        // (references of the whole backup are checked before anything is created, see `restoreEntities`).
         forEachReference(create_entity_query,
-            [this, workload] (const String & target, const String & source, ReferenceType type)
+            [this, workload, restore] (const String & target, const String & source, ReferenceType type)
             {
                 ASTPtr target_entity = findKnownEntity(target, own_entities);
+                if (restore)
+                {
+                    if (type == ReferenceType::ForResource && typeid_cast<ASTCreateResourceQuery *>(target_entity.get()))
+                    {
+                        WorkloadSettings validator;
+                        validator.initFromChanges(workload->changes, target);
+                    }
+                    return;
+                }
                 if (!target_entity)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity '{}' references another workload entity '{}' that doesn't exist", source, target);
 
