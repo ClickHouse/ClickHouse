@@ -15,7 +15,9 @@ are built, because each build is a few hundred translation units of full LTO. Th
 build them locally as described in `utils/wasm-parser/README.md`.
 
 Both modules are published under the `CH_WASM_PARSER_BIN` artifact, which is what a consumer -
-a browser, or a Node.js tool - downloads.
+a browser, or a Node.js tool - downloads. The same job packs `@clickhouse/wasm-parser` from
+`utils/wasm-parser/npm` into a tarball next to those modules; it is not published to the npm
+registry.
 """
 
 import os
@@ -144,6 +146,36 @@ def main():
         published = f"{build_dir}/{artifact}"
         shutil.copy2(f"{config_dir}/parser.wasm", published)
         results[-1].set_info(f"{artifact}: {Path(published).stat().st_size} bytes")
+
+    both_wasm = Path(f"{build_dir}/parser.wasm").is_file() and Path(
+        f"{build_dir}/parser-no-formatting-no-dcl.wasm"
+    ).is_file()
+    if both_wasm:
+        # Staging and the tarball live under `build_dir` (`ci/tmp`), not under
+        # `utils/wasm-parser`, so the source-tree check below still holds.
+        results.append(
+            Result.from_commands_run(
+                name="Pack npm tarball",
+                command=[
+                    f"node {source_dir}/npm/scripts/pack.mjs"
+                    f" --wasm-dir {build_dir} --out-dir {build_dir}",
+                    f"node {source_dir}/npm/test.mjs --wasm-dir {build_dir}",
+                ],
+                with_log=True,
+            )
+        )
+    else:
+
+        def pack_npm_missing():
+            print(
+                "Need parser.wasm and parser-no-formatting-no-dcl.wasm under "
+                f"{build_dir} to pack @clickhouse/wasm-parser"
+            )
+            return False
+
+        results.append(
+            Result.from_commands_run(name="Pack npm tarball", command=pack_npm_missing)
+        )
 
     results.append(check_source_tree_is_clean())
 
