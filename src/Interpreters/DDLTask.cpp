@@ -18,6 +18,7 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
@@ -721,6 +722,12 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
         /// Update database name with actual name of local database
         chassert(!ddl_query->database);
         ddl_query->setDatabase(database->getDatabaseName());
+    }
+    else if (auto * rename = query->as<ASTRenameQuery>(); rename && !rename->database)
+    {
+        /// The entry may still name the initiator's local database.
+        rename->resetDatabases();
+        rename->setDatabaseIfNotExists(database->getDatabaseName());
     }
     formatRewrittenQuery(context);
 }
