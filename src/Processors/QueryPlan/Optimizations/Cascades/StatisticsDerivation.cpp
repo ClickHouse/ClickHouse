@@ -807,6 +807,8 @@ ExpressionStatistics StatisticsDerivation::deriveDistinctStatistics(const Distin
     /// bounds its distinct rows below the search value: that bound is then the estimate.
     result.rows_unknown = (!shared.estimated_rows || input_statistics.rows_unknown) && !(input_statistics.estimated_distinct_bound < groups);
     result.min_row_count = input_statistics.min_row_count > 0 ? 1 : 0;
+    /// The distinct rows are a search value of their own, not the product of the inputs of a join below.
+    result.search_value_is_join_product = false;
     /// Every output row is distinct; an unknown result only proves its row bound, its row count is a
     /// search value.
     result.estimated_distinct_bound = result.rows_unknown ? result.max_row_count : result.estimated_row_count;

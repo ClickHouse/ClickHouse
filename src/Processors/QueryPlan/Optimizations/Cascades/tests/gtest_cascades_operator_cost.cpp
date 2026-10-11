@@ -3,6 +3,13 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/logger_useful.h>
 #include <Core/Block.h>
 
 using namespace DB;
@@ -133,4 +140,53 @@ TEST(CascadesOperatorCost, UnknownResultGatherPricedOnBound)
         .config = config,
     };
     EXPECT_DOUBLE_EQ(estimateOperatorCost(known_inputs, nullptr).sequential, config.exchange_fixed_overhead + config.funnel_sequential_cost_per_row * 0.3);
+}
+
+/// A `DISTINCT` derives a search value of its own, so its unknown result is no longer the product of
+/// the inputs of the unknown join below. Without clearing that mark, a gather of the distinct rows
+/// would be priced at the cap for a join product, as if it moved the raw join result.
+TEST(CascadesOperatorCost, DistinctOverUnknownJoinGatheredOnItsOwnSearchValue)
+{
+    Memo memo(getLogger("gtest_cascades_operator_cost"));
+
+    ColumnWithTypeAndName column;
+    column.name = "x";
+    column.type = std::make_shared<DataTypeUInt64>();
+    column.column = column.type->createColumn();
+    auto header = std::make_shared<const Block>(Block{{column}});
+
+    auto join_result = std::make_shared<GroupExpression>(QueryPlanStepPtr{});
+    const auto join_group_id = memo.addGroup(join_result);
+    auto join_stats = makeStats(1000, 10);
+    join_stats.rows_unknown = true;
+    join_stats.search_value_is_join_product = true;
+    join_stats.max_row_count = 1e12;
+    memo.getGroup(join_group_id)->statistics = join_stats;
+
+    auto distinct = std::make_shared<GroupExpression>(
+        std::make_unique<DistinctStep>(header, DistinctStep::Settings{}, /*limit_hint_=*/0, Names{"x"}, /*pre_distinct_=*/false));
+    distinct->inputs.push_back({join_group_id, join_result->properties});
+    const auto distinct_group_id = memo.addGroup(distinct);
+
+    const auto lookup = createEmptyStatistics();
+    StatisticsDerivation(memo, *lookup).deriveStatistics(distinct_group_id);
+    const auto & distinct_stats = *memo.getGroup(distinct_group_id)->statistics;
+    ASSERT_TRUE(distinct_stats.rows_unknown);
+    EXPECT_FALSE(distinct_stats.search_value_is_join_product);
+
+    CostConfig config;
+    GatherExchangeStep gather(header, 3);
+    CostInputs inputs{
+        .step = &gather,
+        .output_stats = distinct_stats,
+        .input_stats = {},
+        .parallelism = 1.0,
+        .node_count = 3.0,
+        .exchange_rows_override = {},
+        .unknown_exchange_rows = 100000,
+        .config = config,
+    };
+    EXPECT_DOUBLE_EQ(
+        estimateOperatorCost(inputs, nullptr).sequential,
+        config.exchange_fixed_overhead + config.funnel_sequential_cost_per_row * distinct_stats.estimated_row_count);
 }
