@@ -204,9 +204,8 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     return filter_condition;
 }
 
-static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
+bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
 {
-    /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
     return
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
