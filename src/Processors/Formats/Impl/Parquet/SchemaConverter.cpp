@@ -1770,7 +1770,10 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node, size_t depth)
     if (num_children > file_metadata.schema.size() - schema_idx)
         return false;
 
-    const bool group_annotated_variant = node.element->logicalType.__isset.VARIANT;
+    /// Groups annotated with the `VARIANT` logical type are read by `processSubtreeVariant`, which
+    /// runs before this function. This one only reads variants recognized by structure.
+    if (node.element->logicalType.__isset.VARIANT)
+        return false;
 
     enum ChildRole : size_t { Metadata = 0, Value = 1, TypedValue = 2, NumRoles = 3 };
 
@@ -1813,7 +1816,7 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node, size_t depth)
         return isPrimitiveNode(element)
             && element.type == parq::Type::BYTE_ARRAY
             && element.repetition_type != parq::FieldRepetitionType::REPEATED
-            && (group_annotated_variant || (!element.logicalType.__isset.STRING && !element.__isset.converted_type));
+            && !element.logicalType.__isset.STRING && !element.__isset.converted_type;
     };
 
     if (!is_variant_blob_leaf(*schema_idx_of_role[Metadata]))
@@ -1829,17 +1832,19 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node, size_t depth)
     /// Spark 4.0 writes variant columns without the `VARIANT` logical type, so they can only be
     /// recognized by structure. Before this was supported, such groups were read as `Tuple`, hence
     /// the setting. An explicit `Dynamic`/`JSON` request is not ambiguous and bypasses it.
-    if (!group_annotated_variant && !node.type_hint && !options.format.parquet.detect_variant_by_structure)
+    if (!node.type_hint && !options.format.parquet.detect_variant_by_structure)
         return false;
 
     std::optional<String> unsupported;
-    if (group_annotated_variant && node.element->logicalType.VARIANT.__isset.specification_version
-        && node.element->logicalType.VARIANT.specification_version != 1)
-        unsupported = fmt::format(
-            "a variant with specification version {}, but only version 1 is supported",
-            Int16(node.element->logicalType.VARIANT.specification_version));
-    else if (schema_idx_of_role[TypedValue].has_value())
+    if (schema_idx_of_role[TypedValue].has_value())
         unsupported = "a shredded variant (it has a `typed_value` field), which is not supported yet";
+
+    /// Typed paths of a `JSON` column, such as `v.a` of `v JSON(a Int64)`, are requested from the
+    /// format directly, without the parent column (see `filterTupleColumnsToRead`).
+    std::vector<std::pair<size_t, String>> requested_subcolumns;
+    if (!node.requested)
+        requested_subcolumns = collectRequestedSubcolumns(node.name);
+    const bool read_column = node.requested || !requested_subcolumns.empty();
 
     size_t primitive_start = primitive_columns.size();
     size_t output_start = output_columns.size();
@@ -1850,12 +1855,12 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node, size_t depth)
     for (size_t i = 0; i < num_children; ++i)
     {
         TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
-        subnode.requested = node.requested && !unsupported.has_value();
+        subnode.requested = read_column && !unsupported.has_value();
         processSubtree(subnode, depth + 1);
         output_idx_of_role[role_of_child[i]] = subnode.output_idx;
     }
 
-    if (!node.requested)
+    if (!read_column)
         return true;
 
     if (unsupported.has_value())
@@ -1874,14 +1879,47 @@ bool SchemaConverter::processSubtreeDynamic(TraversalNode & node, size_t depth)
         return true;
     }
 
-    node.output_idx = output_columns.size();
+    /// Only subcolumns are requested, so the type of the parent column is not known here. Read it
+    /// as `JSON` (only `JSON` subcolumns are requested directly) and extract the subcolumns from it.
+    DataTypePtr type;
+    if (node.requested)
+        type = read_as_json ? node.type_hint : std::make_shared<DataTypeDynamic>();
+    else
+        type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+
+    size_t whole_column_output_idx = output_columns.size();
     OutputColumnInfo & output = output_columns.emplace_back();
     output.name = node.name;
     output.primitive_start = primitive_start;
     output.primitive_end = primitive_columns.size();
-    output.input_type = read_as_json ? node.type_hint : std::make_shared<DataTypeDynamic>();
-    output.output_type = output.input_type;
+    output.input_type = type;
+    output.output_type = type;
     output.nested_columns = {output_idx_of_role[Metadata].value(), output_idx_of_role[Value].value()};
+    for (size_t primitive_idx = primitive_start; primitive_idx < primitive_columns.size(); ++primitive_idx)
+        addPrimitiveDependency(output, primitive_idx);
+
+    if (node.requested)
+    {
+        node.output_idx = whole_column_output_idx;
+        return true;
+    }
+
+    for (const auto & [idx_in_output_block, subcolumn_name] : requested_subcolumns)
+    {
+        const auto & requested_column = sample_block->getByPosition(idx_in_output_block);
+
+        OutputColumnInfo & subcolumn_output = output_columns.emplace_back();
+        subcolumn_output.idx_in_output_block = idx_in_output_block;
+        subcolumn_output.name = requested_column.name;
+        subcolumn_output.primitive_start = primitive_start;
+        subcolumn_output.primitive_end = primitive_columns.size();
+        subcolumn_output.input_type = requested_column.type;
+        subcolumn_output.output_type = requested_column.type;
+        subcolumn_output.source_kind = OutputColumnInfo::SourceKind::OutputSubcolumn;
+        subcolumn_output.source_idx = whole_column_output_idx;
+        subcolumn_output.source_subcolumn_name = subcolumn_name;
+        addOutputDependencies(subcolumn_output, output_columns.at(whole_column_output_idx));
+    }
     return true;
 }
 

@@ -4062,6 +4062,27 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return reuse_or_cache_output(std::move(res));
     }
 
+    if (output_info.source_kind == OutputColumnInfo::SourceKind::OutputSubcolumn)
+    {
+        const OutputColumnInfo & source_info = output_columns.at(output_info.source_idx);
+        /// `formOutputColumn` caches the source column, so it is formed once for all its subcolumns.
+        ColumnPtr source_column = formOutputColumn(row_subgroup, output_info.source_idx, num_rows);
+
+        auto subcolumn = source_info.output_type->tryGetSubcolumn(output_info.source_subcolumn_name, source_column);
+        auto subcolumn_type = source_info.output_type->tryGetSubcolumnType(output_info.source_subcolumn_name);
+        if (!subcolumn || !subcolumn_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "`Parquet` column {} is read as {}, which has no subcolumn {}",
+                source_info.name,
+                source_info.output_type->getName(),
+                output_info.source_subcolumn_name);
+
+        res = IColumn::mutate(castColumn({subcolumn, subcolumn_type, output_info.name}, output_info.output_type));
+        check_output_row_count();
+        return reuse_or_cache_output(std::move(res));
+    }
+
     /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
     /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
     /// the group null map. Every leaf shares the same def-level null map (the subtree is

@@ -253,6 +253,8 @@ struct Reader
             None,
             ParsedObject,
             Variant,
+            /// A subcolumn of the output column `source_idx`, which is formed in full first.
+            OutputSubcolumn,
         };
 
         String name; // possibly mapped by ColumnMapper
