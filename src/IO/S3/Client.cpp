@@ -906,6 +906,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 // do not increment S3ReadRequestsErrors/S3WriteRequestsErrors here, it has been accounted in IO/S3/PocoHTTPClient.cpp
 
+                /// Unless retries are coordinated across threads, the SDK has already retried this error.
+                if (!client_configuration.s3_slow_all_threads_after_retryable_error)
+                    break;
+
                 /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                 if (!client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                     break;
@@ -1120,9 +1124,9 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
 
     /// The endpoint is taken from an attacker-controllable 301 response (Location header or
     /// <Endpoint> XML), so validate it against RemoteHostFilter before following the redirect,
-    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). This mirrors
-    /// the Poco 307 path in PocoHTTPClient. Throws UNACCEPTABLE_URL.
-    client_configuration.remote_host_filter.checkURL(result.uri);
+    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). Unlike the Poco 307
+    /// path in PocoHTTPClient, this also accepts `<s3_bucket>` entries. Throws UNACCEPTABLE_URL.
+    result.checkRemoteHostFilter(client_configuration.remote_host_filter);
 
     return result;
 }

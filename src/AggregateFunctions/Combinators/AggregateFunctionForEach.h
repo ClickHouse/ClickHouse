@@ -223,6 +223,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     template <bool up_to_state>
     void destroyImpl(AggregateDataPtr __restrict place) const noexcept
     {
@@ -278,14 +283,16 @@ public:
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
-        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        /// An empty array adds nothing and needs no nested states.
+        if (begin == end)
+            return;
 
-        char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = begin; i < end; ++i)
-        {
-            nested_func->add(nested_state, nested.data(), i, arena);
-            nested_state += nested_size_of_data;
-        }
+        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        /// For a single element the direct call is cheaper than the batch call.
+        if (end - begin >= 2)
+            nested_func->addBatchConsecutivePlaces(begin, end, state.array_of_aggregate_datas, nested_size_of_data, nested.data(), arena);
+        else
+            nested_func->add(state.array_of_aggregate_datas, nested.data(), begin, arena);
     }
 
     /// The row-at-a-time `add` rejects a row whose array arguments do not share boundaries. The
@@ -323,14 +330,14 @@ public:
         size_t begin = offsets[row - 1];
         size_t end = offsets[row];
         assertArraySizesMatch(trailing_offsets, row, begin, end);
-        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        if (begin == end)
+            return;
 
-        char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = begin; i < end; ++i)
-        {
-            nested_func->add(nested_state, nested, i, arena);
-            nested_state += nested_size_of_data;
-        }
+        AggregateFunctionForEachData & state = ensureAggregateData(place, end - begin, *arena);
+        if (end - begin >= 2)
+            nested_func->addBatchConsecutivePlaces(begin, end, state.array_of_aggregate_datas, nested_size_of_data, nested, arena);
+        else
+            nested_func->add(state.array_of_aggregate_datas, nested, begin, arena);
     }
 
     /// Optimized batch aggregation for rows belonging to the same place.
@@ -473,7 +480,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         const AggregateFunctionForEachData & state = data(place);
         writeBinaryLittleEndian(state.dynamic_array_size, buf);
@@ -481,7 +488,10 @@ public:
         const char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->serialize(nested_state, buf);
+            /// `isVersioned` and `getDefaultVersion` forward to the nested function, so the version
+            /// is in the nested function's terms already. `deserialize` forwards it, so dropping it
+            /// here would desynchronize the written payload from the later read.
+            nested_func->serialize(nested_state, buf, version);
             nested_state += nested_size_of_data;
         }
     }
