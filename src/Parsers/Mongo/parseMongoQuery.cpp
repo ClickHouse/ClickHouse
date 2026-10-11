@@ -1,6 +1,7 @@
 #include <Parsers/Mongo/parseMongoQuery.h>
 
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/ParserSetQuery.h>
@@ -20,6 +21,49 @@ extern const int SYNTAX_ERROR;
 
 namespace Mongo
 {
+
+namespace
+{
+
+void normalizeIntegerField(Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Int64:
+            if (field.safeGet<Int64>() >= 0)
+                field = Field(static_cast<UInt64>(field.safeGet<Int64>()));
+            break;
+        case Field::Types::Array:
+            for (auto & element : field.safeGet<Array>())
+                normalizeIntegerField(element);
+            break;
+        case Field::Types::Tuple:
+            for (auto & element : field.safeGet<Tuple>())
+                normalizeIntegerField(element);
+            break;
+        default:
+            break;
+    }
+}
+
+/** Stores every non-negative integer literal of the query as `UInt64`, the way the ClickHouse
+  * parser reads it. JSON gives a number the type `Int64` whatever its sign, and the type of a
+  * literal decides the name of the constant in the query tree: `2` stored as `Int64` becomes
+  * `2_Int8`. A query that is sent to another server - a replica of parallel replicas, a shard of
+  * a `Distributed` table - travels as text, where the same `2` is parsed back as `UInt8`, and the
+  * header the remote side returns would not match the one the initiator expects.
+  * The parsers of the dialect inspect the types of the literals they build, so this is done once,
+  * on the finished query.
+  */
+void normalizeIntegerLiterals(IAST & ast)
+{
+    if (auto * literal = ast.as<ASTLiteral>())
+        normalizeIntegerField(literal->value);
+    for (const auto & child : ast.children)
+        normalizeIntegerLiterals(*child);
+}
+
+}
 
 ASTPtr tryParseMongoQuery(
     IParser & parser,
@@ -81,6 +125,7 @@ ASTPtr tryParseMongoQuery(
         out_error_message = "Cannot parse the Mongo query";
         return nullptr;
     }
+    normalizeIntegerLiterals(*res);
     return res;
 }
 
@@ -159,6 +204,7 @@ ASTPtr parseMongoQuery(
     const bool parse_res = parser.parse(token_iterator, res, expected);
     if (!parse_res || !res)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse the Mongo query");
+    normalizeIntegerLiterals(*res);
     return res;
 }
 
