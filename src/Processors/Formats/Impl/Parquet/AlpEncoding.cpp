@@ -140,6 +140,16 @@ struct AlpPage
         if (body_size / 4 < num_vectors)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ALP page is too short for the offsets of its {} vectors: {} bytes", num_vectors, data.size());
+
+        /// The vectors are stored back to back right after the offset array. `decodeVector` checks
+        /// that each vector ends exactly where the next one begins.
+        if (num_vectors > 0)
+        {
+            const size_t first_offset = unalignedLoadLittleEndian<UInt32>(body);
+            if (first_offset != num_vectors * 4)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid offset of the first ALP vector: {}, expected {}", first_offset, num_vectors * 4);
+        }
     }
 
     size_t vectorLength(size_t vector_idx) const
@@ -184,6 +194,16 @@ struct AlpPage
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ALP vector {} needs {} bytes, but the page has only {} bytes left",
                 vector_idx, vectorHeaderSize<T>() + packed_size + exceptions_size, vectorHeaderSize<T>() + available);
+
+        if (vector_idx + 1 < num_vectors)
+        {
+            const size_t expected_next_offset = offset + vectorHeaderSize<T>() + packed_size + exceptions_size;
+            const size_t next_offset = unalignedLoadLittleEndian<UInt32>(body + (vector_idx + 1) * 4);
+            if (next_offset != expected_next_offset)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid offset of ALP vector {}: {}, expected {} (the end of the previous vector)",
+                    vector_idx + 1, next_offset, expected_next_offset);
+        }
 
         /// Two separate multiplications, in this order, as the specification requires.
         const T multiplier_factor = Traits::pow10[factor];
@@ -374,6 +394,11 @@ public:
     /// unspecified state, if the encoded page would be bigger than the values in `PLAIN`.
     bool encodePage(const T * values, size_t num_values, PaddedPODArray<char> & out)
     {
+        /// A page may have only definition and repetition levels. Don't choose the candidates
+        /// without values, leave that to the first page that has them.
+        if (num_values == 0)
+            return false;
+
         /// The candidate parameters are chosen from the first page of the column chunk, as the
         /// specification suggests, and searched for again only if a page doesn't compress with them.
         if (candidates.empty())
@@ -522,7 +547,7 @@ private:
         struct Candidate
         {
             ExponentAndFactor params;
-            UInt32 wins;
+            UInt32 wins = 0;
         };
         std::vector<Candidate> found;
         for (UInt8 exponent = 0; exponent <= Traits::max_exponent; ++exponent)
