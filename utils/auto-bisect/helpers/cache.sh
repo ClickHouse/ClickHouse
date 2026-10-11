@@ -23,6 +23,11 @@ CACHE_DIR="${CACHE_DIR:-$PARENT_DIR/data/file-cache}"
 CACHE_STORAGE="$CACHE_DIR/storage"
 CACHE_METADATA="$CACHE_DIR/metadata.json"
 SCHEMA="id String, name String, path String, tag String, size UInt64, added UInt64"
+# The metadata is a standalone JSON file, so `clickhouse local` does not need its
+# persistent default directory: `--tmp` keeps an unrelated lock or broken table
+# there from failing the cache. Older binaries do not have the option and
+# already use a temporary directory by default.
+CLICKHOUSE_LOCAL_TMP=$(clickhouse local --help 2>/dev/null | grep -qw -e '--tmp' && echo --tmp)
 
 # Initialize cache directory structure
 init_cache() {
@@ -77,7 +82,7 @@ add_file() {
     # Check if metadata file is empty
     if [[ ! -s "$CACHE_METADATA" ]]; then
         # First entry
-        clickhouse local -q "
+        clickhouse local $CLICKHOUSE_LOCAL_TMP -q "
             SELECT
                 '$file_id' as id,
                 '$file_name' as name,
@@ -88,7 +93,7 @@ add_file() {
         " --format=JSONEachRow > "$temp_file"
     else
         # Add to existing entries
-        clickhouse local -q "
+        clickhouse local $CLICKHOUSE_LOCAL_TMP -q "
             WITH new_entry AS (
                 SELECT
                     '$file_id' as id,
@@ -134,7 +139,7 @@ get_files() {
     fi
 
     # Find matching file
-    local file_info=$(clickhouse local -q "
+    local file_info=$(clickhouse local $CLICKHOUSE_LOCAL_TMP -q "
         SELECT id, name
         FROM file('$CACHE_METADATA', 'JSONEachRow', '$SCHEMA')
         WHERE tag = '$tag'
@@ -172,7 +177,7 @@ list_files() {
         return
     fi
 
-    local count=$(clickhouse local -q "SELECT count() FROM file('$CACHE_METADATA', 'JSONEachRow', '$SCHEMA')" 2>/dev/null || echo 0)
+    local count=$(clickhouse local $CLICKHOUSE_LOCAL_TMP -q "SELECT count() FROM file('$CACHE_METADATA', 'JSONEachRow', '$SCHEMA')" 2>/dev/null || echo 0)
 
     if [[ "$count" -eq 0 ]]; then
         echo "Cache is empty"
@@ -184,7 +189,7 @@ list_files() {
     printf "%-30s %10s %16s %s\n" "Name" "Size" "Added" "Tag"
     echo "=============================================="
 
-    clickhouse local -q "
+    clickhouse local $CLICKHOUSE_LOCAL_TMP -q "
         SELECT
             substring(name, 1, 30) as name,
             formatReadableSize(size) as size_human,
@@ -197,7 +202,7 @@ list_files() {
     done
 
     echo ""
-    local total_size=$(clickhouse local -q "SELECT coalesce(sum(size), 0) FROM file('$CACHE_METADATA', 'JSONEachRow', '$SCHEMA')" 2>/dev/null || echo 0)
+    local total_size=$(clickhouse local $CLICKHOUSE_LOCAL_TMP -q "SELECT coalesce(sum(size), 0) FROM file('$CACHE_METADATA', 'JSONEachRow', '$SCHEMA')" 2>/dev/null || echo 0)
     echo "Total cache size: $(( total_size / 1048576 ))MB ($count files)"
 }
 
@@ -212,7 +217,7 @@ has_file() {
     fi
 
     # Check by name, ID, or tag
-    local found=$(clickhouse local -q "
+    local found=$(clickhouse local $CLICKHOUSE_LOCAL_TMP -q "
         SELECT count()
         FROM file('$CACHE_METADATA', 'JSONEachRow', '$SCHEMA')
         WHERE id = '$search_term'
@@ -222,7 +227,7 @@ has_file() {
 
     if [[ "$found" -gt 0 ]]; then
         # Show what was found
-        clickhouse local -q "
+        clickhouse local $CLICKHOUSE_LOCAL_TMP -q "
             SELECT
                 name,
                 formatReadableSize(size) as size,
@@ -252,7 +257,7 @@ remove_file() {
     fi
 
     # Find file by name or ID
-    local file_info=$(clickhouse local -q "
+    local file_info=$(clickhouse local $CLICKHOUSE_LOCAL_TMP -q "
         SELECT id, name
         FROM file('$CACHE_METADATA', 'JSONEachRow', '$SCHEMA')
         WHERE id = '$search_term' OR name = '$search_term'
@@ -271,7 +276,7 @@ remove_file() {
 
     # Update metadata
     local temp_file=$(mktemp)
-    clickhouse local -q "
+    clickhouse local $CLICKHOUSE_LOCAL_TMP -q "
         SELECT * FROM file('$CACHE_METADATA', 'JSONEachRow', '$SCHEMA')
         WHERE id != '$file_id'
     " --format=JSONEachRow > "$temp_file"

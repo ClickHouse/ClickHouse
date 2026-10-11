@@ -34,9 +34,11 @@ class IntegrationCoverageExporter:
 
     def _query(self, query):
         # The binary is the instrumented one; keep its own profile out of the way.
+        # --tmp: a pure query helper must not share (and lock) the default designated
+        # data directory in the home directory.
         env = f"LLVM_PROFILE_FILE={shlex.quote(str(self.coverage_dir / 'export-%m.profraw'))}"
         rc, stdout, _ = Shell.get_res_stdout_stderr(
-            f"{env} {shlex.quote(self.clickhouse_path)} local --query {shlex.quote(query)}",
+            f"{env} {shlex.quote(self.clickhouse_path)} local --tmp --query {shlex.quote(query)}",
             verbose=False,
         )
         if rc:
