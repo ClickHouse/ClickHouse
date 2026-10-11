@@ -58,7 +58,6 @@ ColumnPtr tryFoldFunction(const QueryTreeNodePtr & node, const ColumnsWithTypeAn
     else
         column = function->getConstantResultForNonConstArguments(arguments, function->getResultType());
 
-    /// `resolveFunction` keeps the function in these cases.
     const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
     if (!column_const || column_const->getDataColumn().isDummy() || hasAggregateFunctionNodes(node)
         || hasFunctionNode(node, "arrayJoin") || column->byteSize() >= 1_MiB)
@@ -249,7 +248,6 @@ private:
         const std::string & comparison_function_name) const
     {
         /// A remote server analyzes the query again and names a folded constant that depends on a column differently.
-        /// It folds the element comparisons first, then `and` with their results.
         ColumnsWithTypeAndName and_arguments;
         for (const auto & equals_function : tuple_arguments_equals_functions)
         {
