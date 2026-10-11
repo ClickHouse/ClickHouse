@@ -96,6 +96,11 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "dirty-startup-allblank-entry-reowned",
         "dirty-startup-merge-entry-reowned",
         "shape-not-stamped-before-run",
+        "proxied-endpoint",
+        "cross-origin-terminal",
+        "trusted-host-terminal",
+        "docs-relay-no-playground",
+        "docs-relay-rejected-no-playground",
         "dirty-startup-format",
         "format-connection-change",
     ):
