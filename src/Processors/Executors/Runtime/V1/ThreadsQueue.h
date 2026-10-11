@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <base/defines.h>
 namespace DB
@@ -64,8 +65,8 @@ struct ThreadsQueue
     }
 
 private:
-    std::vector<size_t> stack;
-    std::vector<size_t> thread_pos_in_stack;
+    VectorWithMemoryTracking<size_t> stack;
+    VectorWithMemoryTracking<size_t> thread_pos_in_stack;
     size_t stack_size = 0;
 
     void swapThreads(size_t first, size_t second)
