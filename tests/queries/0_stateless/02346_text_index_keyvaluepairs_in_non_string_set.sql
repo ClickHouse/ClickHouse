@@ -27,5 +27,6 @@ SELECT 'string skip index', count() FROM (EXPLAIN indexes = 1 SELECT id FROM tab
 
 SELECT 'nullable idx', id FROM tab WHERE m['level'] IN (SELECT arrayJoin([toNullable('warn'), NULL])) ORDER BY id SETTINGS transform_null_in = 1;
 SELECT 'nullable scan', id FROM tab WHERE m['level'] IN (SELECT arrayJoin([toNullable('warn'), NULL])) ORDER BY id SETTINGS transform_null_in = 1, use_skip_indexes = 0;
+SELECT 'nullable skip index', count() FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE m['level'] IN (SELECT arrayJoin([toNullable('warn'), NULL])) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Name: idx%';
 
 DROP TABLE tab;
