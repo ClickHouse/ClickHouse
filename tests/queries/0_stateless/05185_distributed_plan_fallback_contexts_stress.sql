@@ -7,10 +7,13 @@
 -- interpreter (view, scalar subquery, Buffer, Distributed local shard), a plan driven by hand (GLOBAL IN subquery), a plan
 -- kept aside (set source, materialized CTE, correlated subquery), a plan deserialized on a shard (`serialize_query_plan`),
 -- or a plan spliced into the parent only during optimization (`TimeSeries` read). Every query aggregates under a global
--- GROUP BY limit, which a distributed plan does not support, so each falls back.
+-- GROUP BY limit, which a distributed plan does not support, so each falls back. Three of them have an outer plan
+-- that reads only `system.one` or `numbers(...)`: those sources are distributable, so the outer plan is distributed
+-- while the inner query that carries the limit still falls back. The column is a flag rather than a task count, so it
+-- does not depend on how many workers the job's cluster has.
 -- The other group lifts the limit  of max_rows_to_group_by, hence
 -- must stay distributed.
--- Next to the task count each row prints the reasons the initiator and the shard queries logged when they fell back
+-- Next to that flag each row prints the reasons the initiator and the shard queries logged when they fell back
 -- (`system.text_log`), so a changed plan shape shows up as a changed reason, not only as a changed count.
 
 SET make_distributed_plan = 1;
@@ -146,7 +149,7 @@ WITH (SELECT metadata_modification_time FROM system.tables WHERE database = curr
         FROM system.text_log AS t INNER JOIN family AS f ON t.query_id = f.query_id
         -- Checks only runs from run_start, so it is fixed to this run
         WHERE t.event_date >= toDate(run_start) AND t.event_time >= run_start AND t.logger_name = 'makeDistributedPlan' AND t.message LIKE '%falling back to local execution%')
-SELECT f.log_comment, sum(f.tasks) AS remote_tasks,
+SELECT f.log_comment, sum(f.tasks) > 0 AS distributed,
     (SELECT arraySort(groupUniqArray(reason)) FROM reasons WHERE reasons.log_comment = f.log_comment AND is_initial_query) AS initiator_fell_back_on,
     (SELECT arraySort(groupUniqArray(reason)) FROM reasons WHERE reasons.log_comment = f.log_comment AND NOT is_initial_query) AS shards_fell_back_on
 FROM family AS f
