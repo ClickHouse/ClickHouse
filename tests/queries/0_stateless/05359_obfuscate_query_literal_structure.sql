@@ -42,13 +42,19 @@ SELECT match(obfuscateQueryWithSeed('SELECT ''192.168.1.255''', 1),
              '^SELECT ''[0-9]{1,3}\\.[0-9]{1,3}\\.1\\.255''$') AS ipv4_shape_kept;
 
 -- A dotted number with a fifth group is not an IPv4 address: the leading group goes through
--- the plain number path and only the last four groups through the address path, so the result
--- still has five groups and each of them is a valid octet.
-WITH obfuscateQueryWithSeed('SELECT ''5.6.7.8.9''', 1) AS o,
+-- the plain number path and only the last four groups through the address path. The two paths
+-- are told apart by their contracts: the address path keeps the octets 0, 1 and 255 and draws
+-- the others from 2..255, while the number path keeps only 0 and 1 and keeps the bit length of
+-- its input. So in `9.255.1.2.255` the trailing `255`, `1` and `255` must survive verbatim and
+-- the trailing `2` must leave the range 2..3 that the number path would be confined to, while
+-- the leading `9` must be replaced by another 4-bit number.
+WITH obfuscateQueryWithSeed('SELECT ''9.255.1.2.255''', 1) AS o,
      splitByChar('.', extract(o, '[0-9.]+')) AS groups
 SELECT length(groups) AS five_groups,
        arrayAll(x -> toUInt16(x) <= 255, groups) AS every_group_is_an_octet,
-       o != 'SELECT ''5.6.7.8.9''' AS dotted_value_changed;
+       groups[2] = '255' AND groups[3] = '1' AND groups[5] = '255' AS trailing_sentinel_octets_kept,
+       toUInt16(groups[4]) > 3 AS trailing_octet_not_from_number_path,
+       toUInt16(groups[1]) BETWEEN 8 AND 15 AND groups[1] != '9' AS leading_group_from_number_path;
 
 -- A number literal that does not fit into UInt64 (2^65 here) wraps to zero while being read
 -- and is then replaced by a plain 64-bit value, which does fit into UInt64.
@@ -61,16 +67,20 @@ SELECT match(o, '^SELECT [0-9]{1,20}$') AS still_a_decimal_number,
 -- preserved: a continuation byte (0x80..0xBF) stays a continuation byte, and a leading byte
 -- stays a leading byte of the same width bucket (0xC0..0xDF, 0xE0..0xEF, 0xF0..0xF7). The
 -- obfuscated bytes need not form valid UTF-8, so this is asserted on the raw bytes only.
--- The payload is U+00E9, U+20AC and U+1F600, that is a two-, a three- and a four-byte sequence
--- between two ASCII letters, so all three leading-byte buckets occur.
-WITH concat('SELECT ''a', unhex('C3A9E282ACF09F9880'), 'b''') AS q,
+-- The payload is U+00E9, U+20AC and U+1F600, that is a two-, a three- and a four-byte sequence,
+-- so all three leading-byte buckets occur. It holds no ASCII character, and the assertions look
+-- only at the bytes between the quotes, so nothing here can be satisfied by the obfuscation of
+-- an ASCII word.
+WITH concat('SELECT ''', unhex('C3A9E282ACF09F9880'), '''') AS q,
      obfuscateQueryWithSeed(q, 1) AS o,
-     arrayMap(i -> reinterpretAsUInt8(substring(q, i, 1)), range(1, length(q) + 1)) AS q_bytes,
-     arrayMap(i -> reinterpretAsUInt8(substring(o, i, 1)), range(1, length(o) + 1)) AS o_bytes,
+     substring(q, 9, length(q) - 9) AS q_payload,
+     substring(o, 9, length(o) - 9) AS o_payload,
+     arrayMap(i -> reinterpretAsUInt8(substring(q_payload, i, 1)), range(1, length(q_payload) + 1)) AS q_bytes,
+     arrayMap(i -> reinterpretAsUInt8(substring(o_payload, i, 1)), range(1, length(o_payload) + 1)) AS o_bytes,
      arrayMap(b -> multiIf(b < 0x80, 0, b < 0xC0, 1, b < 0xE0, 2, b < 0xF0, 3, 4), q_bytes) AS q_classes,
      arrayMap(b -> multiIf(b < 0x80, 0, b < 0xC0, 1, b < 0xE0, 2, b < 0xF0, 3, 4), o_bytes) AS o_classes
 SELECT length(o) = length(q) AS same_byte_length,
-       arrayFilter(c -> c != 0, q_classes) = [2, 1, 3, 1, 1, 4, 1, 1, 1] AS input_has_all_three_lead_widths,
+       q_classes = [2, 1, 3, 1, 1, 4, 1, 1, 1] AS input_has_all_three_lead_widths,
        o_classes = q_classes AS same_byte_classes,
        startsWith(o, 'SELECT ''') AND endsWith(o, '''') AS quoting_kept_verbatim,
-       o != q AS non_ascii_bytes_changed;
+       arrayAll(i -> o_bytes[i] != q_bytes[i], range(1, length(q_payload) + 1)) AS every_payload_byte_changed;
