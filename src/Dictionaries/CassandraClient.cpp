@@ -82,7 +82,8 @@ namespace FrameFlag
 
 namespace QueryFlag
 {
-    constexpr UInt8 PAGE_SIZE = 0x04;
+    /// Not `PAGE_SIZE`, which is a macro in musl.
+    constexpr UInt8 WITH_PAGE_SIZE = 0x04;
     constexpr UInt8 WITH_PAGING_STATE = 0x08;
 }
 
@@ -638,7 +639,7 @@ ResultPage Connection::query(const String & query_text, Consistency consistency,
     BodyWriter request;
     request.writeLongString(query_text);
     request.writeShort(static_cast<UInt16>(consistency));
-    request.writeByte(QueryFlag::PAGE_SIZE | (paging_state.empty() ? 0 : QueryFlag::WITH_PAGING_STATE));
+    request.writeByte(QueryFlag::WITH_PAGE_SIZE | (paging_state.empty() ? 0 : QueryFlag::WITH_PAGING_STATE));
     request.writeInt(page_size);
     if (!paging_state.empty())
         request.writeBytes(paging_state);
