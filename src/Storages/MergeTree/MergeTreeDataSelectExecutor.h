@@ -273,6 +273,7 @@ public:
         bool is_parallel_reading_from_replicas;
         bool has_projections;
         bool check_row_limits;
+        bool use_primary_key = true;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
