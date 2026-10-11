@@ -106,7 +106,7 @@ The Arrow Flight interface supports ClickHouse sessions through custom gRPC meta
 | `x-clickhouse-session-id` | Session identifier. If provided, multiple requests share the same session state (temporary tables, settings). |
 | `x-clickhouse-session-timeout` | Session timeout in seconds. Must not exceed `max_session_timeout`. |
 | `x-clickhouse-session-check` | Set to `1` to check if the session exists without creating one. |
-| `x-clickhouse-session-close` | Set to `1` to close the session after the request completes. Requires `enable_arrow_close_session` to be `true` in the server config. |
+| `x-clickhouse-session-close` | Set to `1` to close the session after the request completes. Requires `enable_arrow_close_session` to be `true` in the server config (see [CloseSession](#closesession)). |
 
 <Note>
 Because Arrow Flight uses gRPC over HTTP/2, metadata header names are case-sensitive and must be specified in lowercase exactly as shown (e.g., `x-clickhouse-session-id`, not `X-ClickHouse-Session-Id`). This is required by [RFC 9113, Section 8.2](https://www.rfc-editor.org/rfc/rfc9113#section-8.2), which mandates that HTTP/2 field names contain only lowercase characters. This differs from HTTP/1.1 where header names are case-insensitive.
@@ -128,7 +128,7 @@ Sessions allow setting persistent ClickHouse settings via the `SetSessionOptions
 | `arrowflight.cancel_flight_descriptor_after_poll_flight_info` | `false` | If `true`, poll descriptors are cancelled after being consumed by `PollFlightInfo`. |
 | `arrowflight.max_prepared_statements_per_user` | `100` | Maximum number of open prepared statements per user. Set to `0` to disable the limit. |
 | `arrowflight.prepared_statements_lifetime_seconds` | `-1` | Prepared statement lifetime mode. `> 0`: use this value as lifetime and refresh expiration on each request for both session-bound and session-less statements. `0`: disable automatic expiration. `-1`: for session-bound statements, use session timeout as lifetime and refresh it on each request; session-less statements do not expire automatically. |
-| `enable_arrow_close_session` | `true` | Allow clients to close sessions via the `x-clickhouse-session-close` header. |
+| `enable_arrow_close_session` | `true` | Allow clients to close sessions via the `x-clickhouse-session-close` header and the [CloseSession](#closesession) `DoAction`. When set to `false`, the header is ignored and `CloseSession` returns `NOT_CLOSABLE` without releasing the session. |
 | `default_session_timeout` | `60` | Default session timeout in seconds. Also controls Bearer token expiration. |
 | `max_session_timeout` | `3600` | Maximum allowed session timeout in seconds. |
 
@@ -278,6 +278,23 @@ If a setting name is unknown, the error `INVALID_NAME` is returned. If a value c
 #### GetSessionOptions {#getsessionoptions}
 
 Returns all current ClickHouse settings and their values for the session. Returns a map of setting names to string values (queries `system.settings` internally).
+
+#### CloseSession {#closesession}
+
+Closes the session identified by the `x-clickhouse-session-id` header via the Flight SQL `CloseSession` action. The action body is an empty serialized `CloseSessionRequest`.
+
+The response is a `CloseSessionResult` with one of these statuses:
+
+- `CLOSED`: the session was closed, or no named session was in use (in which case the action succeeds as a no-op).
+- `NOT_CLOSABLE`: session closing is disabled because `enable_arrow_close_session` is `false` in the server config.
+
+When a session is closed, prepared statements created in that session are released (see [ClosePreparedStatement](#closepreparedstatement)).
+
+```python
+# Close the session from the current Flight call context
+results = list(client.do_action(flight.Action("CloseSession", b""), options))
+# results[0].body encodes CloseSessionResult; b"\x08\x01" means status=CLOSED
+```
 
 #### CreatePreparedStatement {#createpreparedstatement}
 
