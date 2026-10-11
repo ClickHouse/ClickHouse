@@ -1,0 +1,33 @@
+--- two input blocks complete ---
+m0	0
+m1	1
+0
+1
+--- two input blocks complete when a block commits inside consume ---
+e0
+e1
+10
+11
+--- two input blocks complete when a dependent view waits for the part ---
+2
+2
+2
+2
+--- a failed later block drops the earlier block ---
+0
+0
+0
+0
+--- a failed later block keeps the earlier committed tags block ---
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0

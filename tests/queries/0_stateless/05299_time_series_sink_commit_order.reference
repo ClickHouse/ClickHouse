@@ -1,0 +1,11 @@
+--- the tags sink throws: no table gets the block ---
+0
+0
+0
+--- the samples sink throws: tags are committed, samples are empty ---
+1
+0
+--- no sink throws: every table gets the block ---
+1
+2
+2

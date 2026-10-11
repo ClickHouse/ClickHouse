@@ -9,6 +9,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 
+#include <deque>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -21,6 +22,7 @@ class StorageTimeSeries;
 class ExpressionActions;
 class IColumn;
 class PushingPipelineExecutor;
+class PushingAsyncPipelineExecutor;
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
@@ -60,23 +62,35 @@ public:
 
 private:
     /// A persistent pipeline for inserting blocks into one target table.
+    /// Exactly one of `executor` and `async_executor` is set: the asynchronous executor
+    /// runs the pipeline in background threads, so several target tables are written in parallel.
     struct TargetPipeline
     {
         ContextMutablePtr context;
         BlockIO io;
         std::unique_ptr<PushingPipelineExecutor> executor;
+        std::unique_ptr<PushingAsyncPipelineExecutor> async_executor;
         std::shared_ptr<ExpressionActions> converting_actions;
 
         void push(Block block) const;
+        void finish() const;
         ~TargetPipeline();
+    };
+
+    /// A samples block waits until the tags rows it references are committed, see `pushDelayedSamples`.
+    struct DelayedSamplesBlock
+    {
+        Block block;
+        size_t tags_push_index = 0;
     };
 
     void initTagsAndSamplesPipelines();
     void initMetricFamiliesPipeline();
-    std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
+    std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header, bool sequential);
 
     void consumeTagsAndSamples(const Block & block);
     void consumeMetricFamilies(const Block & block);
+    void pushDelayedSamples(bool all);
 
     /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
     ColumnPtr calculateId(const Block & tags_block) const;
@@ -106,6 +120,10 @@ private:
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
     std::unique_ptr<TargetPipeline> metric_families_pipeline;
+
+    /// The number of blocks pushed to `tags_pipeline` so far.
+    size_t tags_pushes = 0;
+    std::deque<DelayedSamplesBlock> delayed_samples_blocks;
 
     /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
     TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
