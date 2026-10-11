@@ -161,6 +161,7 @@ BlockNestedLoopStoreSettings withJoinTemporaryDataScope(BlockNestedLoopStoreSett
             .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
             .num_files = ProfileEvents::ExternalJoinWritePart,
+            .spilled_to_disk_operator = "join",
         },
         settings.temporary_files_buffer_size,
         settings.temporary_files_codec);

@@ -33,6 +33,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromS3InitMicroseconds;
     extern const Event ReadBufferFromS3Bytes;
     extern const Event ReadBufferFromS3RequestsErrors;
+    extern const Event ReadBufferFromS3RequestsCut;
     extern const Event ReadBufferSeekCancelConnection;
     extern const Event S3GetObject;
     extern const Event DiskS3GetObject;
@@ -588,6 +589,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
         {
             cut_request_end = static_cast<size_t>(offset) + fill_size;
             right_offset = cut_request_end - 1;
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsCut);
         }
     }
 
