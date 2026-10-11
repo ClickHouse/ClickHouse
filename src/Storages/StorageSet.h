@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <mutex>
+#include <unordered_set>
 
 
 namespace DB
@@ -60,6 +61,16 @@ protected:
     /// the live state while another insert is still replaying its own committed backup,
     /// so that insert would apply the same rows twice.
     mutable std::mutex mutate_mutex;
+
+    /// Promoted backups of failed `INSERT`s that could neither be removed nor moved out of the
+    /// table directory. They must not be replayed, so `forEachBackupBlock` skips them. Guarded by
+    /// `mutate_mutex`.
+    std::unordered_set<String> discarded_backups;
+
+    /// Called under `mutate_mutex` when the promoted backup of a failed `INSERT` could not be
+    /// removed. Moves it back to `tmp/`, which is never replayed (also not on restart), and if
+    /// that fails as well, excludes it from replays for the lifetime of the table object.
+    void quarantineDiscardedBackup(const String & file_name) noexcept;
 
     /// Restore from backup.
     void restore();

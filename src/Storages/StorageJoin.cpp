@@ -297,6 +297,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
+    discarded_backups.clear();
     {
         MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
@@ -396,7 +397,9 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         disk->listFiles(path, files);
         for (const auto & file_name: files)
         {
-            if (file_name.ends_with(".bin"))
+            /// A discarded backup is not part of the live state; its number must not be reused
+            /// for the consolidated backup, which would then be skipped as well.
+            if (file_name.ends_with(".bin") && !discarded_backups.contains(file_name))
             {
                 UInt64 file_num = parseBackupNumber(file_name);
                 if (!consolidated_num || file_num < *consolidated_num)

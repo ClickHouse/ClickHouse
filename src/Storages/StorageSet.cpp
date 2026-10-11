@@ -54,6 +54,8 @@ namespace FailPoints
     extern const char set_or_join_sink_pause_before_replay[];
     extern const char storage_set_pause_during_backup_replay[];
     extern const char storage_set_fail_during_backup_replay[];
+    extern const char set_or_join_sink_fail_removing_promoted_backup[];
+    extern const char storage_set_or_join_fail_quarantining_backup[];
 }
 
 class SetOrJoinSink final : public SinkToStorage, WithContext
@@ -146,6 +148,13 @@ void SetOrJoinSink::discardStagedBackup() noexcept
     try
     {
         const auto backup_file_path = fs::path(backup_promoted ? backup_path : backup_tmp_path) / backup_file_name;
+        if (backup_promoted)
+        {
+            fiu_do_on(FailPoints::set_or_join_sink_fail_removing_promoted_backup,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while removing the promoted backup of a failed INSERT");
+            });
+        }
         table.disk->removeFileIfExists(backup_file_path);
     }
     catch (...)
@@ -157,6 +166,11 @@ void SetOrJoinSink::discardStagedBackup() noexcept
                 fs::path(backup_promoted ? backup_path : backup_tmp_path) / backup_file_name,
                 table.getStorageID().getNameForLogs(),
                 table.disk->getName()));
+
+        /// A promoted file left in the table directory would be replayed by the next publish and
+        /// restored on restart, bringing back the rows of this failed `INSERT`.
+        if (backup_promoted)
+            table.quarantineDiscardedBackup(backup_file_name);
     }
 
     backup_stream.reset();
@@ -393,6 +407,10 @@ void StorageSet::publishBackup(const String & backup_file_path, ContextPtr conte
         /// replay it either.
         try
         {
+            fiu_do_on(FailPoints::set_or_join_sink_fail_removing_promoted_backup,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while removing the backup of a failed INSERT");
+            });
             disk->removeFileIfExists(backup_file_path);
         }
         catch (...)
@@ -451,6 +469,11 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     Block header = metadata_snapshot->getSampleBlock();
 
     increment = 0;
+    {
+        /// Backup numbers start over, so a discarded name could match a future committed backup.
+        std::lock_guard mutate_lock(mutate_mutex);
+        discarded_backups.clear();
+    }
 
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
     new_set->setHeader(header.getColumnsWithTypeAndName());
@@ -536,7 +559,7 @@ void StorageSetOrJoinBase::forEachBackupBlock(const std::function<void(const Blo
     {
         const auto & name = dir_it->name();
         const auto & file_path = dir_it->path();
-        if (name == exclude_file_name)
+        if (name == exclude_file_name || discarded_backups.contains(name))
             continue;
         if (disk->existsFile(file_path) && endsWith(name, file_suffix) && disk->getFileSize(file_path) > 0)
             backup_files.push({parse<UInt64>(name.substr(0, name.size() - file_suffix_size)), file_path});
@@ -546,6 +569,43 @@ void StorageSetOrJoinBase::forEachBackupBlock(const std::function<void(const Blo
     {
         forEachBlockInBackupFile(backup_files.top().second, callback);
         backup_files.pop();
+    }
+}
+
+void StorageSetOrJoinBase::quarantineDiscardedBackup(const String & file_name) noexcept
+{
+    try
+    {
+        fiu_do_on(FailPoints::storage_set_or_join_fail_quarantining_backup,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while moving the backup of a failed INSERT out of the table directory");
+        });
+        const auto file_path = fs::path(path) / file_name;
+        if (!disk->existsFile(file_path))
+            return;
+        disk->replaceFile(file_path, fs::path(path) / "tmp" / file_name);
+        LOG_WARNING(getLogger("StorageSetOrJoinBase"), "Moved the backup file {} of a failed INSERT into table {} to tmp/",
+            file_name, getStorageID().getNameForLogs());
+        return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            getLogger("StorageSetOrJoinBase"),
+            fmt::format(
+                "Cannot move the backup file {} of a failed INSERT out of the directory of table {}. It is excluded from replays "
+                "until the table is detached, but will be restored on restart unless it is removed manually",
+                file_name,
+                getStorageID().getNameForLogs()));
+    }
+
+    try
+    {
+        discarded_backups.insert(file_name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("StorageSetOrJoinBase"), "Cannot exclude the backup file of a failed INSERT from replays");
     }
 }
 
