@@ -1,0 +1,3 @@
+The `leader_election` setting is only supported on the `MergeTree` engine
+The `leader_election` setting is only supported on the `MergeTree` engine
+0
