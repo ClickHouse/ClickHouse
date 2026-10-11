@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-shared-merge-tree
+# Tags: no-parallel, no-shared-merge-tree, no-fasttest
 # no-parallel -- enables a server-wide failpoint that affects empty-part creation for all tables.
 # no-shared-merge-tree -- the covering-empty-part path being tested is for plain MergeTree.
 
