@@ -1,0 +1,53 @@
+layout
+raw
+front_coded
+front_coded_v2
+dictionary none
+abc
+abd
+token1
+token10
+token11
+token2
+300 x
+300 y
+zebra
+dictionary frontcoding_v1
+abc
+abd
+token1
+token10
+token11
+token2
+300 x
+300 y
+zebra
+dictionary frontcoding_v2
+abc
+abd
+token1
+token10
+token11
+token2
+300 x
+300 y
+zebra
+search
+[0]
+[2]
+[4]
+[5]
+[]
+merge of parts with different layouts
+all_1_1_0	front_coded
+all_2_2_0	front_coded_v2
+all_1_2_1	front_coded_v2
+[0,1]
+[1]
+table settings precedence
+front_coded_v2
+raw
+errors
+size
+uncompressed size: none > frontcoding_v1 > frontcoding_v2
+1	1
