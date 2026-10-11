@@ -979,6 +979,16 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer");
     const auto * footer = flatbuf::GetFooter(footer_storage.data());
 
+    /// The footer carries the metadata version too, and its block list is read under the current edition's
+    /// assumptions, so an unknown edition is rejected here rather than at the first message. Each message is
+    /// checked again in `MessageReader::readNextMessage`.
+    const auto version = footer->version();
+    if (version > flatbuf::MetadataVersion_MAX || version < flatbuf::MetadataVersion_V4)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unsupported Arrow IPC metadata version V{} in the Arrow file footer: this reader implements V4 to V5",
+            static_cast<Int16>(version) + 1);
+
     if (!footer->schema())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file footer has no schema");
 
