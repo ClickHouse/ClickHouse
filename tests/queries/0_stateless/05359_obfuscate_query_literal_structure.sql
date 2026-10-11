@@ -18,12 +18,18 @@ SELECT match(obfuscateQueryWithSeed('SELECT 0x1.8p+3', 1), '^SELECT 0x[0-9A-F]\\
 SELECT match(obfuscateQueryWithSeed('SELECT 0b1010', 1), '^SELECT 0b[01]{4}$') AS bin_prefix_lower,
        match(obfuscateQueryWithSeed('SELECT 0B11', 1), '^SELECT 0B[01]{2}$') AS bin_prefix_upper;
 
--- UUIDs keep the 8-4-4-4-12 shape and the case of every hex digit, so an upper-case UUID is
--- replaced by upper-case hex only and a lower-case one by lower-case hex only.
+-- UUIDs keep the 8-4-4-4-12 shape and the character class of every single hex digit: an
+-- upper-case letter is replaced by an upper-case letter, a lower-case letter by a lower-case
+-- letter and a decimal digit by a decimal digit. The third literal mixes all three classes, so
+-- each part of its regex pins one class at a known position: `01234567` must stay all digits,
+-- `89AB` two digits then two upper-case letters, `CDEF` upper case, `abcd` lower case and
+-- `ef0123456789` two lower-case letters then ten digits.
 SELECT match(obfuscateQueryWithSeed('SELECT ''AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE''', 1),
              '^SELECT ''[A-F]{8}-[A-F]{4}-[A-F]{4}-[A-F]{4}-[A-F]{12}''$') AS uuid_upper_case_kept,
        match(obfuscateQueryWithSeed('SELECT ''aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee''', 1),
-             '^SELECT ''[a-f]{8}-[a-f]{4}-[a-f]{4}-[a-f]{4}-[a-f]{12}''$') AS uuid_lower_case_kept;
+             '^SELECT ''[a-f]{8}-[a-f]{4}-[a-f]{4}-[a-f]{4}-[a-f]{12}''$') AS uuid_lower_case_kept,
+       match(obfuscateQueryWithSeed('SELECT ''01234567-89AB-CDEF-abcd-ef0123456789''', 1),
+             '^SELECT ''[0-9]{8}-[0-9]{2}[A-F]{2}-[A-F]{4}-[a-f]{4}-[a-f]{2}[0-9]{10}''$') AS uuid_digit_slots_stay_digits;
 
 -- A `YYYY-MM-DD` literal keeps both dashes and the 4-2-2 digit groups and stays a valid date.
 -- A `YYYY-MM-DD HH:MM:SS` literal keeps the space, both colons and the 2-2-2 digit groups of
