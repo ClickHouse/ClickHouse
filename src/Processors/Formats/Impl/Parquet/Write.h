@@ -74,7 +74,7 @@ struct WriteOptions
     bool write_geometadata = true;
     /// Annotate the WKB-encoded geo columns (only written if `write_geometadata`) with the
     /// `GEOMETRY` logical type and write `GeospatialStatistics` instead of min/max statistics.
-    bool write_geometry_logical_type = true;
+    bool write_geometry_logical_type = false;
 };
 
 /// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:

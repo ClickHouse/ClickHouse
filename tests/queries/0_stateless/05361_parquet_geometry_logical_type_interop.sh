@@ -60,7 +60,7 @@ $CLICKHOUSE_LOCAL -q "
         (pg::Geometry) AS geom
     FROM numbers(30)
     INTO OUTFILE '${DATA_DIR}/polygons.parquet' FORMAT Parquet
-    SETTINGS output_format_parquet_row_group_size = 3, allow_suspicious_variant_types = 1"
+    SETTINGS output_format_parquet_row_group_size = 3, allow_suspicious_variant_types = 1, output_format_parquet_geometry_logical_type = 1"
 $CLICKHOUSE_LOCAL -q "SELECT c.logical_type FROM file('${DATA_DIR}/polygons.parquet', ParquetMetadata) ARRAY JOIN columns AS c WHERE c.name IN ('pg', 'geom')"
 for column in pg geom
 do

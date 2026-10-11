@@ -47,7 +47,7 @@ mls Geometry(crs=) no_min_max no_column_index ([5], 0.0, 3.0, 0.0, 3.0, None, No
 mpg Geometry(crs=) no_min_max no_column_index ([6], 0.0, 1.0, 0.0, 4.0, None, None)
 mpt Geometry(crs=) no_min_max no_column_index ([4], -1.0, 3.0, -1.0, 3.0, None, None)
 geom Geometry(crs=) no_min_max no_column_index ([1, 2, 3], 0.0, 5.0, 0.0, 5.0, None, None)
---- output_format_parquet_geometry_logical_type = 0
+--- default: no logical type
 id	UInt64					
 pt	Point					
 ls	LineString					
@@ -72,8 +72,6 @@ mls	String
 mpg	String
 mpt	String
 geom	String
---- compatibility = '26.9'
-['Int(bitWidth=64, isSigned=false)','String','String','String','String','String','String','String']
 --- output_format_parquet_geometadata = 0
 1	DOUBLE	None
 2	DOUBLE	None

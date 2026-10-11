@@ -25,7 +25,7 @@ SELECT
 FROM numbers(4)"
 
 echo "--- round trip"
-$CLICKHOUSE_LOCAL -q "$QUERY INTO OUTFILE '${DATA_DIR}/geo.parquet' FORMAT Parquet SETTINGS allow_suspicious_variant_types = 1"
+$CLICKHOUSE_LOCAL -q "$QUERY INTO OUTFILE '${DATA_DIR}/geo.parquet' FORMAT Parquet SETTINGS allow_suspicious_variant_types = 1, output_format_parquet_geometry_logical_type = 1"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('${DATA_DIR}/geo.parquet', Parquet)"
 $CLICKHOUSE_LOCAL -q "SELECT * FROM file('${DATA_DIR}/geo.parquet', Parquet) ORDER BY id"
 $CLICKHOUSE_LOCAL -q "
@@ -80,8 +80,8 @@ for i in range(metadata.num_columns):
     )
 PY
 
-echo "--- output_format_parquet_geometry_logical_type = 0"
-$CLICKHOUSE_LOCAL -q "$QUERY INTO OUTFILE '${DATA_DIR}/old.parquet' FORMAT Parquet SETTINGS allow_suspicious_variant_types = 1, output_format_parquet_geometry_logical_type = 0"
+echo "--- default: no logical type"
+$CLICKHOUSE_LOCAL -q "$QUERY INTO OUTFILE '${DATA_DIR}/old.parquet' FORMAT Parquet SETTINGS allow_suspicious_variant_types = 1"
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('${DATA_DIR}/old.parquet', Parquet)"
 $CLICKHOUSE_LOCAL -q "
     SELECT c.name, c.have_statistics, c.statistics.min IS NOT NULL, c.have_geospatial_statistics
@@ -89,14 +89,8 @@ $CLICKHOUSE_LOCAL -q "
 $CLICKHOUSE_LOCAL -q "
     SELECT c.name, c.logical_type
     FROM file('${DATA_DIR}/old.parquet', ParquetMetadata) ARRAY JOIN columns AS c"
-echo "--- compatibility = '26.9'"
-$CLICKHOUSE_LOCAL -q "$QUERY INTO OUTFILE '${DATA_DIR}/compat.parquet' FORMAT Parquet SETTINGS allow_suspicious_variant_types = 1, compatibility = '26.9'"
-$CLICKHOUSE_LOCAL -q "
-    SELECT groupArray(c.logical_type)
-    FROM file('${DATA_DIR}/compat.parquet', ParquetMetadata) ARRAY JOIN columns AS c"
-
 echo "--- output_format_parquet_geometadata = 0"
-$CLICKHOUSE_LOCAL -q "SELECT (1, 2)::Point AS pt INTO OUTFILE '${DATA_DIR}/tuples.parquet' FORMAT Parquet SETTINGS output_format_parquet_geometadata = 0"
+$CLICKHOUSE_LOCAL -q "SELECT (1, 2)::Point AS pt INTO OUTFILE '${DATA_DIR}/tuples.parquet' FORMAT Parquet SETTINGS output_format_parquet_geometadata = 0, output_format_parquet_geometry_logical_type = 1"
 $CLICKHOUSE_LOCAL -q "
     SELECT c.name, c.physical_type, c.logical_type
     FROM file('${DATA_DIR}/tuples.parquet', ParquetMetadata) ARRAY JOIN columns AS c"
@@ -106,7 +100,7 @@ $CLICKHOUSE_LOCAL -q "
     SELECT number AS id, if(number = 0, ((1, 2)::Point)::Geometry, NULL::Geometry) AS geom, []::LineString AS ls
     FROM numbers(2)
     INTO OUTFILE '${DATA_DIR}/nulls.parquet' FORMAT Parquet
-    SETTINGS output_format_parquet_row_group_size = 1, allow_suspicious_variant_types = 1"
+    SETTINGS output_format_parquet_row_group_size = 1, allow_suspicious_variant_types = 1, output_format_parquet_geometry_logical_type = 1"
 $CLICKHOUSE_LOCAL -q "
     SELECT c.name, c.statistics.null_count, c.have_geospatial_statistics, c.geospatial_statistics
     FROM file('${DATA_DIR}/nulls.parquet', ParquetMetadata) ARRAY JOIN row_groups AS rg ARRAY JOIN rg.columns AS c
