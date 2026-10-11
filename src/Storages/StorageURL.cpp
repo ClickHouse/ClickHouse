@@ -1783,6 +1783,24 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
+    bool canRemoveUnusedColumns() const override
+    {
+        return canRemoveUnusedPrewhereInputsFromFormatInfo(info, query_info.row_level_filter);
+    }
+
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/) override
+    {
+        auto kept_output_positions = removeUnusedPrewhereInputsFromFormatInfo(info, query_info.row_level_filter, required_output_positions);
+        if (!kept_output_positions)
+            return {};
+
+        query_info.prewhere_info = info.prewhere_info;
+        output_header = std::make_shared<const Block>(info.source_header);
+        return {true, {}, std::move(*kept_output_positions)};
+    }
+
+    bool canRemoveColumnsFromOutput() const override { return canRemoveUnusedColumns(); }
+
     ReadFromURL(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
