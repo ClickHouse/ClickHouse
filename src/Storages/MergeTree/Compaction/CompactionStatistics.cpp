@@ -1511,13 +1511,60 @@ UInt64 estimateNeededMemoryForMerge(
     const NamesAndTypesList part_view_input_columns = part_source_view(input_columns);
     const NamesAndTypesList part_view_output_columns = part_source_view(output_columns);
 
+    /// Per-stream write buffer size on a local disk: a writer stream keeps the compressor block and the
+    /// file buffer, both sized by the stream's max_compress_block_size. That size is not one table-wide
+    /// constant: MergeTreeDataPartWriterWide::addStreams resolves it per stream from the column-level
+    /// max_compress_block_size setting when the column overrides it, falling back to the table setting and
+    /// then to the global one, and clamps the result (see MergeTreeWriterSettings). Collapse the per-stream
+    /// sizes to the LARGEST size any written column resolves to: one size can only over-reserve the streams
+    /// of the other columns (the safe direction, and exact for the common table without overrides), while
+    /// sizing everything from the table setting would under-reserve every stream of a column whose override
+    /// is LARGER - the writer would allocate bigger eager buffers than were reserved, and the admission gate
+    /// could admit more concurrent merges than the reservation is supposed to bound.
+    /// The writer settings a projection is written with are its own: a projection definition may override
+    /// MergeTree writer settings with WITH SETTINGS (max_compress_block_size among them, see
+    /// ProjectionsDescription), and writeProjectionPartImpl builds the projection writer from
+    /// getSettings(&projection.settings_changes). So this resolution is parameterized by the effective
+    /// settings and the written columns, and the projection pricing below instantiates it again with the
+    /// projection's own settings and columns instead of reusing the parent table's size.
+    const auto resolve_max_compress_block_size = [&](const MergeTreeSettings & writer_settings,
+                                                     const NamesAndTypesList & written_columns,
+                                                     const ColumnsDescription & written_columns_description)
+    {
+        UInt64 max_compress_block_size = writer_settings[MergeTreeSetting::max_compress_block_size];
+        if (max_compress_block_size == 0)
+            max_compress_block_size = context->getSettingsRef()[Setting::max_compress_block_size];
+        max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+        for (const auto & column : written_columns)
+        {
+            const auto column_desc = written_columns_description.tryGetColumnDescription(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+            if (!column_desc)
+                continue;
+            const auto * override_value = column_desc->settings.tryGet("max_compress_block_size");
+            if (!override_value)
+                continue;
+            const UInt64 column_override = override_value->safeGet<UInt64>();
+            if (column_override == 0)
+                continue;
+            max_compress_block_size = std::max(
+                max_compress_block_size, std::min<UInt64>(column_override, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
+        }
+        return max_compress_block_size;
+    };
+
     /// Input side: one reader stream per column substream a base merge reader actually opens on every
-    /// source part. The reader buffers hold a window of the compressed file plus the decompressed block,
-    /// so they can never hold more than the data they read through: cap the per-part estimate by the size
-    /// of the columns the merge reads (see partReadBytes) - not the whole part, which also counts dead
+    /// source part. Each reader stream keeps two live buffers: the compressed file buffer
+    /// (MergeTreeReaderStream::init) and the decompressed block that CompressedReadBufferFromFile::nextImpl
+    /// resizes its working buffer to. A decompressed block is at most the max_compress_block_size the part
+    /// was written with, priced here at the largest size the read columns resolve to under the current
+    /// settings (a part written under a larger, since lowered, setting is still bounded by the cap below).
+    /// The reader buffers can never hold more than the data they read through: cap the per-part estimate
+    /// by the size of the columns the merge reads (see partReadBytes) - not the whole part, which also counts dead
     /// dropped columns and the projection parts priced separately below. A patch part is accounted whole:
     /// it physically stores only the columns it patches plus the system columns needed to apply them, all
     /// of which its reader reads, and it has no projection parts.
+    const UInt64 input_decompressed_block_size = resolve_max_compress_block_size(settings, input_columns, columns_description);
     UInt64 input_memory = 0;
     UInt64 sum_input_bytes_uncompressed = 0;
     for (const auto & part : future_part.parts)
@@ -1526,9 +1573,10 @@ UInt64 estimateNeededMemoryForMerge(
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
             ? countPartStreamsForColumns(*part, part_view_input_columns, settings)
             : 1;
-        const UInt64 read_buffer_size = part_read_buffer_size(part);
+        const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
         const ColumnSize read_bytes = partReadBytes(*part, part_view_input_columns);
-        input_memory += std::min<UInt64>(streams * read_buffer_size, read_bytes.data_compressed + read_bytes.data_uncompressed);
+        input_memory += std::min<UInt64>(
+            saturatingStreamsTimesBuffer(streams, read_buffer_size), read_bytes.data_compressed + read_bytes.data_uncompressed);
         sum_input_bytes_uncompressed += read_bytes.data_uncompressed;
     }
     for (const auto & part : future_part.patch_parts)
@@ -1536,9 +1584,9 @@ UInt64 estimateNeededMemoryForMerge(
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
             ? countPartStreams(*part, settings)
             : 1;
-        const UInt64 read_buffer_size = part_read_buffer_size(part);
+        const UInt64 read_buffer_size = saturatingAdd(part_read_buffer_size(part), input_decompressed_block_size);
         const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
-        input_memory += std::min<UInt64>(streams * read_buffer_size, part_bytes);
+        input_memory += std::min<UInt64>(saturatingStreamsTimesBuffer(streams, read_buffer_size), part_bytes);
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
     }
 
@@ -1741,48 +1789,6 @@ UInt64 estimateNeededMemoryForMerge(
             {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
              getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_s3_write_buffer_memory, output_marks_bytes_per_stream),
              getMultipartUploadMemoryCeilingForWrittenBytes(*guessed_azure_write_buffer_memory, output_marks_bytes_per_stream)});
-
-    /// Per-stream write buffer size on a local disk: a writer stream keeps the compressor block and the
-    /// file buffer, both sized by the stream's max_compress_block_size. That size is not one table-wide
-    /// constant: MergeTreeDataPartWriterWide::addStreams resolves it per stream from the column-level
-    /// max_compress_block_size setting when the column overrides it, falling back to the table setting and
-    /// then to the global one, and clamps the result (see MergeTreeWriterSettings). Collapse the per-stream
-    /// sizes to the LARGEST size any written column resolves to: one size can only over-reserve the streams
-    /// of the other columns (the safe direction, and exact for the common table without overrides), while
-    /// sizing everything from the table setting would under-reserve every stream of a column whose override
-    /// is LARGER - the writer would allocate bigger eager buffers than were reserved, and the admission gate
-    /// could admit more concurrent merges than the reservation is supposed to bound.
-    /// The writer settings a projection is written with are its own: a projection definition may override
-    /// MergeTree writer settings with WITH SETTINGS (max_compress_block_size among them, see
-    /// ProjectionsDescription), and writeProjectionPartImpl builds the projection writer from
-    /// getSettings(&projection.settings_changes). So this resolution is parameterized by the effective
-    /// settings and the written columns, and the projection pricing below instantiates it again with the
-    /// projection's own settings and columns instead of reusing the parent table's size.
-    const auto resolve_max_compress_block_size = [&](const MergeTreeSettings & writer_settings,
-                                                     const NamesAndTypesList & written_columns,
-                                                     const ColumnsDescription & written_columns_description)
-    {
-        UInt64 max_compress_block_size = writer_settings[MergeTreeSetting::max_compress_block_size];
-        if (max_compress_block_size == 0)
-            max_compress_block_size = context->getSettingsRef()[Setting::max_compress_block_size];
-        max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
-        for (const auto & column : written_columns)
-        {
-            const auto column_desc = written_columns_description.tryGetColumnDescription(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
-            if (!column_desc)
-                continue;
-            const auto * override_value = column_desc->settings.tryGet("max_compress_block_size");
-            if (!override_value)
-                continue;
-            const UInt64 column_override = override_value->safeGet<UInt64>();
-            if (column_override == 0)
-                continue;
-            max_compress_block_size = std::max(
-                max_compress_block_size, std::min<UInt64>(column_override, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
-        }
-        return max_compress_block_size;
-    };
 
     /// One output stream writes through a compressor block of max_compress_block_size and a file buffer the
     /// writer creates at that same size (the stream's own writeFile call), so its worst case is twice the
@@ -2663,9 +2669,11 @@ UInt64 estimateNeededMemoryForMerge(
                 /// twice the rebuilt volume. MergeTreeReaderStream can retain both a compressed file buffer
                 /// and its decompressed block, and each side is bounded by the input volume. The readers of
                 /// one nested merge see no more than the whole rebuilt volume.
+                /// Each read-back reader stream also keeps its decompressed block, at most the projection's own
+                /// max_compress_block_size the temporary parts were written with.
                 const UInt64 read_back_reader_worst_case = saturatingStreamsTimesBuffer(
                     MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams,
-                    projection_read_buffer_size);
+                    saturatingAdd(projection_read_buffer_size, projection_max_compress_block_size));
                 /// `writeTempProjectionPart` materializes non-text skip indexes with the projection's
                 /// metadata, but decides which ones (`materialize_skip_indexes_on_merge` and its exclude
                 /// list) from the table settings snapshot, not the projection's overrides. Those writers live
