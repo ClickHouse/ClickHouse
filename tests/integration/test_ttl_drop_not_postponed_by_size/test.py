@@ -501,11 +501,13 @@ def test_dry_run_after_remove_ttl_counts_expired_part(started_cluster):
 def test_orphan_ttl_drop_is_still_postponed_by_source_size(started_cluster):
     """A drop tagged by TTL info of a TTL the table no longer has must keep the gate.
 
-    The parts carry the expired info of a removed column TTL and no rows TTL info, so the
+    The part carries the expired info of a removed column TTL and no rows TTL info, so the
     merge is tagged as a whole-part drop, but the table's only TTL, a rows TTL, has not
-    expired for any row. The merge writes the rows back and needs room for them.
+    expired for any row. The merge writes the rows back and needs room for them. The drop is
+    queued while the data still fits, and the disk is filled before it runs.
     """
     node.query("DROP TABLE IF EXISTS t_orphan SYNC")
+    node.query("DROP TABLE IF EXISTS filler SYNC")
     node.query(
         """
         CREATE TABLE t_orphan (id UInt64, s String TTL event_time + INTERVAL 1 DAY, event_time DateTime)
@@ -519,12 +521,10 @@ def test_orphan_ttl_drop_is_still_postponed_by_source_size(started_cluster):
         """
     )
     node.query("SYSTEM STOP TTL MERGES t_orphan")
-
-    for _ in range(2):
-        node.query(
-            "INSERT INTO t_orphan SELECT number, randomString(1024), now() - INTERVAL 10 DAY "
-            f"FROM numbers({ROWS_PER_INSERT})"
-        )
+    node.query(
+        "INSERT INTO t_orphan SELECT number, randomString(1024), now() - INTERVAL 10 DAY "
+        f"FROM numbers({ROWS_PER_INSERT})"
+    )
     node.query("ALTER TABLE t_orphan MODIFY COLUMN s REMOVE TTL")
     node.query(
         "ALTER TABLE t_orphan MODIFY TTL event_time + INTERVAL 50 YEAR "
@@ -532,10 +532,14 @@ def test_orphan_ttl_drop_is_still_postponed_by_source_size(started_cluster):
     )
     rows_before = query_int("SELECT count() FROM t_orphan")
 
+    node.query("SYSTEM STOP REPLICATION QUEUES t_orphan")
+    node.query("SYSTEM START TTL MERGES t_orphan")
+    wait_for_queued_drop("t_orphan")
+
+    insert_filler("only_orphan")
     assert_gate_would_fire("t_orphan", "all")
 
-    node.query("SYSTEM START TTL MERGES t_orphan")
-
+    node.query("SYSTEM START REPLICATION QUEUES t_orphan")
     entry = wait_for_entry_postponed_on_size("t_orphan")
     assert "TTLDrop" in entry, (
         "the postponed entry is not the whole-part drop this case is about, so it does not "
@@ -545,16 +549,18 @@ def test_orphan_ttl_drop_is_still_postponed_by_source_size(started_cluster):
         "rows were removed although the merge was supposed to stay postponed:\n" + entry
     )
 
+    node.query("DROP TABLE filler SYNC")
     node.query("DROP TABLE t_orphan SYNC")
 
 
 def test_mixed_drop_needs_room_only_for_parts_with_rows_left(started_cluster):
-    """A drop of fully expired parts that also takes a part without rows TTL info needs room
-    only for that part.
+    """A drop of fully expired parts next to a part without rows TTL info needs room only for
+    that part.
 
     The attached part carries the expired info of its source table's column TTL and no rows
-    TTL info, so the drop takes it together with the expired parts next to it. Its rows have
-    not expired, and they are the only rows the merge writes back.
+    TTL info, so it is a drop candidate next to the expired parts. Its rows have not expired:
+    they are the only rows a drop writes back, and the merge that does it must reserve room
+    for them.
     """
     node.query("DROP TABLE IF EXISTS t_mixed SYNC")
     node.query("DROP TABLE IF EXISTS t_mixed_src SYNC")
@@ -587,9 +593,11 @@ def test_mixed_drop_needs_room_only_for_parts_with_rows_left(started_cluster):
             "INSERT INTO t_mixed SELECT number, randomString(1024), now() - INTERVAL 10 DAY "
             f"FROM numbers({ROWS_PER_INSERT})"
         )
+    attached_rows = 2000
     # Two hours old: past the column TTL of t_mixed_src, not past the rows TTL of t_mixed.
     node.query(
-        "INSERT INTO t_mixed_src SELECT number, 'keep', now() - INTERVAL 2 HOUR FROM numbers(100)"
+        "INSERT INTO t_mixed_src SELECT number, concat('keep', randomString(1024)), "
+        f"now() - INTERVAL 2 HOUR FROM numbers({attached_rows})"
     )
     node.query("ALTER TABLE t_mixed ATTACH PARTITION tuple() FROM t_mixed_src")
     node.query("DROP TABLE t_mixed_src SYNC")
@@ -599,17 +607,19 @@ def test_mixed_drop_needs_room_only_for_parts_with_rows_left(started_cluster):
         "SELECT sum(bytes_on_disk) FROM system.parts WHERE active "
         "AND database = currentDatabase() AND table = 't_mixed' AND delete_ttl_info_max = 0"
     )
-    assert 0 < attached_bytes < threshold, (
-        f"the attached part without rows TTL info holds {attached_bytes} bytes, which does not "
-        f"fit below the gate threshold of {threshold} bytes on its own"
+    # Above the 1 MiB every reservation gets anyway, so that the reservation check can fail.
+    assert (1 << 20) < attached_bytes < threshold, (
+        f"the attached part without rows TTL info holds {attached_bytes} bytes, which is not "
+        f"between the 1 MiB minimum reservation and the gate threshold of {threshold} bytes"
     )
 
+    since = node.query("SELECT now64(6)").strip()
     node.query("SYSTEM START TTL MERGES t_mixed")
 
     assert_eq_with_retry(
         node,
-        "SELECT count(), countIf(s = 'keep') FROM t_mixed",
-        "100\t100",
+        "SELECT count(), countIf(startsWith(s, 'keep')) FROM t_mixed",
+        f"{attached_rows}\t{attached_rows}",
         retry_count=120,
         sleep_time=1,
     )
@@ -623,5 +633,15 @@ def test_mixed_drop_needs_room_only_for_parts_with_rows_left(started_cluster):
         )
         > 0
     ), "the expired rows were removed by something other than a TTL drop merge"
+
+    wait_for_part_log(
+        "t_mixed",
+        "event_type = 'MergeParts' AND merge_reason = 'TTLDropMerge' AND error = 0 AND rows > 0",
+    )
+    reserved = max_reserved_bytes_since("gate_mixed", since)
+    assert reserved >= attached_bytes, (
+        f"the drop that wrote back the attached rows of t_mixed reserved {reserved:.0f} bytes "
+        f"on disk gate_mixed, less than the {attached_bytes} bytes they hold"
+    )
 
     node.query("DROP TABLE t_mixed SYNC")
