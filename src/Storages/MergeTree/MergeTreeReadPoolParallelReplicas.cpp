@@ -163,7 +163,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
             return nullptr;
 
         MarkRanges task_ranges;
-        if (!ranges_refiner)
+        if (ranges_refiners.empty())
         {
             task_ranges = std::move(cut_ranges);
         }
