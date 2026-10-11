@@ -39,3 +39,13 @@ t_c	3
 t_alias_b
 1	t_alias_a
 2	t_alias_b
+-- a remote table with physical _database and _table columns does not shadow the child name
+1	t_phys_dist	a
+1	t_phys_dist	a
+2
+0
+2
+1	t_phys_dist	a	2
+1
+1	t_phys_dist	a
+1	t_phys_dist	a

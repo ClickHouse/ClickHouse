@@ -1845,6 +1845,15 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// on the shards - so any expression over these columns must already see the constant.
         /// `__actionName` pins the action name the outer plan expects for this column.
         ///
+        /// Known limitation, for both `_database` and `_table`: the pinned name is the column
+        /// identifier the child's own planner gives a physical column of the same name. So when a
+        /// child that executes the query itself (`Distributed`) reads a table with a physical
+        /// `_database`/`_table` column, and its query reads no other real column (e.g.
+        /// `SELECT _database FROM m` or `SELECT count() FROM m WHERE _table = ...`), the shard picks
+        /// the smallest physical column to read, which may be that one, and it shadows the constant.
+        /// Queries that also read a real column are not affected
+        /// (see `05055_merge_virtual_columns_delegating_children`).
+        ///
         /// The substitution is not conditioned on the column being among the requested ones: a
         /// column referenced only by a filter is not requested at stages above `FetchColumns`,
         /// yet its references in the query tree are exactly the ones that must see the constant.

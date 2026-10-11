@@ -22,6 +22,9 @@ DROP TABLE IF EXISTS m_same;
 DROP TABLE IF EXISTS t_alias_a;
 DROP TABLE IF EXISTS t_alias_b;
 DROP TABLE IF EXISTS m_alias;
+DROP TABLE IF EXISTS t_phys_leaf;
+DROP TABLE IF EXISTS t_phys_dist;
+DROP TABLE IF EXISTS m_over_phys_dist;
 
 CREATE TABLE t_leaf (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_leaf SELECT toString(number % 3) FROM numbers(6);
@@ -97,6 +100,30 @@ INSERT INTO t_alias_b VALUES (2);
 CREATE TABLE m_alias (x UInt8, child String) ENGINE = Merge(currentDatabase(), '^t_alias_[ab]$');
 SELECT child FROM m_alias WHERE child = 't_alias_b';
 SELECT x, child FROM m_alias ORDER BY x;
+
+SELECT '-- a remote table with physical _database and _table columns does not shadow the child name';
+-- Only the shapes where the shard reads a real column are covered. A shard query that reads no real
+-- column (e.g. `SELECT _database FROM m_over_phys_dist` or `SELECT count() ... WHERE _table = ...`)
+-- makes the shard read its smallest physical column, and when that column is named `_database` or
+-- `_table`, its identifier `__table1._database`/`__table1._table` is the same as the action name the
+-- child-name constant is pinned to, so the remote value shadows the constant. That shape is a known
+-- limitation, see `ReadFromMerge::getModifiedQueryInfo`.
+CREATE TABLE t_phys_leaf (`_database` String, `_table` String, s String) ENGINE = MergeTree ORDER BY s;
+INSERT INTO t_phys_leaf VALUES ('remote_db', 'remote_table', 'a');
+CREATE TABLE t_phys_dist AS t_phys_leaf
+    ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_phys_leaf);
+CREATE TABLE m_over_phys_dist (s String) ENGINE = Merge(currentDatabase(), '^t_phys_dist$');
+SELECT _database = currentDatabase(), _table, s FROM m_over_phys_dist;
+SELECT count() FROM m_over_phys_dist WHERE _database = currentDatabase() AND s != '';
+SELECT count() FROM m_over_phys_dist WHERE _database = 'remote_db' AND s != '';
+SELECT count() FROM m_over_phys_dist WHERE _table = 't_phys_dist' AND s != '';
+SELECT _database = currentDatabase(), _table, s, sum(c) FROM (SELECT _database, _table, s, count() AS c FROM m_over_phys_dist GROUP BY _database, _table, s) GROUP BY ALL;
+SELECT DISTINCT concat(_database, '/', _table, '/', s) = concat(currentDatabase(), '/t_phys_dist/a') FROM m_over_phys_dist;
+SELECT _database = currentDatabase(), _table, s FROM m_over_phys_dist SETTINGS enable_analyzer = 0;
+
+DROP TABLE m_over_phys_dist;
+DROP TABLE t_phys_dist;
+DROP TABLE t_phys_leaf;
 
 DROP TABLE m_alias;
 DROP TABLE t_alias_b;
