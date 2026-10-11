@@ -122,7 +122,7 @@ public:
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void initializeFromDisk();
     void shutdown(bool is_drop) override;
@@ -181,7 +181,15 @@ private:
     ClusterPtr getOptimizedCluster(
         ContextPtr local_context,
         const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info) const;
+        const SelectQueryInfo & query_info,
+        const TreeRewriterResultPtr & syntax_analyzer_result) const;
+
+    ClusterPtr skipUnusedShards(
+        ClusterPtr cluster,
+        const SelectQueryInfo & query_info,
+        const TreeRewriterResultPtr & syntax_analyzer_result,
+        const StorageSnapshotPtr & storage_snapshot,
+        ContextPtr context) const;
 
     ClusterPtr skipUnusedShardsWithAnalyzer(
         ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
@@ -202,6 +210,7 @@ private:
     ///
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;

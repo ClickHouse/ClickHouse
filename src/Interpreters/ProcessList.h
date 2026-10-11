@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <Core/UUID.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
@@ -16,7 +15,6 @@
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/UniqueLock.h>
-#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -29,7 +27,6 @@
 #include <memory>
 #include <mutex>
 #include <map>
-#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -109,10 +106,6 @@ protected:
     String query;
     UInt64 normalized_query_hash;
     ClientInfo client_info;
-
-    /// The principal this query runs as; empty when its context has no bound user, as for a query the
-    /// server runs on its own behalf. The name in `client_info` is reusable, so it cannot decide identity.
-    std::optional<UUID> user_id;
 
     /// Acquired workload resources
     QuerySlotPtr query_slot;
@@ -217,7 +210,6 @@ public:
         const String & query_,
         UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
-        const std::optional<UUID> & user_id_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
         MemoryReservationPtr && memory_reservation_,
@@ -266,7 +258,7 @@ public:
     void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 
     /// Cancels the current query.
-    /// Optional argument `exception` allows to set an exception, a copy of which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
+    /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
     CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
@@ -345,10 +337,6 @@ struct ProcessListForUser
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
 
-    /// Per-user memory-pressure monitor: watches `user_memory_tracker`, escalates against the global
-    /// monitor. A query monitor is repointed onto this one when the query joins the user.
-    MemoryPressureMonitor user_memory_pressure_monitor{user_memory_tracker, getGlobalMemoryPressureMonitor()};
-
     TemporaryDataOnDiskScopePtr user_temp_data_on_disk;
 
     UserOvercommitTracker user_overcommit_tracker;
@@ -365,9 +353,6 @@ struct ProcessListForUser
     {
         /// TODO: should we drop user_temp_data_on_disk here?
         user_memory_tracker.reset();
-        /// Called when the user's last query leaves, so clear the sticky level too - the next query
-        /// must not inherit the previous one's cooldown.
-        user_memory_pressure_monitor.reset();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
     }
@@ -487,10 +472,6 @@ protected:
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
 
-    /// An unset `expected_user_id` cancels whatever holds the key.
-    CancellationCode sendCancelToQueryImpl(
-        const String & current_query_id, const String & current_user, const std::optional<UUID> & expected_user_id);
-
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
@@ -578,20 +559,8 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    struct OwnQuery
-    {
-        String user;
-        String query;
-    };
-
-    /// The running query with this id, if it belongs to `user_id`. A query id is unique across users
-    /// while it runs, so the id locates the entry and the user id decides whether it is that user's.
-    std::optional<OwnQuery> tryGetOwnRunningQuery(const String & current_query_id, const UUID & user_id);
-
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
-    /// Cancel it only if it still belongs to `expected_user_id`, since user names are reusable.
-    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, const UUID & expected_user_id);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     /// Remember the `BackendKeyData` pair that authenticates `CancelRequest` for a PostgreSQL

@@ -54,37 +54,11 @@ if (ENABLE_XRAY)
     )
 endif()
 if (WITH_COVERAGE)
-    # `-noprofilelib` tells clang not to inject its own (host-system) profile
-    # runtime. It also drops the `-u __llvm_profile_runtime` anchor the driver
-    # would add, so the anchor is restored here explicitly. Our own runtime is
-    # NOT named here: contrib/compiler-rt-cmake registers `clang_rt_profile`
-    # into global-libs, which places the archive in every link AFTER the object
-    # files, and the anchor makes the linker pull it from there.
-    #
-    # Both properties are load-bearing, and each was broken once:
-    #
-    #   * The runtime must come after the objects. It defines
-    #     `__llvm_profile_counter_bias` as a WEAK alias of its own default
-    #     variable to detect whether the compiler emitted the real bias variable
-    #     (`-mllvm -runtime-counter-relocation`, continuous mode `%c`); the
-    #     compiler's definition is weak too, and the linker keeps the first weak
-    #     definition. Linked before the objects (the old --whole-archive in
-    #     CMAKE_EXE_LINKER_FLAGS), the alias always won and every process failed
-    #     continuous-mode startup with "LLVM Profile Error: Neither
-    #     __llvm_profile_counter_bias nor __llvm_profile_bitmap_bias is defined".
-    #
-    #   * The anchor must exist. Without it, nothing references the runtime, the
-    #     lazy archive contributes no members, and every process silently writes
-    #     no profile at all — there is not even an error, because the code that
-    #     would print one is exactly what is missing.
-    #
-    #   * The runtime must not be linked twice. A --whole-archive copy placed
-    #     after the lazy global-libs copy force-loads every member on top of the
-    #     lazily selected ones and fails the link with duplicate `lprof*`
-    #     symbols.
+    # Tell clang not to inject its own (host-system) profile runtime — we
+    # provide ours.
     list (APPEND SANITIZER_RUNTIMES
         "-noprofilelib"
-        "-Wl,-u,__llvm_profile_runtime"
+        "${COMPILER_RT_DIR}/libclang_rt_profile.a"
     )
 endif()
 string (REPLACE ";" " " SANITIZER_RUNTIMES "${SANITIZER_RUNTIMES}")

@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <ranges>
 #include <tuple>
 #include <utility>
@@ -15,9 +14,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -32,6 +29,7 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -71,7 +69,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
@@ -80,7 +77,6 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -98,7 +94,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/StorageAlias.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
@@ -145,6 +140,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -152,6 +148,7 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
+    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -168,6 +165,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_analyze_depth;
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -176,6 +174,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
@@ -186,6 +185,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
@@ -207,7 +207,6 @@ namespace Setting
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool use_statistics;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsUInt64 max_rows_to_group_by;
@@ -306,10 +305,13 @@ try
 
     ASTs select_expressions;
 
-    /// The first column is our filter expression.
-    /// the row_policy_filter_expression should be cloned, because it may be changed by TreeRewriter.
-    /// which make it possible an invalid expression, although it may be valid in whole select.
-    select_expressions.push_back(row_policy_filter_expression->clone());
+    /// The first column is our filter expression. Clone it because `TreeRewriter` can change the AST.
+    auto filter_expression = row_policy_filter_expression->clone();
+
+    /// `TreeRewriter` expands table aliases only on the initiator, but these filters are also
+    /// created on shards. An `ALIAS` used by a row policy must be evaluated before the read filter.
+    replaceAliasColumnsInQuery(filter_expression, metadata_snapshot->getColumns(), {}, context);
+    select_expressions.push_back(std::move(filter_expression));
 
     /// Keep columns that are required after the filter actions.
     for (const auto & column_str : prerequisite_columns)
@@ -400,6 +402,23 @@ InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 namespace
 {
+
+/// Whether the AST subtree contains an `arrayJoin` function call, without descending into
+/// nested subqueries (their `arrayJoin` belongs to a different scope). Used to disable the
+/// trivial-LIMIT source optimization, since `arrayJoin` changes row cardinality after the
+/// source has run. Mirrors `numbersLikeUtils::astContainsArrayJoinFunction`.
+bool selectListHasArrayJoinFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+        if (function->name == "arrayJoin")
+            return true;
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && selectListHasArrayJoinFunction(child))
+            return true;
+    return false;
+}
 
 /** There are no limits on the maximum size of the result for the subquery.
   *  Since the result of the query is not the result of the entire query.
@@ -607,9 +626,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    /// Only the analyzer can resolve recursive CTEs.
+    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
     if (getSelectQuery().recursive_with)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported by this interpreter");
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
 
     initSettings();
 
@@ -801,8 +821,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        row_policy_filter = getRowPolicyFilterForStorage(*storage, context);
-
+        row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
         if (row_policy_filter && context->hasQueryContext())
         {
             for (const auto & row_policy : row_policy_filter->policies)
@@ -926,16 +945,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
-                /// The parts are only there for a storage of the `MergeTree` family, and they are
-                /// only used by its condition selectivity estimator. Other storages that allow
-                /// moving conditions to `PREWHERE` either have no snapshot data at all or have
-                /// their own type of it (`StorageMemory`), so the type has to be checked.
                 RangesInDataParts parts_for_estimator;
-                if (const auto * merge_tree_snapshot_data
-                    = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+                if (storage_snapshot->data)
                 {
-                    if (merge_tree_snapshot_data->parts)
-                        parts_for_estimator = *merge_tree_snapshot_data->parts;
+                    const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
+                    if (parts)
+                        parts_for_estimator = *parts;
                 }
 
                 /// Just attempting to read statistics files on disk can increase query latencies.
@@ -944,17 +959,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 const auto * where_function = query.where()->as<ASTFunction>();
                 const bool has_multiple_conditions = where_function && where_function->name == "and";
                 const bool has_statistics = storage_snapshot->metadata->hasStatistics();
-                ConditionSelectivityEstimatorPtr estimator;
-                if (has_statistics && has_multiple_conditions && context->getSettingsRef()[Setting::use_statistics])
-                {
-                    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
-                    {
-                        auto filter = ExpressionAnalyzer(query.where()->clone(), syntax_analyzer_result, context).getActionsDAG(true);
-                        parts_for_estimator = ReadFromMergeTree::filterPartsForStatistics(
-                            parts_for_estimator, filter.getOutputs().front(), *merge_tree, storage_snapshot->metadata, context);
-                    }
-                    estimator = storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context);
-                }
+                auto estimator = (has_statistics && has_multiple_conditions)
+                                    ? storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context)
+                                    : nullptr;
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
@@ -1017,6 +1024,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             for (const auto & it : query_analyzer->getExternalTables())
                 if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
                     context->addExternalTable(it.first, std::move(*it.second));
+        }
+
+        if (!options.only_analyze || options.modify_inplace)
+        {
+            if (syntax_analyzer_result->rewrite_subqueries)
+            {
+                /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
+                interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
+            }
         }
 
         if (interpreter_subquery)
@@ -1205,7 +1221,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         return true;
     }
 
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
     if (!storage_merge_tree || settings[Setting::parallel_replicas_min_number_of_rows_per_replica] == 0)
         return false;
 
@@ -1375,11 +1391,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     /// So it will do partial second stage (second_stage=true), and initiator will do the final part.
     bool second_stage = from_stage <= QueryProcessingStage::WithMergeableState
         && options.to_stage > QueryProcessingStage::WithMergeableState;
-    /// Is running on the initiating server after the remote servers completed their aggregation stage?
-    bool from_aggregation_stage = from_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
 
     analysis_result = ExpressionAnalysisResult(
-        *query_analyzer, metadata_snapshot, first_stage, second_stage, from_aggregation_stage, options.only_analyze, row_policy_info, additional_filter_info, *source_header);
+        *query_analyzer, metadata_snapshot, first_stage, second_stage, options.only_analyze, row_policy_info, additional_filter_info, *source_header);
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -1519,10 +1533,49 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         descr.fill_step = order_by_elem.direction;
 
     if (order_by_elem.getFillStaleness())
+    {
         std::tie(descr.fill_staleness, descr.staleness_kind) = getWithFillValueWithIntervalKind(order_by_elem.getFillStaleness(), context);
 
-    if (const auto reason = checkFillDescription(descr, order_by_elem.direction); !reason.empty())
-        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "{}", reason);
+        if (order_by_elem.getFillFrom())
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STALENESS cannot be used together with WITH FILL FROM");
+    }
+
+    if (accurateEquals(descr.fill_step, Field{0}))
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
+
+    if (order_by_elem.direction == 1)
+    {
+        if (accurateLess(descr.fill_step, Field{0}))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be negative for sorting in ascending direction");
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            accurateLess(descr.fill_to, descr.fill_from))
+        {
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
+        }
+
+        if (accurateLess(descr.fill_staleness, Field{0}))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STALENESS value cannot be negative for sorting in ascending direction");
+    }
+    else
+    {
+        if (accurateLess(Field{0}, descr.fill_step))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be positive for sorting in descending direction");
+
+        if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
+            accurateLess(descr.fill_from, descr.fill_to))
+        {
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                            "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
+        }
+
+        if (accurateLess(Field{0}, descr.fill_staleness))
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STALENESS value cannot be positive for sorting in descending direction");
+    }
 
     return descr;
 }
@@ -1723,15 +1776,8 @@ InterpreterSelectQuery::LimitInfo InterpreterSelectQuery::getLimitLengthAndOffse
 
 UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context_)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN,
-    /// LIMIT AFTER/UNTIL, Fractional Offset, Negative or Fractional Limit.
-    if (!query.distinct
-        && !query.limitBy()
-        && !query.limit_with_ties
-        && !query.limitAfter()
-        && !query.limitUntil()
-        && !query.arrayJoinExpressionList().first
-        && query.limitLength())
+    /// Partial sort can be done if there is LIMIT but no DISTINCT, LIMIT BY, ARRAY JOIN, Fractional Offset, Negative or Fractional Limit.
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList().first && query.limitLength())
     {
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context_);
 
@@ -1747,6 +1793,56 @@ UInt64 InterpreterSelectQuery::getLimitForSorting(const ASTSelectQuery & query, 
 }
 
 
+static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
+{
+    if (query.group_by_with_totals)
+        return true;
+
+    /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
+     * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
+     */
+    if (auto query_table = extractTableExpression(query, 0))
+    {
+        if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
+        {
+            /** NOTE
+            * 1. For ASTSelectWithUnionQuery after normalization for union child node the height of the AST tree is at most 2.
+            * 2. For ASTSelectIntersectExceptQuery after normalization in case there are intersect or except nodes,
+            * the height of the AST tree can have any depth (each intersect/except adds a level), but the
+            * number of children in those nodes is always 2.
+            */
+            std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
+            {
+                if (const auto * select_child = child_ast->as <ASTSelectQuery>())
+                {
+                    if (hasWithTotalsInAnySubqueryInFromClause(select_child->as<ASTSelectQuery &>()))
+                        return true;
+                }
+                else if (const auto * union_child = child_ast->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & subchild : union_child->list_of_selects->children)
+                        if (traverse_recursively(subchild))
+                            return true;
+                }
+                else if (const auto * intersect_child = child_ast->as<ASTSelectIntersectExceptQuery>())
+                {
+                    auto selects = intersect_child->getListOfSelects();
+                    for (const auto & subchild : selects)
+                        if (traverse_recursively(subchild))
+                            return true;
+                }
+                return false;
+            };
+
+            for (const auto & elem : ast_union->list_of_selects->children)
+                if (traverse_recursively(elem))
+                    return true;
+        }
+    }
+
+    return false;
+}
+
 /// Whether the final LimitStep is built with `always_read_till_end`, i.e. it must not cancel its
 /// input early. Shared by `executeDistinct` and `executeLimit` so the two cannot drift apart.
 static bool limitAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings & settings)
@@ -1758,21 +1854,6 @@ static bool limitAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings
     /// otherwise a WITH TOTALS on any level below would lose its totals if the input were cancelled.
     if (query.group_by_with_totals)
         return !query.orderBy();
-
-    return hasWithTotalsInAnySubqueryInFromClause(query);
-}
-
-/// LIMIT BY can be pushed into the sorted-stream pipeline before the final merge, so a direct
-/// WITH TOTALS query must drain its input even when it has ORDER BY. The final LIMIT has a weaker
-/// condition because sorting itself may already consume the full input before LIMIT runs.
-static bool limitByAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings & settings)
-{
-    if (settings[Setting::exact_rows_before_limit]
-        && (query.limitLength() || query.limitAfter() || query.limitUntil()))
-        return true;
-
-    if (query.group_by_with_totals)
-        return true;
 
     return hasWithTotalsInAnySubqueryInFromClause(query);
 }
@@ -2053,7 +2134,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         /// in `JoinStepLogical.cpp`). Besides being semantically correct (this sort is done locally
                         /// before a merge join), it is what lets `optimizeParallelFullSortingMergeJoin` recognize the
                         /// step and rewrite it into hash-scattered shards; otherwise `parallel_full_sorting_merge`
-                        /// would silently degrade to a single merge join here.
+                        /// would silently degrade to a single merge join with `enable_analyzer = 0`.
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
                             std::move(order_descr),
@@ -2074,8 +2155,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             join_pos);
                         creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos), max_len);
 
+                        auto * step_raw_ptr = creating_set_step.get();
                         plan.addStep(std::move(creating_set_step));
-                        return static_cast<CreateSetAndFilterOnTheFlyStep *>(plan.getRootNode()->step.get());
+                        return step_raw_ptr;
                     };
 
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped && expressions.join->getTableJoin().kind() != JoinKind::Paste)
@@ -2317,7 +2399,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
             bool apply_prelimit = apply_limit &&
                                   query.limitLength() && !query.limit_with_ties &&
-                                  !query.limitAfter() && !query.limitUntil() &&
                                   !hasWithTotalsInAnySubqueryInFromClause(query) &&
                                   !query.arrayJoinExpressionList().first &&
                                   !query.distinct &&
@@ -2361,20 +2442,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (options.to_stage == QueryProcessingStage::Complete)
                 executeWithFill(query_plan);
 
-            const bool has_limit_range = query.limitAfter() || query.limitUntil();
-
-            /// AFTER/UNTIL: extremes must be computed on the pre-range stream to match normal LIMIT
-            /// semantics. Since the range limit runs before projection (it may reference non-selected
-            /// columns), extremes are computed here, before both, mirroring the analyzer path.
-            if (has_limit_range && apply_limit && apply_offset)
-                executeExtremes(query_plan);
-
-            if (has_limit_range && apply_limit && apply_offset && expressions.before_limit_range)
-                executeExpression(query_plan, expressions.before_limit_range, "Before LIMIT range (AFTER/UNTIL)");
-
-            /// WITH TIES needs ORDER BY columns removed by projection.
-            /// AFTER/UNTIL conditions may reference non-selected columns, so both must run before projection.
-            if ((query.limit_with_ties || has_limit_range) && apply_limit && apply_offset)
+            /// If we have 'WITH TIES', we need execute limit before projection,
+            /// because in that case columns from 'ORDER BY' are used.
+            if (query.limit_with_ties && apply_limit && apply_offset)
             {
                 executeLimit(query_plan);
             }
@@ -2388,12 +2458,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             }
 
             /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
-            /// For AFTER/UNTIL the extremes were already computed above, before the range limit.
-            if (!(has_limit_range && apply_limit && apply_offset))
-                executeExtremes(query_plan);
+            executeExtremes(query_plan);
 
-            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset)
-                || (has_limit_range && apply_offset);
+            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset);
             /// Limit is no longer needed if there is prelimit.
             ///
             /// NOTE: that LIMIT cannot be applied if OFFSET should not be applied,
@@ -2564,7 +2631,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     }
 
     /// Set of all (including ALIAS) required columns for PREWHERE
-    auto get_prewhere_columns = [&]()
+    auto get_prewhere_columns = [&](bool include_row_level_filter)
     {
         NameSet columns;
 
@@ -2577,7 +2644,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
         /// A row policy that will not be pushed into the storage read is applied as an ordinary
         /// FilterStep above it, so its columns are read normally and are not PREWHERE columns.
-        if (row_level_filter && shouldPushRowLevelFilterToStorage())
+        if (row_level_filter && include_row_level_filter && shouldPushRowLevelFilterToStorage())
         {
             auto row_level_required_columns = row_level_filter->actions.getRequiredColumns().getNames();
             columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
@@ -2595,14 +2662,13 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     /// before any other executions.
     if (alias_columns_required)
     {
-        NameSet required_columns_from_prewhere = get_prewhere_columns();
+        /// The row-level filter runs before `PREWHERE`, but its inputs are not produced by
+        /// `PREWHERE`. Keep them in the alias actions for queries that still need them.
+        NameSet required_columns_from_prewhere = get_prewhere_columns(/*include_row_level_filter=*/ false);
         NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
 
         /// Expression, that contains all raw required columns
         ASTPtr required_columns_all_expr = make_intrusive<ASTExpressionList>();
-
-        /// Expression, that contains raw required columns for PREWHERE
-        ASTPtr required_columns_from_prewhere_expr = make_intrusive<ASTExpressionList>();
 
         /// Sort out already known required columns between expressions,
         /// also populate `required_aliases_from_prewhere`.
@@ -2628,8 +2694,6 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
             if (required_columns_from_prewhere.contains(column))
             {
-                required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
-
                 if (is_alias)
                     required_aliases_from_prewhere.insert(column);
             }
@@ -2697,7 +2761,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
     if (supported_prewhere_columns.has_value())
     {
-        NameSet required_columns_from_prewhere = get_prewhere_columns();
+        NameSet required_columns_from_prewhere = get_prewhere_columns(/*include_row_level_filter=*/ true);
         const auto & table_columns = metadata_snapshot->getColumns();
         const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
 
@@ -2733,7 +2797,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         return {};
 
     auto & query = getSelectQuery();
-    if (!query.prewhere() && !query.where())
+    if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
     {
         /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
         /// require reading some data (but much faster than reading columns).
@@ -2782,13 +2846,11 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
     /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
     /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
-    if (expressionContainsArrayJoin(query.select()) || query.arrayJoinExpressionList().first)
+    if (selectListHasArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
         return 0;
 
     if (!query.distinct
        && !query.limit_with_ties
-       && !query.limitAfter()
-       && !query.limitUntil()
        && !query.prewhere()
        && !query.where()
        && query_info.filter_asts.empty()
@@ -3171,7 +3233,8 @@ void InterpreterSelectQuery::executeAggregation(
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        force_aggregation_in_order);
+        force_aggregation_in_order,
+        settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -3396,7 +3459,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
         query_plan.getCurrentHeader(),
         input_sorting_info->sort_description_for_merging,
         output_order_descr,
-        SortingStep::Settings(settings),
+        settings[Setting::max_block_size],
         limit);
 
     query_plan.addStep(std::move(finish_sorting_step));
@@ -3489,7 +3552,6 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         ///     `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short
         /// then you can get no more than limit_length + limit_offset of different rows.
         if ((!query.orderBy() || !before_order) && !query.limitBy()
-            && !query.limitAfter() && !query.limitUntil()
             && !query.limit_with_ties
             && !limitAlwaysReadsTillEnd(query, settings))
         {
@@ -3501,20 +3563,17 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
                 limit_for_distinct = lim_info.limit_length + lim_info.limit_offset;
         }
 
+        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
+
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
-            DistinctStep::Settings(settings),
+            limits,
             limit_for_distinct,
             columns,
             pre_distinct);
 
         if (pre_distinct)
             distinct_step->setStepDescription("Preliminary DISTINCT");
-
-        /// The `DISTINCT` that runs after the `ORDER BY` sits above the sort in the plan: the sorted order
-        /// has to survive it up to the result.
-        if (!before_order && query.orderBy())
-            distinct_step->preserveInputOrder();
 
         query_plan.addStep(std::move(distinct_step));
     }
@@ -3525,9 +3584,6 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
 {
     auto & query = getSelectQuery();
-    /// Do not apply preliminary LIMIT when LIMIT AFTER/UNTIL is used (effective offset is unknown).
-    if (query.limitAfter() || query.limitUntil())
-        return;
     /// If there is LIMIT
     if (query.limitLength())
     {
@@ -3615,13 +3671,10 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     if (fractional_limit > 0 || fractional_offset > 0)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
 
-    const bool always_read_till_end = limitByAlwaysReadsTillEnd(query, context->getSettingsRef());
-
     if (!is_limit_length_negative && !is_limit_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
-        auto limit_by = std::make_unique<LimitByStep>(
-            query_plan.getCurrentHeader(), limit_length, limit_offset, columns, always_read_till_end);
+        auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
         query_plan.addStep(std::move(limit_by));
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
@@ -3638,7 +3691,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         if (limit_offset > 0)
         {
             auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns, always_read_till_end);
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
@@ -3653,8 +3706,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         auto step1 = std::make_unique<NegativeLimitByStep>(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
         query_plan.addStep(std::move(step1));
-        auto step2 = std::make_unique<LimitByStep>(
-            query_plan.getCurrentHeader(), limit_length, 0, columns, always_read_till_end);
+        auto step2 = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
         query_plan.addStep(std::move(step2));
     }
 }
@@ -3665,11 +3717,14 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
     if (query.orderBy())
     {
         SortDescription sort_description = getSortDescription(query, context);
-        /// `FillingStep` derives the columns to fill from the sort description.
-        const bool has_fill = std::any_of(
-            sort_description.begin(), sort_description.end(), [](const auto & desc) { return desc.with_fill; });
+        SortDescription fill_description;
+        for (auto & desc : sort_description)
+        {
+            if (desc.with_fill)
+                fill_description.push_back(desc);
+        }
 
-        if (!has_fill)
+        if (fill_description.empty())
             return;
 
         InterpolateDescriptionPtr interpolate_descr =
@@ -3679,6 +3734,7 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
         auto filling_step = std::make_unique<FillingStep>(
             query_plan.getCurrentHeader(),
             std::move(sort_description),
+            std::move(fill_description),
             interpolate_descr,
             settings[Setting::use_with_fill_by_sorting_prefix]);
         query_plan.addStep(std::move(filling_step));
@@ -3689,61 +3745,6 @@ void InterpreterSelectQuery::executeWithFill(QueryPlan & query_plan)
 void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
-    /// If there is LIMIT with AFTER or UNTIL, use LimitRangeStep
-    if (query.limitAfter() || query.limitUntil())
-    {
-        if (query.limit_with_ties)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT WITH TIES is not supported with LIMIT AFTER/UNTIL");
-        if (query.limitOffset())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OFFSET is not supported together with LIMIT AFTER/UNTIL");
-
-        std::optional<UInt64> limit_length;
-        if (query.limitLength())
-        {
-            const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
-            if (lim_info.is_limit_length_negative || lim_info.is_limit_offset_negative
-                || lim_info.fractional_limit > 0 || lim_info.fractional_offset > 0)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional and negative LIMIT/OFFSET are not supported with LIMIT AFTER/UNTIL");
-            limit_length = lim_info.limit_length;
-        }
-
-        const bool always_read_till_end = limitAlwaysReadsTillEnd(query, context->getSettingsRef());
-
-        const auto & header = query_plan.getCurrentHeader();
-
-        /// The boundary conditions were computed as columns by the `appendLimitRange` chain step, so the
-        /// step's conditions just read them from the header by name.
-        ActionsDAG conditions;
-        auto add_boundary_column = [&](const String & column_name) -> std::optional<String>
-        {
-            if (column_name.empty())
-                return std::nullopt;
-
-            /// `AFTER` and `UNTIL` with the same expression share one column.
-            if (!conditions.tryFindInOutputs(column_name))
-            {
-                const auto & column = header->getByName(column_name);
-                conditions.getOutputs().push_back(&conditions.addInput(column.name, column.type));
-            }
-            return column_name;
-        };
-
-        auto start_column_name = add_boundary_column(analysis_result.limit_range_start_column_name);
-        auto end_column_name = add_boundary_column(analysis_result.limit_range_end_column_name);
-        auto limit_range_step = std::make_unique<LimitRangeStep>(
-            header,
-            std::move(conditions),
-            std::move(start_column_name),
-            std::move(end_column_name),
-            query.limit_after_all,
-            limit_length,
-            always_read_till_end);
-        limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
-        query_plan.addStep(std::move(limit_range_step));
-
-        return;
-    }
-
     /// If there is LIMIT
     if (query.limitLength())
     {
@@ -3952,6 +3953,12 @@ void InterpreterSelectQuery::initSettings()
     if (query.settings())
     {
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
+
+        /// The old interpreter disabled the analyzer in `IInterpreterUnionOrSelectQuery`, but a `SELECT`
+        /// stored in a `VIEW` may enable it again here. Storages must not use analyzer-only query tree
+        /// paths (for example, `StorageDistributed::read`) when this interpreter built the query.
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            context->setSetting("allow_experimental_analyzer", false);
     }
 
     const auto & client_info = context->getClientInfo();

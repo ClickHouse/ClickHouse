@@ -5,8 +5,6 @@
 #include <base/types.h>
 #include <base/unit.h>
 
-#include <string_view>
-
 namespace DB
 {
 
@@ -61,7 +59,7 @@ struct FormatSettings
 
     bool allow_special_serialization_kinds = false;
 
-    /// Infers a number, not a `String`, for an integer with leading zeros
+    /// tolerates leading zeros during parsing integers
     bool allow_number_leading_zeros = false;
 
     inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
@@ -172,22 +170,6 @@ struct FormatSettings
         ZSTD
     };
 
-    /// What to do with a column whose type has no first-class Arrow mapping.
-    enum class ArrowUnsupportedTypes : uint8_t
-    {
-        /// Reject the query.
-        THROW,
-        /// Write the text representation of each value (`serializeText`) as an Arrow `Utf8` column.
-        TEXT,
-        /// Write the binary representation of each value (`serializeBinary`) as an Arrow `Binary` column.
-        BINARY
-    };
-
-    /// The Arrow extension name both Arrow writers put on a column written as an opaque `Utf8`/`Binary`
-    /// column by `TEXT`/`BINARY` above, with the original ClickHouse type name in the extension metadata,
-    /// so that a consumer can tell it apart from a genuine string or binary column.
-    static constexpr std::string_view ARROW_OPAQUE_EXTENSION_NAME = "clickhouse.opaque";
-
     struct
     {
         UInt64 max_binary_string_size = 1_GiB;
@@ -218,7 +200,7 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
-        ArrowUnsupportedTypes output_unsupported_types = ArrowUnsupportedTypes::BINARY;
+        bool output_unsupported_types_as_binary = true;
         UInt64 output_record_batch_rows = 0;
         UInt64 output_record_batch_bytes = 0;
     } arrow{};
@@ -347,7 +329,6 @@ struct FormatSettings
         bool empty_as_default = false;
         bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
-        bool type_json_skip_null_typed_paths = false;
         std::optional<size_t> max_dynamic_subcolumns_in_json_type_parsing = std::nullopt;
         bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
         bool type_json_use_partial_match_to_skip_paths_by_regexp = true;

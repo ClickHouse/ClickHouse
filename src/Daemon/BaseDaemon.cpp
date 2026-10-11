@@ -39,7 +39,6 @@
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/CoverageCollection.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/SymbolIndex.h>
@@ -252,11 +251,6 @@ void BaseDaemon::initialize(Application & self)
     }
 
     loadConfiguration();
-
-#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
-    /// As early as possible, so that the coverage of the startup (and of its failure) is attributed too.
-    initCoverageFromEnvironment(config().getString("logger.log", ""));
-#endif
 
 #if USE_JEMALLOC
     Jemalloc::setup(

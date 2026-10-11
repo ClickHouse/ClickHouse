@@ -29,6 +29,8 @@ public:
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 
+    virtual ColumnPtr castColumn(const Columns &, const VectorWithMemoryTracking<size_t> &) { return nullptr; }
+
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
 };

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
-#include <Processors/Executors/WorkInterval.h>
 #include <Processors/StepWallClock.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -100,7 +99,7 @@ public:
     bool pulling() const { return output != nullptr; }
     /// Use PushingPipelineExecutor or PushingAsyncPipelineExecutor.
     bool pushing() const { return input != nullptr; }
-    /// Use CompletedPipelineExecutor.
+    /// Use PipelineExecutor. Call execute() to build one.
     bool completed() const { return initialized() && !pulling() && !pushing(); }
 
     /// Only for pushing.
@@ -122,17 +121,12 @@ public:
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
 
     void setProcessListElement(QueryStatusPtr elem);
-    QueryStatusPtr getProcessListElement() const { return process_list_element; }
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
     void setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_);
     StepWallClockRegistry * getStepClocks() const { return step_wall_clock_registry.get(); }
-
-    void setCollectWorkIntervals(bool collect_work_intervals_) { collect_work_intervals = collect_work_intervals_; }
-    /// Moves the collected intervals out; the pipeline holds none afterwards.
-    WorkIntervalsPerThread takeWorkIntervals() { return std::move(work_intervals); }
 
     void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
     void finalizeWriteInQueryResultCache();
@@ -155,8 +149,6 @@ public:
     /// Skip updating profile events.
     /// For merges in mutations it may need special logic, it's done inside ProgressCallback.
     void disableProfileEventUpdate() { update_profile_events = false; }
-    /// Do not account rows read by this pipeline in the query progress and read limits.
-    void disableReadProgress() { report_read_progress = false; }
 
     /// Create progress callback from limits and quotas.
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
@@ -181,7 +173,6 @@ private:
     std::shared_ptr<const EnabledQuota> quota;
     UInt64 normalized_query_hash = 0;
     bool update_profile_events = true;
-    bool report_read_progress = true;
     StepWallClockRegistryPtr step_wall_clock_registry;
 
     std::shared_ptr<Processors> processors;
@@ -198,15 +189,13 @@ private:
 
     size_t num_threads = 0;
     bool concurrency_control = false;
-    bool collect_work_intervals = false;
-
-    WorkIntervalsPerThread work_intervals;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
+    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

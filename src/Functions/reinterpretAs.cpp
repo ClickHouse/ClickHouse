@@ -1094,7 +1094,7 @@ SELECT reinterpretAsDateTime(65), reinterpretAsDateTime('A')
         )",
         R"(
 ┌─reinterpretAsDateTime(65)─┬─reinterpretAsDateTime('A')─┐
-│       1970-01-01 00:01:05 │        1970-01-01 00:01:05 │
+│       1970-01-01 01:01:05 │        1970-01-01 01:01:05 │
 └───────────────────────────┴────────────────────────────┘
         )"
     }
@@ -1121,7 +1121,7 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
         )",
         R"(
 ┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│ 08090a0b-0c0d-0e0f-0001-020304050607                                  │
+│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
 └───────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -1146,15 +1146,14 @@ For an `Array` of fixed-size elements, the element bytes are copied verbatim in 
     {
         "Usage example",
         R"(
--- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05'))),
-    hex(reinterpretAsString(toDate('1970-03-07')))
+    reinterpretAsString(toDateTime('1970-01-01 01:01:05')),
+    reinterpretAsString(toDate('1970-03-07'))
         )",
         R"(
-┌─hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsString(toDate('1970-03-07')))─┐
-│ 510E                                                        │ 41                                             │
-└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
+│ A                                                      │ A                                         │
+└────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
         )"
     },
     {
@@ -1188,15 +1187,14 @@ Reinterprets the input value as a fixed string (assuming little endian order).
     {
         "Usage example",
         R"(
--- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))),
-    hex(reinterpretAsFixedString(toDate('1970-03-07')))
+    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')),
+    reinterpretAsFixedString(toDate('1970-03-07'))
         )",
         R"(
-┌─hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsFixedString(toDate('1970-03-07')))─┐
-│ 510E0000                                                         │ 4100                                                │
-└──────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
+┌─reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsFixedString(toDate('1970-03-07'))─┐
+│ A                                                           │ A                                              │
+└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
         )"
     }
     };

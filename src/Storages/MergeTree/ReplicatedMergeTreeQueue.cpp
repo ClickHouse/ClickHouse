@@ -287,7 +287,7 @@ bool ReplicatedMergeTreeQueue::isIntersectingWithDropReplaceIntent(
     {
         if (!intent.isDisjoint(part_info))
         {
-            constexpr auto fmt_string = "Not executing {} of type {} for part {} (actual part {}) "
+            constexpr auto fmt_string = "Not executing {} of type {} for part {} (actual part {})"
                                         "because there is a drop or replace intent with part name {}.";
             LOG_INFO(
                 LogToStr(out_reason, log),
@@ -1520,7 +1520,7 @@ bool ReplicatedMergeTreeQueue::isCoveredByFuturePartsImpl(const LogEntry & entry
     if (entry_for_same_part_it != future_parts.end())
     {
         const LogEntry & another_entry = *entry_for_same_part_it->second;
-        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} (actual part {}) "
+        constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} (actual part {})"
                                     "because another log entry {} of type {} for the same part ({}) is being processed.";
         LOG_INFO(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.type, entry.new_part_name, new_part_name,
                  another_entry.znode_name, another_entry.type, another_entry.new_part_name);
@@ -1866,16 +1866,6 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
                               (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
                     return false;
-                }
-
-                /// A TTLDrop merge deletes every row only when an unconditional rows TTL is the
-                /// table's only TTL. With a GROUP BY, WHERE or column TTL rows survive and the
-                /// merge rewrites them, so it does need room for what its source parts hold.
-                if (entry.merge_type == MergeType::TTLDrop)
-                {
-                    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-                    if (metadata_snapshot->hasOnlyRowsTTL())
-                        ignore_max_size = true;
                 }
             }
 
@@ -2391,7 +2381,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
     return result;
 }
 
-NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() const
+NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
     if (!hasDataMutations() && !hasAlterMutations())
@@ -2400,10 +2390,7 @@ NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() cons
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
         for (const auto & [version, entry] : mutations)
-        {
-            auto names = entry->commands.getAllUpdatedColumns();
-            std::move(names.begin(), names.end(), std::inserter(res, res.end()));
-        }
+            addColumnsChangedOnFly(entry->commands, res);
     }
     return res;
 }
