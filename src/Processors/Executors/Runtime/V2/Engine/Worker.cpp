@@ -188,6 +188,7 @@ ExecutingProcessor * Worker::trySteal(size_t rounds)
             if (count == 0)
                 continue;
 
+            metrics.stolen_records += count;
             return pickFromBatch(std::span(tmp_buffer).first(count));
         }
     }

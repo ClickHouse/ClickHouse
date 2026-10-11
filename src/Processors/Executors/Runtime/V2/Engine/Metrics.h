@@ -14,6 +14,7 @@ struct Metrics
     UInt64 global_picks = 0;
     UInt64 poll_picks = 0;
     UInt64 steal_picks = 0;
+    UInt64 stolen_records = 0;
     UInt64 steal_misses = 0;
     UInt64 offloads = 0;
     UInt64 parks = 0;
