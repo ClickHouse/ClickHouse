@@ -1,0 +1,59 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <min_insert_block_size_rows>2000000</min_insert_block_size_rows>
+        <min_insert_block_size_bytes>0</min_insert_block_size_bytes>
+        <optimize_on_insert>1</optimize_on_insert>
+        <async_insert>0</async_insert>
+    </settings>
+
+    <!-- With `optimize_on_insert`, every INSERT into these engines merges its block. Unique keys keep every row,
+         repeated keys keep one of each group; both with payload columns the merge does not read. -->
+    <create_query>
+        CREATE TABLE insert_merge_src
+        (
+            n UInt64, id_uh UInt64, id_hh UInt64, ver_h UInt32, sign_h Int8,
+            ts DateTime, user_id UInt64, url String, title String, status LowCardinality(String), amount Float64, qty UInt32, ip IPv4
+        )
+        ENGINE = MergeTree ORDER BY n
+    </create_query>
+    <create_query>CREATE TABLE insert_merge_r (id UInt64, ver UInt32, ts DateTime, user_id UInt64, url String, title String, status LowCardinality(String), amount Float64, qty UInt32, ip IPv4) ENGINE = ReplacingMergeTree(ver) ORDER BY id</create_query>
+    <create_query>CREATE TABLE insert_merge_c (id UInt64, sign Int8, ts DateTime, user_id UInt64, url String, title String, status LowCardinality(String), amount Float64, qty UInt32, ip IPv4) ENGINE = CollapsingMergeTree(sign) ORDER BY id</create_query>
+    <create_query>CREATE TABLE insert_merge_v (id UInt64, sign Int8, ver UInt32, ts DateTime, user_id UInt64, url String, title String, status LowCardinality(String), amount Float64, qty UInt32, ip IPv4) ENGINE = VersionedCollapsingMergeTree(sign, ver) ORDER BY id</create_query>
+    <create_query>CREATE TABLE insert_merge_nv (id UInt64, ts DateTime, user_id UInt64, url String, title String, status LowCardinality(String), amount Float64, qty UInt32, ip IPv4) ENGINE = ReplacingMergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE insert_merge_n0 (id UInt64, ver UInt32) ENGINE = ReplacingMergeTree(ver) ORDER BY id</create_query>
+
+    <fill_query>
+        INSERT INTO insert_merge_src SELECT number AS n, cityHash64(n), cityHash64(intDiv(n, 3)), toUInt32(if(n % 3 = 2, 2, 1)), toInt8(if(n % 3 = 1, -1, 1)),
+            toDateTime(1700000000 + intDiv(n, 10)), intHash64(n) % 1000000,
+            concat('https://example.com/', toString(intHash32(n) % 100000), '/page?id=', toString(n % 9973)),
+            concat('Product title ', toString(intHash32(n * 7) % 50000)),
+            ['new', 'paid', 'shipped', 'cancelled', 'returned'][n % 5 + 1], (intHash32(n) % 100000) / 100., toUInt32(n % 50), CAST(toUInt32(intHash32(n)) AS IPv4)
+        FROM numbers(1000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE insert_merge_src FINAL</fill_query>
+    <fill_query>SYSTEM STOP MERGES insert_merge_r</fill_query>
+    <fill_query>SYSTEM STOP MERGES insert_merge_c</fill_query>
+    <fill_query>SYSTEM STOP MERGES insert_merge_v</fill_query>
+    <fill_query>SYSTEM STOP MERGES insert_merge_nv</fill_query>
+    <fill_query>SYSTEM STOP MERGES insert_merge_n0</fill_query>
+
+    <query>INSERT INTO insert_merge_r SELECT id_uh, 1, ts, user_id, url, title, status, amount, qty, ip FROM insert_merge_src</query>
+    <query>INSERT INTO insert_merge_r SELECT id_hh, ver_h, ts, user_id, url, title, status, amount, qty, ip FROM insert_merge_src</query>
+    <query>INSERT INTO insert_merge_c SELECT id_uh, 1, ts, user_id, url, title, status, amount, qty, ip FROM insert_merge_src</query>
+    <query>INSERT INTO insert_merge_c SELECT id_hh, sign_h, ts, user_id, url, title, status, amount, qty, ip FROM insert_merge_src</query>
+    <query>INSERT INTO insert_merge_v SELECT id_uh, 1, 1, ts, user_id, url, title, status, amount, qty, ip FROM insert_merge_src</query>
+    <query>INSERT INTO insert_merge_v SELECT id_hh, sign_h, 1, ts, user_id, url, title, status, amount, qty, ip FROM insert_merge_src</query>
+    <!-- Sorted runs of equal keys without a version. -->
+    <query>INSERT INTO insert_merge_nv SELECT intDiv(n, 10), ts, user_id, url, title, status, amount, qty, ip FROM insert_merge_src</query>
+    <!-- Key columns only: the merge reads every column. -->
+    <query>INSERT INTO insert_merge_n0 SELECT cityHash64(intDiv(number, 3)), toUInt32(if(number % 3 = 2, 2, 1)) FROM numbers(3000000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS insert_merge_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS insert_merge_r</drop_query>
+    <drop_query>DROP TABLE IF EXISTS insert_merge_c</drop_query>
+    <drop_query>DROP TABLE IF EXISTS insert_merge_v</drop_query>
+    <drop_query>DROP TABLE IF EXISTS insert_merge_nv</drop_query>
+    <drop_query>DROP TABLE IF EXISTS insert_merge_n0</drop_query>
+</test>
