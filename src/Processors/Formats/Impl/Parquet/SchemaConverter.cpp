@@ -1819,7 +1819,7 @@ void SchemaConverter::processPrimitiveColumn(
             out_inferred_type = std::make_shared<DataTypeInt64>();
             auto converter = std::make_shared<IntConverter>();
             converter->input_size = 8;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
+            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ true, *converter);
             out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
