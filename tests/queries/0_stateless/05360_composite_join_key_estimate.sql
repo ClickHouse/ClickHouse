@@ -1,9 +1,10 @@
--- A join on two columns matches pairs of values. Each side has at most as many distinct pairs as rows,
--- and at most the product of the NDVs of its key columns; the join keeps one over the larger of the
--- two per pair of rows. Taking only the most selective column counts every sale of an item for each
--- of its returns: 10 times too many rows here. The product assumes the columns independent, so the
--- estimate is marked as resting on an assumption (`from defaults`). Only the estimate of the join is
--- checked: the rest of the plan varies with settings the runner randomizes.
+-- A join on two columns matches pairs of values. Taking only the most selective column counts every
+-- sale of a ticket for each of its returns: 200000 rows, 100 times too many here. Counting the pairs,
+-- each side having at most as many as rows and at most the product of the NDVs of its key columns,
+-- gives 2000, exact here but too few when the key columns are correlated. The estimate is the
+-- geometric mean of the two, 20000, and it is marked as resting on an assumption (`from defaults`).
+-- Only the estimate of the join is checked: the rest of the plan varies with settings the runner
+-- randomizes.
 SET allow_experimental_statistics = 1;
 SET use_statistics = 1;
 -- The test runner may turn this off; the inserted parts need their statistics.

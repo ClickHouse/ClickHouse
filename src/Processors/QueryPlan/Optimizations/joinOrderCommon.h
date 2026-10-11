@@ -5,6 +5,7 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -113,10 +114,12 @@ struct JoinKeyEstimate
         right_key_combinations *= static_cast<double>(right.from_statistics);
     }
 
-    /// For two or more independent keys with statistics: one over the distinct key combinations of
-    /// the side with more of them, each side having the product of its key NDVs, at most its `rows`.
-    /// It assumes the key columns independent: correlated columns have fewer combinations, and the
-    /// estimate is then too low.
+    /// For two or more independent keys with statistics: the geometric mean of the selectivity of the
+    /// most selective key and of the key combinations. The combinations are those of the side with
+    /// more of them, each side having the product of its key NDVs, at most its `rows`. The single key
+    /// counts too many rows when the other keys also filter, and the combinations too few when the key
+    /// columns are correlated. The true size usually lies between the two, and the mean is then at most
+    /// the square root of their ratio off either way.
     std::optional<double> multiColumnSelectivity(double left_rows, double right_rows) const
     {
         if (independent_keys < 2 || !independent_keys_from_statistics)
@@ -124,7 +127,8 @@ struct JoinKeyEstimate
         const double combinations = std::max(std::min(left_rows, left_key_combinations), std::min(right_rows, right_key_combinations));
         if (combinations < 1.0)
             return {};
-        return std::min(statistics_selectivity, 1.0 / combinations);
+        const double combinations_selectivity = std::min(statistics_selectivity, 1.0 / combinations);
+        return std::sqrt(statistics_selectivity * combinations_selectivity);
     }
 
     /// Whether the estimate for inputs of `left_rows` and `right_rows` rests on the independence of the
