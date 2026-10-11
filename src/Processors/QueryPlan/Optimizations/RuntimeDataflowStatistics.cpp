@@ -305,12 +305,11 @@ static void forEachAggregateStateLeaf(
             });
         return;
     }
-    column.forEachSubcolumnRecursively(
-        [&](const IColumn & subcolumn)
-        {
-            if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
-                callback(*aggregate_column, 0, owner, aggregate_column->byteSize());
-        });
+    /// Recurse structurally rather than with `forEachSubcolumnRecursively`, so that a `ColumnSparse` wrapped
+    /// by another carrier (`Tuple`, `Nullable`, `Variant`, ...) is intercepted by the branch above too:
+    /// otherwise its leaf is reported with the implicit default row of `values` still present, and an
+    /// all-default block would commit the empty default state as a serialized state value.
+    column.forEachSubcolumn([&](const IColumn::WrappedPtr & subcolumn) { forEachAggregateStateLeaf(*subcolumn, callback, owner); });
 }
 
 static bool hasAggregateStateLeaf(const IColumn & column)

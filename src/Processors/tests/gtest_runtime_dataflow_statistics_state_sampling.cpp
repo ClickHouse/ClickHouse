@@ -1098,3 +1098,58 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantStateCompressionFollowsTheW
     EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
+
+/// A `ColumnSparse` of states wrapped by another carrier must drop the implicit default at `values[0]` as
+/// well, not only a top-level one. Otherwise a sampled all-default block reports that default as a
+/// serialized state value, and the next, unsampled block with a real large state is extrapolated from the
+/// empty state's size instead of being serialized, understating `output_bytes` arbitrarily.
+TEST(RuntimeDataflowStatisticsStateSampling, WrappedSparseDefaultStateIsNotASerializedValue)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t default_rows = 100;
+    constexpr size_t elements_in_state = 100000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+    const auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{state_type});
+
+    const auto make_tuple = [](ColumnPtr element)
+    {
+        Columns elements;
+        elements.emplace_back(std::move(element));
+        return ColumnTuple::create(std::move(elements));
+    };
+
+    /// Only the implicit default in `values`, and no offsets: every row of the block is the default state.
+    MutableColumnPtr default_values = ColumnAggregateFunction::create(function);
+    default_values->insertDefault();
+    auto all_default = ColumnSparse::create(std::move(default_values), ColumnUInt64::create(), default_rows);
+
+    MutableColumnPtr state_values = ColumnAggregateFunction::create(function);
+    state_values->insertDefault();
+    state_values->insertFrom(*source_state, 0);
+    auto state_offsets = ColumnUInt64::create();
+    state_offsets->insert(0);
+    auto with_state = ColumnSparse::create(std::move(state_values), std::move(state_offsets), /*size_=*/1);
+
+    const auto exact_compressed_bytes
+        = compressedColumnSize({make_tuple(all_default->convertToFullColumnIfSparse()), tuple_type, "wrapped_sparse_state"})
+        + compressedColumnSize({make_tuple(with_state->convertToFullColumnIfSparse()), tuple_type, "wrapped_sparse_state"});
+    ASSERT_GT(exact_compressed_bytes, elements_in_state * sizeof(UInt64) / 2);
+
+    const size_t cache_key = 0x111985 + 17;
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(std::make_shared<RuntimeDataflowStatisticsBlock>(cache_key, default_rows + 1));
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, tuple_type, "wrapped_sparse_state"});
+        updater.recordOutputChunk(Chunk(Columns{make_tuple(std::move(all_default))}, default_rows), header);
+        updater.recordOutputChunk(Chunk(Columns{make_tuple(std::move(with_state))}, /*num_rows=*/1), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
