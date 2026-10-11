@@ -48,8 +48,11 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
@@ -1113,17 +1116,46 @@ static size_t findLocalReplicaIndexAndUpdatePools(std::vector<ConnectionPoolPtr>
 /// Reading the same table on the initiator is what makes its classification authoritative, so a
 /// table that the initiator cannot resolve (for example, one that only exists on the replicas) is
 /// left alone: the coordinator keeps relying on what the announcements themselves report.
+///
+/// A view, a materialized view or an `Alias` stands for the tables under it, which are the tables the
+/// replicas read and announce.
+static void seedAuthoritativePartNameIdentity(
+    ParallelReplicasReadingCoordinator & coordinator, const StoragePtr & storage, const ContextPtr & context, size_t depth = 0)
+{
+    if (!storage || depth >= max_storage_proxy_depth)
+        return;
+
+    if (const auto merge_tree = castStorage<const MergeTreeData>(storage, DeferredTable::Load))
+    {
+        /// `stream_id` of every stream of this table is the full table name of the `MergeTreeData` it
+        /// reads, plus a `#split_{i}` suffix when the table is read as several streams (stripped by the
+        /// coordinator).
+        coordinator.setAuthoritativePartNameIdentity(merge_tree->getStorageID().getFullTableName(), partNameIdentityOf(*merge_tree));
+    }
+    else if (const auto view = castStorage<const StorageView>(storage, DeferredTable::Load))
+    {
+        std::vector<StoragePtr> tables;
+        if (view->getUnderlyingMergeTreeStorageForParallelReplicas(context, &tables))
+        {
+            for (const auto & table : tables)
+                seedAuthoritativePartNameIdentity(coordinator, table, context, depth + 1);
+        }
+    }
+    else if (const auto materialized_view = castStorage<const StorageMaterializedView>(storage, DeferredTable::Load))
+    {
+        seedAuthoritativePartNameIdentity(coordinator, materialized_view->tryGetTargetTable(), context, depth + 1);
+    }
+    else if (const auto alias = castStorage<const StorageAlias>(storage, DeferredTable::Load))
+    {
+        seedAuthoritativePartNameIdentity(coordinator, alias->tryGetTargetTable(), context, depth + 1);
+    }
+}
+
+/// Same as above for the table named by `storage_id`.
 static void seedAuthoritativePartNameIdentity(
     ParallelReplicasReadingCoordinator & coordinator, const StorageID & storage_id, const ContextPtr & context)
 {
-    const auto merge_tree = castStorage<const MergeTreeData>(DatabaseCatalog::instance().tryGetTable(storage_id, context), DeferredTable::Load);
-    if (!merge_tree)
-        return;
-
-    /// `stream_id` of every stream of this table is the full table name of the `MergeTreeData` it
-    /// reads, plus a `#split_{i}` suffix when the table is read as several streams (stripped by the
-    /// coordinator).
-    coordinator.setAuthoritativePartNameIdentity(merge_tree->getStorageID().getFullTableName(), partNameIdentityOf(*merge_tree));
+    seedAuthoritativePartNameIdentity(coordinator, DatabaseCatalog::instance().tryGetTable(storage_id, context), context);
 }
 
 /// Same as above for every `MergeTree` table read by `plan`, used where the initiator builds a plan
@@ -1148,7 +1180,7 @@ static void seedAuthoritativePartNameIdentity(
 /// Same as above for every `MergeTree` table read by an analyzed query tree, used where the
 /// initiator has the source `SELECT` of an `INSERT SELECT` instead of a plan fragment.
 static void seedAuthoritativePartNameIdentity(
-    ParallelReplicasReadingCoordinator & coordinator, const QueryTreeNodePtr & query_tree)
+    ParallelReplicasReadingCoordinator & coordinator, const QueryTreeNodePtr & query_tree, const ContextPtr & context)
 {
     std::vector<const IQueryTreeNode *> stack{query_tree.get()};
     while (!stack.empty())
@@ -1157,11 +1189,7 @@ static void seedAuthoritativePartNameIdentity(
         stack.pop_back();
 
         if (const auto * table_node = node->as<TableNode>())
-        {
-            if (const auto merge_tree = castStorage<const MergeTreeData>(table_node->getStorage(), DeferredTable::Load))
-                coordinator.setAuthoritativePartNameIdentity(
-                    merge_tree->getStorageID().getFullTableName(), partNameIdentityOf(*merge_tree));
-        }
+            seedAuthoritativePartNameIdentity(coordinator, table_node->getStorage(), context);
 
         for (const auto & child : node->getChildren())
         {
@@ -1797,7 +1825,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// tables from the analyzed `SELECT` above. Without this, announcements from replicas that
         /// predate the part fingerprint carry `PartNameIdentity::Unknown` and the same-named-part
         /// check degrades to the mark-count fallback even for node-local `MergeTree` tables.
-        seedAuthoritativePartNameIdentity(**coordinator, source_query_tree);
+        seedAuthoritativePartNameIdentity(**coordinator, source_query_tree, new_context);
     }
 
     for (size_t i = 0; i < connection_pools.size(); ++i)

@@ -286,8 +286,18 @@ def test_pre_v10_follower_part_identity(start_cluster):
         "merge_tree_min_read_task_size": 1,
     }
 
+    # The views before the tables they read.
+    tables = (
+        "pr_nl_union_view",
+        "pr_nl_view",
+        "pr_nl_mv",
+        "pr_nl_mv_source",
+        "pr_nl_same",
+        "pr_nl_disjoint",
+        "pr_nl_sink",
+    )
     for node in split_topology_nodes:
-        for table in ("pr_nl_same", "pr_nl_disjoint", "pr_nl_sink"):
+        for table in tables:
             node.query(f"drop table if exists {table} sync")
         node.query(
             "create table pr_nl_same(a UInt64, s String) engine = MergeTree order by a"
@@ -363,6 +373,37 @@ def test_pre_v10_follower_part_identity(start_cluster):
             f"that this cluster can execute the query at all: {executed}"
         )
 
+    # A view or a materialized view is read on the followers as the table under it, which is the table
+    # their announcements name, so the initiator has to seed that table and not the wrapper.
     for node in split_topology_nodes:
-        for table in ("pr_nl_same", "pr_nl_disjoint", "pr_nl_sink"):
+        node.query("create table pr_nl_mv_source(a UInt64, s String) engine = Null")
+        node.query(
+            "create materialized view pr_nl_mv to pr_nl_same as select * from pr_nl_mv_source"
+        )
+        node.query("create view pr_nl_view as select * from pr_nl_same")
+        # Only the second branch reads divergent parts, so seeding just the first table is not enough.
+        node.query(
+            "create view pr_nl_union_view as"
+            " select * from pr_nl_disjoint union all select * from pr_nl_same"
+        )
+
+    view_select_settings = {
+        **select_settings,
+        "parallel_replicas_allow_view_over_mergetree": 1,
+    }
+    for query, settings in (
+        ("select sum(a) from pr_nl_mv", view_select_settings),
+        ("select sum(a) from pr_nl_view", view_select_settings),
+        ("select sum(a) from pr_nl_union_view", view_select_settings),
+        ("insert into pr_nl_sink select * from pr_nl_mv", insert_select_settings),
+    ):
+        error = initiator.query_and_get_error(query, settings=settings)
+        assert "Code: 36" in error, (query, error)
+        assert (
+            "the content fingerprint needed to verify that it matches the same-named part"
+            in error
+        ), (query, error)
+
+    for node in split_topology_nodes:
+        for table in tables:
             node.query(f"drop table {table} sync")
