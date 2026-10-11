@@ -316,7 +316,7 @@ private:
     void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
     void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
 
-    bool processUnexpectedData();
+    bool processUnexpectedData(QueryState & state);
     [[noreturn]] void processUnexpectedQuery();
     [[noreturn]] void processUnexpectedHello();
     [[noreturn]] void processUnexpectedTablesStatusRequest();

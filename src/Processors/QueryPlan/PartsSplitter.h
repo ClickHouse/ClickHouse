@@ -22,6 +22,9 @@ struct SplitPartsRangesResult
 /// Check if the primary key types are safe for splitting (no floats with NaN, etc.).
 bool isSafePrimaryKey(const KeyDescription & primary_key);
 
+/// The same check for a single key column, for a consumer that splits by a primary key prefix.
+bool isSafePrimaryDataKeyType(const IDataType & data_type);
+
 /// Derives whether parts are read in descending primary-key order from the sorting key's reverse
 /// flags. Returns nullopt when the primary-key columns mix ascending and descending order, in which
 /// case primary-key-range splitting is not possible.

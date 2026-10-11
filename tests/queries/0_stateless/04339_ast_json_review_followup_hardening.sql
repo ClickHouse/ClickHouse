@@ -22,6 +22,20 @@ SELECT formatQueryFromJSON(parseQueryToJSON('RENAME DATABASE a TO b'));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/01/\''));
 SELECT formatQueryFromJSON(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT lambda(tuple(), 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT arrayMap(() -> 1, [1])'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * APPLY(lambda(1)(tuple(x), x + 1))'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM view(SELECT 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT count() OVER (ORDER BY x) FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT any(x) IGNORE NULLS FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT quantile(0.9)(x) FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM view(SELECT 1 SETTINGS max_threads = 1)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t GROUP BY GROUPING SETS ((a, b), (c))'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * APPLY(quantiles(0.5, 0.9))'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * REPLACE (a + 1 AS a) FROM t'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION ALL (SELECT 2 UNION DISTINCT SELECT 3)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT * FROM view(SELECT 1 UNION ALL SELECT 2)'));
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1 UNION ALL SELECT 2 FORMAT Null'));
 
 -- ---------------------------------------------------------------------------
 -- ASTAlterCommand: parser-owned children are restored by concrete type. `col_decl` must be an
@@ -87,3 +101,72 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON('BACKUP FROM SNAPSHOT Disk(\
 -- `is_lambda_function` flag; reject the kind without the flag.
 -- ---------------------------------------------------------------------------
 SELECT formatQueryFromJSON('{"type":"Function","name":"f","kind":"LAMBDA_FUNCTION"}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ASTFunction: `is_lambda_function` marks the lambda definition shape `lambda(tuple(...), body)`,
+-- the only shape the parser sets it on, and `QueryTreeBuilder` takes the flag as proof of that shape
+-- ahead of the `isASTLambdaFunction` predicate; reject the flag on any other shape. One row per
+-- shape: no `arguments` (under a name that is not `lambda`, then under `lambda`), one argument, a
+-- first argument that is not a tuple, an argument tuple without its own argument list, an otherwise
+-- well-formed lambda whose name is not `lambda`, three arguments, the `APPLY` transformer child
+-- (whose own boundary check accepts a two-child lambda whose first argument is not a tuple), and an
+-- argument tuple carrying its own parameter list, which no `tuple` parse produces.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"Function","name":"f","is_lambda_function":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple"},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"f","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * APPLY(x -> (x + 1))'), '"name":"tuple"', '"name":"nottuple"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"lambda","is_lambda_function":true,"arguments":{"type":"ExpressionList","children":[{"type":"Function","name":"tuple","parameters":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":7}}]},"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}},{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ASTFunction: a bare select query argument is parser-producible only in `view(SELECT ...)` and
+-- `viewIfPermitted(SELECT ... ELSE f(...))`. One row per rejected carrier: another function name, an
+-- extra argument, `parameters`, a nested expression list, then parameters / window / NULLS action /
+-- query output options under `view` itself, and each other select query node type the format can
+-- build. The `position()` row anchors the `replace()` rows against a serialization change.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"Function","name":"any","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"foo","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}},{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"foo","parameters":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"foo","arguments":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT position(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"type":"Function","name":"view","arguments"') > 0;
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","parameters"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","is_window_function":true,"window_name":"w","arguments"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON(replace(parseQueryToJSON('SELECT * FROM view(SELECT 1)'), '"name":"view","arguments"', '"name":"view","nulls_action":"RESPECT_NULLS","arguments"')); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"any","arguments":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"foo","arguments":{"type":"ExpressionList","children":[{"type":"SelectIntersectExceptQuery","final_operator":"INTERSECT ALL","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}},{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}}]}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"view","arguments":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"any","arguments":{"type":"ExpressionList","children":[{"type":"ProjectionSelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"view","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]},"format_ast":{"type":"Identifier","name":"Null"}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"view","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]},"settings_ast":{"type":"SetQuery","changes":[{"name":"max_threads","value":{"field_type":"UInt64","value":1}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"viewIfPermitted","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]},"out_file":{"type":"Literal","value":{"field_type":"String","value":"f"}}},{"type":"Function","name":"null","arguments":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"String","value":"x UInt8"}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- An expression position holds an expression, and neither an expression list nor a select query is
+-- one. One row per boundary and carrier, over the three boundaries that own such a position: a
+-- function's `arguments` and `parameters`, the `APPLY` transformer's own `parameters`, and the
+-- `REPLACE` replacement child. A nested list is parser-producible elsewhere, in
+-- `GROUP BY GROUPING SETS ((a, b), (c))`, which round-trips above.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"Function","name":"plus","arguments":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}},{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"quantile","parameters":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"Float64","value":0.5}}]}]},"arguments":{"type":"ExpressionList","children":[{"type":"Identifier","name":"x"}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Asterisk","transformers":{"type":"ColumnsTransformerList","children":[{"type":"ColumnsApplyTransformer","func_name":"quantiles","parameters":{"type":"ExpressionList","children":[{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"Float64","value":0.5}},{"type":"Literal","value":{"field_type":"Float64","value":0.9}}]}]}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Asterisk","transformers":{"type":"ColumnsTransformerList","children":[{"type":"ColumnsApplyTransformer","func_name":"quantiles","parameters":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Asterisk","transformers":{"type":"ColumnsTransformerList","children":[{"type":"ColumnsReplaceTransformer","children":[{"type":"ColumnsReplaceTransformerReplacement","name":"a","children":[{"type":"ExpressionList","children":[{"type":"Identifier","name":"a"},{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}]}]}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Asterisk","transformers":{"type":"ColumnsTransformerList","children":[{"type":"ColumnsReplaceTransformer","children":[{"type":"ColumnsReplaceTransformerReplacement","name":"a","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}]}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- ---------------------------------------------------------------------------
+-- ASTSelectWithUnionQuery / ASTSelectIntersectExceptQuery: an element of a set operation chain is
+-- never a one-select chain of its own (`ParserSelectWithUnionQuery` lifts it) and never carries
+-- query output options (`ParserQueryWithOutput` attaches those to the outermost query only). One
+-- row per carrier: the wrapper alone, the wrapper as the blessed `view` argument, then an element
+-- carrying `FORMAT` under each of the two set operation nodes.
+-- ---------------------------------------------------------------------------
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"Function","name":"view","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}}]}}]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":0}}]}},{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}},{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}}]},"list_of_modes":["UNION_ALL"],"format_ast":{"type":"Identifier","name":"Null"}}]},"list_of_modes":["UNION_ALL"]}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectIntersectExceptQuery","final_operator":"INTERSECT ALL","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}},{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}}]},"format_ast":{"type":"Identifier","name":"Null"}}]}]}}'); -- { serverError BAD_ARGUMENTS }

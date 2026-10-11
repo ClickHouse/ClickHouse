@@ -73,13 +73,27 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// does this between queries of one session); otherwise a stale entry produces
 /// wrong results (e.g. DateTime values rendered in another query's timezone).
 ///
-/// Serializations with `supportsPooling() == false` (e.g. SerializationJSON, which
-/// holds mutable per-use state, see the comment in SerializationJSON::create) are
-/// never cached at all, not even within one query: for them only the type is cached
-/// and a fresh serialization is built on every lookup. Note that query-scoped
-/// invalidation alone would not be enough for them anyway: clickhouse-client keeps
-/// one client context attached to the client thread for the whole session, so
-/// consecutive client queries can share one "query scope".
+/// This scoping is also what makes it safe to pool serializations with
+/// `supportsPooling() == false` here, e.g. SerializationJSON: its own contract
+/// (see the comment in SerializationJSON::create) forbids sharing *across queries*,
+/// because its extraction tree accumulates mutable, context-dependent state (its
+/// documented example is exactly the timezone case this cache already invalidates
+/// on). Reuse *within* one query is already an established, trusted pattern for the
+/// very same object (see ColumnDynamic's per-column `serialization_cache`, used
+/// throughout its binary insert/deserialize paths).
+///
+/// IMPORTANT: this safety only holds for the ways SerializationJSON is currently used
+/// through this cache (type resolution, binary serialization, and text *output*) - none
+/// of which touch the mutable extraction-tree caches or the parser choice. A cached
+/// serialization from here must never be used for *text deserialization*: that path is
+/// exactly what SerializationJSON::create's "do NOT pool" comment is about, and two
+/// gaps this cache does not track would then matter. First, `DataTypeObject::doGetSerialization`
+/// reads `allow_simdjson` at construction; a client session that flips it in place would
+/// keep the previously-built parser, and rapidjson (`RAPIDJSON_PARSE_DEFAULT_FLAGS` lacks
+/// `kParseFullPrecisionFlag`) is not a drop-in replacement for simdjson's parsing the way
+/// it is for output - it can round Float64 differently and has no nesting-depth cap. Second,
+/// the extraction tree's caches would then legitimately accumulate per-query state and need
+/// the same cross-query invalidation this cache does not extend to their internals.
 class DataTypesCache
 {
 public:
@@ -101,9 +115,6 @@ private:
     struct Element
     {
         DataTypePtr type;
-        /// Null if the default serialization of `type` has `supportsPooling() == false`:
-        /// such serializations keep mutable per-use state and must be rebuilt for every use
-        /// instead of being served from the cache.
         SerializationPtr serialization;
     };
 

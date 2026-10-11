@@ -39,7 +39,6 @@ echo "
         automatic_parallel_replicas_mode = 0,
         parallel_replicas_for_non_replicated_merge_tree = 1,
         interactive_delay=0,
-        parallel_replicas_only_with_analyzer=0,
         parallel_replicas_local_plan=0
     "\
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&query_id=${query_id_base}_interactive_0" --data-binary @- -vvv 2>&1 \
@@ -56,7 +55,6 @@ echo "
         automatic_parallel_replicas_mode = 0,
         parallel_replicas_for_non_replicated_merge_tree = 1,
         interactive_delay=99999999999,
-        parallel_replicas_only_with_analyzer=0,
         parallel_replicas_local_plan=0
     "\
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&query_id=${query_id_base}_interactive_high" --data-binary @- -vvv 2>&1 \

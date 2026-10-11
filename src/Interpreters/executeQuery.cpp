@@ -14,6 +14,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
@@ -21,6 +22,7 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -57,7 +59,10 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
+#include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+#include <Parsers/LogsQL/ParserLogsQLQuery.h>
+#include <Parsers/LogsQL/parseLogsQLQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -77,13 +82,15 @@
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -101,7 +108,9 @@
 #include <Core/BaseSettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingsSecrets.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -153,6 +162,7 @@ namespace ProfileEvents
     extern const Event ASTFuzzerQueries;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
+    extern const Event ASTFuzzerSkippedCollaborativeWorker;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -170,6 +180,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool enable_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -181,7 +192,6 @@ namespace Setting
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_reads_from_query_cache;
-    extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsString framing_output_format;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
@@ -206,6 +216,11 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
+    extern const SettingsBool enable_logsql_dialect;
+    extern const SettingsString logsql_database;
+    extern const SettingsString logsql_table;
+    extern const SettingsString logsql_time_column;
+    extern const SettingsString logsql_message_column;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
@@ -225,6 +240,7 @@ namespace Setting
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsBool send_profile_events;
+    extern const SettingsUInt64 session_query_ids_history_size;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -240,13 +256,11 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
-    extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsDoubleAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
-    extern const SettingsUInt64Auto insert_quorum;
-    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsString format;
     extern const SettingsString output_format;
@@ -278,10 +292,8 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
-    extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
     extern const int QUERY_IS_PROHIBITED;
 }
@@ -370,6 +382,15 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
                 client_info.client_trace_context.composeTraceparentHeader());
         }
     }
+}
+
+/// Mirrors `LOG_IMPL`'s enablement check: a log file, the console and `system.text_log` all sit behind
+/// the logger's own level, and a client can additionally ask for server logs through `send_logs_level`.
+static bool errorMessageWillBeLogged(const LoggerPtr & logger)
+{
+    /// `currentThreadHasGroup` must stay first: `currentThreadLogsLevel` throws without a thread status.
+    return (currentThreadHasGroup() && currentThreadLogsLevel() >= LogsLevel::error)
+        || logger->is(Poco::Message::PRIO_ERROR);
 }
 
 /// Log exception (with query info) into text log (not into system table).
@@ -501,6 +522,17 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         add_counter("max_parallel_prefetch_tasks", async_read_counters->max_parallel_prefetch_tasks.load(std::memory_order_relaxed));
         add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
     }
+
+    if (auto query_execution_counters = context_ptr->getQueryExecutionCounters())
+    {
+        auto counters = query_execution_counters->getSnapshot();
+        element.used_number_of_joins = counters.number_of_joins;
+        element.used_join_algorithms = std::move(counters.join_algorithms);
+        element.used_join_kinds = std::move(counters.join_kinds);
+        element.used_join_strictness = std::move(counters.join_strictness);
+        element.spilled_to_disk = std::move(counters.spilled_to_disk);
+    }
+
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
@@ -522,6 +554,27 @@ static String httpRequestURLForLogging(const ContextPtr & context)
 {
     const String & url = context->getHTTPRequestURL();
     return url.substr(0, url.find_first_of("?#"));
+}
+
+String formatQueryForLogging(const String & query, const Settings & settings)
+{
+    const char * pos = query.data();
+    const char * end = pos + query.size();
+    ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+    String parse_error;
+    const ASTPtr ast = tryParseQuery(
+        parser,
+        pos,
+        end,
+        parse_error,
+        /*hilite*/ false,
+        "",
+        /*allow_multi_statements*/ false,
+        settings[Setting::max_query_size],
+        settings[Setting::max_parser_depth],
+        settings[Setting::max_parser_backtracks],
+        /*skip_insignificant*/ true);
+    return ast ? ast->formatForLogging(settings[Setting::log_queries_cut_to_length]) : "";
 }
 
 QueryLogElement logQueryStart(
@@ -551,7 +604,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
-        elem.formatted_query = query_ast->formatWithSecretsOneLine();
+        elem.formatted_query = query_ast->formatForLogging();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
@@ -592,16 +645,15 @@ QueryLogElement logQueryStart(
         else if (interpreter)
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
 
-        if (settings[Setting::log_query_settings])
-            elem.query_settings = context->getSettingsRef().changedToMap();
-
         elem.log_comment = settings[Setting::log_comment];
         if (elem.log_comment.size() > settings[Setting::max_query_size])
             elem.log_comment.resize(settings[Setting::max_query_size]);
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
+            if (settings[Setting::log_query_settings])
+                elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+            else if (settings[Setting::log_query_settings].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
@@ -810,10 +862,17 @@ static void logQueryFinishImpl(
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
+            /// Unset unless the QUERY_START row was logged and built them already. Settings cannot change
+            /// while the query runs, so building them here gives the same values.
+            if (settings[Setting::log_query_settings] && !elem.query_settings)
+                elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+
             if (auto query_log = context->getQueryLog())
                 query_log->add([&](QueryLogElement & e) { e = elem; });
         }
 
+        /// Already logged; `elem` lives on in a `BlockIO` callback and this snapshot would outlive the query.
+        elem.profile_counters.reset();
     }
 
     if (query_span && query_span->isTraceEnabled())
@@ -839,7 +898,9 @@ static void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+                String value = convertFieldToString(change.value);
+                CoreSettings::maskSettingValue(change.name, change.value, value);
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), value);
             }
         }
         query_span->finish(time);
@@ -939,16 +1000,24 @@ void logQueryException(
 
     elem.is_internal = log_as_internal;
 
-    if (settings[Setting::calculate_text_stack_trace] && log_error)
+    /// `elem.stack_trace` has two readers: `logException` below and `system.query_log`'s `stack_trace` column.
+    std::shared_ptr<QueryLog> query_log;
+    if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
+        && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        query_log = context->getQueryLog();
+
+    if (settings[Setting::calculate_text_stack_trace] && log_error
+        && (query_log || errorMessageWillBeLogged(getLogger("executeQuery"))))
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
     logException(context, elem, log_error);
 
     /// In case of exception we log internal queries also
-    if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
-        && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+    if (query_log)
     {
-        if (auto query_log = context->getQueryLog())
-            query_log->add([&](QueryLogElement & e) { e = elem; });
+        if (settings[Setting::log_query_settings] && !elem.query_settings)
+            elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+
+        query_log->add([&](QueryLogElement & e) { e = elem; });
     }
 
     if (query_span)
@@ -1000,7 +1069,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = ast->formatWithSecretsOneLine();
+            elem.formatted_query = ast->formatForLogging();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1025,14 +1094,22 @@ void logExceptionBeforeStart(
         elem.tid = txn->tid;
 
     if (settings[Setting::log_query_settings])
-        elem.query_settings = settings.changedToMap();
+        elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
-    if (settings[Setting::calculate_text_stack_trace])
+    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
+
+    /// A configured `system.query_log` here receives the trace even for a cancelled query.
+    auto query_log = context->getQueryLog();
+    const bool query_log_will_read = query_log && settings[Setting::log_queries]
+        && elem.type >= settings[Setting::log_queries_min_type]
+        && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds();
+
+    if (settings[Setting::calculate_text_stack_trace]
+        && (query_log_will_read || (log_error && errorMessageWillBeLogged(getLogger("executeQuery")))))
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
 
     elem.is_internal = log_as_internal;
 
-    bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
     logException(context, elem, log_error);
 
     /// Update performance counters before logging to query_log
@@ -1048,10 +1125,9 @@ void logExceptionBeforeStart(
     }
     logQueryMetricLogFinish(context, /*internal=*/ false, elem.client_info.current_query_id, query_end_time, info);
 
-    if (auto query_log = context->getQueryLog())
+    if (query_log)
     {
-        if (settings[Setting::log_queries] && elem.type >= settings[Setting::log_queries_min_type]
-            && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
+        if (query_log_will_read)
         {
             if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
                 LOG_TRACE(
@@ -1097,21 +1173,8 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void normalizeAnalyzerSettings(ASTPtr ast)
 {
-    if (ast->as<ASTSetQuery>())
-        return;
-
-    bool top_level = context_value;
-
-    auto field_to_bool = [](const Field & f) -> bool
-    {
-        if (f.getType() == Field::Types::String)
-            return stringToBool(f.safeGet<String>());
-        else
-            return f.safeGet<bool>();
-    };
-
     std::vector<ASTPtr> nodes_to_process{ ast };
     while (!nodes_to_process.empty())
     {
@@ -1120,16 +1183,10 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 
         if (auto * set_query = node->as<ASTSetQuery>())
         {
-            if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
+            for (auto & change : set_query->changes)
             {
-                if (top_level != field_to_bool(*value))
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
-            }
-
-            if (auto * value = set_query->changes.tryGet("enable_analyzer"))
-            {
-                if (top_level != field_to_bool(*value))
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
+                if ((change.name == "allow_experimental_analyzer" || change.name == "enable_analyzer") && !SettingFieldBool{change.value}.value)
+                    change.value = Field(true);
             }
         }
 
@@ -1141,7 +1198,8 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
     }
 }
 
-/// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from the
+/// Remove the resource-limit settings and the stream-like direct-select ban that executeASTFuzzerQueries
+/// pins on the fuzz context, plus `profile` (it would re-apply a whole settings profile over them), from the
 /// query-level SETTINGS carriers of the fuzzed AST. These caps (row/time/memory/result/block-size
 /// limits) keep a single fuzzed query from running away. They are applied to the fuzz context up front, but
 /// executeQueryImpl re-applies the query's own SETTINGS on top of the context
@@ -1164,6 +1222,8 @@ static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
         "max_result_bytes",
         "max_block_size",
         "min_insert_block_size_rows",
+        "stream_like_engine_allow_direct_select",
+        "profile",
     };
 
     removeSettingsFromQuery(ast, limit_settings);
@@ -2264,7 +2324,26 @@ static BlockIO executeQueryImpl(
     chassert(internal || CurrentThread::get().tryGetQueryContext());
     chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
+    /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9 and the old
+    /// query analysis is gone, so nothing reads the value anymore. A change that would disable it is
+    /// rewritten to `1` where the settings constraints are consulted, but a settings profile from the server
+    /// configuration is applied without them, so is a setting given to `clickhouse-local` on the command
+    /// line, and so is a secondary query another server sent. Normalize it here, so that `getSetting`,
+    /// `system.query_log` and a query this server sends on report the analysis that actually ran.
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        context->setSetting("allow_experimental_analyzer", true);
+
     const Settings & settings = context->getSettingsRef();
+
+    /// Remember the query id in the session history exposed through `system.session_query_ids`.
+    /// Recorded at query start deliberately, so that queries that later fail are captured too.
+    /// Secondary queries of distributed queries are excluded: they arrive over pooled
+    /// inter-server connections whose sessions are shared between initiators.
+    if (!internal && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->hasSessionContext())
+    {
+        if (UInt64 history_size = settings[Setting::session_query_ids_history_size])
+            context->getSessionQueryIdsHistory().add(client_info.current_query_id, history_size);
+    }
 
     size_t max_query_size = settings[Setting::max_query_size];
     /// Don't limit the size of internal queries or distributed subquery.
@@ -2313,8 +2392,8 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::promql && !internal)
         {
-            if (!settings[Setting::allow_experimental_time_series_table])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
+            if (!settings[Setting::enable_time_series_table])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'enable_time_series_table')");
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
@@ -2333,6 +2412,34 @@ static BlockIO executeQueryImpl(
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
+        else if (settings[Setting::dialect] == Dialect::trino && !internal)
+        {
+            /// Like `ParserPolyglotQuery`, `ParserTrinoQuery` handles SET queries and
+            /// the feature gate internally so users can always switch the dialect back.
+            ParserTrinoQuery parser(
+                max_query_size,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                end,
+                settings[Setting::enable_trino_dialect],
+                settings[Setting::allow_settings_after_format_in_insert],
+                settings[Setting::implicit_select]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// Settings that align the query semantics with Trino: outer joins
+            /// produce NULLs (not type defaults) and set operations use the numeric
+            /// supertype (not `Variant`).
+            /// They are applied to the context rather than injected into the
+            /// query text, so that they also hold for a query that carries its
+            /// own `SETTINGS` clause and for wrappers such as `INSERT ... SELECT`
+            /// or `EXPLAIN SELECT`. An explicit `SETTINGS` clause is applied
+            /// afterwards and still wins.
+            if (!out_ast->as<ASTSetQuery>())
+            {
+                context->setSetting("join_use_nulls", true);
+                context->setSetting("use_variant_as_common_type", false);
+            }
+        }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
         {
             /// Allow `SET` queries in plain SQL so users can switch back to another dialect
@@ -2340,7 +2447,8 @@ static BlockIO executeQueryImpl(
             /// applied only to the JSON-deserialization branch — otherwise a session with
             /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
             /// cannot execute `SET dialect = 'clickhouse'` to recover.
-            if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+            if (isClickHouseJSONSetEscape(
+                    begin, end, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]))
             {
                 ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
                 out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
@@ -2376,6 +2484,22 @@ static BlockIO executeQueryImpl(
                     settings[Setting::max_ast_elements]);
                 checkASTSizeLimits(*out_ast, settings);
             }
+        }
+        else if (settings[Setting::dialect] == Dialect::logsql && !internal)
+        {
+            /// `ParserLogsQLQuery` handles SET queries internally even when the feature gate is off,
+            /// so that users can recover from misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
+            ParserLogsQLQuery parser(
+                settings[Setting::logsql_database],
+                settings[Setting::logsql_table],
+                settings[Setting::logsql_time_column],
+                settings[Setting::logsql_message_column],
+                begin,
+                end,
+                settings[Setting::enable_logsql_dialect],
+                settings[Setting::max_parser_depth],
+                max_query_size);
+            out_ast = parseLogsQLQuery(parser, begin, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
         {
@@ -2755,7 +2879,7 @@ static BlockIO executeQueryImpl(
                 visitor.visit(out_ast);
             }
 
-            validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
+            normalizeAnalyzerSettings(out_ast);
 
             if (settings[Setting::enforce_strict_identifier_format])
             {
@@ -2884,9 +3008,9 @@ static BlockIO executeQueryImpl(
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
-            else if (insert_query->select)
-                reason = "insert query has select";
-            else if (insert_query->hasInlinedData())
+            /// `INSERT ... SELECT` (including `FROM input()`) is routed through
+            /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
+            else if (!insert_query->select && insert_query->hasInlinedData())
                 async_insert = true;
 
             if (!reason.empty())
@@ -2902,12 +3026,6 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
             if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-
-            auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
-            if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_PARAMETER,
-                    "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum or set insert_quorum_parallel=1 or do not use async inserts");
 
             quota = context->getQuota();
             if (quota)
@@ -2941,7 +3059,8 @@ static BlockIO executeQueryImpl(
                         std::move(result.future),
                         timeout,
                         context->getProcessListElement(),
-                        context->getProgressCallback());
+                        context->getProgressCallback(),
+                        /* report_read_progress */ true);
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
@@ -2981,11 +3100,17 @@ static BlockIO executeQueryImpl(
         context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
+        /// The query result cache on disk (backed by a preconfigured filesystem cache), see setting `query_cache_on_disk_cache_name`.
+        QueryResultCacheOnDiskPtr query_result_cache_on_disk;
+        if (can_use_query_result_cache)
+            query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
+
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
-        /// another overflow mode.
-        if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
+        /// another overflow mode. This is only needed if some backend can actually store the result (e.g. not in `clickhouse-local` with
+        /// `enable_writes_to_query_cache_on_disk = 0`, where the in-memory cache is disabled).
+        if (settings[Setting::use_query_cache] && hasQueryResultCacheWriteBackend(context, query_result_cache_on_disk) && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
             || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
             || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
             || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
@@ -3012,18 +3137,40 @@ static BlockIO executeQueryImpl(
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
             {
-                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+                if (out_ast && can_use_query_result_cache)
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
-                    QueryResultCacheReader reader = query_result_cache->createReader(key);
+                    const bool read_from_memory_cache = settings[Setting::enable_reads_from_query_cache];
+                    const bool read_from_on_disk_cache = query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled();
+                    if (!read_from_memory_cache && !read_from_on_disk_cache)
+                        return false;
 
-                    if (reader.hasCacheEntryForKey())
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
+
+                    std::optional<QueryResultCacheReader> reader;
+                    if (read_from_memory_cache)
                     {
-                        result_details.query_cache_entry_created_at = reader.entryCreatedAt();
-                        result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
+                        reader.emplace(query_result_cache->createReader(key));
+                        if (!reader->hasCacheEntryForKey())
+                            reader.reset();
+                    }
+                    /// If reads are enabled for both the in-memory and the on-disk cache, the (slower) on-disk cache is consulted
+                    /// only on a miss in memory.
+                    if (!reader && read_from_on_disk_cache)
+                    {
+                        reader.emplace(query_result_cache_on_disk->createReader(key));
+                        if (!reader->hasCacheEntryForKey())
+                            reader.reset();
+                    }
+
+                    QueryResultCacheReader::recordProbeResult(reader.has_value());
+
+                    if (reader)
+                    {
+                        result_details.query_cache_entry_created_at = reader->entryCreatedAt();
+                        result_details.query_cache_entry_expires_at = reader->entryExpiresAt();
 
                         QueryPipeline pipeline;
-                        pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                        pipeline.readFromQueryResultCache(reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
@@ -3121,7 +3268,10 @@ static BlockIO executeQueryImpl(
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
                         create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-                        create_interpreter->setInternal(internal);
+                        /// `InterpreterCreateQuery` uses `internal` to mean "initiated by the server itself, so all
+                        /// the restrictions for user queries (access checks among them) can be skipped". A query
+                        /// written by the user is never that, even when it is executed as a nested `internal` query.
+                        create_interpreter->setInternal(internal && !flags.user_initiated);
                     }
 
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
@@ -3135,7 +3285,7 @@ static BlockIO executeQueryImpl(
                     res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (checkCanWriteQueryResultCache(out_ast, context))
+                    if (checkCanWriteQueryResultCache(out_ast, context, query_result_cache_on_disk))
                     {
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = saturatedSecondsFrom(created_at, settings[Setting::query_cache_ttl].totalSeconds());
@@ -3149,6 +3299,10 @@ static BlockIO executeQueryImpl(
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
 
+                            const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(context);
+                            QueryResultCacheOnDiskPtr write_to_on_disk_cache
+                                = canWriteToQueryResultCacheOnDisk(context, query_result_cache_on_disk) ? query_result_cache_on_disk : nullptr;
+
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                             {
@@ -3156,7 +3310,7 @@ static BlockIO executeQueryImpl(
                                     "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
                                     num_query_runs, settings[Setting::query_cache_min_query_runs].value);
                             }
-                            else
+                            else if (write_to_memory_cache || write_to_on_disk_cache)
                             {
                                 auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
                                      key,
@@ -3164,14 +3318,17 @@ static BlockIO executeQueryImpl(
                                      settings[Setting::query_cache_squash_partial_results],
                                      settings[Setting::max_block_size],
                                      settings[Setting::query_cache_max_size_in_bytes],
-                                     settings[Setting::query_cache_max_entries]));
+                                     settings[Setting::query_cache_max_entries],
+                                     write_to_memory_cache,
+                                     write_to_on_disk_cache));
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
 
                             /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
                             /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
-                            if (settings[Setting::enable_reads_from_query_cache])
+                            if (settings[Setting::enable_reads_from_query_cache]
+                                || (query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled()))
                                 result_details.query_cache_entry_expires_at = expires_at;
                     }
                 }
@@ -3202,14 +3359,22 @@ static BlockIO executeQueryImpl(
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
 
             plan.resolveStorages(context);
-            plan.optimize(QueryPlanOptimizationSettings(context));
+
+            /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
+            /// plan to a distributed one. A deserialized plan has no planner-registered contexts, and its
+            /// steps captured this query context at deserialization, so it is the object the decision
+            /// must write on fallback (set building reads `make_distributed_plan` live from it).
+            plan.addDistributedPlanDecisionContext(context);
+            QueryPlanOptimizationSettings optimization_settings(context);
+            plan.applyDistributedPlanFallbackToLocal(optimization_settings);
+            plan.optimize(optimization_settings);
 
             WriteBufferFromOwnString buf;
             plan.explainPlan(buf, {.header=true, .actions=true});
             LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
 
             auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings(context),
+                    optimization_settings,
                     BuildQueryPipelineSettings(context),
                     /*do_optimize=*/ false);
 
@@ -3284,7 +3449,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error, const QueryPipeline & query_pipeline) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -3303,6 +3468,13 @@ static BlockIO executeQueryImpl(
                 }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
+
+                if (query_pipeline.initialized())
+                {
+                    /// The query may have failed with MEMORY_LIMIT_EXCEEDED, try to preserve original exception
+                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Process);
+                    logProcessorProfile(context, query_pipeline.getProcessors(), elem.exception_code, elem.exception);
+                }
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
@@ -3391,6 +3563,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     if (context->getClientInfo().is_replicated_database_internal || context->getZooKeeperMetadataTransaction())
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedReplicatedDDLInternal);
+        return;
+    }
+
+    /// A fuzz context copied from a collaborative worker inherits its replica number and the callbacks of the
+    /// initiator's read, so a fuzzed copy would take part in that read a second time as the same worker.
+    if (context->getClientInfo().collaborate_with_initiator)
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedCollaborativeWorker);
         return;
     }
 
@@ -3501,12 +3681,20 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ContextMutablePtr fuzz_session_context;
         ContextMutablePtr fuzz_context;
 
-        auto reset_transactions = [&]()
+        /// Everything this iteration owes once the query is over, on either outcome: the fuzzer state
+        /// it has to report the result to, and the transactions it has to release.
+        auto finish_iteration = [&](bool succeeded)
         {
             if (fuzz_context)
                 fuzz_context->setCurrentTransaction(NO_TRANSACTION_PTR);
             if (fuzz_session_context)
                 fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+            if (!succeeded)
+            {
+                auto [fuzzer, lock] = getGlobalASTFuzzer();
+                fuzzer->notifyQueryFailed(fuzzed_ast);
+            }
         };
 
         try
@@ -3524,12 +3712,18 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// silently clearing the user's active transaction on the caller session.
             fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
+            /// Detach the seed query's ProcessList entry: a fuzzed query failing before registering
+            /// its own entry would log `ExceptionBeforeStart` with the seed query's ProfileEvents.
+            fuzz_session_context->setProcessListElement(nullptr);
+
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
             fuzz_context->resetInputCallbacks();
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+            /// A direct read of a stream-like table (Kafka, FileLog, ...) consumes its messages, which may belong to another session.
+            fuzz_context->setSetting("stream_like_engine_allow_direct_select", Field(false));
 
             /// Limit resources for each fuzzed query to prevent runaway execution.
             fuzz_context->setSetting("max_execution_time", Field(UInt64(10)));
@@ -3650,17 +3844,21 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                 }
             }
 
-            reset_transactions();
+            finish_iteration(/*succeeded=*/true);
             base_ast = fuzzed_ast;
         }
         catch (const Exception & e)
         {
-            reset_transactions();
+            finish_iteration(/*succeeded=*/false);
             if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                 throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
-            auto [fuzzer, lock] = getGlobalASTFuzzer();
-            fuzzer->notifyQueryFailed(fuzzed_ast);
+        }
+        catch (...)
+        {
+            /// E.g. a Poco::Exception from a mutated URI: it must not fail the client's query, whose result is already sent.
+            finish_iteration(/*succeeded=*/false);
+            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
         }
     }
 }
