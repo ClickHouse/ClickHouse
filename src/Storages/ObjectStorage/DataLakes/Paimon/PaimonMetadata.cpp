@@ -1067,8 +1067,8 @@ void PaimonMetadata::checkCursorSnapshotUnchanged(Int64 snapshot_id, const Paimo
         "Paimon incremental read cursor at '{}' consumed snapshot {} committed at timeMillis {}, but snapshot {} of '{}' "
         "is a different snapshot (committed at timeMillis {}). The warehouse was rolled back, restored or recreated "
         "and the writer reused snapshot ids the cursor had already consumed, so the snapshots now carrying them were "
-        "never delivered. No data was read and the cursor was not modified. To re-read everything after the last "
-        "snapshot delivered before the rewind: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
+        "never delivered. No data was read and the cursor was not modified. To read every snapshot written since the "
+        "rewind, set the cursor to the snapshot the warehouse was rewound to: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
         "'<that snapshot id>'\". Setting it to {} instead skips the snapshots at the reused ids.",
         keeper_path, snapshot_id, consumed.time_millis, snapshot_id, persistent_components.table_path,
         current.time_millis, keeper_path, snapshot_id);

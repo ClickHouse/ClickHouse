@@ -819,7 +819,7 @@ def test_paimon_incremental_read_reused_snapshot_id_below_head(started_cluster):
             "the failing read modified the cursor"
         )
 
-        # Re-read everything after the last snapshot delivered before the rewind.
+        # Read every snapshot written since the rewind: the warehouse was rewound to snapshot 1.
         zk.set(f"{keeper_path}/committed_snapshot", b"1")
         _wait_until_query_result(count_query, "30\n", database="default")
         assert zk.get(f"{keeper_path}/committed_snapshot")[0] == b"4"
