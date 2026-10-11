@@ -46,6 +46,8 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     log_comment,
+    -- Without this, an optimization skipped altogether would pass for one that built the plan.
+    ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] > 0 AS built_the_plan,
     ProfileEvents['AutomaticParallelReplicasDecidedWithoutBuildingPlan'] > 0 AS decided_without_building_the_plan,
     ProfileEvents['ParallelReplicasUsedCount'] > 0 AS used_parallel_replicas
 FROM system.query_log
