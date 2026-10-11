@@ -238,6 +238,15 @@ private:
         }
 
         /// Scale the histogram to the range [0, BAR_LEVELS]
+        ///
+        /// Vectorization is disabled because of a bug in the loop vectorizer of clang 23 that shows up in
+        /// baseline x86-64 builds (`-DX86_ARCH_LEVEL=1`): `mulOverflow` is widened to a vector
+        /// `llvm.umul.with.overflow`, but the predicated division below is replicated per lane and takes the
+        /// whole vector struct member as a scalar operand, which produces ill-typed IR and a backend failure
+        /// (`Cannot select: i32 = any_extend`). Fixed on LLVM main by
+        /// https://github.com/llvm/llvm-project/pull/219941, not backported to any 23.1.x release.
+        /// The loop is at most 1024 iterations long, so it does not matter for performance.
+#pragma clang loop vectorize(disable)
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)

@@ -547,10 +547,13 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
 
     if (execute_linear)
     {
-        PaddedPODArray<UInt64> values_index(_size);
-        auto offset_it = begin();
-        for (size_t i = 0; i < _size; ++i, ++offset_it)
-            values_index[i] = offset_it.getValueIndex();
+        /// Scatter instead of walking the iterator row by row: that loop compares every row with the next
+        /// offset, and clang-23 compiles it into a `cmov` chain where each row waits for the previous one's
+        /// load of `offsets`. The scatter touches each offset once and has no per-row branch at all.
+        PaddedPODArray<UInt64> values_index(_size, 0);
+        const auto & offsets_data = getOffsetsData();
+        for (size_t i = 0; i < offsets_data.size(); ++i)
+            values_index[offsets_data[i]] = i + 1;
 
         for (size_t i = 0; i < limit;)
         {

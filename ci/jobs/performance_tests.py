@@ -2769,7 +2769,7 @@ def main():
             for test in test_files:
                 CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=10,
+                    max_queries=0,  # TEMPORARY: run the whole suite in this PR, revert before merge
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                 )

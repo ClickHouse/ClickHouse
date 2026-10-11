@@ -6,6 +6,8 @@
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 
+#include <cstring>
+
 
 namespace DB
 {
@@ -68,6 +70,22 @@ public:
 
         pcg64_fast rng(randomSeed());
 
+        using Words = UInt16 __attribute__((vector_size(16)));
+        using Wide = UInt32 __attribute__((vector_size(32)));
+        using Bytes = UInt8 __attribute__((vector_size(8)));
+
+        auto generate = [](UInt8 * out, UInt64 rand0, UInt64 rand1)
+        {
+            const UInt64 rand[2] = {rand0, rand1};
+            Words words;
+            memcpy(&words, rand, sizeof(words));
+            /// Printable characters are from range [32; 126].
+            /// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+            const Words scaled = __builtin_convertvector((__builtin_convertvector(words, Wide) * 95u) >> 16, Words) + 32;
+            const Bytes bytes = __builtin_convertvector(scaled, Bytes);
+            memcpy(out, &bytes, sizeof(bytes));
+        };
+
         const IColumn & length_column = *arguments[0].column;
 
         IColumn::Offset offset = 0;
@@ -82,25 +100,15 @@ public:
             offsets_to[row_num] = next_offset;
 
             auto * data_to_ptr = data_to.data();    /// avoid assert on array indexing after end
-            for (size_t pos = offset, end = offset + length; pos < end; pos += 4)    /// We have padding in column buffers that we can overwrite.
-            {
-                UInt64 rand = rng();
-
-                UInt16 rand1 = static_cast<UInt16>(rand);
-                UInt16 rand2 = static_cast<UInt16>(rand >> 16);
-                UInt16 rand3 = static_cast<UInt16>(rand >> 32);
-                UInt16 rand4 = rand >> 48;
-
-                /// Printable characters are from range [32; 126].
-                /// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
-
-                data_to_ptr[pos + 0] = 32 + ((rand1 * 95) >> 16);
-                data_to_ptr[pos + 1] = 32 + ((rand2 * 95) >> 16);
-                data_to_ptr[pos + 2] = 32 + ((rand3 * 95) >> 16);
-                data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
-
-                /// NOTE gcc failed to vectorize this code (aliasing of char?)
-            }
+            size_t pos = offset;
+            const size_t end = offset + length;
+            /// Eight characters per iteration from two 64-bit random values, 16 bits each, scaled with a vector
+            /// multiply-high and packed to bytes: one `pmulhuw` plus `packuswb` on x86. We have padding in column
+            /// buffers that we can overwrite, so the tail of up to four characters is produced the same way.
+            for (; pos + 4 < end; pos += 8)
+                generate(data_to_ptr + pos, rng(), rng());
+            if (pos < end)
+                generate(data_to_ptr + pos, rng(), 0);
 
             offset = next_offset;
         }
