@@ -36,8 +36,9 @@ parser.add_argument("--stderr-with-rows", action="store_true")
 # process to go. `sys.stdout.close` would leave the descriptor open (the standard streams are opened
 # with `closefd=False`); the server only sees EOF once the descriptor itself is closed.
 parser.add_argument("--close-stdout", action="store_true")
-# Then writes its pid to the file, for the test to check that the server did not leave it behind as a
-# zombie.
+# Writes its pid to the file before anything else, for the test to check that the server did not
+# leave it behind as a zombie - before the answer, so that it is there however soon the server ends
+# the process after it.
 parser.add_argument("--pid-file", metavar="PATH")
 # Then reads its stdin to the end - the way a pooled command is written to exit. A pooled command that
 # closed its stdout cannot go back to the pool, so its exit code is read right after its answer;
@@ -59,10 +60,17 @@ parser.add_argument("--stray-stdout", action="store_true")
 # output the command produced, and `stderr_reaction` `throw` promises that output fails the query -
 # with the exit-status check switched off too.
 parser.add_argument("--stderr-on-the-way-out", action="store_true")
+# The code it finally exits with: an exit status that `check_exit_code` fails the query for, which must
+# not hide what it wrote on its way out.
+parser.add_argument("--exit-code", type=int, default=0)
 args = parser.parse_args()
 
 
 def main():
+    if args.pid_file:
+        with open(args.pid_file, "w") as f:
+            f.write(f"{os.getpid()}\n")
+
     rows = [sys.stdin.readline()] if args.first_row_only else sys.stdin
     for row in rows:
         row = row.strip()
@@ -75,9 +83,6 @@ def main():
 
     if args.close_stdout:
         os.close(1)
-    if args.pid_file:
-        with open(args.pid_file, "w") as f:
-            f.write(f"{os.getpid()}\n")
     if args.read_to_eof:
         for _ in sys.stdin:
             pass
@@ -90,7 +95,7 @@ def main():
         os.write(1, b"stray line\n")
     if args.stderr_on_the_way_out:
         os.write(2, b"complaining on the way out\n")
-    sys.exit(0)
+    sys.exit(args.exit_code)
 
 
 if __name__ == "__main__":

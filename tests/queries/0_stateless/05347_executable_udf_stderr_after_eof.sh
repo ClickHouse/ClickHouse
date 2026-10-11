@@ -9,7 +9,8 @@ WORK=$(mktemp -d "${CLICKHOUSE_TMP}/stderr_eof_XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
 # The direct child exits after its row; its helper must not turn later EOF probes into
-# new `command_read_timeout` waits. A noisy helper makes those waits exceed the query limit.
+# new `command_read_timeout` waits. A noisy helper makes those waits exceed the query limit: a single
+# one already does (30 s against 10 s), and the limit leaves room for starting Python under sanitizers.
 cat > "$WORK/command.py" <<'PY'
 #!/usr/bin/env python3
 import os
@@ -50,8 +51,8 @@ pidfile = work / "helper.pid"
 query = f"""
 SELECT * FROM executable('command.py {pidfile}', TSV, 'value String',
     SETTINGS check_exit_code = 0, stderr_reaction = 'none',
-        command_termination_timeout = 0, command_read_timeout = 3000)
-SETTINGS max_threads = 1, max_execution_time = 2
+        command_termination_timeout = 0, command_read_timeout = 30000)
+SETTINGS max_threads = 1, max_execution_time = 10
 """
 try:
     result = subprocess.run(

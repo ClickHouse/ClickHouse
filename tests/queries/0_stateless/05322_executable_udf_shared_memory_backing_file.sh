@@ -16,6 +16,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./shm_udf_scripts/common.sh
 . "$CUR_DIR"/shm_udf_scripts/common.sh
 
+# Its commands lay the region out page by page, in base pages.
+shm_require_base_pages
+
 function shm_pool_function()
 {
     # name, argument type, the options that make it what it is, the command

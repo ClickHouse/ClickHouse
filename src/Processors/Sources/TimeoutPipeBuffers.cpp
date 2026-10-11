@@ -31,9 +31,6 @@ bool tryMakeFdNonBlocking(int fd)
     int flags = fcntl(fd, F_GETFL, 0);
     if (-1 == flags)
         return false;
-    /// A pooled worker's pipes keep the mode across borrows: no second syscall for each of them.
-    if ((flags & O_NONBLOCK) != 0)
-        return true;
     if (-1 == fcntl(fd, F_SETFL, flags | O_NONBLOCK))
         return false;
 
@@ -53,8 +50,6 @@ bool tryMakeFdBlocking(int fd)
     if (-1 == flags)
         return false;
 
-    if ((flags & O_NONBLOCK) == 0)
-        return true;
     if (-1 == fcntl(fd, F_SETFL, flags & (~O_NONBLOCK)))
         return false;
 
@@ -70,15 +65,8 @@ void makeFdBlocking(int fd)
 
 int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_milliseconds)
 {
-    /// Once: it is called several times per query, and obtaining a logger takes a global lock.
-    static LoggerPtr logger = getLogger("TimeoutReadBufferFromFileDescriptor");
-    /// A negative descriptor is one `poll` skips (a closed stderr); `fcntl` on it would only fail.
-    auto describe_fd = [](const auto & pollfd)
-    {
-        if (pollfd.fd < 0)
-            return fmt::format("(fd={})", pollfd.fd);
-        return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL));
-    };
+    auto logger = getLogger("TimeoutReadBufferFromFileDescriptor");
+    auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
 
     int res = 0;
 

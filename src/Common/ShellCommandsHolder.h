@@ -9,7 +9,6 @@
 #include <optional>
 #include <thread>
 #include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -22,15 +21,18 @@ class ShellCommandsHolder final : public boost::noncopyable
 public:
     static ShellCommandsHolder & instance();
 
-    /// Called on `SIGCHLD` for `pid`.
     void removeCommand(pid_t pid);
     void addCommand(std::unique_ptr<ShellCommand> command);
 
-    /// A child that `~ShellCommand` signalled to terminate and nobody waits for any more: reaped as
-    /// soon as it exits, by a thread of this holder, so that it does not stay a zombie for as long as
-    /// the process runs - and without whoever signalled it blocking until it exits.
-    void addSignalledChild(pid_t pid);
+    /// A child that `ShellCommand` signalled to terminate, or killed and could not reap, and that
+    /// nobody waits for any more: reaped as soon as it exits, by a thread of this holder, so that it
+    /// does not stay a zombie for as long as the process runs - and without whoever signalled it
+    /// blocking until it exits. `udf_registry_generation` is the child's entry in
+    /// `UDFProcessRegistry`, if it has one: removed once the child is reaped, not before, so that a
+    /// child that ignores the signal goes on being counted while it lives.
+    void addSignalledChild(pid_t pid, std::optional<UInt64> udf_registry_generation);
 
+    ShellCommandsHolder();
     ~ShellCommandsHolder();
 
 private:
@@ -41,11 +43,16 @@ private:
     /// added (`reaper_wakeup`), and reaps.
     void runReaper();
 
+    /// Wakes the reaper from its wait, to look at the children again. A full pipe already holds a
+    /// wake-up, which is all this is, so a write that does not fit is not an error.
+    void wakeReaper() noexcept;
+
     using ShellCommands = std::unordered_map<pid_t, std::unique_ptr<ShellCommand>>;
 
     std::mutex mutex;
     ShellCommands shell_commands TSA_GUARDED_BY(mutex);
-    std::unordered_set<pid_t> signalled_children TSA_GUARDED_BY(mutex);
+    /// The children `addSignalledChild` took over, with their `UDFProcessRegistry` generations.
+    std::unordered_map<pid_t, std::optional<UInt64>> signalled_children TSA_GUARDED_BY(mutex);
     std::optional<std::thread> reaper TSA_GUARDED_BY(mutex);
     /// Opened under `mutex` before the reaper starts and never changed after, so the reaper reads it
     /// without the lock.

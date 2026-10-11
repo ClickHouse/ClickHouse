@@ -188,7 +188,8 @@ private:
     /// `0` is a legitimate "fully under pressure" signal (cgroup at/over its limit, or
     /// `MemAvailable: 0`) and is distinct from a read failure: the dynamic limit must still
     /// shrink in that case rather than keep the previous (larger) value.
-    std::optional<uint64_t> readAvailableForDynamicLimit();
+    /// `unmeasured`: the shared-memory pages added to `resident` this tick (`MemoryTrackingUnmeasured`).
+    std::optional<uint64_t> readAvailableForDynamicLimit(Int64 unmeasured);
 
     /// Reads `MemAvailable` from /proc/meminfo. Returns `std::nullopt` if the file can't be
     /// read or the field is missing; returns `0` if `MemAvailable` is genuinely `0`.

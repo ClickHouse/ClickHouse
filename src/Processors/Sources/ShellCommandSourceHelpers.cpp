@@ -147,10 +147,15 @@ void waitForCommandExit(
     }
     catch (Exception & e)
     {
-        /// Enriched with the buffered stderr (`log_first`/`log_last`).
+        /// Enriched with what the command said on stderr: the buffered part (`log_first`/`log_last`),
+        /// and under `throw` what was accumulated - which this wait may have read only now, after the
+        /// check that gives stderr priority over the exit status has already passed. A command that
+        /// writes its diagnostic and exits with an error must not come out as a bare exit status.
         String stderr_content = output.consumeBufferedStderr();
         if (!stderr_content.empty())
             e.addMessage("Stderr: {}", stderr_content);
+        if (output.hasStderr())
+            e.addMessage("Executable generates stderr: {}", output.getStderr());
         throw;
     }
 

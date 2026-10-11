@@ -275,7 +275,9 @@ namespace
                 /// closed first; the send threads were joined at the top of this function.
                 /// It gets what it always got: EOF on its inputs and `command_termination_timeout` to
                 /// exit on it - a command may have cleanup to do (a `finally`, a `SIGTERM` handler) -
-                /// then `termination_signal`, after which it is reaped (`~ShellCommand`).
+                /// then `termination_signal` (`~ShellCommand`), after which it is reaped by
+                /// `ShellCommandsHolder` once it goes. A command that ignores the signal outlives its
+                /// slot, and the pool runs over `pool_size` for as long as it lives - as it always did.
                 if (command)
                     closeCommandInputsNoThrow();
 

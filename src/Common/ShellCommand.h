@@ -295,6 +295,9 @@ private:
     /// reaps it once it goes on the signal.
     void signalAndHandOverChild();
 
+    /// Hands a child this object will not reap to `ShellCommandsHolder`, which reaps it once it exits.
+    void handOverChildToReaper() noexcept;
+
     /// `tryWait`, logging what it throws: for the destructor's path.
     void tryWaitNoThrow() noexcept;
 

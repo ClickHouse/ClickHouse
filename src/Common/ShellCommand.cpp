@@ -220,16 +220,26 @@ void ShellCommand::signalAndHandOverChild()
         return;
     }
 
-    /// Reaped once it goes on the signal, as a command normally does - left alone, it would stay
-    /// a zombie for as long as the server runs - but not waited for here: a command can take its
-    /// time over the signal, and whatever destroys this (a query, a reload of a whole pool) is
-    /// not to be held up by it. A command that ignores the signal is left running, as it always
-    /// was.
+    /// A UDF command is reaped once it goes on the signal, as a command normally does - left alone,
+    /// it would stay a zombie, and an entry in `UDFProcessRegistry`, for as long as the server runs -
+    /// but not waited for here: a command can take its time over the signal, and whatever destroys
+    /// this (a query, a reload of a whole pool) is not to be held up by it. A command that ignores
+    /// the signal is left running, as it always was. Other commands are left as they always were.
+    if (config.register_in_udf_process_registry)
+        handOverChildToReaper();
+}
+
+void ShellCommand::handOverChildToReaper() noexcept
+{
+    /// Not this object's to wait for any more, but not forgotten either (`forgetChild`): its entry
+    /// in `UDFProcessRegistry` goes with it, and is removed once it is reaped - a child that
+    /// ignores the signal is still a process of the server for as long as it lives.
+    child_reaped = true;
+    wait_called = true;
     try
     {
-        const pid_t signalled_pid = pid;
-        forgetChild();
-        ShellCommandsHolder::instance().addSignalledChild(signalled_pid);
+        ShellCommandsHolder::instance().addSignalledChild(
+            pid, config.register_in_udf_process_registry ? std::optional<UInt64>(udf_registry_generation) : std::nullopt);
     }
     catch (...)
     {
@@ -338,16 +348,19 @@ void ShellCommand::killAndReapNoThrow(bool whole_group) noexcept
             case WaitForPidResult::NOT_OUR_CHILD:
                 forgetChild();
                 break;
+            /// Still ours, as far as anyone can tell, and not reaped here - the wait failed (run out
+            /// of descriptors for `pidfd_open`, say), or ran out: it is handed to the reaper, or
+            /// nobody would ever reap it once this object is gone.
             case WaitForPidResult::ERROR:
             {
-                /// The wait failed with the child still ours, as far as anyone can tell (run out of
-                /// descriptors for `pidfd_open`, say): it is not forgotten.
                 const int saved_errno = errno;
                 LOG_WARNING(getLogger(), "Cannot reap shell command pid {} after SIGKILL: {}", pid, errnoToString(saved_errno));
+                handOverChildToReaper();
                 break;
             }
             case WaitForPidResult::TIMEOUT:
                 LOG_WARNING(getLogger(), "Shell command pid {} was not reaped within {} ms after SIGKILL", pid, reap_after_kill_timeout_ms);
+                handOverChildToReaper();
                 break;
         }
     }
@@ -822,13 +835,18 @@ void ShellCommand::handleUnreadableChildReport(pid_t child_pid, int read_error)
         /// signalled and reaped before the failure is reported. `ESRCH` on a child that
         /// was gone after all costs nothing, and this is the one place where killing is
         /// the conservative choice: the alternative is leaking the process.
+        /// Except a child that is not ours any more (`ECHILD`): somebody else reaped it, and its pid
+        /// may belong to anybody now, so it is neither signalled nor waited for.
         const int probe_error = errno;
 
-        if (0 != ::kill(child_pid, SIGKILL) && errno != ESRCH)
-            LOG_WARNING(getLogger(), "Cannot kill child process pid {}: {}", child_pid, errnoToString());
-
-        while (-1 == ::waitpid(child_pid, &status, 0) && errno == EINTR)
+        if (probe_error != ECHILD)
         {
+            if (0 != ::kill(child_pid, SIGKILL) && errno != ESRCH)
+                LOG_WARNING(getLogger(), "Cannot kill child process pid {}: {}", child_pid, errnoToString());
+
+            while (-1 == ::waitpid(child_pid, &status, 0) && errno == EINTR)
+            {
+            }
         }
 
         throw Exception(

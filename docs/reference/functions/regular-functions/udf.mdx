@@ -79,7 +79,7 @@ With `check_exit_code` disabled and `stderr_reaction` other than `none`, the ser
 For `type` `executable_pool`, `stderr` is read only while a query is reading from the process and once more when the query returns the process to the pool:
 
 - `stderr` that arrives before that final check belongs to the current query: under `throw` it fails the query, even if it was written after the answer.
-- `stderr` that arrives later is found by the next query that borrows the process. It is logged and not raised against that query. Under `throw`, and when the process has exited in the pool, the process is discarded and replaced (with `use_shared_memory`, counted in `ExecutableUDFSharedMemoryDirtyChannelDiscards`). Output that the command writes while the next request is running is attributed to that query.
+- `stderr` that arrives later is found by the next query that borrows the process. It is logged and not raised against that query. Under `throw` the process is discarded and replaced (with `use_shared_memory`, counted in `ExecutableUDFSharedMemoryDirtyChannelDiscards`). A process that has exited in the pool is replaced as well, but is not counted there. Output that the command writes while the next request is running is attributed to that query.
 - Under `none`, leftover `stderr` is discarded and never causes a process to be replaced.
 - Between borrows, nothing reads the pipe, under any `stderr_reaction`. A command that writes while idle can fill the pipe and block in `write` until the next borrow drains it, and that borrow pays for the wait.
 
@@ -141,7 +141,7 @@ What the server does:
 
 - `command_read_timeout` bounds the time from sending a request to having read the whole response frame, not each read.
 - The returned `offset` and `size` are validated, so a command cannot make the server read past the mapping.
-- For `type` `executable_pool`, the server checks both pipes before returning a process to the pool, and again before sending the next request. A process that left unread output is discarded and replaced (counted in `ExecutableUDFSharedMemoryDirtyChannelDiscards`). These checks are not a safety net: a byte written just before the next request still fails that query through `request_id`.
+- For `type` `executable_pool`, the server checks both pipes before returning a process to the pool, and again before sending the next request. A process that left unread output on its `stdout`, or on its `stderr` under `stderr_reaction` `throw`, is discarded and replaced (counted in `ExecutableUDFSharedMemoryDirtyChannelDiscards`); under the other reactions leftover `stderr` is handled as described in [Handling of stderr](#executable-udf-stderr). These checks are not a safety net: a byte written just before the next request still fails that query through `request_id`.
 - The region is not cleared between invocations by the same user with the same current roles, so a command can read what that user's earlier query left there. When the process is borrowed by a different user, or by the same user with a different set of current roles, the server zeroes the whole file first (counted in `ExecutableUDFSharedMemoryScrubbedBytes`). This is done by freeing and re-committing the pages, and is charged to the query.
 
 #### Region size {#shared-memory-region-size}

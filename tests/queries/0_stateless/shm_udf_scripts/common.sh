@@ -34,6 +34,18 @@ for knob in "$THP_DIR"/hugepages-*kB/shmem_enabled; do
     fi
 done
 
+# For a test whose commands lay a region out page by page (`shm_udf_region.py`, in base pages): on a
+# host that backs `shmem` with large folios (`SHM_PAGE` larger than the page) the layout it builds is
+# not the one its expectations describe, so it prints its reference and stops there.
+function shm_require_base_pages()
+{
+    if [ "$SHM_PAGE" != "$(getconf PAGESIZE)" ]; then
+        # The test that sourced this file: the outermost script, however it was started.
+        cat "$CUR_DIR/$(basename "${BASH_SOURCE[${#BASH_SOURCE[@]} - 1]}" .sh).reference"
+        exit 0
+    fi
+}
+
 # `size` rounded up to whole pages.
 function shm_pages()
 {

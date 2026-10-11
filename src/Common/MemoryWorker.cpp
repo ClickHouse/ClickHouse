@@ -685,7 +685,7 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
     total_memory_tracker.setHardLimit(limit_to_apply);
 }
 
-std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
+std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit([[maybe_unused]] Int64 unmeasured)
 {
 #if defined(OS_LINUX)
     /// When running in a cgroup with a finite limit, the host-wide `/proc/meminfo` is
@@ -764,8 +764,11 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
                     /// `cgroups_reader`. v1 does not traverse the hierarchy.
                     /// `cgroups_reader->readMemoryUsage` already excludes reclaimable memory
                     /// (it sums anon + sock + non-reclaimable kernel), so no further adjustment
-                    /// is needed here.
-                    used = cgroups_reader->readMemoryUsage();
+                    /// is needed for that. It excludes the shared-memory pages of executable UDFs
+                    /// as well, which `resident` - the baseline the headroom is added to - includes
+                    /// (`unmeasured`, the same snapshot): counted there and not here, they would
+                    /// raise the limit by their own size. In v2 `memory.current` holds them already.
+                    used = cgroups_reader->readMemoryUsage() + static_cast<uint64_t>(std::max<Int64>(0, unmeasured));
                 }
 
                 auto decision = MemoryWorkerHelpers::decideCgroupLevelAvailability(first_token, used, host_memory_bytes);
@@ -893,10 +896,10 @@ void MemoryWorker::updateResidentMemoryThread()
             /// headroom. Otherwise `updateRSS` drops these charges on every tick, allowing the
             /// combined footprint to exceed the server limit when tracker correction is disabled
             /// or sanitizer overhead makes RSS larger than the allocated counter.
+            /// The purge decision below included: its threshold is a share of the server's limit, which
+            /// these pages count against too, so they are part of the pressure a purge relieves - even
+            /// though what it returns are only jemalloc's dirty pages.
             const Int64 unmeasured = CurrentMetrics::get(CurrentMetrics::MemoryTrackingUnmeasured);
-            /// Except for the purge decision below: a purge returns jemalloc's dirty pages, and the
-            /// shared-memory pages are not jemalloc's to return.
-            [[maybe_unused]] const Int64 allocator_resident = memory_usage.resident;
             memory_usage.resident += unmeasured;
             memory_usage.allocated += unmeasured;
 
@@ -979,7 +982,7 @@ void MemoryWorker::updateResidentMemoryThread()
             const auto purge_dirty_pages_threshold = static_cast<double>(memory_tracker_limit) * purge_dirty_pages_threshold_ratio;
 
             const bool needs_purge
-                = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(allocator_resident) > purge_total_memory_threshold)
+                = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(memory_usage.resident) > purge_total_memory_threshold)
                 || (purge_dirty_pages_threshold_ratio > 0
                     && static_cast<double>(pdirty_mib.getValue() * page_size) > purge_dirty_pages_threshold);
 
@@ -1071,7 +1074,7 @@ void MemoryWorker::updateResidentMemoryThread()
                     /// "metric is genuinely zero" (`0`, real high-pressure signal). Skipping
                     /// on `0` would keep the previous (larger) hard limit in place exactly
                     /// when ClickHouse should be shrinking its budget the most.
-                    std::optional<uint64_t> available_opt = readAvailableForDynamicLimit();
+                    std::optional<uint64_t> available_opt = readAvailableForDynamicLimit(unmeasured);
                     if (available_opt)
                     {
                         uint64_t available = *available_opt;

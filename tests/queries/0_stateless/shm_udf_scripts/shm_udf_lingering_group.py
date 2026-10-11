@@ -39,6 +39,11 @@ def start_descendant(directory):
     os._exit(0)
 
 
+def wait_for(directory, name):
+    while not os.path.exists(os.path.join(directory, name)):
+        time.sleep(0.01)
+
+
 def linger():
     # Discarded: the server closed stdin. Stay, deaf to `SIGTERM`, holding the region.
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -47,6 +52,9 @@ def linger():
 
 def main():
     start_descendant(sys.argv[1])
+    # The descendant has written its pid before the first answer: the server may discard this worker,
+    # and end its group, right after it.
+    wait_for(sys.argv[1], "descendant")
     write_pid(sys.argv[1], "worker")
 
     # Every response frame with a stray byte after it, in the same write (see `serve`).
