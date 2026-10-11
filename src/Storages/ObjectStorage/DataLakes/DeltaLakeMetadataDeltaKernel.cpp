@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeCatalogRegistration.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -54,6 +55,11 @@ namespace FailPoints
 {
     extern const char delta_lake_metadata_iterate_pause[];
     extern const char delta_lake_create_table_pause[];
+}
+
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsBool delta_lake_enable_domain_metadata;
 }
 
 namespace Setting
@@ -280,6 +286,11 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 
         latest_snapshot_version = version;
     }
+}
+
+std::optional<String> DeltaLakeMetadataDeltaKernel::getRefreshCursor(ContextPtr context) const
+{
+    return getTableSnapshot(getSnapshotVersion(context->getSettingsRef()))->getDomainMetadata(DeltaLake::REFRESH_CURSOR_DOMAIN);
 }
 
 DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(
@@ -798,6 +809,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
 
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(write_kernel_helper, snapshot->getTableSchema());
     delta_transaction->create(partition_columns);
+    delta_transaction->setStreamingCursor(context->getStreamingCursor());
 
     if (partition_columns.empty())
     {
@@ -891,7 +903,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
 
     try
     {
-        write_transaction->createTable();
+        write_transaction->createTable(configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::delta_lake_enable_domain_metadata]);
     }
     catch (const Exception & e)
     {

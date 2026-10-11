@@ -8,6 +8,9 @@
 #include <Common/logger_useful.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Streaming/CursorTree.h>
+#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -255,6 +258,24 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
 
     ffi::add_files(transaction.get(), engine_data.release());
 
+    /// Requires the table's `domainMetadata` writer feature; without it the commit fails instead of losing the cursor.
+    if (streaming_cursor)
+    {
+        std::string refresh_cursor;
+        {
+            std::lock_guard lock(streaming_cursor->mutex);
+            refresh_cursor = DB::refreshCursorToStorage(streaming_cursor->tree);
+        }
+        /// Consumes the transaction handle, also on failure.
+        transaction = DeltaLake::KernelUtils::unwrapResult(
+            ffi::with_domain_metadata(
+                transaction.release(),
+                DeltaLake::KernelUtils::toDeltaString(REFRESH_CURSOR_DOMAIN),
+                DeltaLake::KernelUtils::toDeltaString(refresh_cursor),
+                engine.get()),
+            "with_domain_metadata");
+    }
+
     fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
         throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");
     });
@@ -269,7 +290,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Commit version: {}", version);
 }
 
-void WriteTransaction::createTable()
+void WriteTransaction::createTable(bool enable_domain_metadata)
 {
     /// Reject non-round-tripping column types before the kernel FFI, so unsupported types raise a normal exception.
     DeltaLake::validateSchemaForDeltaCreate(table_schema);
@@ -308,6 +329,18 @@ void WriteTransaction::createTable()
     }
     if (schema_state.exception)
         std::rethrow_exception(schema_state.exception);
+
+    if (enable_domain_metadata)
+    {
+        /// Consumes the builder handle, also on failure.
+        builder = DeltaLake::KernelUtils::unwrapResult(
+            ffi::create_table_builder_with_table_property(
+                builder.release(),
+                DeltaLake::KernelUtils::toDeltaString("delta.feature.domainMetadata"),
+                DeltaLake::KernelUtils::toDeltaString("supported"),
+                engine.get()),
+            "create_table_builder_with_table_property");
+    }
 
     /// `create_table_builder_build` consumes the builder on both success and failure, so release() is correct here.
     KernelCreateTransaction create_txn(DeltaLake::KernelUtils::unwrapResult(
