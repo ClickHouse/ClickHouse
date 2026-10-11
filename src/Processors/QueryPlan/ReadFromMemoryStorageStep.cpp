@@ -23,6 +23,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MaterializedCTE.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageMemory.h>
@@ -872,6 +873,34 @@ std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnly
 
     const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
 
+    /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
+    /// after the block was inserted) with the defaults of the type in both branches, not by evaluating
+    /// the `DEFAULT` expression. Do not rely on that, the same way `supportsTopKDynamicFilter` does:
+    /// a column with a default expression and the transitive inputs of the expression stay in the main branch.
+    const auto & column_defaults = storage_snapshot->metadata->getColumns().getDefaults();
+    NameSet names_in_default_expressions;
+    std::vector<String> names_to_visit;
+    for (const auto & column_name : columns_to_read)
+    {
+        auto column = storage_snapshot->tryGetColumn(options, column_name);
+        if (column && column_defaults.contains(column->getNameInStorage()) && names_in_default_expressions.insert(column->getNameInStorage()).second)
+            names_to_visit.push_back(column->getNameInStorage());
+    }
+    while (!names_to_visit.empty())
+    {
+        const auto it = column_defaults.find(names_to_visit.back());
+        names_to_visit.pop_back();
+        if (it == column_defaults.end() || !it->second.expression)
+            continue;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = it->second.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & required_name : columns_context.requiredColumns())
+            if (names_in_default_expressions.insert(required_name).second)
+                names_to_visit.push_back(required_name);
+    }
+
     Names main_columns;
     NamesAndTypesList lazy_columns;
     for (const auto & column_name : columns_to_read)
@@ -881,7 +910,8 @@ std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnly
             return {};
 
         auto column = storage_snapshot->tryGetColumn(options, column_name);
-        if (column && !names_to_keep.contains(column_name) && output_header->has(column_name))
+        if (column && !names_to_keep.contains(column_name) && output_header->has(column_name)
+            && !names_in_default_expressions.contains(column_name) && !names_in_default_expressions.contains(column->getNameInStorage()))
             lazy_columns.push_back(*column);
         else
             main_columns.push_back(column_name);
