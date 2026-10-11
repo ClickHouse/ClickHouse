@@ -147,7 +147,7 @@ public:
     /// `IStorage::checkTableCanBeRenamedByDatabaseRename`). Reject the database-level rename too,
     /// for the same reason as a table rename: the shared lease path is captured at startup and
     /// there is no protocol to broadcast a new path to followers.
-    void checkTableCanBeRenamedByDatabaseRename() const override;
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
 
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
@@ -644,7 +644,7 @@ private:
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
-        NameSet getAllUpdatedColumns() const override;
+        NameSet getColumnsChangedOnFly() const override;
     };
 
     class PartMutationBackoffPolicy

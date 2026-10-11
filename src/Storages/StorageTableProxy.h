@@ -249,23 +249,25 @@ public:
     /// rejected because of one `leader_election` table would still have started every table
     /// before it.
     ///
-    /// `IStorage::checkTableCanBeRenamedByDatabaseRename` is a no-op everywhere except
-    /// `StorageMergeTree`, where it only throws under `leader_election`, so the storage-free
-    /// predicate below decides it exactly. It is true only when the `CREATE` query names an
+    /// A table that is still a stand-in is therefore not loaded to ask unless the storage-free
+    /// predicate below says it may need the `leader_election` guard. For `StorageMergeTree`, which
+    /// only throws under `leader_election`, the predicate decides it exactly. Other overrides of
+    /// `IStorage::checkTableCanBeRenamedByDatabaseRename` (`ObjectStorageQueue`) are asked only once
+    /// the table is loaded: a stand-in has nothing to answer with. It is true only when the `CREATE` query names an
     /// engine that `StorageMergeTree` backs *and* `leader_election` resolves to on for that
     /// table (from its own `SETTINGS`, falling back to the server-wide `merge_tree` default);
     /// when either half is false, the nested call is a no-op by construction and skipping it
     /// changes nothing. In particular a lazy `ReplicatedMergeTree`, whose hook is the no-op
     /// one, is not materialized just because the server-wide default happens to be on — which
     /// would fail the rename outright, since that engine refuses to attach under the setting.
-    void checkTableCanBeRenamedByDatabaseRename() const override
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
     {
         {
             std::lock_guard lock{nested_mutex};
             if (!nested && !may_use_leader_election())
                 return;
         }
-        getNested()->checkTableCanBeRenamedByDatabaseRename();
+        getNested()->checkTableCanBeRenamedByDatabaseRename(new_database_name);
     }
 
     bool dropSkipsDataDirectoryCleanup() const override

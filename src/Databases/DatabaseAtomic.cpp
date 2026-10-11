@@ -775,8 +775,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     /// the rename — including the final `RENAME DATABASE` of the Ordinary-to-Atomic startup
     /// conversion, which a previous version of this code broke. See
     /// `IStorage::checkTableCanBeRenamedByDatabaseRename`.
-    for (auto & table : tables)
-        table.second->checkTableCanBeRenamedByDatabaseRename();
+    for (const auto & table : tables)
+        table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
 
     /// The same guard for the tables that are currently detached. `DETACH TABLE` moves a table out
     /// of `tables` into `snapshot_detached_tables` and keeps its metadata file, which this method
