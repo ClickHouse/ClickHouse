@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/Epoll.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/WakeupFd.h>
@@ -31,9 +33,9 @@ class PollingQueue
         std::optional<Key> popExpired();
 
     private:
-        using Queue = std::multimap<Clock::time_point, Key>;
+        using Queue = MultiMapWithMemoryTracking<Clock::time_point, Key>;
         Queue queue;
-        std::unordered_map<Key, Queue::iterator> index;
+        UnorderedMapWithMemoryTracking<Key, Queue::iterator> index;
     };
 
     struct TaskData
@@ -76,7 +78,7 @@ public:
 
 private:
     Epoll epoll{EpollNesting::PipelinePoller};
-    std::unordered_map<Key, TaskData> tasks;
+    UnorderedMapWithMemoryTracking<Key, TaskData> tasks;
 
     /// In-Flight timers
     Deadlines deadlines;
