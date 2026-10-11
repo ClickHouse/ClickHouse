@@ -44,13 +44,15 @@ public:
         auto block = reader->read();
         approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(*in) - block_start;
 
-        if (block.empty())
+        /// A block with no columns keeps its number of rows in the block info; it is the end of the data
+        /// only when it has no rows either.
+        if (block.empty() && block.info.num_rows_without_columns == 0)
             return {};
 
         assertBlocksHaveEqualStructure(getPort().getHeader(), block, getName());
         block.checkNumberOfRows();
 
-        size_t num_rows = block.rows();
+        size_t num_rows = block.columns() == 0 ? block.info.num_rows_without_columns : block.rows();
         return Chunk(block.getColumns(), num_rows);
     }
 
@@ -88,8 +90,14 @@ protected:
     {
         if (chunk)
         {
+            const size_t num_rows = chunk.getNumRows();
             auto block = getPort(PortKind::Main).getHeader();
             block.setColumns(chunk.detachColumns());
+
+            /// A block takes its number of rows from its columns, so without them the count has to be kept aside.
+            if (block.columns() == 0)
+                block.info.num_rows_without_columns = num_rows;
+
             writer.write(block);
         }
     }
