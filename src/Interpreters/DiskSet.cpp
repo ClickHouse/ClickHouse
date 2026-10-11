@@ -9,6 +9,12 @@
 #include <algorithm>
 #include <functional>
 
+namespace ProfileEvents
+{
+extern const Event ExternalSetLookupKeys;
+extern const Event ExternalSetBloomFilterSkippedKeys;
+}
+
 namespace DB
 {
 
@@ -104,6 +110,7 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
     const auto & keys = assert_cast<const ColumnVector<Key> &>(keys_column).getData();
     chassert(keys.size() == found.size());
     std::fill(found.begin(), found.end(), 0);
+    ProfileEvents::increment(ProfileEvents::ExternalSetLookupKeys, keys.size());
 
     /// A set without keys has no blocks and finds nothing.
     if (!rows)
@@ -136,8 +143,8 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
     /// Results go back to the original rows, so evaluating `IN` does not reorder the input.
     ::sort(probes.begin(), probes.end(), [](const Probe & lhs, const Probe & rhs) { return lhs.key < rhs.key; });
 
-    /// Step 3: Find the block of each distinct key, and add a lookup in that block unless the bloom filter of the
-    /// block rules the key out. The keys ascend, so the search for each block starts at the block of the
+    /// Step 3: Find the block of each distinct key, and add a lookup in that block unless the Bloom filter of
+    /// the block rules the key out. The keys ascend, so the search for each block starts at the block of the
     /// previous key. The reader gets the needed blocks, each once and in ascending order.
     struct Lookup
     {
@@ -148,9 +155,20 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
         size_t probes_end;
     };
 
+    /// Returns the number of rows that a probe answers: its own row, and the rows after it that repeat its
+    /// key and take its answer in step 5.
+    const auto count_rows_of_probe = [&](const Probe & probe)
+    {
+        size_t end = probe.row + 1;
+        while (end < keys.size() && keys[end] == probe.key)
+            ++end;
+        return end - probe.row;
+    };
+
     VectorWithMemoryTracking<Lookup> lookups;
     std::vector<size_t> needed_blocks;
     size_t block = 0;
+    size_t skipped_rows = 0;
     for (size_t begin = 0; begin < probes.size();)
     {
         size_t end = begin + 1;
@@ -164,8 +182,17 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
                 needed_blocks.push_back(block); /// Each block once, in ascending order
             lookups.push_back({block, begin, end});
         }
+        else
+        {
+            for (size_t i = begin; i < end; ++i)
+                skipped_rows += count_rows_of_probe(probes[i]);
+        }
         begin = end;
     }
+
+    /// A skipped key counts once for each of its rows, as `ExternalSetLookupKeys` does, so that the two
+    /// events give the share of the rows that the filters answer.
+    ProfileEvents::increment(ProfileEvents::ExternalSetBloomFilterSkippedKeys, skipped_rows);
 
     if (lookups.empty()) /// The filters ruled out every key
         return;
