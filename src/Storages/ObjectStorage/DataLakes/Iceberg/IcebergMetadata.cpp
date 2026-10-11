@@ -14,6 +14,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -168,9 +169,7 @@ void checkNoUInt64(const ColumnsDescription & columns)
 {
     for (const auto & column : columns.getAllPhysical())
     {
-        bool has_uint64 = column.type->getTypeId() == TypeIndex::UInt64;
-        column.type->forEachChild([&](const IDataType & child) { has_uint64 |= child.getTypeId() == TypeIndex::UInt64; });
-        if (has_uint64)
+        if (anyInTypeTree(*column.type, [](const IDataType & type) { return type.getTypeId() == TypeIndex::UInt64; }))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Column {} of type {} cannot be stored in Iceberg: the widest Iceberg integer type is the signed 64-bit `long`, "
