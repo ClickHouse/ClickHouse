@@ -175,6 +175,7 @@ rm -rf tmp_stress_output
 # We experienced deadlocks in this command in very rare cases. Let's debug it:
 timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM system.tables" ||
 (
+    echo -e "Cannot count the tables after the stress phase (see gdb.log)$FAIL" >> /test_output/test_results.tsv
     echo "thread apply all backtrace (on select tables count)" >> /test_output/gdb.log
     timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
     clickhouse stop --force
@@ -183,6 +184,12 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
 # A query can outlive the stress phase and hold its table locks until it ends (one that reads an unreachable S3
 # endpoint retries for tens of minutes). The replica restarts below need their tables exclusively, so cancel them.
 timeout 2m clickhouse-client --query "KILL QUERY WHERE 1 SYNC" ||:
+
+# `system.mutations` lists only the tables the server holds attached, but a restart attaches again what a `DETACH`
+# without `PERMANENTLY` took away, as the upgraded server will. Restart the previous release, so the kill below sees
+# those tables too and no query left running by the stress phase changes them behind it.
+stop_server 300 false || (echo "Failed to stop server" && exit 1)
+start_server || (echo "Failed to start server" && exit 1)
 
 # Kill the mutations that the stress phase left unfinished, before the server is upgraded.
 #
