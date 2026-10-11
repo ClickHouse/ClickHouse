@@ -77,6 +77,10 @@ CREATION_CSN_LOG = "creation_csn is not set"
 # (`StorageMergeTree::getDataPartsToMutate`), so this reason is the mutation defect itself rather
 # than a server that happens to be slow.
 VERSION_NOT_VISIBLE = "Not visible by transaction version"
+# `PostponeReasons::NO_FREE_THREADS`, written by a pass that stops before it looks at any part
+# (`mt_select_parts_to_mutate_no_free_threads`). `require_fresh_mutation_pass` uses it to date a
+# reason: the map is rebuilt from scratch on every pass.
+NO_FREE_THREADS = "No free threads in pool"
 # `version_metadata_store_creation_csn_fail` fires inside `~MergeTreeData::Transaction`, which
 # logs the exception and swallows it. The statement already reported the first injected failure,
 # so this line is the only thing that says the rollback's own mark failed too.
@@ -96,6 +100,7 @@ FAILPOINTS = [
     "transaction_log_pause_before_loading_entries",
     "version_metadata_store_creation_csn_fail",
     "version_metadata_store_pause_before_rename",
+    "mt_select_parts_to_mutate_no_free_threads",
 ]
 
 
@@ -158,15 +163,18 @@ def start_cluster():
         cluster.shutdown(ignore_logical_errors=True, ignore_fatal=True)
 
 
-# `cluster.shutdown` can exempt a run from its `LOGICAL_ERROR` check, but only the whole run, and
-# this module needs that exemption for one reproduction. So the exemption is replaced per test: a
-# test named here may log the message it names, and every other test must log no logical error at
-# all. The `<Fatal>` check stays exempt and unreplaced -- the abort of a logical error writes a
-# whole stack, of which one line carries the message, so counting cannot tell it from an unrelated
-# crash.
+# `cluster.shutdown` can exempt a run from its `LOGICAL_ERROR` and `<Fatal>` checks, but only the
+# whole run, and this module needs both exemptions for one reproduction: in a debug or sanitizer
+# build its logical error aborts, and the abort writes a whole stack of fatal lines of which one
+# carries the message, so counting cannot tell that stack from an unrelated one. The exemptions are
+# therefore replaced per test. A test named here may log the message it names and may abort over
+# it; every other test must log no logical error and no fatal line of its own.
 LOGICAL_ERROR_EXPECTED = {
     "test_drop_partition_of_uncommitted_creation_is_refused": CREATION_CSN_LOG,
 }
+# The watchdog logs the `SIGKILL` of `restart_server` at fatal level (`BaseDaemon.cpp`), which is
+# this module killing a server on purpose. `cluster.shutdown` exempts the same line.
+EXPECTED_FATAL = "Child process was terminated by signal 9 (KILL)"
 
 
 @pytest.fixture(autouse=True)
@@ -186,6 +194,8 @@ def isolated_test(start_cluster, request):
     expected_error = LOGICAL_ERROR_EXPECTED.get(request.node.name)
     logical_errors = log_hits("LOGICAL_ERROR")
     expected_errors = log_hits(expected_error) if expected_error else 0
+    fatals = log_hits("<Fatal>")
+    expected_fatals = log_hits(EXPECTED_FATAL)
     yield
     # pytest runs the tests after this one whatever a teardown error says, so a server that
     # cannot be cleaned is replaced rather than merely reported.
@@ -237,6 +247,14 @@ def isolated_test(start_cluster, request):
         unaccounted <= 0,
         f"the server logged {unaccounted} logical error(s) this test did not declare",
     )
+    if request.node.name not in LOGICAL_ERROR_EXPECTED:
+        unaccounted_fatal = (log_hits("<Fatal>") - fatals) - (
+            log_hits(EXPECTED_FATAL) - expected_fatals
+        )
+        require(
+            unaccounted_fatal <= 0,
+            f"the server logged {unaccounted_fatal} fatal line(s) during this test",
+        )
 
 
 def _mark_contaminated(reason):
@@ -484,6 +502,29 @@ def mutation_outcome(table, future, timeout=HANG_TIMEOUT, stop_early=True):
     return future.done(), postponed
 
 
+def require_fresh_mutation_pass(table, future, timeout=60):
+    """Makes the scheduler prove it ran a mutation selection pass for `table` now.
+
+    `selectPartsToMutate` clears `current_parts_postpone_reasons` at the start of every pass, so a
+    postponement read later says only that some pass recorded it -- a reason justified by a
+    failpoint that has since been released survives until the next pass. `NO_FREE_THREADS` comes
+    from a pass that stops before it looks at any part, so seeing it dates the map to after this
+    call, and whatever the verdict reads afterwards comes from a pass later still.
+
+    A mutation that has already finished has nothing to date; `system.mutations` drops it too.
+    """
+    with failpoints("mt_select_parts_to_mutate_no_free_threads"):
+        require(
+            poll(
+                lambda remaining: future.done()
+                or NO_FREE_THREADS in mutation_postpone_reasons(table, remaining),
+                timeout,
+            ),
+            f"the scheduler ran no mutation selection pass for {table} within {timeout} s, so a "
+            "postponement read after this would not describe the state under test",
+        )
+
+
 def require_cancelled(future, what):
     """The killed request must fail because it was killed, not for some other reason.
 
@@ -518,6 +559,35 @@ def wait_for_no_merges(timeout=60):
         )
 
 
+def wait_for_no_cleanup(table=None, timeout=60):
+    """Waits out the cleanup rounds that were already running when cleanup was stopped.
+
+    `SYSTEM STOP CLEANUP` cancels an `ActionBlocker`, and `IMergeTreeCleanupThread::run` tests it
+    once, before `iterate`: a round past that test goes on to `grabOldParts` and removes parts
+    after the statement returned. A later round returns at the test, so waiting for the task to
+    stop executing is enough. `system.background_schedule_pool` names the task of each table
+    `<database>.<table> (CleanupThread)` (`IMergeTreeCleanupThread`).
+    """
+    if table:
+        scope = f"= '{q('SELECT currentDatabase()').strip()}.{table} (CleanupThread)'"
+    else:
+        scope = "LIKE '% (CleanupThread)'"
+    executing = (
+        "SELECT count() FROM system.background_schedule_pool "
+        f"WHERE executing AND log_name {scope}"
+    )
+    if not poll(
+        lambda remaining: q(executing, timeout=remaining).strip() == "0", timeout
+    ):
+        raise Precondition(
+            "a cleanup round is still running after it was stopped: "
+            + q(
+                "SELECT log_name, elapsed_ms FROM system.background_schedule_pool "
+                f"WHERE executing AND log_name {scope}"
+            )
+        )
+
+
 @contextlib.contextmanager
 def merges_and_cleanup_stopped():
     """Stops every merge and the cleanup of outdated parts. The reproductions need both.
@@ -538,12 +608,14 @@ def merges_and_cleanup_stopped():
     Enter this only once the test's tables exist. Neither statement covers a table created
     afterwards: without a table both iterate the tables of every database and take an action lock
     per table (`InterpreterSystemQuery::startStopAction`). `SYSTEM STOP MERGES` also leaves a merge
-    that is already running alone, hence the wait.
+    that is already running alone, and `SYSTEM STOP CLEANUP` a cleanup round that is already past
+    its cancellation test, hence the two waits.
     """
     q("SYSTEM STOP MERGES")
     q("SYSTEM STOP CLEANUP")
     try:
         wait_for_no_merges()
+        wait_for_no_cleanup()
         yield
     finally:
         q("SYSTEM START CLEANUP")
@@ -664,6 +736,11 @@ def require_rolled_back_parts_on_disk(table):
     They are what the reload loads, and nothing keeps them: the rollback set `remove_time = 0`, so
     cleanup may delete them at any moment (see `merges_and_cleanup_stopped`). Without them the
     reload keeps the rows and the test reports a fix that did not happen.
+
+    A repair that makes the rollback remove the directories instead of marking them fails here,
+    red rather than green: it satisfies the assertion below for a reason this reproduction cannot
+    tell from cleanup having run. Such a repair needs this precondition rewritten, not only the
+    xfail marker dropped.
     """
     active = q(
         "SELECT arrayStringConcat(groupArray(name), ' ') FROM system.parts "
@@ -990,6 +1067,9 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
                 tx(3, "INSERT INTO t_unloaded_commit_poke VALUES (1)")
                 tx(3, "COMMIT")
 
+                # The pause justified a postponement of its own, and that reason outlives it.
+                require_fresh_mutation_pass("t_unloaded_commit", mutation)
+
                 finished, postponed = mutation_outcome(
                     "t_unloaded_commit", mutation, stop_early=False
                 )
@@ -1051,53 +1131,71 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
             ).strip()
         )
 
-    tx(1, "BEGIN TRANSACTION")
-    tx(1, f"INSERT INTO {table} VALUES (1)")
-    tx(1, "COMMIT")
-    snapshot = int(q("SELECT transactionLatestSnapshot()").strip())
+    def last_removal_attempt(timeout=QUERY_TIMEOUT):
+        """The newest `last_removal_attempt_time` over the parts of `table`, in epoch seconds.
 
-    tx(2, "BEGIN TRANSACTION")
-    tx(2, f"TRUNCATE TABLE {table}")
-    tx(2, "COMMIT")
-
-    tx(3, "BEGIN TRANSACTION")
-    tx(3, f"SET TRANSACTION SNAPSHOT {snapshot}")
-    seen = tx(3, f"SELECT count() FROM {table}").strip()
-    require(seen == "1", f"the lowered snapshot does not see the row: {seen}")
-
-    def removal_attempted(timeout=QUERY_TIMEOUT):
-        """Whether the cleanup thread has looked at the part since the snapshot was lowered.
-
-        `grabOldParts` stamps `last_removal_attempt_time` on every part it examines, before it
-        tests whether a transaction can still see it, so this is the chance the defect needs. A
-        run where cleanup never got that chance proves nothing: both assertions below would pass
-        on a server that still removes the part.
+        `grabOldParts` stamps it on every part it examines, before it tests whether a transaction
+        can still see it, so a value newer than a baseline is the chance the defect needs. A plain
+        test against zero would accept the stamp of a setup round instead: `TRUNCATE` cleans up
+        synchronously (`StorageMergeTree::truncate`), and that round ran while the truncating
+        transaction still protected the part.
         """
         return int(
             q(
-                "SELECT max(last_removal_attempt_time) > toDateTime(0) FROM system.parts "
+                "SELECT max(toUnixTimestamp(last_removal_attempt_time)) FROM system.parts "
                 f"WHERE database = currentDatabase() AND table = '{table}'",
                 timeout=timeout,
             ).strip()
             or 0
         )
 
-    q(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
+    # Nothing protects the part between the truncating commit and the lowered snapshot below: the
+    # transactional `TRUNCATE` hands it to `removePartsFromWorkingSet` with `clear_without_timeout`,
+    # which sets `remove_time = 0`, and `grabOldParts` then ignores `old_parts_lifetime`.
+    q(f"SYSTEM STOP CLEANUP {table}")
+    cleanup_stopped = True
     try:
+        wait_for_no_cleanup(table)
+
+        tx(1, "BEGIN TRANSACTION")
+        tx(1, f"INSERT INTO {table} VALUES (1)")
+        tx(1, "COMMIT")
+        snapshot = int(q("SELECT transactionLatestSnapshot()").strip())
+
+        tx(2, "BEGIN TRANSACTION")
+        tx(2, f"TRUNCATE TABLE {table}")
+        tx(2, "COMMIT")
+
+        tx(3, "BEGIN TRANSACTION")
+        tx(3, f"SET TRANSACTION SNAPSHOT {snapshot}")
+        seen = tx(3, f"SELECT count() FROM {table}").strip()
+        require(seen == "1", f"the lowered snapshot does not see the row: {seen}")
+
+        baseline = last_removal_attempt()
+        q(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
+        q(f"SYSTEM START CLEANUP {table}")
+        cleanup_stopped = False
+
         # Stop early once the part is gone: that is the defect the assertions below report.
         require(
             poll(
-                lambda remaining: parts_on_disk(remaining) == 0 or removal_attempted(remaining),
+                lambda remaining: parts_on_disk(remaining) == 0
+                or last_removal_attempt(remaining) > baseline,
                 60,
             ),
-            "the cleanup thread never looked at the part, so this run says nothing about what it "
-            "skips",
+            "the cleanup thread never looked at the part while the lowered snapshot was set, so "
+            "this run says nothing about what it skips",
         )
 
         assert tx(3, f"SELECT count() FROM {table}").strip() == "1"
         assert parts_on_disk() == 1, "the cleanup removed a part the transaction still sees"
     finally:
-        tx(3, "ROLLBACK")
+        if cleanup_stopped:
+            q(f"SYSTEM START CLEANUP {table}")
+        # The setup can fail before this session has a transaction; teardown reports a rollback
+        # that is genuinely stuck.
+        with contextlib.suppress(Exception):
+            tx(3, "ROLLBACK")
 
     # Once no transaction can see it, the part goes.
     require(
