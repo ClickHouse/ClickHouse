@@ -344,6 +344,9 @@ bool NamedCollectionFactory::removeFromSQLIfNoDependencies(const ASTDropNamedCol
     std::lock_guard lock(mutex);
     loadIfNot(lock);
 
+    if (query.if_exists && !exists(query.collection_name, lock))
+        return true;
+
     const auto detached_it = detached_dependencies.lower_bound(std::make_tuple(query.collection_name, String{}, String{}));
     if (dependencies.get<Collection>().find(query.collection_name) != dependencies.get<Collection>().end()
         || (detached_it != detached_dependencies.end() && std::get<0>(*detached_it) == query.collection_name))

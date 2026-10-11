@@ -119,6 +119,13 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
 
     if (current_context->getSettingsRef()[Setting::check_named_collection_dependencies])
     {
+        /// `IF EXISTS` of a collection that is already gone is a no-op: there is nothing to drop, so
+        /// the leftover dependencies (e.g. of a detached table after a drop with the check disabled)
+        /// must not make it fail. A concurrent drop after this check is handled the same way by
+        /// `removeFromSQLIfNoDependencies`.
+        if (query.if_exists && !NamedCollectionFactory::instance().exists(query.collection_name))
+            return {};
+
         auto dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
         if (!dependents.empty())
         {
