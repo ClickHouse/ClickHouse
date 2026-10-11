@@ -586,8 +586,13 @@ private:
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
             {
+                /// Keep a `CAST` that drops `Nullable` under the preprocessor, so that the predicate still throws on NULL.
+                new_children[0] = unwrapLosslessConversion(arg_haystack, /*allow_drop_nullable=*/ false);
+
                 ActionsDAG::NodeRawConstPtrs merged_outputs;
-                actions_dag.mergeNodes(preprocessor_dag.clone(), &merged_outputs);
+                actions_dag.mergeNodes(
+                    preprocessor->getActionsDAGForColumn(new_children[0]->result_name, new_children[0]->result_type),
+                    &merged_outputs);
 
                 chassert(merged_outputs.size() == 1);
                 new_children[0] = merged_outputs.front();
@@ -635,7 +640,11 @@ private:
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
         if (needApplyPostprocessor(function_name) && has_postprocessor)
         {
-            auto haystack_name = getNameWithoutAliases(new_children[0]);
+            /// Name the postprocessor's haystack input after the haystack node's actual result_name so
+            /// mergeNodes reuses that node (it matches by result_name). A reconstructed name can diverge for
+            /// an expression haystack (e.g. `lower(CAST(__table1.s, 'String'_String))` vs `lower(CAST(s, 'String'_String))`),
+            /// leaving a dangling input.
+            const auto & haystack_name = new_children[0]->result_name;
             ActionsDAG::NodeRawConstPtrs merged_outputs;
             actions_dag.mergeNodes(
                 postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription()),
