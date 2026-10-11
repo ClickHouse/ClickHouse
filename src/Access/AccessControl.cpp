@@ -1140,13 +1140,14 @@ std::shared_ptr<const EnabledRowPolicies> AccessControl::getEnabledRowPolicies(c
 }
 
 
-std::shared_ptr<const EnabledRowPolicies> AccessControl::tryGetDefaultRowPolicies(const UUID & user_id) const
+std::shared_ptr<const EnabledRowPolicies> AccessControl::tryGetRowPoliciesOfInitialUser(const UUID & user_id, const std::vector<UUID> * current_roles) const
 {
     auto user = tryRead<User>(user_id);
     if (!user)
         return nullptr;
-    auto default_roles = getEnabledRoles(user->granted_roles.findGranted(user->default_roles), {})->getRolesInfo()->enabled_roles;
-    return getEnabledRowPolicies(user_id, default_roles);
+    auto roles = current_roles ? *current_roles : user->granted_roles.findGranted(user->default_roles);
+    auto enabled_roles = getEnabledRoles(roles, {})->getRolesInfo()->enabled_roles;
+    return getEnabledRowPolicies(user_id, enabled_roles);
 }
 
 

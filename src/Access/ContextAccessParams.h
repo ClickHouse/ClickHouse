@@ -30,7 +30,8 @@ public:
         const Settings & settings_,
         const String & current_database_,
         const ClientInfo & client_info_,
-        const std::optional<UUID> & initial_user_id_);
+        const std::optional<UUID> & initial_user_id_,
+        const std::shared_ptr<const std::vector<UUID>> & initial_user_current_roles_);
 
     const std::optional<UUID> user_id;
 
@@ -64,6 +65,9 @@ public:
 
     /// Initial user is used to combine row policies with.
     const std::optional<UUID> initial_user_id;
+
+    /// The initiator's active roles for the initial user's row policies; null means the initial user's default roles.
+    const std::shared_ptr<const std::vector<UUID>> initial_user_current_roles;
 
     /// Outputs `ContextAccessParams` to string for logging.
     String toString() const;
