@@ -179,8 +179,10 @@ String makeFillValue(T value)
 /// bitmap of that many bits is enough. The search is therefore linear in the size of the column,
 /// and its memory is an eighth of the number of its values, which is a fraction of the column
 /// itself, already buffered in whole.
-template <typename T>
-String chooseFillValue(const T * data, size_t size, const UInt8 * null_map, T preferred)
+///
+/// The values of a decimal column, such as `DateTime64`, are taken from its underlying integers.
+template <typename T, typename Source>
+String chooseFillValue(const Source * data, size_t size, const UInt8 * null_map, T preferred)
 {
     using Bits = std::conditional_t<sizeof(T) == 1, UInt8,
         std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
@@ -204,7 +206,13 @@ String chooseFillValue(const T * data, size_t size, const UInt8 * null_map, T pr
         if (null_map && null_map[i])
             continue;
 
-        UInt64 offset = static_cast<Bits>(first_candidate - std::bit_cast<Bits>(data[i]));
+        T value;
+        if constexpr (std::is_same_v<Source, T>)
+            value = data[i];
+        else
+            value = data[i].value;
+
+        UInt64 offset = static_cast<Bits>(first_candidate - std::bit_cast<Bits>(value));
         if (offset < num_candidates)
             taken[offset / bits_in_word] |= UInt64(1) << (offset % bits_in_word);
     }
@@ -361,8 +369,7 @@ String chooseFillValue(const IColumn & column, const UInt8 * null_map, const Str
         {
             /// A `DateTime64` is a 64-bit integer with a scale, and it is written as one.
             const auto & data = assert_cast<const ColumnDecimal<DateTime64> &>(column).getData();
-            return chooseFillValue<Int64>(
-                reinterpret_cast<const Int64 *>(data.data()), size, null_map, -9223372036854775806LL);
+            return chooseFillValue<Int64>(data.data(), size, null_map, -9223372036854775806LL);
         }
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
