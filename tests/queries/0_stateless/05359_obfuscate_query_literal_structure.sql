@@ -25,6 +25,18 @@ SELECT match(obfuscateQueryWithSeed('SELECT ''AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEE
        match(obfuscateQueryWithSeed('SELECT ''aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee''', 1),
              '^SELECT ''[a-f]{8}-[a-f]{4}-[a-f]{4}-[a-f]{4}-[a-f]{12}''$') AS uuid_lower_case_kept;
 
+-- A `YYYY-MM-DD` literal keeps both dashes and the 4-2-2 digit groups and stays a valid date.
+-- A `YYYY-MM-DD HH:MM:SS` literal keeps the space, both colons and the 2-2-2 digit groups of
+-- the time, and the replacement is a valid wall clock time.
+WITH obfuscateQueryWithSeed('SELECT ''2023-04-05''', 1) AS d,
+     obfuscateQueryWithSeed('SELECT ''2023-04-05 06:07:08''', 1) AS dt
+SELECT match(d, '^SELECT ''[0-9]{4}-[0-9]{2}-[0-9]{2}''$') AS date_shape_kept,
+       toDateOrNull(extract(d, '[0-9-]{10}')) IS NOT NULL AS date_still_parses,
+       d != 'SELECT ''2023-04-05''' AS date_value_changed,
+       match(dt, '^SELECT ''[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}''$') AS datetime_shape_kept,
+       toDateTimeOrNull(extract(dt, '[0-9-]{10} [0-9:]{8}')) IS NOT NULL AS datetime_still_parses,
+       dt != 'SELECT ''2023-04-05 06:07:08''' AS datetime_value_changed;
+
 -- A real IPv4 address keeps its four groups, and the octets 0, 1 and 255 are kept as is.
 SELECT match(obfuscateQueryWithSeed('SELECT ''192.168.1.255''', 1),
              '^SELECT ''[0-9]{1,3}\\.[0-9]{1,3}\\.1\\.255''$') AS ipv4_shape_kept;
