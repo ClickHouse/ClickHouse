@@ -39,6 +39,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
+#include <Storages/Utils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -273,13 +274,14 @@ private:
 QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
     if (auto destination = getDestinationTable())
     {
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        const auto stage = destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        return getStageForConvertingRead(stage, destination, destination_metadata->getColumns(), storage_snapshot->metadata->getColumns());
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -339,6 +341,11 @@ void StorageBuffer::read(
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
+
+        /// The stage was chosen from an earlier, unlocked snapshot and can no longer be lowered here.
+        checkStageForConvertingRead(
+            processed_stage, destination, destination_metadata_snapshot->getColumns(), metadata_snapshot->getColumns(), getStorageID());
+
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto destination_columns = destination_snapshot->getColumns(get_columns_options);
