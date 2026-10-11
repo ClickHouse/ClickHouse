@@ -143,7 +143,7 @@ ORDER BY expr
 [PARTITION BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
+[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|CLEAR INDEX index_name], ...]
 [SETTINGS name=value, ...]
 [COMMENT 'comment']
 
@@ -1331,7 +1331,7 @@ ORDER BY expr
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
 [TTL expr
-    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
+    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|CLEAR INDEX index_name] [, ...]
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
 [SETTINGS name = value, ...]
@@ -2050,11 +2050,11 @@ ALTER TABLE tab
 
 ### Table TTL {#mergetree-table-ttl}
 
-Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving or recompressing, all rows of a part must satisfy the `TTL` expression criteria.
+Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving, recompressing, or clearing index files, all rows of a part must satisfy the `TTL` expression criteria.
 
 ```sql
 TTL expr
-    [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
+    [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'|CLEAR INDEX index_name1][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'|CLEAR INDEX index_name2] ...
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ]
 ```
@@ -2065,6 +2065,7 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 - `RECOMPRESS codec_name` - recompress data part with the `codec_name`;
 - `TO DISK 'aaa'` - move part to the disk `aaa`;
 - `TO VOLUME 'bbb'` - move part to the disk `bbb`;
+- `CLEAR INDEX index_name` - delete the files of the skip index `index_name` from the part. The index stays in the table metadata, and queries read the part without it;
 - `GROUP BY` - aggregate expired rows.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
@@ -2114,6 +2115,28 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
+
+#### Creating a table, where an index is deleted from expired parts: {#creating-a-table-where-an-index-is-deleted-from-expired-parts}
+
+The text index is kept for the last 7 days of logs. In older parts its files are deleted, and queries read those parts without it:
+
+```sql
+CREATE TABLE logs
+(
+    timestamp DateTime,
+    service LowCardinality(String),
+    message String,
+    INDEX message_text message TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(timestamp)
+ORDER BY (service, timestamp)
+TTL timestamp + INTERVAL 7 DAY CLEAR INDEX message_text;
+```
+
+A part keeps the index while any of its rows hasn't expired, so a merge of old and new rows writes the index for all of them. Partitioning by time keeps old rows apart from new ones.
+
+Merges leave an expired index out of the parts they write. A dedicated merge also deletes the index files from a single part if the part's files can be hardlinked. This covers parts that are not merged again, for example because they reached the maximum size. Other parts keep the index until a merge or `OPTIMIZE ... FINAL` rewrites them. The table setting `ttl_clear_index_merges` turns the dedicated merges on and off. `ALTER TABLE ... MATERIALIZE TTL` does not delete index files itself, and `ALTER TABLE ... MATERIALIZE INDEX` writes them again.
 
 #### Creating a table, where expired rows are recompressed: {#creating-a-table-where-expired-rows-are-recompressed}
 
