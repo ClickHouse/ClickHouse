@@ -1,0 +1,8 @@
+<test>
+    <!-- Two high-cardinality Nullable number keys (nullable_keys128). -->
+    <query>SELECT toNullable(WatchID) AS w, toNullable(ClientIP) AS ip, count(), sum(IsRefresh), avg(ResolutionWidth) FROM hits_100m_single GROUP BY w, ip FORMAT Null</query>
+    <!-- A Nullable number key next to a Nullable string key (nullable_prealloc_serialized). -->
+    <query>SELECT toNullable(UserID) AS u, toNullable(SearchPhrase) AS s, count() FROM hits_100m_single GROUP BY u, s FORMAT Null</query>
+    <!-- Three Nullable keys holding real NULLs (nullable_keys256). -->
+    <query>SELECT if(WatchID % 5 = 0, NULL, WatchID) AS k1, if(UserID % 11 = 0, NULL, UserID) AS k2, if(CounterID % 2 = 0, NULL, CounterID) AS k3, count() FROM hits_100m_single GROUP BY k1, k2, k3 FORMAT Null</query>
+</test>
