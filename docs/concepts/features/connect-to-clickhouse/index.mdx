@@ -1,0 +1,93 @@
+---
+description: 'Choose a client, driver, protocol, or built-in interface for connecting to ClickHouse'
+sidebarTitle: 'Overview'
+keywords: ['clients', 'interfaces', 'CLI', 'SQL console', 'drivers', 'protocols']
+slug: /concepts/features/connect-to-clickhouse
+title: 'Connect to ClickHouse'
+doc_type: 'landing-page'
+mode: wide
+---
+
+Choose the interface that best fits how you use ClickHouse. For application development, start with an official language client or driver. For interactive work, use a native or web-based tool. For direct integrations, use a network protocol. Before connecting, configure [network ports](/concepts/features/security/network-ports), [access rights](/concepts/features/security/access-rights), and [TLS](/concepts/features/security/tls/configuring-tls) as needed.
+
+## Native tools {#native-tools}
+
+<CardGroup cols={2}>
+  <Card title="clickhousectl" icon="terminal" href="/concepts/features/connect-to-clickhouse/native-tools/clickhousectl">
+    The CLI for ClickHouse: local and cloud.
+  </Card>
+  <Card title="ClickHouse Client" icon="keyboard" href="/concepts/features/connect-to-clickhouse/native-tools/clickhouse-client">
+    Native command-line client supporting command-line options and configuration files.
+  </Card>
+  <Card title="Web Terminal" icon="globe" href="/concepts/features/connect-to-clickhouse/native-tools/web-terminal">
+    An in-browser `clickhouse-client` session over WebSocket.
+  </Card>
+  <Card title="Model Context Protocol (MCP)" icon="/images/mcp.svg" href="/concepts/features/connect-to-clickhouse/native-tools/mcp">
+    Connect AI assistants to ClickHouse through a standardized interface.
+  </Card>
+</CardGroup>
+
+## Drivers and language clients {#drivers-and-language-clients}
+
+<CardGroup cols={2}>
+  <Card title="ADBC driver" icon="database" href="/concepts/features/connect-to-clickhouse/drivers/adbc">
+    Connect ADBC-compatible applications to ClickHouse.
+  </Card>
+  <Card title="ODBC driver" icon="database" href="/concepts/features/connect-to-clickhouse/drivers/odbc">
+    Connect ODBC-compatible applications to ClickHouse.
+  </Card>
+  <Card title="Language clients" icon="code" href="/integrations/language-clients">
+    Browse official ClickHouse clients for your programming language.
+  </Card>
+</CardGroup>
+
+## Protocols {#protocols}
+
+<CardGroup cols={2}>
+  <Card title="HTTP interface" icon="globe" href="/concepts/features/connect-to-clickhouse/protocols/http">
+    Use ClickHouse over HTTP from any platform or language.
+  </Card>
+  <Card title="Native TCP interface" icon="network-wired" href="/concepts/features/connect-to-clickhouse/protocols/native-tcp">
+    Use the native protocol for ClickHouse-aware clients and inter-server communication.
+  </Card>
+  <Card title="gRPC interface" icon="arrows-left-right" href="/concepts/features/connect-to-clickhouse/protocols/grpc">
+    Use ClickHouse's gRPC interface.
+  </Card>
+  <Card title="Arrow Flight interface" icon="arrow-right-arrow-left" href="/concepts/features/connect-to-clickhouse/protocols/arrow-flight">
+    Connect Flight SQL clients using Apache Arrow.
+  </Card>
+  <Card title="MySQL interface" icon="database" href="/concepts/features/connect-to-clickhouse/protocols/compatibility/mysql">
+    Connect MySQL-compatible clients.
+  </Card>
+  <Card title="PostgreSQL interface" icon="database" href="/concepts/features/connect-to-clickhouse/protocols/compatibility/postgresql">
+    Connect PostgreSQL-compatible clients.
+  </Card>
+  <Card title="SSH interface" icon="terminal" href="/concepts/features/connect-to-clickhouse/protocols/ssh">
+    Connect with an SSH client to the ClickHouse server.
+  </Card>
+</CardGroup>
+
+## Prometheus {#prometheus}
+
+<CardGroup cols={2}>
+  <Card title="Prometheus API and PromQL" icon="chart-line" href="/concepts/features/connect-to-clickhouse/prometheus">
+    Store Prometheus metrics in ClickHouse and query them with PromQL.
+  </Card>
+  <Card title="Prometheus metrics endpoint" icon="chart-line" href="/concepts/features/connect-to-clickhouse/prometheus/metrics">
+    Expose ClickHouse server metrics for a Prometheus server to scrape.
+  </Card>
+</CardGroup>
+
+## Built-in web interfaces {#built-in-web-interfaces}
+
+<CardGroup cols={2}>
+  <Card title="Web SQL UI (Play)" icon="browser" href="/concepts/features/connect-to-clickhouse/built-in-web-interfaces/web-sql">
+    The built-in in-browser SQL interface served by ClickHouse at `/play`.
+  </Card>
+  <Card title="SQL Console" icon="browser" href="/concepts/features/connect-to-clickhouse/built-in-web-interfaces/sql-console">
+    An embedded web interface for running queries and exploring data.
+  </Card>
+  <Card title="Documentation Search" icon="book-open" href="/concepts/features/connect-to-clickhouse/built-in-web-interfaces/documentation-search">
+    Search the reference documentation embedded in a running ClickHouse server.
+  </Card>
+</CardGroup>

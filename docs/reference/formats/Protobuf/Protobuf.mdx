@@ -344,7 +344,7 @@ TRUNCATE TABLE test.protobuf_messages;
 ```
 
 Insert the data into ClickHouse Cloud, specifying the schema as a query to run.
-Send this insert over the [HTTP interface](/concepts/features/interfaces/http#insert-protobuf), where the server parses the data and runs the schema query: `clickhouse client` parses input data on the client side, where the schema query fails.
+Send this insert over the [HTTP interface](/concepts/features/connect-to-clickhouse/protocols/http#insert-protobuf), where the server parses the data and runs the schema query: `clickhouse client` parses input data on the client side, where the schema query fails.
 curl's `--url-query` option (curl 7.87 and later) URL-encodes each parameter, so the query and the schema query can be written as they are:
 
 ```bash

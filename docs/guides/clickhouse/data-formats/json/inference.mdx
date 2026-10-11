@@ -102,7 +102,7 @@ We can see that most columns have automatically been detected as `String`, with 
 <Info>
 **Controlling type detection**
 
-The auto-detection of dates and datetimes can be controlled through the settings [`input_format_try_infer_dates`](/reference/settings/formats/input-format#input_format_try_infer_dates) and [`input_format_try_infer_datetimes`](/reference/settings/formats/input-format#input_format_try_infer_datetimes) respectively (both enabled by default). The inference of objects as tuples is controlled by the setting [`input_format_json_try_infer_named_tuples_from_objects`](/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Other settings which control schema inference for JSON, such as the auto-detection of numbers, can be found [here](/concepts/features/interfaces/schema-inference#text-formats).
+The auto-detection of dates and datetimes can be controlled through the settings [`input_format_try_infer_dates`](/reference/settings/formats/input-format#input_format_try_infer_dates) and [`input_format_try_infer_datetimes`](/reference/settings/formats/input-format#input_format_try_infer_datetimes) respectively (both enabled by default). The inference of objects as tuples is controlled by the setting [`input_format_json_try_infer_named_tuples_from_objects`](/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Other settings which control schema inference for JSON, such as the auto-detection of numbers, can be found [here](/concepts/features/operations/insert/schema-inference#text-formats).
 </Info>
 
 ## Querying JSON {#querying-json}
@@ -415,4 +415,4 @@ SETTINGS enable_json_type = 1, describe_compact_output = 1
 
 ## Further reading {#further-reading}
 
-To learn more about the data type inference, you can refer to [this](/concepts/features/interfaces/schema-inference) documentation page.
+To learn more about the data type inference, you can refer to [this](/concepts/features/operations/insert/schema-inference) documentation page.

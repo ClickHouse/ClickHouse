@@ -41,7 +41,7 @@ If the evidence does not match one of these categories, return to the query plan
 - **Change:** Reduce the size or number of columns read by the query.
 - **Validate:** Compare `read_bytes`, memory use, and duration under the same conditions.
 
-ClickHouse reads only the columns required by a query, but it still has to read, decompress, and process the selected data. Review both the selected columns and their types. [Schema inference](/concepts/features/interfaces/schema-inference) provides a practical starting point, but inferred types can be wider or more permissive than the production data requires.
+ClickHouse reads only the columns required by a query, but it still has to read, decompress, and process the selected data. Review both the selected columns and their types. [Schema inference](/concepts/features/operations/insert/schema-inference) provides a practical starting point, but inferred types can be wider or more permissive than the production data requires.
 
 ### Review column types {#review-column-types}
 
