@@ -42,6 +42,10 @@ INSERT INTO test_foreach_mismatch VALUES (1, [1.0, 2.0], [3.0, 4.0]), (1, [1.0, 
 SELECT corrForEach(a, b) FROM test_foreach_mismatch; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT grp, corrForEach(a, b) FROM test_foreach_mismatch GROUP BY grp; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
+-- An empty first array must still match the other arguments, in an aggregation and in `arrayReduce`.
+SELECT corrForEach(CAST([], 'Array(Float64)'), [1.]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT arrayReduce('corrForEach', [CAST([], 'Array(Float64)')], [[1.]]); -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
 -- A filtered-out row is not validated, exactly as the row-at-a-time path leaves it unvalidated.
 SELECT corrForEachIf(a, b, length(a) = length(b)) FROM test_foreach_mismatch;
 

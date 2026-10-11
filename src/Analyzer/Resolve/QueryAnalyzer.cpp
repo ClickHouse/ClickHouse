@@ -2808,13 +2808,15 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                       * In this case `id` is not present in the left table expression,
                       * so asterisk should return `id` from the right table expression.
                       */
-                    auto is_column_from_parent_scope = [&scope](const QueryTreeNodePtr & using_node_from_table)
+                    /// `table_expression_node_to_data` is populated only on the join-owning scope.
+                    auto is_column_from_parent_scope = [&nearest_query_scope](const QueryTreeNodePtr & using_node_from_table)
                     {
                         if (using_node_from_table->getNodeType() != QueryTreeNodeType::COLUMN)
                             return false;
                         const auto & using_column_from_table = using_node_from_table->as<ColumnNode &>();
-                        auto table_expression_data_it = scope.table_expression_node_to_data.find(using_column_from_table.getColumnSource());
-                        if (table_expression_data_it != scope.table_expression_node_to_data.end())
+                        const auto & table_expression_node_to_data = nearest_query_scope->table_expression_node_to_data;
+                        auto table_expression_data_it = table_expression_node_to_data.find(using_column_from_table.getColumnSource());
+                        if (table_expression_data_it != table_expression_node_to_data.end())
                         {
                             const auto & table_expression_data = table_expression_data_it->second;
                             const auto & column_name = using_column_from_table.getColumnName();
@@ -2830,8 +2832,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         is_column_from_parent_scope(join_using_column_nodes.at(1)))
                         continue;
 
+                    /// `join_use_nulls` and the PREWHERE rollback map `join_columns_with_changed_types` live on the query scope.
                     QueryTreeNodePtr matched_column_node = createProjectionForUsing(
-                        join_using_column_node, join_node->getKind(), scope, semi_anti_star_checker.preservedSideOrNone());
+                        join_using_column_node, join_node->getKind(), *nearest_query_scope, semi_anti_star_checker.preservedSideOrNone());
                     matched_column_node->setAlias(join_using_column_name);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
@@ -2918,6 +2921,40 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 }
 
 
+/** Nearest scope, up to the enclosing QUERY/UNION scope, whose `member` is not empty.
+  * `registered_table_expression_nodes` and `nullable_group_by_keys` are populated only on the scope
+  * that owns the join tree, never on a lambda's child scope.
+  */
+template <typename Member>
+static IdentifierResolveScope * findNearestScopeWithNonEmpty(IdentifierResolveScope & scope, Member IdentifierResolveScope::* member)
+{
+    for (auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (!(scope_ptr->*member).empty())
+            return scope_ptr;
+
+        if (isQueryOrUnionNode(scope_ptr->scope_node))
+            break;
+    }
+
+    return nullptr;
+}
+
+/// `ExpressionsStack` is per-scope, so an aggregate enclosing a lambda sits on a parent scope's stack.
+static bool isInAggregateOrGroupingFunctionScope(const IdentifierResolveScope & scope)
+{
+    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction())
+            return true;
+
+        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+            break;
+    }
+
+    return false;
+}
+
 /** Resolve query tree matcher. Check MatcherNode.h for detailed matcher description. Check ColumnTransformers.h for detailed transformers description.
   *
   * 1. Populate matched expression nodes resolving qualified or unqualified matcher.
@@ -2937,14 +2974,16 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
 
-    if (scope.join_use_nulls)
+    auto * join_tree_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::registered_table_expression_nodes);
+
+    if (join_tree_scope && join_tree_scope->join_use_nulls)
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
           * We are checking all registered_table_expression_nodes which contains all table expressions that are used to resolve matcher.
           * If it's on null side, we need to convert column type to Nullable.
           */
-        for (const auto & table_expression : scope.registered_table_expression_nodes)
+        for (const auto & table_expression : join_tree_scope->registered_table_expression_nodes)
         {
             const JoinNode * nearest_scope_join_node = table_expression->as<JoinNode>();
             if (!nearest_scope_join_node)
@@ -2956,7 +2995,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (!join_identifier_side)
                     continue;
                 auto projection_name_it = node_to_projection_name.find(node);
-                auto nullable_node = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(node, node->getResultType(), nearest_scope_join_node->getKind(), join_identifier_side, scope);
+                /// Records the type change in the given scope's `join_columns_with_changed_types`.
+                auto nullable_node = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(node, node->getResultType(), nearest_scope_join_node->getKind(), join_identifier_side, *join_tree_scope);
                 if (nullable_node)
                 {
                     node = nullable_node;
@@ -3034,12 +3074,14 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_apply_transformer)
+    auto * group_by_keys_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::nullable_group_by_keys);
+
+    if (group_by_keys_scope && !isInAggregateOrGroupingFunctionScope(scope) && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
-            auto it = scope.nullable_group_by_keys.find(node);
-            if (it != scope.nullable_group_by_keys.end())
+            auto it = group_by_keys_scope->nullable_group_by_keys.find(node);
+            if (it != group_by_keys_scope->nullable_group_by_keys.end())
             {
                 /// Look up the projection name before the clone replaces the node: the map is keyed
                 /// by node identity, so afterwards the original key is unreachable.
@@ -7485,7 +7527,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         scope.allow_resolve_from_using = false;
         bool in_prewhere = scope.in_prewhere;
         scope.in_prewhere = true;
+        /// PREWHERE columns keep their pre-join types: the rollback below cannot descend into a
+        /// lambda body, so promoting here would leave types the storage cannot supply.
+        bool join_use_nulls = scope.join_use_nulls;
+        scope.join_use_nulls = false;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        scope.join_use_nulls = join_use_nulls;
         scope.in_prewhere = in_prewhere;
         scope.allow_resolve_from_using = allow_resolve_from_using;
 
