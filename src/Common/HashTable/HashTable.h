@@ -851,7 +851,12 @@ protected:
         if (for_num_elems)
         {
             new_grower.set(for_num_elems);
-            if (new_grower.bufSize() <= old_size)
+            /// The higher load factor of the Robin Hood mode may fit the elements without growing the buffer,
+            /// then the hash table switches to the Robin Hood mode in place.
+            bool switches_to_robin_hood = false;
+            if constexpr (GrowerWithRobinHood<Grower>)
+                switches_to_robin_hood = new_grower.bufSize() == old_size && !grower.isRobinHood() && new_grower.isRobinHood();
+            if (new_grower.bufSize() <= old_size && !switches_to_robin_hood)
                 return;
         }
         else if (for_buf_size)

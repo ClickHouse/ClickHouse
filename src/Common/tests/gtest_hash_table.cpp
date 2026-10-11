@@ -696,7 +696,7 @@ void checkRandomOperations(size_t num_operations, UInt64 max_key, bool with_eras
 {
     Map map;
     std::unordered_map<UInt64, UInt64> expected;
-    std::mt19937_64 rng(42);
+    std::mt19937_64 rng(42); /// NOLINT(cert-msc32-c,cert-msc51-cpp,bugprone-random-generator-seed) a reproducible sequence
     bool switched_to_robin_hood = false;
 
     for (size_t i = 0; i < num_operations; ++i)
@@ -718,7 +718,7 @@ void checkRandomOperations(size_t num_operations, UInt64 max_key, bool with_eras
         else
         {
             typename Map::LookupResult it;
-            bool inserted;
+            bool inserted = false;
             map.emplace(key, it, inserted);
             ASSERT_EQ(inserted, expected.emplace(key, i).second);
             ASSERT_EQ(it->getKey(), key);
@@ -806,6 +806,28 @@ TEST(HashTableRobinHood, GrowerSwitchesInPlace)
     grower.set(10000);
     ASSERT_EQ(grower.bufSize(), 16384);
     ASSERT_TRUE(grower.isRobinHood());
+}
+
+TEST(HashTableRobinHood, ReserveSwitchesInPlace)
+{
+    using Map = HashTableWithInvariantsCheck<HashMap<UInt64, UInt64, CollidingHash, RobinHoodTestGrower>>;
+
+    Map map;
+    for (UInt64 i = 0; i < 100; ++i)
+        map[i * 3] = i;
+    ASSERT_EQ(map.getBufferSizeInCells(), 256);
+    ASSERT_FALSE(map.isRobinHoodMode());
+
+    /// The reserved number of elements fits into the same buffer with the higher load factor.
+    map.reserve(200);
+    ASSERT_EQ(map.getBufferSizeInCells(), 256);
+    ASSERT_TRUE(map.isRobinHoodMode());
+    map.checkInvariants();
+
+    for (UInt64 i = 0; i < 200; ++i)
+        map[i * 3] = i;
+    ASSERT_EQ(map.getBufferSizeInCells(), 256);
+    map.checkInvariants();
 }
 
 TEST(HashTableRobinHood, ReserveSerializationAndTwoLevel)
