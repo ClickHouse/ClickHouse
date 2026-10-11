@@ -59,6 +59,12 @@ public:
 
     bool isRemoteDatabase() const override { return true; }
 
+    /// The tables are read-through proxies of the remote MySQL server's tables: even probing a table
+    /// (`isTableExist`, `tryGetTable`) fetches the remote table list under the caller's credentials
+    /// (see `fetchTablesIntoLocalCache`), so it is not free of side effects, and a `DETACH`/`ATTACH`
+    /// cycle would only manipulate the local proxy cache, not the remote table.
+    bool supportsDetachingTables() const override { return false; }
+
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool empty() const override;
