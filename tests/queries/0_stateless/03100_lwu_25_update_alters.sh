@@ -28,6 +28,28 @@ function wait_for_mutation_to_start()
     done
 }
 
+# With `alter_sync = 0` the mutation shows up in `system.mutations` as soon as it is created in
+# Keeper, but the replica applies the new column type from its queue (`ALTER_METADATA`) later.
+# Under load the following `UPDATE` can otherwise still be analyzed against the old type.
+function wait_for_column_type()
+{
+    local table=$1
+    local column=$2
+    local type=$3
+
+    for i in {1..300}
+    do
+        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT type FROM system.columns WHERE database='$CLICKHOUSE_DATABASE' AND table='$table' AND name='$column'") == "$type" ]]; then
+            break
+        fi
+
+        if [[ $i -eq 300 ]]; then
+            echo "Timed out while waiting for column $column to become $type."
+        fi
+        sleep 0.1
+    done
+}
+
 ${CLICKHOUSE_CLIENT} -n --query "
     DROP TABLE IF EXISTS t_lightweight_mut_4 SYNC;
     SET enable_lightweight_update = 1;
@@ -44,6 +66,7 @@ ${CLICKHOUSE_CLIENT} -n --query "
 "
 
 wait_for_mutation_to_start "t_lightweight_mut_4" "0000000000"
+wait_for_column_type "t_lightweight_mut_4" "v" "String"
 
 ${CLICKHOUSE_CLIENT} -n --query "
     SET enable_lightweight_update = 1;
@@ -69,6 +92,7 @@ ${CLICKHOUSE_CLIENT} -n --query "
 "
 
 wait_for_mutation_to_start "t_lightweight_mut_4" "0000000001"
+wait_for_column_type "t_lightweight_mut_4" "v" "UInt64"
 
 ${CLICKHOUSE_CLIENT} -n --query "
     SELECT id, v, toTypeName(v) FROM t_lightweight_mut_4 ORDER BY id SETTINGS apply_patch_parts = 0;
