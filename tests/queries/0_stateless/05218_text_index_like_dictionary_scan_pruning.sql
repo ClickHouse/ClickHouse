@@ -240,8 +240,8 @@ SELECT 'Empty mandatory literal';
 DROP TABLE IF EXISTS tab_no_literal;
 
 -- Every literal run of 'a%b%c%d' is one byte, below the three the regexp analysis needs, so the compiled
--- pattern has no mandatory literal and can match a token anywhere in the dictionary; the array tokenizer
--- admits it by counting the four non-wildcard characters. Block first tokens: 'a1b1c1d', 'a5b5c5d', 'tocc0'.
+-- pattern has no mandatory literal. The automaton still recognizes its anchored prefix and skips the last
+-- block. Block first tokens: 'a1b1c1d', 'a5b5c5d', 'tocc0'.
 CREATE TABLE tab_no_literal
 (
     id UInt32,
@@ -264,7 +264,7 @@ SELECT 'no mandatory literal, no index', groupArray(id) FROM tab_no_literal WHER
 SELECT 'no mandatory literal with a prefix', groupArray(id) FROM tab_no_literal WHERE message LIKE 'a%b%c%d' OR message LIKE 'toaa%' SETTINGS log_comment = '05218_no_literal_mixed';
 SELECT 'no mandatory literal with a prefix, no index', groupArray(id) FROM tab_no_literal WHERE message LIKE 'a%b%c%d' OR message LIKE 'toaa%' SETTINGS use_skip_indexes = 0;
 
--- That same prefix on its own is narrowed to one block, so the full count above is the all-or-nothing decline.
+-- That same prefix on its own is narrowed to one block by the existing literal range seek.
 SELECT 'prefix alone', groupArray(id) FROM tab_no_literal WHERE message LIKE 'toaa%' SETTINGS log_comment = '05218_no_literal_prefix';
 SELECT 'prefix alone, no index', groupArray(id) FROM tab_no_literal WHERE message LIKE 'toaa%' SETTINGS use_skip_indexes = 0;
 
