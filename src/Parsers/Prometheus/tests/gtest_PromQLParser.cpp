@@ -1628,12 +1628,32 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'http_requests_total'
 )");
 
+    EXPECT_EQ(parse("http_requests_total @ -100"), R"(
+http_requests_total @ -100
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: -100
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
     EXPECT_EQ(parse("http_requests_total @ start()"), R"(
 http_requests_total @ start()
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
         at: start()
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
+    EXPECT_EQ(parse("http_requests_total @ +3.3e1"), R"(
+http_requests_total @ 33
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: 33
         InstantSelector:
             __name__ EQ 'http_requests_total'
 )");
@@ -2005,7 +2025,7 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
         PrometheusQueryTree query_tree;
         String error_message;
         size_t error_pos = String::npos;
-        EXPECT_FALSE(query_tree.tryParse(query, /* time_scale = */ 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(query_tree.tryParse(query, /* time_scale_ = */ 3, &error_message, &error_pos)) << query;
         EXPECT_NE(error_message.find("surrogate range 0xD800-0xDFFF"), String::npos) << query << ": " << error_message;
         EXPECT_EQ(error_pos, expected_error_pos) << query;
     };
