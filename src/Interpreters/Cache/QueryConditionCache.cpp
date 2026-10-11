@@ -136,6 +136,8 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::input_format_try_infer_dates].value);
     hash.update(settings[Setting::input_format_try_infer_datetimes].value);
     hash.update(settings[Setting::input_format_try_infer_datetimes_only_datetime64].value);
+    hash.update(settings[Setting::input_format_try_infer_ipv4].value);
+    hash.update(settings[Setting::input_format_try_infer_ipv6].value);
     hash.update(settings[Setting::schema_inference_make_columns_nullable].valueOr(2));
     hash.update(settings[Setting::type_json_skip_duplicated_paths].value);
     hash.update(settings[Setting::type_json_skip_null_typed_paths].value);

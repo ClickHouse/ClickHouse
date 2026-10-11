@@ -2139,7 +2139,7 @@ Row 1:
 storage:                File
 source:                 /home/droscigno/user_files/data.jsonl
 format:                 JSONEachRow
-additional_format_info: schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, schema_inference_make_columns_nullable=true, try_infer_integers=false, try_infer_dates=true, try_infer_datetimes=true, try_infer_numbers_from_strings=true, read_bools_as_numbers=true, try_infer_objects=false
+additional_format_info: schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, max_bytes_to_read_for_schema_inference=33554432, schema_inference_make_columns_nullable=3, schema_inference_allow_nullable_tuple_type=true, date_time_input_format=BestEffort, input_format_try_infer_variants=false, max_parser_depth=1000, try_infer_integers=false, try_infer_dates=true, try_infer_datetimes=true, try_infer_datetimes_only_datetime64=false, try_infer_ipv4=false, try_infer_ipv6=false, try_infer_numbers_from_strings=false, read_bools_as_numbers=true, read_bools_as_strings=true, read_objects_as_strings=true, read_numbers_as_strings=true, read_arrays_as_strings=true, try_infer_objects_as_tuples=true, infer_incomplete_types_as_strings=true, use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects=false, infer_array_of_dynamic_from_array_of_different_values=true
 registration_time:      2022-12-29 17:49:52
 schema:                 id Nullable(Float64), age Nullable(Float64), name Nullable(String), hobbies Array(Nullable(String))
 ```
