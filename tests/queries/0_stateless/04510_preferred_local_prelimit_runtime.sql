@@ -54,16 +54,12 @@ SET prefer_localhost_replica = 1;
 SELECT '' FROM cluster(test_cluster_two_shards, currentDatabase(), preferred_local_prelimit_rt)
 WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3 FORMAT Template;
 
--- (2) Parallel replicas. A single shard read cooperatively by three replicas
--- => exact count 30. Assert the statistic at runtime, not just the plan shape
--- (which is all 04509 checks for this path).
+-- (2) Parallel replicas with local plan (`parallel_replicas_local_plan = 1`, `parallel_replicas_plan_based = 0`).
+-- A single shard read cooperatively by three replicas => exact count 30.
 --
--- `parallel_replicas_local_plan = 0` is deliberate, and this assertion does NOT
--- cover the local-plan path: with the local plan the statistic comes back as 0,
--- because the local branch's preliminary LIMIT is never marked as a shard limit
--- (the marking added in #110136 is gated on a processing stage that parallel
--- replicas never use), so `initRowsBeforeLimit` stops at it and only the remote
--- replicas are counted. Restore this to 1 once #113279 is fixed.
+-- With `parallel_replicas_local_plan = 1`, the local replica's preliminary LIMIT
+-- is marked as a shard limit (#113279), allowing `initRowsBeforeLimit` to count
+-- through it and report the correct total 30.
 SELECT '' FROM preferred_local_prelimit_rt
 WHERE id < 30 ORDER BY id LIMIT 1 OFFSET 3
 FORMAT Template
@@ -76,6 +72,7 @@ SETTINGS
     max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1,
-    parallel_replicas_local_plan = 0;
+    parallel_replicas_local_plan = 1,
+    parallel_replicas_plan_based = 0;
 
 DROP TABLE preferred_local_prelimit_rt;
