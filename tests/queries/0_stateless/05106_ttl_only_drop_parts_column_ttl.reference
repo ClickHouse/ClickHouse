@@ -3,5 +3,8 @@ ttl_only_drop_parts = 0
 ttl_only_drop_parts = 1
 1	keep		not_expired
 mixed row and column TTL
-1	keep	not_expired
+0
+mixed unconditional and conditional row TTL
+0
+mixed unconditional and aggregation TTL
 0
