@@ -5689,6 +5689,31 @@ static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
     }
 }
 
+bool MergeTreeData::canAlterGranularitySettingForNewParts(const String & setting_name, const Field * new_value) const
+{
+    if (setting_name != "index_granularity" && setting_name != "index_granularity_bytes")
+        return false;
+
+    /// Replicated engines pin these in Keeper as immutable table-identity fields that every replica
+    /// must match, with no replicated path to change them; keep them readonly there.
+    if (supportsReplication())
+        return false;
+
+    /// Safe only while every part is adaptive (reads its granularity from its own marks); non-adaptive
+    /// or mixed-granularity tables reconstruct granule boundaries from the live `index_granularity`, so
+    /// changing it would misread existing data.
+    if ((*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0 || has_non_adaptive_index_granularity_parts)
+        return false;
+
+    /// Keep the table adaptive: `index_granularity_bytes` must stay non-zero, else new parts switch to
+    /// the non-adaptive mark format. RESET (null) reverts to the non-zero default.
+    if (setting_name == "index_granularity_bytes" && new_value
+        && MergeTreeSettings::castValueUtil(setting_name, *new_value).safeGet<UInt64>() == 0)
+        return false;
+
+    return true;
+}
+
 void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
@@ -6805,7 +6830,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const Field * current_value = current_changes.tryGet(setting_name);
 
             if ((!current_value || *current_value != new_value)
-                && MergeTreeSettings::isReadonlySetting(setting_name))
+                && MergeTreeSettings::isReadonlySetting(setting_name)
+                && !canAlterGranularitySettingForNewParts(setting_name, &new_value))
             {
                 throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
             }
@@ -6842,7 +6868,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const auto & setting_name = current_setting.name;
             const Field * new_value = new_changes.tryGet(setting_name);
             /// Prevent unsetting readonly setting
-            if (MergeTreeSettings::isReadonlySetting(setting_name) && !new_value)
+            if (MergeTreeSettings::isReadonlySetting(setting_name) && !new_value
+                && !canAlterGranularitySettingForNewParts(setting_name, nullptr))
             {
                 throw Exception(ErrorCodes::READONLY_SETTING, "Setting '{}' is readonly for storage '{}'", setting_name, getName());
             }

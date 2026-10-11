@@ -59,6 +59,7 @@ const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
 struct AlterCommand;
 class AlterCommands;
 class ASTFunction;
+class Field;
 class InterpreterSelectQuery;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
@@ -2474,7 +2475,11 @@ private:
     StorageSnapshotPtr
     createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
-    bool isReadonlySetting(const std::string & setting_name) const;
+    /// Whether the normally-readonly `index_granularity` / `index_granularity_bytes` (see
+    /// `MergeTreeSettings::isReadonlySetting`) may still be altered on this table: true only on
+    /// non-replicated, fully adaptive tables, where the change affects only newly written parts.
+    /// `new_value` is null for RESET.
+    bool canAlterGranularitySettingForNewParts(const String & setting_name, const Field * new_value) const;
 
     /// Is the disk should be searched for orphaned parts (ones that belong to a table based on file names, but located
     ///   on disks that are not a part of storage policy of the table).
