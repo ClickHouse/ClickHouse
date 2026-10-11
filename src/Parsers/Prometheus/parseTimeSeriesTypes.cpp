@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 
@@ -231,6 +232,11 @@ namespace
                 return result;
 
             if (tryParseDateTime(str, scale, result))
+                return result;
+
+            /// Otherwise accept any date-time text parseDateTimeBestEffort understands, e.g. 'Tue, 14 Nov 2023 22:13:20 GMT'.
+            ReadBufferFromString buf{str};
+            if (tryParseDateTime64BestEffort(result, scale, buf, DateLUT::instance(), DateLUT::instance("UTC")) && buf.eof())
                 return result;
         }
         else
