@@ -22724,6 +22724,11 @@ document.getElementById('download-button').addEventListener('click', async funct
     /// Captured once when the iframe is created so it stays in sync with `iframe.src`
     /// even if the user later edits the server URL field.
     let terminalOrigin = null;
+    /// The credentials the iframe was opened with, captured together with `terminalOrigin`. The
+    /// session belongs to the server it was opened against: a later `load` of the same iframe (a
+    /// reload or a self-navigation) must re-send these, never the current fields, which may by then
+    /// hold credentials typed for another server and would leak to `terminalOrigin`.
+    let terminalCredentials = null;
     const MIN_TERMINAL_HEIGHT = 20;
 
     /// The Web Terminal endpoint lives on the ClickHouse server addressed by `url_elem.value`,
@@ -22868,13 +22873,11 @@ document.getElementById('download-button').addEventListener('click', async funct
     user_elem.addEventListener('input', updateTerminalHref);
 
     function sendCredentialsToTerminal() {
-        if (terminalIframe && terminalIframe.contentWindow && terminalOrigin) {
-            /// The terminal authenticates with these credentials (see `dropAutofilledStalePassword`).
-            dropAutofilledStalePassword();
+        if (terminalIframe && terminalIframe.contentWindow && terminalOrigin && terminalCredentials) {
             terminalIframe.contentWindow.postMessage({
                 type: 'webterminal-credentials',
-                user: user_elem.value,
-                password: password_elem.value || ''
+                user: terminalCredentials.user,
+                password: terminalCredentials.password
             }, terminalOrigin);
         }
     }
@@ -22910,6 +22913,9 @@ document.getElementById('download-button').addEventListener('click', async funct
             terminalIframe = document.createElement('iframe');
             terminalIframe.id = 'terminal-iframe';
             terminalOrigin = new URL(terminalSrc).origin;
+            /// The terminal authenticates with these credentials (see `dropAutofilledStalePassword`).
+            dropAutofilledStalePassword();
+            terminalCredentials = {user: user_elem.value, password: password_elem.value || ''};
             terminalIframe.src = terminalSrc;
             terminalIframe.addEventListener('load', sendCredentialsToTerminal);
             terminalPanel.insertBefore(terminalIframe, terminalResizer);
@@ -22942,6 +22948,7 @@ document.getElementById('download-button').addEventListener('click', async funct
             terminalIframe.remove();
             terminalIframe = null;
             terminalOrigin = null;
+            terminalCredentials = null;
         }
     }
 

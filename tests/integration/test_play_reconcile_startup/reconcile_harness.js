@@ -1774,6 +1774,7 @@ async function main() {
 
         /// The terminal of the server this page came from accepts the handover, and is embedded.
         await point_at('https://a.example/');
+        vm.runInContext("user_elem.value = 'alice'; password_elem.value = 'a-secret';", r.sandbox);
         const own_click = plain_click();
         check('cross-origin-terminal', 'a plain click embeds the terminal of the same-origin server',
             own_click.defaultPrevented && embedded().length === 1 && embedded()[0] === 'https://a.example/webterminal'
@@ -1788,6 +1789,19 @@ async function main() {
             reopen.defaultPrevented && terminal_panel.classList.contains('active')
                 && embedded().length === 1 && opened.length === 1,
             { defaultPrevented: reopen.defaultPrevented, embedded: embedded(), opened });
+        /// The session is bound to the credentials it was opened with: when the iframe reloads (or
+        /// navigates itself) after the fields were retargeted to another server, it must get the
+        /// original credentials again, not the ones now typed for `b.example`.
+        vm.runInContext("user_elem.value = 'bob'; password_elem.value = 'b-secret';", r.sandbox);
+        const frame = terminal_panel.children.find(c => c.tagName === 'IFRAME');
+        const posted = [];
+        frame.contentWindow = { postMessage: (message, origin) => posted.push({ message, origin }) };
+        frame.dispatchEvent(new Event('load'));
+        check('cross-origin-terminal', 'a reloaded inline session gets the credentials it was opened with',
+            posted.length === 1 && posted[0].origin === 'https://a.example'
+                && posted[0].message.type === 'webterminal-credentials'
+                && posted[0].message.user === 'alice' && posted[0].message.password === 'a-secret',
+            posted);
     }
 
     /// Contract: on a trusted host, whose origin every terminal accepts the handover from, a cross-origin
