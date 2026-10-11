@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/StringHelpers.h>
+#include <Functions/URL/domain.h>
 
 #include <algorithm>
 
@@ -70,22 +71,36 @@ struct ExtractNetloc
         /// Now pos points to the first byte after scheme (if there is).
 
         bool has_identification = false;
+        bool has_ip_literal = false;
         Pos hostname_end = end;
         Pos question_mark_pos = end;
         Pos slash_pos = end;
         Pos start_of_host = pos;
         for (; pos < end; ++pos)
         {
+            if (*pos == '[')
+            {
+                /// Recognize only a validated IP-literal at this exact bracket.
+                const auto host = getURLHostRFC(data, size);
+                if (!host.empty() && host.data() == pos + 1
+                    && host.size() < static_cast<size_t>(end - host.data()) && host.data()[host.size()] == ']')
+                {
+                    pos = host.data() + host.size();
+                    has_ip_literal = true;
+                    continue;
+                }
+            }
+
             switch (*pos) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case '/':
-                    if (has_identification)
+                    if (has_identification || has_ip_literal)
                         return std::string_view(start_of_host, pos - start_of_host);
                     else
                         slash_pos = pos;
                     break;
                 case '?':
-                    if (has_identification)
+                    if (has_identification || has_ip_literal)
                         return std::string_view(start_of_host, pos - start_of_host);
                     else
                         question_mark_pos = pos;
