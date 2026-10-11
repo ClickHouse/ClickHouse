@@ -82,6 +82,10 @@ VERSION_NOT_VISIBLE = "Not visible by transaction version"
 # so this line is the only thing that says the rollback's own mark failed too.
 ROLLBACK_MARK_LOG = "Injected failure of the creation_csn store"
 
+# `non_transactional_removal_store_fail_after_first_part` raises this from
+# `NonTransactionalRemovalLocks::store`, after the first part of the batch was already stamped.
+INJECTED_REMOVAL_STORE = "Injected failure of the removal store of the part"
+
 FAILPOINTS = [
     "non_transactional_removal_store_fail_after_first_part",
     "non_transactional_drop_pause_before_publish",
@@ -482,22 +486,34 @@ def wait_for_no_merges(timeout=60):
 
 
 @contextlib.contextmanager
-def merges_stopped():
-    """Stops every merge, which the removal-store failpoint needs: it fires once, on the first
-    batch of two or more parts to reach `NonTransactionalRemovalLocks::store`, and a merge of any
-    table -- a system log included -- is indistinguishable there, both callers passing
-    `LockKind::REMOVAL`.
+def merges_and_cleanup_stopped():
+    """Stops every merge and the cleanup of outdated parts. The reproductions need both.
 
-    Enter this only once the test's tables exist. `SYSTEM STOP MERGES` without a table iterates
-    the tables of every database and takes an action lock per table
-    (`InterpreterSystemQuery::startStopAction`), so a table created afterwards is not covered. It
-    also leaves a merge that is already running alone, hence the wait.
+    The removal-store failpoint fires once, on the first batch of two or more parts to reach
+    `NonTransactionalRemovalLocks::store`, and a merge or a part removal of any table -- a system
+    log included -- is indistinguishable there, every caller passing `LockKind::REMOVAL`. A
+    background cleanup that takes the failpoint first leaves the statement under test succeeding,
+    which `require_injected_failure` then rejects.
+
+    Cleanup also erases the reproduction itself. The rollback of the failed removal hands the empty
+    covering parts to `removePartsFromWorkingSet` with `clear_without_timeout`, which sets
+    `remove_time = 0`, so `grabOldParts` may delete them whatever `old_parts_lifetime` says. Once
+    the directories are gone the reload finds only the original parts, keeps the rows, and the
+    reproduction reports a defect that is still there. `SYSTEM STOP MERGES` does not cover this:
+    cleanup runs on its own thread under `ActionLocks::Cleanup`.
+
+    Enter this only once the test's tables exist. Neither statement covers a table created
+    afterwards: without a table both iterate the tables of every database and take an action lock
+    per table (`InterpreterSystemQuery::startStopAction`). `SYSTEM STOP MERGES` also leaves a merge
+    that is already running alone, hence the wait.
     """
     q("SYSTEM STOP MERGES")
+    q("SYSTEM STOP CLEANUP")
     try:
         wait_for_no_merges()
         yield
     finally:
+        q("SYSTEM START CLEANUP")
         q("SYSTEM START MERGES")
 
 
@@ -537,9 +553,11 @@ def require_injected_failure(error):
     fails for an unrelated reason -- neither of which says anything about the defect.
 
     The message names the part the store was about to write, so it also says which call site fired.
+    Matching that text and not just `CANNOT_WRITE_TO_FILE` keeps a genuine write failure elsewhere
+    in the statement from passing as the injection.
     """
     require(
-        error and "CANNOT_WRITE_TO_FILE" in error,
+        error and INJECTED_REMOVAL_STORE in error,
         f"the injected store error did not reach the statement: {error!r}",
     )
     logging.info("injected store error: %s", one_line(error))
@@ -567,6 +585,47 @@ def require_rollback_mark_failed(baseline):
     )
 
 
+def table_path(table):
+    return q(
+        f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
+    ).strip()
+
+
+def part_dirs(table):
+    """The part directories on disk, `detached` excluded.
+
+    `system.parts` cannot answer this: without `_state` in the SELECT it returns only Active and
+    Outdated parts (`StoragesInfo::getParts`), and a rollback whose own mark failed leaves the empty
+    covering parts PreActive.
+    """
+    listing = node.exec_in_container(
+        ["bash", "-c", f"cd {table_path(table)} && ls -d */ 2>/dev/null"],
+        user="root",
+    )
+    names = [line.rstrip("/") for line in listing.split()]
+    return sorted(name for name in names if name != "detached")
+
+
+def require_rolled_back_parts_on_disk(table):
+    """The empty covering parts of the failed removal must still be on disk.
+
+    They are what the reload loads, and nothing keeps them: the rollback set `remove_time = 0`, so
+    cleanup may delete them at any moment (see `merges_and_cleanup_stopped`). Without them the
+    reload keeps the rows and the test reports a fix that did not happen.
+    """
+    active = q(
+        "SELECT arrayStringConcat(groupArray(name), ' ') FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+    ).split()
+    leftover = sorted(set(part_dirs(table)) - set(active))
+    require(
+        leftover,
+        f"nothing is left on disk for {table} beside its active parts {active}: the rolled-back "
+        "empty covering parts were removed before the reload could load them",
+    )
+    logging.info("rolled back, still on disk: %s", leftover)
+
+
 def reload_state(table):
     """The parts, and what the loader would find on disk for them.
 
@@ -575,28 +634,32 @@ def reload_state(table):
     store of a part that was never in a transaction. The empty covering parts keep their final
     directory names and no `txn_version.txt`, so the loader reads them as prehistoric. pytest prints
     this when a strict xfail passes, so a run that does not reproduce says which of those it lost.
+
+    `_state` is selected to get the PreActive parts too, and the `txn_version*` files are printed
+    with their contents: a file that exists says nothing on its own, the TIDs and CSNs in it do.
     """
     parts = q(
-        "SELECT groupArray((name, active, visible, creation_csn, removal_csn)) FROM system.parts "
-        f"WHERE database = currentDatabase() AND table = '{table}'"
+        "SELECT groupArray((name, _state, rows, active, visible, creation_csn, removal_csn)) "
+        f"FROM system.parts WHERE database = currentDatabase() AND table = '{table}'"
     ).strip()
     detached = q(
         "SELECT groupArray((name, reason)) FROM system.detached_parts "
         f"WHERE database = currentDatabase() AND table = '{table}'"
     ).strip()
-    path = q(
-        f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
-    ).strip()
-    dirs = node.exec_in_container(
+    path = table_path(table)
+    versions = node.exec_in_container(
         [
             "bash",
             "-c",
-            f"cd {path} && echo \"dirs: $(ls -d */ | tr '\\n' ' ')txn_version files: "
-            f"$(find . -maxdepth 2 -name 'txn_version*' | tr '\\n' ' ')\"",
+            f"cd {path} && find . -maxdepth 3 -name 'txn_version*' "
+            "-exec sh -c 'printf \"%s=[\" \"$1\"; tr \"\\n\" \" \" < \"$1\"; printf \"] \"' sh {} \\;",
         ],
         user="root",
     ).strip()
-    return f"parts {parts} | detached {detached} | {dirs}"
+    return (
+        f"parts {parts} | detached {detached} | dirs {' '.join(part_dirs(table))} "
+        f"| txn_version {versions or 'none'}"
+    )
 
 
 def require_rows(table, expected):
@@ -648,7 +711,17 @@ def covered_active_parts(table):
     ).split()
 
 
-def two_parts(table, settings="old_parts_lifetime = 3600"):
+def two_parts(
+    table,
+    settings="old_parts_lifetime = 3600, cleanup_delay_period = 1, max_cleanup_delay_period = 1",
+):
+    """Two parts of one row each, with the cleanup thread polling as fast as it can.
+
+    The fast poll is the point: the empty covering parts a failed removal rolls back carry
+    `remove_time = 0`, so a reproduction that forgets `SYSTEM STOP CLEANUP` loses them within a
+    second or two and reports a fix that did not happen. At the default 30 s it would depend on how
+    long the test took.
+    """
     q(f"DROP TABLE IF EXISTS {table} SYNC")
     q(f"CREATE TABLE {table} (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS {settings}")
     q(f"INSERT INTO {table} VALUES (1)")
@@ -956,7 +1029,7 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
 )
 def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
     two_parts("t_drop_stamp")
-    with merges_stopped():
+    with merges_and_cleanup_stopped():
         require_parts("t_drop_stamp", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = q_error("ALTER TABLE t_drop_stamp DROP PARTITION tuple()")
@@ -987,13 +1060,14 @@ def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
 )
 def test_failed_drop_partition_survives_reload(start_cluster):
     two_parts("t_drop_reload")
-    with merges_stopped():
+    with merges_and_cleanup_stopped():
         require_parts("t_drop_reload", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = q_error("ALTER TABLE t_drop_reload DROP PARTITION tuple()")
         require_injected_failure(error)
         require_rows("t_drop_reload", "2\t3")
 
+        require_rolled_back_parts_on_disk("t_drop_reload")
         logging.info("before the reload: %s", reload_state("t_drop_reload"))
         q("DETACH TABLE t_drop_reload")
         q("ATTACH TABLE t_drop_reload")
@@ -1009,13 +1083,14 @@ def test_failed_drop_partition_survives_reload(start_cluster):
 )
 def test_failed_truncate_survives_reload(start_cluster):
     two_parts("t_truncate_reload")
-    with merges_stopped():
+    with merges_and_cleanup_stopped():
         require_parts("t_truncate_reload", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = q_error("TRUNCATE TABLE t_truncate_reload")
         require_injected_failure(error)
         require_rows("t_truncate_reload", "2\t3")
 
+        require_rolled_back_parts_on_disk("t_truncate_reload")
         logging.info("before the reload: %s", reload_state("t_truncate_reload"))
         q("DETACH TABLE t_truncate_reload")
         q("ATTACH TABLE t_truncate_reload")
@@ -1039,7 +1114,7 @@ def test_failed_replace_partition_leaves_destination_intact(start_cluster):
     q("INSERT INTO t_replace_dst VALUES (1)")
     q("INSERT INTO t_replace_dst VALUES (2)")
 
-    with merges_stopped():
+    with merges_and_cleanup_stopped():
         require_parts("t_replace_dst", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = q_error(
@@ -1065,7 +1140,7 @@ def test_failed_replace_partition_leaves_destination_intact(start_cluster):
 )
 def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cluster):
     two_parts("t_rollback_mark")
-    with merges_stopped():
+    with merges_and_cleanup_stopped():
         require_parts("t_rollback_mark", 2)
         marks_failed = log_hits(ROLLBACK_MARK_LOG)
         with failpoints(
@@ -1080,6 +1155,7 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
         require_rollback_mark_failed(marks_failed)
         require_rows("t_rollback_mark", "2\t3")
 
+        require_rolled_back_parts_on_disk("t_rollback_mark")
         logging.info("before the reload: %s", reload_state("t_rollback_mark"))
         q("DETACH TABLE t_rollback_mark")
         q("ATTACH TABLE t_rollback_mark")
