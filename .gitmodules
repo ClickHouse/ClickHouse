@@ -474,3 +474,6 @@
 [submodule "contrib/spdlog"]
 	path = contrib/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "contrib/arrow-testing"]
+	path = contrib/arrow-testing
+	url = https://github.com/apache/arrow-testing
