@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
@@ -36,7 +37,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -89,6 +89,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 readonly;
@@ -96,7 +97,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
@@ -304,7 +304,8 @@ void StorageBuffer::read(
 {
     storage_snapshot->check(column_names);
 
-    if (processed_stage > QueryProcessingStage::FetchColumns)
+    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
           * For example: SELECT * FROM buffer t1 JOIN buffer t2 USING (column)
@@ -539,16 +540,27 @@ void StorageBuffer::read(
         auto buffers_select_query_options = SelectQueryOptions(processed_stage);
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
 
-        auto storage = std::make_shared<StorageValues>(
-                getStorageID(),
-                storage_snapshot->getAllColumnsDescription(),
-                std::move(pipe_from_buffers),
-                storage_snapshot->metadata->virtuals);
+        if (enable_analyzer)
+        {
+            auto storage = std::make_shared<StorageValues>(
+                    getStorageID(),
+                    storage_snapshot->getAllColumnsDescription(),
+                    std::move(pipe_from_buffers),
+                    storage_snapshot->metadata->virtuals);
 
-        auto interpreter
-            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
-        interpreter.addStorageLimits(*query_info.storage_limits);
-        buffers_plan = std::move(interpreter).extractQueryPlan();
+            auto interpreter
+                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
+            interpreter.addStorageLimits(*query_info.storage_limits);
+            buffers_plan = std::move(interpreter).extractQueryPlan();
+        }
+        else
+        {
+            auto interpreter = InterpreterSelectQuery(
+                    query_info.query, local_context, std::move(pipe_from_buffers),
+                    buffers_select_query_options);
+            interpreter.addStorageLimits(*query_info.storage_limits);
+            interpreter.buildQueryPlan(buffers_plan);
+        }
     }
     else
     {
@@ -1547,20 +1559,8 @@ void registerStorageBuffer(StorageFactory & factory)
                 args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
 
             auto destination = DatabaseCatalog::instance().getTable(destination_id, structure_context);
-
-            /// An `Alias` reports its target's columns, so a structure inferred from one needs the
-            /// privilege on the target that describing the target requires.
-            if (const auto * alias = destination->as<StorageAlias>();
-                !from_existing_metadata && alias
-                && !alias->isTargetTableGranted(structure_context, AccessType::SHOW_COLUMNS, {}))
-                throw Exception(
-                    ErrorCodes::ACCESS_DENIED,
-                    "Not enough privileges to describe metadata exposed by {}",
-                    destination_id.getNameForLogs());
-
             auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
             columns = destination_metadata->getColumns();
-            columns.clearColumnTTLs();
         }
 
         return std::make_shared<StorageBuffer>(

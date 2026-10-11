@@ -21,7 +21,7 @@ for data_path in /var/lib/clickhouse /var/lib/clickhouse/; do
       --name "$(cname)" \
       "$image"
   )"
-  trap '[ $? -eq 0 ] || dumpServerLogs "$cid"; docker rm -vf "$cid" > /dev/null' EXIT
+  trap 'docker rm -vf "$cid" > /dev/null' EXIT
 
   chCli() {
     docker exec "$cid" clickhouse-client --query "$*"

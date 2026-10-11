@@ -404,7 +404,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Skip if projection was applied. A non-null analysis result alone does not imply
     /// a projection: join-order estimation runs index analysis for join relations and
-    /// memoizes the result (see estimateReadRowsCount in RelationStatisticsEstimator.cpp).
+    /// memoizes the result (see estimateReadRowsCount in optimizeJoin.cpp).
     if (auto analyzed = reading_step->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
         return;
 

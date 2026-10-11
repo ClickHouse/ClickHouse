@@ -327,13 +327,10 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
-    /// One token per pair: `m['key'] = 'value'` is one posting list, `mapContainsKeyValue` the union of
-    /// the first-occurrence and repeated-occurrence lists. Nothing else is supported yet.
+    /// One token per pair, so `m['key'] = 'value'` is a single-token lookup whose posting list is exactly
+    /// the matching rows. Nothing else is supported yet.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
-    {
-        const bool is_exact = function_name == "equals" || function_name == "mapContainsKeyValue";
-        return is_exact ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
-    }
+        return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
@@ -400,9 +397,8 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
         return true;
 
     const auto function_name = node.function_base->getName();
-    /// The third argument is an ESCAPE character for `like`/`ilike` and the searched value for
-    /// `mapContainsKeyValue`, not a tokenizer.
-    if (function_name == "like" || function_name == "ilike" || function_name == "mapContainsKeyValue")
+    /// The third argument of `like` and `ilike` is an ESCAPE character, not a tokenizer.
+    if (function_name == "like" || function_name == "ilike")
         return true;
 
     RPNBuilderTreeContext rpn_tree_context(getContext());
@@ -670,7 +666,8 @@ std::string MergeTreeIndexConditionText::getDescription() const
         {
             if (i > 0)
                 description += ", ";
-            description += tokenizer->formatTokenForLogs(all_search_tokens[i]);
+
+            description += fmt::format("\"{}\"", all_search_tokens[i]);
         }
     }
 
@@ -763,10 +760,6 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         if (function_arguments_size == 3)
         {
-            /// Both needles are arguments of the call, so the (column, constant) shape below cannot express it.
-            if (function_name == "mapContainsKeyValue")
-                return traverseMapContainsKeyValueNode(function, out);
-
             /// The index path tokenizes needles with the index tokenizer, so it can answer the
             /// predicate only when the tokenizer argument denotes that same tokenizer.
             if (!tokenizerArgumentMatchesIndex(function_name, function.getArgumentAt(2)))
@@ -1185,13 +1178,16 @@ static bool isMapValueDefault(std::string_view value, const Block & header)
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
-    const RPNBuilderTreeNode & index_column_node,
+    const RPNBuilderTreeNode & argument_node,
     DataTypePtr value_type,
     Field value_field,
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
+
+    /// The index knows the expression under the conversion, e.g. `m.key_<key>` in `equals(_CAST(m.key_<key>, 'String'), 'value')`.
+    const auto index_column_node = unwrapLosslessConversion(argument_node);
 
     /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
     /// path. Partition hard, so none of them can emit a token in the pair format.
@@ -1248,14 +1244,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
-
-    auto stripped_value_type = removeLowCardinality(value_type);
-    if (!value_field.isNull())
-        stripped_value_type = removeNullable(stripped_value_type);
-    /// Only a String needle is unwrapped. A FixedString one is tokenized together with its NUL
-    /// padding, which string equality ignores, so the index would discard matching granules.
-    if (WhichDataType(stripped_value_type).isString())
-        value_type = stripped_value_type;
 
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
@@ -1455,50 +1443,30 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
-        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
-        /// In all other cases, bypass the index.
+        /// `hasToken` splits by non-alphanumeric characters, so only an index with the same tokenizer can answer it.
         if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
             return false;
 
-        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
-        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
-        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
-        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
-        /// pre/postprocessor is configured; the plain index path is unaffected.
+        /// `hasTokenOrNull` is never rewritten to a direct read, so its needle never goes through the
+        /// pre/postprocessor, while `stringToTokens` applies them. The index would disagree with the scan.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
-        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
-        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
-        ///
-        /// A separator is any ASCII non-alphanumeric character.
-        if (function_name == "hasToken"
-            && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
+        /// The scan raises BAD_ARGUMENTS for a needle with a separator, and the exact direct read of `hasToken`
+        /// would replace the predicate and hide it. `hasTokenOrNull` returns NULL for such a needle instead.
+        if (function_name == "hasToken" && std::ranges::any_of(value_field.safeGet<String>(), isTokenSeparator))
             return false;
 
         auto tokens = stringToTokens(value_field);
         if (tokens.empty())
         {
+            /// A needle without a word character is invalid: leave it to the scan, which raises or returns NULL.
+            /// Otherwise the pre/postprocessor dropped the needle (e.g. a stop word), so it is not in the index:
+            /// push the empty sentinel to prune every granule.
             const String & string_needle = value_field.safeGet<String>();
-            if (!string_needle.empty())
-            {
-                /// hasToken uses splitByNonAlpha as its tokenizer, so:
-                ///  - A needle without any word character (alphanumeric or non-ASCII) is invalid.
-                ///  - Bypass the index in that case so the row-level evaluation throws BAD_ARGUMENTS (or returns NULL for hasTokenOrNull)
-                ///  -- Consistent with the no-index behaviour.
-                /// If the needle does contain word characters (e.g. "abc" with ngrams(4)):
-                ///  - It is valid but too short for the index's tokenizer:
-                ///  -- Fall through to push "" so all granules are pruned and the query returns 0 rows.
-                /// If the postprocessor filters the needle (e.g. stop-word):
-                ///  -- The needle is not in the index; push "" sentinel so the condition evaluates to false.
-                if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
-                    return false;
-            }
-            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
-            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
+            if (!string_needle.empty() && std::ranges::all_of(string_needle, isTokenSeparator))
+                return false;
+
             tokens.push_back("");
         }
 
@@ -1865,6 +1833,28 @@ static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, cons
     return true;
 }
 
+/// Whether the predicate of the sub-DAG may be true on the default value of its single input column,
+/// i.e. for a row with a missing map key or JSON path. Unknown if the predicate throws on the default value,
+/// e.g. `toUInt64(m['key'])` on an empty string, as in `filterResultForNotMatchedRows` for JOIN.
+static bool mayBeTrueOnDefaultValue(const ActionsDAG & subdag)
+{
+    const auto * input = subdag.getInputs().front();
+    ActionsDAG::IntermediateExecutionResult default_input;
+    default_input.emplace(input, ColumnWithTypeAndName(input->result_type->createColumnConstWithDefaultValue(1), input->result_type, input->result_name));
+
+    ColumnsWithTypeAndName result;
+    try
+    {
+        result = ActionsDAG::evaluatePartialResult(default_input, subdag.getOutputs(), /*input_rows_count=*/ 1);
+    }
+    catch (const Exception &)
+    {
+        return true;
+    }
+
+    return !result.front().column || result.front().column->getBool(0);
+}
+
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
@@ -1872,9 +1862,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     /// It can be an arbitrary function that returns 0 for the default value of the map value type.
     /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
+    /// The result may be `Nullable` or `LowCardinality`, e.g. for a `Nullable` key: NULL reads as false below, as in WHERE.
 
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
+    if (!dag_node
+        || !dag_node->function_base
+        || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -1885,7 +1879,6 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         return false;
 
     auto required_column = required_columns.front();
-    auto output_column_name = outputs.front()->result_name;
 
     std::optional<String> key_const_value;
 
@@ -1914,19 +1907,14 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN)
+                /// A NULL key is declined: `arrayElement` returns NULL for it, not the default value.
+                Field key_field;
+                DataTypePtr key_type;
+                if (!RPNBuilderTreeNode(const_key_argument, function_node.getTreeContext()).tryGetConstant(key_field, key_type)
+                    || key_field.getType() != Field::Types::String)
                     return false;
 
-                const bool key_is_null = const_key_argument->column->isNullAt(0);
-                auto unwrapped_result_type = removeLowCardinality(const_key_argument->result_type);
-
-                if (!key_is_null)
-                    unwrapped_result_type = removeNullable(unwrapped_result_type);
-
-                if (key_is_null || !isStringOrFixedString(unwrapped_result_type))
-                    return false;
-
-                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+                key_const_value = key_field.safeGet<String>();
             }
             else
             {
@@ -1956,13 +1944,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         return false;
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
-    Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
-    ExpressionActions actions(std::move(subdag));
-    actions.execute(block);
-    const auto & result_column = block.getByName(output_column_name).column;
-
     /// If the function returns true for the empty map, we cannot use index.
-    if (result_column->getBool(0))
+    if (mayBeTrueOnDefaultValue(subdag))
         return false;
 
     auto tokens = stringToTokens(std::string_view(*key_const_value));
@@ -2032,54 +2015,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
     if (value.empty())
         return false;
 
-    /// `m['key']` is the key's first occurrence: is_duplicate = 0.
+    /// `m['key']` is the key's first occurrence: is_rest = 0.
     VectorWithMemoryTracking<String> tokens;
-    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_duplicate=*/ false));
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_rest=*/ false));
 
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(
         std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-    return true;
-}
-
-bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
-    const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
-{
-    if (tokenizer->getType() != ITokenizer::Type::KeyValuePairs)
-        return false;
-
-    if (!hasIndexForColumn(function_node.getArgumentAt(0).getColumnName()))
-        return false;
-
-    /// FixedString excluded: its padding is compared away by the function but not stored in the token,
-    /// so exact direct read would drop matching rows. Same as traverseMapElementKeyValueNode.
-    auto get_string_constant = [](const RPNBuilderTreeNode & node) -> std::optional<String>
-    {
-        Field field;
-        DataTypePtr type;
-        if (!node.tryGetConstant(field, type) || !WhichDataType(type).isString())
-            return std::nullopt;
-        return field.safeGet<String>();
-    };
-
-    auto key = get_string_constant(function_node.getArgumentAt(1));
-    if (!key)
-        return false;
-
-    auto value = get_string_constant(function_node.getArgumentAt(2));
-    if (!value)
-        return false;
-
-    /// The pair is either the key's first occurrence or a repetition. Every entry has a token, so even
-    /// an empty value is searchable here, unlike in `equals`.
-    VectorWithMemoryTracking<String> tokens;
-    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_duplicate=*/ false));
-    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_duplicate=*/ true));
-
-    const auto function_name = function_node.getFunctionName();
-    out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
-    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-        function_name, TextSearchMode::Any, getDirectReadMode(function_name), std::move(tokens)));
     return true;
 }
 
@@ -2125,8 +2067,10 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     /// Similar to traverseMapElementKeyNode but for JSON subcolumns.
 
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
-        || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
+    if (!dag_node
+        || !dag_node->function_base
+        || !dag_node->isDeterministic()
+        || !WhichDataType(removeLowCardinalityAndNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -2136,8 +2080,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     if (required_columns.size() != 1 || outputs.size() != 1)
         return false;
 
-    auto required_column = required_columns.front();
-    auto output_column_name = outputs.front()->result_name;
+    const auto & required_column = required_columns.front();
 
     /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
     auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths");
@@ -2150,13 +2093,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     /// Evaluate the function on a default column value.
     /// If the function returns true for the default value (what we'd get when the path is missing),
     /// we cannot safely skip the granule.
-    Block block{{required_column.type->createColumnConstWithDefaultValue(1),
-                 required_column.type, required_column.name}};
-    ExpressionActions actions(std::move(subdag));
-    actions.execute(block);
-    const auto & result_column = block.getByName(output_column_name).column;
-
-    if (result_column->getBool(0))
+    if (mayBeTrueOnDefaultValue(subdag))
         return false;
 
     auto tokens = stringToTokens(Field(json_info->path));
@@ -2177,8 +2114,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
     bool has_index_for_map_element_value = false;
 
-    auto has_index = [&](const RPNBuilderTreeNode & node)
+    auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
+        const auto node = unwrapLosslessConversion(argument);
         if (hasIndexForMapElementValue(node))
         {
             has_index_for_map_element_value = true;

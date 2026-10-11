@@ -443,7 +443,6 @@ public:
     static constexpr bool DateTime64Supported = false;
 
     using ColVecType = ColumnVectorOrDecimal<T>;
-    using ResultType = TResult;
 
     String getName() const override
     {
@@ -461,12 +460,6 @@ public:
 
     AggregateFunctionSum(const IDataType & data_type, const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, createResultType(getDecimalScale(data_type)))
-    {}
-
-    /// For result types that are backed by `TResult` but are not `TResult` itself, such as the
-    /// `Interval` data types, which are backed by `Int64`.
-    AggregateFunctionSum(const DataTypes & argument_types_, const DataTypePtr & result_type_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data, Type>>(argument_types_, {}, result_type_)
     {}
 
     static DataTypePtr createResultType(UInt32 scale_)

@@ -50,7 +50,6 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
-    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
@@ -67,7 +66,6 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
-    M(CLASS_NAME, DoubleAuto) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, ExplainQueryPlanDefault) \
     M(CLASS_NAME, Float) \
@@ -116,7 +114,6 @@ class WriteBuffer;
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, TextIndexPostingListApplyMode) \
-    M(CLASS_NAME, TextIndexPostingsIntersectionAlgorithm) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, TransactionsWaitCSNMode) \

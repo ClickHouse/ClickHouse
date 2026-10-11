@@ -373,7 +373,7 @@ client.query(
 | IPv4                  | `ipaddress.IPv4Address` | string, int       | IP addresses can be read as strings or integers.                                                                  |
 | IPv6                  | `ipaddress.IPv6Address` | string            | IP addresses can be read as strings and properly formatted can be inserted as IP addresses                        |
 | Tuple                 | dict or tuple           | tuple, dict, json | Named tuples return dictionaries by default; unnamed tuples return tuples. A `Tuple()` value returns `()`.         |
-| Map                   | dict                    | pairs             | `dict` is the default. `pairs` returns a list of key/value tuples and preserves duplicate keys.                     |
+| Map                   | dict                    | -                 |                                                                                                                   |
 | Nested                | Sequence[dict]          | -                 |                                                                                                                   |
 | UUID                  | uuid.UUID               | string            | UUIDs can be read as strings formatted as per RFC 4122<br/>                                                       |
 | JSON                  | dict                    | string            | A python dictionary is returned by default. The `string` format will return a JSON string                         |
@@ -384,23 +384,6 @@ client.query(
 | QBit                  | list[float]             | -                 | NumPy is used automatically for faster bit transposition when installed.                                          |
 
 `query_np`, `query_np_stream`, `query_df`, and `query_df_stream` support `Time64` scales 0, 3, 6, and 9. Other scales raise `ProgrammingError` because they do not have a matching NumPy time unit. Use a standard Python query with the `int` or `string` read format to preserve those precisions. The experimental [Rust codec](/integrations/language-clients/python/rust-codec#known-behavior-differences) documents an exception for `Time64` stored inside `Dynamic`.
-
-### Map values with duplicate keys {#map-pairs}
-
-ClickHouse Maps can contain duplicate keys. The default Python dictionary keeps only the last value for each key. Select the `pairs` read format to preserve every pair in the order returned by the server:
-
-```python
-result = client.query(
-    "SELECT map('key', 'X', 'key', 'Y') AS m",
-    query_formats={"Map": "pairs"},
-)
-print(result.first_item["m"])
-# [('key', 'X'), ('key', 'Y')]
-```
-
-The format applies recursively to Maps nested inside other ClickHouse types, including Arrays, Tuples, JSON typed paths, Dynamic, Variant, and other Maps. It also works with `query_np`, `query_df`, and their streaming counterparts. To select Maps in one result column, use `column_formats={"m": {"Map": "pairs"}}`. To set it globally, use `set_read_format("Map", "pairs")`.
-
-This is a read format. Native Map inserts still require dictionaries and don't accept pair lists. Use `query_arrow` and `insert_arrow` to round trip duplicate keys without loss. Read formats don't affect Arrow methods. As with other read-format overrides, `native_codec="rust"` falls back to Python, while `native_codec="rust_strict"` raises `NotSupportedError`.
 
 ## External data {#external-data}
 

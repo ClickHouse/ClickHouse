@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -28,7 +27,6 @@
 
 #include <cstdlib>
 #include <memory>
-#include <algorithm>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -68,31 +66,6 @@ bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
         if (!isColumnConst(*arg.column))
             return false;
     return true;
-}
-
-/// Whether any of the `Nullable` arguments actually holds a NULL among the first `input_rows_count`
-/// rows. Cheaper than building the combined null map of all arguments, and it is all that is needed
-/// to decide whether the null rows have to be filtered out before execution.
-bool anyArgumentHasNullRows(const ColumnsWithTypeAndName & args, size_t input_rows_count)
-{
-    for (const auto & arg : args)
-    {
-        if (!arg.type->isNullable())
-            continue;
-
-        if (isColumnConst(*arg.column))
-        {
-            if (arg.column->onlyNull())
-                return true;
-            continue;
-        }
-
-        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-        if (!memoryIsZero(null_map.data(), 0, input_rows_count))
-            return true;
-    }
-
-    return false;
 }
 
 /// If the single-dictionary fast path applies (exactly one full LowCardinality argument and every
@@ -354,18 +327,6 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
         }
 
-        /// A function that declines execution on default arguments must not be executed on the rows
-        /// behind a NULL either. `createBlockWithNestedColumns` does not overwrite those rows, so the
-        /// nested column keeps whatever it holds there - for a column that was built as `Nullable`
-        /// from the start that is the type's default value - and a function that throws on it fails
-        /// on entirely valid data, e.g. `parseDateTime` over a `Nullable(String)` containing a NULL.
-        /// The result for those rows is masked out by [[wrapInNullable]] anyway, so filter them out
-        /// before executing instead. This is only needed when the input really contains a NULL: an
-        /// argument that is `Nullable` but has no NULL in it keeps every regular path, including the
-        /// numeric fast path below.
-        const bool must_filter_null_rows
-            = !canBeExecutedOnDefaultArguments() && anyArgumentHasNullRows(args, input_rows_count);
-
         bool all_columns_constant = true;
         bool all_numeric_types = true;
         for (const auto & arg: args)
@@ -394,7 +355,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return result_type->createColumn();
         }
 
-        if (all_columns_constant || (all_numeric_types && !must_filter_null_rows))
+        if (all_columns_constant || all_numeric_types)
         {
             /// When all columns are constant or numeric, the cost of [[countBytesInFilter]] or [[ColumnUInt8::create]] should not be ignored.
             /// That's why we add a fast path for this case.
@@ -442,10 +403,8 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         }
 
         double null_ratio = static_cast<double>(rows_with_nulls) / static_cast<double>(input_rows_count);
-        bool should_short_circuit = result_null_map && rows_with_nulls > 0
-            && (must_filter_null_rows
-                || (short_circuit_function_evaluation_for_nulls
-                    && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold));
+        bool should_short_circuit = short_circuit_function_evaluation_for_nulls && result_null_map
+            && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
         ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(args);
         patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
@@ -557,18 +516,6 @@ IExecutableFunction::IExecutableFunction()
             short_circuit_function_evaluation_for_nulls_threshold = query_context->getSettingsRef()[Setting::short_circuit_function_evaluation_for_nulls_threshold];
         }
     }
-}
-
-bool IExecutableFunction::isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const
-{
-    if (!isDeterministicInScopeOfQuery())
-        return false;
-
-    /// A lambda argument is as deterministic as its body: `arrayMap(i -> rand64(i), ...)` must run per output row.
-    return std::ranges::all_of(arguments, [](const auto & argument)
-    {
-        return allColumnFunctions(*argument.column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
-    });
 }
 
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
@@ -708,7 +655,7 @@ ColumnPtr IExecutableFunction::execute(
         }
 
         auto arguments_without_replicated = arguments;
-        if (has_full_columns || !common_replicated_indexes || !isCallDeterministicInScopeOfQuery(arguments))
+        if (has_full_columns || !common_replicated_indexes || !isDeterministicInScopeOfQuery())
         {
             convertReplicatedColumnsToFull(arguments_without_replicated);
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
@@ -785,7 +732,7 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
             return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
-        if (num_sparse_columns == 1 && num_full_columns == 0 && isCallDeterministicInScopeOfQuery(arguments))
+        if (num_sparse_columns == 1 && num_full_columns == 0 && isDeterministicInScopeOfQuery())
         {
             auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
             ColumnPtr sparse_offsets;

@@ -16,9 +16,9 @@ struct PrometheusQueryParsingUtil
     using DurationType = Decimal64;
 
     /// Parses a prometheus query.
-    /// Scale `time_scale` is used to parse decimals representing timestamps and durations.
+    /// Scale `timestamp_scale` is used to parse decimals representing timestamps and durations.
     static bool tryParseQuery(std::string_view input,
-                              UInt32 time_scale,
+                              UInt32 timestamp_scale,
                               PrometheusQueryTree & res_query,
                               String * error_message = nullptr,
                               size_t * error_pos = nullptr);
@@ -34,14 +34,10 @@ struct PrometheusQueryParsingUtil
     /// Parses a scalar which can be either an integer number or a floating-point number (e.g. 237e6), or Inf, or Nan,
     /// or a hexadecimal number (e.g. 0xA7CD), or a duration with time units, for example 1m30s.
     /// Also underscores (_) can be used in between decimal or hexadecimal digits and they don't mean anything.
-    /// `res_is_duration` reports whether the literal was written with time units, which the
-    /// serialization needs to print it the way it was written rather than as a number of seconds.
     static bool tryParseScalar(std::string_view input,
                                ScalarType & res_scalar,
                                String * error_message = nullptr,
-                               size_t * error_pos = nullptr,
-                               bool * res_is_duration = nullptr,
-                               std::optional<Int64> * res_duration_ms = nullptr);
+                               size_t * error_pos = nullptr);
 
     /// Parses a timestamp which can be either an integer or floating-point number of seconds since epoch (1 January 1970),
     /// or a hexadecimal number of seconds since epoch, or a duration with time units since epoch.
@@ -57,7 +53,7 @@ struct PrometheusQueryParsingUtil
     /// or a hexadecimal number of seconds, or a duration with time units.
     /// Also underscores (_) can be used in between decimal or hexadecimal digits and they don't mean anything.
     static bool tryParseDuration(std::string_view input,
-                                 UInt32 duration_scale,
+                                 UInt32 timestamp_scale,
                                  DurationType & res_duration,
                                  String * error_message = nullptr,
                                  size_t * error_pos = nullptr,
@@ -65,14 +61,14 @@ struct PrometheusQueryParsingUtil
 
     /// Parses the range in a range selector, for example for "[1h30m]" the function parses "1h30m".
     static bool tryParseSelectorRange(std::string_view input,
-                                      UInt32 time_scale,
+                                      UInt32 timestamp_scale,
                                       DurationType & res_range,
                                       String * error_message = nullptr,
                                       size_t * error_pos = nullptr);
 
     /// Parses the range and optionally the step in a subquery, for example for "[1h:5m]" the function parses "1h" and "5m".
     static bool tryParseSubqueryRange(std::string_view input,
-                                      UInt32 time_scale,
+                                      UInt32 timestamp_scale,
                                       DurationType & res_range,
                                       std::optional<DurationType> & res_step,
                                       String * error_message = nullptr,

@@ -222,11 +222,6 @@ namespace Net
 
 
     protected:
-        int completeHandshakeImpl(bool verifyPeer);
-        /// Completes the SSL handshake, and, if verifyPeer is true, validates the
-        /// peer certificate as a part of the same handshake, so that a validation
-        /// failure is accounted as a handshake failure.
-
         void acceptSSL();
         /// Assume per-object mutex is locked.
         /// Performs a server-side SSL handshake and certificate verification.
@@ -291,9 +286,6 @@ namespace Net
         Context::Ptr _pContext;
         bool _needHandshake;
         bool _fatalError;
-        bool _pendingWrite = false;
-        /// Whether the last `SSL_write` returned `SSL_ERROR_WANT_WRITE`. OpenSSL keeps that record pending
-        /// until `SSL_write` is retried, even after other operations change what `SSL_get_error` reports.
         std::string _peerHostName;
         Session::Ptr _pSession;
         const BIO_METHOD * _bioMethod = nullptr;

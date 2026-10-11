@@ -101,8 +101,6 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
 
 ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
 {
-    if (start == 0 && length == size())
-        return getPtr();
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
         column.column = column.column->cut(start, length);
@@ -113,7 +111,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
         capture,
         is_short_circuit_argument,
         is_function_compiled,
-        recursively_convert_result_to_full_column_if_low_cardinality,
+        /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
         allow_lazy_replicated_captures);
 }
 

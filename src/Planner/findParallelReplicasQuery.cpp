@@ -31,7 +31,6 @@ namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
-    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
@@ -103,8 +102,6 @@ bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextP
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
 static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
-    const auto & settings = context->getSettingsRef();
-
     std::vector<const QueryNode *> res;
 
     while (query_tree_node)
@@ -156,9 +153,6 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             }
             case QueryTreeNodeType::JOIN:
             {
-                if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
-                    return {};
-
                 const auto & join_node = query_tree_node->as<JoinNode &>();
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();
@@ -373,10 +367,6 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
-    /// A shard number shipped for a different cluster cannot scope this read.
-    if (ClusterProxy::hasForeignShardScope(context))
-        return nullptr;
-
     auto stack = getSupportingParallelReplicasQueries(query_tree_node.get(), context);
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
@@ -426,7 +416,6 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
-    const auto & settings = context->getSettingsRef();
     std::stack<const IQueryTreeNode *> join_nodes;
     while (query_tree_node || !join_nodes.empty())
     {
@@ -484,9 +473,6 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             }
             case QueryTreeNodeType::JOIN:
             {
-                if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
-                    return nullptr;
-
                 const auto & join_node = query_tree_node->as<JoinNode &>();
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();

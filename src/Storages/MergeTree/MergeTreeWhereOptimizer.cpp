@@ -1,18 +1,12 @@
 #include <algorithm>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -109,31 +103,6 @@ NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names
     return table_columns;
 }
 
-bool typeContainsFloat(const DataTypePtr & type)
-{
-    if (isFloat(removeLowCardinalityAndNullable(type)))
-        return true;
-
-    bool has_float = false;
-    type->forEachChild([&](const IDataType & child)
-    {
-        if (!has_float && WhichDataType(child).isFloat())
-            has_float = true;
-    });
-    return has_float;
-}
-
-/// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
-/// over a float sorting key column can tell apart rows of one dedup group and drop its winner
-NameSet getSortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
-{
-    NameSet names;
-    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
-        if (!typeContainsFloat(sorting_key.data_types[i]))
-            names.insert(sorting_key.column_names[i]);
-    return names;
-}
-
 }
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -149,7 +118,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , supported_columns_include_subcolumns{supported_columns_include_subcolumns_}
-    , sorting_key_names{getSortingKeyNamesSafeBeforeFinal(storage_snapshot->metadata->getSortingKey())}
+    , sorting_key_names{NameSet(
+          storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
     , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
     , storage_metadata(storage_snapshot->metadata)
     , log{log_}
@@ -452,7 +422,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && !cannotBeMoved(conjunct, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns.
@@ -609,7 +579,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 !has_invalid_column
                 && !columns.empty()
                 && !cannotBeMoved(conjunct, where_optimizer_context)
-                && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
+                && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
                 && columnsSupportPrewhere(columns)
                 && columns.size() < queried_columns.size();
             res.emplace_back(std::move(cond));
@@ -814,57 +784,11 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     return true;
 }
 
-/// Constant folding turns a lambda whose captured columns are all constants into a constant
-/// ColumnFunction: a function object, not a value, so its body still has to be checked
-static bool isConstantDeterministicInScopeOfQuery(const RPNBuilderTreeNode & node)
-{
-    const auto * dag_node = node.getDAGNode();
-    if (!dag_node)
-        return true; /// AST constants are scalar literals, lambdas are not folded into them
-
-    while (dag_node->type == ActionsDAG::ActionType::ALIAS)
-        dag_node = dag_node->children.front();
-
-    if (!dag_node->column)
-        return true;
-
-    return allColumnFunctions(*dag_node->column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
-}
-
-static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
-{
-    if (auto function_base = function_node.getFunctionBase())
-        return function_base->isDeterministicInScopeOfQuery();
-
-    /// For an AST-based tree there is no resolved function, mirror the legacy analyzer's lookup order
-    const auto function_name = function_node.getFunctionName();
-
-    /// executable UDFs are never stable within a query
-    if (UserDefinedExecutableFunctionFactory::has(function_name, context))
-        return false;
-
-    /// WASM UDFs are stable only when declared deterministic, plain SQL UDFs are inlined before this point
-    if (auto create_function_query = UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
-    {
-        const auto * create_wasm_function_query = create_function_query->as<ASTCreateWasmFunctionQuery>();
-        return create_wasm_function_query && create_wasm_function_query->is_deterministic;
-    }
-
-    auto function_resolver = FunctionFactory::instance().tryGet(function_name, context);
-    return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
-}
-
-bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
+bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const
 {
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
-
-        /// functions like rand can give different results for row versions of the same key,
-        /// query-scoped-stable ones (e.g. runtime filters) are fine to evaluate before the merge
-        if (!isFunctionDeterministicInScopeOfQuery(function_node, context))
-            return false;
-
         size_t arguments_size = function_node.getArgumentsSize();
 
         for (size_t i = 0; i < arguments_size; ++i)
@@ -872,18 +796,10 @@ bool MergeTreeWhereOptimizer::isDeterministicExpressionOverSortingKey(const RPNB
             auto argument = function_node.getArgumentAt(i);
             auto argument_column_name = argument.getColumnName();
 
-            if (argument.isConstant())
-            {
-                /// a folded lambda hides its body behind a constant
-                if (!isConstantDeterministicInScopeOfQuery(argument))
-                    return false;
-                continue;
-            }
-
-            if (sorting_key_names.contains(argument_column_name))
+            if (argument.isConstant() || sorting_key_names.contains(argument_column_name))
                 continue;
 
-            if (!isDeterministicExpressionOverSortingKey(argument, context))
+            if (!isExpressionOverSortingKey(argument))
                 return false;
         }
 

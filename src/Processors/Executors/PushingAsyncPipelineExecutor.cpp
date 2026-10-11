@@ -22,8 +22,8 @@ namespace ErrorCodes
 class PushingAsyncSource : public ISource
 {
 public:
-    explicit PushingAsyncSource(SharedHeader header, bool enable_auto_progress)
-        : ISource(header, enable_auto_progress)
+    explicit PushingAsyncSource(SharedHeader header)
+        : ISource(header)
     {}
 
     String getName() const override { return "PushingAsyncSource"; }
@@ -120,12 +120,12 @@ static void threadFunction(
 }
 
 
-PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool report_read_progress) : pipeline(pipeline_)
+PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getSharedHeader(), report_read_progress);
+    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getSharedHeader());
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors->emplace_back(pushing_source);
 }

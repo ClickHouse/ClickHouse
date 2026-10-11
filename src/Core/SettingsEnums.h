@@ -2,7 +2,6 @@
 
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Common/AsynchronousMetricsKeyValuesMode.h>
-#include <Common/SeccompFilter.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -231,20 +230,11 @@ DECLARE_SETTING_ENUM(DefaultTableEngine)
 
 enum class TextIndexPostingListApplyMode : uint8_t
 {
-    Materialize,
-    Lazy,
+    MATERIALIZE,
+    LAZY,
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
-
-enum class TextIndexPostingsIntersectionAlgorithm : uint8_t
-{
-    BruteForce,
-    Leapfrog,
-    Auto,
-};
-
-DECLARE_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm)
 
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
@@ -325,8 +315,6 @@ DECLARE_SETTING_ENUM_WITH_RENAME(GeoJSONUnsupportedGeometryHandling, FormatSetti
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetCompression)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
-
-DECLARE_SETTING_ENUM_WITH_RENAME(ArrowUnsupportedTypes, FormatSettings::ArrowUnsupportedTypes)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
@@ -470,8 +458,6 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
 
-DECLARE_SETTING_ENUM(SeccompMode)
-
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
@@ -557,8 +543,7 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking,
-    PFor
+    Bitpacking
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)

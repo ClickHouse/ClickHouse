@@ -112,6 +112,20 @@ export const quickStartsData = [
     ]
   },
   {
+    "id": "tutorial",
+    "title": "高级教程",
+    "description": "了解如何使用纽约市出租车示例数据集在 ClickHouse 中摄取和查询数据。",
+    "href": "/zh/get-started/quickstarts/tutorial",
+    "useCases": [
+      "real-time-analytics",
+      "data-warehousing"
+    ],
+    "products": [
+      "cloud",
+      "self-managed"
+    ]
+  },
+  {
     "id": "working-with-the-map-type",
     "title": "在 ClickHouse 中使用 Map 类型",
     "description": "了解如何在 ClickHouse 中使用 Map 类型来存储、查询和聚合动态键值数据，并以 OTel 资源属性为例。",

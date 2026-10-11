@@ -5,13 +5,10 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionAbsent.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyHistogramQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyMinMaxOfFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyRoundFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
@@ -53,9 +50,6 @@ SQLQueryPiece applyFunction(
     if (isClampFunction(function_name))
         return applyClampFunction(function_node, std::move(arguments), context);
 
-    if (isMinMaxOfFunction(function_name))
-        return applyMinMaxOfFunction(function_node, std::move(arguments), context);
-
     if (isRoundFunction(function_name))
         return applyRoundFunction(function_node, std::move(arguments), context);
 
@@ -64,12 +58,6 @@ SQLQueryPiece applyFunction(
 
     if (isLabelManipulationFunction(function_name))
         return applyLabelManipulationFunction(function_node, std::move(arguments), context);
-
-    if (isFunctionPredictLinear(function_name))
-        return applyFunctionPredictLinear(function_node, std::move(arguments), context);
-
-    if (isFunctionQuantileOverTime(function_name))
-        return applyFunctionQuantileOverTime(function_node, std::move(arguments), context);
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);

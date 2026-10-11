@@ -10,7 +10,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Core/SettingsFields.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
@@ -34,12 +33,13 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 
 namespace fs = std::filesystem;
 
@@ -61,7 +61,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsString storage_policy;
-    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -145,19 +144,6 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
             zookeeper_path, backQuote(table_id.getFullTableName())
         );
-}
-
-bool DatabaseOrdinary::isTableReadonlyAsReplicated(const ASTCreateQuery & create_query, ContextPtr local_context)
-{
-    /// Resolved the way `registerStorageMergeTree` resolves the settings of a `ReplicatedMergeTree`:
-    /// the definition's own `SETTINGS` over the `merge_tree` and `replicated_merge_tree` config defaults.
-    if (create_query.storage && create_query.storage->settings)
-    {
-        if (const Field * readonly_setting = create_query.storage->settings->changes.tryGet("table_readonly"))
-            return SettingFieldBool{*readonly_setting}.value;
-    }
-
-    return local_context->getReplicatedMergeTreeSettings()[MergeTreeSetting::table_readonly];
 }
 
 void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr local_context)
@@ -262,28 +248,6 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
             "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
-
-    /** `table_readonly` is not supported for `ReplicatedMergeTree`, and a converted table keeps the
-      * settings of the table it was converted from, so converting would produce a replicated table
-      * in the state the checks around it exist to make unrepresentable. Leave the table alone and
-      * say so: it keeps loading and serving as it is, `MODIFY SETTING table_readonly = 0` is allowed
-      * on it, and the flag stays in place, so the conversion happens on the next start once the
-      * setting is off. Throwing here would take the table down with the whole database load, and
-      * the setting could then not be changed at all. The setting can also come from the server's
-      * config defaults rather than the definition; an explicit `0` in the definition overrides them.
-      */
-    if (isTableReadonlyAsReplicated(create_query, getContext()))
-    {
-        LOG_ERROR(
-            log,
-            "Not converting table {} to replicated: it would have `table_readonly = 1` (from its definition or the server's "
-            "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
-            "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0`; the {} flag is kept, "
-            "so the conversion runs on the next start.",
-            backQuote(qualified_name.getFullName()),
-            CONVERT_TO_REPLICATED_FLAG_NAME);
-        return;
-    }
 
     checkReplicaPathIsSafe(create_query, getContext());
     checkReplicaPathExists(create_query, getContext());
@@ -483,6 +447,15 @@ static bool isPushSourceEngine(const String & engine_name)
     return push_source_engines.contains(engine_name);
 }
 
+/// Background work that deferring would cancel, or nothing to load, so these are never deferred.
+static bool isEagerEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> eager_engines
+        = {"Distributed", "Buffer", "MaterializedPostgreSQL", "Merge", "Memory"};
+
+    return eager_engines.contains(engine_name);
+}
+
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -500,6 +473,9 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     /// A lazy proxy would hide the `Alias` type from the target-table access checks, so the alias's
     /// metadata could be read without a grant on the target. Load it eagerly, as for views.
     if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
+        return false;
+
+    if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
@@ -582,7 +558,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    TransactionManager::increaseAsyncTablesLoadingJobNumber();
+    TransactionLog::increaseAsyncTablesLoadingJobNumber();
     std::scoped_lock lock(mutex);
     auto job = makeLoadJob(
         std::move(load_after),
@@ -590,7 +566,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         fmt::format("load table {}", name.getFullName()),
         [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
         {
-            SCOPE_EXIT(TransactionManager::decreaseAsyncTablesLoadingJobNumber(););
+            SCOPE_EXIT(TransactionLog::decreaseAsyncTablesLoadingJobNumber(););
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
         });
 
@@ -599,7 +575,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip);
     if (!rmt)
         return;
 
@@ -861,7 +837,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     }
 
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
     writeMetadataFile(
         db_disk,
@@ -918,7 +894,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
+    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true}, Documentation{
         .description = R"DOCS_MD(
 The `Ordinary` database engine is the legacy database engine. It stores each table's metadata in a separate file and has been superseded by [`Atomic`](/reference/engines/database-engines/atomic).
 

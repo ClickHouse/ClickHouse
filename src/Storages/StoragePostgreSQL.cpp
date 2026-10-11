@@ -34,6 +34,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 
+#include <Parsers/getInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -203,7 +204,7 @@ public:
             /// reject any outer filter under external_table_strict_query.
             rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
             query = buildQueryForExternalDatabaseSubquery(
-                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotesPostgreSQL);
+                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
         }
         else
         {
@@ -217,7 +218,7 @@ public:
                 query_info,
                 required_source_columns,
                 storage_snapshot->metadata->getColumns().getOrdinary(),
-                IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
+                IdentifierQuotingStyle::DoubleQuotes,
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
@@ -310,10 +311,8 @@ public:
             }
             else
             {
-                inserter = std::make_unique<PreparedInsert>(connection_holder->get(),
-                        remote_table_schema.empty() ? pqxx::table_path({remote_table_name})
-                                                    : pqxx::table_path({remote_table_schema, remote_table_name}),
-                        block.getNames(), on_conflict);
+                inserter = std::make_unique<PreparedInsert>(connection_holder->get(), remote_table_name,
+                                                            remote_table_schema, block.getColumnsWithTypeAndName(), on_conflict);
             }
         }
 
@@ -532,12 +531,14 @@ private:
 
     struct PreparedInsert : Inserter
     {
-        PreparedInsert(pqxx::connection & connection_, const pqxx::table_path & table, const Names & columns, const String & on_conflict_)
+        PreparedInsert(pqxx::connection & connection_, const String & table, const String & schema,
+                       const ColumnsWithTypeAndName & columns, const String & on_conflict_)
             : Inserter(connection_)
             , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
-            buf << "INSERT INTO " << connection.quote_table(table) << " (" << connection.quote_columns(columns) << ") VALUES (";
+            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
+            buf << " (";
             for (size_t i = 1; i <= columns.size(); ++i)
             {
                 if (i > 1)
@@ -832,7 +833,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
