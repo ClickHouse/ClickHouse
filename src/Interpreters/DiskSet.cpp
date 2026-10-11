@@ -98,7 +98,7 @@ void DiskSetImpl<Key>::finishWriting()
         rows,
         sizeof(Key),
         directory.size(),
-        getTotalByteCount(),
+        directory.allocatedBytes(),
         filters ? filters->allocatedBytes() : 0,
         filters ? filters->getBitsPerKey() : 0.0,
         file->getStat().compressed_size,

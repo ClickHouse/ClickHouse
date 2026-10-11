@@ -17,10 +17,11 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 /// Builds a `DiskSet` from columns of keys that arrive in any order and with repeats, and keeps
 /// each distinct key once. The finished set owns its temporary file independently of the builder.
 ///
-/// The size limits of the set apply to its distinct keys and to the memory of the finished set without its
-/// filters. Exceeding them throws in the `throw` overflow mode. In the `break` mode, the set keeps the
-/// smallest keys, compared as unsigned integers, whatever order they arrive in: the merge writes the keys in
-/// ascending order and stops after the batch of at most `max_block_size` keys that reaches the limits.
+/// The size limits of the set apply to its distinct keys and to their bytes (see
+/// `DiskSet::getTotalByteCount`). Exceeding them throws in the `throw` overflow mode. In the `break` mode,
+/// the set keeps the smallest keys, compared as unsigned integers, whatever order they arrive in: the merge
+/// writes the keys in ascending order and stops after the batch of at most `max_block_size` keys that reaches
+/// the limits.
 class DiskSetBuilder
 {
 public:

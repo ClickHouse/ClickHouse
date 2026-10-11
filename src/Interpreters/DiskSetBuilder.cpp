@@ -70,9 +70,9 @@ public:
     bool isTruncated() const override { return truncated; }
 
 private:
-    /// Checks the size limits, which apply to the distinct keys of the set and to the memory of its
-    /// directory. In the `break` mode, a set that reaches the limits keeps the keys that reached them. A set
-    /// in memory does the same with the block that reaches its limits.
+    /// Checks the size limits, which apply to the distinct keys of the set and to their bytes (see
+    /// `DiskSetImpl::getTotalByteCount`). In the `break` mode, a set that reaches the limits keeps the keys
+    /// that reached them. A set in memory does the same with the block that reaches its limits.
     void checkLimits();
 
     /// Checks the time limit of the query, which throws in the `throw` overflow mode and when the query is
