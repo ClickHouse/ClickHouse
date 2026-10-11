@@ -1,0 +1,218 @@
+---
+slug: /cloud/managed-postgres/migrations/clickhouse-cloud
+sidebarTitle: 'ClickHouse Cloud'
+title: Migrar a Managed Postgres con ClickHouse Cloud
+description: 'Aprende a migrar tu base de datos de PostgreSQL a ClickHouse Managed Postgres con el asistente de importación integrado de orígenes de datos de ClickHouse Cloud.'
+keywords: ['postgres', 'postgresql', 'replicación lógica', 'migración', 'transferencia de datos', 'managed postgres', 'orígenes de datos', 'importación']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+ClickHouse Cloud incluye un asistente de importación integrado que migra tu base de datos externa de PostgreSQL a un servicio de Managed Postgres. El asistente gestiona la conexión de origen, la exportación e importación del esquema, la configuración de replicación y la selección de tablas en cinco pasos guiados.
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Acceso a la base de datos PostgreSQL de origen con un usuario que tenga privilegios de replicación.
+* Un servicio de ClickHouse Managed Postgres como destino de la migración. Si aún no dispone de uno, consulte la [guía de inicio rápido](/es/products/managed-postgres/quickstart).
+* `pg_dump` y `psql` instalados en la máquina local. Ambos se incluyen con las herramientas estándar del cliente de PostgreSQL.
+
+<div id="considerations">
+  ## Consideraciones antes de migrar
+</div>
+
+* **Propagación de DDL**: la replicación continua (CDC) captura las operaciones DML y `ADD COLUMN`. Otros cambios de DDL, como `DROP COLUMN` y `ALTER COLUMN`, no se propagan y deben aplicarse manualmente en el sistema de destino.
+
+<div id="step-1-connect">
+  ## Paso 1: Conéctate a tu base de datos de origen
+</div>
+
+Abre la [consola de ClickHouse Cloud](https://clickhouse.cloud) y selecciona tu servicio de Managed Postgres.
+
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Tarjeta del servicio de Managed Postgres en la lista de servicios de ClickHouse Cloud" size="lg" border />
+
+En la barra lateral izquierda, haz clic en **fuentes de datos**.
+
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada de fuentes de datos en la barra lateral del servicio de Managed Postgres" size="lg" border />
+
+Haz clic en **Start import**.
+
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Página de fuentes de datos con el botón Start import" size="lg" border />
+
+Completa los datos de conexión de tu base de datos PostgreSQL de origen: host, puerto, nombre de usuario, contraseña y nombre de la base de datos. Habilita **TLS** si tu base de datos de origen lo requiere.
+
+Si necesitas una conexión privada a tu base de datos de origen, puedes usar **SSH tunneling** y proporcionar los datos de SSH necesarios. Esto permite que la migración se conecte de forma segura a bases de datos que no son accesibles públicamente.
+
+Elige un método de ingestión:
+
+* **Initial load + CDC** — copia los datos existentes y luego mantiene el destino sincronizado con los cambios en curso.
+* **Initial load only** — copia única, sin replicación continua.
+* **CDC only** — omite la copia inicial y replica solo los cambios nuevos a partir de este momento.
+
+<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Paso 1: formulario de conexión a la base de datos de origen con opciones de método de ingestión" size="lg" border />
+
+Haz clic en **Next**.
+
+<div id="step-2-export-schema">
+  ## Paso 2: Exporta el esquema de tu base de datos
+</div>
+
+El asistente muestra un comando `pg_dump` ya completado con los datos de conexión del origen. Ejecútalo en una terminal:
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Paso 2: comando `pg_dump` para exportar el esquema" size="lg" border />
+
+```shell
+pg_dump \
+  -h <source_host> \
+  -U <source_user> \
+  -d <source_database> \
+  --schema-only \
+  -f pg.sql
+```
+
+Esto crea `pg.sql` en el directorio actual.
+
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Salida de la terminal después de ejecutar pg_dump" size="lg" border />
+
+Haz clic en **Next**.
+
+<div id="step-3-import-schema">
+  ## Paso 3: Importa el esquema en tu servicio de Managed Postgres
+</div>
+
+Selecciona la base de datos de destino en el menú desplegable o haz clic en **Crear una base de datos nueva** para aprovisionar una.
+
+El asistente muestra un comando `psql` para aplicar el volcado del esquema a tu servicio de Managed Postgres. Ejecútalo en una terminal:
+
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Paso 3: comando psql para importar el esquema" size="lg" border />
+
+```shell
+psql \
+  -h <target_host> \
+  -p 5432 \
+  -U <target_user> \
+  -d <target_database> \
+  -f pg.sql
+```
+
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Salida de la terminal tras ejecutar la importación del esquema con psql" size="lg" border />
+
+Haz clic en **Siguiente**.
+
+<div id="step-4-ingestion-settings">
+  ## Paso 4: Configurar la ingestión
+</div>
+
+Especifique la publicación que se usará para la replicación lógica. Si deja este campo en blanco, se creará una publicación automáticamente.
+
+Expanda **Configuración avanzada de replicación** para ajustar el rendimiento:
+
+| Configuración                                   | Predeterminado | Descripción                                                  |
+| ----------------------------------------------- | -------------- | ------------------------------------------------------------ |
+| Intervalo de sincronización (segundos)          | 10             | Frecuencia con la que se consulta la ranura de replicación   |
+| Hilos en paralelo para la carga inicial         | 4              | Número de hilos para la fase de copia masiva                 |
+| Tamaño del lote de extracción                   | 100,000        | Filas recuperadas por lote de replicación                    |
+| Número de filas por partición en la instantánea | 100000         | Tamaño de la partición para instantáneas de tablas grandes   |
+| Número de tablas en paralelo en la instantánea  | 1              | Tablas de las que se toman instantáneas de forma concurrente |
+
+<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Paso 4: formulario de configuración de ingestión con opciones de publicación y replicación avanzada" size="lg" border />
+
+Haga clic en **Siguiente**.
+
+<div id="step-5-select-tables">
+  ## Paso 5: Seleccionar tablas
+</div>
+
+Selecciona las tablas que quieres replicar. Las tablas se agrupan por esquema. Selecciona tablas individuales o expande un esquema para seleccionarlas todas.
+
+<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Paso 5: selector de tablas agrupado por esquema con el botón Crear migración" size="lg" border />
+
+Haz clic en **Crear migración**.
+
+<div id="monitor">
+  ## Supervisar la migración
+</div>
+
+Después de crear la migración, la verá en **Fuentes de datos** con el estado **En ejecución**.
+
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Lista de fuentes de datos que muestra una migración en ejecución" size="lg" border />
+
+Haga clic en la migración para abrir la vista detallada. La pestaña **Tablas** muestra el progreso de la carga inicial de cada tabla, incluidas las filas procesadas, las particiones y el tiempo promedio por partición. La pestaña **Métricas** muestra el retraso de replicación y el rendimiento una vez que comienza CDC.
+
+<Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Vista detallada de la migración que muestra estadísticas de la carga inicial por tabla" size="lg" border />
+
+<div id="post-migration">
+  ## Tareas posteriores a la migración
+</div>
+
+Una vez completada la carga inicial y, si usa CDC, cuando el retraso de replicación sea casi nulo:
+
+**Valide los recuentos de filas.** Compruebe las tablas críticas tanto en el origen como en el destino antes de redirigir el tráfico:
+
+```sql
+SELECT COUNT(*) FROM public.orders;
+```
+
+**Detenga las escrituras en el origen.** Pause las escrituras de la aplicación. Para habilitar el modo de solo lectura durante la transición:
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+**Confirme que la replicación esté al día.** Compare la última fila del origen y del destino:
+
+```sql
+-- Ejecutar en el origen y en el destino
+SELECT MAX(id), MAX(updated_at) FROM public.orders;
+```
+
+**Restablezca las secuencias.** Alinee las secuencias con los valores máximos actuales de cada tabla:
+
+```sql
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+**Redirija el tráfico de la aplicación.** Dirija las operaciones de lectura y escritura a su servicio de Managed Postgres y supervise si se producen errores, violaciones de restricciones y problemas en el estado de la replicación.
+
+**Limpieza.**  Una vez que haya redirigido el tráfico y confirmado que el nuevo servicio está en buen estado, elimine la migración de **fuentes de datos**. Si usó CDC, elimine el slot de replicación del origen para liberar recursos:
+
+```sql
+SELECT pg_drop_replication_slot('<slot_name>');
+```
+
+<div id="next-steps">
+  ## Próximos pasos
+</div>
+
+* [Guía de inicio rápido de Managed Postgres](/es/products/managed-postgres/quickstart)
+* [Detalles de conexión de Managed Postgres](/es/products/managed-postgres/connection)
+* [FAQ de ClickPipes para Postgres](/es/integrations/clickpipes/postgres/faq)

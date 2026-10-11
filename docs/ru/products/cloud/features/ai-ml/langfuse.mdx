@@ -48,29 +48,29 @@ Langfuse использует только компоненты с открыт�
 
 ```mermaid
 flowchart TB
-    User["UI, API, SDKs"]
-    subgraph vpc["VPC"]
-        Web["Web Server<br/>(langfuse/langfuse)"]
-        Worker["Async Worker<br/>(langfuse/worker)"]
-        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Transactional Data)", pos: "b", w: 60, h: 60, constraint: "on" }
-        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Cache, Queue)", pos: "b", w: 60, h: 60, constraint: "on" }
-        ClickHouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "ClickHouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
-        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Raw events, multi-modal attachments)", pos: "b", w: 60, h: 60, constraint: "on" }
+    User["Интерфейс, API, SDKs"]
+    subgraph vpc ["VPC"]
+        Web["Веб-сервер<br/>(langfuse/langfuse)"]
+        Worker["Асинхронный воркер<br/>(langfuse/worker)"]
+        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Данные транзакций)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Кэш, очередь)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(Данные обсервабилити)", pos: "b", w: 60, h: 60, constraint: "on" }
+        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Необработанные события, мультимодальные вложения)", pos: "b", w: 60, h: 60, constraint: "on" }
     end
-    LLM["LLM API/Gateway<br/>(optional; BYO; can be same VPC or VPC-peered)"]
+    LLM["API/шлюз LLM<br/>(необязательно; BYO; может находиться в той же VPC или быть связан через VPC-пиринг)"]
 
     User --> Web
     Web --> S3
     Web --> Postgres
     Web --> Cache
-    Web --> ClickHouse
-    Web -..->|"optional for playground"| LLM
+    Web --> Clickhouse
+    Web -..->|"необязательно для Песочницы ClickHouse"| LLM
 
     Cache --> Worker
-    Worker --> ClickHouse
+    Worker --> Clickhouse
     Worker --> Postgres
     Worker --> S3
-    Worker -..->|"optional for evals"| LLM
+    Worker -..->|"необязательно для evals"| LLM
 ```
 
 <div id="features">

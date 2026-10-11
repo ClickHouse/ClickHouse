@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-在本指南中，你将学习如何借助 [chDB](/zh/chdb/index) (一款由 ClickHouse 驱动的快速进程内 SQL OLAP Engine) ，在 Marimo 笔记本 中探索 ClickHouse Cloud 上的数据集。
+在本指南中，你将学习如何借助 [chDB](/zh/products/chdb/index) (一款由 ClickHouse 驱动的快速进程内 SQL OLAP Engine) ，在 Marimo 笔记本 中探索 ClickHouse Cloud 上的数据集。
 
 **前置条件：**
 
@@ -101,7 +101,7 @@ Marimo 笔记本 以纯 Python 文件的形式存储，因此便于进行版本�
   ## 安装依赖项
 </div>
 
-在新单元中，导入所需的软件包：
+在新单元格中，导入所需的软件包：
 
 ```python
 import marimo as mo
@@ -112,10 +112,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 ```
 
-将鼠标悬停在单元上时，会看到出现两个带有 &quot;+&quot; 符号的圆圈。
-点击它们即可添加新的单元。
+将鼠标悬停在单元格上时，会看到出现两个带有 &quot;+&quot; 符号的圆圈。
+点击它们即可添加新的单元格。
 
-添加一个新单元，并运行一个简单的查询，检查是否已正确完成设置：
+添加一个新单元格，并运行一个简单的查询，检查是否已正确完成设置：
 
 ```python
 result = chdb.query("SELECT 'Hello ClickHouse from Marimo!'", "DataFrame")
@@ -214,7 +214,7 @@ Marimo 的一大优势在于其响应式执行模型。接下来，我们创建�
   ### 交互式城镇选择
 </div>
 
-在新的单元中，创建一个下拉列表，用于选择不同的城镇：
+在新的单元格中，创建一个下拉列表，用于选择不同的城镇：
 
 ```python
 town_selector = mo.ui.dropdown(
@@ -225,7 +225,7 @@ town_selector = mo.ui.dropdown(
 town_selector
 ```
 
-在另一个单元中，创建一个会根据城镇选择作出响应的查询。更改下拉列表时，此单元会自动重新执行：
+在另一个单元中，创建一个会根据城镇选择作出响应的查询。更改下拉菜单时，此单元会自动重新执行：
 
 ```python
 query_reactive = f"""
@@ -249,7 +249,7 @@ df_reactive
 
 现在创建一个图表，使其在更改城镇时自动更新。
 你可以将图表移到动态 DataFrame 上方，这样它会显示
-在带有下拉列表的单元下方。
+在带有下拉菜单的单元下方。
 
 ```python
 fig_reactive = px.line(
@@ -265,7 +265,7 @@ fig_reactive.update_layout(hovermode='x unified')
 fig_reactive
 ```
 
-现在，当你从下拉列表中选择一个城镇后，图表会动态更新：
+现在，当你从下拉菜单中选择一个城镇后，图表会动态更新：
 
 <Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Marimo 动态图表" />
 
@@ -313,16 +313,16 @@ WHERE town = 'LONDON'
 
 df_distribution = chdb.query(query_distribution, "DataFrame")
 
-# create an interactive box plot.
+# 创建交互式箱线图。
 fig_box = go.Figure()
 
 fig_box.add_trace(
     go.Box(
         y=df_distribution['price'],
         name=f'London {year_slider.value}',
-        boxmean='sd',  # Show mean and standard deviation
+        boxmean='sd',  # 显示均值和标准差
         marker_color='lightblue',
-        boxpoints='outliers'  # Show outlier points
+        boxpoints='outliers'  # 显示离群点
     )
 )
 

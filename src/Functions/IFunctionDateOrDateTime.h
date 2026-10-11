@@ -52,7 +52,7 @@ protected:
     /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
     bool acceptsIntervalArgument() const
     {
-        IntervalKind unused;
+        IntervalKind::Kind unused = IntervalKind::Kind::Second;
         return IntervalKind::tryParseFromNameOfFunctionExtractTimePart(getName(), unused);
     }
 
@@ -199,25 +199,6 @@ public:
                     ? is_monotonic
                     : is_not_monotonic;
         }
-    }
-
-    bool hasInformationAboutPreimage() const override
-    {
-        if constexpr (requires { Transform::hasPreimage(); })
-            return Transform::hasPreimage();
-
-        return false;
-    }
-
-    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
-    {
-        if constexpr (requires { Transform::hasPreimage(); })
-        {
-            if constexpr (Transform::hasPreimage())
-                return Transform::getPreimage(type, point);
-        }
-
-        return IFunction::getPreimage(type, point);
     }
 };
 
