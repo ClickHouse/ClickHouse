@@ -294,9 +294,10 @@ GLOBAL_ENTITY_SOURCES = [
     ("function", "system.functions"),
     ("named collection", "system.named_collections"),
     ("workload", "system.workloads"),
+    ("resource", "system.resources"),
 ]
 # Tests that never mention global-entity DDL cannot leak a global entity, so the
-# per-test leak query is skipped for them - it is one extra query over eight
+# per-test leak query is skipped for them - it is one extra query over nine
 # system tables per test, which is a measurable cost over a whole shard.  The
 # pattern is deliberately loose (matching more tests than strictly necessary is
 # only a small waste), and a test that composes the DDL dynamically and slips
@@ -338,6 +339,17 @@ def get_free_tcp_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+def get_global_entity_name_tokens(testcase_args):
+    # Tests name their global entities after either `CLICKHOUSE_TEST_UNIQUE_NAME` or
+    # `CLICKHOUSE_DATABASE` (e.g. `secret_user_${CLICKHOUSE_DATABASE}`). The database name is a
+    # usable token only when it was generated for this test: a database given with `--database`
+    # is shared by every test and could match unrelated entities.
+    tokens = [testcase_args.testcase_unique_name]
+    if not testcase_args.database:
+        tokens.append(testcase_args.testcase_database)
+    return tokens
 
 
 def find_global_entity_leaks(args, unique_names, timeout, log_comment):
@@ -2810,7 +2822,8 @@ class TestCase:
         testcase_args.testcase_zookeeper_prefix = testcase_zookeeper_prefix
         testcase_args.testcase_user_files = testcase_user_files
         if hasattr(self, "suite"):
-            self.suite.record_test_unique_name(testcase_unique_name)
+            for name in get_global_entity_name_tokens(testcase_args):
+                self.suite.record_test_unique_name(name)
 
         # Printed only in case of failures
         #
@@ -4740,7 +4753,7 @@ class TestCase:
             return
         leaked_entities = find_global_entity_leaks(
             args,
-            [args.testcase_unique_name],
+            get_global_entity_name_tokens(args),
             timeout,
             f"{args.testcase_basename}-{args.testcase_database}",
         )
