@@ -93,13 +93,14 @@ void DiskSetImpl<Key>::finishWriting()
     directory.setFileSize(file->finishWriting().compressed_size);
     LOG_TRACE(
         getLogger("DiskSet"),
-        "Created set on disk with {} keys of {} bytes, {} blocks, {} bytes of directory, {} bytes of filters, {} bytes in "
-        "temporary file {}",
+        "Created set on disk with {} keys of {} bytes, {} blocks, {} bytes of directory, {} bytes of filters with {:.2f} bits "
+        "per key, {} bytes in temporary file {}",
         rows,
         sizeof(Key),
         directory.size(),
         getTotalByteCount(),
         filters ? filters->allocatedBytes() : 0,
+        filters ? filters->getBitsPerKey() : 0.0,
         file->getStat().compressed_size,
         file->describeFilePath());
 }

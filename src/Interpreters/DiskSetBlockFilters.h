@@ -54,6 +54,9 @@ public:
     /// Returns the memory that `create` reserves with the same arguments, or 0 when it creates no filters.
     static size_t estimateBytes(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes);
 
+    /// Returns the bits of the filters per key: 8, or fewer when they fit a smaller budget.
+    double getBitsPerKey() const { return static_cast<double>(bits_per_1024_keys) / 1024; }
+
     /// Adds the filter of the next block of the set, which holds `block_keys`.
     void addBlock(std::span<const Key> block_keys);
 
