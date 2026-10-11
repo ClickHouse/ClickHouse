@@ -1,0 +1,6 @@
+patch_stores_t	1
+merge_algorithm	Vertical
+1	('xx','yy')
+2	('c','d')
+3	('xx','yy')
+4	('g','h')

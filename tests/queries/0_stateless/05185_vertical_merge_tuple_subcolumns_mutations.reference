@@ -1,0 +1,65 @@
+=== text index on t.x flattens and rebuilds ===
+2
+1	('hello',1)
+2	('world',2)
+3	('hello',3)
+4	('foobar',4)
+1
+
+=== ALTER UPDATE t then Vertical merge, including Compact patch ===
+Compact
+merge_algorithm	Vertical
+1	('upd',99)
+2	('b',2)
+3	('c',3)
+4	('d',4)
+1
+
+=== DROP / MODIFY tuple element ===
+1	('a','b')
+2	('d','e')
+3	('g','h')
+1
+1	('a',10)
+2	('b',20)
+3	('c',30)
+1
+
+=== RENAME t to t2 then Vertical merge ===
+1	('a',1)
+2	('b',2)
+1	a	1
+2	b	2
+1
+
+=== expired Tuple is not resurrected by leaf defaults ===
+1	('',0)
+2	('',0)
+1
+
+=== projection on t pins t into merging_columns ===
+1	('a',1)
+2	('b',2)
+3	('c',3)
+4	('d',4)
+1
+1
+
+=== index on t.x while ORDER BY t: rebuilt on horizontal writer ===
+1
+1
+standalone_skip_index_materialized
+1
+1
+1
+packed_skip_index_materialized
+1
+
+=== lightweight delete + Vertical ===
+1	('a',1)
+3	('c',3)
+5	('e',5)
+1	('a',1)
+3	('c',3)
+5	('e',5)
+1

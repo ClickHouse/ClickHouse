@@ -1,0 +1,11 @@
+=== minmax on t.s with ORDER BY k flattens and rebuilds ===
+1
+1	('a',1)
+2	('b',2)
+3	('c',3)
+4	('d',4)
+1
+merge_algorithm
+Vertical
+skip_index_materialized
+1
