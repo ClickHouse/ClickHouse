@@ -590,3 +590,25 @@ TEST(JoinBlockNestedLoopPlanSetting, GatedOnThePlanVersion)
     EXPECT_FALSE(JoinSettings(serializeAt(makeJoinSettings({}), pre_block_nested_loop_version), pre_block_nested_loop_version)
                      .allow_block_nested_loop_join);
 }
+
+/// `sorted_merge` and `parallel_sorted_merge` are removed from `join_algorithm` towards a peer that does not know
+/// them, so the join falls through to the next algorithm in the list there, and a list of only these is refused.
+TEST(JoinSortedMergePlanSetting, GatedOnThePlanVersion)
+{
+    constexpr UInt64 pre_sorted_merge_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORTED_MERGE_JOIN - 1;
+    const auto with_fallback = makeJoinSettings({{"join_algorithm", "sorted_merge,parallel_sorted_merge,hash"}});
+
+    auto algorithms_at = [](const JoinSettings & join_settings, UInt64 version)
+    {
+        return JoinSettings(serializeAt(join_settings, version), version).join_algorithms;
+    };
+
+    EXPECT_EQ(
+        algorithms_at(with_fallback, current_version),
+        (std::vector<JoinAlgorithm>{JoinAlgorithm::SORTED_MERGE, JoinAlgorithm::PARALLEL_SORTED_MERGE, JoinAlgorithm::HASH}));
+    EXPECT_EQ(algorithms_at(with_fallback, pre_sorted_merge_version), std::vector<JoinAlgorithm>{JoinAlgorithm::HASH});
+
+    const auto alone = makeJoinSettings({{"join_algorithm", "sorted_merge,parallel_sorted_merge"}});
+    EXPECT_EQ(algorithms_at(alone, current_version).size(), 2u);
+    EXPECT_THROW(serializeAt(alone, pre_sorted_merge_version), Exception);
+}

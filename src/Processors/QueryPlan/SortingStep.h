@@ -146,6 +146,9 @@ public:
     void convertToScatteredFullSort(size_t partitions)
     {
         partition_by_description = result_description;
+        /// The step may have been a `FinishSorting` (an in-order read or a nested merge join below it);
+        /// the scattered full sort does not use the prefix.
+        prefix_description.clear();
         type = Type::Full;
         scatter_partitions = partitions;
     }
