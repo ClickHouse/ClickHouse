@@ -10,6 +10,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Core/Settings.h>
 #include <Core/callOnTypeIndex.h>
@@ -1170,7 +1171,15 @@ private:
                 }
             });
 
-            result_null_mask = executeImpl(temporary_columns, std::make_shared<DataTypeUInt8>(), input_rows_count);
+            result_null_mask = materializeColumnIfConst(executeImpl(temporary_columns, std::make_shared<DataTypeUInt8>(), input_rows_count));
+
+            /// The NULLs of the branches may be not selected, then the result has no NULLs as well.
+            if (const auto * result_null_mask_vector = typeid_cast<const ColumnUInt8 *>(result_null_mask.get()))
+            {
+                const auto & result_null_mask_data = result_null_mask_vector->getData();
+                if (memoryIsZero(result_null_mask_data.data(), 0, result_null_mask_data.size()))
+                    result_null_mask = nullptr;
+            }
         }
 
         ColumnPtr result_nested_column;
@@ -1197,8 +1206,7 @@ private:
         if (!result_null_mask)
             return ColumnNullable::create(materializeColumnIfConst(result_nested_column));
 
-        return ColumnNullable::create(
-            materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
+        return ColumnNullable::create(materializeColumnIfConst(result_nested_column), result_null_mask);
     }
 
     ColumnPtr executeForNullThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
