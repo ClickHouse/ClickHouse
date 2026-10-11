@@ -1,0 +1,6 @@
+trivial limit keeps full grouping
+1
+reject max_rows_to_group_by any
+reject max_rows_to_group_by break
+throw mode still allowed
+1
