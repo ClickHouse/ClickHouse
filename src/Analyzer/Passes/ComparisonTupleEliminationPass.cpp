@@ -20,6 +20,28 @@ namespace DB
 namespace
 {
 
+/// Whether `resolveFunction` could replace the function with a constant.
+bool canBeConstantFolded(const FunctionNode & function_node)
+{
+    const auto & function = function_node.getFunction();
+    if (!function->isSuitableForConstantFolding())
+        return false;
+
+    bool all_arguments_constant = true;
+    for (const auto & argument : function_node.getArguments().getNodes())
+    {
+        /// `resolveFunction` folds through `__getScalar` with the scalar's value, which is not visible here.
+        if (const auto * argument_function = argument->as<FunctionNode>(); argument_function && argument_function->getFunctionName() == "__getScalar")
+            return true;
+        all_arguments_constant &= argument->as<ConstantNode>() != nullptr;
+    }
+
+    if (all_arguments_constant)
+        return true;
+
+    return function->getConstantResultForNonConstArguments(function_node.getArgumentColumns(), function->getResultType()) != nullptr;
+}
+
 class ComparisonTupleEliminationPassVisitor : public InDepthQueryTreeVisitorWithContext<ComparisonTupleEliminationPassVisitor>
 {
 public:
@@ -136,6 +158,8 @@ private:
         for (size_t i = 0; i < lhs_tuple_function_arguments_nodes_size; ++i)
         {
             auto equals_function = makeEqualsFunction(lhs_tuple_function_arguments_nodes[i], rhs_tuple_function_arguments_nodes[i]);
+            if (!equals_function)
+                return {};
             tuple_arguments_equals_functions.push_back(std::move(equals_function));
         }
 
@@ -185,6 +209,8 @@ private:
         {
             auto equals_argument_constant_node = std::make_shared<ConstantNode>(constant_tuple[i], tuple_data_type_elements[i]);
             auto equals_function = makeEqualsFunction(function_arguments_nodes[i], std::move(equals_argument_constant_node));
+            if (!equals_function)
+                return {};
             tuple_arguments_equals_functions.push_back(std::move(equals_function));
         }
 
@@ -226,6 +252,10 @@ private:
         comparison_function->markAsOperator();
 
         resolveOrdinaryFunctionNodeByName(*comparison_function, comparison_function->getFunctionName(), getContext());
+
+        /// A remote server analyzes the query again and folds such a comparison, so its name would differ there.
+        if (canBeConstantFolded(*comparison_function))
+            return {};
 
         return comparison_function;
     }
