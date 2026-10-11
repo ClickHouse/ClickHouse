@@ -18,6 +18,8 @@ COMPACT="min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 10000000
 WIDE="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0"
 # The marks are small, so that each marks file consists of several compressed blocks.
 SMALL_MARKS="index_granularity = 100, marks_compress_block_size = 256"
+# The data is in small compressed blocks, so that each data file consists of several of them.
+SMALL_BLOCKS="min_compress_block_size = 1024, max_compress_block_size = 1024"
 
 # Every case is a table of its own, so that all of them are created by one run of `clickhouse-local`
 # and loaded by another one.
@@ -45,12 +47,17 @@ TABLES="
     compact_missing_data_empty_checksums
     wide_missing_dynamic_data_no_substreams_no_checksums
     wide_missing_dynamic_data_no_substreams_empty_checksums
+    wide_torn_data_no_checksums
+    compact_torn_data_no_checksums
+    wide_torn_data_empty_checksums
 "
 
 table_settings()
 {
     case "$1" in
         wide_no_checksums|wide_empty_checksums) echo "${WIDE}" ;;
+        wide_several_blocks_*|wide_torn_data_*) echo "${WIDE}, ${SMALL_MARKS}, ${SMALL_BLOCKS}" ;;
+        compact_several_blocks_*|compact_torn_data_*) echo "${COMPACT}, ${SMALL_MARKS}, ${SMALL_BLOCKS}" ;;
         wide_*) echo "${WIDE}, ${SMALL_MARKS}" ;;
         compact_*) echo "${COMPACT}, ${SMALL_MARKS}" ;;
         *) echo "${COMPACT}" ;;
@@ -110,8 +117,8 @@ column_file()
     awk -F '\t' -v table="$1" -v substream="$2" '$1 == table && $2 == substream { print $3 }' "${COLUMN_FILES}"
 }
 
-# A compressed marks file cut by a crash right after its first compressed block still decompresses,
-# only to fewer marks.
+# A compressed file cut by a crash right after its first compressed block still decompresses, only to
+# fewer marks or rows.
 truncate_to_first_block()
 {
     local file
@@ -119,7 +126,7 @@ truncate_to_first_block()
     do
         if [ ! -f "${file}" ]
         then
-            echo "No marks file ${file}, the part has: $(ls "$(dirname "${file}")")" >&2
+            echo "No file ${file}, the part has: $(ls "$(dirname "${file}")")" >&2
             continue
         fi
         local compressed_size
@@ -173,6 +180,11 @@ rm "$(part_path compact_missing_data_empty_checksums)/data.bin"
 # directory are checked for their data files.
 rm "$(part_path wide_missing_dynamic_data_no_substreams_no_checksums)/$(column_file wide_missing_dynamic_data_no_substreams_no_checksums d.UInt64).bin"
 rm "$(part_path wide_missing_dynamic_data_no_substreams_empty_checksums)/$(column_file wide_missing_dynamic_data_no_substreams_empty_checksums d.UInt64).bin"
+# A data file cut by a crash right after its first compressed block, while the marks are intact: the
+# marks of the rest of the rows point past its end.
+truncate_to_first_block "$(part_path wide_torn_data_no_checksums)/$(column_file wide_torn_data_no_checksums v).bin"
+truncate_to_first_block "$(part_path compact_torn_data_no_checksums)/data.bin"
+truncate_to_first_block "$(part_path wide_torn_data_empty_checksums)/$(column_file wide_torn_data_empty_checksums v).bin"
 for table in ${TABLES}
 do
     if [[ ${table} == *_no_substreams_* ]]

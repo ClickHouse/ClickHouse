@@ -911,6 +911,11 @@ protected:
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 
+    /// Checks that no mark of `marks_file_name` points past the end of `data_file_name`. Missing or
+    /// regenerated checksums cannot vouch for a data file torn by a crash: if it was cut at a compressed
+    /// block boundary, it still decompresses, only to fewer rows, and the marks of the rest point beyond it.
+    void checkDataFileCoversMarks(const String & data_file_name, const String & marks_file_name, size_t num_columns_in_mark) const;
+
 private:
     String mutable_name;
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};

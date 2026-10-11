@@ -1599,12 +1599,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         if (!parent_part)
             loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
 
-        /// Kept out of the dedicated arena scope above on purpose: the size computation is heavy
-        /// short-lived churn (a sample column per column/substream). The finished, part-lifetime maps
-        /// are re-homed into the arena inside `calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked`.
-        if (!(*storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
-            calculateColumnsAndSecondaryIndicesSizesOnDisk();
-
         /// A broken projection does not break its part on purpose, and this check tolerates one by
         /// itself: `loadProjections` above marks such a projection broken instead of failing, and the
         /// file-size loop of `checkConsistencyBase` does the same for the `.proj` entry of the part's
@@ -1614,6 +1608,14 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// rows disappear from every query - with nothing detached to recover them from.
         if (check_consistency)
             checkConsistency(require_columns_checksums);
+
+        /// Kept out of the dedicated arena scope above on purpose: the size computation is heavy
+        /// short-lived churn (a sample column per column/substream). The finished, part-lifetime maps
+        /// are re-homed into the arena inside `calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked`.
+        /// It runs after `checkConsistency`: computing the size of a `Dynamic` column reads the column,
+        /// which fails with a less helpful error on a broken part.
+        if (!(*storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
+            calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
         loadDefaultCompressionCodec();
     }
@@ -2547,9 +2549,14 @@ void IMergeTreeDataPart::loadRowsCount()
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No count.txt in part {}", name);
 
 #ifndef NDEBUG
+        /// The sizes of columns are taken from the checksums, and a `Dynamic` column is even read to
+        /// compute them. Missing or regenerated checksums cannot vouch for the files, so leave a broken
+        /// part to `checkConsistency`, which tells what is wrong with it.
         /// columns have to be loaded
         for (const auto & column : getColumns())
         {
+            if (!hasTrustworthyChecksums())
+                break;
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber()
                 && !column.type->haveSubtypes()
@@ -3419,6 +3426,47 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
 void IMergeTreeDataPart::doCheckConsistency(bool /* require_part_metadata */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", getType().toString());
+}
+
+void IMergeTreeDataPart::checkDataFileCoversMarks(const String & data_file_name, const String & marks_file_name, size_t num_columns_in_mark) const
+{
+    size_t marks_count = index_granularity->getMarksCount();
+    if (marks_count == 0)
+        return;
+
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    MergeTreeMarksLoader marks_loader(
+        info_for_read,
+        /*mark_cache=*/ nullptr,
+        marks_file_name,
+        marks_count,
+        index_granularity_info,
+        /*save_marks_in_cache=*/ false,
+        storage.getContext()->getReadSettings(),
+        /*load_marks_threadpool=*/ nullptr,
+        num_columns_in_mark,
+        storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]);
+    auto marks = marks_loader.loadMarks();
+
+    /// The marks of all columns of a compact part point into the same file, so take the farthest one.
+    MarkInCompressedFile farthest_mark{0, 0};
+    for (size_t mark = 0; mark < marks_count; ++mark)
+        for (size_t column = 0; column < num_columns_in_mark; ++column)
+            farthest_mark = std::max(farthest_mark, marks->getMark(mark, column));
+
+    /// A mark into a compressed block needs that block in the file. A mark right at the end of the file
+    /// with nothing to decompress is the final mark of a stream whose last block was already flushed.
+    UInt64 data_file_size = getDataPartStorage().getFileSize(data_file_name);
+    if (farthest_mark.offset_in_compressed_file > data_file_size
+        || (farthest_mark.offset_in_compressed_file == data_file_size && farthest_mark.offset_in_decompressed_block > 0))
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Part {} is broken: data file {} has {} bytes, but its marks in {} point to {}",
+            getDataPartStorage().getFullPath(),
+            data_file_name,
+            data_file_size,
+            marks_file_name,
+            farthest_mark.toString());
 }
 
 void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metadata) const

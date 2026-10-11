@@ -343,6 +343,8 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name),
                     marks_payload_size, expected_payload_size);
+
+            checkDataFileCoversMarks(DATA_FILE_NAME_WITH_EXTENSION, mrk_file_name, num_marks_in_granule);
         }
     }
 }

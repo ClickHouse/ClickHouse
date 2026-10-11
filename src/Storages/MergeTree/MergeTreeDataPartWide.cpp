@@ -570,6 +570,8 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                         throw Exception(
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+
+                    checkDataFileCoversMarks(*stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1);
                 }
             }
         }
@@ -578,8 +580,9 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             /// Fallback: check that all marks are nonempty and have the same size.
             std::optional<UInt64> marks_size;
             NameSet checked_marks_files;
-            auto check_marks_file = [&](const String & file_path)
+            auto check_marks_file = [&](const String & stream_name)
             {
+                auto file_path = stream_name + marks_file_extension;
                 if (!checked_marks_files.insert(file_path).second)
                     return;
 
@@ -602,6 +605,8 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                     throw Exception(
                         ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                         "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+
+                checkDataFileCoversMarks(stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1);
             };
 
             /// Dynamic streams are not enumerated here, so a sample column with the dynamic structure is not
@@ -622,7 +627,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                         return;
 
                     check_data_file_exists(*stream_name);
-                    check_marks_file(*stream_name + marks_file_extension);
+                    check_marks_file(*stream_name);
                 }, data);
             }
 
@@ -655,7 +660,8 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 if (!file_name.ends_with(DATA_FILE_EXTENSION))
                     continue;
 
-                String marks_file_name = file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION)) + marks_file_extension;
+                String stream_name = file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION));
+                String marks_file_name = stream_name + marks_file_extension;
                 if (!file_names.contains(marks_file_name))
                     throw Exception(
                         ErrorCodes::NO_FILE_IN_DATA_PART,
@@ -664,7 +670,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                         marks_file_name,
                         file_name);
 
-                check_marks_file(marks_file_name);
+                check_marks_file(stream_name);
             }
         }
     }
