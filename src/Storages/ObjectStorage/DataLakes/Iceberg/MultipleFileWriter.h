@@ -38,6 +38,9 @@ public:
 
     UInt64 getResultBytes() const;
 
+    UInt64 getCurrentFileRows() const;
+    UInt64 getCurrentFileOnDiskBytes() const;
+
     const std::vector<Iceberg::IcebergPathFromMetadata> & getDataFiles() const
     {
         return data_file_names;
