@@ -18,11 +18,11 @@ struct GetSetElementParams
     bool forbid_unknown_enum_values = false;
 };
 
-/// The key columns that `IN` compares separately for a left operand of this type. A plain `Tuple` with more than
-/// one element is unpacked into one key column per element, so a NULL element of a member never matches with
-/// `transform_null_in = 0`. Anything else is one key whose NULL fields are ordinary values: an empty or
-/// single-element tuple, and a `Nullable(Tuple(...))`, because the set is built as a single `Nullable(Tuple(...))`
-/// column anyway.
+/// The key columns that `IN` compares separately for a left operand of this type. A plain `Tuple` with more
+/// than one element is unpacked into one key column per element, so a NULL element of a member never matches
+/// with `transform_null_in = 0`. Anything else is one key whose NULL fields are ordinary values: an empty or
+/// single-element tuple, and a `Nullable(Tuple(...))`, because the set is built as a single
+/// `Nullable(Tuple(...))` column anyway.
 DataTypes getInKeyColumnTypes(const DataTypePtr & lhs_type);
 
 /** Get set elements for constant part of IN subquery.

@@ -490,8 +490,9 @@ ASTPtr makeNonConstantInReplacement(
 
     ASTPtr result = has_function;
     /// `IN` compares the columns of a multi-column key separately, and with `transform_null_in = 0` a NULL
-    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match. Guard
-    /// the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are values.
+    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match.
+    /// Guard the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are
+    /// values.
     if (!inFunctionComparesNulls(node.name) && left_operand_key_column_count > 1)
         result = makeASTFunction(
             "and",

@@ -205,8 +205,8 @@ ColumnsWithTypeAndName createBlockFromCollection(
 
         /// For `Nullable(Tuple(...))` we process tuple members element-by-element:
         /// - to correctly skip unknown enum literals when `validate_enum_literals_in_operators = 0`
-        /// - to skip members with a NULL field that the key's non-nullable field cannot hold; a NULL field that the
-        ///   key can hold is part of the key value in either `transform_null_in` mode, as in `Set`
+        /// - to skip members with a NULL field that the key's non-nullable field cannot hold; a NULL field
+        ///   that the key can hold is part of the key value in either `transform_null_in` mode, as in `Set`
         const auto * lhs_nullable = typeid_cast<const DataTypeNullable *>(lhs_type.get());
         const auto * lhs_tuple = lhs_nullable ? typeid_cast<const DataTypeTuple *>(lhs_nullable->getNestedType().get()) : nullptr;
 
@@ -650,15 +650,17 @@ DataTypes getInKeyColumnTypes(const DataTypePtr & lhs_type)
 /// Format: lhs IN rhs
 /// Explanation of the setting: `transform_null_in`. First of all, it is only applicable if the lhs is nullable.
 /// Then if lhs is nullable and `transform_null_in` is true, then NULLs from rhs are inserted into the result set as well.
-/// Whereas, if `transform_null_in` is false, we pretend NULLs are not present in rhs at all: a NULL member, or a NULL
-/// element of a member of a multi-column key (a plain `Tuple` lhs with several elements is unpacked into one key
-/// column per element). A NULL field of a `Nullable(Tuple)` or single-element tuple key is part of the key value.
+/// Whereas, if `transform_null_in` is false, we pretend NULLs are not present in rhs at all: a NULL member,
+/// or a NULL element of a member of a multi-column key (a plain `Tuple` lhs with several elements is
+/// unpacked into one key column per element). A NULL field of a `Nullable(Tuple)` or single-element tuple
+/// key is part of the key value.
 /// If `transform_null_in` is false, then `SELECT NULL IN (NULL, 1)` returns NULL, otherwise it returns true.
 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
     const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params)
 {
-    /// A `Nullable(Tuple(...))` stays a single value and is handled in the createBlockFromCollection() fast path.
+    /// A `Nullable(Tuple(...))` stays a single value and is handled in the createBlockFromCollection() fast
+    /// path.
     DataTypes lhs_unpacked_types = getInKeyColumnTypes(lhs_expression_type);
 
     const auto * lhs_nullable_type = typeid_cast<const DataTypeNullable *>(lhs_expression_type.get());
