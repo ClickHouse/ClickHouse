@@ -420,7 +420,6 @@ IProcessor::Status AffinityResizeProcessor::prepare(const UpdatedInputPorts & up
             input_status[input] = InputStatus::HasData;
     }
 
-    /// Each stream feeds its own output.
     for (auto * input_port : updated_inputs)
     {
         size_t stream = input_index.at(input_port);
@@ -476,8 +475,7 @@ IProcessor::Status AffinityResizeProcessor::prepare(const UpdatedInputPorts & up
         return Status::Finished;
     }
 
-    /// Ask an input for data only when an output it may feed needs it, as a direct connection would:
-    /// a stream must not read ahead of its own consumer (it would, for example, check a staler top-K threshold).
+    /// Ask an input for data only when an output it may feed needs it: a stream must not read ahead of its own consumer.
     bool has_waiting_output = false;
     bool has_waiting_unpaired_output = false;
     for (size_t output = 0; output < output_ports.size(); ++output)

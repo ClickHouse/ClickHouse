@@ -130,11 +130,9 @@ private:
     std::vector<Port::Data> abandoned_chunks;
 };
 
-/// N inputs to N outputs, input i paired with output i. While input i is not finished, output i takes
-/// chunks only from it, and input i is asked for data only when an output it may feed needs data, so
-/// equally loaded streams run as without a resize. An output whose input has finished takes chunks
-/// from the other inputs, and a chunk of an input whose output has finished goes to any output that
-/// needs data, so the work of a stream that got much more data is spread once the others run out.
+/// N inputs to N outputs, input i paired with output i. While input i is not finished, output i takes chunks only from it,
+/// and input i is asked for data only when an output it may feed needs data. An output whose input has finished takes
+/// chunks of the other inputs, and a chunk of an input whose output has finished goes to any output that needs data.
 class AffinityResizeProcessor final : public IProcessor
 {
 public:
