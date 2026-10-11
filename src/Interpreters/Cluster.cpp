@@ -13,6 +13,7 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/DNSResolver.h>
+#include <Common/PortUtils.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
@@ -122,10 +123,13 @@ Cluster::Address::Address(
     proto_send_chunked = config.getString(config_prefix + ".proto_caps.send", "notchunked");
     proto_recv_chunked = config.getString(config_prefix + ".proto_caps.recv", "notchunked");
 
+    /// The port this server actually listens on: `port_offset` shifts the local listeners, so both the
+    /// port a replica inherits when it omits `<port>` and the port used for locality detection must
+    /// carry it. An explicit `<port>` is taken as is.
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
-    auto default_port = config.getInt(port_type, 0);
+    const UInt16 bound_port = applyPortOffset(static_cast<UInt16>(config.getInt(port_type, 0)), getPortOffsetFromConfig(config));
 
-    port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
+    port = static_cast<UInt16>(config.getInt(config_prefix + ".port", bound_port));
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
 
@@ -147,7 +151,7 @@ Cluster::Address::Address(
     /// in with the default value regardless (see `LocalServer::processConfig`). The port a replica
     /// inherits from the top-level `tcp_port` - the shape of the built-in `remote_servers.default`
     /// cluster - therefore says nothing about this process, exactly like an explicit `<port>`.
-    is_local = !treat_local_port_as_remote && isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    is_local = !treat_local_port_as_remote && isLocal(bound_port);
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.

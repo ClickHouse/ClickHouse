@@ -26,6 +26,7 @@ node_offset = cluster.add_instance(
         "configs/config.d/ports_offset.xml",
         "configs/config.d/port_offset.xml",
         "configs/config.d/secure_discovery.xml",
+        "configs/config.d/remote_servers.xml",
         "configs/server.crt",
         "configs/server.key",
         "configs/dhparam.pem",
@@ -303,6 +304,29 @@ def test_port_offset_replicated_database_replica_is_local(start_cluster):
         )
     finally:
         node_offset.query("DROP DATABASE db_port_offset SYNC")
+
+
+def test_port_offset_remote_servers_use_bound_port(start_cluster):
+    """A static `remote_servers` cluster follows the port the server actually bound.
+
+    A replica that omits `<port>` inherits the local `tcp_port`, which the offset shifts
+    from `8900` to `9000`, and an explicit `<port>9000</port>` names the shifted listener,
+    so in both cases the replica is the server itself: it is reported as local and queries
+    through the cluster reach it.
+    """
+    for name in ["implicit_port", "explicit_port"]:
+        assert (
+            node_offset.query(
+                f"SELECT port, is_local FROM system.clusters WHERE cluster = '{name}'"
+            ).strip()
+            == "9000\t1"
+        ), name
+        assert (
+            node_offset.query(
+                f"SELECT * FROM cluster('{name}', system.one) SETTINGS prefer_localhost_replica = 0"
+            ).strip()
+            == "0"
+        ), name
 
 
 def test_port_offset_embedded_keeper_client_uses_shifted_port(start_cluster):
