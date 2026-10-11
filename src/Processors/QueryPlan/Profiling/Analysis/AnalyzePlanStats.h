@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Profiling/Analysis/StepStatsAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepStatsModel.h>
 #include <Processors/QueryPlan/Profiling/Time/StepIntervalTimings.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -45,6 +46,14 @@ public:
     /// Empty when the work intervals were not collected, that is without the `time` setting.
     std::optional<ExecutionTimeBreakdown> executionTimeBreakdown() const;
 
+    /// The analysis of one step, format-neutral: the ASCII rendering below and the JSON one in
+    /// `StepStatisticsJSONPrinter` are two readings of this. Must run while the pipeline is alive.
+    AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
+
+    /// How long the query executed, and the thread count that caps how parallel any stage could be.
+    UInt64 getExecutionTimeNs() const { return execution_query_time_ns; }
+    UInt64 getMaxThreads() const { return max_num_threads_per_query; }
+
 private:
     void collectIOStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const StepProfiler & step_profiler, const Processors & processors);
@@ -52,7 +61,6 @@ private:
     void computeJoinBranchCosts(const QueryPlan & plan);
 
     StepStatsContext makeContext(const IQueryPlanStep * step) const;
-    AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
     void renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
 
     StatsByStep stats_by_step;
