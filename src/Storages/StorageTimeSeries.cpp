@@ -480,26 +480,32 @@ void StorageTimeSeries::drop()
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
     /// Running synchronous DROP from that task leads to deadlock.
-    dropInnerTableIfAny(/* sync= */ false, getContext());
+    /// No DDL guard is taken here, so the drop task does not wait for DDL queries.
+    dropInnerTables(/* sync= */ false, getContext(), /* need_ddl_guard= */ false);
 }
 
 void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
+    dropInnerTables(sync, local_context, /* need_ddl_guard= */ true);
+}
+
+void StorageTimeSeries::dropInnerTables(bool sync, ContextPtr local_context, bool need_ddl_guard)
+{
     if (!hasInnerTables())
         return;
 
+    auto table_id = getStorageID();
     for (auto target_kind : getTargetKinds())
     {
         if (isInnerTable(target_kind))
         {
-            if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
-            {
-                /// DDLGuards must be locked in order of increasing table name, so the inner guard
-                /// may be requested only when this table's name sorts first.
-                bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
+            auto inner_table_id = tryGetTargetTableID(target_kind, local_context);
+            /// A table that is not attached, e.g. during `SYSTEM RESTART REPLICA`, is guarded by its name from the definition.
+            if (!inner_table_id && need_ddl_guard)
+                inner_table_id = StorageID(table_id.database_name, getTimeSeriesInnerTableName(target_kind, table_id, getVersion()));
+            if (inner_table_id)
                 InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, inner_table_id,
-                                                    sync, /* ignore_sync_setting= */ true, may_lock_ddl_guard);
-            }
+                                                       sync, /* ignore_sync_setting= */ true, need_ddl_guard);
         }
     }
 }
@@ -543,7 +549,7 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
             /// again, which is safe: TRUNCATE is idempotent.
             InterpreterDropQuery::executeDropQuery(
                 ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true,
-                /* ignore_sync_setting= */ false, /* need_ddl_guard= */ false, /* propagate_metadata_transaction= */ false);
+                /* ignore_sync_setting= */ false, /* need_ddl_guard= */ true, /* propagate_metadata_transaction= */ false);
         }
     }
 }

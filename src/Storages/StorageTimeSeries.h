@@ -153,6 +153,8 @@ private:
     /// Returns the target of the given kind or null if this table has no such target.
     const Target * tryGetTarget(ViewTarget::Kind target_kind) const;
 
+    void dropInnerTables(bool sync, ContextPtr local_context, bool need_ddl_guard);
+
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
