@@ -641,8 +641,18 @@ bool WorkloadEntityStorageBase::removeEntity(
 
         // Only own entities can be removed; an entity stored only in an inner layer is read-only here
         const bool inherited = inherited_entities.contains(entity_name);
-        if (!own_entities.contains(entity_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
+        // The own entity must be of the requested kind: an own entity of the other kind may be shadowed by name
+        auto own_it = own_entities.find(entity_name);
+        if (own_it != own_entities.end() && getEntityType(own_it->second) != entity_type)
+            own_it = own_entities.end();
+        if (own_it == own_entities.end())
+        {
+            if (auto it = inherited_entities.find(entity_name); it != inherited_entities.end() && getEntityType(it->second) == entity_type)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to remove workload entity '{}' that is stored in read-only {} storage", entity_name, next_storage->getName());
+            if (throw_if_not_exists)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} '{}' doesn't exist", entity_type == WorkloadEntityType::Resource ? "Resource" : "Workload", entity_name);
+            return false;
+        }
 
         // Referenced by visible entities or by own entities (shadowed ones become visible again later).
         // An own entity shadowed by name is not the target of visible references: they reach the inherited one.

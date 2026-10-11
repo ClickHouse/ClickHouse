@@ -2675,6 +2675,34 @@ TEST(SchedulerWorkloadResourceManager, ShadowingByName)
     EXPECT_FALSE(t.storage.has("res"));
 }
 
+// DROP addresses the own entity of the requested kind only: an own entity of the other kind shadowed by name is
+// not removed by it.
+TEST(SchedulerWorkloadResourceManager, DropChecksKindOfShadowedEntity)
+{
+    ResourceTest t;
+    t.query("CREATE WORKLOAD r");
+    t.query("CREATE RESOURCE w (READ DISK d)");
+    t.loadConfig("CREATE RESOURCE r (WRITE DISK d); CREATE WORKLOAD w");
+
+    EXPECT_THROW(t.query("DROP RESOURCE r"), DB::Exception); // read-only configuration resource
+    EXPECT_THROW(t.query("DROP WORKLOAD w"), DB::Exception); // read-only configuration workload
+    EXPECT_THROW(t.query("DROP RESOURCE IF EXISTS r"), DB::Exception);
+
+    t.loadConfig("");
+    EXPECT_EQ(t.storage.getEntitySource("r"), "sql");
+    EXPECT_EQ(t.storage.getEntitySource("w"), "sql");
+    EXPECT_TRUE(t.manager->hasResource("w"));
+
+    // The own entities are dropped by their own kind
+    EXPECT_THROW(t.query("DROP RESOURCE r"), DB::Exception);
+    t.query("DROP WORKLOAD IF EXISTS w"); // `w` is a resource: nothing to drop
+    EXPECT_TRUE(t.storage.has("w"));
+    t.query("DROP WORKLOAD r");
+    t.query("DROP RESOURCE w");
+    EXPECT_FALSE(t.storage.has("r"));
+    EXPECT_FALSE(t.storage.has("w"));
+}
+
 // Conflicts are rejected: two entities of one layer claiming one role, and a SQL statement claiming a
 // role or a name of an inherited entity.
 TEST(SchedulerWorkloadResourceManager, ShadowingConflictsThrow)
