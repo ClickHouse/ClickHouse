@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <limits>
+#include <utility>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -755,8 +756,8 @@ String getBestPartitionToOptimizeEntire(
 
     chassert(best_partition_it != stats.end());
 
-    const size_t best_partition_min_age = static_cast<size_t>(best_partition_it->second.min_age);
-    if (best_partition_min_age < (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds] || is_partition_invalid(best_partition_it->second))
+    if (std::cmp_less(best_partition_it->second.min_age, (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds].value)
+        || is_partition_invalid(best_partition_it->second))
         return {};
 
     return best_partition_it->first;

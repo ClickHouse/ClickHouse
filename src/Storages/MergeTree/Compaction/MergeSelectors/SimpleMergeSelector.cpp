@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <utility>
 
 namespace DB
 {
@@ -26,11 +27,11 @@ public:
     {
     }
 
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t min_age, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
+    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, time_t min_age, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         const bool should_remove_small_parts_at_right = settings.enable_heuristic_to_remove_small_parts_at_right
             && (!settings.merge_selector_min_age_to_disable_right_tail_heuristic
-                || min_age < settings.merge_selector_min_age_to_disable_right_tail_heuristic);
+                || std::cmp_less(min_age, settings.merge_selector_min_age_to_disable_right_tail_heuristic));
         if (should_remove_small_parts_at_right)
         {
             size_t size_delta = 0;
@@ -290,7 +291,7 @@ void selectWithinPartsRange(
         size_t sum_size = parts[begin].size;
         size_t sum_rows = parts[begin].rows;
         size_t max_size = parts[begin].size;
-        size_t min_age = parts[begin].age;
+        time_t min_age = parts[begin].age;
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
@@ -299,7 +300,7 @@ void selectWithinPartsRange(
                 break;
 
             size_t cur_size = parts[end - 1].size;
-            size_t cur_age = parts[end - 1].age;
+            time_t cur_age = parts[end - 1].age;
             size_t cur_rows = parts[end - 1].rows;
 
             sum_size += cur_size;

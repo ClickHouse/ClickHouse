@@ -32,7 +32,7 @@ struct PartProperties
     /// Size of data part in bytes.
     const size_t size = 0;
 
-    /// How old this data part in seconds.
+    /// How old this data part in seconds. Negative if the part was modified after the time it is measured against.
     const time_t age = 0;
 
     /// Number of rows in part.
