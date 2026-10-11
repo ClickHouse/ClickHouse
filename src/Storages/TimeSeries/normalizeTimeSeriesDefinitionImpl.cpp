@@ -528,6 +528,10 @@ namespace
             old_settings.removeSettings({"metric_families_deduplication_cache_size_bytes", "metric_families_deduplication_cache_expiration_seconds",
                                         "tags_deduplication_cache_size_bytes", "tags_deduplication_cache_expiration_seconds"});
 
+        /// The same for the setting of the Prometheus remote-write dynamic URL routing which exists from version 8.
+        if (const auto * value = get_new_value("version"); value && (SettingFieldUInt64{*value}.value < TimeSeriesVersion::MIN_WITH_REMOTE_WRITE_DYNAMIC_ROUTING_SETTING))
+            old_settings.removeSetting("prometheus_remote_write_dynamic_routing_enabled");
+
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
             old_settings.removeSettings({"recent_samples_partition_by", "recent_samples_index_granularity"});

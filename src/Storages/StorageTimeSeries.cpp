@@ -104,7 +104,8 @@ namespace
             && (setting_name != "metric_families_deduplication_cache_size_bytes")
             && (setting_name != "metric_families_deduplication_cache_expiration_seconds")
             && (setting_name != "tags_deduplication_cache_size_bytes")
-            && (setting_name != "tags_deduplication_cache_expiration_seconds"))
+            && (setting_name != "tags_deduplication_cache_expiration_seconds")
+            && (setting_name != "prometheus_remote_write_dynamic_routing_enabled"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
@@ -1003,6 +1004,25 @@ Then this table can be used with the following protocols (a port must be assigne
 - [prometheus remote-write](/concepts/features/interfaces/prometheus#remote-write)
 - [prometheus remote-read](/concepts/features/interfaces/prometheus#remote-read)
 
+When configuring a Prometheus remote-write handler with `enable_table_name_url_routing`, the URL is expected to start with `/{database}/{table}/`. This option cannot be combined with a fixed `database` or `table` in the handler configuration. Make sure the handler's `<url>` rule matches paths that include the database and table name. For example:
+
+```xml
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url>regex:^/[^/]+/[^/]+/write$</url>
+        <handler>
+            <type>prometheus_write</type>
+            <enable_table_name_url_routing>true</enable_table_name_url_routing>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+Enabling `enable_table_name_url_routing` on a `prometheus_api_v1` handler makes that handler write-only. Configure a separate handler without this option for `/read`, `/query`, and metadata endpoints; that handler can use a fixed `database` and `table` or the corresponding query parameters.
+
+See [Route remote write by URL path](/concepts/features/interfaces/prometheus#remote-write-url-routing) for the full handler configuration.
+
 ### Outer columns {#outer-columns}
 
 Columns of a TimeSeries table are generated automatically. These are outer columns, they store no data, they just provide interface for SELECT/INSERT. Actual data is stored in [target tables](#target-tables). Here is the list of the outer columns:
@@ -1166,7 +1186,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 7, recent_samples_ttl_seconds = 345600
+SETTINGS version = 8, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1464,11 +1484,13 @@ The following settings can be changed after `CREATE`:
 - `filter_by_min_time_and_max_time`
 - `metric_families_deduplication_cache_size_bytes`, `metric_families_deduplication_cache_expiration_seconds`
 - `tags_deduplication_cache_size_bytes`, `tags_deduplication_cache_expiration_seconds`
+- `prometheus_remote_write_dynamic_routing_enabled`
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600;
+ALTER TABLE my_table MODIFY SETTING prometheus_remote_write_dynamic_routing_enabled = 1;
 ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
@@ -1485,7 +1507,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `version` | UInt64 | 7 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 8 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 | `id_type` | Data type | depends on the `id` column | The type of the `id` column of the target tables. Normally the type is declared in the `INNER COLUMNS` clauses of the inner tables or in an [external](#external-target-tables) tags table; the setting is recorded automatically at `CREATE` time if the type isn't kept in the definition otherwise: if the tags target is an external table, or if the `id_generator` setting is set. The setting can also be specified explicitly instead of `TAGS INNER COLUMNS (id <type>)`. Requires `version` to be at least 2 |
 | `id_generator` | Expression | depends on `id` type | Expression that computes the identifier (fingerprint) of a time series from its tags. If unset, the default expression for the `id` column is used. If the default expression for the `id` column is also unset then the expression is chosen automatically. For an external tags table the setting is recorded automatically at `CREATE` time if `version` is at least 2 (see [External target tables](#external-target-tables)) |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
@@ -1502,13 +1524,14 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
+| `prometheus_remote_write_dynamic_routing_enabled` | Bool | false | Allow Prometheus remote-write dynamic URL routing to insert into this `TimeSeries` table. Requires [version](#schema-versioning) 8 or later |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 7) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 8) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
@@ -1537,6 +1560,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 5 | New inner tags tables with a `MergeTree` family engine get a `keyValuePairs` text index on the `tags` map by default (see [Tags table](#tags-table)) |
 | 6 | The column `metric_family_name` of the [metric families](#metric-families-table) table was renamed to `metric_family`, the name of the corresponding outer column. Tables of earlier versions keep the old name of the column, and the [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetricFamilies) table function returns the column under the name the table uses. An external metric families table must name the column the way the version of the `TimeSeries` table does |
 | 7 | The deduplication caches of the [metric families](#metric-families-table) and [tags](#tags-table) tables were introduced together with their settings (see [`metric_families_deduplication_cache_expiration_seconds`](#settings) and [`tags_deduplication_cache_expiration_seconds`](#settings)). Tables of earlier versions don't use the caches. The stored data didn't change |
+| 8 | The [`prometheus_remote_write_dynamic_routing_enabled`](#settings) setting was introduced. Tables of earlier versions can't be targets of the Prometheus remote-write dynamic URL routing |
 
 # Functions {#functions}
 

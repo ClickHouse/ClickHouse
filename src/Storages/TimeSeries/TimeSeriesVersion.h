@@ -32,6 +32,8 @@ class StorageTimeSeries;
 ///       (see `TimeSeriesColumnNames::getInnerMetricFamily`).
 ///   7 - The deduplication caches of the metric families and tags tables were introduced together with their settings
 ///       (`metric_families_deduplication_cache_*` and `tags_deduplication_cache_*`). Tables of earlier versions don't use the caches.
+///   8 - The `prometheus_remote_write_dynamic_routing_enabled` setting was introduced. Tables of earlier versions can't be
+///       targets of the Prometheus remote-write dynamic URL routing.
 namespace TimeSeriesVersion
 {
     /// The first version recording the `id_type` setting (see the version history above).
@@ -57,11 +59,15 @@ namespace TimeSeriesVersion
     /// A table of an earlier version doesn't use the caches and must not have the settings: an older server wouldn't understand them.
     constexpr UInt64 MIN_WITH_DEDUPLICATION_CACHES = 7;
 
+    /// The first version with the `prometheus_remote_write_dynamic_routing_enabled` setting (see the version history above).
+    /// A table of an earlier version must not have the setting: an older server wouldn't understand it.
+    constexpr UInt64 MIN_WITH_REMOTE_WRITE_DYNAMIC_ROUTING_SETTING = 8;
+
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 7;
+    constexpr UInt64 LATEST = 8;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -82,6 +88,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_METRIC_FAMILIES_TARGET_NAME <= LATEST);
     static_assert(MIN_WITH_METRIC_FAMILY_INNER_COLUMN <= LATEST);
     static_assert(MIN_WITH_DEDUPLICATION_CACHES <= LATEST);
+    static_assert(MIN_WITH_REMOTE_WRITE_DYNAMIC_ROUTING_SETTING <= LATEST);
 
     static_assert(MIN_SUPPORTED <= LATEST);
     static_assert((MIN_SUPPORTED <= MIN_WRITABLE) && (MIN_WRITABLE <= LATEST));
