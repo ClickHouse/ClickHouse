@@ -89,6 +89,10 @@ public:
 
     String getDefaultTableEngineName(const String & name) const override;
 
+    /// Creates an Iceberg table in the catalog if there are no engine arguments and the catalog writes the first metadata file.
+    /// Otherwise returns nullptr. In such cases the storage factory creates the table.
+    StoragePtr maybeCreateTableInExternalCatalog(ContextPtr context_, const ASTCreateQuery & create, const ColumnsDescription & columns) const override;
+
     ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
 
     void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
