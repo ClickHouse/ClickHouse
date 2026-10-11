@@ -2,7 +2,7 @@
 -- Plan-based parallel replicas build an ordinary local plan and then serialize a fragment of it for the
 -- replicas. A lambda body becomes `ExpressionActions` while that plan is built, so a JIT-compiled lambda
 -- body would be shipped as a node whose name is a dump of the compiled expression, and the replica would
--- fail with `UNKNOWN_FUNCTION`. The body is left uncompiled in such a plan.
+-- fail with `UNKNOWN_FUNCTION`. The lambda keeps its uncompiled body for serialization.
 -- Without a local plan every replica, the initiator's own one included, reads through the shipped
 -- fragment, so a replica failure is not hidden by the initiator reading the rest itself.
 
