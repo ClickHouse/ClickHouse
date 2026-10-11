@@ -208,6 +208,20 @@ public:
         return items.size();
     }
 
+    /** The number of entries currently checked out of the pool.
+      * For connection pools it approximates the number of in-flight requests to the host:
+      * an entry is vended when a query is dispatched over the connection and returned to
+      * the pool when the query finishes and the connection is released. It is a lower
+      * bound rather than an exact count of outstanding queries (e.g. connections that are
+      * being established are checked out slightly before the query is sent), but the entry
+      * checkout/return path is the only place where both dispatch and completion are
+      * reliably observable. Used by the `least_request` load balancing.
+      */
+    size_t getActiveEntries() const
+    {
+        return active_entries.load(std::memory_order_relaxed);
+    }
+
 private:
     /** Length of one wait slice. Bounds how long a queued caller can stay unaware of its own
       * cancellation; short enough to be prompt, long enough that an idle pool barely wakes.
@@ -225,15 +239,18 @@ private:
     Entry makeEntry(PooledObject & item)
     {
         bool * in_use = &item.in_use;
-        return Entry(std::make_shared<typename Entry::PoolEntryHelper>(
+        auto helper = std::make_shared<typename Entry::PoolEntryHelper>(
             item.object.get(),
             &item.is_expired,
             [this, in_use]
             {
                 std::lock_guard lock(mutex);
                 *in_use = false;
+                active_entries.fetch_sub(1, std::memory_order_relaxed);
                 available.notify_one();
-            }));
+            });
+        active_entries.fetch_add(1, std::memory_order_relaxed);
+        return Entry(std::move(helper));
     }
 
     /** The maximum size of the pool. */
@@ -241,6 +258,11 @@ private:
 
     /** Pool. */
     Objects items;
+
+    /** The number of entries currently handed out to clients (see getActiveEntries).
+      * Atomic because it is read without taking the pool mutex.
+      */
+    std::atomic<size_t> active_entries = 0;
 
     /** Lock to access the pool. */
     TLocker mutex;
