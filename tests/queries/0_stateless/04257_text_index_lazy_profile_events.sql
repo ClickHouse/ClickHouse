@@ -1,5 +1,5 @@
 -- Verifies that the nine TextIndexLazy* ProfileEvents fire when the corresponding
--- code paths in MergeTreeIndexTextPostingListCursor are exercised. Without this guard,
+-- code paths in `PostingListCursor` are exercised. Without this guard,
 -- a regression that silently disables a skip optimisation (or never reaches the lazy
 -- cursor path) would not be caught: the query results would stay correct because the
 -- materialize path is functionally equivalent.
