@@ -26,7 +26,7 @@ namespace DB
 /// Reads the blocks that one lookup call needs: it takes the blocks that the cache of the set holds from the
 /// cache, and reads the others from the file. Each lookup call creates its own reader, so concurrent calls
 /// share only the immutable file and directory, and the cache, which the reader calls once to get the blocks
-/// of the call and once to add the blocks that it read.
+/// of the call and in batches to add the blocks that it read.
 ///
 /// The constructor queries the cache for all the blocks of the call in one batch, and gives the frames of the
 /// blocks that the cache lacks to a `TemporaryFileFrameReader`, which reads the frames that are close to each
@@ -123,6 +123,8 @@ public:
             read_block->body.assign(block_in.position(), block_in.position() + header.body_bytes); /// Allocates the exact size
             blocks_to_cache.push_back(block);
             read_blocks_to_cache.push_back(std::move(read_block));
+            if (blocks_to_cache.size() == blocks_per_cache_batch)
+                addReadBlocksToCache();
         }
         ++read_blocks;
         current_keys = decoder.decode(header, block_in, set.directory.getFirstKey(block));
@@ -130,12 +132,15 @@ public:
         return current_keys;
     }
 
-    /// Adds to the cache of the set the blocks that the reader read from the file and the cache admitted, so
-    /// that later calls do not read them again.
+    /// Adds to the cache of the set the blocks that the reader read from the file and the cache admitted
+    /// since the last batch, so that later calls do not read them again.
     void addReadBlocksToCache()
     {
-        if (!blocks_to_cache.empty()) /// Only a set with a cache admits blocks
-            set.block_cache->setMany(blocks_to_cache, read_blocks_to_cache);
+        if (blocks_to_cache.empty()) /// None since the last batch, as always for a set without a cache
+            return;
+        set.block_cache->setMany(blocks_to_cache, read_blocks_to_cache);
+        blocks_to_cache.clear();
+        read_blocks_to_cache.clear();
     }
 
 private:
@@ -175,7 +180,12 @@ private:
     std::span<const Key> current_keys;
 
     /// The blocks that the reader read from the file and the cache admitted, with their bytes, which the
-    /// reader adds to the cache at the end of the call.
+    /// reader adds to the cache in batches of `blocks_per_cache_batch` and at the end of the call. Until
+    /// then, their bytes are outside the cache and its budget. A call of random lookups can read tens of
+    /// thousands of blocks, so adding them all at the end of the call would keep many times the budget
+    /// outside the cache across concurrent calls. A batch of 1024 blocks takes about 4 MiB, and adding it
+    /// locks each of the 64 shards of the default cache once for about 16 of its blocks.
+    static constexpr size_t blocks_per_cache_batch = 1024;
     std::vector<size_t> blocks_to_cache;
     std::vector<DiskSetBlockCache::BlockPtr> read_blocks_to_cache;
 

@@ -209,7 +209,7 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
             for (size_t i = lookup.probes_begin; i < lookup.probes_end; ++i)
                 found[probes[i].row] = 1;
     }
-    blocks.addReadBlocksToCache(); /// One batch per call, so each shard is locked once for it
+    blocks.addReadBlocksToCache(); /// The blocks that the reader read since its last batch
 
     /// Step 5: Rows that repeat the key of the previous row take its answer.
     for (size_t row = 1; row < keys.size(); ++row)
