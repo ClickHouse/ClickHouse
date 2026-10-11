@@ -1,0 +1,44 @@
+only the missing member
+[NULL,NULL]
+with its subcolumns
+1	[NULL,NULL]	2	2	[1,1]
+2	[7]	1	1	[0]
+1	[NULL,NULL]	2	2	[1,1]
+2	[7]	1	1	[0]
+with a subcolumn of another member
+1	2	[NULL,NULL]
+2	1	[7]
+with another member
+1	[1,2]	[NULL,NULL]
+2	[3]	[7]
+ARRAY JOIN
+1	\N
+1	\N
+2	7
+WHERE
+1
+share_nested_offsets = 0
+[]
+child with an ALIAS column
+[NULL,NULL]
+ALIAS column read next to two missing columns
+5	[NULL,NULL]	\N
+\N	[NULL,NULL]	5
+Memory child
+[NULL,NULL]
+View child with a constant member
+[NULL,NULL]
+[NULL,NULL]
+Distributed child
+[1,2]	[NULL,NULL]	2	[1,1]
+2	1
+MergeTree and Distributed children
+4	2	[[0,0],[0,0]]	[[{},{}],[{},{}]]
+share_nested_offsets = 0 child next to a Distributed child
+2	2
+Quantized member of a Distributed child
+[0,0]	000000000000000000000000
+row policy on another member
+[NULL,NULL]
+row policy on another column next to two missing columns
+[NULL,NULL]	\N
