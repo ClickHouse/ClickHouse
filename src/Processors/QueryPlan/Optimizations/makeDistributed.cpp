@@ -1048,19 +1048,21 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     {
 #if CLICKHOUSE_CLOUD
         /// As for a MergeTree read, sized by the estimator, which takes the rows a data lake table
-        /// keeps in its metadata; a table without a known row count is read distributed.
+        /// keeps in its metadata. A filtered read has only that row count as its bound, which still
+        /// decides; a table with neither an estimate nor a bound is read distributed.
         /// TODO: implement better logic for choosing number of parallel readers
         const auto stats = estimateReadRowsCount(node);
-        if (stats.estimated_rows)
-        {
-            const ReplicationSize size{
-                .estimated_rows = stats.estimated_rows,
-                .estimate_from_defaults = stats.estimate_from_defaults,
-                .max_rows = stats.max_rows,
-                .bytes_per_row = stats.avg_row_bytes.value_or(estimateRowWidth(*read_from_object_storage_step->getOutputHeader(), stats.column_stats))};
-            if (decideReplication(size, replicationBudget(optimization_settings)).allowed)
-                return;
-        }
+        const Float64 bytes_per_row = stats.avg_row_bytes.value_or(estimateRowWidth(*read_from_object_storage_step->getOutputHeader(), stats.column_stats));
+        /// Every node scans all the rows of the table whatever the filter leaves of them.
+        const auto scanned_rows = stats.max_rows ? stats.max_rows : stats.estimated_rows;
+        const ReplicationSize size{
+            .estimated_rows = stats.estimated_rows,
+            .estimate_from_defaults = stats.estimate_from_defaults,
+            .max_rows = stats.max_rows,
+            .bytes_per_row = bytes_per_row,
+            .scan_bytes = scanned_rows ? std::optional<UInt64>(static_cast<UInt64>(static_cast<Float64>(*scanned_rows) * bytes_per_row)) : std::nullopt};
+        if (decideReplication(size, replicationBudget(optimization_settings)).allowed)
+            return;
 
         read_from_object_storage_step->setDistributedRead(bucket_count);
 #else
