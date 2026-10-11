@@ -155,7 +155,7 @@ enum class AccessType : uint8_t
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
-/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
+/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMN/TABLE_ENGINE/FUNCTION),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.
@@ -322,6 +322,7 @@ enum class AccessType : uint8_t
     M(SET_DEFINER, "", DEFINER, ALL) \
     \
     M(TABLE_ENGINE, "TABLE ENGINE", TABLE_ENGINE, ALL) \
+    M(FUNCTION, "EXECUTE FUNCTION, USE FUNCTION", FUNCTION, ALL) /* allows to execute a function listed in access_control_improvements.functions_requiring_grant */\
     \
     M(SYSTEM_SHUTDOWN, "SYSTEM KILL, SHUTDOWN", GLOBAL, SYSTEM) \
     M(SYSTEM_DROP_DNS_CACHE, "SYSTEM CLEAR DNS CACHE, SYSTEM DROP DNS, DROP DNS CACHE, DROP DNS", GLOBAL, SYSTEM_DROP_CACHE)  \
