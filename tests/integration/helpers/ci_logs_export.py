@@ -785,6 +785,14 @@ def _create_senders_and_watchers(instance, tables, exportable, expression):
         # leftover from being reused with the destination table of an older
         # structure: if the drop fails, the batch stops before the `CREATE`, and
         # the table stays unexported until the next attempt drops it again.
+        #
+        # The discovery has just flushed the logs into the table, and a
+        # materialized view only sees the blocks inserted after it is created,
+        # so the rows already in the table - the startup of the server, which is
+        # what matters most when it fails to boot - are sent explicitly. That
+        # happens before the `_watcher` is created, so that no block reaches the
+        # `_sender` twice; a flush that lands between the two statements is
+        # lost, which is a much shorter window than the flush interval.
         statements.append(
             f"""
             DROP VIEW IF EXISTS system.{table}_watcher SYNC;
@@ -794,6 +802,8 @@ def _create_senders_and_watchers(instance, tables, exportable, expression):
             ENGINE = Distributed({cluster_name}, 'default', '{table}_{hash_value}')
             SETTINGS flush_on_detach = 0
             EMPTY AS SELECT {expression}, * FROM system.{table};
+
+            INSERT INTO system.{table}_sender SELECT {expression}, * FROM system.{table};
 
             CREATE MATERIALIZED VIEW IF NOT EXISTS system.{table}_watcher
             TO system.{table}_sender
