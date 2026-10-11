@@ -221,11 +221,22 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+
+    /// AggregatingInOrderTransform assumes every run of the sorted key columns yields at least one group,
+    /// which the GROUP BY top-K heap breaks by skipping rows.
+    params.top_k.reset();
 }
 
 void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
 {
     params.top_k = std::move(top_k);
+}
+
+void AggregatingStep::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker)
+{
+    if (!params.top_k)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set a top-K threshold tracker on an aggregation without the top-K optimization");
+    params.top_k->threshold_tracker = std::move(threshold_tracker);
 }
 
 std::vector<size_t> AggregatingStep::getStepGroups() const
@@ -650,8 +661,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     counter++,
                     limit_hint,
                     limit_hint_prefix_columns,
-                    nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
-                );
+                    /// With `skip_merging` the `MergingAggregatedBucketTransform` below is never created,
+                    /// so these transforms are the last producers of this step's output and have to record
+                    /// it themselves. Otherwise the merging transform records it, and recording here too
+                    /// would count the same rows twice.
+                    skip_merging ? dataflow_cache_updater : nullptr);
             });
 
             if (skip_merging)
@@ -1364,6 +1378,10 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             value.nulls_directions[i] = nulls_direction;
         }
     }
+
+    /// AggregatingInOrderTransform cannot run the top-K heap.
+    if (top_k && has_in_order)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Top-K parameters on an in-order aggregation in a serialized query plan");
 
     StatsCollectingParams stats_collecting_params(
         stats_key,

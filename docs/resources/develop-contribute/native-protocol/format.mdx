@@ -155,7 +155,7 @@ A Column appears `num_columns` times within a Block.
 | # | Field                    | Type    | Condition                | Description |
 |---|--------------------------|---------|--------------------------|-------------|
 | 1 | name                     | String  | always                   | Column name |
-| 2 | type                     | String *or* binary type encoding | always | ClickHouse type string (e.g., `"UInt64"`, `"Array(String)"`) by default; a binary type encoding when `output_format_native_encode_types_in_binary_format = 1` (see note below) |
+| 2 | type                     | String *or* binary type encoding | always | ClickHouse type string (e.g., `"UInt64"`, `"Array(String)"`) by default; a binary type encoding when `output_format_native_encode_types_in_binary_format = 1`, except for a secondary query (see note below) |
 | 3 | has_custom_serialization | UInt8   | feature `CUSTOM_SERIALIZATION` (v54454) | `0` = default, `1` = custom (kind_stack follows) |
 | 4 | kind_stack               | bytes   | when field 3 = `1`       | One UInt8 enum byte (see below) describing the non-default serialization (sparse, etc.). For the `COMBINATION` value, followed by a VarUInt count plus that many additional kind bytes. For a `Tuple` (and other composites with element-level serialization info) the payload is recursive — see below. |
 | 5 | data                     | bytes   | always                   | Column values for all `num_rows` rows. Layout per type — see [data types](#data-types). For sparse columns, see below. |
@@ -166,6 +166,8 @@ A decoder dispatches on the `type` string. Type strings often carry parameters i
 **Binary type encoding**
 
 The `type` field is a textual `String` only in the default mode. When the query setting `output_format_native_encode_types_in_binary_format = 1` is set, this field is instead a **binary type encoding** — the same tag-based encoding documented in [data type binary encoding](/reference/data-types/data-types-binary-encoding) — and flattened `Dynamic` type lists use the same binary encoding for their per-type names. A decoder that always reads field 2 as a length-prefixed string would treat the first binary type tag as a string length and desynchronize, so it must know which mode the stream uses.
+
+For a query with `query_kind = SECONDARY_QUERY` (sent by another server for `remote`, `Distributed` or parallel replicas, or by `clickhouse-client --query_kind secondary_query`), both peers ignore `output_format_native_encode_types_in_binary_format` and `input_format_native_decode_types_in_binary_format` for the blocks of that query: they carry textual type names in both directions. Servers that predate this rule apply these settings to a secondary query like to any other query.
 </Info>
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="Decoder routing from a type description to its encoding family" width="1568" height="854" loading="lazy" />
@@ -323,6 +325,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
 | `skip_degree` in `quantileDeterministic` state | `DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE` | `54491` | `AggregateFunction(quantileDeterministic, ...)` states (and the `quantiles`/`median` spellings of the same function) are written at state version `0`, without the trailing `UInt8 skip_degree`. See the note under [type aliases](#type-aliases). |
 | 64-bit hash sample in `uniq` state | `DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1` | `54493` | `AggregateFunction(uniq, ...)` states are written at state version `0`: no leading flags byte and no trailing sample of 64-bit hashes. See the note under [type aliases](#type-aliases). |
+| Versioned `-Merge` states | `DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION` | `54494` | A state of a `-Merge` aggregate function, such as `AggregateFunction(quantileDeterministicMerge, ...)`, is written at state version `0`, whatever version the function it merges has at that revision. |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
 | `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
@@ -1291,7 +1294,8 @@ The **FLATTENED (version 3)** layout selected by that setting:
   [8 bytes:  UInt64 LE version = 3]                ← state prefix, repeated at the start of every non-empty block
   [VarUInt num_types]                              ← number of runtime types
   [num_types × type]                               ← type names, in wire order; each a String, or a binary
-                                                     type encoding when output_format_native_encode_types_in_binary_format = 1
+                                                     type encoding when output_format_native_encode_types_in_binary_format = 1,
+                                                     except for a secondary query (see the type field note)
   [per type: its own state prefix]                 ← empty for leaf types; + indexes-type prefix (empty, integer)
   [num_rows × discriminator]                       ← width by num_types (UInt8 if ≤ 255, else UInt16/32/64);
                                                      NULL discriminator = num_types (one past the last type)

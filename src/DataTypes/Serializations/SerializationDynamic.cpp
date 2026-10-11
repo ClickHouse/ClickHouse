@@ -463,7 +463,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             auto variant_type = std::make_shared<DataTypeVariant>(variants);
 
             /// Read statistics.
-            if (settings.object_and_dynamic_read_statistics)
+            if (settings.read_statistics)
             {
                 bool has_statistics = true;
                 /// In V3 version we have additional flag that indicates if we have statistics or not.
@@ -708,7 +708,7 @@ void SerializationDynamic::deserializeBinaryBulkWithMultipleStreams(
 
     const auto & variant_info = column_dynamic.getVariantInfo();
     if (!variant_info.variant_type->equals(*structure_state->variant_type))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Mismatch of internal columns of Dynamic. Expected: {}, Got: {}", structure_state->variant_type->getName(), variant_info.variant_type->getName());
 
     settings.path.push_back(Substream::DynamicData);
     dynamic_state->variant_serialization->deserializeBinaryBulkWithMultipleStreams(column_dynamic.getVariantColumn(), limit, settings, dynamic_state->variant_state, cache);

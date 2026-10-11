@@ -689,6 +689,8 @@ PointInPolygonWithGrid<CoordinateType>::clipRing(const Ring & ring, const Box & 
         return {};
 
     points.push_back(points.front());
+    /// The result is retained by the grid, and the swapped buffer may have the capacity of the whole ring.
+    points.shrink_to_fit();
     return points;
 }
 
