@@ -21,3 +21,6 @@ rewrite each other's files.
 - `vxlan.pcap` — an untagged Ethernet frame tunneling a VLAN-tagged Ethernet
   frame in VXLAN, so the Ethernet columns and `vlan_id` must describe the outer
   link layer and not the tunneled frame.
+- `null.pcap`, `sll.pcap` — an IPv4 TCP packet behind a BSD loopback header
+  (`LINKTYPE_NULL`) and an IPv4 UDP packet behind a Linux cooked capture header
+  (`LINKTYPE_LINUX_SLL`), link types that are dissected by `libtins`.

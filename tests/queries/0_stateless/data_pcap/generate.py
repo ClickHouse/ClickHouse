@@ -170,6 +170,17 @@ write_pcap(out_dir / "raw_ip.pcap", [(packet, len(packet)) for packet in raw_ip]
 write_pcap(out_dir / "ipv4.pcap", [(ipv4(17, udp), len(ipv4(17, udp)))], linktype=228)
 write_pcap(out_dir / "ipv6.pcap", [(ipv6(6, tcp), len(ipv6(6, tcp)))], linktype=229)
 
+# Link types dissected by `libtins` other than Ethernet. BSD loopback
+# (`LINKTYPE_NULL`, 0) prefixes the packet with a 4-byte address family in the
+# byte order of the capturing host, here little-endian `AF_INET` (2). Linux
+# cooked capture (`LINKTYPE_LINUX_SLL`, 113) prefixes it with a 16-byte header:
+# packet type (unicast to us), ARPHRD type (Ethernet), address length, the
+# address padded to 8 bytes, and the EtherType (IPv4).
+loopback = struct.pack("<I", 2) + ipv4(6, tcp)
+write_pcap(out_dir / "null.pcap", [(loopback, len(loopback))], linktype=0)
+sll = struct.pack(">HHH", 0, 1, 6) + bytes.fromhex("0011223344550000") + struct.pack(">H", 0x0800) + ipv4(17, udp)
+write_pcap(out_dir / "sll.pcap", [(sll, len(sll))], linktype=113)
+
 # A link type that is not dissected (`LINKTYPE_LINUX_SLL2`, 276): the packet
 # still produces a row with the capture metadata and `raw`, but no layer columns.
 sll2 = bytes.fromhex("0800000000000001000106") + bytes(9) + ipv4(17, udp)

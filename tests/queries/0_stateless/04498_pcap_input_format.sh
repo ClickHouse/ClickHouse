@@ -132,7 +132,7 @@ FROM file('$DATA_DIR/truncated.pcap', PCAP)
 ORDER BY number FORMAT TSV"
 
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap packets.pcapng truncated.pcap raw_ip.pcap ipv4.pcap ipv6.pcap sll2.pcap dot3.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap sll2.pcap dot3.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
@@ -200,6 +200,14 @@ WHERE ip_protocol = 'ICMP' FORMAT TSV"
 
 echo "--- raw IP link types: the IP header is the outermost layer ---"
 for f in raw_ip.pcap ipv4.pcap ipv6.pcap; do
+    $CLICKHOUSE_LOCAL -q "
+    SELECT '$f', number, link_type, protocols, eth_src, eth_type, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port, payload_length
+    FROM file('$DATA_DIR/$f', PCAP)
+    ORDER BY number FORMAT TSV"
+done
+
+echo "--- BSD loopback and Linux cooked capture link types are dissected ---"
+for f in null.pcap sll.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT '$f', number, link_type, protocols, eth_src, eth_type, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port, payload_length
     FROM file('$DATA_DIR/$f', PCAP)
