@@ -76,6 +76,29 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|par
 ```
 
 Removes the specified part or all parts of the specified partition from `detached`.
+
+To remove detached parts whose full directory names match a case-sensitive SQL `LIKE` pattern, use:
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PART LIKE 'pattern'
+    SETTINGS allow_drop_detached = 1;
+```
+
+For example, remove parts with the `ignored_` prefix:
+
+```sql
+ALTER TABLE mt DROP DETACHED PART LIKE 'ignored\\_%'
+    SETTINGS allow_drop_detached = 1;
+```
+
+`%` matches any sequence of characters and `_` matches one character. Use backslash to escape
+literal `%`, `_`, or backslash characters; backslashes must also be escaped in SQL string literals.
+The pattern matches the name including any detachment reason prefix and retry suffix. No matches
+is a no-op. Entries starting with `attaching_` or `deleting_` are skipped because another operation
+may be using them. Other matching detached entries, including malformed part names, can be removed.
+This operation is local to the executing server unless `ON CLUSTER` is specified, and requires
+`allow_drop_detached = 1`, like the exact-name form.
+
 Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 ## FORGET PARTITION {#forget-partition}

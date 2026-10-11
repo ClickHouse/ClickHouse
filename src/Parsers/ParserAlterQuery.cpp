@@ -89,6 +89,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_move_part(Keyword::MOVE_PART);
     ParserKeyword s_drop_detached_partition(Keyword::DROP_DETACHED_PARTITION);
     ParserKeyword s_drop_detached_part(Keyword::DROP_DETACHED_PART);
+    ParserKeyword s_like(Keyword::LIKE);
     ParserKeyword s_fetch_partition(Keyword::FETCH_PARTITION);
     ParserKeyword s_fetch_part(Keyword::FETCH_PART);
     ParserKeyword s_replace_partition(Keyword::REPLACE_PARTITION);
@@ -295,6 +296,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_drop_detached_part.ignore(pos, expected))
             {
+                command->part_like = s_like.ignore(pos, expected);
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
