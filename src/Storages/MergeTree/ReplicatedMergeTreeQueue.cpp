@@ -2420,7 +2420,7 @@ MutationCommands ReplicatedMergeTreeQueue::MutationsSnapshot::getOnFlyMutationCo
     return result;
 }
 
-NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() const
+NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
     if (!hasDataMutations() && !hasAlterMutations())
@@ -2429,10 +2429,7 @@ NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() cons
     for (const auto & [partition_id, mutations] : mutations_by_partition)
     {
         for (const auto & [version, entry] : mutations)
-        {
-            auto names = entry->commands.getAllUpdatedColumns();
-            std::move(names.begin(), names.end(), std::inserter(res, res.end()));
-        }
+            addColumnsChangedOnFly(entry->commands, res);
     }
     return res;
 }
