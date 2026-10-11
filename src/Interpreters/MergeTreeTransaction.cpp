@@ -13,6 +13,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/retryTransientStoreError.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedMergeTree.h>
 #endif
@@ -468,6 +469,8 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// The metadata writes below retry a transient storage error: no caller is left to report it to.
+    TransientStoreRetryScope retry_scope;
     /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
     ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
@@ -538,6 +541,8 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// The metadata writes below retry a transient storage error: no caller is left to report it to.
+    TransientStoreRetryScope retry_scope;
     /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
     ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`
