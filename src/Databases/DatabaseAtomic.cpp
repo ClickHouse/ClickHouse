@@ -12,6 +12,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
@@ -756,9 +758,18 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
 
     /// The `renameInMemory` loop below only notifies the storages, it does not ask them whether the new
-    /// database name is acceptable. Detached tables are not asked: no storage object exists for them here.
+    /// database name is acceptable.
     for (const auto & table : tables)
         table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+
+    /// A detached table's metadata moves with the database, and `ATTACH` loads it under the new name.
+    for (const auto & [_, detached_table] : snapshot_detached_tables)
+    {
+        auto ast = parseQueryFromMetadata(log, getContext(), getDisk(), detached_table.metadata_path);
+        const auto & create = ast->as<const ASTCreateQuery &>();
+        StorageObjectStorageQueue::checkCreateQueryCanBeRenamedByDatabaseRename(
+            create, StorageID(database_name, create.getTable(), create.uuid), getUUID(), new_name, getContext());
+    }
 
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
