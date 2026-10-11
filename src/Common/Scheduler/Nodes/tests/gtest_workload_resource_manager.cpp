@@ -2748,6 +2748,21 @@ TEST(SchedulerWorkloadResourceManager, ImplicitResourceNamesReserved)
     EXPECT_ANY_THROW(t.query("CREATE WORKLOAD __server_cpu__"));
     EXPECT_THROW(t.loadConfig("CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD)"), DB::Exception);
     EXPECT_THROW(t.loadConfig("CREATE RESOURCE __server_memory__ (MEMORY RESERVATION)"), DB::Exception);
+
+    // Persisted data may hold a reserved name written by an older version: it is loaded hidden and can be dropped
+    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString(
+        "CREATE RESOURCE __server_cpu__ (MASTER THREAD, WORKER THREAD); CREATE RESOURCE io (READ DISK d)"));
+    EXPECT_TRUE(t.storage.has("io"));
+    EXPECT_FALSE(t.storage.has(String(IMPLICIT_CPU_RESOURCE_NAME)));
+    EXPECT_EQ(t.storage.getMasterThreadResourceName(), "");
+
+    // It does not shadow the implicit resource
+    t.setImplicitEntities(cpuLimitConfig(4));
+    EXPECT_EQ(t.storage.getEntitySource(String(IMPLICIT_CPU_RESOURCE_NAME)), "implicit");
+    t.setImplicitEntities({});
+
+    t.query("DROP RESOURCE __server_cpu__");
+    EXPECT_NO_THROW(t.sql_storage->loadPersistedFromString("CREATE RESOURCE io (READ DISK d)"));
 }
 
 // Persisted entities cannot reference implicit entities: they live in an outer layer.

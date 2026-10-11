@@ -105,11 +105,16 @@ bool resourceUnitChanged(const ASTPtr & before, const ASTPtr & after)
 
 /// Throws if `entity_name` cannot be used for a user entity (SQL, configuration, Keeper or disk).
 /// The empty name denotes the root workload; the names of implicit resources are reserved.
+bool isReservedEntityName(const String & entity_name)
+{
+    return entity_name == IMPLICIT_CPU_RESOURCE_NAME || entity_name == IMPLICIT_MEMORY_RESOURCE_NAME;
+}
+
 void checkUserEntityName(const String & entity_name)
 {
     if (entity_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity name should not be empty.");
-    if (entity_name == IMPLICIT_CPU_RESOURCE_NAME || entity_name == IMPLICIT_MEMORY_RESOURCE_NAME)
+    if (isReservedEntityName(entity_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Workload entity name '{}' is reserved for an implicit resource and cannot be used", entity_name);
 }
@@ -822,6 +827,14 @@ void WorkloadEntityStorageBase::updateVisibleEntities(std::unique_lock<std::recu
     std::unordered_set<String> new_conflicting_entities;
     for (const auto & [entity_name, entity] : own_by_name)
     {
+        if (!ownsImplicitEntities() && isReservedEntityName(entity_name))
+        {
+            new_conflicting_entities.insert(entity_name);
+            if (!conflicting_entities.contains(entity_name))
+                LOG_ERROR(log, "Workload entity '{}' of the {} storage is hidden: the name is reserved for an implicit resource. "
+                    "Drop it and create it under another name.", entity_name, getName());
+            continue;
+        }
         auto keys = getClaimKeys(entity_name, entity);
         auto conflict = std::find_if(keys.begin(), keys.end(), [&](const ClaimKey & key) { return own_claims.contains(key); });
         if (conflict != keys.end())
@@ -981,7 +994,9 @@ void WorkloadEntityStorageBase::setOwnEntities(const std::vector<std::pair<Strin
     std::unordered_map<String, ASTPtr> new_own_entities;
     for (const auto & [entity_name, create_query] : raw_new_entities)
     {
-        checkUserEntityName(entity_name);
+        // Persisted data written by older versions may use a reserved name: such an entity is hidden, not rejected
+        if (!(on_conflict == OnOwnConflict::Hide && isReservedEntityName(entity_name)))
+            checkUserEntityName(entity_name);
         new_own_entities[entity_name] = normalizeCreateWorkloadEntityQuery(*create_query);
     }
 

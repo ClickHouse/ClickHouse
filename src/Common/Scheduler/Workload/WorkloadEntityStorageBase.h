@@ -129,6 +129,9 @@ protected:
     /// Unlocks `lock`.
     void replaceOwnEntities(std::unique_lock<std::recursive_mutex> & lock, std::unordered_map<String, ASTPtr> new_own_entities);
 
+    /// Whether this layer owns the implicit entities, whose names are reserved for all other layers
+    virtual bool ownsImplicitEntities() const { return false; }
+
     /// Adds entities derived from the visible entities (own entities that are not shadowed plus inherited
     /// ones) to `visible_entities`. Called with the lock held on every change of own or inherited entities.
     virtual void addDerivedEntities(std::unordered_map<String, ASTPtr> & /*visible_entities*/) const {}

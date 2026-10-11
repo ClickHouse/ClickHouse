@@ -73,7 +73,9 @@ class RestorerFromBackup;
  * `ImplicitWorkloadEntitiesConfig`): the resources `__server_cpu__` (MASTER THREAD, WORKER THREAD) and
  * `__server_memory__` (MEMORY RESERVATION) and the workload `default`. They are own entities of the
  * implicit layer, so any user entity claiming the same name or role shadows them. The names of the implicit
- * resources are reserved: user entities with these names are rejected.
+ * resources are reserved: user entities with these names are rejected by SQL statements and by the
+ * configuration. A persisted layer (Keeper, disk) may hold such an entity written by an older version: it is
+ * loaded hidden, with an error in the log, and can be dropped.
  *
  * Root workload. The workload entity with the empty name `""`. It is the parent of every workload without
  * an explicit parent, and its settings are the per-resource root limits (e.g. `max_concurrent_threads =
