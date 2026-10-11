@@ -302,6 +302,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_allows_fewer_columns_than_expected = false;
     bool format_reads_typed_json_value_tokens = false;
     bool format_reads_string_values_as_whole_text = false;
+    bool format_imports_nested_json_objects = false;
     bool format_reads_any_value_into_string_column = true;
     bool format_reads_quoted_text_values = false;
     bool format_maps_columns_by_name = false;
@@ -340,6 +341,7 @@ String getInsertDataSchemaMismatchDescription(
         format_allows_fewer_columns_than_expected = schema_reader->allowsFewerColumnsThanExpected();
         format_reads_typed_json_value_tokens = schema_reader->readsTypedJSONValueTokens();
         format_reads_string_values_as_whole_text = schema_reader->readsStringValuesAsWholeText();
+        format_imports_nested_json_objects = schema_reader->importsNestedJSONObjects();
         format_reads_any_value_into_string_column = schema_reader->readsAnyValueIntoStringColumn();
         format_reads_quoted_text_values = schema_reader->readsQuotedTextValues();
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
@@ -1289,16 +1291,17 @@ String getInsertDataSchemaMismatchDescription(
     const bool match_by_name = expected_names.size() == expected.size()
         && (format_maps_columns_by_name || !format_has_strict_order_of_columns);
 
-    /// With `input_format_import_nested_json` enabled, the row-based JSON parsers map a top-level
-    /// object field (`{"n": {...}}`) onto the dotted columns of a `Nested` carrier (`n.i`, ...).
-    /// Schema inference cannot represent that mapping — it reports the top-level field as a single
-    /// `Tuple` column — so the name-based comparison below would either treat the carrier field as
-    /// unknown (hiding a real mismatch inside the nested data) or report a mismatch for perfectly
+    /// With `input_format_import_nested_json` enabled, the `JSONEachRowRowInputFormat` family maps a
+    /// top-level object field (`{"n": {...}}`) onto the dotted columns of a `Nested` carrier (`n.i`,
+    /// ...). Schema inference cannot represent that mapping — it reports the top-level field as a
+    /// single `Tuple` column — so the name-based comparison below would either treat the carrier field
+    /// as unknown (hiding a real mismatch inside the nested data) or report a mismatch for perfectly
     /// valid nested input. Skip the diagnostic when that mode can actually apply: the setting is
-    /// enabled, the format identifies fields by name and reads JSON values, and the destination has a
-    /// dotted column for the parser to register as a `Nested` prefix.
-    if (format_settings.import_nested_json && match_by_name
-        && (format_reads_typed_json_value_tokens || format_reads_string_values_as_whole_text)
+    /// enabled, the format identifies fields by name and its parser registers `Nested` prefixes, and
+    /// the destination has a dotted column for the parser to register as such a prefix. Other by-name
+    /// parsers (`Form`, `TSKV`, ...) ignore the setting and look the field names up exactly, so the
+    /// comparison stays valid for them.
+    if (format_settings.import_nested_json && match_by_name && format_imports_nested_json_objects
         && std::any_of(
             expected.begin(), expected.end(), [](const auto & column) { return column.name.find('.') != String::npos; }))
         return {};

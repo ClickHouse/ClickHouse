@@ -113,6 +113,14 @@ public:
     /// nothing about the parsability of its content into the destination type.
     virtual bool readsStringValuesAsWholeText() const { return false; }
 
+    /// True when, with `input_format_import_nested_json` enabled, the parser maps a top-level object
+    /// field (`{"n": {...}}`) onto the dotted columns of a `Nested` destination (`n.i`, ...). Only the
+    /// `JSONEachRowRowInputFormat` family registers such `Nested` prefixes; the other by-name parsers
+    /// (`Form`, `TSKV`, the formats with a configurable escaping rule, ...) look field names up exactly
+    /// regardless of that setting. A caller comparing an inferred schema against an expected one uses
+    /// this to know when that mapping, which schema inference cannot represent, can apply.
+    virtual bool importsNestedJSONObjects() const { return false; }
+
     /// True if the parser reads the raw representation of a field of any type verbatim into a `String`
     /// destination column, as the flat-text formats (`TSV`, `CSV`, ...) do. It is false for formats
     /// that store typed values and reject a non-string value for a `String` column (`BSONEachRow`,

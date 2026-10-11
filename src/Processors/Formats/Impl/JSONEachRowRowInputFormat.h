@@ -107,6 +107,9 @@ public:
     bool readsTypedJSONValueTokens() const override { return !json_strings; }
     bool readsStringValuesAsWholeText() const override { return json_strings; }
 
+    /// `JSONEachRowRowInputFormat` registers the `Nested` prefixes under `input_format_import_nested_json`.
+    bool importsNestedJSONObjects() const override { return true; }
+
     /// The parser resolves field names through `CaseAwareBlockNameMap`, honoring
     /// `input_format_column_name_matching_mode`.
     bool honorsColumnNameMatchingMode() const override { return true; }
