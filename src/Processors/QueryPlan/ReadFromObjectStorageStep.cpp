@@ -141,15 +141,20 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     auto context = getContext();
-    /// Iceberg reads the row lineage columns from the data file.
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration()),
-        context,
-        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
-        query_info.row_level_filter,
-        query_info.prewhere_info);
-    format_filter_info->top_k_filter = top_k_filter;
+    auto make_format_filter_info = [&](std::shared_ptr<const ActionsDAG> filter)
+    {
+        auto result = std::make_shared<FormatFilterInfo>(
+            std::move(filter),
+            context,
+            configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+            query_info.row_level_filter,
+            query_info.prewhere_info);
+        result->top_k_filter = top_k_filter;
+        return result;
+    };
 
+    /// A dataset reader gets the whole filter, including the conjuncts on virtual columns: it pushes
+    /// down `LIMIT` and `count` only when it can evaluate the whole filter itself.
     if (auto dataset_pipe = configuration->readDataset(
             storage_snapshot,
             info,
@@ -157,7 +162,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             context,
             max_block_size,
             num_streams,
-            format_filter_info,
+            make_format_filter_info(info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag),
             need_only_count,
             limit,
             distributed_processing))
@@ -189,6 +194,10 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
+
+    /// Iceberg reads the row lineage columns from the data file.
+    auto format_filter_info = make_format_filter_info(
+        info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration()));
 
     for (size_t i = 0; i < num_streams; ++i)
     {
