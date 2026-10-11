@@ -1,4 +1,4 @@
-<test>
+<test run_all_queries="1">
     <!-- The set of `IN` spills to disk, where it stores its keys in the ascending order of their disk keys.
          In the first four queries, the keys arrive in the order of their disk keys, which keep the order of
          numbers and short `FixedString` values, and of the first 4 bytes of other strings. So lookups of
