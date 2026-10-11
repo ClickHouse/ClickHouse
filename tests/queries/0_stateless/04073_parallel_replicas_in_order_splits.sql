@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-msan
 
 -- Test that in-order reading with parallel replicas creates multiple splits
 -- (reading streams) within each replica for intra-replica parallelism.

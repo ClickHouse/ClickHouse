@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, long
+-- Tags: no-replicated-database, long, no-msan
 -- long: one run of this file goes past the flaky check's 180s per-run budget under ASan
 -- with S3 storage and metadata in Keeper, where every statement pays an object-storage
 -- round trip. Untagged, that budget fails the check outright rather than reporting a flake.

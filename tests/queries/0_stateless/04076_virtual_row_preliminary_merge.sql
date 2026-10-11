@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-random-merge-tree-settings
+-- Tags: no-parallel-replicas, no-random-merge-tree-settings, no-msan
 -- ^ no-parallel-replicas because we use query_log
 
 SET optimize_read_in_order = 1;

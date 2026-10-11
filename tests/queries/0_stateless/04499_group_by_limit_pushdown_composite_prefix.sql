@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, long
+-- Tags: no-parallel-replicas, long, no-msan
 -- Correctness of enable_group_by_top_k_optimization for composite GROUP BY keys,
 -- ORDER BY prefix matching, and projections that reuse a GROUP BY key's name for
 -- a different expression.

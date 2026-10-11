@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-msan
 -- The flaky check runs one copy of the changed test per core. This test is heavy enough that the
 -- self-contention alone puts it over the 180 second cap.
 

@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-msan
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
 -- grammar requires it.
 --

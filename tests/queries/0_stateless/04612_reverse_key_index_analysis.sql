@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-msan
 -- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
 
 -- Primary key pruning on tables with reverse-sorted key columns must never drop granules that
