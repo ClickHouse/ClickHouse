@@ -2,21 +2,12 @@
 #include <Interpreters/DiskSetImpl.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Core/SortDescription.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/sortBlock.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/ISink.h>
-#include <Processors/Transforms/MergeSortingTransform.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <Core/Defines.h>
+#include <Interpreters/DiskSetKeySorter.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/FailPoint.h>
-#include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
-
-namespace ProfileEvents
-{
-extern const Event ExternalSetMerge;
-}
 
 namespace DB
 {
@@ -50,19 +41,15 @@ size_t DiskSetBuilder::getMinBytesInRun(size_t max_bytes_before_external_set)
 size_t
 DiskSetBuilder::estimateMemoryToWriteRun(size_t max_bytes_before_external_set, size_t max_block_size, size_t key_bytes, size_t buffer_size)
 {
-    /// The estimate counts the run, an added column of keys with its sort permutation, and three buffers of
-    /// temporary files.
-    const size_t column_bytes = max_block_size * (key_bytes + sizeof(IColumn::Permutation::value_type));
-    return getMinBytesInRun(max_bytes_before_external_set) + column_bytes + 3 * buffer_size;
+    return estimateMemoryToSortRun(getMinBytesInRun(max_bytes_before_external_set), max_block_size, key_bytes, buffer_size);
 }
 
-/// Each column of keys is sorted and deduplicated on arrival and merged by the external sorter, which keeps
-/// one row per key, in blocks of `max_block_size` rows. The sorter writes a run once it buffers at least
-/// `getMinBytesInRun` bytes and tracked query memory exceeds `max_bytes_before_external_set`. Its final merge
-/// writes the keys into a `DiskSetImpl`. The builder checks the size limits after each merged block and once
-/// more after the set writes its last block. In the `break` mode, it stops the merge at the block that
+/// The builder adds each column of keys to a `DiskSetKeySorter`, which writes runs of sorted distinct keys to
+/// temporary files while tracked query memory exceeds `max_bytes_before_external_set`, and merges them into a
+/// `DiskSetImpl` in batches of `max_block_size` keys. The builder checks the size limits after each batch and
+/// once more after the set writes its last block. In the `break` mode, it stops the merge at the batch that
 /// reaches the limits. The builder also counts the distinct keys as they arrive: the filters of the set are
-/// sized before the merge writes its first key, and the sorter outputs nothing before all keys have arrived.
+/// sized before the merge writes its first key, and the sorter passes on no keys until all have arrived.
 template <typename Key>
 class DiskSetBuilderImpl final : public DiskSetBuilder
 {
@@ -71,39 +58,37 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         const SizeLimits & limits_,
         size_t max_bytes_before_external_set,
-        size_t max_block_size,
+        size_t max_block_size_,
         size_t min_free_disk_space_,
         size_t max_bytes_for_bloom_filter_,
         size_t max_bytes_for_cache_,
-        QueryStatusPtr process_list_element);
-    ~DiskSetBuilderImpl() override;
+        QueryStatusPtr process_list_element_);
 
     void add(ColumnPtr keys) override;
     std::unique_ptr<DiskSet> finish() override;
     bool isTruncated() const override { return truncated; }
 
 private:
-    class Sink;
-
-    /// Appends the next block of the sorter's output to the set and checks the size limits. The sorter
-    /// also deduplicates the keys.
-    void appendSortedDistinctKeys(const IColumn & keys);
+    /// Appends the next batch of the merge to the set and checks the size limits.
+    void appendSortedDistinctKeys(std::span<const Key> keys);
 
     /// Checks the size limits, which apply to the distinct keys of the set and to the memory of its
     /// directory. In the `break` mode, a set that reaches the limits keeps the keys that reached them. A set
     /// in memory does the same with the block that reaches its limits.
     void checkLimits();
 
+    /// Checks the time limit of the query, which throws in the `throw` overflow mode and when the query is
+    /// cancelled. In the `break` mode, the limit stops the query without an exception, as the failpoint does,
+    /// but a set without all its keys would give wrong results, so the builder throws instead.
+    void checkTimeLimit() const;
+
     TemporaryDataOnDiskScopePtr tmp_data;
     SizeLimits limits;
+    size_t max_block_size;
     size_t min_free_disk_space;
     size_t max_bytes_for_bloom_filter;
     size_t max_bytes_for_cache;
-    SharedHeader header;
-    SortDescription description;
-
-    /// Becomes true once the sorter finishes, by delivering all keys or by being stopped at the size limits.
-    bool sorter_finished = false;
+    QueryStatusPtr process_list_element;
 
     /// Becomes true when the set reaches its size limits in the `break` overflow mode and keeps no more keys.
     bool truncated = false;
@@ -111,38 +96,10 @@ private:
     /// Counts the distinct keys for the filters of the set. It is null when the budget of the filters is 0.
     std::unique_ptr<typename DiskSetBlockFilters<Key>::DistinctKeyCounter> distinct_key_counter;
 
-    /// The set is created with its file when the sorter delivers the first keys.
+    DiskSetKeySorter<Key> sorter;
+
+    /// The set is created with its file when the merge passes the first keys.
     std::unique_ptr<DiskSetImpl<Key>> set;
-    QueryPipeline pipeline;
-
-    /// The first `add` creates the executor. `PushingPipelineExecutor::finish` runs nothing for an executor
-    /// that never received a chunk, so a builder without keys skips the sorter and finishes an empty set.
-    std::unique_ptr<PushingPipelineExecutor> executor;
-};
-
-template <typename Key>
-class DiskSetBuilderImpl<Key>::Sink final : public ISink
-{
-public:
-    Sink(SharedHeader header_, DiskSetBuilderImpl & builder_)
-        : ISink(std::move(header_))
-        , builder(builder_)
-    {
-    }
-    String getName() const override { return "DiskSetSink"; }
-
-    Status prepare() override
-    {
-        /// Closing the input stops the merge once the set keeps no more keys.
-        if (builder.truncated)
-            input.close();
-        return ISink::prepare();
-    }
-
-private:
-    void consume(Chunk chunk) override { builder.appendSortedDistinctKeys(*chunk.getColumns().front()); }
-    void onFinish() override { builder.sorter_finished = true; }
-    DiskSetBuilderImpl & builder;
 };
 
 template <typename Key>
@@ -150,95 +107,38 @@ DiskSetBuilderImpl<Key>::DiskSetBuilderImpl(
     TemporaryDataOnDiskScopePtr tmp_data_,
     const SizeLimits & limits_,
     size_t max_bytes_before_external_set,
-    size_t max_block_size,
+    size_t max_block_size_,
     size_t min_free_disk_space_,
     size_t max_bytes_for_bloom_filter_,
     size_t max_bytes_for_cache_,
-    QueryStatusPtr process_list_element)
+    QueryStatusPtr process_list_element_)
     : tmp_data(std::move(tmp_data_))
     , limits(limits_)
+    , max_block_size(max_block_size_)
     , min_free_disk_space(min_free_disk_space_)
     , max_bytes_for_bloom_filter(max_bytes_for_bloom_filter_)
     , max_bytes_for_cache(max_bytes_for_cache_)
-    , header(std::make_shared<const Block>(Block{{ColumnVector<Key>::create(), std::make_shared<DataTypeNumber<Key>>(), "key"}}))
+    , process_list_element(std::move(process_list_element_))
+    , sorter(tmp_data, getMinBytesInRun(max_bytes_before_external_set), max_bytes_before_external_set, min_free_disk_space)
 {
     chassert(max_bytes_before_external_set);
-    description.emplace_back("key", 1, 1);
 
     if (max_bytes_for_bloom_filter)
         distinct_key_counter = std::make_unique<typename DiskSetBlockFilters<Key>::DistinctKeyCounter>();
-
-    /// `add` passes sorted unique chunks, which lets the sorter keep one row per key in its merges.
-    auto merge_sort = std::make_shared<MergeSortingTransform>(
-        header,
-        description,
-        max_block_size,
-        /*max_block_bytes=*/0,
-        /*limit=*/0,
-        /*increase_sort_description_compile_attempts=*/false,
-        /*max_bytes_before_remerge=*/0,
-        /*remerge_lowered_memory_bytes_ratio=*/0,
-        getMinBytesInRun(max_bytes_before_external_set),
-        max_bytes_before_external_set,
-        tmp_data,
-        min_free_disk_space,
-        /*threshold_tracker=*/nullptr,
-        MergeSorter::Mode::MergeUniqueChunks,
-        ProfileEvents::ExternalSetMerge);
-
-    auto sink = std::make_shared<Sink>(header, *this);
-    connect(merge_sort->getOutputs().front(), sink->getPort());
-
-    auto processors = std::make_shared<Processors>(Processors{merge_sort, sink});
-    pipeline = QueryPipeline({}, std::move(processors), &merge_sort->getInputs().front());
-    pipeline.setProcessListElement(std::move(process_list_element));
-    pipeline.disableReadProgress();
-}
-
-template <typename Key>
-DiskSetBuilderImpl<Key>::~DiskSetBuilderImpl()
-{
-    if (executor)
-    {
-        try
-        {
-            executor->cancel();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("DiskSetBuilder"), "Failed to cancel PushingPipelineExecutor");
-        }
-    }
 }
 
 template <typename Key>
 void DiskSetBuilderImpl<Key>::add(ColumnPtr keys)
 {
-    auto block = header->cloneWithColumns({std::move(keys)});
-
-    /// Rows with equal keys are identical, so it does not matter which one the unstable sort
-    /// and the subsequent deduplication keep.
-    sortBlockAndDeduplicate(block, description, IColumn::PermutationSortStability::Unstable);
-
+    const auto & values = assert_cast<const ColumnVector<Key> &>(*keys).getData();
     if (distinct_key_counter)
-    {
-        const auto & values = assert_cast<const ColumnVector<Key> &>(*block.getByPosition(0).column).getData();
         distinct_key_counter->add({values.data(), values.size()});
-    }
-
-    if (!executor)
-        executor = std::make_unique<PushingPipelineExecutor>(pipeline);
-
-    executor->push(std::move(block));
+    sorter.add({values.data(), values.size()});
 }
 
 template <typename Key>
-void DiskSetBuilderImpl<Key>::appendSortedDistinctKeys(const IColumn & keys)
+void DiskSetBuilderImpl<Key>::appendSortedDistinctKeys(std::span<const Key> keys)
 {
-    const auto & values = assert_cast<const ColumnVector<Key> &>(keys).getData();
-    if (values.empty())
-        return;
-
     if (!set)
         set = std::make_unique<DiskSetImpl<Key>>(
             tmp_data,
@@ -247,7 +147,7 @@ void DiskSetBuilderImpl<Key>::appendSortedDistinctKeys(const IColumn & keys)
             max_bytes_for_bloom_filter,
             max_bytes_for_cache);
 
-    set->add({values.data(), values.size()});
+    set->add(keys);
     checkLimits();
 }
 
@@ -262,21 +162,26 @@ void DiskSetBuilderImpl<Key>::checkLimits()
 }
 
 template <typename Key>
+void DiskSetBuilderImpl<Key>::checkTimeLimit() const
+{
+    bool within_time_limit = !process_list_element || process_list_element->checkTimeLimit();
+    fiu_do_on(FailPoints::disk_set_builder_stop_before_finish, { within_time_limit = false; });
+    if (!within_time_limit)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled before the set of IN was written to disk");
+}
+
+template <typename Key>
 std::unique_ptr<DiskSet> DiskSetBuilderImpl<Key>::finish()
 {
-    if (executor)
+    checkTimeLimit();
+    sorter.merge(max_block_size, [&](std::span<const Key> keys)
     {
-        /// The failpoint stops the executor as the time limit in the `break` overflow mode does.
-        fiu_do_on(FailPoints::disk_set_builder_stop_before_finish, { executor->cancel(); });
-        executor->finish();
-        executor.reset();
-
-        /// The executor stops without an exception at the time limit in the `break` overflow mode. A set
-        /// without all its keys would give wrong results, so the query stops with an exception instead.
-        if (!sorter_finished)
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled before the set of IN was written to disk");
-    }
-    pipeline = {};
+        appendSortedDistinctKeys(keys);
+        if (truncated) /// The set keeps no more keys
+            return false;
+        checkTimeLimit();
+        return true;
+    });
 
     if (!set)
         set = std::make_unique<DiskSetImpl<Key>>();
