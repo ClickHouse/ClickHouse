@@ -806,3 +806,500 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def test_writes_mutate_update(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_mutate_update_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456', 2);", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('999', 3);", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\t1\n456\t2\n999\t3\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = '777' WHERE x = '123';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\t2\n777\t1\n999\t3\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = 'goshan dr' WHERE x = '777';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\t2\n999\t3\ngoshan dr\t1\n"
+
+    node.query(f"ALTER TABLE {table_ref} UPDATE x = 'pudge1000-7' WHERE y = 2;", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "999\t3\ngoshan dr\t1\npudge1000-7\t2\n"
+
+
+def test_writes_mutate_delete(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_mutate_delete_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    # DELETE on empty table is a no-op.
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'pudge1000-7';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == ""
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('789'), ('890'), ('999');", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n890\n999\n"
+
+    # No-match DELETE keeps the table intact.
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = 'pudge1000-7';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n890\n999\n"
+
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = '789';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n890\n999\n"
+
+    # Lightweight DELETE syntax should work identically against catalog tables.
+    node.query(f"DELETE FROM {table_ref} WHERE x = '123';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n890\n999\n"
+
+    node.query(f"ALTER TABLE {table_ref} DELETE WHERE x = '999';", settings=write_settings)
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n890\n"
+
+
+def test_iceberg_file_progress_callback(started_cluster):
+    """
+    Regression test for the `IcebergIterator::next` file-progress callback wiring (PR #105413).
+
+    `IcebergIterator` stored a `FileProgressCallback` but never invoked it, so the
+    per-query `Progress.total_bytes_to_read` stayed at zero for Iceberg scans and
+    the progress bar showed no estimate. The fix invokes the callback with the data
+    file size for every object info returned. The assertion below uses the
+    `FileProgressCallbackInvocations` ProfileEvent, which is incremented inside the
+    callback lambda installed by `TCPHandler::setFileProgressCallback`, so removing
+    the `callback(...)` call in `IcebergIterator::next` makes this event stay at
+    zero for the test query.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_progress_callback_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    table = create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        DEFAULT_SCHEMA,
+        PartitionSpec(),
+        DEFAULT_SORT_ORDER,
+    )
+
+    # Append a small but non-empty batch so the iterator returns a data-file entry.
+    num_rows = 50
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # `node.query` uses native TCP, the only protocol path where
+    # `setFileProgressCallback` is currently wired. `SELECT *` with `FORMAT Null`
+    # forces a full scan: the metadata-only `SELECT count()` path resolves the row
+    # count from manifest statistics and bypasses the data-file iterator.
+    query_id = f"iceberg_progress_callback_{uuid.uuid4().hex}"
+    node.query(
+        f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` FORMAT Null",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    # `FileProgressCallbackInvocations` is incremented inside the lambda installed
+    # by `TCPHandler::setFileProgressCallback`. For an Iceberg-table scan it can
+    # only fire from `IcebergIterator::next` (the generic
+    # `StorageObjectStorageSource::KeysIterator` path is replaced by
+    # `IcebergIterator` for Iceberg storage), so a non-zero value proves the
+    # iterator's `callback(FileProgress(...))` invocation was executed.
+    profile_event_value = node.query(
+        f"""
+        SELECT ProfileEvents['FileProgressCallbackInvocations']
+        FROM system.query_log
+        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+        """
+    ).strip()
+    assert profile_event_value, (
+        f"`system.query_log` has no `QueryFinish` row for query_id={query_id}."
+    )
+    file_progress_callback_invocations = int(profile_event_value)
+    assert file_progress_callback_invocations > 0, (
+        f"Expected `FileProgressCallbackInvocations` > 0 from the Iceberg scan, "
+        f"got {file_progress_callback_invocations}. "
+        f"`IcebergIterator::next` did not invoke the file-progress callback "
+        f"(regression of PR #105413 wiring)."
+    )
+
+
+def test_alter_database_settings_not_supported(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"iceberg_alter_settings_{uuid.uuid4().hex}"
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+
+    fake_token = f"fake_secret_token_{uuid.uuid4().hex}"
+
+    qid_alter = uuid.uuid4().hex
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING warehouse = 'other_warehouse'"
+    )
+    assert "BAD_ARGUMENTS" in error
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = '{fake_token}'",
+        query_id=qid_alter,
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING no_such_setting = 1"
+    )
+    assert "BAD_ARGUMENTS" in error or "UNKNOWN_SETTING" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "other_warehouse" not in show_result
+    assert "onelake_bearer_token" not in show_result
+    node.query(
+        f"SELECT name FROM system.tables WHERE database = '{db_name}' SETTINGS show_data_lake_catalogs_in_system_tables = true"
+    )
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    logged_query = node.query(
+        f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log WHERE query_id = '{qid_alter}'"
+    )
+    assert fake_token not in logged_query
+    assert "[HIDDEN]" in logged_query
+
+    node.query(f"DROP DATABASE {db_name}")
+
+    glue_db_name = f"glue_alter_settings_{uuid.uuid4().hex}"
+    node.query(
+        f"""
+        ATTACH DATABASE {glue_db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x'
+        """
+    )
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {glue_db_name} MODIFY SETTING region = 'eu-west-1'"
+    )
+    assert "NOT_IMPLEMENTED" in error
+    node.query(f"DROP DATABASE {glue_db_name}")
+
+
+def test_alter_database_settings_rest_auth_header(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"rest_alter_auth_header_{uuid.uuid4().hex}"
+    old_header = f"Authorization: Bearer old_{uuid.uuid4().hex}"
+    new_header = f"Authorization: Bearer new_{uuid.uuid4().hex}"
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-rest:1/api')
+        SETTINGS catalog_type = 'rest', warehouse = 'wh', auth_header = '{old_header}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING auth_header = '{new_header}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING catalog_credential = 'id:secret'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert new_header not in show_result
+    assert "[HIDDEN]" in show_result
+
+    node.restart_clickhouse()
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_header in engine_full_with_secrets
+    assert old_header not in engine_full_with_secrets
+
+    node.query(f"DROP DATABASE {db_name}")
+
+
+def test_alter_database_settings_onelake_persistence(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"onelake_alter_persist_{uuid.uuid4().hex}"
+    old_token = f"secret_token_{uuid.uuid4().hex}"
+    new_token = f"secret_token_{uuid.uuid4().hex}"
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-0', onelake_tenant_id = 'tenant-1', onelake_bearer_token = '{old_token}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_tenant_id = 'tenant-2', onelake_bearer_token = '{new_token}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_client_id = 'client-1'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING warehouse = 'other_warehouse'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = ''"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "tenant-2" in show_result
+    assert new_token not in show_result
+    assert old_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert "tenant-2" in engine_full_with_secrets
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    node.restart_clickhouse()
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "tenant-2" in show_result
+    assert "tenant-0" not in show_result
+    assert "tenant-1" not in show_result
+    assert new_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+    )
+    assert "tenant-2" in engine_full
+    assert "tenant-0" not in engine_full
+    assert "tenant-1" not in engine_full
+    assert new_token not in engine_full
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    node.query(f"DROP DATABASE {db_name}")
+
+
+def test_alter_database_settings_onelake_refresh_token(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"onelake_refresh_token_{uuid.uuid4().hex}"
+    old_token = f"refresh_token_{uuid.uuid4().hex}"
+    new_token = f"refresh_token_{uuid.uuid4().hex}"
+
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_refresh_token = '{old_token}'
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', oauth_server_use_request_body = 0
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "oauth_server_use_request_body" in error
+
+    # In refresh-token mode the catalog access token is reused for Azure storage,
+    # so a non-storage auth_scope is rejected at CREATE time.
+    error = node.query_and_get_error(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', auth_scope = 'api://my-catalog/.default'
+        """,
+        settings={"allow_database_iceberg": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "auth_scope" in error
+
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
+        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}'
+        """
+    )
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_refresh_token = '{new_token}'"
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = 'token'"
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert new_token not in show_result
+    assert "[HIDDEN]" in show_result
+
+    node.restart_clickhouse()
+
+    engine_full_with_secrets = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert new_token in engine_full_with_secrets
+    assert old_token not in engine_full_with_secrets
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+    )
+    assert new_token not in engine_full
+
+    node.query(f"DROP DATABASE {db_name}")
+
+
+def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
+    """
+    Regression test: an error from the catalog while listing tables (e.g. expired
+    catalog credentials) must not be silently turned into an empty listing when the
+    user explicitly opted into showing datalake catalogs in system tables with
+    show_data_lake_catalogs_in_system_tables=1. Without the opt-in the old tolerant
+    behaviour is kept (system tables must not fail because of one broken catalog).
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_listing_error"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, "table_x")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_get_tables_throw")
+    try:
+        assert (
+            node.query(
+                f"SELECT count() FROM system.iceberg_files WHERE database = '{CATALOG_NAME}'"
+            ).strip()
+            == "0"
+        )
+
+        error = node.query_and_get_error(
+            f"SELECT count() FROM system.iceberg_files WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+
+        error = node.query_and_get_error(
+            f"SELECT name, engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert "Injected catalog listing failure" in error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_get_tables_throw")
+
+    result = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    )
+    assert "table_x" in result
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_catalog_commit_conflict_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node, root_namespace, table_name, "(x UInt64)"
+    )
+
+    # Every sink reads the branch tip in its constructor, and all `max_insert_threads` sinks are
+    # constructed before the pipeline starts, so all but one of them commit against a stale parent
+    # and are refused with `409`. That makes the conflict a property of the plan rather than a race.
+    num_writers = 4
+    query_id = uuid.uuid4().hex
+    node.query(
+        f"INSERT INTO {table_ref} SELECT number FROM numbers_mt(4000000)",
+        query_id=query_id,
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "max_insert_threads": num_writers,
+            "max_threads": num_writers,
+        },
+    )
+
+    node.query("SYSTEM FLUSH LOGS system.text_log")
+
+    conflicts, http_requests = map(
+        int,
+        node.query(
+            f"""
+            SELECT
+                countIf(logger_name LIKE 'RestCatalog%' AND message LIKE '%updateMetadata conflict%'),
+                countIf(logger_name = 'ReadWriteBufferFromHTTP')
+            FROM system.text_log
+            WHERE query_id = '{query_id}' AND message LIKE '%409%'
+            """
+        ).split(),
+    )
+
+    assert conflicts, (
+        "no writer was refused, so nothing about conflict handling was exercised"
+    )
+    assert http_requests == conflicts, (
+        f"{conflicts} refused commit(s) cost {http_requests} catalog requests, so a conflict is "
+        f"resent with backoff instead of being handed back to the sink at once"
+    )
+
+    assert int(node.query(f"SELECT count() FROM {table_ref}")) == 4000000
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
