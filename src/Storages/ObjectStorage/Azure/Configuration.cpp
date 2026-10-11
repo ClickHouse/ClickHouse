@@ -19,8 +19,10 @@
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/identity/client_secret_credential.hpp>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/logger_useful.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -38,6 +40,11 @@ namespace Setting
     extern const SettingsBool azure_truncate_on_insert;
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_azure;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool azure_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace ErrorCodes
@@ -93,6 +100,20 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
 {
     assertInitialized();
     check(context);
+
+    connection_params.anonymous_fallback_for_server_credentials = connection_params.forbid_implicit_credentials
+        && is_loading_from_existing_metadata
+        && (context->getGlobalContext()->getServerSettings()[ServerSetting::azure_load_table_anonymously_if_credentials_restricted]
+            || force_anonymous_load_fallback);
+
+    if (connection_params.anonymous_fallback_for_server_credentials && connection_params.mustDropServerManagedCredentials())
+        LOG_WARNING(
+            getLogger("StorageAzureConfiguration"),
+            "Loading this table with an Azure client that has no credentials: its definition uses the server's "
+            "own identity, which is restricted for user queries "
+            "(azure_allow_server_credentials_in_user_queries = 0). It stays inaccessible until its credentials "
+            "resolve to a permitted source; set azure_load_table_anonymously_if_credentials_restricted = 0 to "
+            "fail loading instead.");
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
@@ -154,6 +175,10 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     }
 
     connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, local_context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
+
+    /// Captured here because the client is built later, sometimes from the global context.
+    connection_params.forbid_implicit_credentials = local_context->shouldRestrictUserQueryAzureCredentials();
+
     return connection_params;
 }
 

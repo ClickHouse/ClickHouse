@@ -120,6 +120,7 @@ possible_properties = {
         ["key_values", "legacy_names", "both"]
     ),
     "asynchronous_metrics_update_period_s": threshold_generator(0.2, 0.2, 1, 30, 5),
+    "azure_load_table_anonymously_if_credentials_restricted": true_false_lambda,
     "background_buffer_flush_schedule_pool_size": threads_lambda,
     "background_common_pool_size": no_zero_threads_lambda,
     "background_distributed_schedule_pool_size": no_zero_threads_lambda,

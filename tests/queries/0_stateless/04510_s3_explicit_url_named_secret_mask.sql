@@ -258,6 +258,8 @@ BACKUP TABLE nonexistent_04510 TO Null(); -- { serverError UNKNOWN_TABLE }
 -- rejected only after the statement is logged, and AzureQueue has no backup engine at all. The last
 -- two statements are the controls: a connection string hides its AccountKey, and the three-argument
 -- shape has nothing to hide, so it stays visible verbatim.
+-- Let statements without explicit credentials reach argument validation instead of `ACCESS_DENIED`.
+SET azure_allow_server_credentials_in_user_queries = 1;
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'cont', 'blob',
                  'SEKRIT_AZTO4'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, 'dir',
