@@ -41,7 +41,7 @@ namespace
 
         AccessRightsElements elements;
         if (with_implicit)
-            elements = ContextAccess::addImplicitAccessRights(access, *access_control).getElements();
+            elements = ContextAccess::addImplicitAccessRights(access, access_control->getImplicitExpansionSettings()).getElements();
         else
             elements = access.getElements();
 
