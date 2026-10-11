@@ -2848,9 +2848,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
                             /// An upper bound holding a nested NULL breaks the same assumption in its own
                             /// way: it is widened to `+inf`, so an interior granule of a continuous range
-                            /// is no longer claimed to match wholly.
+                            /// is no longer claimed to match wholly. Neither is any granule for a comparison
+                            /// over a `Tuple` key column with a `Nullable` element, which is NULL for a row
+                            /// holding a NULL element wherever the key stores it.
 #ifndef NDEBUG
-                            if (used_key_prefix_loaded_in_memory && !boundary_pair_inexact)
+                            if (used_key_prefix_loaded_in_memory && !boundary_pair_inexact
+                                && !key_condition.comparesTupleKeyWithNullableElement(primary_key.data_types))
                             {
                                 auto describe_condition = [](const KeyCondition & condition)
                                 {

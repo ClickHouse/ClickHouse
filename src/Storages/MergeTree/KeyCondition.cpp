@@ -7062,6 +7062,33 @@ bool rangeOfKeyColumnMayHoldNull(const Range & key_range, const DataTypes & key_
         && isNullableOrLowCardinalityNullable(key_types[key_position]);
 }
 
+bool tupleTypeHasNullableElement(const IDataType & type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type);
+    if (!tuple_type)
+        return false;
+
+    for (const auto & element : tuple_type->getElements())
+        if (isNullableOrLowCardinalityNullable(element) || tupleTypeHasNullableElement(*element))
+            return true;
+
+    return false;
+}
+
+/// Whether a range atom over a `Tuple` key column may answer NULL for a row inside any analysed range.
+/// A `Tuple` comparison answers NULL once it reaches a NULL element - `(2, NULL) >= (2, 3)` is NULL - and
+/// the key stores such a row between bounds that hold no NULL themselves: `(2, NULL)` sorts after `(2, 3)`
+/// and before `(3, 1)`. `IN` answers 0 or 1 for such a row, so set atoms are not affected. A `Nullable(Tuple)`
+/// key column is looked through: `rangeOfKeyColumnMayHoldNull` covers a NULL tuple, not a NULL element of it.
+bool rangeAtomMayBeNullInsideTuple(KeyCondition::RPNElement::Function function, const DataTypes & key_types, size_t key_position)
+{
+    if (function != KeyCondition::RPNElement::FUNCTION_IN_RANGE && function != KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE)
+        return false;
+
+    return key_position < key_types.size() && key_types[key_position]
+        && tupleTypeHasNullableElement(*removeNullable(key_types[key_position]));
+}
+
 /// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
 /// answering true or false as `IS NULL` and `IS NOT NULL` do.
 bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
@@ -7097,7 +7124,8 @@ bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
 /// analysis is gone as soon as one such atom reads a `Nullable` key column whose range may hold a
 /// NULL. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
 /// the algebra describes them exactly. Only `can_be_false` is affected; `can_be_true`, and with it
-/// every pruning decision, is left alone.
+/// every pruning decision, is left alone. The same holds for a NULL nested in a `Tuple` key column, see
+/// `rangeAtomMayBeNullInsideTuple`, except that such a row can sit inside any range.
 bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
 {
     for (const auto & element : rpn)
@@ -7106,8 +7134,13 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
             continue;
 
         for (size_t key_column : element.key_columns)
+        {
             if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(hyperrectangle[key_column], key_types, key_column))
                 return true;
+
+            if (rangeAtomMayBeNullInsideTuple(element.function, key_types, key_column))
+                return true;
+        }
     }
 
     return false;
@@ -7132,8 +7165,21 @@ bool KeyCondition::mayReadNullKeyValue(
             if (sparse_pos < sparse_hyperrectangle.size()
                 && rangeOfKeyColumnMayHoldNull(sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
                 return true;
+
+            if (rangeAtomMayBeNullInsideTuple(element.function, sparse_key_types, sparse_pos))
+                return true;
         }
     }
+
+    return false;
+}
+
+bool KeyCondition::comparesTupleKeyWithNullableElement(const DataTypes & key_types) const
+{
+    for (const auto & element : rpn)
+        for (size_t key_column : element.key_columns)
+            if (rangeAtomMayBeNullInsideTuple(element.function, key_types, key_column))
+                return true;
 
     return false;
 }

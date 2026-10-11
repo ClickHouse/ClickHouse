@@ -277,6 +277,11 @@ public:
 
     bool matchesExactContinuousRange() const;
 
+    /// Whether a comparison reads a `Tuple` or `Nullable(Tuple)` key column with a `Nullable` element. The
+    /// comparison is NULL for a row holding a NULL element, and the key stores such a row inside a range whose
+    /// bounds hold no NULL, so `checkInHyperrectangle` never claims that a range matches the condition wholly.
+    bool comparesTupleKeyWithNullableElement(const DataTypes & key_types) const;
+
     /// Extract plain ranges of the condition.
     /// Note that only support one column key condition.
     ///
@@ -528,7 +533,8 @@ public:
         bool date_time_overflow_behavior_ignore_);
 
 private:
-    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value.
+    /// Whether any atom reads a `Nullable` key column whose analysed range may hold a NULL value, or
+    /// compares a `Tuple` key column whose `Nullable` element may make the comparison NULL.
     /// A NULL satisfies neither a comparison nor its negation, which the two-valued range algebra of
     /// `checkInHyperrectangle` cannot express, so it costs the analysis its `can_be_false` claim.
     bool mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const;
