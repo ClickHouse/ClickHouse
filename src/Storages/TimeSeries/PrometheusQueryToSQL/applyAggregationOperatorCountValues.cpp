@@ -138,7 +138,10 @@ SQLQueryPiece applyAggregationOperatorCountValues(
     SQLQueryPiece res = vector_argument;
     res.node = operator_node;
     if (label_name == kMetricName)
+    {
         res.metric_name_dropped = false;
+        res.metric_name_is_constant = false;
+    }
 
     /// Step 1: unroll each per-series values array into one row per non-null grid point.
     ASTPtr unrolled_query;

@@ -55,6 +55,7 @@ SQLQueryPiece applyFunctionScalar(
     auto res = argument;
     res.node = function_node;
     res.type = ResultType::SCALAR;
+    res.metric_name_is_constant = false;
 
     switch (argument.store_method)
     {
