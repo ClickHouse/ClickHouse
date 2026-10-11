@@ -740,6 +740,7 @@ def _wait_for_reused_snapshot_id_error(count_query: str) -> str:
         out, error = node.query_and_get_answer_with_error(count_query)
         if error:
             assert "INVALID_STATE" in error, f"unexpected error: {error!r}"
+            assert "reused snapshot ids" in error, f"not the reused snapshot id error: {error!r}"
             assert "clickhouse-keeper-client" in error, (
                 f"the error does not tell the operator how to recover: {error!r}"
             )
@@ -752,12 +753,30 @@ def _wait_for_reused_snapshot_id_error(count_query: str) -> str:
 
 
 def test_paimon_incremental_read_reused_snapshot_id_at_cursor(started_cluster):
-    """After a rewind the writer re-creates snapshots 2 and 3, so the cursor (3) equals the
-    warehouse head again but points at a snapshot it never consumed."""
+    """After a rewind the writer re-creates snapshot 2, then snapshot 3 while a read is pinned at 2, below the cursor (3).
+    The cursor then equals the warehouse head again but points at a snapshot it never consumed."""
     zk = cluster.get_kazoo_client("zoo1")
     try:
         writer_container_id, warehouse_uri, _, keeper_path, count_query = _consume_three_snapshots_then_rewind(
-            zk, CH_TABLE_NAME_REUSED_AT_CURSOR, "warehouse_reused_at_cursor", reused_commits=2
+            zk, CH_TABLE_NAME_REUSED_AT_CURSOR, "warehouse_reused_at_cursor", reused_commits=1
+        )
+
+        # A read pinned at the new head 2, below the cursor, while the writer reuses the cursor's id 3.
+        node.query("SYSTEM ENABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock")
+        parked_result = {}
+        parked = threading.Thread(
+            target=lambda: parked_result.update(
+                zip(("out", "err"), node.query_and_get_answer_with_error(count_query))
+            )
+        )
+        parked.start()
+        node.query("SYSTEM WAIT FAILPOINT paimon_incremental_read_pause_before_processing_lock PAUSE", timeout=60)
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=110, rows_per_commit=10, commit_times=1)
+        node.query("SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock")
+        parked.join(timeout=120)
+        assert not parked.is_alive(), "the parked reader never finished"
+        assert "reused snapshot ids" in parked_result.get("err", ""), (
+            f"a read pinned below the cursor missed the reused cursor id: {parked_result!r}"
         )
 
         _wait_for_reused_snapshot_id_error(count_query)
@@ -798,6 +817,7 @@ def test_paimon_incremental_read_reused_snapshot_id_at_cursor(started_cluster):
         assert zk.get(committed_path)[0] == b"5"
         assert_identity_bound()
     finally:
+        node.query("SYSTEM DISABLE FAILPOINT paimon_incremental_read_pause_before_processing_lock")
         zk.stop()
 
     node.query(f"DROP TABLE IF EXISTS {CH_TABLE_NAME_REUSED_AT_CURSOR} SYNC;")

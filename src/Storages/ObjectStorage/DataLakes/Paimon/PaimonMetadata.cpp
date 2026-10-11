@@ -961,6 +961,9 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
 
         if (latest_snapshot_info && *committed_snapshot_id <= latest_snapshot_info->first)
         {
+            if (committed.snapshot_identity)
+                checkCursorSnapshotUnchanged(*committed_snapshot_id, *committed.snapshot_identity);
+
             /// Everything up to the watermark has been consumed by another reader. Do not
             /// consume up to the fresh head either: this query's schema was resolved from
             /// the pinned state, and Paimon schemas can change across snapshots. The next
