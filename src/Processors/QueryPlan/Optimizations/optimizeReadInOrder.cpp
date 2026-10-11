@@ -1,4 +1,6 @@
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -220,6 +222,35 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
+/// `equals` compares a `String` with a `FixedString` zero-padded, so `s = toFixedString('a', 2)` holds for
+/// the `String` values `'a'`, `'a\0'` and `'a\0\0'`. They sort differently, so such a condition does not fix `s`.
+/// `Tuple` values are compared element by element with `equals`, so the same holds for a `String` element compared
+/// with a `FixedString` element: `t = tuple(toFixedString('a', 2))` holds for `tuple('a')` and `tuple('a\0')`.
+/// `Array` and `Map` values are cast to a common type and compared byte by byte, so they are not affected.
+/// A `FixedString` column is not affected either: all its values have the same length, so at most one of them matches.
+bool comparesStringWithFixedString(const DataTypePtr & column_type_with_wrappers, const DataTypePtr & constant_type_with_wrappers)
+{
+    auto column_type = removeLowCardinalityAndNullable(column_type_with_wrappers);
+    auto constant_type = removeLowCardinalityAndNullable(constant_type_with_wrappers);
+    if (isString(column_type) && isFixedString(constant_type))
+        return true;
+
+    const auto * column_tuple = typeid_cast<const DataTypeTuple *>(column_type.get());
+    const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
+    if (!column_tuple || !constant_tuple)
+        return false;
+
+    const auto & column_elements = column_tuple->getElements();
+    const auto & constant_elements = constant_tuple->getElements();
+    if (column_elements.size() != constant_elements.size())
+        return false;
+
+    for (size_t i = 0; i < column_elements.size(); ++i)
+        if (comparesStringWithFixedString(column_elements[i], constant_elements[i]))
+            return true;
+    return false;
+}
+
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
@@ -244,16 +275,21 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             else if (name == "equals")
             {
                 const ActionsDAG::Node * maybe_fixed_column = nullptr;
+                const ActionsDAG::Node * constant = nullptr;
                 size_t num_constant_columns = 0;
                 for (const auto & child : node->children)
                 {
                     if (child->column)
+                    {
                         ++num_constant_columns;
+                        constant = child;
+                    }
                     else
                         maybe_fixed_column = child;
                 }
 
-                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
+                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
+                    && !comparesStringWithFixedString(maybe_fixed_column->result_type, constant->result_type))
                 {
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fixed_columns.insert(maybe_fixed_column);
@@ -262,7 +298,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
                         && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective({}))
+                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
                     {
                         maybe_injective = maybe_injective->children.front();
                         fixed_columns.insert(maybe_injective);
@@ -1360,6 +1396,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return {};
 
+        /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
+        if (reading->isParallelReadingFromReplicas() && aggregating.getParams().only_merge)
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -1660,15 +1700,24 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
 }
 
-bool wouldReadInOrderBeUseful(
+QueryPlan::Node * findReadingStepForReadInOrder(QueryPlan::Node & node, bool read_in_order_through_join)
+{
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = false,
+        .read_in_order_through_join = read_in_order_through_join,
+    };
+    return findReadingStep(node, find_reading_ctx);
+}
+
+InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     const SortingStep & sorting,
     const KeyDescription & sorting_key,
     const QueryPlan::Node & subtree_above_reading)
 {
     if (sorting.getType() != SortingStep::Type::Full)
-        return false;
+        return nullptr;
     if (sorting_key.column_names.empty())
-        return false;
+        return nullptr;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1686,7 +1735,35 @@ bool wouldReadInOrderBeUseful(
         sorting_key.column_names,
         limit);
 
-    return order_info.input_order != nullptr;
+    return order_info.input_order;
+}
+
+InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
+    const SortingStep & sorting,
+    ReadFromMerge & merge,
+    const QueryPlan::Node & subtree_above_reading)
+{
+    if (sorting.getType() != SortingStep::Type::Full)
+        return nullptr;
+
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    size_t limit = sorting.getLimit();
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    /// The same matching as in `optimizeReadInOrder` itself: every child's sorting key against the sort
+    /// description, through the renaming that the child plan performs on top of the child table.
+    auto order_info = buildInputOrderFromSortDescription(
+        &merge,
+        fixed_columns,
+        dag,
+        sorting.getSortDescription(),
+        limit);
+
+    return order_info.input_order;
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)

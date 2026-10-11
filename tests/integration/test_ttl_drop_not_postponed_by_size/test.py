@@ -21,6 +21,8 @@ node = cluster.add_instance(
         "/ttl_drop_gate_c:size=64M",
         "/ttl_drop_gate_d:size=64M",
         "/ttl_drop_gate_e:size=64M",
+        "/ttl_drop_gate_orphan:size=64M",
+        "/ttl_drop_gate_mixed:size=64M",
     ],
     with_zookeeper=True,
 )
@@ -37,7 +39,15 @@ FILLER_ROWS = 34000
 
 # Each case gets its own disk and policy so that dropping one table's data cannot raise the
 # other table's threshold.
-CASES = {"t_a": "gate_a", "t_b": "gate_b", "t_c": "gate_c", "t_d": "gate_d", "t_e": "gate_e"}
+CASES = {
+    "t_a": "gate_a",
+    "t_b": "gate_b",
+    "t_c": "gate_c",
+    "t_d": "gate_d",
+    "t_e": "gate_e",
+    "t_orphan": "gate_orphan",
+    "t_mixed": "gate_mixed",
+}
 
 SIZE_UNITS = {"B": 1, "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30}
 
@@ -96,6 +106,7 @@ def assert_gate_would_fire(table, partition_id):
         f"max_bytes_to_merge_at_max_space_in_pool = {pool_limit} bytes, so the size check is "
         f"skipped for every merge"
     )
+    return threshold
 
 
 def ttl_merge_entry(table):
@@ -485,3 +496,132 @@ def test_dry_run_after_remove_ttl_counts_expired_part(started_cluster):
 
     node.query("DROP TABLE filler SYNC")
     node.query("DROP TABLE t_e SYNC")
+
+
+def test_orphan_ttl_drop_is_still_postponed_by_source_size(started_cluster):
+    """A drop tagged by TTL info of a TTL the table no longer has must keep the gate.
+
+    The parts carry the expired info of a removed column TTL and no rows TTL info, so the
+    merge is tagged as a whole-part drop, but the table's only TTL, a rows TTL, has not
+    expired for any row. The merge writes the rows back and needs room for them.
+    """
+    node.query("DROP TABLE IF EXISTS t_orphan SYNC")
+    node.query(
+        """
+        CREATE TABLE t_orphan (id UInt64, s String TTL event_time + INTERVAL 1 DAY, event_time DateTime)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/ttl_drop_gate/t_orphan', 'r1')
+        ORDER BY id
+        SETTINGS storage_policy = 'only_orphan',
+                 ttl_only_drop_parts = 1,
+                 merge_with_ttl_timeout = 0,
+                 max_replicated_merges_with_ttl_in_queue = 1,
+                 min_bytes_for_wide_part = 1
+        """
+    )
+    node.query("SYSTEM STOP TTL MERGES t_orphan")
+
+    for _ in range(2):
+        node.query(
+            "INSERT INTO t_orphan SELECT number, randomString(1024), now() - INTERVAL 10 DAY "
+            f"FROM numbers({ROWS_PER_INSERT})"
+        )
+    node.query("ALTER TABLE t_orphan MODIFY COLUMN s REMOVE TTL")
+    node.query(
+        "ALTER TABLE t_orphan MODIFY TTL event_time + INTERVAL 50 YEAR "
+        "SETTINGS materialize_ttl_after_modify = 0"
+    )
+    rows_before = query_int("SELECT count() FROM t_orphan")
+
+    assert_gate_would_fire("t_orphan", "all")
+
+    node.query("SYSTEM START TTL MERGES t_orphan")
+
+    entry = wait_for_entry_postponed_on_size("t_orphan")
+    assert "TTLDrop" in entry, (
+        "the postponed entry is not the whole-part drop this case is about, so it does not "
+        f"discriminate the exempted class:\n{entry}"
+    )
+    assert query_int("SELECT count() FROM t_orphan") == rows_before, (
+        "rows were removed although the merge was supposed to stay postponed:\n" + entry
+    )
+
+    node.query("DROP TABLE t_orphan SYNC")
+
+
+def test_mixed_drop_needs_room_only_for_parts_with_rows_left(started_cluster):
+    """A drop of fully expired parts that also takes a part without rows TTL info needs room
+    only for that part.
+
+    The attached part carries the expired info of its source table's column TTL and no rows
+    TTL info, so the drop takes it together with the expired parts next to it. Its rows have
+    not expired, and they are the only rows the merge writes back.
+    """
+    node.query("DROP TABLE IF EXISTS t_mixed SYNC")
+    node.query("DROP TABLE IF EXISTS t_mixed_src SYNC")
+    node.query(
+        """
+        CREATE TABLE t_mixed (id UInt64, s String, event_time DateTime)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/ttl_drop_gate/t_mixed', 'r1')
+        ORDER BY id
+        TTL event_time + INTERVAL 1 DAY
+        SETTINGS storage_policy = 'only_mixed',
+                 ttl_only_drop_parts = 1,
+                 merge_with_ttl_timeout = 0,
+                 max_replicated_merges_with_ttl_in_queue = 1,
+                 min_bytes_for_wide_part = 1
+        """
+    )
+    node.query(
+        """
+        CREATE TABLE t_mixed_src (id UInt64, s String TTL event_time + INTERVAL 1 HOUR, event_time DateTime)
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS storage_policy = 'only_mixed', min_bytes_for_wide_part = 1
+        """
+    )
+    node.query("SYSTEM STOP TTL MERGES t_mixed")
+    node.query("SYSTEM STOP MERGES t_mixed_src")
+
+    for _ in range(2):
+        node.query(
+            "INSERT INTO t_mixed SELECT number, randomString(1024), now() - INTERVAL 10 DAY "
+            f"FROM numbers({ROWS_PER_INSERT})"
+        )
+    # Two hours old: past the column TTL of t_mixed_src, not past the rows TTL of t_mixed.
+    node.query(
+        "INSERT INTO t_mixed_src SELECT number, 'keep', now() - INTERVAL 2 HOUR FROM numbers(100)"
+    )
+    node.query("ALTER TABLE t_mixed ATTACH PARTITION tuple() FROM t_mixed_src")
+    node.query("DROP TABLE t_mixed_src SYNC")
+
+    threshold = assert_gate_would_fire("t_mixed", "all")
+    attached_bytes = query_int(
+        "SELECT sum(bytes_on_disk) FROM system.parts WHERE active "
+        "AND database = currentDatabase() AND table = 't_mixed' AND delete_ttl_info_max = 0"
+    )
+    assert 0 < attached_bytes < threshold, (
+        f"the attached part without rows TTL info holds {attached_bytes} bytes, which does not "
+        f"fit below the gate threshold of {threshold} bytes on its own"
+    )
+
+    node.query("SYSTEM START TTL MERGES t_mixed")
+
+    assert_eq_with_retry(
+        node,
+        "SELECT count(), countIf(s = 'keep') FROM t_mixed",
+        "100\t100",
+        retry_count=120,
+        sleep_time=1,
+    )
+
+    node.query("SYSTEM FLUSH LOGS part_log")
+    assert (
+        query_int(
+            "SELECT count() FROM system.part_log WHERE database = currentDatabase() "
+            "AND table = 't_mixed' AND event_type = 'MergeParts' "
+            "AND merge_reason = 'TTLDropMerge'"
+        )
+        > 0
+    ), "the expired rows were removed by something other than a TTL drop merge"
+
+    node.query("DROP TABLE t_mixed SYNC")

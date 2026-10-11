@@ -5,11 +5,13 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -282,6 +284,27 @@ namespace
         builder.select_list.push_back(std::move(value));
 
         builder.where = std::move(where);
+
+        if (result.node->node_type == PrometheusQueryTree::NodeType::AggregationOperator)
+        {
+            const auto * aggregation = static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node);
+            if (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk")
+            {
+                if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
+                {
+                    bool metric_name_dropped = result.metric_name_dropped;
+                    /// Group ids follow read order, so order by the bucket tags.
+                    ASTPtr bucket_group = transformGroupASTForAggregationOperator(
+                        aggregation,
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        /*drop_metric_name=*/true,
+                        metric_name_dropped);
+                    builder.order_by.push_back(makeASTFunction("timeSeriesGroupToTags", std::move(bucket_group)));
+                }
+                builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+                builder.order_direction = aggregation->operator_name == "topk" ? -1 : 1;
+            }
+        }
 
         builder.with = std::move(context.subqueries);
         if (result.select_query)
