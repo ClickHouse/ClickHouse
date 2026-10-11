@@ -97,11 +97,13 @@ public:
         chassert(position < blocks.size()); /// `block` is one of the blocks of the reader
         current_block = block;
 
-        /// A cached block is decoded from its header and body, without reading the file.
-        if (const auto & cached_block = cached_blocks[position])
+        /// A cached block is decoded from its header and body, without reading the file. The reader releases
+        /// the block right after decoding it (see `cached_blocks`).
+        if (auto & cached_block = cached_blocks[position])
         {
             ReadBufferFromMemory body(cached_block->body.data(), cached_block->body.size());
             current_keys = decoder.decode(cached_block->header, body, set.directory.getFirstKey(block));
+            cached_block.reset();
             prefetchNextCachedBlock();
             return current_keys;
         }
@@ -153,9 +155,11 @@ private:
     const DiskSetImpl & set;
 
     /// The blocks of the call, with the cached block of each, or null for a block that the reader reads from
-    /// the file, and whether the cache admits a block that the reader reads. The reader holds the cached
-    /// blocks, so the cache may evict them before the reader decodes them. `position` is the index of the
+    /// the file, and whether the cache admits a block that the reader reads. `position` is the index of the
     /// block that `read` returned last, where `read` starts looking for the next one.
+    ///
+    /// The reader holds each cached block until it decodes the block, so the cache may evict the block before
+    /// then. It releases the block right after decoding it.
     std::vector<size_t> blocks;
     std::vector<DiskSetBlockCache::BlockPtr> cached_blocks;
     std::vector<bool> admitted_blocks;
