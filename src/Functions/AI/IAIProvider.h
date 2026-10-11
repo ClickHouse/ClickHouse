@@ -84,11 +84,15 @@ struct AIResponse
     /// The generated text content from the model.
     String result;
 
-    /// Number of tokens in the input (prompt + system prompt), as reported by the provider. Used for quota tracking.
+    /// Total input tokens, including cache reads and writes. Used for quota tracking.
     UInt64 input_tokens = 0;
 
     /// Number of tokens in the generated output, as reported by the provider. Used for quota tracking.
     UInt64 output_tokens = 0;
+
+    /// Input tokens read from or written to the provider's prompt cache. Subsets of `input_tokens`.
+    UInt64 cache_read_tokens = 0;
+    UInt64 cache_write_tokens = 0;
 
     /// Canonical reason the model stopped generating, normalized from the provider's native value.
     FinishReason finish_reason = FinishReason::Complete;

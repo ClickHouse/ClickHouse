@@ -120,6 +120,11 @@ void AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeo
         {
             response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
             response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
+            response.cache_read_tokens = usage->optValue<UInt64>("cache_read_input_tokens", 0);
+            response.cache_write_tokens = usage->optValue<UInt64>("cache_creation_input_tokens", 0);
+
+            /// Anthropic reports uncached input separately from cache reads and writes.
+            response.input_tokens += response.cache_read_tokens + response.cache_write_tokens;
         }
     }
 

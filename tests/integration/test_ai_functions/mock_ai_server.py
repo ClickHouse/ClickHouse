@@ -63,6 +63,7 @@ Endpoints:
 import http.server
 import json
 import threading
+import time
 from urllib.parse import urlparse, parse_qs
 
 MOCK_PORT = 18123
@@ -271,6 +272,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
             LAST_REQUEST["path"] = parsed.path
             LAST_REQUEST["body"] = body
             LAST_REQUEST["headers"] = {k.lower(): v for k, v in self.headers.items()}
+
+        if parsed.path in ("/v1/metrics/openai", "/v1/metrics/anthropic"):
+            # A known delay provides a lower bound for the request timer.
+            time.sleep(0.02)
+            mode = parse_qs(parsed.query).get("mode", ["cached"])[0]
+            if parsed.path.endswith("anthropic"):
+                response = make_anthropic_response(extract_user_message(body))
+                response["usage"].update(
+                    cache_read_input_tokens=60, cache_creation_input_tokens=30
+                )
+                if mode == "malformed":
+                    del response["content"]
+                elif mode == "truncated":
+                    response["stop_reason"] = "max_tokens"
+            else:
+                response = make_success_response(
+                    extract_user_message(body), prompt_tokens=100
+                )
+                response["usage"]["prompt_tokens_details"] = {"cached_tokens": 60}
+                if mode == "no_details":
+                    del response["usage"]["prompt_tokens_details"]
+                elif mode == "null_details":
+                    response["usage"]["prompt_tokens_details"] = None
+                elif mode == "empty_details":
+                    response["usage"]["prompt_tokens_details"] = {}
+                elif mode == "malformed":
+                    response["choices"] = []
+                elif mode == "truncated":
+                    response["choices"][0]["finish_reason"] = "length"
+            if mode == "no_usage":
+                del response["usage"]
+            self._send_json(200, response)
+            return
 
         if parsed.path in ("/v1/chat/flaky", "/v1/embeddings_flaky"):
             with _LOCK:

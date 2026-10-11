@@ -5,8 +5,9 @@
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
 
-#include <Common/ProfileEvents.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -29,6 +30,8 @@
 
 namespace ProfileEvents
 {
+    extern const Event AIExecutionMicroseconds;
+    extern const Event AIInputRows;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -125,6 +128,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        ProfileEventTimeIncrement<Microseconds> execution_time(ProfileEvents::AIExecutionMicroseconds);
+        ProfileEvents::increment(ProfileEvents::AIInputRows, input_rows_count);
+
         const auto & settings = getContext()->getSettingsRef();
         auto params = FunctionBaseAI::resolveAIParams(
             getContext(), arguments, FunctionBaseAI::embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);

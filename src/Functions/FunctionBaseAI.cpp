@@ -1,6 +1,7 @@
 #include <Functions/FunctionBaseAI.h>
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
@@ -31,6 +32,11 @@ namespace ProfileEvents
 {
     extern const Event AIInputTokens;
     extern const Event AIOutputTokens;
+    extern const Event AICacheReadTokens;
+    extern const Event AICacheWriteTokens;
+    extern const Event AIRequestMicroseconds;
+    extern const Event AIExecutionMicroseconds;
+    extern const Event AIInputRows;
     extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
@@ -426,7 +432,10 @@ void FunctionBaseAI::embedTexts(
                     input_tokens += ai_embedding_response.input_tokens;
                     quota.recordTokens(ai_embedding_response.input_tokens, 0);
                 });
-                provider.embed(ai_embedding_request, timeouts, ai_embedding_response);
+                {
+                    ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::AIRequestMicroseconds);
+                    provider.embed(ai_embedding_request, timeouts, ai_embedding_response);
+                }
                 batch_ok = true;
                 break;
             }
@@ -464,6 +473,9 @@ void FunctionBaseAI::embedTexts(
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    ProfileEventTimeIncrement<Microseconds> execution_time(ProfileEvents::AIExecutionMicroseconds);
+    ProfileEvents::increment(ProfileEvents::AIInputRows, input_rows_count);
+
     const auto & settings = getContext()->getSettingsRef();
     auto params = resolveAIParams(getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials]);
 
@@ -509,6 +521,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 total_api_calls = 0;
     UInt64 total_input_tokens = 0;
     UInt64 total_output_tokens = 0;
+    UInt64 total_cache_read_tokens = 0;
+    UInt64 total_cache_write_tokens = 0;
     UInt64 rows_processed = 0;
     UInt64 rows_skipped = 0;
 
@@ -517,6 +531,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
         ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
         ProfileEvents::increment(ProfileEvents::AIOutputTokens, total_output_tokens);
+        ProfileEvents::increment(ProfileEvents::AICacheReadTokens, total_cache_read_tokens);
+        ProfileEvents::increment(ProfileEvents::AICacheWriteTokens, total_cache_write_tokens);
         ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
         ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
     });
@@ -566,8 +582,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                     quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
                     total_input_tokens += ai_response.input_tokens;
                     total_output_tokens += ai_response.output_tokens;
+                    total_cache_read_tokens += ai_response.cache_read_tokens;
+                    total_cache_write_tokens += ai_response.cache_write_tokens;
                 });
-                provider->call(ai_request, timeouts, ai_response);
+                {
+                    ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::AIRequestMicroseconds);
+                    provider->call(ai_request, timeouts, ai_response);
+                }
 
                 /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
                 /// interpolating it into an exception message that reaches the logs and `system.query_log`.
