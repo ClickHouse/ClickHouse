@@ -6,6 +6,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
+#include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <base/demangle.h>
@@ -890,9 +891,12 @@ public:
         {
             UInt32 len = std::min(k_batch_size, length - offset);
 
-#if defined(__AVX512__)
-            cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
-#elif defined(__AVX2__) && !defined(__e2k__)
+#if USE_MULTITARGET_CODE
+            if (isArchSupported(TargetArch::x86_64_icelake))
+                cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
+            else
+#endif
+#if defined(__AVX2__) && !defined(__e2k__)
             cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
 #else
             cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
