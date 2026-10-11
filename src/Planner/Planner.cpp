@@ -2280,9 +2280,6 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         fake_name_set.emplace(column.name);
     }
 
-    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
-
     /// Each call to collectSourceColumns will register column identifiers in the shared GlobalPlannerContext.
     /// When multiple UNION branches share the same GlobalPlannerContext and each applies additional_result_filter,
     /// the bare column names (e.g. "a") would collide. Give the fake table expression a unique alias
@@ -2306,6 +2303,12 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         if (!has_collision)
             break;
     }
+
+    /// The table name of the fake table expression is also visible to the filter as a qualifier, e.g. in `t.a` or
+    /// `t.*`, so it is the unique alias as well: a fixed name such as `dummy` could shadow a result column of the same
+    /// name, e.g. `greatest(dummy.*)` over a `Tuple` column `dummy` with `analyzer_compatibility_prefer_alias_over_subcolumn`.
+    auto storage = std::make_shared<StorageDummy>(StorageID{"_additional_result_filter", unique_alias}, fake_column_descriptions);
+    auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
     fake_table_expression->setAlias(unique_alias);
 
     auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));

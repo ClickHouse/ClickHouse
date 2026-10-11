@@ -26,6 +26,7 @@
 
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageSnapshot.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionContainsColumnMatcher.h>
@@ -66,6 +67,7 @@ namespace Setting
 {
     extern const SettingsString additional_result_filter;
     extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -718,8 +720,44 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
     /// only ever expand into the argument list of a function such as `ignore(*)`. Reject it deliberately, with a
     /// clear diagnostic, instead of letting the analyzer fail on the missing table sources of such a scope. The
     /// check descends into SQL UDF bodies, and skips subqueries, e.g. `x IN (SELECT * FROM allowed)`, which resolve
-    /// against their own tables.
-    if (const auto * matcher = findColumnMatcherInExpression(*filter_expression))
+    /// against their own tables. A qualified matcher over a column of the table, e.g. `tup.*` for a `Tuple` column
+    /// `tup`, expands into the elements of that column and is fine.
+    StorageSnapshotPtr storage_snapshot;
+    NameSet table_names;
+    std::optional<std::pair<String, String>> database_and_table_name;
+    if (!table_expression->getAlias().empty())
+        table_names.insert(table_expression->getAlias());
+    if (const auto * table_node = table_expression->as<TableNode>())
+    {
+        storage_snapshot = table_node->getStorageSnapshot();
+        const auto & storage_id = table_node->getStorageID();
+        table_names.insert(storage_id.getTableName());
+        database_and_table_name.emplace(storage_id.getDatabaseName(), storage_id.getTableName());
+    }
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+    {
+        storage_snapshot = table_function_node->getStorageSnapshot();
+        /// A parameterized view has a name of its own, the analyzer qualifies with it exactly like for a `TableNode`.
+        if (table_function_node->isParameterizedView())
+        {
+            const auto & storage_id = table_function_node->getStorageID();
+            table_names.insert(storage_id.getTableName());
+            database_and_table_name.emplace(storage_id.getDatabaseName(), storage_id.getTableName());
+        }
+    }
+
+    auto is_column_qualifier = makeTupleColumnQualifierCheck(
+        [&](const String & name) -> std::optional<NameAndTypePair>
+        {
+            if (!storage_snapshot)
+                return {};
+            return storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name);
+        },
+        std::move(table_names),
+        std::move(database_and_table_name),
+        query_context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]);
+
+    if (auto matcher = findColumnMatcherInExpression(filter_expression, is_column_qualifier))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Column matcher {} is not allowed in an expression over a single table (a row policy, `additional_table_filters`, "
             "`additional_result_filter` or `parallel_replicas_custom_key`); list the columns explicitly. In expression {}",
