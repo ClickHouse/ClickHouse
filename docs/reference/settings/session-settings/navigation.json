@@ -36,6 +36,7 @@
     "reference/settings/session-settings/cluster",
     "reference/settings/session-settings/cluster-table",
     "reference/settings/session-settings/collect-hash",
+    "reference/settings/session-settings/columns-cache",
     "reference/settings/session-settings/compatibility",
     "reference/settings/session-settings/compatibility-ignore",
     "reference/settings/session-settings/compile",
@@ -259,6 +260,7 @@
     "reference/settings/session-settings/vector-search",
     "reference/settings/session-settings/wait-for",
     "reference/settings/session-settings/webassembly-udf",
+    "reference/settings/session-settings/weight-lowering",
     "reference/settings/session-settings/write-through-distributed-cache",
     "reference/settings/session-settings/other"
   ]

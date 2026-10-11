@@ -50,6 +50,9 @@ public:
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
 
+    /// Adds the columns changed on the fly by the command.
+    static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
+
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
 
     /// The columns a skip index must not depend on to be usable for this part: the columns updated on

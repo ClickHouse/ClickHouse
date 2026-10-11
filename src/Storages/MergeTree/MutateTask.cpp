@@ -58,6 +58,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 #include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -1705,6 +1706,25 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
+    auto remove_column_streams = [&](const String & column_name)
+    {
+        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+
+            /// Delete files if they are no longer shared with another column.
+            if (stream_name && --stream_counts[*stream_name] == 0)
+            {
+                add_rename(*stream_name + ".bin", "");
+                add_rename(*stream_name + mrk_extension, "");
+            }
+        };
+
+        if (auto serialization = try_get_serialization_of_stored_column(column_name))
+            serialization->enumerateStreams(callback);
+    };
+    NameSet columns_renamed_to_not_stored;
+
     /// Files owned by the indices that survive this mutation. `metadata_snapshot` is already the
     /// post-drop metadata, so a dropped index is absent here.
     ///
@@ -1745,6 +1765,8 @@ static NameToNameVector collectFilesForRenames(
             }
         }
     }
+
+    const auto new_part_column_names = new_part->getColumns().getNameSet();
 
     /// Remove old data
     for (const auto & command : commands_for_renames)
@@ -1789,23 +1811,17 @@ static NameToNameVector collectFilesForRenames(
         {
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
-                {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
-
-                    /// Delete files if they are no longer shared with another column.
-                    if (stream_name && --stream_counts[*stream_name] == 0)
-                    {
-                        add_rename(*stream_name + ".bin", "");
-                        add_rename(*stream_name + mrk_extension, "");
-                    }
-                };
-
-                if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
-                    serialization->enumerateStreams(callback);
+                remove_column_streams(command.column_name);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
+                if (!new_part_column_names.contains(command.rename_to))
+                {
+                    if (columns_renamed_to_not_stored.insert(command.column_name).second)
+                        remove_column_streams(command.column_name);
+                    continue;
+                }
+
                 /// Columns updated in patches should be rewritten by mutation.
                 if (updated_columns_in_patches.contains(command.rename_to))
                     continue;
@@ -1883,6 +1899,39 @@ static NameToNameVector collectFilesForRenames(
                         add_rename(old_stream + ".bin", "");
                         add_rename(old_stream + mrk_extension, "");
                     }
+                }
+            }
+        }
+    }
+
+    /// A wide part reader finds a column's streams by name in the checksums, so the streams of a column
+    /// the new part does not store must not be carried over unless a stored column shares them.
+    if (isWidePart(source_part))
+    {
+        NameSet renamed_or_dropped;
+        for (const auto & command : commands_for_renames)
+        {
+            if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
+                renamed_or_dropped.insert(command.column_name);
+        }
+
+        const auto & new_part_columns = new_part->getColumns();
+        Names columns_not_stored;
+        for (const auto & column : source_part_columns)
+        {
+            if (!new_part_column_names.contains(column.name) && !renamed_or_dropped.contains(column.name))
+                columns_not_stored.push_back(column.name);
+        }
+
+        if (!columns_not_stored.empty())
+        {
+            auto streams_of_new_part = getStreamCounts(new_part, source_part->checksums, new_part_columns.getNames());
+            for (const auto & [stream_name, _] : getStreamCounts(source_part, source_part->checksums, columns_not_stored))
+            {
+                if (!streams_of_new_part.contains(stream_name))
+                {
+                    add_rename(stream_name + ".bin", "");
+                    add_rename(stream_name + mrk_extension, "");
                 }
             }
         }
@@ -2301,8 +2350,7 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
+        if (merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         }
@@ -3893,6 +3941,22 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
+
+    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
+    /// Same condition as `checkOperationIsNotCanceled`.
+    auto mutation_cancelled = [merges_blocker = ctx->merges_blocker,
+        partition_id = ctx->future_part->part_info.getPartitionId(),
+        mutate_entry = ctx->mutate_entry]
+    {
+        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
+    };
+    (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
+        mutation_cancelled,
+        [mutation_cancelled]
+        {
+            if (mutation_cancelled())
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+        });
 }
 
 
@@ -4607,8 +4671,14 @@ bool MutateTask::prepare()
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
-    /// It shouldn't be changed by mutation.
-    ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
+    /// Keep the source granularity properties while the part type survives the mutation (e.g. a
+    /// legacy part with non-adaptive granularity must stay non-adaptive). When the mutation
+    /// changes the part type, the new part must keep the granularity info of its own type, set by
+    /// the part constructor: the mark type encodes the part type in the marks file extension, and
+    /// a `Wide` part written with the source's `Compact` extension (e.g. per-column `.cmrk4`
+    /// files) is detected as `Compact` on the next load from disk and breaks.
+    if (ctx->new_data_part->getType() == ctx->source_part->getType())
+        ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
