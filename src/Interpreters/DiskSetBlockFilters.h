@@ -51,6 +51,9 @@ public:
     /// per key fits, because such filters let so many keys pass that they do not pay for filling them.
     static std::optional<DiskSetBlockFilters> create(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes);
 
+    /// Returns the memory that `create` reserves with the same arguments, or 0 when it creates no filters.
+    static size_t estimateBytes(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes);
+
     /// Adds the filter of the next block of the set, which holds `block_keys`.
     void addBlock(std::span<const Key> block_keys);
 
@@ -84,7 +87,20 @@ private:
     static constexpr size_t hash_bits_per_position = 21;
     static_assert(max_positions_per_key * hash_bits_per_position <= 64);
 
-    DiskSetBlockFilters(size_t bits_per_1024_keys_, size_t positions_per_key_, size_t reserved_words, size_t reserved_ranges);
+    /// The bits and the positions per key of the filters, and the words of bits and the ranges that they
+    /// reserve, which `computeLayout` derives from the arguments of `create`.
+    struct Layout
+    {
+        size_t bits_per_1024_keys;
+        size_t positions_per_key;
+        size_t reserved_words;
+        size_t reserved_ranges;
+    };
+
+    /// Returns the layout of the filters that `create` creates, or nothing when it creates none.
+    static std::optional<Layout> computeLayout(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes);
+
+    explicit DiskSetBlockFilters(const Layout & layout);
 
     /// Returns position `i` of the bits of a key with `hash` in a range of `range_bits` bits.
     static size_t getBitPosition(UInt64 hash, size_t i, size_t range_bits)

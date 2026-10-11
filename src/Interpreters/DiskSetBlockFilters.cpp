@@ -20,7 +20,8 @@ constexpr double reserved_keys_ratio = 1.01;
 }
 
 template <typename Key>
-std::optional<DiskSetBlockFilters<Key>> DiskSetBlockFilters<Key>::create(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes)
+std::optional<typename DiskSetBlockFilters<Key>::Layout>
+DiskSetBlockFilters<Key>::computeLayout(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes)
 {
     chassert(expected_keys && max_bytes);
     const double reserved_keys = reserved_keys_ratio * static_cast<double>(expected_keys);
@@ -40,17 +41,31 @@ std::optional<DiskSetBlockFilters<Key>> DiskSetBlockFilters<Key>::create(size_t 
 
     const auto bits_per_1024_keys = static_cast<size_t>(bits_per_key * 1024);
     const auto reserved_words = static_cast<size_t>(std::ceil(reserved_keys * static_cast<double>(bits_per_1024_keys) / 1024 / 64));
-    return DiskSetBlockFilters(bits_per_1024_keys, positions_per_key, reserved_words, reserved_ranges);
+    return Layout{bits_per_1024_keys, positions_per_key, reserved_words, reserved_ranges};
 }
 
 template <typename Key>
-DiskSetBlockFilters<Key>::DiskSetBlockFilters(
-    size_t bits_per_1024_keys_, size_t positions_per_key_, size_t reserved_words, size_t reserved_ranges)
-    : bits_per_1024_keys(bits_per_1024_keys_)
-    , positions_per_key(positions_per_key_)
+std::optional<DiskSetBlockFilters<Key>> DiskSetBlockFilters<Key>::create(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes)
 {
-    words.reserve(reserved_words);
-    range_begins.reserve(reserved_ranges);
+    if (const auto layout = computeLayout(expected_keys, min_keys_per_block, max_bytes))
+        return DiskSetBlockFilters(*layout);
+    return {};
+}
+
+template <typename Key>
+size_t DiskSetBlockFilters<Key>::estimateBytes(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes)
+{
+    const auto layout = computeLayout(expected_keys, min_keys_per_block, max_bytes);
+    return layout ? layout->reserved_words * sizeof(UInt64) + layout->reserved_ranges * sizeof(size_t) : 0;
+}
+
+template <typename Key>
+DiskSetBlockFilters<Key>::DiskSetBlockFilters(const Layout & layout)
+    : bits_per_1024_keys(layout.bits_per_1024_keys)
+    , positions_per_key(layout.positions_per_key)
+{
+    words.reserve(layout.reserved_words);
+    range_begins.reserve(layout.reserved_ranges);
 }
 
 template <typename Key>
