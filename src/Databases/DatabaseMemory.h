@@ -59,6 +59,7 @@ protected:
 
 private:
     void removeDataPath(ContextPtr local_context);
+    void checkMetadataFilenameAvailabilityUnlocked(const String & table_name) const TSA_REQUIRES(mutex);
 
     const String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;

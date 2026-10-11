@@ -1,7 +1,9 @@
--- In a `Memory` database the name of a detached table, view or dictionary stays reserved: `CREATE`, `CREATE OR REPLACE` and a full `ATTACH` are refused before anything is built, and a short `ATTACH` restores the original definition.
+-- In a `Memory` database the name of a detached table, view or dictionary stays reserved: `CREATE`, `CREATE OR REPLACE` and a full `ATTACH` are refused before anything is built, `RENAME` and `EXCHANGE` into it are refused, and a short `ATTACH` restores the original definition.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic;
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 CREATE TABLE src (x UInt64) ENGINE = Null;
@@ -35,6 +37,11 @@ CREATE TABLE u (a Int32) ENGINE = Null;
 DETACH TABLE u;
 ATTACH TABLE u (b String) ENGINE = Null; -- { serverError TABLE_ALREADY_EXISTS }
 ATTACH TABLE IF NOT EXISTS u (b String) ENGINE = Null;
+CREATE TABLE r (b String) ENGINE = Null;
+RENAME TABLE r TO u; -- { serverError NOT_IMPLEMENTED }
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.r (b String) ENGINE = Null;
+RENAME TABLE {CLICKHOUSE_DATABASE_2:Identifier}.r TO u; -- { serverError NOT_IMPLEMENTED }
+EXCHANGE TABLES {CLICKHOUSE_DATABASE_2:Identifier}.r AND u; -- { serverError NOT_IMPLEMENTED }
 ATTACH TABLE u;
 SHOW CREATE TABLE u;
 
@@ -46,3 +53,4 @@ ATTACH DICTIONARY dict;
 SHOW CREATE DICTIONARY dict;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};

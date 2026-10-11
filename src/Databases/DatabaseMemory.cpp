@@ -42,6 +42,12 @@ void DatabaseMemory::createTable(
 {
     ensurePopulated();
     std::lock_guard lock{mutex};
+
+    /// A detached table keeps its definition and dependencies under its name, only a short `ATTACH` may reuse it.
+    const auto * create_query = query ? query->as<ASTCreateQuery>() : nullptr;
+    if (!create_query || !create_query->attach_short_syntax)
+        checkMetadataFilenameAvailabilityUnlocked(table_name);
+
     attachTableUnlocked(table_name, table);
 
     /// Clean the query from temporary flags.
@@ -131,6 +137,11 @@ void DatabaseMemory::checkMetadataFilenameAvailability(const String & table_name
 {
     ensurePopulated();
     std::lock_guard lock{mutex};
+    checkMetadataFilenameAvailabilityUnlocked(table_name);
+}
+
+void DatabaseMemory::checkMetadataFilenameAvailabilityUnlocked(const String & table_name) const
+{
     if (snapshot_detached_tables.contains(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists (detached)",
                         backQuote(database_name), backQuote(table_name));
