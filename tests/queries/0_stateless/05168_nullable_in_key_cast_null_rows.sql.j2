@@ -70,15 +70,16 @@ FROM
 )
 SETTINGS max_block_size = 7;
 
-{% if mode == 1 %}
--- Strict set-key casts report invalid conversions in non-null tuples.
-SELECT (k, 1) IN (SELECT toNullable(tuple(toUInt8(1))), 1)
-FROM (SELECT materialize(CAST(tuple('bad'), 'Nullable(Tuple(String))')) AS k); -- { serverError CANNOT_PARSE_TEXT }
+-- A non-null tuple with a field that does not convert to the key type is not a member.
+SELECT (k, 1) IN (SELECT toNullable(tuple(toUInt8(1))), 1),
+    (k, 1) NOT IN (SELECT toNullable(tuple(toUInt8(1))), 1)
+FROM (SELECT materialize(CAST(tuple('bad'), 'Nullable(Tuple(String))')) AS k);
 
--- A NULL field inside a non-null tuple is not an outer NULL that can be skipped during conversion.
-SELECT (k, 1) IN (SELECT tuple(toUInt8(1)), 1)
-FROM (SELECT materialize(CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))')) AS k); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
-{% endif %}
+-- A NULL field inside a non-null tuple is not an outer NULL. The non-nullable key field cannot hold it, so the
+-- tuple is not a member either.
+SELECT (k, 1) IN (SELECT tuple(toUInt8(1)), 1),
+    (k, 1) NOT IN (SELECT tuple(toUInt8(1)), 1)
+FROM (SELECT materialize(CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))')) AS k);
 
 {% endfor %}
 

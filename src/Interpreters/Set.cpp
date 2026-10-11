@@ -581,6 +581,71 @@ Columns Set::getSetElements() const
     return result;
 }
 
+ColumnPtr Set::castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const
+{
+    /// The constant columns to the left of `IN` are not supported directly, so they are materialized.
+    const ColumnWithTypeAndName probe = {column.column->convertToFullColumnIfConst(), column.type, column.name};
+    const DataTypePtr & key_type = data_types[key];
+
+    ColumnPtr result;
+    if (canContainNull(*key_type) && !key_type->isNullable() && !probe.type->isNullable())
+    {
+        /// A `Variant` or `Dynamic` key type stores NULLs as its own values, the same way a join compares
+        /// such keys, so the NULLs of a `Variant` or `Dynamic` probe convert as they are.
+        result = castColumnAccurate(probe, key_type, cast_cache.get());
+    }
+    else
+    {
+        const DataTypePtr key_type_without_nullable = removeNullable(key_type);
+        ColumnPtr values;
+
+        /// A value the key type cannot represent is simply not a member - which is what the literal `IN` list
+        /// concludes, because it compares in a common supertype. Converting it strictly would raise
+        /// `CANNOT_CONVERT_TYPE` on the rows the read path happens to deliver, so `v IN set_table` would fail
+        /// where `v IN (1)` returns 0. A tuple does not fit when one of its fields does not, including a NULL
+        /// in a field that cannot hold it. The lenient conversion produces a `Nullable`, so the key type must
+        /// be one that `accurateCastOrNull` can produce. When the probe already has the key type (up to
+        /// `Nullable`), no value can fail to fit, so the cheap path is kept: an exact-type cast is a no-op,
+        /// and that is the common `x IN set_table` case.
+        if (canBeAccurateCastOrNullTarget(key_type) && !removeNullable(probe.type)->equals(*key_type_without_nullable))
+        {
+            const ColumnPtr converted = castColumnAccurateOrNullSkipNulls(probe, key_type_without_nullable, cast_cache.get());
+            const auto & converted_nullable = assert_cast<const ColumnNullable &>(*converted);
+            values = converted_nullable.getNestedColumnPtr();
+            /// The NULLs of the conversion are the values that did not fit. Even when the set can hold a
+            /// NULL, a value that merely does not fit is not that NULL.
+            non_member_rows = mergeNullMaps(std::move(non_member_rows), converted_nullable.getNullMapColumnPtr());
+        }
+        else
+        {
+            values = castColumnAccurateSkipNulls(probe, key_type_without_nullable, cast_cache.get());
+        }
+
+        /// The NULLs of the probe, kept in the null map of a `Nullable` or the discriminators of a `Variant`,
+        /// stay out of the conversion. With `transform_null_in = 1`, a nullable key type keeps them to match
+        /// a NULL of the set. Otherwise they are not members: with `transform_null_in = 0` the set holds no
+        /// NULL and stores the nested columns of nullable keys, see `insertFromColumns`, and a non-nullable
+        /// key type has no NULL to match. Nullable fields inside a non-null tuple remain part of the key
+        /// value in either mode.
+        const ColumnPtr null_map = getSourceNullMap(*probe.column);
+        if (transform_null_in && key_type->isNullable())
+        {
+            if (null_map)
+                result = ColumnNullable::create(values, null_map);
+            else
+                result = makeNullable(values);
+        }
+        else
+        {
+            result = std::move(values);
+            non_member_rows = mergeNullMaps(std::move(non_member_rows), null_map);
+        }
+    }
+
+    non_member_rows = mergeNullMaps(std::move(non_member_rows), getDateTime64CastLossMap(probe, key_type));
+    return result;
+}
+
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
     size_t num_key_columns = columns.size();
@@ -609,123 +674,20 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
 
     checkColumnsNumber(num_key_columns);
 
-    /// Remember the columns we will work with. Also check that the data types are correct.
+    /// The key columns converted to the key types of the set, and the columns that own them.
     ColumnRawPtrs key_columns;
     key_columns.reserve(num_key_columns);
-
-    /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
     Columns materialized_columns;
     materialized_columns.reserve(num_key_columns);
 
-    /// Exclude rows with an outer NULL in a non-nullable key, a value that does not fit the key type, or a
-    /// conversion that loses precision.
-    ColumnPtr null_map_holder;
-
+    ColumnPtr non_member_rows;
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        ColumnPtr result;
-
-        const auto & column_before_cast = columns.at(i);
-        ColumnWithTypeAndName column_to_cast
-            = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
-
-        const auto target_type_without_nullable = removeNullable(data_types[i]);
-        const bool use_cast_accurate_or_null = !transform_null_in && canBeAccurateCastOrNullTarget(data_types[i]);
-        /// The lenient conversion below produces a `Nullable` of the key type, so the key type must be able to be
-        /// inside `Nullable`. A `Tuple` key keeps the strict conversion of its fields, which reports an invalid
-        /// field as an error. When the probe already has the key type (up to `Nullable`), no value can fail to fit,
-        /// so the cheap paths below are kept: an exact-type cast is a no-op, and that is the common
-        /// `x IN set_table` case.
-        const bool can_convert_leniently = target_type_without_nullable->canBeInsideNullable()
-            && !isTuple(target_type_without_nullable)
-            && !removeNullable(column_to_cast.type)->equals(*target_type_without_nullable);
-
-        if (use_cast_accurate_or_null)
-        {
-            result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
-        }
-        else if (can_convert_leniently)
-        {
-            /// `transform_null_in` makes NULL an ordinary matchable value, so the accurate-or-null
-            /// cast above is not taken. A value the key type cannot represent is still simply not a
-            /// member - which is what the literal `IN` list concludes, because it compares in a
-            /// common supertype - but converting it strictly raised `CANNOT_CONVERT_TYPE` on rows
-            /// the read path happened to deliver, so `v IN set_table` failed where `v IN (1)`
-            /// returned 0.
-            ///
-            /// Convert leniently and mark the values that did not fit as non-members. This also
-            /// covers a `Nullable` probe against a non-`Nullable` key, which `nullIn` and `IN` with
-            /// `transform_null_in = 1` reach directly: there a strict cast of the nested column
-            /// threw on the very same out-of-range values.
-            auto casted = castColumnAccurateOrNull(column_to_cast, makeNullable(target_type_without_nullable), cast_cache.get());
-            const auto & casted_nullable = assert_cast<const ColumnNullable &>(*casted);
-
-            if (data_types[i]->isNullable())
-            {
-                /// The set can hold a NULL, and a value that merely does not fit is not that NULL,
-                /// so the key column keeps the rows' original nullness and only the NULLs the cast
-                /// invented become non-members. The source NULLs include those that a `Variant`
-                /// stores in its discriminators.
-                const size_t num_rows = casted_nullable.size();
-                ColumnPtr source_null_map = getSourceNullMap(*column_to_cast.column);
-                if (!source_null_map)
-                    source_null_map = ColumnUInt8::create(num_rows, UInt8(0));
-
-                const auto & source_nulls = assert_cast<const ColumnUInt8 &>(*source_null_map).getData();
-                const auto & null_after_cast = casted_nullable.getNullMapData();
-                auto did_not_fit = ColumnUInt8::create(num_rows, UInt8(0));
-                auto & did_not_fit_data = did_not_fit->getData();
-                for (size_t row = 0; row < num_rows; ++row)
-                    did_not_fit_data[row] = null_after_cast[row] && !source_nulls[row];
-
-                result = ColumnNullable::create(casted_nullable.getNestedColumnPtr(), source_null_map);
-                null_map_holder = mergeNullMaps(std::move(null_map_holder), std::move(did_not_fit));
-            }
-            else
-            {
-                /// The key column is not `Nullable`, so the set has nothing to match a NULL against:
-                /// a source NULL and a value that does not fit are both non-members, and together
-                /// they are exactly the NULLs of the lenient cast.
-                result = casted_nullable.getNestedColumnPtr();
-                null_map_holder = mergeNullMaps(std::move(null_map_holder), casted_nullable.getNullMapColumnPtr());
-            }
-        }
-        else if (ColumnPtr source_null_map = getSourceNullMap(*column_to_cast.column);
-                 source_null_map && (column_to_cast.type->isNullable() || !canContainNull(*data_types[i])))
-        {
-            /// The key stores its NULLs in its own representation, the null map of a `Nullable` or the
-            /// discriminators of a `Variant`. Cast only the non-null rows. A nullable key type preserves outer NULLs
-            /// for matching with `transform_null_in = 1`; a non-nullable key type excludes them through the combined
-            /// null map. Nullable fields inside a non-null tuple remain part of the key value in either mode.
-            /// A `Variant` or `Dynamic` key type stores the NULLs of a `Variant` or `Dynamic` key as its own values,
-            /// the same way a join compares such keys, so those keys convert below as they are.
-            result = castColumnAccurateSkipNulls(column_to_cast, target_type_without_nullable, cast_cache.get());
-            if (data_types[i]->isNullable())
-                result = ColumnNullable::create(result, source_null_map);
-            else
-                null_map_holder = mergeNullMaps(std::move(null_map_holder), source_null_map);
-        }
-        else
-        {
-            result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
-        }
-
-        null_map_holder = mergeNullMaps(
-            std::move(null_map_holder), getDateTime64CastLossMap(column_to_cast, data_types[i]));
-
-        materialized_columns.emplace_back(std::move(result));
+        materialized_columns.emplace_back(castToKeyType(columns.at(i), i, non_member_rows));
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    if (!transform_null_in)
-    {
-        /// The keys cast with `castColumnAccurateOrNull` are still `Nullable`: unwrap them and fold their null maps in.
-        ConstNullMapPtr extracted_null_map = nullptr;
-        ColumnPtr extracted_null_map_holder = extractNestedColumnsAndNullMap(key_columns, extracted_null_map);
-        null_map_holder = mergeNullMaps(std::move(null_map_holder), extracted_null_map_holder);
-    }
-
-    const auto * null_map = null_map_holder ? &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData() : nullptr;
+    const auto * null_map = non_member_rows ? &assert_cast<const ColumnUInt8 &>(*non_member_rows).getData() : nullptr;
 
     if (disk_set)
     {

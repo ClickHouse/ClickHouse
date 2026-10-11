@@ -215,6 +215,12 @@ private:
     /// for every call to `execute`
     mutable std::unique_ptr<InternalCastFunctionCache> cast_cache;
 
+    /// Casts the probe `column` to the type of the key `key` as the set stores it, see `insertFromColumns`,
+    /// and adds the rows that cannot be members of the set to `non_member_rows`: the NULLs that match
+    /// nothing, the values that do not fit the key type, and the `DateTime64` values that the key type does
+    /// not hold exactly.
+    ColumnPtr castToKeyType(const ColumnWithTypeAndName & column, size_t key, ColumnPtr & non_member_rows) const;
+
     template <typename Method>
     void insertFromBlockImpl(
         Method & method,

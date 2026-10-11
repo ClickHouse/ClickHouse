@@ -8,10 +8,9 @@
 SET enable_analyzer = 1;
 SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
-SET transform_null_in = 0;
 
--- With `transform_null_in = 0`, an unrepresentable tuple field cannot match a set key.
--- Since `256` does not fit into `Int8`, `IN` returns 0 even with `rewrite_in_to_join` enabled.
+-- An unrepresentable tuple field cannot match a set key. Since `256` does not fit into `Int8`, `IN`
+-- returns 0 even with `rewrite_in_to_join` enabled.
 SELECT count() FROM numbers(1) WHERE (toUInt16(256), number) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'));
 
 -- `NOT IN` returns 1 for the same non-matching key.
@@ -51,6 +50,7 @@ SELECT count() FROM numbers(1) WHERE concat('0', toString(number + 1)) IN (SELEC
 -- Equal `Nullable` scalar types need the same treatment: with `transform_null_in = 0`, regular
 -- `IN` and `NOT IN` return `NULL` for a NULL key, while `equals` in the EXISTS rewrite would make
 -- `NOT IN` true. Both predicates must filter the row out.
+SET transform_null_in = 0;
 SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
 SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)'));
 
