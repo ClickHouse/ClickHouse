@@ -91,6 +91,9 @@ public:
     /// Assembles the temporary directory name of a merge.
     static String buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix);
 
+    /// Whether `part` has a calculated rows TTL that has expired at `time` for all its rows.
+    static bool isRowsTTLExpired(const IMergeTreeDataPart & part, time_t time);
+
     MergeTask(
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,

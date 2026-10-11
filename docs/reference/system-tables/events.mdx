@@ -920,6 +920,10 @@ The server successfully detected this situation and will download merged part fr
 
 Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.
 
+### DatabaseTablesEnumerated {#databasetablesenumerated}
+
+Number of tables a database handed out through its table iterator - to `SHOW TABLES`, the system tables that list tables and everything else that walks a database. A condition on the table name in a query over such a system table narrows the enumeration, and this counter shows by how much.
+
 ### DefaultImplementationForNullsRows {#defaultimplementationfornullsrows}
 
 Number of rows processed by default implementation for nulls in function execution
@@ -4979,6 +4983,10 @@ Number of granules examined for read time pruning by JOIN Runtime Filters
 ### RuntimeFilterGranulesDropped {#runtimefiltergranulesdropped}
 
 Number of granules pruned at read time by JOIN Runtime Filters
+
+### RuntimeFilterIndexAnalysisReads {#runtimefilterindexanalysisreads}
+
+Number of reads set up to prune granules with a JOIN runtime filter at read time. Counted when the read reaches its pipeline carrying the descriptors and has a primary key or skip index to prune them with, whether or not a granule is later examined, so it shows that the descriptors survived every rebuild of the read step.
 
 ### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
 

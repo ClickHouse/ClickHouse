@@ -906,6 +906,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 // do not increment S3ReadRequestsErrors/S3WriteRequestsErrors here, it has been accounted in IO/S3/PocoHTTPClient.cpp
 
+                /// Unless retries are coordinated across threads, the SDK has already retried this error.
+                if (!client_configuration.s3_slow_all_threads_after_retryable_error)
+                    break;
+
                 /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                 if (!client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                     break;

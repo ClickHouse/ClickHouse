@@ -10,6 +10,9 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/dataTypeToAST.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
@@ -69,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsBool use_legacy_to_time;
+    extern const SettingsBool data_type_default_nullable;
 }
 
 namespace ServerSetting
@@ -117,6 +121,28 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
             if (payload)
                 replaceLegacyToTime(*payload);
         }
+    }
+}
+
+/// The resolved type is spelled out in the query, so the hosts that replay it do not depend on the setting.
+void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command = child->as<ASTAlterCommand>();
+        const bool is_add = command->type == ASTAlterCommand::ADD_COLUMN;
+        if (!is_add && command->type != ASTAlterCommand::MODIFY_COLUMN)
+            continue;
+
+        auto & col_decl = command->col_decl->as<ASTColumnDeclaration &>();
+        if (!col_decl.getType() || col_decl.null_modifier)
+            continue;
+
+        /// Like `AlterCommand::parse`, only `ADD COLUMN` pins the current aggregate function state version.
+        DataTypePtr type = is_add
+            ? InterpreterCreateQuery::getColumnType(col_decl, /*make_columns_nullable=*/ true, /*pin_current_state_version=*/ true)
+            : makeNullable(DataTypeFactory::instance().get(col_decl.getType()));
+        col_decl.setType(dataTypeToAST(type));
     }
 }
 
@@ -469,6 +495,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
+
+    if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
+        && !getContext()->getClientInfo().is_shared_catalog_internal)
+        applyDataTypeDefaultNullableToColumnDeclarations(query_ptr->as<ASTAlterQuery &>());
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
