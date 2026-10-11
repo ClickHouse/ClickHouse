@@ -109,13 +109,14 @@ const std::vector<Shape> shapes
     {"Chain", [](ContextPtr context, size_t) { return chain(context, Load{}); }},
     {"FanOut", [](ContextPtr context, size_t threads) { return fanOut(context, threads, Load{}); }},
     {"FanIn", [](ContextPtr context, size_t threads) { return fanIn(context, threads, Load{}); }},
-    {"Hub", [](ContextPtr context, size_t threads) { return hub(context, threads, Load{}); }},
+    {"Hub", [](ContextPtr context, size_t threads) { return hub(context, threads, Load{.chunks = 30}); }},
     {"ShortQuery", [](ContextPtr context, size_t) { return chain(context, Load{.chunks = 5}); }},
     {"FanInMerge", [](ContextPtr context, size_t threads) { return fanInMerge(context, 4 * threads, Load{}); }},
     {"ManySources", [](ContextPtr context, size_t threads) { return manySources(context, 1000, threads, Load{.chunks = 1000, .rows_per_chunk = 8192}); }},
     {"WideFanIn", [](ContextPtr context, size_t) { return fanIn(context, 64, Load{}); }},
     {"Delayed", [](ContextPtr context, size_t) { return delayed(context, Load{}); }},
     {"FanInAggregate", [](ContextPtr context, size_t threads) { return fanInAggregate(context, threads, Load{}); }},
+    {"Aggregate", [](ContextPtr context, size_t threads) { return aggregate(context, threads, Load{}); }},
     {"ManyPartsInOrder", [](ContextPtr context, size_t threads) { return manyPartsInOrder(context, 1000, threads, Load{.rows_per_chunk = 8192}); }},
 };
 
