@@ -31,7 +31,7 @@ AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & ap
             "Unsupported Anthropic API version '{}'. Supported: '{}'", api_version, DEFAULT_ANTHROPIC_API_VERSION);
 }
 
-void AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
+void AnthropicProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
     response = {};
 
