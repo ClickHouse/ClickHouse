@@ -9462,7 +9462,7 @@ replicas.
 
 Disable it to make every query pay the full cost of the decision, e.g. when benchmarking that cost.
 )", EXPERIMENTAL, \
-        {"26.10", true, true, "New setting"}) \
+        {"26.10", false, true, "New setting. Automatic parallel replicas now remembers the boundary of the replicas' share of the work per query plan; previously every query built the plan with parallel replicas to find it."}) \
     DECLARE(Float, automatic_parallel_replicas_max_duplicated_read_ratio, 0.5, R"(
 How much of a query's read volume may be read by every replica instead of being split between them, as a
 fraction of the whole, before automatic parallel replicas declines the query.
