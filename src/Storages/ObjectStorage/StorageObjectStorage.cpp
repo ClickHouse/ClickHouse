@@ -783,9 +783,11 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
 
                 QueryConsumedObjectSets::Object object;
                 object.path = object_info->getPath();
+                object.read_source_index = object_info->relative_path_with_metadata.read_source_index;
                 if (metadata)
                 {
                     object.etag = metadata->etag;
+                    object.etag_is_strong = metadata->etag_is_strong;
                     object.size = metadata->size_bytes;
                     object.last_modified = metadata->last_modified.epochTime();
                     object.has_metadata = true;
@@ -819,13 +821,17 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
     for (const auto & object : objects)
     {
         /// Require a strong provider version (ETag). Size and modification time are weak validators
-        /// (e.g. HDFS does not expose an ETag, and a same-size rewrite within the same second would be
-        /// missed), so fail closed rather than risk a stale result. `has_metadata` is false when the
-        /// object could not be probed at all (assume the data may have changed).
-        if (!object.has_metadata || object.etag.empty() || object.etag.starts_with("W/"))
+        /// (e.g. HDFS does not expose an ETag but synthesizes a second-precision `(mtime, size)` token
+        /// marked non-strong, and a same-size rewrite within the same second would be missed), so fail
+        /// closed rather than risk a stale result. `has_metadata` is false when the object could not be
+        /// probed at all (assume the data may have changed).
+        if (!object.has_metadata || !object.etag_is_strong || object.etag.empty() || object.etag.starts_with("W/"))
             return {};
 
         hash.update(object.path);
+        /// The same relative path served by two expanded URL options is two distinct objects.
+        hash.update(object.read_source_index.has_value());
+        hash.update(object.read_source_index.value_or(0));
         hash.update(object.etag);
         hash.update(object.size);
         hash.update(object.last_modified);

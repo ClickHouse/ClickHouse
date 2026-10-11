@@ -31,14 +31,23 @@ struct QueryConsumedObjectSets
     struct Object
     {
         String path;
+        /// Which expanded URL option (`http://{h1,h2}/data/**`) produced the object, if any. The same
+        /// relative `path` can come from different options, so it is a part of the object identity:
+        /// without it two shards serving the same path would collapse into one object in `canonicalize`.
+        /// See `StorageObjectStorageSource::getUniqueStoragePathIdentifier`.
+        std::optional<size_t> read_source_index;
         String etag;
+        /// Copy of `ObjectMetadata::etag_is_strong`. A non-strong `etag` (e.g. the second-precision
+        /// `(mtime, size)` token synthesized for HDFS) does not change on a same-second, same-size
+        /// rewrite, so `getModificationHash` fails closed for it.
+        bool etag_is_strong = false;
         UInt64 size = 0;
         Int64 last_modified = 0;
         /// False when the read could not attach object metadata (e.g. no ETag). `getModificationHash`
         /// then fails closed for the table rather than risk an unsound comparison.
         bool has_metadata = false;
 
-        auto asTuple() const { return std::tie(path, etag, size, last_modified, has_metadata); }
+        auto asTuple() const { return std::tie(path, read_source_index, etag, etag_is_strong, size, last_modified, has_metadata); }
         bool operator<(const Object & rhs) const { return asTuple() < rhs.asTuple(); }
         bool operator==(const Object & rhs) const { return asTuple() == rhs.asTuple(); }
     };

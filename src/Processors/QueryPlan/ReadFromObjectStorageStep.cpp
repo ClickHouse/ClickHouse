@@ -70,9 +70,11 @@ public:
         {
             QueryConsumedObjectSets::Object object;
             object.path = object_info->getPath();
+            object.read_source_index = object_info->relative_path_with_metadata.read_source_index;
             if (auto metadata = object_info->getObjectMetadata())
             {
                 object.etag = metadata->etag;
+                object.etag_is_strong = metadata->etag_is_strong;
                 object.size = metadata->size_bytes;
                 object.last_modified = metadata->last_modified.epochTime();
                 object.has_metadata = true;
