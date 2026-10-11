@@ -1129,8 +1129,8 @@ private:
             return nullptr;
 
         const ColumnWithTypeAndName & arg_cond = arguments[0];
-        const ColumnWithTypeAndName & arg_then = arguments[1];
-        const ColumnWithTypeAndName & arg_else = arguments[2];
+        const ColumnWithTypeAndName arg_then = castNullableEnumToResultType(arguments[1], result_type);
+        const ColumnWithTypeAndName arg_else = castNullableEnumToResultType(arguments[2], result_type);
 
         const bool then_is_nullable = arg_then.type->isNullable();
         const bool else_is_nullable = arg_else.type->isNullable();
