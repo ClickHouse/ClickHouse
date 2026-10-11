@@ -230,6 +230,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
     bool collect_hash_table_stats_during_aggregation;
+    bool optimize_uniq_exact_radix_partitioning;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;

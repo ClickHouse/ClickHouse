@@ -492,6 +492,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_trivial_count_with_sparsity_filter", trueOrFalseSetting},
        {"optimize_trivial_group_by_limit_query", trueOrFalseSetting},
        {"optimize_truncate_order_by_after_group_by_keys", trueOrFalseSetting},
+       {"optimize_uniq_exact_radix_partitioning", trueOrFalseSetting},
        {"optimize_uniq_to_count", trueOrFalseSetting},
        {"optimize_use_implicit_projections", trueOrFalseSetting},
        {"optimize_use_projection_filtering", trueOrFalseSetting},
