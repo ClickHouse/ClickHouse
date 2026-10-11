@@ -102,7 +102,7 @@ class RestorerFromBackup;
  *
  * Writes, backup and restore. `storeEntity`, `removeEntity`, `backup` and `restore` are served by the SQL
  * layer: the implicit layer forwards them, and the configuration is read-only. Implicit entities cannot be
- * dropped: they are defined by the server settings. A backup contains only the
+ * dropped, even while shadowed: they are defined by the server settings. A backup contains only the
  * own entities of the SQL layer, hidden ones included: configuration entities belong to the server
  * configuration, and implicit entities are synthesized from it. A restore recreates own entities of the SQL
  * layer and validates them like a load of persisted data, not like SQL statements: overlap with inherited

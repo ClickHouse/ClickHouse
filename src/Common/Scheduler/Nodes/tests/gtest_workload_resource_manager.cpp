@@ -2722,6 +2722,18 @@ TEST(SchedulerWorkloadResourceManager, ImplicitEntitiesCannotBeReferenced)
     t.query("CREATE WORKLOAD default");
     t.query("DROP WORKLOAD default");
     EXPECT_EQ(t.storage.getEntitySource("default"), "implicit");
+
+    // A shadowed implicit resource cannot be dropped either
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    ASSERT_FALSE(t.storage.has(String(IMPLICIT_CPU_RESOURCE_NAME)));
+    expect_drop_error("DROP RESOURCE __server_cpu__", "workloads_respect_server_cpu_limit");
+    t.query("DROP RESOURCE cpu");
+    EXPECT_EQ(t.storage.getEntitySource(String(IMPLICIT_CPU_RESOURCE_NAME)), "implicit");
+
+    // Once the setting is off, the name is just absent
+    t.setImplicitEntities({});
+    EXPECT_THROW(t.query("DROP RESOURCE __server_cpu__"), DB::Exception);
+    t.query("DROP RESOURCE IF EXISTS __server_cpu__");
 }
 
 // Conflicting entities written to a persisted layer earlier do not fail the load: the entity with the smaller

@@ -157,13 +157,29 @@ bool WorkloadEntityImplicitStorage::storeEntity(
     return getNextStorage()->storeEntity(current_context, entity_type, entity_name, create_entity_query, throw_if_exists, replace_if_exists, settings);
 }
 
+bool WorkloadEntityImplicitStorage::definesEntity(const String & entity_name) const
+{
+    auto lock = getLock();
+    if (entity_name.empty())
+        return true; // The root workload
+    if (entity_name == IMPLICIT_CPU_RESOURCE_NAME)
+        return config.respect_cpu_limit;
+    if (entity_name == IMPLICIT_MEMORY_RESOURCE_NAME)
+        return config.respect_memory_limit;
+    if (entity_name == DEFAULT_WORKLOAD_NAME)
+        return config.implicit_default_workload;
+    return false;
+}
+
 bool WorkloadEntityImplicitStorage::removeEntity(
     const ContextPtr & current_context,
     WorkloadEntityType entity_type,
     const String & entity_name,
     bool throw_if_not_exists)
 {
-    if (getEntitySource(entity_name) == getName())
+    // An implicit entity cannot be dropped even while shadowed: it stays defined by the server settings and becomes
+    // visible again when the shadowing entity goes away. An entity of an inner layer with the same name is dropped instead.
+    if (definesEntity(entity_name) && !getNextStorage()->has(entity_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Workload entity '{}' cannot be dropped: it is an implicit entity defined by the server setting `{}`",
             entity_name, getImplicitEntitySetting(entity_name));
