@@ -1051,7 +1051,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
 {
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
-        return createStringParsingWrapper();
+        return createStringParsingWrapper(/*requested_result_is_nullable=*/false);
 
     const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
     if (!from_type)

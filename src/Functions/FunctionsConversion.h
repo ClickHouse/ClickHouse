@@ -5841,7 +5841,9 @@ private:
     template <typename ToDataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-    WrapperType createStringParsingWrapper(bool requested_result_is_nullable = false) const;
+    /// Parses text with the text serialization of the result type. With `accurateCastOrNull` malformed input
+    /// becomes NULL, otherwise it throws. `requested_result_is_nullable` parses into a `Nullable` result.
+    WrapperType createStringParsingWrapper(bool requested_result_is_nullable) const;
 
     WrapperType createUInt8ToBoolWrapper(DataTypePtr from_type, DataTypePtr to_type) const;
 
