@@ -188,15 +188,8 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     return replicas_plan_top_node;
 }
 
-/// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
-/// The working principle behind automatic parallel replicas is that we use statistics collected during execution of single-node plan
-/// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
-/// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
-/// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
 using NodeHashes = std::unordered_map<const QueryPlan::Node *, UInt64>;
 
-/// Hashes `args` one after another, like a sequence of `SipHash::update`. Not an overload of `sipHash64`: its
-/// `(const char *, size_t)` form would lose to a variadic template for calls like `sipHash64(",", 1)`.
 template <typename... Args>
 UInt64 sipHash64Of(const Args &... args)
 {
@@ -205,81 +198,79 @@ UInt64 sipHash64Of(const Args &... args)
     return hash.get64();
 }
 
-QueryPlan::Node * findSingleReplicaPlanBoundary(
-    /* const */ QueryPlan::Node & single_replica_plan_root, const NodeHashes & nopr_node_hashes, UInt64 wanted_hash)
+/// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
+/// The working principle behind automatic parallel replicas is that we use statistics collected during execution of single-node plan
+/// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
+/// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
+/// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
+std::pair<QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
+    std::optional<UInt64> wanted_hash, QueryPlan::Node & single_replica_plan_root, const NodeHashes & nopr_node_hashes)
 {
-    /// A step that contributes nothing to the key adopts its child's key (see
-    /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
-    /// of that chain - the hash map's order is unspecified, so walk the plan for a stable answer -
-    /// and then walk down to its bottom, which is the node that actually produces the numbers the
-    /// chain shares. A wrapper above it measures something else: an `Aggregating` with a rename over
-    /// it is such a chain, and the aggregation records the partial states the replicas ship where
-    /// the rename above it already sees finalized values.
-    QueryPlan::Node * matched_node = nullptr;
-    Stack traversal_stack;
-    const auto key_of = [&](const QueryPlan::Node & node) -> std::optional<UInt64>
+    if (wanted_hash)
     {
-        if (auto hash_it = nopr_node_hashes.find(&node); hash_it != nopr_node_hashes.end())
-            return hash_it->second;
-        return {};
-    };
-    traverseQueryPlan(
-        traversal_stack,
-        single_replica_plan_root,
-        [&](auto & frame_node)
+        /// A step that contributes nothing to the key adopts its child's key (see
+        /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
+        /// of that chain - the hash map's order is unspecified, so walk the plan for a stable answer -
+        /// and then walk down to its bottom, which is the node that actually produces the numbers the
+        /// chain shares. A wrapper above it measures something else: an `Aggregating` with a rename over
+        /// it is such a chain, and the aggregation records the partial states the replicas ship where
+        /// the rename above it already sees finalized values.
+        QueryPlan::Node * matched_node = nullptr;
+        Stack traversal_stack;
+        const auto key_of = [&](const QueryPlan::Node & node) -> std::optional<UInt64>
         {
-            if (!matched_node && key_of(frame_node) == wanted_hash)
-                matched_node = &frame_node;
-        });
+            if (auto hash_it = nopr_node_hashes.find(&node); hash_it != nopr_node_hashes.end())
+                return hash_it->second;
+            return {};
+        };
+        traverseQueryPlan(
+            traversal_stack,
+            single_replica_plan_root,
+            [&](auto & frame_node)
+            {
+                if (!matched_node && key_of(frame_node) == *wanted_hash)
+                    matched_node = &frame_node;
+            });
 
-    if (matched_node)
-    {
-        QueryPlan::Node * above = nullptr;
-        while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == wanted_hash)
+        if (matched_node)
         {
-            above = matched_node;
-            matched_node = matched_node->children.front();
+            QueryPlan::Node * above = nullptr;
+            while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == *wanted_hash)
+            {
+                above = matched_node;
+                matched_node = matched_node->children.front();
+            }
+
+            /// The reading step records input bytes only, so where the chain bottoms out in one, take
+            /// the wrapper just above it instead - it does record output bytes. This mirrors
+            /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read with no
+            /// wrapper above it is returned as it is, so the caller's fail-close for it stays reachable.
+            if (matched_node->children.empty() && above)
+                matched_node = above;
         }
 
-        /// The reading step records input bytes only, so where the chain bottoms out in one, take
-        /// the wrapper just above it instead - it does record output bytes. This mirrors
-        /// `findTopNodeOfReplicasPlan` stopping above the read on the other side. A read with no
-        /// wrapper above it is returned as it is, so the caller's fail-close for it stays reachable.
-        if (matched_node->children.empty() && above)
-            matched_node = above;
-    }
+        if (!matched_node)
+        {
+            LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
+            return std::make_pair(nullptr, 0);
+        }
 
-    if (!matched_node)
+        if (!matched_node->step->supportsDataflowStatisticsCollection())
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
+                matched_node->step->getName());
+            return std::make_pair(nullptr, 0);
+        }
+
+        LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", matched_node->step->getName());
+        return std::make_pair(matched_node, *wanted_hash);
+    }
+    else
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
-        return nullptr;
+        return std::make_pair(nullptr, 0);
     }
-
-    if (!matched_node->step->supportsDataflowStatisticsCollection())
-    {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
-            matched_node->step->getName());
-        return nullptr;
-    }
-
-    LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", matched_node->step->getName());
-    return matched_node;
-}
-
-std::pair<QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
-    const QueryPlan::Node & replicas_plan_boundary,
-    const QueryPlan::Node & parallel_replicas_plan_root,
-    QueryPlan::Node & single_replica_plan_root,
-    const NodeHashes & nopr_node_hashes)
-{
-    auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
-    auto it = pr_node_hashes.find(&replicas_plan_boundary);
-    if (it == pr_node_hashes.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find replicas_plan_top_node in hash table");
-    auto * matched_node = findSingleReplicaPlanBoundary(single_replica_plan_root, nopr_node_hashes, it->second);
-    return std::make_pair(matched_node, matched_node ? it->second : 0);
 }
 
 /// Collect the lazy reads inside one lazy-materialization branch, i.e. the branch of a
@@ -790,28 +781,21 @@ void considerEnablingParallelReplicas(
     QueryPlan::Node * single_replica_plan_boundary = nullptr;
     size_t single_replica_plan_boundary_hash = 0;
     if (optimization_settings.automatic_parallel_replicas_mode != 2)
-    {
-        if (const auto boundary_hash = stats_cache.getBoundaryHash(root_key))
-        {
-            single_replica_plan_boundary_hash = *boundary_hash;
-            single_replica_plan_boundary = findSingleReplicaPlanBoundary(root, nopr_node_hashes, *boundary_hash);
-        }
-    }
+        std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash)
+            = findCorrespondingNodeInSingleNodePlan(stats_cache.getBoundaryHash(root_key), root, nopr_node_hashes);
 
     /// A boundary remembered from an earlier execution lets the statistics decline without building the replicas
     /// plan. Everything else - adopting, collecting, or no remembered boundary - needs that plan: the cached key
     /// cannot see everything that decides where the replicas' half ends, so the plan names the boundary and the
     /// decision is taken again there.
-    QueryPlanPtr plan_with_parallel_replicas;
-    const QueryPlan::Node * replicas_plan_boundary = nullptr;
     if (single_replica_plan_boundary
         && !decideAtBoundary(
             optimization_settings,
             query_plan,
             single_replica_plan_boundary,
             single_replica_plan_boundary_hash,
-            plan_with_parallel_replicas,
-            replicas_plan_boundary))
+            /*plan_with_parallel_replicas=*/nullptr,
+            /*replicas_plan_boundary=*/nullptr))
         return;
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
@@ -823,14 +807,14 @@ void considerEnablingParallelReplicas(
     /// `buildOrderedSetInplace` for every `IN` whose left argument maps to key columns. The
     /// `selectRangesToRead` below reuses those `indexes` (it builds them only `if (!indexes)`), so it
     /// adds no set that collecting later would catch.
-    plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
+    const auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
     {
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
         return;
     }
 
-    replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
+    auto * const replicas_plan_boundary = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!replicas_plan_boundary)
     {
         LOG_DEBUG(
@@ -841,7 +825,7 @@ void considerEnablingParallelReplicas(
     LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", replicas_plan_boundary->step->getName());
 
     std::tie(single_replica_plan_boundary, single_replica_plan_boundary_hash) = findCorrespondingNodeInSingleNodePlan(
-        *replicas_plan_boundary, *plan_with_parallel_replicas->getRootNode(), root, nopr_node_hashes);
+        calculateHashTableCacheKeys(*plan_with_parallel_replicas->getRootNode()).at(replicas_plan_boundary), root, nopr_node_hashes);
     if (!single_replica_plan_boundary)
         return;
     stats_cache.setBoundaryHash(root_key, single_replica_plan_boundary_hash);
