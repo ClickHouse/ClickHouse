@@ -8,10 +8,14 @@
 
 #include <Core/Settings.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -38,6 +42,7 @@
 #include <functional>
 #include <memory>
 #include <numeric>
+#include <unordered_map>
 
 #include <fmt/ranges.h>
 
@@ -146,6 +151,78 @@ static ColumnPtr readColumnFromBlock(const Block & src, const NameAndTypePair & 
     return tryGetColumnFromBlock(src, name_and_type);
 }
 
+/// Only dotted names are members of a `Nested`, and the members of one `Nested` are checked to have equal sizes on insert.
+static const ColumnWithTypeAndName * findSizesSource(const Block & src, const NameAndTypePair & column, const Names & nested_arrays)
+{
+    if (nested_arrays.empty() || !isArray(column.getTypeInStorage()))
+        return nullptr;
+
+    const String name_in_storage = column.getNameInStorage();
+    const auto [nested_name, member_name] = Nested::splitName(name_in_storage);
+    if (member_name.empty() || src.has(name_in_storage))
+        return nullptr;
+
+    for (const auto & array_name : nested_arrays)
+    {
+        if (Nested::splitName(std::string_view(array_name)).first != nested_name)
+            continue;
+
+        const auto * stored = src.findByName(array_name);
+        if (stored && stored->column && isArray(stored->type))
+            return stored;
+    }
+
+    return nullptr;
+}
+
+/// Each missing entry is filled from `src` alone, independently of the other columns of the read.
+/// `nested_arrays` are the arrays of the table that are members of the `Nested` of a requested member.
+static void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns, const Names & nested_arrays)
+{
+    NamesAndTypesList columns_without_sizes;
+    std::vector<size_t> positions_without_sizes;
+    std::unordered_map<const ColumnWithTypeAndName *, ColumnPtr> decompressed_sources;
+
+    auto column_it = columns_to_read.begin();
+    for (size_t i = 0; i < columns.size(); ++i, ++column_it)
+    {
+        if (columns[i])
+            continue;
+
+        const ColumnArray * source_array = nullptr;
+        if (const auto * source = findSizesSource(src, *column_it, nested_arrays))
+        {
+            auto & source_column = decompressed_sources[source];
+            if (!source_column)
+                source_column = source->column->decompress();
+            source_array = typeid_cast<const ColumnArray *>(source_column.get());
+        }
+
+        if (!source_array)
+        {
+            columns_without_sizes.push_back(*column_it);
+            positions_without_sizes.push_back(i);
+            continue;
+        }
+
+        /// Only the outer sizes: the deeper levels of a member are its own.
+        const auto & type_in_storage = column_it->getTypeInStorage();
+        const auto & offsets = source_array->getOffsets();
+        auto elements = assert_cast<const DataTypeArray &>(*type_in_storage).getNestedType()
+            ->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())->convertToFullColumnIfConst();
+        ColumnPtr column = ColumnArray::create(elements, source_array->getOffsetsPtr());
+        columns[i] = column_it->isSubcolumn() ? type_in_storage->getSubcolumn(column_it->getSubcolumnName(), column) : column;
+    }
+
+    if (!positions_without_sizes.empty())
+    {
+        Columns filled(positions_without_sizes.size());
+        fillMissingColumns(filled, src.rows(), columns_without_sizes, columns_without_sizes, {}, nullptr);
+        for (size_t j = 0; j < positions_without_sizes.size(); ++j)
+            columns[positions_without_sizes[j]] = std::move(filled[j]);
+    }
+}
+
 class MemorySource : public ISource
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
@@ -172,7 +249,8 @@ public:
         MaterializedCTEPtr materialized_cte_ = {},
         MemorySourceFilterPtr filter_ = {},
         SharedHeader filtered_header_ = {},
-        BlockStartRowsPtr block_start_rows_ = {})
+        BlockStartRowsPtr block_start_rows_ = {},
+        Names nested_arrays_ = {})
         : ISource(filter_ ? filtered_header_ : std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_, block_start_rows_ != nullptr)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
@@ -182,6 +260,7 @@ public:
         , materialized_cte(std::move(materialized_cte_))
         , filter(std::move(filter_))
         , block_start_rows(std::move(block_start_rows_))
+        , nested_arrays(std::move(nested_arrays_))
     {
         if (filter && !virtual_columns.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
@@ -273,7 +352,7 @@ private:
         for (const auto & name_and_type : physical_columns)
             result_columns.emplace_back(readColumnFromBlock(src, name_and_type));
 
-        fillMissingColumns(result_columns, src.rows(), physical_columns, physical_columns, {}, nullptr);
+        fillColumnsMissingFromBlock(src, physical_columns, result_columns, nested_arrays);
         chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
     }
 
@@ -424,7 +503,7 @@ private:
             for (const auto & name_and_type : missing)
                 columns.emplace_back(readColumnFromBlock(src, name_and_type));
 
-            fillMissingColumns(columns, num_src_rows, missing, missing, {}, nullptr);
+            fillColumnsMissingFromBlock(src, missing, columns, nested_arrays);
 
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
@@ -550,6 +629,8 @@ private:
     MemorySourceFilterPtr filter;
     /// Set if the source produces the `__global_row_index` column for lazy materialization.
     BlockStartRowsPtr block_start_rows;
+    /// The arrays of the table that are members of the `Nested` of a requested member; see `findSizesSource`.
+    const Names nested_arrays;
 };
 
 /// The rows of one block of the snapshot to read in the lazy branch of lazy materialization.
@@ -569,11 +650,13 @@ public:
         SharedHeader header,
         NamesAndTypesList columns_,
         std::shared_ptr<const Blocks> data_,
-        std::vector<MemoryLazyBlockRows> block_rows_)
+        std::vector<MemoryLazyBlockRows> block_rows_,
+        Names nested_arrays_)
         : ISource(std::move(header))
         , columns(std::move(columns_))
         , data(std::move(data_))
         , block_rows(std::move(block_rows_))
+        , nested_arrays(std::move(nested_arrays_))
     {
     }
 
@@ -597,7 +680,7 @@ protected:
             for (const auto & name_and_type : columns)
                 block_columns.emplace_back(readColumnFromBlock(src, name_and_type));
 
-            fillMissingColumns(block_columns, src.rows(), columns, columns, {}, nullptr);
+            fillColumnsMissingFromBlock(src, columns, block_columns, nested_arrays);
 
             for (size_t i = 0; i < block_columns.size(); ++i)
                 result_columns[i]->insertRangeFrom(*block_columns[i]->index(*rows_in_block, 0), 0, rows_in_block->size());
@@ -613,6 +696,7 @@ private:
     const NamesAndTypesList columns;
     std::shared_ptr<const Blocks> data;
     std::vector<MemoryLazyBlockRows> block_rows;
+    const Names nested_arrays;
 };
 
 /// The source of the lazy branch of lazy materialization for the `Memory` storage.
@@ -633,12 +717,14 @@ public:
         NamesAndTypesList columns_,
         std::shared_ptr<const Blocks> data_,
         MemoryLazyMaterializingRowsPtr lazy_materializing_rows_,
-        size_t num_streams_)
+        size_t num_streams_,
+        Names nested_arrays_)
         : IProcessor({}, {std::move(header)})
         , columns(std::move(columns_))
         , data(std::move(data_))
         , lazy_materializing_rows(std::move(lazy_materializing_rows_))
         , num_streams(num_streams_)
+        , nested_arrays(std::move(nested_arrays_))
     {
     }
 
@@ -692,7 +778,7 @@ public:
                 std::make_move_iterator(block_rows.begin() + (i + 1) * block_rows.size() / num_sources));
 
             auto source = std::make_shared<LazyReadFromMemoryBlocksSource>(
-                outputs.front().getSharedHeader(), columns, data, std::move(source_block_rows));
+                outputs.front().getSharedHeader(), columns, data, std::move(source_block_rows), nested_arrays);
 
             auto & source_output = source->getOutputs().front();
             inputs.emplace_back(source_output.getHeader(), this);
@@ -745,6 +831,7 @@ private:
     std::shared_ptr<const Blocks> data;
     MemoryLazyMaterializingRowsPtr lazy_materializing_rows;
     const size_t num_streams;
+    const Names nested_arrays;
     InputPorts::iterator current_input = inputs.end();
 };
 
@@ -1096,6 +1183,30 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     return result;
 }
 
+static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot)
+{
+    NameSet nested_names;
+    for (const auto & column : physical_columns)
+    {
+        auto [nested_name, member_name] = Nested::splitName(column.getNameInStorage());
+        if (isArray(column.getTypeInStorage()) && !member_name.empty())
+            nested_names.insert(std::move(nested_name));
+    }
+
+    Names result;
+    if (nested_names.empty())
+        return result;
+
+    for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+    {
+        auto [nested_name, member_name] = Nested::splitName(column.name);
+        if (isArray(column.type) && !member_name.empty() && nested_names.contains(nested_name))
+            result.push_back(column.name);
+    }
+
+    return result;
+}
+
 Pipe ReadFromMemoryStorageStep::makePipe()
 {
     /// With lazy materialization, every column may be deferred to the lazy branch, e.g. for
@@ -1111,6 +1222,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     /// Virtual columns are not filled by a source with a filter. Such a filter is needed only for the query condition cache then.
     if (source_filter && source_filter->steps.empty() && !virtual_columns.empty())
         source_filter = nullptr;
+    auto nested_arrays = getArraysOfRequestedNested(physical_columns, storage_snapshot);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;
@@ -1137,7 +1249,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             },
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
             source_filter,
-            output_header));
+            output_header,
+            nested_arrays));
     }
 
     size_t size = current_data->size();
@@ -1150,7 +1263,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         auto source = std::make_shared<MemorySource>(
-            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header, block_start_rows);
+            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header, block_start_rows,
+            nested_arrays);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows);
         pipes.emplace_back(std::move(source));
@@ -1180,7 +1294,8 @@ void LazilyReadFromMemoryStorage::initializePipeline(QueryPipelineBuilder & pipe
     /// The same snapshot as the main branch has, so the global row indexes refer to the same blocks.
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto source = std::make_shared<LazyReadFromMemorySource>(
-        getOutputHeader(), columns, snapshot_data.blocks, lazy_materializing_rows, num_streams);
+        getOutputHeader(), columns, snapshot_data.blocks, lazy_materializing_rows, num_streams,
+        getArraysOfRequestedNested(columns, storage_snapshot));
 
     processors.emplace_back(source);
     pipeline.init(Pipe(std::move(source)));
