@@ -798,7 +798,11 @@ void considerEnablingParallelReplicas(
             single_replica_plan_boundary_hash,
             /*plan_with_parallel_replicas=*/nullptr,
             /*replicas_plan_boundary=*/nullptr))
+    {
+        /// Counted here rather than at each decline in `decideAtBoundary`, so that none of them is missed.
+        ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
         return;
+    }
 
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
@@ -1077,7 +1081,6 @@ static bool decideAtBoundary(
                     getLogger("optimizeTree"),
                     "Parallel replicas are not used: decided from the statistics of {}, so no plan with parallel replicas was built",
                     single_replica_plan_boundary->step->getName());
-                ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasDecidedWithoutBuildingPlan);
             }
         }
     }
