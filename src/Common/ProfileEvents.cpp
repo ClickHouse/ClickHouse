@@ -471,6 +471,8 @@
     M(ExternalDistinctUncompressedBytes, "Amount of data (uncompressed, before compression) written for DISTINCT in external memory.", ValueType::Bytes) \
     M(ExternalSetWritePart, "Number of times a temporary file was written to disk for an `IN` set in external memory.", ValueType::Number) \
     M(ExternalSetMerge, "Number of times temporary files were merged for an `IN` set in external memory.", ValueType::Number) \
+    M(ExternalSetTailSpilledKeys, "Number of keys in memory written to a temporary file before the final merge of an `IN` set in external memory, so that the merge fits within the spill threshold.", ValueType::Number) \
+    M(ExternalSetTailKeptKeys, "Number of keys kept in memory for the final merge of an `IN` set in external memory.", ValueType::Number) \
     M(ExternalSetCompressedBytes, "Number of compressed bytes written for `IN` sets in external memory.", ValueType::Bytes) \
     M(ExternalSetUncompressedBytes, "Amount of data (uncompressed, before compression) written for `IN` sets in external memory.", ValueType::Bytes) \
     M(ExternalSetReadBlocks, "Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.", ValueType::Number) \

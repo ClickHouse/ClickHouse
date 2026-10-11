@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Defines.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/PODArray.h>
@@ -543,6 +544,18 @@ void merge(std::vector<Chain<Key>> chains, size_t batch_size, Consume && consume
     const bool passed_all = readers.size() == 1 ? readers.front().passTo(out) : Tournament<Key>(readers).passTo(out);
     if (passed_all)
         out.finish(); /// The last batch, unless `consume` stopped the merge
+}
+
+/// Returns the most memory that `merge` takes besides the runs in memory, when `file_runs` runs are in files
+/// that buffers of `buffer_size` bytes wrote, and batches take `batch_size` keys. A chain reads one file at a
+/// time, so the files take at most a reader each: a batch of keys, the compressed and the decompressed blocks
+/// of the buffer size, and a file buffer of at most `DBMS_DEFAULT_BUFFER_SIZE`. The batch being filled takes
+/// `batch_size` keys.
+template <typename Key>
+size_t estimateMemoryToMerge(size_t file_runs, size_t batch_size, size_t buffer_size)
+{
+    const size_t reader_bytes = keys_per_batch<Key> * sizeof(Key) + 2 * buffer_size + DBMS_DEFAULT_BUFFER_SIZE;
+    return file_runs * reader_bytes + batch_size * sizeof(Key);
 }
 
 }

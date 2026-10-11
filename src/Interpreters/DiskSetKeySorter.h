@@ -23,9 +23,11 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 /// wider keys. If at least half of `bytes_in_run` bytes remain, they become a run, and otherwise they stay
 /// and are sorted again with the keys that follow, so that repeated keys do not make small runs. The runs
 /// stay in memory until query memory exceeds `max_bytes_before_external_set`, and then the runs in memory
-/// merge into one temporary file. `merge` merges all runs, in memory and in files. A merge reads runs that do
-/// not overlap, or share only the key at their boundary, one after another as one run, so the runs of keys
-/// that arrive in order need no comparisons between them.
+/// merge into one temporary file. `merge` merges all runs, in memory and in files. Before that, when query
+/// memory and the memory of the merge would exceed `max_bytes_before_external_set`, it writes as few runs in
+/// memory to a temporary file as free enough memory, as external `DISTINCT` does with the rest of its input.
+/// A merge reads runs that do not overlap, or share only the key at their boundary, one after another as one
+/// run, so the runs of keys that arrive in order need no comparisons between them.
 ///
 /// An external sort of blocks sorts each block as it arrives and merges sorted blocks into each run, and
 /// again runs into the result, comparing rows of columns. Sorting a run as a whole and merging plain keys
@@ -41,14 +43,25 @@ public:
     /// Adds keys in any order and with repeats.
     void add(std::span<const Key> keys);
 
+    /// Whether no keys were added.
+    bool empty() const { return pending.empty() && memory_runs.empty() && file_runs.empty(); }
+
     /// Passes each distinct key once, in ascending order, to `consume`, in batches of `batch_size` keys but
     /// the last one, and stops when `consume` returns false. A batch is valid only until `consume` returns.
-    /// Call once, after the last `add`.
+    /// Call once, after the last `add`. Memory that the caller takes before the call counts towards the
+    /// threshold that the merge keeps to, and memory that `consume` takes during the call does not.
     void merge(size_t batch_size, const std::function<bool(std::span<const Key>)> & consume);
 
 private:
-    /// Merges the runs in memory into one temporary file.
-    void writeMemoryRuns();
+    /// Merges the first `count` runs in memory into one temporary file.
+    void writeMemoryRuns(size_t count);
+
+    /// Returns how many runs in memory, from the first, to write to a temporary file before a merge in
+    /// batches of `batch_size` keys. None, when query memory and the memory of the merge fit within
+    /// `max_bytes_before_external_set`. Otherwise, as few as free the memory that they exceed it by, together
+    /// with the memory of reading the new file, or all of them when no fewer do. The readers of the files can
+    /// exceed the threshold on their own, so writing all runs in memory does not bound the merge.
+    size_t countRunsToWriteBeforeMerge(size_t batch_size) const;
 
     TemporaryDataOnDiskScopePtr tmp_data;
     const size_t keys_in_run;

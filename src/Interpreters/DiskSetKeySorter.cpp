@@ -5,6 +5,7 @@
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/RadixSort.h>
+#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 
@@ -13,6 +14,8 @@
 namespace ProfileEvents
 {
 extern const Event ExternalSetMerge;
+extern const Event ExternalSetTailSpilledKeys;
+extern const Event ExternalSetTailKeptKeys;
 }
 
 namespace DB
@@ -30,6 +33,16 @@ void sortAndDeduplicate(PODArray<Key> & keys)
     else
         ::sort(keys.begin(), keys.end()); /// Radix sort would take 16 or 32 passes
     keys.resize(std::unique(keys.begin(), keys.end()) - keys.begin()); /// Sorting makes repeats adjacent
+}
+
+/// Returns the number of keys of `runs`.
+template <typename Key>
+size_t countKeys(std::span<const PODArray<Key>> runs)
+{
+    size_t keys = 0;
+    for (const auto & run : runs)
+        keys += run.size();
+    return keys;
 }
 
 }
@@ -72,20 +85,19 @@ void DiskSetKeySorter<Key>::add(std::span<const Key> keys)
 
     memory_runs.emplace_back().swap(pending); /// The buffer becomes a run and starts empty
     if (getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_set))
-        writeMemoryRuns(); /// Moves the runs to disk to free their memory
+        writeMemoryRuns(memory_runs.size()); /// Moves the runs to disk to free their memory
 }
 
 template <typename Key>
-void DiskSetKeySorter<Key>::writeMemoryRuns()
+void DiskSetKeySorter<Key>::writeMemoryRuns(size_t count)
 {
-    size_t keys = 0;
-    for (const auto & run : memory_runs)
-        keys += run.size(); /// An upper bound: the merge drops repeats across runs
+    const std::span<const PODArray<Key>> written(memory_runs.data(), count);
+    const size_t keys = countKeys(written); /// An upper bound for the file: the merge drops repeats across runs
 
     using Run = DiskSetRunMerge::Run<Key>;
     std::vector<Run> runs;
-    runs.reserve(memory_runs.size());
-    for (const auto & run : memory_runs)
+    runs.reserve(count);
+    for (const auto & run : written)
         runs.push_back(Run::inMemory({run.data(), run.size()}));
     const Key first = std::ranges::min(runs, {}, &Run::first).first;
     const Key last = std::ranges::max(runs, {}, &Run::last).last;
@@ -101,12 +113,34 @@ void DiskSetKeySorter<Key>::writeMemoryRuns()
     LOG_TRACE(
         getLogger("DiskSetKeySorter"),
         "Wrote {} runs with {} keys of a set of IN to temporary file {}",
-        memory_runs.size(),
+        count,
         keys,
         file->describeFilePath());
 
     file_runs.push_back({std::move(file), first, last});
-    memory_runs.clear(); /// Frees the runs, whose keys the file holds
+    memory_runs.erase(memory_runs.begin(), memory_runs.begin() + count); /// Frees the runs that the file holds
+}
+
+template <typename Key>
+size_t DiskSetKeySorter<Key>::countRunsToWriteBeforeMerge(size_t batch_size) const
+{
+    const size_t buffer_size = tmp_data->getSettings().buffer_size;
+    const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage()); /// Can briefly be negative
+    if (query_memory + DiskSetRunMerge::estimateMemoryToMerge<Key>(file_runs.size(), batch_size, buffer_size)
+        <= max_bytes_before_external_set)
+        return 0;
+
+    /// The runs written to a file free their memory, and the merge reads the file with one more reader.
+    const size_t memory_after_write
+        = query_memory + DiskSetRunMerge::estimateMemoryToMerge<Key>(file_runs.size() + 1, batch_size, buffer_size);
+    size_t freed_bytes = 0;
+    for (size_t count = 1; count < memory_runs.size(); ++count)
+    {
+        freed_bytes += memory_runs[count - 1].allocated_bytes();
+        if (memory_after_write <= max_bytes_before_external_set + freed_bytes)
+            return count;
+    }
+    return memory_runs.size();
 }
 
 template <typename Key>
@@ -121,6 +155,22 @@ void DiskSetKeySorter<Key>::merge(size_t batch_size, const std::function<bool(st
     /// A sorter without keys has no runs.
     if (file_runs.empty() && memory_runs.empty())
         return;
+
+    /// A write frees the memory of its runs and adds a reader, so the budget measures query memory again, as
+    /// external `DISTINCT` does, until the merge fits or no runs stay in memory.
+    while (const size_t count = countRunsToWriteBeforeMerge(batch_size))
+    {
+        ProfileEvents::increment(ProfileEvents::ExternalSetTailSpilledKeys, countKeys<Key>({memory_runs.data(), count}));
+        LOG_TRACE(
+            getLogger("DiskSetKeySorter"),
+            "Writing {} of {} runs of a set of IN in memory to a temporary file before the merge (query memory: {}, spill threshold: {})",
+            count,
+            memory_runs.size(),
+            formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
+            formatReadableSizeWithBinarySuffix(max_bytes_before_external_set));
+        writeMemoryRuns(count);
+    }
+    ProfileEvents::increment(ProfileEvents::ExternalSetTailKeptKeys, countKeys<Key>(memory_runs));
 
     using Run = DiskSetRunMerge::Run<Key>;
     std::vector<Run> runs;

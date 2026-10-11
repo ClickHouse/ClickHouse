@@ -48,8 +48,9 @@ DiskSetBuilder::estimateMemoryToWriteRun(size_t max_bytes_before_external_set, s
 /// temporary files while tracked query memory exceeds `max_bytes_before_external_set`, and merges them into a
 /// `DiskSetImpl` in batches of `max_block_size` keys. The builder checks the size limits after each batch and
 /// once more after the set writes its last block. In the `break` mode, it stops the merge at the batch that
-/// reaches the limits. The builder also counts the distinct keys as they arrive: the filters of the set are
-/// sized before the merge writes its first key, and the sorter passes on no keys until all have arrived.
+/// reaches the limits. The builder also counts the distinct keys as they arrive. The sorter passes on no keys
+/// until all have arrived, so the builder creates the set with filters sized for them before the merge, and
+/// the merge counts the memory of the filters towards the spill threshold.
 template <typename Key>
 class DiskSetBuilderImpl final : public DiskSetBuilder
 {
@@ -69,9 +70,6 @@ public:
     bool isTruncated() const override { return truncated; }
 
 private:
-    /// Appends the next batch of the merge to the set and checks the size limits.
-    void appendSortedDistinctKeys(std::span<const Key> keys);
-
     /// Checks the size limits, which apply to the distinct keys of the set and to the memory of its
     /// directory. In the `break` mode, a set that reaches the limits keeps the keys that reached them. A set
     /// in memory does the same with the block that reaches its limits.
@@ -98,7 +96,7 @@ private:
 
     DiskSetKeySorter<Key> sorter;
 
-    /// The set is created with its file when the merge passes the first keys.
+    /// The set is created with its file before the merge.
     std::unique_ptr<DiskSetImpl<Key>> set;
 };
 
@@ -137,21 +135,6 @@ void DiskSetBuilderImpl<Key>::add(ColumnPtr keys)
 }
 
 template <typename Key>
-void DiskSetBuilderImpl<Key>::appendSortedDistinctKeys(std::span<const Key> keys)
-{
-    if (!set)
-        set = std::make_unique<DiskSetImpl<Key>>(
-            tmp_data,
-            min_free_disk_space,
-            distinct_key_counter ? distinct_key_counter->getCount() : 0,
-            max_bytes_for_bloom_filter,
-            max_bytes_for_cache);
-
-    set->add(keys);
-    checkLimits();
-}
-
-template <typename Key>
 void DiskSetBuilderImpl<Key>::checkLimits()
 {
     if (!limits.check(set->getTotalRowCount(), set->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
@@ -174,17 +157,24 @@ template <typename Key>
 std::unique_ptr<DiskSet> DiskSetBuilderImpl<Key>::finish()
 {
     checkTimeLimit();
+    if (sorter.empty())
+        return std::make_unique<DiskSetImpl<Key>>(); /// A set without keys has no file
+
+    set = std::make_unique<DiskSetImpl<Key>>(
+        tmp_data,
+        min_free_disk_space,
+        distinct_key_counter ? distinct_key_counter->getCount() : 0,
+        max_bytes_for_bloom_filter,
+        max_bytes_for_cache);
     sorter.merge(max_block_size, [&](std::span<const Key> keys)
     {
-        appendSortedDistinctKeys(keys);
+        set->add(keys);
+        checkLimits();
         if (truncated) /// The set keeps no more keys
             return false;
         checkTimeLimit();
         return true;
     });
-
-    if (!set)
-        set = std::make_unique<DiskSetImpl<Key>>();
     set->finishWriting();
 
     /// `finishWriting` writes the last block, which can take the directory past the limits. A set that the

@@ -27,9 +27,10 @@ SQL
 }
 
 # Chunks of 8,192 rows repeat the same 100 keys. The sorter sorts its buffer whenever it holds a run of
-# 16 KiB, and each sort leaves fewer keys than half a run, which stay for the next sort. So the sorter writes
-# no run, and the set is the only file. The subquery starts with keys that no probe finds, which grow the
-# table to the threshold, so the set spills before the repeated keys arrive.
+# 16 KiB, and each sort leaves fewer keys than half a run, which stay for the next sort. So the sorter makes
+# no run while the keys arrive, and only the merge writes them to a temporary file, as one run, because query
+# memory exceeds the threshold. The subquery starts with keys that no probe finds, which grow the table to
+# the threshold, so the set spills before the repeated keys arrive.
 run_case buffer_stays "
 SELECT countIf(number IN (SELECT if(number < 8192, 1000000 + number % 600, number % 100) FROM numbers(40960)))
 FROM numbers(1000);" \
@@ -45,8 +46,8 @@ SELECT countIf(number IN (SELECT intDiv(number, 64) * 32 + number % 64 FROM numb
 # Each key but the first comes twice in a row, so each chunk ends with the key that the next one starts with.
 # The sorted runs make one chain, which passes the key at each boundary once. With a threshold of 16 bytes,
 # the sorter sorts its buffer whenever it holds 2 keys, so each chunk of 64 rows becomes a run in a file, and
-# the last chunk of 1 key stays in memory. The chain reads it after the runs in files, and it holds only the
-# key that ends the previous run.
+# the last chunk of 1 key stays in memory until the merge writes it to a file of its own, because query memory
+# exceeds the threshold. The chain reads that file last, and it holds only the key that ends the previous run.
 run_case touching_runs "
 SELECT countIf(number IN (SELECT intDiv(number + 1, 2) FROM numbers(1025))) FROM numbers(1000);" \
     --max_bytes_before_external_set 16 --max_block_size 64 --max_rows_in_set 513
