@@ -3574,6 +3574,21 @@ void registerStorageFile(StorageFactory & factory)
                                 "Storage File requires from 1 to 3 arguments: "
                                 "name of used format, source and compression_method.");
 
+            /// Only a table over a file descriptor does not own its data, see `StorageFile::hasUnreplicatedTableDataOnDisk`.
+            /// Checked before the storage is constructed, because the construction resolves the path and may infer the schema
+            /// from the file, which would turn a deterministic rejection into a file or schema error. This also covers
+            /// `ENGINE = URL('file://...')`, which creates its delegate with this creator.
+            bool is_table_over_fd = false;
+            if (engine_args_ast.size() >= 2)
+            {
+                if (tryGetIdentifierName(engine_args_ast[1]))
+                    is_table_over_fd = true;
+                else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
+                    is_table_over_fd = literal->value.getType() == Field::Types::Int64 || literal->value.getType() == Field::Types::UInt64;
+            }
+            if (!is_table_over_fd)
+                throwIfUnreplicatedTableDataNotAllowed(factory_args);
+
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
             storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");
 

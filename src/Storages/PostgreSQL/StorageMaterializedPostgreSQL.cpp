@@ -28,7 +28,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
-#include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
 
 #include <Interpreters/applyTableOverride.h>
@@ -48,7 +47,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool enable_materialized_postgresql_table;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
@@ -66,7 +64,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_BACKUP_TABLE;
-    extern const int UNKNOWN_STORAGE;
 }
 
 
@@ -710,20 +707,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `enable_materialized_postgresql_table` setting");
 
-        /// The same restriction as in `InterpreterCreateQuery::doCreateTable` (see `hasUnreplicatedTableDataOnDisk`),
-        /// but it must be checked before the storage is constructed: the constructor starts replication, which creates
-        /// the publication and the replication slot in PostgreSQL and the nested table, and a rejected `CREATE` would not
-        /// remove them. The condition matches the one in the interpreter (`!create.attach`), so it also covers
-        /// `SECONDARY_CREATE`, which is used when other replicas of a `Replicated` database replay the query.
-        if (!args.query.attach
-            && args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
-        {
-            auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
-            if (database && database->getEngineName() == "Replicated")
-                throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                                "Only tables with a replicated engine or tables which do not store their own data on disk "
-                                "are allowed in a Replicated database");
-        }
+        /// Checked before the storage is constructed: the constructor starts replication, which creates the publication
+        /// and the replication slot in PostgreSQL and the nested table, and a rejected `CREATE` would not remove them.
+        throwIfUnreplicatedTableDataNotAllowed(args);
 
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
