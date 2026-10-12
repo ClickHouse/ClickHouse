@@ -106,7 +106,7 @@ public:
     void doInsertRangeFrom(const IColumn &, size_t start, size_t length) override;
 #endif
 
-    /// Squashing uses this to decide whether `insertRangeFrom` can concatenate two columns.
+    /// Compares the captured columns only: `Squashing` uses it to decide whether special representations must be removed before `insertRangeFrom`.
     bool structureEquals(const IColumn & rhs) const override;
 
     void insertData(const char *, size_t) override
