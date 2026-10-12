@@ -68,11 +68,15 @@ Block StorageSystemErrors::getFilterSampleBlock() const
     };
 }
 
-/// Whether the condition reads a set that can change while the query runs (a `Set` table).
-static bool hasSetMutableDuringQuery(const ActionsDAG & dag)
+/// Whether the condition has a lambda, whose sets the walk below cannot see, or reads a set that can change while the
+/// query runs (a `Set` table).
+static bool hasLambdaOrSetMutableDuringQuery(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())
     {
+        if (WhichDataType(node.result_type).isFunction())
+            return true;
+
         if (node.type != ActionsDAG::ActionType::COLUMN)
             continue;
 
@@ -236,7 +240,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
 
         /// A set that is not built yet, or one that can change before the filter above runs, cannot drop rows here.
         auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
-        if (filter_dag && !hasSetMutableDuringQuery(*filter_dag) && VirtualColumnUtils::buildSetsForDAG(*filter_dag, context))
+        if (filter_dag && !hasLambdaOrSetMutableDuringQuery(*filter_dag) && VirtualColumnUtils::buildSetsForDAG(*filter_dag, context))
             VirtualColumnUtils::filterBlockWithExpression(
                 VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), context), block);
 
