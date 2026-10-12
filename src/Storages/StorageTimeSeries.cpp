@@ -1520,7 +1520,13 @@ ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expirati
 ALTER TABLE my_table RESET SETTING metric_families_deduplication_cache_expiration_seconds;
 ```
 
-Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
+Changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
+
+<Note>
+After a change of `id_generator`, the Prometheus HTTP API endpoints `/api/v1/series`, `/api/v1/labels` and `/api/v1/label/<name>/values`
+may return the time series written with the previous generator even if they have no samples in the requested time range.
+</Note>
+
 Changing a setting of a deduplication cache replaces the cache with an empty one, so the next insert writes all its rows again.
 Setting the size or the expiration to 0 disables the cache.
 
