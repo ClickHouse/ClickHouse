@@ -10,6 +10,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 
@@ -47,7 +48,8 @@ KafkaSource::KafkaSource(
     LoggerPtr log_,
     size_t max_block_size_,
     bool commit_in_suffix_,
-    std::optional<UInt64> cancel_epoch_)
+    std::optional<UInt64> cancel_epoch_,
+    size_t poll_batch_size_)
     : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
@@ -55,6 +57,7 @@ KafkaSource::KafkaSource(
     , column_names(columns)
     , log(log_)
     , max_block_size(max_block_size_)
+    , poll_batch_size(poll_batch_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
@@ -93,7 +96,7 @@ Chunk KafkaSource::generateImpl()
     if (!consumer)
     {
         auto timeout = saturatedMilliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
-        consumer = storage.popConsumer(timeout);
+        consumer = storage.popConsumer(timeout, poll_batch_size);
 
         if (!consumer)
             return {};
@@ -129,9 +132,16 @@ Chunk KafkaSource::generateImpl()
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
-        ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
+        /// A memory limit is a state of the server, not a property of the message, so reporting it
+        /// as a bad message would drop a well-formed one. Rethrowing is only safe while nothing is
+        /// committed: `kafka_commit_every_batch` commits the earlier polls of this block already.
+        const bool memory_limit_of_the_server
+            = StorageKafkaUtils::isMemoryLimitError(e.code()) && !consumer->commitsBetweenPolls();
 
-        switch (handle_error_mode)
+        if (!memory_limit_of_the_server)
+            ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
+
+        switch (memory_limit_of_the_server ? StreamingHandleErrorMode::DEFAULT : handle_error_mode)
         {
             case StreamingHandleErrorMode::STREAM:
             {
