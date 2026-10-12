@@ -206,6 +206,21 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
     }
 }
 
+void ColumnGathererStream::onSourceExhausted(size_t source_num)
+{
+    /// A single source with no mask is passed through block by block, so once it is exhausted it has
+    /// delivered everything the result needs and the merge is done.
+    if (sources.size() == 1 && row_sources_buf.eof())
+    {
+        next_required_source = -1;
+        return;
+    }
+
+    /// Otherwise a source is re-requested only while the mask still maps rows to it, so a source
+    /// that cannot deliver them leaves the gathered column short: skipping it is not correct.
+    throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Cannot fetch required block. Source {} is exhausted", source_num);
+}
+
 ColumnGathererTransform::ColumnGathererTransform(
     SharedHeader header,
     size_t num_inputs,
