@@ -13,8 +13,10 @@ using namespace DB;
 /// Writes the archive of @writer into @file_name on @disk and returns its index.
 static PackedFilesIO::Index writeArchive(const DiskPtr & disk, const String & file_name, PackedFilesWriter & writer)
 {
+    const auto plan = writer.prepareFinalize({}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
     auto buf = disk->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, writer.getWriteSettings());
     auto [index, need_sync] = writer.finalize(*buf, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    EXPECT_EQ(plan.total_size, buf->count());
 
     buf->finalize();
     if (need_sync)

@@ -47,7 +47,10 @@ struct MergeTreeTemporaryPart
 
     std::vector<Stream> streams;
 
+    bool finalization_started = false;
+
     void cancel();
+    void startFinalization();
     void finalize();
     void prewarmCaches();
 };
