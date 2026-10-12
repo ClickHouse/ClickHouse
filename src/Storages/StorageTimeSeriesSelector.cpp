@@ -313,6 +313,46 @@ namespace
         return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
+    /// Returns the terms of a regex like `a|b` or `(a|b)|(?:c)` if every term is a plain literal.
+    /// A group is allowed only as a whole term, so `(a|b)c` is not a list.
+    std::optional<Strings> tryGetLiteralAlternatives(std::string_view regex)
+    {
+        Strings terms(1);
+        size_t depth = 0;
+        bool term_ended = false;
+        for (size_t pos = 0; pos < regex.size(); ++pos)
+        {
+            char c = regex[pos];
+            if (c == '|')
+            {
+                terms.emplace_back();
+                term_ended = false;
+            }
+            else if (c == '(')
+            {
+                if (term_ended || !terms.back().empty())
+                    return {};
+                if (regex.substr(pos + 1).starts_with("?:"))
+                    pos += 2;
+                ++depth;
+            }
+            else if (c == ')')
+            {
+                if (depth == 0)
+                    return {};
+                --depth;
+                term_ended = true;
+            }
+            else if (term_ended || std::string_view("\\.^$?*+[]{}").contains(c))
+                return {};
+            else
+                terms.back() += c;
+        }
+        if (depth != 0)
+            return {};
+        return terms;
+    }
+
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         std::string_view function_name;
@@ -331,6 +371,21 @@ namespace
         String value = matcher.label_value;
         if (add_anchors)
         {
+            /// `IN` matches exactly what the fully anchored regex matches, and the primary key can filter by it.
+            if (auto terms = tryGetLiteralAlternatives(value))
+            {
+                /// A single term is an equality, which the text index on tags can serve too.
+                if (terms->size() == 1)
+                    return makeASTFunction(add_not ? "notEquals" : "equals",
+                        tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(std::move(terms->front())));
+
+                ASTs literals;
+                for (auto & term : *terms)
+                    literals.push_back(make_intrusive<ASTLiteral>(std::move(term)));
+                return makeASTFunction(add_not ? "notIn" : "in",
+                    tagNameToAST(matcher.label_name, column_name_by_tag_name), makeASTFunction("tuple", std::move(literals)));
+            }
+
             if (!value.starts_with('^'))
                 value = '^' + value;
             if (!value.ends_with('$'))

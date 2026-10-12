@@ -656,6 +656,10 @@ struct Reader
     /// describe only the non-null values, and null rows may belong to the top-K). Statistics that
     /// are present but cannot be decoded throw, as in the static min/max pruning path.
     std::optional<Range> getTopKSortColumnRange(const parq::RowGroup & meta) const;
+    /// Two rows (min, max of every output column) from chunk statistics; nullopt if some chunk lacks exact statistics.
+    std::optional<Chunk> readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const;
+    /// If set, no row groups are read and the format returns this chunk instead.
+    std::optional<Chunk> min_max_chunk;
     /// True if the running top-K threshold proves that no row of this row group can enter the
     /// top-K heap, so the row group can be skipped without reading its column data. The threshold
     /// only ever tightens, so a `false` result is safely revisited by the row filter later.
