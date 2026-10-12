@@ -1,5 +1,4 @@
 -- DISTINCT in order and a `set` skip index keyed on a single 16-byte column.
-DROP TABLE IF EXISTS t_uuid_key;
 SET optimize_distinct_in_order = 1, optimize_read_in_order = 1, enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_uuid_key;
