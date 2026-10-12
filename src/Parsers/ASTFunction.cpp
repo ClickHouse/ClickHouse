@@ -1057,9 +1057,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (query_parameter_name)
         query_parameter_name->format(ostr, settings, state, nested_dont_need_parens);
+    /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     else if (!name.empty())
         ostr << (quantifierNameNeedsQuoting(name, arguments) ? backQuote(name) : backQuoteIfNeed(name));
 
