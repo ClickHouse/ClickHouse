@@ -765,6 +765,7 @@ def test_glob_skips_directory_entries(cluster):
     container_client = cluster.blob_service_client.get_container_client("cont")
     container_client.upload_blob(f"{prefix}/a.csv", b"1\n")
     container_client.upload_blob(f"{prefix}/empty.csv", b"")
+    container_client.upload_blob(f"{prefix}/marked.csv", b"3\n", metadata={"hdi_isfolder": "true"})
     container_client.upload_blob(f"{prefix}/sub", b"", metadata={"hdi_isfolder": "true"})
     container_client.upload_blob(f"{prefix}/sub/b.csv", b"2\n")
     query = (
@@ -773,7 +774,7 @@ def test_glob_skips_directory_entries(cluster):
         f"blob_path = '{prefix}/**', format = 'One') ORDER BY _path"
     )
     assert azure_query(node, query, settings={"azure_skip_empty_files": 0}).splitlines() == [
-        f"cont/{prefix}/a.csv", f"cont/{prefix}/empty.csv", f"cont/{prefix}/sub/b.csv",
+        f"cont/{prefix}/a.csv", f"cont/{prefix}/empty.csv", f"cont/{prefix}/marked.csv", f"cont/{prefix}/sub/b.csv",
     ]
 
 
