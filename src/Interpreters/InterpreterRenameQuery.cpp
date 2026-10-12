@@ -1,6 +1,8 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Access/checkRowPolicyForBlendingEngine.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -26,6 +28,24 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// A row policy on the new name must not start to apply to a blending engine unnoticed
+void checkNoRowPolicyForMovedTable(const StorageID & moved_id, const StorageID & new_id, bool exchange, const ContextPtr & context)
+{
+    auto & catalog = DatabaseCatalog::instance();
+    auto moved = catalog.tryGetTable(moved_id, context);
+    if (!moved)
+        return;
+
+    auto replaced = exchange ? catalog.tryGetTable(new_id, context) : nullptr;
+    checkNoRowPolicyForBlendingEngine(
+        *moved, new_id, /*include_database_policies=*/ moved_id.database_name != new_id.database_name, context, replaced.get());
+}
+
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -88,6 +108,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     chassert(!rename.rename_if_cannot_exchange || descriptions.size() == 1);
     chassert(!(rename.rename_if_cannot_exchange && rename.exchange));
     auto & database_catalog = DatabaseCatalog::instance();
+    bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
 
     for (const auto & elem : descriptions)
     {
@@ -120,6 +141,15 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         /// storage to check (this is a plain `RENAME TO new_name`, not an exchange).
         if (pre_swap_check && exchange_tables)
             pre_swap_check(StorageID(elem.to_database_name, elem.to_table_name));
+
+        if (!is_secondary_query)
+        {
+            StorageID from_id{elem.from_database_name, elem.from_table_name};
+            StorageID to_id{elem.to_database_name, elem.to_table_name};
+            checkNoRowPolicyForMovedTable(from_id, to_id, exchange_tables, getContext());
+            if (exchange_tables)
+                checkNoRowPolicyForMovedTable(to_id, from_id, /*exchange=*/ true, getContext());
+        }
 
         DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
         if (database->shouldReplicateQuery(getContext(), query_ptr))

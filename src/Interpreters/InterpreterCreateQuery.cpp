@@ -7,6 +7,7 @@
 #include <Access/User.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Access/checkRowPolicyForBlendingEngine.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
@@ -2475,11 +2476,14 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, bool attach_short_syntax, ContextPtr context, bool is_temporary)
 try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
+    /// A policy can be created before its table, and then nobody was told that a merge undoes it
+    if (isFreshTableDefinition(mode, attach_short_syntax))
+        checkNoRowPolicyForBlendingEngine(storage, storage.getStorageID(), /*include_database_policies=*/ true, context);
 }
 catch (...)
 {
@@ -2523,7 +2527,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+            validateStorage(*res, mode, create.attach_short_syntax, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2751,7 +2755,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary());
+    validateStorage(*res, mode, create.attach_short_syntax, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -3281,7 +3285,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+        validateStorage(*res, mode, create.attach_short_syntax, getContext(), /*is_temporary=*/true);
         return res;
     };
 
