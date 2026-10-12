@@ -334,6 +334,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_,
+    bool count_in_one_chunk_,
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
@@ -345,6 +346,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
+    , count_in_one_chunk(count_in_one_chunk_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , read_from_format_info(info)
@@ -992,7 +994,8 @@ Chunk StorageObjectStorageSource::generate()
             /// from different files in DeltaLake) are squashed together during INSERT, the squashing code
             /// doesn't properly handle merging Const columns with different constant values.
             /// By converting to full columns here, we ensure the values are preserved correctly.
-            if (chunk.hasColumns())
+            /// Not for the one chunk of a cached row count (no input format): nothing reads its columns.
+            if (chunk.hasColumns() && !(count_in_one_chunk && !reader.getInputFormat()))
             {
                 size_t chunk_num_rows = chunk.getNumRows();
                 auto columns = chunk.detachColumns();
@@ -1130,7 +1133,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         max_block_size,
         parser_shared_resources,
         format_filter_info,
-        need_only_count);
+        need_only_count,
+        count_in_one_chunk);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -1147,7 +1151,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
-    bool need_only_count)
+    bool need_only_count,
+    bool count_in_one_chunk)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -1332,13 +1337,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
         /// Instead, we use special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
+        /// One chunk is fine when nothing reads the columns, see `readsOnlyRowCount`.
 
         auto names_and_types = read_from_format_info.columns_description.getAllPhysical();
         ColumnsWithTypeAndName columns;
         for (const auto & [name, type] : names_and_types)
             columns.emplace_back(type->createColumn(), type, name);
         builder.init(Pipe(std::make_shared<ConstChunkGenerator>(
-                              std::make_shared<const Block>(columns), *num_rows_from_cache, max_block_size)));
+            std::make_shared<const Block>(columns), *num_rows_from_cache, count_in_one_chunk ? *num_rows_from_cache : max_block_size)));
     }
     else
     {
