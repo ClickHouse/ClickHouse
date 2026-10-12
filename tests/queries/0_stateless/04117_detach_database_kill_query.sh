@@ -17,7 +17,9 @@ cleanup()
     # Kill the SELECT first so its `StoragePtr` reference is released. On a build that
     # does not include the cancellation check in `waitDetachedTableNotInUse`, killing
     # the DETACH first with SYNC would block until the SELECT finishes on its own.
-    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$SELECT_QID' SYNC FORMAT Null" 2>/dev/null || true
+    # Match by `initial_query_id`: with parallel replicas the SELECT also runs as sub-queries on the replicas,
+    # which have their own `query_id` and would otherwise keep sleeping for minutes after the test ends.
+    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE initial_query_id = '$SELECT_QID' SYNC FORMAT Null" 2>/dev/null || true
     $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$DETACH_QID' SYNC FORMAT Null" 2>/dev/null || true
     $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 --query "ATTACH DATABASE IF NOT EXISTS \`$DB\`" 2>/dev/null || true
     $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 --query "DROP DATABASE IF EXISTS \`$DB\` SYNC" 2>/dev/null || true
