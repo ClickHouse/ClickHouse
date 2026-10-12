@@ -690,8 +690,9 @@ if has_shell_queries and any("do_not_check_in_pr" in e.attrib for e in setup_que
     )
 
 # Failpoints are test-wide: enable before setup and disable after teardown.
-# Unlike do_not_check_in_pr, an unsupported failpoint on EITHER server makes
-# the entire comparison inapplicable, rather than producing a partial result.
+# Unlike do_not_check_in_pr, a build without failpoint support makes the
+# comparison inapplicable; an unknown name on the reference side does too,
+# but only if the new server accepted it. Other enable errors are fatal.
 failpoint_enables = []
 failpoint_disables = []
 declared_failpoints = set()
@@ -1024,15 +1025,34 @@ reportStageEnd("settings")
 
 setup_connections = [i for i, e in enumerate(setup_error_on_connection) if not e]
 for name in failpoint_enables:
-    failed_enable = False
+    enable_errors = {}
     for conn_index in setup_connections:
         c = all_connections[conn_index]
         enabled_failpoints.setdefault(name, set()).add(conn_index)
         try:
             c.execute(f"SYSTEM ENABLE FAILPOINT {name}")
-        except Exception:
-            failed_enable = True
-    if failed_enable:
+        except Exception as error:
+            enable_errors[conn_index] = error
+    if enable_errors:
+        def can_skip(index, error):
+            if not isinstance(error, clickhouse_driver.errors.ServerException):
+                return False
+            if error.code == 344:  # `SUPPORT_IS_DISABLED`
+                return "Fail points are disabled because ClickHouse was built without libfiu" in error.message
+            return (
+                index == 0
+                and len(all_connections) == 2
+                and 1 not in enable_errors
+                and error.code == 36  # `BAD_ARGUMENTS`
+                and f"Cannot find fail point {name}" in error.message
+            )
+
+        fatal_errors = [
+            error for index, error in enable_errors.items()
+            if not can_skip(index, error)
+        ]
+        if fatal_errors:
+            raise fatal_errors[0]
         # Even a failed side may have enabled it before losing the reply.
         # Cleanup is best-effort here; the exit hook retries any failures.
         skipping_unsupported_failpoint = True

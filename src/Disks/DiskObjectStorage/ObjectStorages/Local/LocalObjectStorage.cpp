@@ -185,6 +185,7 @@ String LocalObjectStorage::resolvePathRelativelyToKeyPrefix(const String & path)
 bool LocalObjectStorage::exists(const StoredObject & object) const
 {
     std::shared_lock lock(directories_mutex);
+    fiu_do_on(FailPoints::local_object_storage_slow_response, { sleepForMilliseconds(simulated_io_latency_ms); });
     auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
     return fs::exists(resolved_path);
 }
