@@ -135,6 +135,64 @@ std::unique_ptr<MergingAggregatedStep> makeMergingAggregatedStep(bool serialize_
         /*memory_bound_merging_of_aggregation_results_enabled=*/false);
 }
 
+/// `serialize` packs `params.overflow_row` as flag bit 2 and a non-empty
+/// `sort_description_for_merging` as bit 32, so this spans the four flag combinations.
+std::unique_ptr<AggregatingStep> makeAggregatingStepWithOverflowRow(bool overflow_row, bool in_order)
+{
+    Aggregator::Params params(
+        Names{"k"},
+        AggregateDescriptions{},
+        overflow_row,
+        /*max_threads=*/1,
+        /*max_block_size=*/65536,
+        /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
+        /*serialize_string_with_zero_byte=*/false,
+        /*enable_packed_string_keys=*/true);
+
+    SortDescription sort_description;
+    if (in_order)
+        sort_description.push_back(SortColumnDescription(std::string("k")));
+
+    return std::make_unique<AggregatingStep>(
+        makeHeader(),
+        std::move(params),
+        GroupingSetsParamsList{},
+        /*final=*/true,
+        /*max_block_size=*/65536,
+        /*aggregation_in_order_max_block_bytes=*/0,
+        /*merge_threads=*/1,
+        /*temporary_data_merge_threads=*/1,
+        /*storage_has_evenly_distributed_read=*/false,
+        /*group_by_use_nulls=*/false,
+        sort_description,
+        sort_description,
+        /*should_produce_results_in_order_of_bucket_number=*/false,
+        /*memory_bound_merging_of_aggregation_results_enabled=*/false,
+        /*explicit_sorting_required_for_aggregation_in_order=*/false);
+}
+
+/// Feeds a step's own bytes back through `AggregatingStep::deserialize` the way
+/// `QueryPlan::deserialize` does. Returns the error code, or 0 when the stream is accepted.
+int deserializeStepErrorCode(const String & bytes, UInt64 version)
+{
+    ReadBufferFromString in(bytes);
+    DeserializedSetsRegistry registry;
+    auto header = makeHeader();
+    SharedHeaders input_headers{header};
+    QueryPlanSerializationSettings settings;
+    IQueryPlanStep::Deserialization ctx{
+        in, registry, {}, getContext().context, input_headers, header, settings, 0, version, 0, false};
+    try
+    {
+        AggregatingStep::deserialize(ctx);
+        return 0;
+    }
+    catch (const Exception & e)
+    {
+        return e.code();
+    }
+}
+
 }
 
 /// Regression tests for `serialize_string_in_memory_with_zero_byte` being dropped from the serialized
@@ -269,4 +327,36 @@ TEST(AggregatingStepOnlyMergeVersionGates, CacheKeySerializationIsolatesOnlyMerg
     EXPECT_NE(
         serializeStep(*ordinary, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, /*for_cache_key=*/true),
         serializeStep(*merge_only, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, /*for_cache_key=*/true));
+}
+
+/// A plan that aggregates in order and also needs the aggregation overflow row raises the
+/// `TotalsHavingTransform` logical error on the node executing it. Planning refuses the pair, but a
+/// plan arriving from a peer is not planned here, and only a gtest can present that stream: a
+/// server that refuses to build the pair also never serializes it.
+
+TEST(AggregatingStepOverflowRowInOrder, StreamWithBothIsRejected)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto step = makeAggregatingStepWithOverflowRow(/*overflow_row=*/true, /*in_order=*/true);
+    const String bytes = serializeStep(*step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    EXPECT_EQ(deserializeStepErrorCode(bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), ErrorCodes::INCORRECT_DATA);
+}
+
+/// The other three combinations, so that a guard keyed on either flag alone would fail here.
+TEST(AggregatingStepOverflowRowInOrder, EitherFlagAloneIsAccepted)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    for (auto [overflow_row, in_order] : {std::pair{true, false}, std::pair{false, true}, std::pair{false, false}})
+    {
+        auto step = makeAggregatingStepWithOverflowRow(overflow_row, in_order);
+        const String bytes = serializeStep(*step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+        EXPECT_EQ(deserializeStepErrorCode(bytes, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), 0)
+            << "overflow_row=" << overflow_row << " in_order=" << in_order;
+    }
 }
