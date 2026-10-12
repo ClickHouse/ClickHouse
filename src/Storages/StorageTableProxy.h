@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_BEING_RESTARTED;
+}
+
 /// Lazily creates underlying storage for tables in databases with `lazy_load_tables` setting.
 /// Similar to `StorageTableFunctionProxy`, but for real on-disk tables.
 class StorageTableProxy final : public StorageProxy
@@ -77,6 +82,14 @@ public:
         if (nested)
             return nested;
 
+        /// `SYSTEM RESTART REPLICA` marks the table, then shuts it down through this proxy, which waits
+        /// for `nested_mutex`. A load that starts after the mark would bring back the very replica the
+        /// restart is retiring and start its background threads, only for the following `lockForShare`
+        /// to reject the query anyway. A load already running when the mark is set is shut down by the
+        /// restart as soon as it finishes.
+        if (is_being_restarted)
+            throw Exception(ErrorCodes::TABLE_IS_BEING_RESTARTED, "Table {} is being restarted", getStorageID().getNameForLogs());
+
         LOG_TRACE(log, "Loading lazy table on first access");
 
         auto nested_storage = get_nested();
@@ -120,7 +133,7 @@ public:
     }
 
     /// `StorageProxy` forwards `mutate`, but not the checks that gate a mutation, an UPDATE or a
-    /// DELETE. Without these, the first such statement addressed to a table that has not been loaded
+    /// DELETE, including whether it may run inside a transaction. Without these, the first such statement addressed to a table that has not been loaded
     /// yet is answered by the `IStorage` defaults and rejected, e.g. with
     /// `Table engine MergeTree doesn't support mutations`. They all mean the table is about to be
     /// written to, so materializing it here costs nothing.
@@ -129,6 +142,8 @@ public:
         getNested()->checkMutationIsPossible(commands, settings);
     }
 
+    /// Only asked inside a transaction, about a table the query is going to read or write.
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
     bool supportsDelete() const override { return getNested()->supportsDelete(); }
     bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
