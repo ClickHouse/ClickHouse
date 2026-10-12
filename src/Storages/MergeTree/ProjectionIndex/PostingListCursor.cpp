@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
 
 #include <abpfor.h>
 
@@ -685,25 +684,21 @@ void ProjectionPostingListCursor::iterateLargeBlock(
             else
                 std::ignore = abpfor::b256::decodeTailDelta1(src_ptr, count, iter_decode_buf, delta_base);
 
-            /// Validate: strictly monotonically increasing.
-            if (count > 1) [[likely]]
+            /// Validate the decoded values the same way as `ensureBlockDecoded`: they feed mark
+            /// filtering and direct-read results, so corrupted data must not be used.
+            if (count > 0) [[likely]]
             {
                 bool ok = true;
                 for (UInt32 vi = 1; vi < count && ok; ++vi)
                     ok = (iter_decode_buf[vi] > iter_decode_buf[vi - 1]);
                 if (!ok || iter_decode_buf[0] <= delta_base || iter_decode_buf[count - 1] > lb.lastDocIdOf(blk))
                 {
-                    LOG_TRACE(getLogger("ProjectionPostingListCursor"),
-                        "iterateLargeBlock DECODE ERROR: blk={} large_block={} count={} delta_base={} "
-                        "expected_max={} first_val={} last_val={} monotonic={} "
-                        "src_ptr_align16={} bytes={} sequential_skip={}",
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Corrupted projection text index: decoded posting block has invalid doc ids "
+                        "(block_idx={} large_block={} count={} delta_base={} expected_max={} first={} last={} monotonic={})",
                         blk, large_block, count, delta_base,
-                        lb.lastDocIdOf(blk), iter_decode_buf[0], iter_decode_buf[count - 1], ok,
-                        (reinterpret_cast<uintptr_t>(src_ptr) % 16 == 0), bytes,
-                        (blk == stream_blk_start
-                         && last_sequential_large_block == large_block
-                         && last_sequential_block != SIZE_MAX
-                         && stream_blk_start == last_sequential_block + 1));
+                        lb.lastDocIdOf(blk), iter_decode_buf[0], iter_decode_buf[count - 1], ok);
                 }
             }
 
