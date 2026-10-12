@@ -468,7 +468,7 @@ static void sortNodesByAvailableColumnsOrder(
 /// names against WHERE clause names), override top-level output names from
 /// `ast_column_names`, and append source columns to outputs (matching the old
 /// `ExpressionAnalyzer::getActions(false, false)` behavior).
-static void applyAstNamingAndAppendSourceColumns(
+static void applyASTNamingAndAppendSourceColumns(
     ActionsDAG & actions, const std::vector<String> & ast_column_names, const NamesAndTypesList & available_columns)
 {
     auto & outputs = actions.getOutputs();
@@ -647,7 +647,7 @@ ActionsDAG analyzeExpressionToActionsDAG(
     }
     else
     {
-        applyAstNamingAndAppendSourceColumns(actions, ast_column_names, available_columns);
+        applyASTNamingAndAppendSourceColumns(actions, ast_column_names, available_columns);
     }
 
     return std::move(actions);
@@ -726,7 +726,7 @@ AnalyzedExpressionWithSampleBlock analyzeExpressionToActionsAndSampleBlock(
     /// Apply AST-style intermediate renaming and append source columns to outputs
     /// so the resulting `ExpressionActions` matches the legacy
     /// `ExpressionAnalyzer::getActions(false, false)` shape.
-    applyAstNamingAndAppendSourceColumns(actions, names_no_aliases, available_columns);
+    applyASTNamingAndAppendSourceColumns(actions, names_no_aliases, available_columns);
 
     AnalyzedExpressionWithSampleBlock result;
     result.expression = std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings(context, compile_expressions));
