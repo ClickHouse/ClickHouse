@@ -18,6 +18,9 @@
 #include <Core/DecimalComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -2208,7 +2211,40 @@ public:
             DataTypeInt32,
             DataTypeInt64,
             DataTypeFloat32,
-            DataTypeFloat64>(type, std::forward<F>(f));
+            DataTypeFloat64,
+            DataTypeDate,
+            DataTypeDate32,
+            DataTypeDateTime>(type, std::forward<F>(f));
+    }
+
+    static bool isDateOrTimeType(const WhichDataType & which)
+    {
+        return which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isTimeOrTime64();
+    }
+
+    /// The pairs of date and time types `executeImpl` compares by their stored integers: two values of the same kind
+    /// (`DateTime` values with any time zones, which are absolute timestamps), `Date` vs `Date32` (both day numbers from
+    /// the same epoch), and a `DateTime` vs a `DateTime64`, converted to the `DateTime64` by a multiplication that cannot
+    /// overflow. `Date` vs `DateTime` needs the time zone, and `DateTime64` values of different scales are rescaled
+    /// with an overflow check that can throw, so they stay interpreted. `Time` and `Time64` are not compiled yet.
+    static bool isCompilableDateOrTimePair(const IDataType & left, const IDataType & right)
+    {
+        WhichDataType which_left(left);
+        WhichDataType which_right(right);
+
+        if (which_left.isTimeOrTime64() || which_right.isTimeOrTime64())
+            return false;
+
+        if (which_left.isDateTime64() && which_right.isDateTime64())
+            return assert_cast<const DataTypeDateTime64 &>(left).getScale() == assert_cast<const DataTypeDateTime64 &>(right).getScale();
+
+        if (which_left.isDateTime64() || which_right.isDateTime64())
+            return which_left.isDateTime() || which_right.isDateTime();
+
+        if (isDateOrTimeType(which_left) && isDateOrTimeType(which_right) && which_left.idx != which_right.idx)
+            return which_left.isDateOrDate32() && which_right.isDateOrDate32();
+
+        return true;
     }
 
     template <typename F>
@@ -2231,12 +2267,13 @@ public:
         if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
             return false;
 
-        WhichDataType data_type_lhs(arguments[0]);
-        WhichDataType data_type_rhs(arguments[1]);
-        /// TODO support date/date32
-        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
-            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
+        if (!isCompilableDateOrTimePair(*arguments[0], *arguments[1]))
             return false;
+
+        /// A `DateTime64` is compared with a `DateTime64` of the same scale or a `DateTime`, see `isCompilableDateOrTimePair`.
+        /// Both sides are compared as the `Int64` the `DateTime64` stores.
+        if (WhichDataType(arguments[0]).isDateTime64() || WhichDataType(arguments[1]).isDateTime64())
+            return Op<Int64, Int64>::compilable;
 
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
@@ -2261,6 +2298,19 @@ public:
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
     {
         chassert(2 == arguments.size());
+
+        if (WhichDataType(arguments[0].type).isDateTime64() || WhichDataType(arguments[1].type).isDateTime64())
+        {
+            if constexpr (Op<Int64, Int64>::compilable)
+            {
+                /// Like `executeImpl`, compare both sides as the `DateTime64`: `nativeCast` multiplies a `DateTime` by 10^scale.
+                const auto & common_type = WhichDataType(arguments[0].type).isDateTime64() ? arguments[0].type : arguments[1].type;
+                auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                auto * left_value = nativeCast(b, arguments[0], common_type);
+                auto * right_value = nativeCast(b, arguments[1], common_type);
+                return b.CreateSelect(CompileOp<Op>::compile(b, left_value, right_value, /*is_signed=*/ true), b.getInt8(1), b.getInt8(0));
+            }
+        }
 
         llvm::Value * result = nullptr;
         castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)

@@ -1,0 +1,10 @@
+rows differing, compiled vs interpreted
+0
+0
+rows	3003
+edge rows
+1	49	22	49	42	42	49	49	49	42	49	42	\N	\N	22	22	22
+2	42	49	42	22	49	49	42	49	22	49	22	49	49	42	42	42
+3	22	42	49	49	22	49	49	22	49	22	49	49	49	49	49	49
+compiled	1
+not compiled	1

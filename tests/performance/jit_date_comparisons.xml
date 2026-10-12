@@ -1,0 +1,79 @@
+<test>
+    <settings>
+        <min_count_to_compile_expression>0</min_count_to_compile_expression>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jit_date_comparisons (
+            d Date,
+            d32 Date32,
+            ts DateTime('UTC'),
+            ts64 DateTime64(3, 'UTC'),
+            value UInt32
+        ) Engine = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO jit_date_comparisons
+        SELECT
+            toDate(19000 + number % 2000),
+            toDate32(19000 + number * 7 % 2000),
+            toDateTime(1640000000 + number * 13 % 200000000, 'UTC'),
+            fromUnixTimestamp64Milli(toInt64(1640000000 + number * 17 % 200000000) * 1000 + number % 1000, 'UTC'),
+            number % 1000
+        FROM numbers(50000000)
+    </fill_query>
+
+    <!-- A DateTime range condition inside an aggregate function argument. -->
+    <query>
+        SELECT countIf(ts >= toDateTime(1700000000, 'UTC') AND ts &lt; toDateTime(1750000000, 'UTC') AND value &gt; 500)
+        FROM jit_date_comparisons
+        SETTINGS compile_expressions = 0
+    </query>
+    <query>
+        SELECT countIf(ts >= toDateTime(1700000000, 'UTC') AND ts &lt; toDateTime(1750000000, 'UTC') AND value &gt; 500)
+        FROM jit_date_comparisons
+        SETTINGS compile_expressions = 1
+    </query>
+
+    <!-- A Date range and Date vs Date32. -->
+    <query>
+        SELECT countIf(d >= toDate(19500) AND d &lt;= toDate(20500) AND d &lt; d32) FROM jit_date_comparisons
+        SETTINGS compile_expressions = 0
+    </query>
+    <query>
+        SELECT countIf(d >= toDate(19500) AND d &lt;= toDate(20500) AND d &lt; d32) FROM jit_date_comparisons
+        SETTINGS compile_expressions = 1
+    </query>
+
+    <!-- A DateTime64 column against DateTime constants, like ts64 > now() - INTERVAL 1 DAY. -->
+    <query>
+        SELECT countIf(ts64 > toDateTime(1700000000, 'UTC') AND ts64 &lt;= toDateTime(1800000000, 'UTC') AND value &lt; 900)
+        FROM jit_date_comparisons
+        SETTINGS compile_expressions = 0
+    </query>
+    <query>
+        SELECT countIf(ts64 > toDateTime(1700000000, 'UTC') AND ts64 &lt;= toDateTime(1800000000, 'UTC') AND value &lt; 900)
+        FROM jit_date_comparisons
+        SETTINGS compile_expressions = 1
+    </query>
+
+    <!-- A time bucket in a conditional sum. -->
+    <query>
+        SELECT sum(if(ts >= toDateTime(1700000000, 'UTC') AND ts &lt; toDateTime(1750000000, 'UTC'), value, 0)) FROM jit_date_comparisons
+        SETTINGS compile_expressions = 0
+    </query>
+    <query>
+        SELECT sum(if(ts >= toDateTime(1700000000, 'UTC') AND ts &lt; toDateTime(1750000000, 'UTC'), value, 0)) FROM jit_date_comparisons
+        SETTINGS compile_expressions = 1
+    </query>
+
+    <!-- The same range as a WHERE filter, which must not get slower. -->
+    <query>
+        SELECT count() FROM jit_date_comparisons
+        WHERE ts >= toDateTime(1700000000, 'UTC') AND ts &lt; toDateTime(1750000000, 'UTC') AND value &gt; 500
+        SETTINGS compile_expressions = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS jit_date_comparisons</drop_query>
+</test>
