@@ -79,6 +79,12 @@ protected:
 
     void consumeQueryResultPreview(Chunk chunk) override
     {
+        /// Previews precede the result: once a chunk of the result has been queued, a preview is
+        /// stale, and the native protocol must not send `PreviewData` after `Data` (the same guard
+        /// as in `IOutputFormat::consumeQueryResultPreview`). A preview can still arrive late, for
+        /// example from another input of `IMergingTransformBase` after it has pushed its output.
+        if (finalized || !need_write_prefix)
+            return;
         (void)(queue.emplace(std::move(chunk)));
     }
 
