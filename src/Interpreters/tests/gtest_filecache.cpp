@@ -131,7 +131,6 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
     extern const FileCacheSettingsUInt64 efficiency_window_sec;
-    extern const FileCacheSettingsUInt64 reserve_granularity;
 }
 
 void printRanges(const auto & segments)
