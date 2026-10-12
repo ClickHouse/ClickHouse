@@ -47,6 +47,11 @@ struct ColumnStatisticsDescription
 {
     bool operator==(const ColumnStatisticsDescription & other) const;
 
+    /// Whether both descriptions describe the same explicit statistics. Implicit statistics
+    /// (added by `auto_statistics_types`) and the auxiliary `data_type` are not serialized into
+    /// stored metadata, so they are not part of a column definition's identity.
+    bool hasSameExplicitStatistics(const ColumnStatisticsDescription & other) const;
+
     bool empty() const;
 
     bool hasExplicitStatistics() const;

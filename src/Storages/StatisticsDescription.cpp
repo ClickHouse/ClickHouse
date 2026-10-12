@@ -1,5 +1,8 @@
 #include <Storages/StatisticsDescription.h>
 
+#include <map>
+#include <ranges>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -107,6 +110,41 @@ bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription &
         return false;
 
     return types_to_desc == other.types_to_desc && data_type->equals(*other.data_type);
+}
+
+bool ColumnStatisticsDescription::hasSameExplicitStatistics(const ColumnStatisticsDescription & other) const
+{
+    /// Parameters are a part of the declaration, so the AST is compared; the type name is not,
+    /// because it is stored as written while `stringToStatisticsType` is case-insensitive.
+    auto explicit_declarations = [](const ColumnStatisticsDescription & desc)
+    {
+        std::map<StatisticsType, ASTPtr> declarations;
+        for (const auto & [type, single_description] : desc.types_to_desc)
+        {
+            if (single_description.is_implicit)
+                continue;
+
+            ASTPtr ast = single_description.ast ? single_description.ast->clone() : nullptr;
+            if (auto * function = ast ? ast->as<ASTFunction>() : nullptr)
+            {
+                /// Arguments are ordinary expressions, so canonicalize the function names in them
+                /// before overwriting the statistics type, which is not a registered function.
+                FunctionNameNormalizer::visitForComparison(function->arguments.get());
+                function->name = statisticsTypeToString(type);
+            }
+            else if (auto * identifier = ast ? ast->as<ASTIdentifier>() : nullptr)
+                *identifier = ASTIdentifier(statisticsTypeToString(type));
+            declarations.emplace(type, std::move(ast));
+        }
+        return declarations;
+    };
+
+    auto lhs = explicit_declarations(*this);
+    auto rhs = explicit_declarations(other);
+    return std::ranges::equal(lhs, rhs, [](const auto & l, const auto & r)
+    {
+        return l.first == r.first && sameAST(l.second, r.second);
+    });
 }
 
 bool ColumnStatisticsDescription::empty() const

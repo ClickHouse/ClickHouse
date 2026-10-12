@@ -83,3 +83,27 @@ columns format version: 1
         });
     }
 }
+
+TEST_F(ColumnsDescriptionTest, StatisticsTypeNameCaseIsNotSignificant)
+{
+    /// `stringToStatisticsType` lowercases the name, so a case-only difference is the same
+    /// statistics type. A replica declaring `STATISTICS(TDigest)` where the stored definition says
+    /// `STATISTICS(tdigest)` must still start up instead of failing with `INCOMPATIBLE_COLUMNS`.
+    auto parse_one = [](const String & statistics_declaration)
+    {
+        return ColumnsDescription::parse(
+            "columns format version: 1\n1 columns:\n`a` UInt64\tSTATISTICS(" + statistics_declaration + ")\n");
+    };
+
+    EXPECT_EQ(parse_one("tdigest"), parse_one("TDigest"));
+    EXPECT_EQ(parse_one("tdigest(1)"), parse_one("TDigest(1)"));
+    EXPECT_EQ(parse_one("countmin"), parse_one("CountMin"));
+
+    /// A different type, and a different parameter of the same type, are still different.
+    EXPECT_NE(parse_one("tdigest"), parse_one("uniq"));
+    EXPECT_NE(parse_one("tdigest(1)"), parse_one("tdigest(2)"));
+
+    /// Parameters are ordinary expressions, so the function names in them are canonicalized too.
+    EXPECT_EQ(parse_one("tdigest(ABS(-1))"), parse_one("TDigest(abs(-1))"));
+    EXPECT_NE(parse_one("tdigest(ABS(-1))"), parse_one("tdigest(ABS(-2))"));
+}
