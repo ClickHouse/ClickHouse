@@ -693,13 +693,18 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
         tbl = f"t_txt_own_{label}"
 
         node.query(f"DROP TABLE IF EXISTS {tbl} SYNC")
+        # The base a skip index writes comes from its name at write time, so the colliding name has
+        # to be declared before the first INSERT. In the colliding arm that pair resolves to one base
+        # stream name, which CREATE rejects, hence ATTACH with a fresh UUID.
+        uuid = node.query("SELECT generateUUIDv4()").strip()
         node.query(f"""
-            CREATE TABLE {tbl}
+            ATTACH TABLE {tbl} UUID '{uuid}'
             (
                 k UInt64,
                 s String,
                 w UInt64,
-                INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1
+                INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1,
+                INDEX `{sib}` w TYPE minmax GRANULARITY 1
             )
             ENGINE = MergeTree ORDER BY k
             SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
@@ -717,20 +722,31 @@ def test_mutate_corrupted_text_index_multistream(started_cluster):
         container_bash(f"mkdir -p {dp}/saved_{tbl}")
         container_bash(f"cp {act}skp_idx_a.* {dp}/saved_{tbl}/")
 
-        # Corrupt the text index while NO sibling exists, so nothing inherits a checksum entry for
-        # its files, then add the healthy sibling. Order matters: adding the sibling first would let
-        # it register a name the text index also addresses before the entries are stripped.
-        # The sibling must be materialized and registered, else its file is not in `checksums.txt`,
-        # the collision never arises, and the final `CHECK TABLE` passes for the wrong reason.
-        node.query(f"ALTER TABLE {tbl} DROP INDEX a SETTINGS mutations_sync = 2")
-        node.query(
-            f"ALTER TABLE {tbl} ADD INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1"
-        )
-        node.query(f"ALTER TABLE {tbl} ADD INDEX `{sib}` w TYPE minmax GRANULARITY 1")
+        # `CLEAR INDEX a` strips the text index's files while keeping it declared, so the part carries
+        # no checksum entries for them. It removes candidates purely by filename, so it takes the mark
+        # file the sibling shares with the text index down with them. The sibling is then cleared and
+        # materialized to write that mark again: `MATERIALIZE INDEX` recalculates only an index the
+        # part no longer has, so clearing it first is what makes the materialization act.
+        # The sibling must end up registered with marks, else the collision never arises and the final
+        # `CHECK TABLE` passes for the wrong reason.
+        node.query(f"ALTER TABLE {tbl} CLEAR INDEX a SETTINGS mutations_sync = 2")
+        node.query(f"ALTER TABLE {tbl} CLEAR INDEX `{sib}` SETTINGS mutations_sync = 2")
         node.query(
             f"ALTER TABLE {tbl} MATERIALIZE INDEX `{sib}` SETTINGS mutations_sync = 2"
         )
         cor = active_part_path(tbl)
+
+        # Fixture state after both statements completed: the text index's own unique data files are
+        # gone and its sibling still reports data.
+        assert not (
+            path_exists(f"{cor}skp_idx_a.idx") or path_exists(f"{cor}skp_idx_a.dct.idx")
+        ), label
+        assert (
+            node.query(
+                f"SELECT count() FROM system.data_skipping_indices WHERE database = 'default' AND table = '{tbl}' AND name = '{sib}' AND data_compressed_bytes > 0"
+            )
+            == "1\n"
+        ), label
 
         # Measured BEFORE reinjection, so it discriminates: only the colliding name makes the sibling
         # write the contested `skp_idx_a.pst.cmrk2` (0 for the control, 1 for the collision). After
@@ -815,8 +831,12 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
     # too - without them the text index declares no `.pos` substream and there is no collision at all.
     def make_corrupted_part(tbl):
         node.query(f"DROP TABLE IF EXISTS {tbl} SYNC")
+        # ATTACH, not CREATE: this pair resolves to one base stream name, which CREATE rejects. The
+        # colliding name has to be declared here rather than introduced later, because the base a skip
+        # index writes comes from its name at write time. A fresh UUID is required by ATTACH.
+        uuid = node.query("SELECT generateUUIDv4()").strip()
         node.query(f"""
-            CREATE TABLE {tbl}
+            ATTACH TABLE {tbl} UUID '{uuid}'
             (
                 k UInt64,
                 s String,
@@ -849,13 +869,23 @@ def test_mutate_corrupted_index_sibling_owns_file(started_cluster):
         # healthy sibling's mark and corrupt the very index this test asserts stays intact.
         container_bash(f"cp {active}skp_idx_a.pos.idx2 {data_path}/saved_{tbl}/")
 
-        # DROP + re-ADD makes the active part carry no checksums entries for `a.pos`, then the saved
-        # files are re-injected on disk. Re-ADD without `MATERIALIZE INDEX` leaves it unmaterialized,
-        # which is the released-bug shape.
-        node.query(f"ALTER TABLE {tbl} DROP INDEX `a.pos` SETTINGS mutations_sync = 2")
-        node.query(f"ALTER TABLE {tbl} ADD INDEX `a.pos` w TYPE minmax GRANULARITY 1")
+        # `CLEAR INDEX` removes `a.pos`'s files while KEEPING it in metadata, which is exactly the
+        # declared-but-unmaterialized shape of the released bug. DROP + re-ADD cannot be used: the
+        # re-ADD would introduce the colliding name anew and be refused.
+        node.query(f"ALTER TABLE {tbl} CLEAR INDEX `a.pos` SETTINGS mutations_sync = 2")
 
         corrupt = active_part_path(tbl, order_by_name=True)
+        # Fixture state before re-injection: the cleared index's own `.idx2` is gone from the part while
+        # the text index is still registered with readable data. The positional pair is deliberately not
+        # asserted here for the same reason `text_streams_on_disk` excludes it - this table loses it on
+        # any rewrite, before this test's corruption is introduced.
+        assert not path_exists(f"{corrupt}skp_idx_a.pos.idx2"), tbl
+        assert (
+            node.query(
+                f"SELECT count() FROM system.data_skipping_indices WHERE database = 'default' AND table = '{tbl}' AND name = 'a' AND data_compressed_bytes > 0"
+            )
+            == "1\n"
+        ), tbl
         container_bash(f"cp {data_path}/saved_{tbl}/skp_idx_a.pos.idx2 {corrupt}")
 
     def orphan_on_disk(tbl):
