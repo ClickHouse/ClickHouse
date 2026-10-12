@@ -44,13 +44,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        const IDataType * type_ptr = &type;
-
-        if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
-            type_ptr = lc_type->getDictionaryType().get();
-
-        if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
-            type_ptr = nullable_type->getNestedType().get();
+        const IDataType * type_ptr = removeLowCardinalityAndNullable(&type);
 
         const IFunction::Monotonicity is_not_monotonic;
 
