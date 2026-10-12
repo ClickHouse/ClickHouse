@@ -44,27 +44,19 @@ Query:
 
 **Simple case**
 ```sql
-arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
-
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
-
-Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
+SELECT extractKeyValuePairs('name:neymar, age:34 team:santos,nationality:brazil') AS kv;
 
 ┌─kv──────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+│ {'name':'neymar','age':'34','team':'santos','nationality':'brazil'}        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Single quote as quoting character**
 ```sql
-arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
-
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
-
-Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':34;team:santos;nationality:brazil,last_key:last_value', ':', ';,', '\'') AS kv;
 
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+│ {'name':'neymar','age':'34','team':'santos','nationality':'brazil','last_key':'last_value'}                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,7 +65,7 @@ unexpected_quoting_character_strategy examples:
 unexpected_quoting_character_strategy=invalid
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') AS kv;
 ```
 
 ```text
@@ -83,7 +75,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') AS kv;
 ```
 
 ```text
@@ -95,7 +87,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
 unexpected_quoting_character_strategy=accept
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
 ```
 
 ```text
@@ -105,7 +97,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
 ```
 
 ```text
@@ -117,7 +109,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 unexpected_quoting_character_strategy=promote
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
 ```
 
 ```text
@@ -127,7 +119,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
 ```
 
 ```text
@@ -138,11 +130,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 
 **Escape sequences without escape sequences support**
 ```sql
-arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
-
-SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
-
-Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 
 ┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
@@ -184,11 +172,7 @@ Leading escape sequences will be skipped in keys and will be considered invalid 
 
 **Escape sequences with escape sequence support turned on**
 ```sql
-arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
-
-SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
-
-Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv;
 
 ┌─kv────────────────┐
 │ {'age':'a\n\n\0'} │
@@ -604,6 +588,39 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
 └───────────────────────────────┘
 ```
 
+## mapEntries {#mapEntries}
+
+Introduced in: v26.10.0
+
+Returns the key-value pairs of a map as an array of named tuples with fields `key` and `value`.
+Duplicate keys are preserved.
+
+**Syntax**
+
+```sql
+mapEntries(map)
+```
+
+**Arguments**
+
+- `map` — Map to extract entries from. [`Map(K, V)`](/reference/data-types/map)
+
+**Returned value**
+
+Returns an array containing the key-value pairs from the map. [`Array(Tuple(key K, value V))`](/reference/data-types/array)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT mapEntries(map('k1', 'v1', 'k2', 'v2'))
+```
+
+```response title=Response
+[('k1','v1'),('k2','v2')]
+```
+
 ## mapExists {#mapExists}
 
 Introduced in: v23.4.0
@@ -954,6 +971,41 @@ SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)
 
 ```response title=Response
 ([1,2,3,4,5],[11,22,0,44,0])
+```
+
+## mapRemove {#mapRemove}
+
+Introduced in: v26.10.0
+
+Removes all entries from a map whose key equals the specified key. If several entries have the same key, all matching entries are removed.
+NULLs are compared as values: a NULL removal key does not match a non-NULL key, and NULL components in composite keys match other NULL components.
+For key types with a common supertype, NaN keys follow map lookup semantics, so a NaN removal key matches a NaN map key.
+
+**Syntax**
+
+```sql
+mapRemove(map, key)
+```
+
+**Arguments**
+
+- `map` — Map to remove matching entries from. [`Map(K, V)`](/reference/data-types/map)
+- `key` — Key whose matching entries are removed. Type must be comparable with the key type of the map. [`Any`](/reference/data-types/index)
+
+**Returned value**
+
+Returns the map with all entries whose key does not match the specified key. [`Map(K, V)`](/reference/data-types/map)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT mapRemove(map('k1', 1, 'k2', 2), 'k1')
+```
+
+```response title=Response
+{'k2':2}
 ```
 
 ## mapReverseSort {#mapReverseSort}
