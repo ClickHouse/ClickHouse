@@ -5,6 +5,8 @@
 -- whitespace before the parenthesis
 [('job','a')]	1970-01-01 00:01:50.000	2.5
 1970-01-01 00:01:50.000	1
+[('job','a')]	1970-01-01 00:01:50.000	2.5
+[('job','a')]	1970-01-01 00:01:50.000	2.5
 -- unknown functions
 -- unknown functions fail before execution, known ones are described
 tags	Array(Tuple(String, String))					

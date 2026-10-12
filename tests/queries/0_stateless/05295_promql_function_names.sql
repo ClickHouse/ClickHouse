@@ -24,10 +24,14 @@ SELECT * FROM prometheusQuery('prometheus', 'max_over_time(rate[1m])', 110);
 SELECT '-- whitespace before the parenthesis';
 SELECT * FROM prometheusQuery('prometheus', 'max_over_time (rate[1m])', 110);
 SELECT * FROM prometheusQuery('prometheus', 'min_of (1, 2)', 110);
+SELECT * FROM prometheusQuery('prometheus', 'max_over_time\n(rate[1m])', 110);
+SELECT * FROM prometheusQuery('prometheus', 'max_over_time # c\r\n(rate[1m])', 110);
 
 SELECT '-- unknown functions';
 SELECT * FROM prometheusQuery('prometheus', 'foo_bar(rate)', 110); -- { serverError UNKNOWN_FUNCTION }
 SELECT * FROM prometheusQuery('prometheus', 'foo_bar (rate)', 110); -- { serverError UNKNOWN_FUNCTION }
+SELECT * FROM prometheusQuery('prometheus', 'foo_bar\n(rate)', 110); -- { serverError UNKNOWN_FUNCTION }
+SELECT * FROM prometheusQuery('prometheus', 'foo_bar # c\r\n(rate)', 110); -- { serverError UNKNOWN_FUNCTION }
 SELECT * FROM prometheusQuery('prometheus', 'Rate(rate[1m])', 110); -- { serverError UNKNOWN_FUNCTION }
 SELECT * FROM prometheusQuery('prometheus', 'info(rate)', 110); -- { serverError NOT_IMPLEMENTED }
 
