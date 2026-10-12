@@ -107,6 +107,11 @@ if Utils.is_arm():
 else:
     docker_sock_mount = "--volume=/run:/run/host:ro"
 
+# Submodules with test data only. They do not affect the builds, so a bump of them must not rebuild the binaries.
+test_data_submodules = [
+    "./contrib/parquet-testing",
+]
+
 build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
@@ -128,6 +133,7 @@ build_digest_config = Job.CacheDigestConfig(
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
     ],
+    exclude_paths=test_data_submodules,
     with_git_submodules=True,
 )
 
@@ -207,6 +213,8 @@ common_ft_job_config = Job.Config(
             "./ci/praktika/info.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
+            # The tests read the test data from these submodules.
+            *test_data_submodules,
             "./tests/clickhouse-test",
             "./tests/config",
             "./tests/*.txt",
@@ -656,6 +664,7 @@ class JobConfigs:
                 Job.CacheDigestConfig(
                     include_paths=build_digest_config.include_paths
                     + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
+                    exclude_paths=build_digest_config.exclude_paths,
                     with_git_submodules=True,
                 )
             )
@@ -691,6 +700,7 @@ class JobConfigs:
                 "./contrib/",
                 "./.gitmodules",
             ],
+            exclude_paths=test_data_submodules,
             with_git_submodules=True,
         ),
         needs_submodules=True,
@@ -1178,6 +1188,7 @@ class JobConfigs:
                 "./programs",
                 "./rust",
             ],
+            exclude_paths=test_data_submodules,
             with_git_submodules=True,
         ),
         result_name_for_cidb="Tests",
@@ -2283,6 +2294,7 @@ class JobConfigs:
                 "./ci/jobs/sign_macos_binary.py",
                 "./ci/jobs/scripts/sign_macos_binary",
             ],
+            exclude_paths=build_digest_config.exclude_paths,
             with_git_submodules=True,
         ),
     ).parametrize(
