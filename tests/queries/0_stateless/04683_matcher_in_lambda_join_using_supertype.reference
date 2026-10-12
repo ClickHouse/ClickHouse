@@ -1,0 +1,80 @@
+int inner
+11	1	10
+int inner direct oracle
+11	1	10
+int lambda expansion equals direct expansion	1
+int direct expansion	1
+int left
+11	1	10
+int right
+11	1	10
+int full lambda expansion equals direct expansion	1
+int full direct expansion	1
+arrayFilter
+1
+arrayExists
+1
+arraySort
+11	1	10
+nested lambda
+11	1	10
+using alias
+11	1	10
+COLUMNS matcher
+11	1	10
+natural join
+1	10
+multi column matcher in one argument lambda
+WHERE keeps the supertype
+Array(Tuple(UInt64, Int16))
+qualified matcher
+11	1	10
+explicit columns
+Array(Tuple(UInt64, Int16))
+bare key column
+11	1	10
+matcher excluding the key
+Array(Tuple(Int16))
+APPLY transformer
+Array(Tuple(String, String))
+matcher in the select list
+Array(Tuple(UInt64, Int16))
+top level identifier compatibility	1
+join_use_nulls with USING
+1
+join_use_nulls widens the lambda body, right	1
+join_use_nulls widens the lambda body, right direct oracle	1
+join_use_nulls widens the lambda body, right value
+1
+join_use_nulls widens the lambda body, full value
+1
+join_use_nulls with ON, bare column
+1
+lambda argument is not replaced
+1
+lambda argument beside a matcher
+1
+subquery in PREWHERE keeps its own supertype
+Array(Tuple(UInt64, Int16))
+subquery inside a lambda is not visited
+1
+LowCardinality(String) against String
+11	1	10
+LowCardinality lambda expansion equals direct expansion	1
+LowCardinality direct expansion	1
+LowCardinality(Nullable(String)) against String
+11	1	10
+String against Nullable(String)
+11	1	10
+multi key USING
+11	1	2	10
+no join
+1	10
+cross join
+1
+three tables qualified matcher
+Array(Tuple(Int8, Int16))
+three tables unqualified matcher
+Array(Tuple(UInt64, Int8))
+three tables unqualified matcher direct oracle
+Tuple(UInt64, Int8)
