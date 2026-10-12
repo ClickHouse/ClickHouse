@@ -1753,7 +1753,8 @@ private:
     {
         int32_t metadata_version = -1;
         String schema_signature;
-        Names part_names;
+        /// Identities of the part objects the cached value was built from, see `getLookupTableState`.
+        std::vector<std::weak_ptr<const IMergeTreeDataPart>> parts;
         SetPtr set;
     };
 
@@ -1761,7 +1762,8 @@ private:
     {
         int32_t metadata_version = -1;
         String schema_signature;
-        Names part_names;
+        /// Identities of the part objects the cached value was built from, see `getLookupTableState`.
+        std::vector<std::weak_ptr<const IMergeTreeDataPart>> parts;
         std::shared_ptr<const IKeyValueEntity> entity;
     };
 

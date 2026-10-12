@@ -289,7 +289,7 @@ struct LookupReadResult
     Block block;
     int32_t metadata_version = -1;
     String schema_signature;
-    Names part_names;
+    std::vector<std::weak_ptr<const IMergeTreeDataPart>> parts;
     bool cacheable = true;
 };
 
@@ -297,7 +297,7 @@ struct LookupTableState
 {
     int32_t metadata_version = -1;
     String schema_signature;
-    Names part_names;
+    std::vector<std::weak_ptr<const IMergeTreeDataPart>> parts;
     bool cacheable = true;
 };
 
@@ -359,7 +359,7 @@ LookupReadResult readLookupIndexColumns(
     auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, columns_to_read);
     result.metadata_version = lookup_table_state.metadata_version;
     result.schema_signature = lookup_table_state.schema_signature;
-    result.part_names = lookup_table_state.part_names;
+    result.parts = std::move(lookup_table_state.parts);
     result.cacheable = lookup_table_state.cacheable;
 
     SelectQueryInfo query_info;
@@ -403,13 +403,17 @@ LookupTableState getLookupTableState(
     LookupTableState result;
     result.metadata_version = storage_snapshot->metadata->getMetadataVersion();
     result.schema_signature = storage_snapshot->getSampleBlockForColumns(columns_to_read).dumpStructure();
-    result.part_names.reserve(snapshot_data.parts->size());
+    /// The cached value is valid only for exactly the same part objects. A part name is not enough:
+    /// `REPLACE PARTITION`, `ATTACH PARTITION FROM` or attaching detached parts can bring different
+    /// data under a name seen before. A part object is immutable, and holding `weak_ptr` to it keeps
+    /// its control block alive, so the identity cannot be reused by another part.
+    result.parts.reserve(snapshot_data.parts->size());
 
     for (const auto & ranges_in_part : *snapshot_data.parts)
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges_in_part.data_part, snapshot_data.mutations_snapshot, query_context);
 
-        result.part_names.push_back(ranges_in_part.data_part->name);
+        result.parts.push_back(ranges_in_part.data_part);
         if (ranges_in_part.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()
             || alter_conversions->hasMutations() || alter_conversions->hasPatches())
         {
@@ -420,12 +424,22 @@ LookupTableState getLookupTableState(
     return result;
 }
 
-template <typename CacheEntry>
-bool isLookupCacheEntryValid(const CacheEntry & cache_entry, const LookupTableState & lookup_table_state)
+bool isSameLookupParts(
+    const std::vector<std::weak_ptr<const IMergeTreeDataPart>> & lhs,
+    const std::vector<std::weak_ptr<const IMergeTreeDataPart>> & rhs)
+{
+    return std::ranges::equal(lhs, rhs, [](const auto & left, const auto & right)
+    {
+        return !left.owner_before(right) && !right.owner_before(left);
+    });
+}
+
+template <typename CacheEntry, typename LookupState>
+bool isLookupCacheEntryValid(const CacheEntry & cache_entry, const LookupState & lookup_table_state)
 {
     return cache_entry.metadata_version == lookup_table_state.metadata_version
         && cache_entry.schema_signature == lookup_table_state.schema_signature
-        && cache_entry.part_names == lookup_table_state.part_names;
+        && isSameLookupParts(cache_entry.parts, lookup_table_state.parts);
 }
 
 SetPtr buildLookupSet(const Block & block, bool transform_null_in)
@@ -15247,9 +15261,7 @@ SetPtr MergeTreeData::tryGetLookupSet(
     std::lock_guard lock(table_lookup_indices_mutex);
     if (auto cache_it = lookup_sets_cache.find(cache_key); cache_it != lookup_sets_cache.end())
     {
-        if (cache_it->second.metadata_version == lookup_result.metadata_version
-            && cache_it->second.schema_signature == lookup_result.schema_signature
-            && cache_it->second.part_names == lookup_result.part_names)
+        if (isLookupCacheEntryValid(cache_it->second, lookup_result))
             return cache_it->second.set;
     }
 
@@ -15257,7 +15269,7 @@ SetPtr MergeTreeData::tryGetLookupSet(
     {
         lookup_result.metadata_version,
         lookup_result.schema_signature,
-        std::move(lookup_result.part_names),
+        std::move(lookup_result.parts),
         set,
     };
     return set;
@@ -15318,9 +15330,7 @@ std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(
     std::lock_guard lock(table_lookup_indices_mutex);
     if (auto cache_it = lookup_joins_cache.find(cache_key); cache_it != lookup_joins_cache.end())
     {
-        if (cache_it->second.metadata_version == lookup_result.metadata_version
-            && cache_it->second.schema_signature == lookup_result.schema_signature
-            && cache_it->second.part_names == lookup_result.part_names)
+        if (isLookupCacheEntryValid(cache_it->second, lookup_result))
             return cache_it->second.entity;
     }
 
@@ -15328,7 +15338,7 @@ std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(
     {
         lookup_result.metadata_version,
         lookup_result.schema_signature,
-        std::move(lookup_result.part_names),
+        std::move(lookup_result.parts),
         entity,
     };
     return entity;
