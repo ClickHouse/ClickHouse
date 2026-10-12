@@ -63,9 +63,10 @@
  * }
  *
  * Sometimes code may benefit from compiling with different options.
- * For these purposes use DECLARE_X86_64_MULTITARGET_CODE macro. It will create a copy
- * of the code for every supported target and compile it with different options.
+ * For these purposes use DECLARE_X86_64_MULTITARGET_CODE macro. It will create copies
+ * of the code for x86_64_v3 and x86_64_v4 and compile them with different options.
  * These copies are available via TargetSpecific namespaces described above.
+ * On other architectures, including AArch64, it creates only the Default copy.
  *
  * Inside every TargetSpecific namespace there is a constexpr variable BuildArch,
  * which indicates the target platform for current code.
@@ -290,9 +291,8 @@ namespace TargetSpecific::Default { \
 }
 
 
-/* x86_64 multi-target code, targeting x86_64_v3 and x86_64_v4.
- * On AArch64, the default copy is used, because SVE kernels were no faster than NEON,
- * except some hash functions in src/Functions/FunctionsHashing.h.
+/* x86_64 multi-target code, generating Default, x86_64_v3 and x86_64_v4 copies.
+ * On AArch64 and other platforms only the Default copy is generated.
  */
 #define DECLARE_X86_64_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE              (__VA_ARGS__) \
