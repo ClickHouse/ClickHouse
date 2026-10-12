@@ -90,11 +90,11 @@ SETTINGS index_granularity = 65536, index_granularity_bytes = 0, min_bytes_for_w
 INSERT INTO tab_container SELECT * FROM tab;
 
 -- A granule reuses the intersection of the posting lists kept for the previous granules in the same 65536 rows.
--- Granules of 65536 rows never share them.
+-- Granules of 65536 rows read whole never share them.
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAllTokens(s, ['a', 'b'])
     SETTINGS max_threads = 1, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05275_reuse_tab';
 SELECT count(), sum(cityHash64(id)) FROM tab_container WHERE hasAllTokens(s, ['a', 'b'])
-    SETTINGS max_threads = 1, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05275_reuse_tab_container';
+    SETTINGS max_threads = 1, max_block_size = 65536, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05275_reuse_tab_container';
 
 SYSTEM FLUSH LOGS query_log;
 
