@@ -43,8 +43,8 @@ namespace ErrorCodes
 }
 namespace
 {
-    /// Only credential replacement, addition and reset qualify, without any explicit expiry.
-    /// Inspect the final AST; new account mutation fields must be excluded here as well.
+    /// Covered by USER AUTHENTICATION permission.
+    /// Note, that new account mutation fields must be added here as well.
     bool isAuthenticationOnlyAlter(const ASTCreateUserQuery & query)
     {
         if (!query.alter || query.attach)
@@ -258,36 +258,42 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto access = getContext()->getAccess();
 
     const Strings names = query.names->toStrings();
-    const auto authenticated_user_id = getContext()->getUserID();
-    const bool self_service = isAuthenticationOnlyAlter(query)
-        && names.size() == 1 && query.cluster.empty() && query.storage_name.empty()
-        && authenticated_user_id && names.front() == getContext()->getUserName();
-
-    const auto required_access = !query.alter
-        ? AccessType::CREATE_USER
-        : (self_service ? AccessType::ALTER_USER_AUTHENTICATION : AccessType::ALTER_USER);
+    std::optional<UUID> self_service_user_id;
 
     /// Authorize every target before credential conversion, cluster dispatch, or storage updates.
     /// `IF EXISTS` and storage selection do not bypass these checks.
-    for (const auto & name : names)
-        access->checkAccess(required_access, name);
-
-    std::optional<UUID> self_service_user_id;
-    if (self_service)
+    if (query.alter)
     {
-        /// Resolve after authorization. `IF EXISTS` may skip a missing target, but a recreated
-        /// account must match the authenticated ID. Retain that ID through the storage update.
-        self_service_user_id = query.if_exists
-            ? access_control.find<User>(names.front())
-            : std::optional<UUID>{access_control.getID<User>(names.front())};
-        if (!self_service_user_id)
-            return {};
-        if (*self_service_user_id != *authenticated_user_id)
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Self-service authentication requires the authenticated account");
-    }
+        const auto authenticated_user_id = getContext()->getUserID();
+        const bool self_service = isAuthenticationOnlyAlter(query)
+            && names.size() == 1 && query.cluster.empty() && query.storage_name.empty()
+            && authenticated_user_id && names.front() == getContext()->getUserName();
+        const auto required_access = self_service ? AccessType::ALTER_USER_AUTHENTICATION : AccessType::ALTER_USER;
 
-    if (query.new_name && !query.alter)
-        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
+        for (const auto & name : names)
+            access->checkAccess(required_access, name);
+
+        if (self_service)
+        {
+            /// Resolve after authorization. `IF EXISTS` may skip a missing target, but a recreated
+            /// account must match the authenticated ID. Retain that ID through the storage update.
+            self_service_user_id = query.if_exists
+                ? access_control.find<User>(names.front())
+                : std::optional<UUID>{access_control.getID<User>(names.front())};
+            if (!self_service_user_id)
+                return {};
+            if (*self_service_user_id != *authenticated_user_id)
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Self-service authentication requires the authenticated account");
+        }
+    }
+    else
+    {
+        for (const auto & name : names)
+            access->checkAccess(AccessType::CREATE_USER, name);
+
+        if (query.new_name)
+            access->checkAccess(AccessType::CREATE_USER, *query.new_name);
+    }
 
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
