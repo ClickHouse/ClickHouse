@@ -78,6 +78,9 @@ namespace Setting
     extern const SettingsUInt64 min_execution_speed;
     extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsTotalsMode totals_mode;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
@@ -798,6 +801,12 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
             filter_actions_outputs.push_back(filter_input_node);
 
     return {std::move(filter_actions_dag), std::move(filter_node_name), remove_filter_column};
+}
+
+bool hasAggregateOverflowRow(const QueryNode & query_node, const Settings & settings)
+{
+    return query_node.isGroupByWithTotals() && settings[Setting::max_rows_to_group_by]
+        && settings[Setting::group_by_overflow_mode] == OverflowMode::ANY && settings[Setting::totals_mode] != TotalsMode::AFTER_HAVING_EXCLUSIVE;
 }
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings)

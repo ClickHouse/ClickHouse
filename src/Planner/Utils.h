@@ -26,6 +26,8 @@
 namespace DB
 {
 
+class QueryNode;
+
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
 
@@ -127,6 +129,9 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
 ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
+/// Whether `TotalsHavingStep` of the query receives the overflow row of `max_rows_to_group_by` from the aggregation.
+bool hasAggregateOverflowRow(const QueryNode & query_node, const Settings & settings);
+
 using UsefulSets = std::unordered_set<FutureSetPtr>;
 void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 
@@ -145,5 +150,6 @@ bool optimizePlanForExists(QueryPlan & query_plan);
 QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
+
 
 }

@@ -60,8 +60,7 @@ Expression
     Expression
       ReadFromSystemNumbers
     Expression
-      Filter
-        ReadFromSystemNumbers
+      ReadFromSystemNumbers
 -- Same subquery as CTE
 EXPLAIN keep_logical_steps=1, description=0
 WITH
@@ -76,8 +75,7 @@ Expression
     Expression
       ReadFromSystemNumbers
     Expression
-      Filter
-        ReadFromSystemNumbers
+      ReadFromSystemNumbers
 WITH
     t as (select number from numbers(5))
 SELECT *
