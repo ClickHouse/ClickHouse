@@ -224,8 +224,8 @@ protected:
     /// Drops the cached answers about the server session, to be called once a new session is
     /// established: a reconnect can land on a different server, which may not know a setting the
     /// previous one knew, or may run the session under a different settings profile. The sticky
-    /// flags are kept, because they fail closed: `settings_may_be_changed_by_profile` only pins the
-    /// internal queries to the ClickHouse dialect and asks the server for `readonly`, and the rows the agent may have left unmarked in
+    /// flags are kept, because they fail closed: `settings_may_be_changed_by_profile` only makes the
+    /// client ask the server for the effective `dialect` and `readonly`, and the rows the agent may have left unmarked in
     /// the query log stay there after a reconnect, so `read_query_log` must not come back.
     void resetServerSessionCaches();
 
@@ -684,10 +684,10 @@ protected:
     int error_code = 0;
 
     /// A settings profile is applied on the server without its constituent settings being sent
-    /// back to the client. Once one is used, always pin internal queries (of the `help` command
-    /// and of the AI agent) to the ClickHouse dialect instead of trusting the stale local
-    /// dialect value, and ask the server for the effective `readonly` - see
-    /// `sessionReadonlyIfKnown`. Not guarded by `USE_CLIENT_AI`: `help` needs it in every build.
+    /// back to the client. Once one is used, ask the server for the effective `dialect` (whether
+    /// the internal queries of the `help` command and of the AI agent need the pin to the
+    /// ClickHouse dialect - see `internalQueriesRequireDialectPin`) and `readonly` (see
+    /// `sessionReadonlyIfKnown`) instead of trusting the stale local values. Not guarded by `USE_CLIENT_AI`: `help` needs it in every build.
     bool settings_may_be_changed_by_profile = false;
 
     /// The effective values of the settings of this session as the server reports them, asked one
@@ -728,6 +728,12 @@ protected:
     bool ai_provider_acknowledged = false;
     /// Whether the AI API key was inferred from environment
     bool ai_inferred_from_env = false;
+    /// Set when the client connected to the server again while an AI agent exists: its conversation
+    /// belongs to the previous session, possibly on another server, and the way it reaches the model
+    /// (a server-side `aiGenerate`) was chosen for that server. The agent is dropped at the start of
+    /// the next `?` turn rather than in `connect`, which can run in the middle of a turn, from a
+    /// query the agent itself runs.
+    bool ai_agent_reset_pending = false;
     /// The AI provider name (e.g., "openai", "anthropic")
     std::string ai_provider_name;
     /// The environment variable of another provider whose API key is also set but not used

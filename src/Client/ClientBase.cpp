@@ -4502,6 +4502,13 @@ bool ClientBase::processAIChat(const String & text_)
         }
     }
 
+    if (ai_agent_reset_pending)
+    {
+        ai_agent_reset_pending = false;
+        ai_agent.reset();
+        output_stream << "The connection to the server was re-established, so the AI conversation was started over." << std::endl;
+    }
+
     try
     {
         initAIAgent();
@@ -4727,8 +4734,8 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     /// comparing the final value: setting the dialect to `clickhouse` is a real change too.
     ///
     /// Whether the pin is needed is decided by `internalQueriesRequireDialectPin`, which asks the
-    /// server when the client cannot see its effective settings (`apply_settings_from_server = 0`)
-    /// instead of trusting the local value, and fails when the question fails.
+    /// server when the client cannot see its effective settings (`apply_settings_from_server = 0`,
+    /// or after a `SET profile`) instead of trusting the local value, and fails when the question fails.
     std::optional<Field> dialect_to_restore;
     if (internalQueriesRequireDialectPin())
     {
@@ -5440,6 +5447,12 @@ void ClientBase::resetServerSessionCaches()
     server_effective_setting_values.clear();
 #if USE_CLIENT_AI
     ai_query_log_marker_writable.reset();
+    /// Neither the conversation nor the recent queries of the previous session may reach the model
+    /// as the context of this one.
+    if (ai_query_context)
+        ai_query_context->dropFinishedEntries();
+    if (ai_agent)
+        ai_agent_reset_pending = true;
 #endif
 }
 
@@ -5557,14 +5570,18 @@ bool ClientBase::internalQueriesRequireDialectPin()
     applySettingsFromServerIfNeeded();
 
     const Settings & settings = client_context->getSettingsRef();
-    if (settings_may_be_changed_by_profile || settings[Setting::dialect] != Dialect::clickhouse)
+    if (settings[Setting::dialect] != Dialect::clickhouse)
         return true;
 
-    /// The local value is the effective one only when the settings of the server reach the client.
-    /// With `apply_settings_from_server = 0` the client keeps its own default while the server
-    /// parses under the dialect of the settings profile of the user, so it has to be asked - and an
-    /// unanswered question means the pin is applied (or, where it cannot be, the query is refused).
-    if (settings[Setting::apply_settings_from_server])
+    /// The local value is the effective one only when the settings of the server reach the client,
+    /// and no settings profile was applied with `SET profile` since: the server applies one without
+    /// reporting the settings it changed. With `apply_settings_from_server = 0` the client keeps its
+    /// own default while the server parses under the dialect of the settings profile of the user.
+    /// In both cases the server has to be asked - and an unanswered question means the pin is
+    /// applied (or, where it cannot be, the query is refused). It must not be assumed to be
+    /// required without asking: a profile that makes the session `readonly = 1` and leaves the
+    /// dialect alone would then take the AI chat and `help` down for nothing.
+    if (settings[Setting::apply_settings_from_server] && !settings_may_be_changed_by_profile)
         return false;
 
     std::optional<String> value;

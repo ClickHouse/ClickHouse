@@ -132,7 +132,12 @@ void QueryContextBuffer::finishQuery(double elapsed_seconds, bool cancelled)
 
 UInt64 QueryContextBuffer::latestSeqno() const
 {
-    return entries.empty() ? 0 : entries.back().seqno;
+    return next_seqno - 1;
+}
+
+void QueryContextBuffer::dropFinishedEntries()
+{
+    std::erase_if(entries, [](const Entry & entry) { return entry.finished; });
 }
 
 String QueryContextBuffer::format(UInt64 since_seqno, bool skip_ai_initiated) const

@@ -120,6 +120,30 @@ TEST(QueryContextBuffer, SeqnoFilteringAndAISkipping)
     EXPECT_NE(text.find("SELECT 3"), String::npos);
 }
 
+TEST(QueryContextBuffer, DropFinishedEntriesKeepsTheRunningQuery)
+{
+    /// On a reconnect the queries of the previous session are forgotten, but the query that is
+    /// running - the one that reconnected - stays, and a newer entry is still told from the old ones.
+    QueryContextBuffer buffer;
+    buffer.startQuery("SELECT old", false);
+    buffer.finishQuery(0.1, false);
+    const UInt64 seen = buffer.latestSeqno();
+    buffer.startQuery("SELECT running", false);
+
+    buffer.dropFinishedEntries();
+    buffer.addBlock(makeBlock(0, 1));
+    buffer.finishQuery(0.1, false);
+
+    const String text = buffer.format(0, false);
+    EXPECT_EQ(text.find("SELECT old"), String::npos);
+    EXPECT_NE(text.find("SELECT running"), String::npos);
+    EXPECT_GT(buffer.latestSeqno(), seen);
+
+    buffer.dropFinishedEntries();
+    EXPECT_TRUE(buffer.empty());
+    EXPECT_GT(buffer.latestSeqno(), seen);
+}
+
 TEST(QueryContextBuffer, EntryCountIsBounded)
 {
     QueryContextBuffer buffer;

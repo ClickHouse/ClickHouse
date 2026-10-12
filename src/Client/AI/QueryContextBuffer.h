@@ -54,8 +54,14 @@ public:
     /// Close the open entry.
     void finishQuery(double elapsed_seconds, bool cancelled);
 
-    /// The sequence number of the latest entry, 0 when the buffer is empty.
+    /// The sequence number of the latest entry ever opened, 0 when there was none. The numbers are
+    /// not reused after `dropFinishedEntries`, so an entry opened later is always newer.
     UInt64 latestSeqno() const;
+
+    /// Forget the finished entries, keeping the open one (the query that is running). Called when
+    /// the client connects to the server again: the queries of the previous session, possibly on
+    /// another server, are not the context of the new one.
+    void dropFinishedEntries();
 
     bool empty() const { return entries.empty(); }
 
