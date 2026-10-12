@@ -191,7 +191,7 @@ namespace Net
 
         static SecureStreamSocket
         attach(const StreamSocket & streamSocket, const std::string & peerHostName, const std::string & serverNameIndication);
-        /// As above; a non-empty serverNameIndication is passed to setServerNameIndication().
+        /// As above; a non-empty `serverNameIndication` is passed to `setServerNameIndication`.
 
         static SecureStreamSocket attach(const StreamSocket & streamSocket, const std::string & peerHostName, Context::Ptr pContext);
         /// Creates a SecureStreamSocket over an existing socket
