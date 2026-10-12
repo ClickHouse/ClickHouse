@@ -3,13 +3,16 @@
 #if USE_PARQUET
 
 #include <sstream>
+#include <unordered_set>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Poco/URI.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DataLake
@@ -114,6 +117,31 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
     body->set("columns", columns);
     body->set("properties", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
     return body;
+}
+
+/// The `table_type` values of tables whose data lives outside the catalog's own storage, so their
+/// log may be committed directly. Everything else (`MANAGED`, `MANAGED_SHALLOW_CLONE`, foreign tables,
+/// views, an absent or unknown value) is refused: a direct commit is safe only when it is known to be.
+static const std::unordered_set<std::string> DIRECTLY_WRITABLE_TABLE_TYPES = {"EXTERNAL", "EXTERNAL_SHALLOW_CLONE"};
+
+void checkUnityDirectCommitIsAllowed(const Poco::JSON::Object::Ptr & table_json, const String & full_table_name)
+{
+    String table_type;
+    if (table_json && table_json->has("table_type") && !table_json->isNull("table_type"))
+        table_type = table_json->getValue<String>("table_type");
+
+    if (!DIRECTLY_WRITABLE_TABLE_TYPES.contains(table_type))
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "INSERT into Unity Catalog table `{}` with table_type '{}' is not supported, only external tables can be written",
+            full_table_name, table_type);
+}
+
+String encodeUnityFullName(const String & full_name)
+{
+    String encoded;
+    Poco::URI::encode(full_name, "/?#", encoded);
+    return encoded;
 }
 
 }

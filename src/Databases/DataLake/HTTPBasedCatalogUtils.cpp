@@ -48,7 +48,8 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
 {
     validateBearerToken(context, bearer_token);
 
-    Poco::URI url(endpoint);
+    /// Sent as is: callers percent-encode the names in the path, and decoding would turn `%2F` back into `/`.
+    Poco::URI url(endpoint, /* enable_url_encoding */ false);
     if (!params.empty())
         url.setQueryParameters(params);
 
