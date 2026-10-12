@@ -112,8 +112,16 @@ private:
     void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
 
-    /// Intersects the phrase tokens' postings into candidates, then decodes only the covering blocks.
-    PaddedPODArray<UInt32> phraseSearchBlocked(const TextSearchQuery & search_query);
+    struct PhraseTokens;
+
+    /// Finds the documents holding every phrase token, then decodes only the position blocks covering them.
+    PaddedPODArray<UInt32> phraseSearch(const TextSearchQuery & search_query);
+    /// Candidates from the tokens' full posting lists, intersected as bitmaps.
+    PaddedPODArray<UInt32> phraseSearchBlocked(const PhraseTokens & phrase);
+    /// Candidates from a leapfrog over the tokens' posting lists, which also yields their ranks.
+    PaddedPODArray<UInt32> phraseSearchBlockedCursors(const PhraseTokens & phrase, std::vector<PostingListCursorPtr> postings_cursors);
+    /// One cursor per unique token.
+    std::vector<PostingListCursorPtr> makePhraseCursors(const PhraseTokens & phrase);
     /// One token's full posting list — the rank space the blocked position stream is addressed in.
     PostingList readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info);
 

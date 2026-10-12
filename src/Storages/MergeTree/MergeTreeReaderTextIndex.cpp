@@ -3,10 +3,12 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
+#include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexPhraseSearch.h>
 #include <Storages/MergeTree/PostingListCursor.h>
+#include <Storages/MergeTree/TextIndexPostingsRankCursor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -20,17 +22,21 @@
 #include <Core/Settings.h>
 
 #include <algorithm>
+#include <iterator>
+#include <optional>
 
 namespace ProfileEvents
 {
     extern const Event TextIndexReaderTotalMicroseconds;
     extern const Event TextIndexPositionsDecodeMicroseconds;
     extern const Event TextIndexPhraseMatchMicroseconds;
+    extern const Event TextIndexPhraseCandidatesMicroseconds;
     extern const Event TextIndexPositionsBlocksRead;
     extern const Event TextIndexPositionsBlocksTotal;
     extern const Event TextIndexPositionsBytesRead;
     extern const Event TextIndexPhraseCandidates;
     extern const Event TextIndexPhraseSearches;
+    extern const Event TextIndexPhraseCursorSearches;
     extern const Event TextIndexPhraseFallbacks;
 }
 
@@ -914,32 +920,190 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
     return result;
 }
 
-PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextSearchQuery & search_query)
+/// Repeated tokens reuse one posting list and one position stream.
+struct MergeTreeReaderTextIndex::PhraseTokens
 {
-    const auto & all_token_infos = granule->getAnalyzer().getAllTokenInfos();
-    const auto & phrase_tokens = search_query.getPhraseTokens();
-
-    /// Repeated phrase terms reuse one posting list and one decoded position stream.
     std::vector<std::string_view> unique_tokens;
     std::vector<const TokenPostingsInfo *> unique_infos;
     std::vector<size_t> term_to_unique;
-    term_to_unique.reserve(phrase_tokens.size());
-    for (const auto & token : phrase_tokens)
-    {
-        auto it = all_token_infos.find(token);
-        if (it == all_token_infos.end() || !(it->second->header & PostingsSerialization::Flags::HasPositions))
-            return {};
 
-        size_t unique_idx = 0;
-        while (unique_idx < unique_tokens.size() && unique_tokens[unique_idx] != token)
-            ++unique_idx;
-        if (unique_idx == unique_tokens.size())
+    /// Nothing to match if a token is missing from the granule or carries no positions.
+    static std::optional<PhraseTokens> resolve(
+        const TokenToPostingsInfosMap & all_token_infos, const VectorWithMemoryTracking<String> & phrase_tokens)
+    {
+        PhraseTokens phrase;
+        phrase.term_to_unique.reserve(phrase_tokens.size());
+        for (const auto & token : phrase_tokens)
         {
-            unique_tokens.emplace_back(token);
-            unique_infos.push_back(it->second.get());
+            auto it = all_token_infos.find(token);
+            if (it == all_token_infos.end() || !(it->second->header & PostingsSerialization::Flags::HasPositions))
+                return {};
+
+            size_t unique_idx = 0;
+            while (unique_idx < phrase.unique_tokens.size() && phrase.unique_tokens[unique_idx] != token)
+                ++unique_idx;
+            if (unique_idx == phrase.unique_tokens.size())
+            {
+                phrase.unique_tokens.emplace_back(it->first);
+                phrase.unique_infos.push_back(it->second.get());
+            }
+            phrase.term_to_unique.push_back(unique_idx);
         }
-        term_to_unique.push_back(unique_idx);
+        return phrase;
     }
+
+    bool canUseRankCursors() const
+    {
+        return std::ranges::all_of(unique_infos, [](const TokenPostingsInfo * info)
+        {
+            return (info->header & PostingsSerialization::Flags::RawPostings) || (info->header & PostingsSerialization::Flags::HasBlockIndex);
+        });
+    }
+};
+
+namespace
+{
+
+TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(
+    MergeTreeReaderStream & stream, const TokenPostingsInfo & token_info, UInt64 expected_num_docs)
+{
+    /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
+    const size_t file_size = stream.getFileSize();
+    if ((token_info.position_bytes == 0) || (token_info.position_offset > file_size)
+        || (token_info.position_bytes > file_size - token_info.position_offset))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
+            token_info.position_bytes, token_info.position_offset, file_size);
+
+    stream.seekToMark({token_info.position_offset, 0});
+    return TextIndexBlockedPositionsCodec::readDirectory(
+        *stream.getDataBuffer(), token_info.position_offset, expected_num_docs, token_info.position_bytes);
+}
+
+/// Counters of one phrase search, added to the profile events in the destructor.
+struct PhraseSearchStats
+{
+    PhraseSearchStats() = default;
+    PhraseSearchStats(const PhraseSearchStats &) = delete;
+    PhraseSearchStats & operator=(const PhraseSearchStats &) = delete;
+
+    ~PhraseSearchStats()
+    {
+        ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidates, candidates);
+        ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidatesMicroseconds, candidates_us);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, directory_us + decode_us);
+        ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
+        ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, bytes_read);
+    }
+
+    size_t candidates = 0;
+    UInt64 candidates_us = 0;
+    UInt64 directory_us = 0;
+    UInt64 decode_us = 0;
+    UInt64 match_us = 0;
+    size_t blocks_read = 0;
+    size_t blocks_total = 0;
+    UInt64 bytes_read = 0;
+};
+
+/// Decodes a chunk of candidates' positions per unique token, then runs the phrase adjacency match.
+/// Ranks ascend within a chunk, so blocks decode in ascending order and reseek only on a block gap.
+class PhraseChunkMatcher
+{
+public:
+    PhraseChunkMatcher(
+        MergeTreeReaderStream & stream_,
+        TextIndexBlockedPositionsCodec::DecodeScratch & scratch_,
+        const std::vector<TextIndexBlockedPositionsCodec::Directory> & dirs_,
+        const std::vector<size_t> & term_to_unique_,
+        PhraseSearchStats & stats_)
+        : stream(stream_)
+        , data_buffer(*stream_.getDataBuffer())
+        , scratch(scratch_)
+        , dirs(dirs_)
+        , term_to_unique(term_to_unique_)
+        , stats(stats_)
+        , offsets(dirs_.size())
+        , positions(dirs_.size())
+    {
+    }
+
+    /// ranks[u] holds the candidates' ranks in token u's postings, aligned with `candidates`.
+    void match(
+        std::span<const UInt32> candidates,
+        const std::vector<std::span<const UInt64>> & ranks,
+        PaddedPODArray<UInt32> & matching)
+    {
+        Stopwatch decode_watch;
+        for (size_t u = 0; u < dirs.size(); ++u)
+            decodeToken(u, ranks[u]);
+        stats.decode_us += decode_watch.elapsedMicroseconds();
+
+        Stopwatch match_watch;
+        TextIndexPhraseSearch::matchCandidatePositions(candidates, offsets, positions, term_to_unique, matching);
+        stats.match_us += match_watch.elapsedMicroseconds();
+    }
+
+    static constexpr size_t CHUNK = 1 << 16;
+
+private:
+    void decodeToken(size_t u, std::span<const UInt64> ranks)
+    {
+        const auto & dir = dirs[u];
+        auto & token_offsets = offsets[u];
+        auto & token_positions = positions[u];
+        token_offsets.clear();
+        token_positions.clear();
+        token_offsets.push_back(0);
+
+        size_t previous_block = std::numeric_limits<size_t>::max();
+        for (size_t idx = 0; idx < ranks.size();)
+        {
+            const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+            if (block_idx >= dir.numBlocks())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: rank {} is outside the token's {} blocks", ranks[idx], dir.numBlocks());
+            local_ranks.clear();
+            do
+            {
+                local_ranks.push_back(static_cast<UInt32>(ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS));
+                ++idx;
+            } while (idx < ranks.size() && ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS == block_idx);
+
+            if (previous_block == std::numeric_limits<size_t>::max() || block_idx != previous_block + 1)
+                stream.seekToMark({dir.block_offsets[block_idx], 0});
+            TextIndexBlockedPositionsCodec::decodeBlock(
+                data_buffer, dir, block_idx, local_ranks, token_offsets, token_positions, scratch);
+            previous_block = block_idx;
+            ++stats.blocks_read;
+            stats.bytes_read += dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
+        }
+    }
+
+    MergeTreeReaderStream & stream;
+    ReadBuffer & data_buffer;
+    TextIndexBlockedPositionsCodec::DecodeScratch & scratch;
+    const std::vector<TextIndexBlockedPositionsCodec::Directory> & dirs;
+    const std::vector<size_t> & term_to_unique;
+    PhraseSearchStats & stats;
+
+    std::vector<PaddedPODArray<UInt32>> offsets;
+    std::vector<PaddedPODArray<UInt32>> positions;
+    std::vector<UInt32> local_ranks;
+};
+
+}
+
+PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const PhraseTokens & phrase)
+{
+    const auto & unique_tokens = phrase.unique_tokens;
+    const auto & unique_infos = phrase.unique_infos;
+    const auto & term_to_unique = phrase.term_to_unique;
+
+    PhraseSearchStats stats;
+    Stopwatch candidates_watch;
 
     /// Candidate rows = intersection of the phrase tokens' postings. The full per-token posting
     /// list is also the rank space the blocked position stream is addressed in.
@@ -962,47 +1126,30 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
 
     PaddedPODArray<UInt32> candidates(intersection.cardinality());
     intersection.toUint32Array(candidates.data());
-    ProfileEvents::increment(ProfileEvents::TextIndexPhraseCandidates, candidates.size());
+    stats.candidates = candidates.size();
 
     /// A single-term "phrase" needs no positional check: every row containing the token matches.
     if (term_to_unique.size() == 1)
         return candidates;
 
-    /// Bounded-memory chunked phrase match: precompute per-token candidate ranks, then process
-    /// candidates in fixed chunks. Per chunk, decode only that chunk's covering blocks per token
-    /// (token-sequential; consecutive blocks skip the reseek) into small reused buffers, run the
-    /// two-pointer adjacency with per-candidate early-exit, and keep only matching doc ids. The full
-    /// candidate position set is never materialized (the old per-token arrays cost ~GiB per phrase).
-    const size_t pos_file_size = positions_stream->getFileSize();
-    auto * data_buffer = positions_stream->getDataBuffer();
-
+    /// Bounded memory: ranks are precomputed per token, then candidates are matched in fixed chunks,
+    /// so the full candidate position set is never materialized (it cost ~GiB per phrase).
     std::vector<TextIndexBlockedPositionsCodec::Directory> dirs(unique_tokens.size());
     std::vector<PaddedPODArray<UInt64>> candidate_ranks(unique_tokens.size());
-    size_t blocks_total = 0;
-    UInt64 decode_us = 0;
     {
-        Stopwatch prep_watch;
         PaddedPODArray<UInt32> posting_docs;
         for (size_t u = 0; u < unique_tokens.size(); ++u)
         {
             const auto & token_info = *unique_infos[u];
-            /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
-            if ((token_info.position_bytes == 0) || (token_info.position_offset > pos_file_size)
-                || (token_info.position_bytes > pos_file_size - token_info.position_offset))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
-                    token_info.position_bytes, token_info.position_offset, pos_file_size);
-            positions_stream->seekToMark({token_info.position_offset, 0});
-            const size_t available = token_info.position_bytes;
+            Stopwatch directory_watch;
             /// Candidate ranks in this token's postings. Dense candidates: one linear walk over the
             /// materialized list beats per-candidate roaring rank(); sparse: rank() wins.
             const auto & postings = token_postings[u];
 
-            /// readDirectory rejects a blob whose document count disagrees with the postings. That
-            /// equality is what bounds a rank below num_docs, so the block index needs no check.
-            dirs[u] = TextIndexBlockedPositionsCodec::readDirectory(
-                *data_buffer, token_info.position_offset, postings.cardinality(), available);
-            blocks_total += dirs[u].numBlocks();
+            /// readDirectory rejects a blob whose document count disagrees with the postings.
+            dirs[u] = readPositionsDirectory(*positions_stream, token_info, postings.cardinality());
+            stats.blocks_total += dirs[u].numBlocks();
+            stats.directory_us += directory_watch.elapsedMicroseconds();
 
             auto & ranks = candidate_ranks[u];
             ranks.resize(candidates.size());
@@ -1025,73 +1172,148 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
                     ranks[i] = postings.rank(candidates[i]) - 1;
             }
         }
-        decode_us += prep_watch.elapsedMicroseconds();
+    }
+    const UInt64 elapsed_us = candidates_watch.elapsedMicroseconds();
+    stats.candidates_us = elapsed_us > stats.directory_us ? elapsed_us - stats.directory_us : 0;
+
+    PhraseChunkMatcher matcher(*positions_stream, blocked_positions_scratch, dirs, term_to_unique, stats);
+
+    PaddedPODArray<UInt32> matching;
+    std::vector<std::span<const UInt64>> chunk_ranks(unique_tokens.size());
+
+    for (size_t chunk_lo = 0; chunk_lo < candidates.size(); chunk_lo += PhraseChunkMatcher::CHUNK)
+    {
+        const size_t chunk_hi = std::min(candidates.size(), chunk_lo + PhraseChunkMatcher::CHUNK);
+        for (size_t u = 0; u < unique_tokens.size(); ++u)
+            chunk_ranks[u] = std::span<const UInt64>(candidate_ranks[u].data() + chunk_lo, chunk_hi - chunk_lo);
+
+        matcher.match(std::span<const UInt32>(candidates.data() + chunk_lo, chunk_hi - chunk_lo), chunk_ranks, matching);
     }
 
-    size_t blocks_read = 0;
-    UInt64 block_bytes_read = 0;
-    UInt64 block_decode_us = 0;
-    std::vector<UInt32> block_local_ranks;
+    return matching;
+}
 
-    /// Decode candidates [lo, hi) of token `u` into offsets/positions (offsets seeded with a leading
-    /// 0; indices chunk-relative). Blocks decode in ascending order, reseeking only on a block gap.
-    auto decode_chunk = [&](size_t u, size_t lo, size_t hi, PaddedPODArray<UInt32> & offsets, PaddedPODArray<UInt32> & positions)
+std::vector<PostingListCursorPtr> MergeTreeReaderTextIndex::makePhraseCursors(const PhraseTokens & phrase)
+{
+    std::vector<PostingListCursorPtr> cursors;
+    cursors.reserve(phrase.unique_tokens.size());
+    for (size_t u = 0; u < phrase.unique_tokens.size(); ++u)
     {
-        Stopwatch sw;
-        const auto & dir = dirs[u];
-        const auto & ranks = candidate_ranks[u];
-        offsets.clear();
-        positions.clear();
-        offsets.push_back(0);
-        size_t previous_block = std::numeric_limits<size_t>::max();
-        for (size_t idx = lo; idx < hi;)
+        const auto & token = phrase.unique_tokens[u];
+        const auto & token_info = *phrase.unique_infos[u];
+        if (token_info.header & PostingsSerialization::Flags::RawPostings)
         {
-            const size_t block_idx = ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS;
-            block_local_ranks.clear();
-            block_local_ranks.push_back(static_cast<UInt32>(ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS));
-            ++idx;
-            while (idx < hi && ranks[idx] / TextIndexBlockedPositionsCodec::BLOCK_DOCS == block_idx)
-            {
-                block_local_ranks.push_back(static_cast<UInt32>(ranks[idx] % TextIndexBlockedPositionsCodec::BLOCK_DOCS));
-                ++idx;
-            }
-            if (previous_block == std::numeric_limits<size_t>::max() || block_idx != previous_block + 1)
-                positions_stream->seekToMark({dir.block_offsets[block_idx], 0});
-            TextIndexBlockedPositionsCodec::decodeBlock(
-                *data_buffer, dir, block_idx, block_local_ranks, offsets, positions, blocked_positions_scratch);
-            previous_block = block_idx;
-            ++blocks_read;
-            block_bytes_read += dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
+            const PostingList postings = readAllPostingsForToken(token, token_info);
+            auto docs = std::make_shared<PaddedPODArray<UInt32>>(postings.cardinality());
+            postings.toUint32Array(docs->data());
+            cursors.push_back(std::make_shared<PostingListCursor>(std::move(docs)));
         }
-        block_decode_us += sw.elapsedMicroseconds();
+        else
+        {
+            cursors.push_back(std::make_shared<PostingListCursor>(getPostingsStream(token, token_info), token_info));
+        }
+    }
+    return cursors;
+}
+
+PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(const PhraseTokens & phrase, std::vector<PostingListCursorPtr> postings_cursors)
+{
+    ProfileEvents::increment(ProfileEvents::TextIndexPhraseCursorSearches);
+
+    const auto & unique_tokens = phrase.unique_tokens;
+    const auto & unique_infos = phrase.unique_infos;
+    const auto & term_to_unique = phrase.term_to_unique;
+
+    const size_t num_tokens = unique_tokens.size();
+
+    PhraseSearchStats stats;
+    Stopwatch candidates_watch;
+
+    std::vector<PostingListCursor *> leapfrog_cursors;
+    leapfrog_cursors.reserve(num_tokens);
+    std::ranges::transform(postings_cursors, std::back_inserter(leapfrog_cursors), [](const auto & cursor) { return cursor.get(); });
+
+    std::vector<TextIndexPostingsRankCursor> cursors;
+    cursors.reserve(num_tokens);
+    for (size_t u = 0; u < num_tokens; ++u)
+    {
+        if (unique_infos[u]->header & PostingsSerialization::Flags::RawPostings)
+            cursors.emplace_back(std::move(postings_cursors[u]));
+        else
+            cursors.emplace_back(std::move(postings_cursors[u]), *unique_infos[u]);
+
+        if (!cursors.back().valid())
+            return {};
+    }
+
+    /// The directory must hold as many documents as the cursor's checked posting list, which bounds every rank.
+    std::vector<TextIndexBlockedPositionsCodec::Directory> directories(num_tokens);
+    Stopwatch directory_watch;
+    for (size_t u = 0; u < num_tokens; ++u)
+    {
+        directories[u] = readPositionsDirectory(*positions_stream, *unique_infos[u], cursors[u].numDocuments());
+        stats.blocks_total += directories[u].numBlocks();
+    }
+    stats.directory_us = directory_watch.elapsedMicroseconds();
+
+    PhraseChunkMatcher matcher(*positions_stream, blocked_positions_scratch, directories, term_to_unique, stats);
+
+    PaddedPODArray<UInt32> matching;
+    PaddedPODArray<UInt32> chunk_candidates;
+    std::vector<PaddedPODArray<UInt64>> chunk_ranks(num_tokens);
+    std::vector<std::span<const UInt64>> chunk_rank_spans(num_tokens);
+
+    auto match_chunk = [&]
+    {
+        if (chunk_candidates.empty())
+            return;
+        for (size_t u = 0; u < num_tokens; ++u)
+            chunk_rank_spans[u] = std::span<const UInt64>(chunk_ranks[u].data(), chunk_ranks[u].size());
+        matcher.match(std::span<const UInt32>(chunk_candidates.data(), chunk_candidates.size()), chunk_rank_spans, matching);
+        chunk_candidates.clear();
+        for (auto & ranks : chunk_ranks)
+            ranks.clear();
     };
 
-    static constexpr size_t CHUNK = 1 << 16;
-    PaddedPODArray<UInt32> matching;
-    std::vector<PaddedPODArray<UInt32>> chunk_offsets(unique_tokens.size());
-    std::vector<PaddedPODArray<UInt32>> chunk_positions(unique_tokens.size());
-    UInt64 match_us = 0;
-
-    for (size_t chunk_lo = 0; chunk_lo < candidates.size(); chunk_lo += CHUNK)
+    sortCursorsForIntersection(leapfrog_cursors);
+    leapfrogIntersect(leapfrog_cursors, std::numeric_limits<size_t>::max(), [&](UInt32 doc)
     {
-        const size_t chunk_hi = std::min(candidates.size(), chunk_lo + CHUNK);
-        for (size_t u = 0; u < unique_tokens.size(); ++u)
-            decode_chunk(u, chunk_lo, chunk_hi, chunk_offsets[u], chunk_positions[u]);
+        chunk_candidates.push_back(doc);
+        for (size_t u = 0; u < num_tokens; ++u)
+            chunk_ranks[u].push_back(cursors[u].rank());
+        ++stats.candidates;
 
-        Stopwatch match_watch;
-        TextIndexPhraseSearch::matchCandidatePositions(
-            std::span<const UInt32>(candidates.data() + chunk_lo, chunk_hi - chunk_lo),
-            chunk_offsets, chunk_positions, term_to_unique, matching);
-        match_us += match_watch.elapsedMicroseconds();
-    }
-    decode_us += block_decode_us;
+        if (chunk_candidates.size() == PhraseChunkMatcher::CHUNK)
+            match_chunk();
+    });
+    match_chunk();
 
-    ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, decode_us);
-    ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
-    ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
-    ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
-    ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, block_bytes_read);
+    const UInt64 elapsed_us = candidates_watch.elapsedMicroseconds();
+    const UInt64 nested_us = stats.directory_us + stats.decode_us + stats.match_us;
+    stats.candidates_us = elapsed_us > nested_us ? elapsed_us - nested_us : 0;
     return matching;
+}
+
+PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearch(const TextSearchQuery & search_query)
+{
+    auto phrase = PhraseTokens::resolve(granule->getAnalyzer().getAllTokenInfos(), search_query.getPhraseTokens());
+    if (!phrase)
+        return {};
+
+    /// A single-token phrase needs no intersection: every row holding the token matches.
+    if (phrase->term_to_unique.size() == 1 || !phrase->canUseRankCursors())
+        return phraseSearchBlocked(*phrase);
+
+    auto cursors = makePhraseCursors(*phrase);
+    std::vector<PostingListCursor *> cursor_ptrs;
+    cursor_ptrs.reserve(cursors.size());
+    for (const auto & cursor : cursors)
+        cursor_ptrs.push_back(cursor.get());
+
+    if (chooseIntersectionAlgorithm(cursor_ptrs, intersection_algorithm) == TextIndexPostingsIntersectionAlgorithm::BruteForce)
+        return phraseSearchBlocked(*phrase);
+
+    return phraseSearchBlockedCursors(*phrase, std::move(cursors));
 }
 
 void MergeTreeReaderTextIndex::applyPostingsPhrase(
@@ -1123,7 +1345,7 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
             chassert(static_cast<TextIndexPositionCodec::Encoding>(granule->getPositionsCodec()) == TextIndexPositionCodec::Encoding::BlockedPfor);
             ProfileEvents::increment(ProfileEvents::TextIndexPhraseSearches);
             return std::make_shared<TextIndexPostingsCacheCell>(
-                std::make_shared<PaddedPODArray<UInt32>>(phraseSearchBlocked(*search_query)));
+                std::make_shared<PaddedPODArray<UInt32>>(phraseSearch(*search_query)));
         });
 
         doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::get<PaddedPODArrayPtr>(cell->value)).first;
