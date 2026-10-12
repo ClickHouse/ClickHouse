@@ -7,9 +7,6 @@ keywords: ['managed postgres', 'spring boot', 'spring', 'java', 'jdbc', 'pgjdbc'
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-spring-boot-beta" />
 
 [Spring Boot](https://spring.io/projects/spring-boot) connects to Postgres through the PostgreSQL JDBC driver (pgjdbc) and a HikariCP connection pool, and it runs [Flyway](https://documentation.red-gate.com/flyway) migrations when the app starts. In this guide, you create a `todos` table with a Flyway migration and serve create, read, update, and delete requests from a Spring Data JPA REST controller. Every connection uses TLS with full certificate verification.
 

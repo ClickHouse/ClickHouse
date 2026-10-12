@@ -7,7 +7,6 @@ keywords: ['managed postgres', 'quickstart', 'getting started', 'create database
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 import QuickstartCLI from "/snippets/managed-postgres/_quickstart_cli.mdx";
 
@@ -20,14 +19,12 @@ import QuickstartCLI from "/snippets/managed-postgres/_quickstart_cli.mdx";
 <Visibility for="humans">
 <View title="Cloud UI">
 
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-beta" />
-
 ClickHouse Managed Postgres is enterprise-grade Postgres backed by NVMe storage, delivering up to 10x faster performance for disk-bound workloads compared to network-attached storage like EBS. This quickstart is divided into two parts:
 
 - **Part 1:** Get started with NVMe Postgres and experience its performance
 - **Part 2:** Unlock real-time analytics by integrating with ClickHouse
 
-ClickHouse Managed Postgres is currently available on AWS in several regions and is in public beta. GCP is in Private Preview. You can sign up for the GCP Private Preview waitlist [here](https://clickhouse.com/cloud/postgres#gcp-waitlist).
+ClickHouse Managed Postgres is generally available on AWS in several regions. GCP is in Public Preview. See [Supported cloud providers](/products/managed-postgres/overview#supported-cloud-providers) for details.
 
 **In this quickstart, you will:**
 - Create a ClickHouse Managed Postgres instance with NVMe-powered performance
@@ -416,8 +413,6 @@ To delete the resources created in this quickstart:
 </View>
 
 <View title="CLI">
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.quick-start-cli-beta" />
 
 You can follow this path yourself, script it, or hand it to an AI agent. Switch to the **Cloud UI** view for the console version.
 
