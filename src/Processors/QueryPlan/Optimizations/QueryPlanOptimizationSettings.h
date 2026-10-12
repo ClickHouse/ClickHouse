@@ -2,6 +2,7 @@
 
 #include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
+#include <Common/Logger.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/FutureSetSettings.h>
@@ -24,6 +25,26 @@ using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 class QueryPlan;
 
 struct DistributedPlanLocalObject;
+
+/// What the builder of the plan with parallel replicas for automatic parallel replicas produced. When
+/// it built nothing, `skip_reason` says which kind of reason stopped it, so that the optimization can
+/// count it; the builder logs the specific reason itself.
+struct PlanWithParallelReplicas
+{
+    enum class SkipReason : uint8_t
+    {
+        None,
+        /// The settings rule parallel replicas out.
+        Settings,
+        /// The query cannot be read with parallel replicas.
+        QueryShape,
+    };
+
+    std::unique_ptr<QueryPlan> plan;
+    SkipReason skip_reason = SkipReason::None;
+};
+
+using QueryPlanWithParallelReplicasBuilder = std::function<PlanWithParallelReplicas(const BuiltSetsByHashPtr &, const LoggerPtr &)>;
 
 struct QueryPlanOptimizationSettings
 {
@@ -265,6 +286,9 @@ struct QueryPlanOptimizationSettings
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
+    /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
+    /// plan; see `parallelReplicasBoundarySettingsHash`.
+    UInt64 parallel_replicas_boundary_settings_hash = 0;
 
     bool query_plan_optimize_primary_key = true;
 
@@ -277,10 +301,9 @@ struct QueryPlanOptimizationSettings
     mutable UInt64 join_reorder_next_cluster_id = 0;
 
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
-    /// of re-running the same subqueries.
-    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
+    /// of re-running the same subqueries, and the logger to say why it could not build a plan on.
+    QueryPlanWithParallelReplicasBuilder query_plan_with_parallel_replicas_builder;
 
-    bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
 };
 

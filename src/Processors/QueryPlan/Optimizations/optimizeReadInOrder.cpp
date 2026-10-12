@@ -317,13 +317,60 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
         dag = expression.clone();
 }
 
+/// The read's own columns underneath a node. A fixed column is named differently depending on where it
+/// is seen - `__table1.tenant` above `Change column names to column identifiers`, `tenant` in the
+/// prewhere below it - so neither name identifies it across two traversals. Its `INPUT` nodes do.
+void collectInputNames(const ActionsDAG::Node * node, NameSet & out)
+{
+    std::vector<const ActionsDAG::Node *> stack{node};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(current).second)
+            continue;
+
+        if (current->type == ActionsDAG::ActionType::INPUT)
+            out.insert(current->result_name);
+        for (const auto * child : current->children)
+            stack.push_back(child);
+    }
+}
+
+/// Drop what the read is not allowed to consider fixed. Called wherever columns are added rather than
+/// once at the end, so that `enrichFixedColumns` cannot derive a new fixed column from one that was
+/// never allowed in.
+void applyFixedColumnRestriction(const std::optional<NameSet> * allowed, FixedColumns & fixed_columns)
+{
+    if (!allowed || !*allowed)
+        return;
+
+    std::erase_if(fixed_columns, [&](const ActionsDAG::Node * node)
+    {
+        NameSet inputs;
+        collectInputNames(node, inputs);
+        if (inputs.empty())
+            return true;
+        for (const auto & name : inputs)
+            if (!(*allowed)->contains(name))
+                return true;
+        return false;
+    });
+}
+
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
-/// Additionally, build a set of fixed columns.
-void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+/// Additionally, build a set of fixed columns. `allowed_fixed_columns` is an out parameter: the read at
+/// the bottom is reached first and says there what the filters above it may fix.
+void buildSortingDAG(
+    const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit,
+    const std::optional<NameSet> *& allowed_fixed_columns)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
+        allowed_fixed_columns = &reading->getFixedColumnRestriction();
+
         if (const auto prewhere_info = reading->getPrewhereInfo())
         {
             /// Should ignore limit if there is filtering.
@@ -331,7 +378,10 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
             appendExpression(dag, prewhere_info->prewhere_actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
+            {
                 appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+                applyFixedColumnRestriction(allowed_fixed_columns, fixed_columns);
+            }
 
         }
         if (const auto row_level_filter = reading->getRowLevelFilter())
@@ -341,7 +391,10 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
             appendExpression(dag, row_level_filter->actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(row_level_filter->column_name))
+            {
                 appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+                applyFixedColumnRestriction(allowed_fixed_columns, fixed_columns);
+            }
 
         }
         return;
@@ -355,7 +408,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     if (node.children.empty())
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, allowed_fixed_columns);
 
     if (typeid_cast<const DistinctStep *>(step))
     {
@@ -380,7 +433,10 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
         appendExpression(dag, filter->getExpression());
         if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
+        {
             appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+            applyFixedColumnRestriction(allowed_fixed_columns, fixed_columns);
+        }
     }
 
     if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
@@ -1068,7 +1124,10 @@ void buildCombinedDAGForMergeChildPlan(
     size_t & limit)
 {
     if (child_plan && child_plan->isInitialized())
-        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit);
+    {
+        const std::optional<NameSet> * allowed_fixed_columns = nullptr;
+        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit, allowed_fixed_columns);
+    }
 
     if (outer_dag)
     {
@@ -1259,7 +1318,8 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    const std::optional<NameSet> * allowed_fixed_columns = nullptr;
+    buildSortingDAG(node, dag, fixed_columns, limit, allowed_fixed_columns);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1384,7 +1444,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    const std::optional<NameSet> * allowed_fixed_columns = nullptr;
+    buildSortingDAG(node, dag, fixed_columns, limit, allowed_fixed_columns);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1528,7 +1589,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    const std::optional<NameSet> * allowed_fixed_columns = nullptr;
+    buildSortingDAG(node, dag, fixed_columns, limit, allowed_fixed_columns);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1632,7 +1694,8 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    const std::optional<NameSet> * allowed_fixed_columns = nullptr;
+    buildSortingDAG(node, dag, fixed_columns, limit, allowed_fixed_columns);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1700,6 +1763,25 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
 }
 
+NameSet collectFixedColumnNames(const QueryPlan::Node & root)
+{
+    /// Use the very traversal read-in-order will use later, so the names are the ones it will ask
+    /// about. A bespoke walk over the same steps sees them before `Change column names to column
+    /// identifiers` is folded in and reports `__table1.x` where the analysis reports `x`.
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    size_t limit = 0;
+    const std::optional<NameSet> * allowed = nullptr;
+    buildSortingDAG(root, dag, fixed_columns, limit, allowed);
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    NameSet names;
+    for (const auto * node : fixed_columns)
+        collectInputNames(node, names);
+    return names;
+}
+
 QueryPlan::Node * findReadingStepForReadInOrder(QueryPlan::Node & node, bool read_in_order_through_join)
 {
     FindReadingStepContext find_reading_ctx{
@@ -1722,7 +1804,8 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+    const std::optional<NameSet> * allowed_fixed_columns = nullptr;
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit, allowed_fixed_columns);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1749,7 +1832,8 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+    const std::optional<NameSet> * allowed_fixed_columns = nullptr;
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit, allowed_fixed_columns);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);

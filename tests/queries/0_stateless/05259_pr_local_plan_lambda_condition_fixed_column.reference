@@ -1,0 +1,16 @@
+a lambda-bearing equality does not order the read
+Read type: Default
+and answers correctly
+2	6
+2	7
+2	14
+a plain equality next to a lambda still orders it
+Read type: InOrder
+and answers correctly
+5	5
+5	205
+5	405
+the lambda reaches none of them
+1	0
+the plain equality standing next to one reaches all of them
+1	1

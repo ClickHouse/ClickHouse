@@ -9471,7 +9471,7 @@ Use up to `max_parallel_replicas` the number of replicas from each shard for SEL
 )", 0, enable_parallel_replicas, \
         {"24.10", false, false, "Parallel replicas with read tasks became the Beta tier feature. The setting is also known by its alias `enable_parallel_replicas`."}) \
     DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
-Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_parallel_replicas != 0`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`.
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_parallel_replicas = 1`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`. With `enable_parallel_replicas = 2` parallel replicas are forced and the automatic mode is not applied.
 0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
 )", EXPERIMENTAL, \
         {"25.12", 0, 0, "New setting"}) \
@@ -9631,9 +9631,12 @@ Replace table function engines with their -Cluster alternatives
 Allow usage of materialized views with parallel replicas
 )", 0, \
         {"25.12", false, true, "Allow usage of materialized views with parallel replicas"}) \
-    DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
-Allow pushing down filters to part of query which parallel replicas choose to execute
-)", BETA, \
+    DECLARE(Bool, parallel_replicas_filter_pushdown, true, R"(
+Push a condition standing above the part of the query parallel replicas execute into that part, and into the query the replicas are sent, so that they filter by it as well.
+
+Turn it off to keep the condition above the read on the initiator, as versions before 26.10 did. It is the way out if the push-down misbehaves: the answer does not change either way, only how much work the replicas do and how early they do it.
+)", 0, \
+        {"26.10", false, true, "A condition standing above the part of the query parallel replicas execute is now pushed into it and spliced into the query the replicas are sent, the way the distributed path has always done it. The read-mode disagreement the setting was added to avoid is prevented directly now, by withholding the ordering rather than the condition. The setting stays as the way out if the push-down misbehaves in production."}, \
         {"26.2", false, false, "New setting"}) \
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.

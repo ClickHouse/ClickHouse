@@ -1,0 +1,20 @@
+equality: prunes the read and orders it, because the replicas have it too
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+100
+the same equality written inside the fragment orders it too
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+100
+comparison: nothing is fixed, so there is no ordering to derive
+Read type: Default
+Prewhere filter column:  tenant > 90
+900
+equality off the sorting key
+Read type: Default
+Prewhere filter column:  name = \'5\'
+1
+bare boolean
+Read type: Default
+Prewhere filter column:  flag
+5000
