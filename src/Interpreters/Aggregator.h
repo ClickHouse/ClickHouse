@@ -178,6 +178,10 @@ public:
         bool bucket_top_k_ascending = false;
         size_t bucket_top_k_rank_index = 0;
 
+        /// The largest `bucket_top_k` the plan optimization sets. The per-bucket selection scans every cell anyway; past
+        /// this many candidate rows per bucket the saved materialization no longer pays for the selection scan.
+        static constexpr size_t max_bucket_top_k = 65536;
+
         /// Whether the adaptive aggregation prunes its merge by the top-K of `bucket_top_k` (see `AdaptiveTopKPruning`):
         /// the count bins bound the ranks from above, which serves a descending order only, and a throw-mode group limit
         /// needs every group counted, which a skipped unit is not.

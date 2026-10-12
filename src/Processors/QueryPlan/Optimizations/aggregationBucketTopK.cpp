@@ -13,10 +13,6 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-/// The per-bucket selection scans every cell anyway; past this many candidate rows per bucket
-/// the saved materialization no longer pays for the selection scan.
-constexpr size_t max_bucket_top_k = 65536;
-
 /// Traces an output column of a pass-through expression to the input column it forwards:
 /// aliases are unwrapped, anything computed disqualifies.
 const String * traceThroughExpression(const ExpressionStep & expression, const String & name)
@@ -62,7 +58,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         return 0;
 
     const size_t n = sorting->getLimit();
-    if (n == 0 || n > max_bucket_top_k)
+    if (n == 0 || n > Aggregator::Params::max_bucket_top_k)
         return 0;
 
     const auto & description = sorting->getSortDescription();
