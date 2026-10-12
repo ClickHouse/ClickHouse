@@ -15,6 +15,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -92,7 +93,7 @@ struct AggregateFunctionVarianceMatrixData
 
     static constexpr StatisticsMatrixFunctionKind kind = _kind;
     PaddedPODArray<DataType> data_matrix;
-    size_t num_args;
+    size_t num_args{};
 };
 
 template <typename Data>
@@ -135,7 +136,7 @@ public:
         this->data(place).add(columns, row_num);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -166,6 +167,9 @@ AggregateFunctionPtr createAggregateFunctionVarianceMatrix(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
+    if (argument_types.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} requires at least one argument", name);
     for (const auto & argument_type : argument_types)
         if (!isNativeNumber(argument_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} only supports numerical types", name);
@@ -175,6 +179,7 @@ AggregateFunctionPtr createAggregateFunctionVarianceMatrix(
 
 }
 
+void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description covarSampMatrix_description = R"(
@@ -224,7 +229,7 @@ Returns the population covariance matrix over N variables.
     )";
     FunctionDocumentation::Syntax covarPopMatrix_syntax = "covarPopMatrix(x1[, x2, ...])";
     FunctionDocumentation::Arguments covarPopMatrix_arguments = {
-        {"x1[, x2, ...]", "A variable number of parameters.", {"(U)Int*", "Float*", "Decimal"}}
+        {"x1[, x2, ...]", "One or more parameters over which to compute the population covariance matrix.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::Parameters covarPopMatrix_parameters = {};
     FunctionDocumentation::ReturnedValue covarPopMatrix_returned_value = {"Returns the population covariance matrix.", {"Array(Array(Float64))"}};

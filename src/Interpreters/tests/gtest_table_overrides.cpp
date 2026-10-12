@@ -21,7 +21,7 @@ struct TableOverrideTestCase
     String expected_create_table_query;
 };
 
-std::ostream & operator<<(std::ostream & ostr, const TableOverrideTestCase & test_case)
+static std::ostream & operator<<(std::ostream & ostr, const TableOverrideTestCase & test_case)
 {
     return ostr << "database: " << test_case.create_database_query << ", table: " << test_case.create_table_query
                 << ", expected: " << test_case.expected_create_table_query;

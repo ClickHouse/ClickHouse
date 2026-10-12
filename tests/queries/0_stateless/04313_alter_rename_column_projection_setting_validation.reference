@@ -1,0 +1,10 @@
+d
+id
+allow_part_offset_column_in_projections = 1
+1	hello
+2	world
+1	hello
+2	world
+0
+1	hello
+2	world

@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
-class FunctionBitSlice : public IFunction
+class FunctionBitSlice final : public IFunction
 {
     const UInt8 word_size = 8;
 
@@ -230,7 +230,7 @@ public:
             if (start != 0)
             {
                 typename std::decay_t<Source>::Slice slice;
-                size_t shift_bit;
+                size_t shift_bit = 0;
 
                 if (start > 0)
                 {
@@ -354,9 +354,9 @@ public:
                 size_t offset = left_offset ? static_cast<size_t>(start - 1) : -static_cast<size_t>(start);
                 size_t size = src.getElementSize();
 
-                size_t offset_byte;
-                size_t offset_bit;
-                size_t shift_bit;
+                size_t offset_byte = 0;
+                size_t offset_bit = 0;
+                size_t shift_bit = 0;
                 if (left_offset)
                 {
                     offset_byte = offset / word_size;
@@ -375,8 +375,8 @@ public:
 
                 ssize_t remain_byte = left_offset ? size - offset_byte : offset_byte;
 
-                size_t length_byte;
-                size_t over_bit;
+                size_t length_byte = 0;
+                size_t over_bit = 0;
                 if (length > 0)
                 {
                     length_byte = (length + offset_bit) / word_size;
@@ -416,15 +416,14 @@ REGISTER_FUNCTION(BitSlice)
 Returns the starting bit position (1-based indexing).
 - Positive values: count from the beginning of the string.
 - Negative values: count from the end of the string.
-
-        )", {"(U)Int8/16/32/64", "Float*"}},
+)", {"(U)Int8/16/32/64", "Float*"}},
         {"length", R"(
 Optional. The number of bits to extract.
 - Positive values: extract `length` bits.
 - Negative values: extract from the offset to `(string_length - |length|)`.
 - Omitted: extract from offset to end of string.
 - If length is not a multiple of 8, the result is padded with zeros on the right.
-        )", {"(U)Int8/16/32/64", "Float*"}}
+)", {"(U)Int8/16/32/64", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the extracted bits, represented as a binary sequence. The result is always padded to byte boundaries (multiples of 8 bits)", {"String"}};
     FunctionDocumentation::Examples examples = {{"Usage example",

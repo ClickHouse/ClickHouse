@@ -9,17 +9,14 @@ add_compile_definitions(_REENTRANT _POSIX_PTHREAD_SEMANTICS __EXTENSIONS__)
 
 set (DEFAULT_LIBS "-nodefaultlibs")
 
+# On SunOS/illumos, building compiler-rt from source is not yet supported
+# (no toolchain file in contrib/compiler-rt-cmake/), so we use -lgcc_s.
 set (BUILTINS_LIBRARY "-lgcc_s")
-if (USE_SYSTEM_COMPILER_RT)
-    # Try to find the clang builtins library
-    execute_process(COMMAND
-        ${CMAKE_CXX_COMPILER} --print-libgcc-file-name --rtlib=compiler-rt
-        OUTPUT_VARIABLE BUILTINS_LIBRARY
-        COMMAND_ERROR_IS_FATAL ANY
-        OUTPUT_STRIP_TRAILING_WHITESPACE)
-endif ()
 
-set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} -lc -lm -lrt -lpthread -ldl -lsocket -lnsl -lsendfile -lproc -lumem")
+# On linux/darwin, we use lld, which isn't sensitive to the order of
+# dependencies. On illumos, we use ld, which is. Set `-z rescan-now` so that we
+# don't have to explicitly manage the dependency graph in DEPENDS.
+set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-z,rescan-now ${BUILTINS_LIBRARY} -lc -lm -lrt -lpthread -ldl -lsocket -lnsl -lsendfile -lproc -lumem")
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 

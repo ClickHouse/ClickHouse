@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ListNode.h>
@@ -27,7 +28,7 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     JoinStrictness strictness_,
     JoinKind kind_,
     bool is_using_join_expression_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , locality(locality_)
     , strictness(strictness_)
     , kind(kind_)
@@ -120,6 +121,7 @@ ASTPtr JoinNode::toASTTableJoin() const
     join_ast->strictness = strictness;
     join_ast->kind = kind;
     join_ast->is_natural = is_natural && !hasJoinExpression();
+    join_ast->lateral = lateral;
 
     if (children[join_expression_child_index])
     {
@@ -150,11 +152,16 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", kind: " << toString(kind);
 
+    if (lateral)
+        buffer << ", lateral: true";
+
+    /// Use the raw node accessors: in an unresolved tree (e.g. EXPLAIN QUERY TREE
+    /// with run_passes = 0) the children are still identifiers, not table expressions.
     buffer << '\n' << std::string(indent + 2, ' ') << "LEFT TABLE EXPRESSION\n";
-    getLeftTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getLeftTableExpressionNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "RIGHT TABLE EXPRESSION\n";
-    getRightTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getRightTableExpressionNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (getJoinExpression())
     {
@@ -168,7 +175,7 @@ bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const JoinNode &>(rhs);
     return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind &&
         is_using_join_expression == rhs_typed.is_using_join_expression &&
-        is_natural == rhs_typed.is_natural;
+        is_natural == rhs_typed.is_natural && lateral == rhs_typed.lateral;
 }
 
 void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -178,14 +185,18 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(kind);
     state.update(is_using_join_expression);
     state.update(is_natural);
+    state.update(lateral);
 }
 
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
     auto clone = std::make_shared<JoinNode>(
-        getLeftTableExpression(), getRightTableExpression(), getJoinExpression(),
+        getLeftTableExpressionNode(),
+        getRightTableExpressionNode(),
+        getJoinExpression(),
         locality, strictness, kind, is_using_join_expression);
     clone->is_natural = is_natural;
+    clone->lateral = lateral;
     return clone;
 }
 
@@ -224,13 +235,13 @@ void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
 
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodePtr table_expression)
-    : IQueryTreeNode(1)
+    : ITableExpressionNode(1)
 {
     children = {std::move(table_expression)};
 }
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_)
-    : IQueryTreeNode(table_expressions.size())
+    : ITableExpressionNode(table_expressions.size())
     , join_types(std::move(join_types_))
 {
     children = std::move(table_expressions);

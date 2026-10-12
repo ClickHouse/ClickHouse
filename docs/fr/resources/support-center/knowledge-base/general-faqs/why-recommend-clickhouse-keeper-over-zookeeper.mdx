@@ -1,0 +1,34 @@
+---
+date: 2023-06-07
+title: Pourquoi ClickHouse Keeper est-il recommandé plutôt que ZooKeeper ?
+description: ClickHouse Keeper apporte des améliorations à ZooKeeper, notamment une réduction de l’espace disque utilisé, une reprise plus rapide et une consommation de mémoire plus faible, ce qui offre de meilleures performances pour les clusters ClickHouse.
+tags: ['Concepts fondamentaux des données']
+keywords: ['ClickHouse Keeper', 'ZooKeeper']
+---
+
+***
+
+<div id="question">
+  ## Question
+</div>
+
+ClickHouse Keeper fournit le système de coordination pour la réplication des données et l’exécution des requêtes DDL distribuées. ClickHouse Keeper est compatible avec ZooKeeper, mais il n’est pas forcément évident de savoir pourquoi l’utiliser plutôt que ZooKeeper. Cet article présente certains des avantages de Keeper.
+
+<div id="answer">
+  ## Réponse
+</div>
+
+[ClickHouse Cloud](https://console.clickhouse.cloud/) utilise `clickhouse-keeper` à grande échelle pour des milliers de services dans un environnement multitenant. Nous avons conçu et développé Keeper afin de nous affranchir de notre dépendance à l’implémentation ZooKeeper basée sur Java. ClickHouse Keeper corrige bon nombre des limitations bien connues de ZooKeeper et apporte d’autres améliorations, notamment :
+
+* Les snapshots et les logs consomment beaucoup moins d’espace disque grâce à une meilleure compression
+* Aucune limite sur la taille par défaut des paquets et des données de nœud (elle est de 1 Mo dans ZooKeeper)
+* Aucun problème de dépassement de `zxid` (dans ZooKeeper, cela impose un redémarrage toutes les 2 milliards de transactions)
+* Une reprise plus rapide après des partitions réseau grâce à l’utilisation d’un meilleur protocole de consensus distribué
+* Il utilise moins de mémoire pour le même volume de données
+* Il est plus simple à configurer et ne nécessite ni de définir la taille de mémoire de la JVM ni d’utiliser une implémentation personnalisée du garbage collector
+* Quelques commandes personnalisées dans le protocole permettent d’accélérer les opérations sur les tables `ReplicatedMergeTree`
+* Une couverture de tests Jepsen plus étendue
+
+En outre, ClickHouse Support a constaté une baisse massive des problèmes de cluster dans les environnements qui utilisent `clickhouse-keeper` plutôt que ZooKeeper.
+
+Consultez la [page de documentation de Keeper](/fr/guides/oss/deployment-and-scaling/keeper/index) pour plus de détails sur la configuration et l’exécution de ClickHouse Keeper.

@@ -1,0 +1,298 @@
+---
+title: Windows Active Directory 보안 그룹을 ClickHouse 역할에 매핑하기
+description: "Windows Active Directory 보안 그룹을 ClickHouse 역할에 매핑하는 예시"
+date: 2024-05-20
+tags: ['도구 및 유틸리티']
+keywords: ['Windows']
+---
+
+<div id="example">
+  ## 예시
+</div>
+
+이 예시에서는 서로 다른 AD 보안 그룹에 속한 AD 사용자에게 ClickHouse에서 역할 기반 접근 권한을 부여하는 방법을 보여줍니다. 또한 여러 역할에서 제공하는 접근 권한을 사용할 수 있도록 하나의 사용자를 여러 AD 사용자 그룹에 추가하는 방법도 보여줍니다.
+
+이 환경은 다음과 같습니다:
+
+* Windows Active Directory 도메인: `marsnet2.local`
+* ClickHouse 클러스터 `cluster_1S_3R`: 1개 세그먼트, 3개 레플리카로 구성된 3개의 노드
+* AD 사용자 3명
+
+| AD User                     | 설명                                           |
+| --------------------------- | -------------------------------------------- |
+| clickhouse&#95;ad&#95;admin | ClickHouse 관리자 사용자                           |
+| clickhouse&#95;db1&#95;user | db1.table1에 대한 접근 권한이 있는 사용자                 |
+| clickhouse&#95;db2&#95;user | db2.table1에 대한 접근 권한이 있는 사용자                 |
+| ch&#95;db1&#95;db2&#95;user | db1.table1 및 db2.table1 모두에 대한 접근 권한이 있는 사용자 |
+
+* AD 보안 그룹 3개
+
+| AD Group                            | 설명                        |
+| ----------------------------------- | ------------------------- |
+| clickhouse&#95;ad&#95;admins        | ClickHouse 관리자 그룹         |
+| clickhouse&#95;ad&#95;db1&#95;users | db1.table1 접근 권한에 매핑되는 그룹 |
+| clickhouse&#95;ad&#95;db2&#95;users | db2.table1 접근 권한에 매핑되는 그룹 |
+
+* 예시 AD 환경 및 UO 구조:
+
+<Image img={ad_env} size="md" alt="예시 AD 환경 및 UO 구조" />
+
+* 예시 AD 보안 그룹 구성:
+
+<Image img={ad_group} size="md" alt="예시 AD 보안 그룹 구성" />
+
+* 예시 AD 사용자 구성:
+
+<Image img={ad_user} size="md" alt="예시 AD 사용자 구성" />
+
+1. Windows AD Users and Groups에서 각 사용자를 해당 그룹에 추가하십시오. 그러면 사용자가 ClickHouse 역할에 매핑됩니다(예시는 다음 단계 참조).
+
+| AD Security Group           | ClickHouse 역할                                                             |
+| --------------------------- | ------------------------------------------------------------------------- |
+| clickhouse&#95;ad&#95;admin | clickhouse&#95;ad&#95;admins                                              |
+| clickhouse&#95;db1&#95;user | clickhouse&#95;ad&#95;db1&#95;users                                       |
+| clickhouse&#95;db2&#95;user | clickhouse&#95;ad&#95;db2&#95;users                                       |
+| ch&#95;db1&#95;db2&#95;user | clickhouse&#95;ad&#95;db1&#95;users 및 clickhouse&#95;ad&#95;db2&#95;users |
+
+* 예시 사용자 그룹 멤버십:
+
+<Image img={ad_user_group} size="md" alt="예시 사용자 그룹 멤버십" />
+
+2. ClickHouse `config.xml`에서 각 ClickHouse 노드에 `ldap_servers` 구성을 추가하십시오.
+
+```
+<ldap_servers>
+	<marsnet2_ad>
+		<host>marsdc1.marsnet2.local</host>
+		<port>389</port>
+		<bind_dn>{user_name}@marsnet2.local</bind_dn>
+		<user_dn_detection>
+			<base_dn>OU=Users,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+			<search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+		</user_dn_detection>
+		<enable_tls>no</enable_tls>
+	</marsnet2_ad>
+</ldap_servers>
+```
+
+| xml tag                   | 설명                                                                  | 예시 값                                                |
+| ------------------------- | ------------------------------------------------------------------- | --------------------------------------------------- |
+| ldap&#95;servers          | ClickHouse에서 사용할 LDAP 서버를 정의하는 데 사용하는 태그                            | 해당 없음                                               |
+| marsnet&#95;ad            | 이 태그는 임의로 정한 값이며, `<user_directories>` 섹션에서 서버를 식별하기 위한 레이블로만 사용됩니다 | 해당 없음                                               |
+| host                      | Active Directory 서버 또는 도메인의 FQDN 또는 IP 주소                           | marsdc1.marsnet2.local                              |
+| port                      | Active Directory 포트입니다. 일반적으로 비SSL에는 389, SSL에는 636을 사용합니다          | 389                                                 |
+| bind&#95;dn               | AD에 bind할 때 사용할 사용자입니다. 일반 사용자의 사용이 허용되지 않는 경우 전용 사용자를 사용할 수 있습니다   | `{user_name}@marsnet2.local`                        |
+| user&#95;dn&#95;detection | ClickHouse가 AD 사용자를 찾는 방법을 지정하는 설정                                  | 해당 없음                                               |
+| base&#95;dn               | 사용자 검색을 시작할 AD OU 경로                                                | OU=Users,OU=ClickHouse,DC=marsnet2,DC=local         |
+| search&#95;filter         | AD 사용자를 찾기 위한 LDAP search filter                                    | `(&(objectClass=user)(sAMAccountName={user_name}))` |
+
+전체 옵션은 다음 문서를 참조하십시오:
+[https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
+
+3. ClickHouse `config.xml`에서 각 ClickHouse 노드에 `<ldap>` 항목이 포함된 `<user_directories>` 구성을 추가하십시오.
+
+```
+<user_directories>
+	<users_xml>
+		<path>users.xml</path>
+	</users_xml>
+	<local_directory>
+		<path>/var/lib/clickhouse/access/</path>
+	</local_directory>
+	<ldap>
+		<server>marsnet2_ad</server>
+		<role_mapping>
+			<base_dn>OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+			<search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
+			<attribute>CN</attribute>
+			<scope>subtree</scope>
+			<prefix>clickhouse_</prefix>
+		</role_mapping>
+	</ldap>
+</user_directories>
+```
+
+| xml tag              | 설명                                                   | 예시 값                                         |
+| -------------------- | ---------------------------------------------------- | -------------------------------------------- |
+| user&#95;directories | 사용할 인증자를 정의합니다                                       | NA                                           |
+| ldap                 | 사용할 LDAP 서버 설정을 포함하며, 이 예시에서는 해당 AD에 대한 설정입니다        | NA                                           |
+| server               | `<ldap_servers>` 섹션에 정의된 태그입니다                       | marsnet2&#95;ad                              |
+| role&#95;mapping     | 인증된 사용자를 AD 그룹과 ClickHouse 역할 간에 어떻게 매핑할지 정의합니다      | NA                                           |
+| base&#95;dn          | 시스템이 AD 그룹 검색을 시작할 때 사용할 AD 경로입니다                    | OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local |
+| search&#95;filter    | AD 그룹을 찾기 위한 LDAP search filter입니다                   | `(&(objectClass=group)(member={user_dn}))`   |
+| attribute            | 사용자를 식별하는 데 사용할 AD 속성 필드입니다                          | CN                                           |
+| scope                | 시스템이 그룹을 검색할 때 base DN에서 어느 범위까지 검색할지 지정합니다          | subtree                                      |
+| prefix               | AD 그룹 이름의 접두사이며, ClickHouse에서 역할을 찾을 때는 이 접두사를 제거합니다 | clickhouse&#95;                              |
+
+전체 옵션은 다음 문서를 참조하십시오:
+[https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory)
+
+**참고:::**
+예시에서는 AD 보안 그룹에 `clickhouse_ad_db1_users`처럼 접두사가 붙어 있습니다. 시스템이 이 그룹을 가져올 때 접두사를 제거하므로, `clickhouse_ad_db1_users`에 매핑할 ClickHouse 역할 이름은 `ad_db1_users`여야 합니다.
+**:::**
+
+4. 예시 데이터베이스를 생성합니다.
+
+```
+create database db1 on cluster 'cluster_1S_3R';
+create database db2 on cluster 'cluster_1S_3R';
+```
+
+5. 예시 테이블을 생성합니다.
+
+```
+create table db1.table1 on cluster 'cluster_1S_3R'
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+
+create table db2.table1 on cluster 'cluster_1S_3R
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+```
+
+6. 예제 데이터를 삽입합니다.
+
+```
+insert into db1.table1
+values
+(1, 'a');
+
+insert into db2.table1
+values
+(2, 'b');
+```
+
+7. ClickHouse 역할을 생성합니다.
+
+```
+create role ad_admins on cluster 'cluster_1S_3R';
+create role ad_db1_users on cluster 'cluster_1S_3R';
+create role ad_db2_users on cluster 'cluster_1S_3R';
+```
+
+8. 역할에 권한을 부여하세요.
+
+```
+GRANT SHOW, SELECT, INSERT, ALTER, CREATE, DROP, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, KILL QUERY, KILL TRANSACTION, MOVE PARTITION BETWEEN SHARDS, ACCESS MANAGEMENT, SYSTEM, dictGet, displaySecretsInShowAndSelect, INTROSPECTION, SOURCES, CLUSTER ON *.* on cluster 'cluster_1S_3R' TO ad_admins WITH GRANT OPTION;
+
+GRANT SELECT ON db1.table1 on cluster 'cluster_1S_3R' TO ad_db1_users;
+
+GRANT SELECT ON db2.table1 on cluster 'cluster_1S_3R' TO ad_db2_users;
+```
+
+9. 제한된 권한의 db1 사용자 액세스를 테스트합니다.
+   예를 들어:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user clickhouse_db1_user --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user clickhouse_db1_user.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: b04b92d6-5b8b-40a2-a92a-f06f15774930
+
+┌─id─┬─column1─┐
+│  1 │ a       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+
+clickhouse :) select * from db2.table1;
+
+SELECT *
+FROM db2.table1
+
+Query id: 7f7eaa44-7b47-4184-807a-6968a56057ad
+
+Elapsed: 0.115 sec.
+
+Received exception from server (version 24.1.3):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: clickhouse_db1_user: Not enough privileges. To execute this query, it's necessary to have the grant SELECT(id, column1) ON db2.table1. (ACCESS_DENIED)
+```
+
+10. db1과 db2 두 데이터베이스에 모두 접근할 수 있는 사용자의 액세스를 테스트합니다.
+    예를 들어 다음과 같습니다:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user ch_db1_db2_user --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user ch_db1_db2_user.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: 23084744-08c2-48bd-8635-a23438812026
+
+┌─id─┬─column1─┐
+│  1 │ a       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+
+clickhouse :) select * from db2.table1;
+
+SELECT *
+FROM db2.table1
+
+Query id: f9954ec4-d8d9-4b5a-9f68-a7aa79a1bb4a
+
+┌─id─┬─column1─┐
+│  2 │ b       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+11. 관리자 사용자의 액세스를 테스트합니다.
+    예를 들어:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user clickhouse_ad_admin --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user clickhouse_ad_admin.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) create table db1.table2 on cluster 'cluster_1S_3R'
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+
+CREATE TABLE db1.table2 ON CLUSTER cluster_1S_3R
+(
+    `id` Int32,
+    `column1` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: 6041fd32-4294-44bd-b442-3fdd41333e6f
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   2 │                2 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                1 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode3.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```

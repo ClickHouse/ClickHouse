@@ -37,7 +37,14 @@ while true; do
     sleep 0.5
 done
 
-$CLICKHOUSE_CLIENT --query-id="$same_query_finish" -q "SELECT sleep(2) SETTINGS query_metric_log_interval=100, replace_running_query=1 FORMAT Null;" &
+# Use a larger `replace_running_query_max_wait_ms` than the 5000ms default because on slow
+# builds (e.g. `amd_llvm_coverage`) the chain
+#     is_killed=true → sleep() notices cancellation → QUERY_WAS_CANCELLED unwinds →
+#     ProcessListEntry destructor removes query from map → notify_all
+# can take longer than 5s, causing a spurious `QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING`
+# "already running and can't be stopped" failure. 30s is well beyond worst-case coverage
+# timing but still bounded.
+$CLICKHOUSE_CLIENT --query-id="$same_query_finish" -q "SELECT sleep(2) SETTINGS query_metric_log_interval=100, replace_running_query=1, replace_running_query_max_wait_ms=30000 FORMAT Null;" &
 $CLICKHOUSE_CLIENT --query-id="$same_query_not_finish" -q "SELECT 'a' SETTINGS query_metric_log_interval=0, replace_running_query=0 FORMAT Null;" 2> /dev/null
 
 # Kill the initial query because the second one didn't replace it

@@ -93,7 +93,7 @@ private:
 
     using PartVec = std::vector<Part>;
 
-    const size_t max_fields_number, max_field_name_size, max_field_value_size;
+    const size_t max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size;
 
     std::string encoding;
     std::string boundary;

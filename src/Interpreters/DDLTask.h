@@ -38,7 +38,7 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 struct HostID
 {
     String host_name;
-    UInt16 port;
+    UInt16 port{};
 
     HostID() = default;
 
@@ -119,6 +119,9 @@ struct DDLTaskBase
     bool is_initial_query = false;
     bool is_circular_replicated = false;
     bool execute_on_single_replica = false;
+
+    /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
+    ContextPtr submitting_user_context;
 
     Coordination::Requests ops;
     ExecutionStatus execution_status;
@@ -275,7 +278,7 @@ public:
     void commit();
 
     /// (It would be nice to assert something like the following:
-    ///    assert(isExecuted() || std::uncaught_exceptions() || ops.empty());
+    ///    chassert(isExecuted() || std::uncaught_exceptions() || ops.empty());
     ///  But we can't do it because it would cause rare false positives because
     ///  ZooKeeperMetadataTransaction can be inside a weak_ptr
     ///  (in QueryStatus -> WithContext -> Context -> ContextData), enabling the following
@@ -290,6 +293,10 @@ public:
     ///      is called with std::uncaught_exceptions() == 0.)
     ~ZooKeeperMetadataTransaction() = default;
 };
+
+/// Whether the query re-executes a DDL that its initiator already validated and committed: an entry of a `Replicated`
+/// database queue, or a Shared Catalog replay (marked in the client info, not in a metadata transaction).
+bool isSecondaryDDLReplay(const ContextPtr & context);
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 

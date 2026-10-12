@@ -1,0 +1,399 @@
+---
+title: 'Journalisation de DataStore'
+sidebarTitle: 'Journalisation'
+slug: /chdb/debugging/logging
+description: 'Configurer la journalisation de DataStore pour le débogage et la supervision'
+keywords: ['chdb', 'datastore', 'journalisation', 'débogage', 'journal', 'niveau']
+doc_type: 'reference'
+---
+
+DataStore utilise le module de journalisation standard de Python. Ce guide explique comment configurer la journalisation à des fins de débogage.
+
+<div id="quick-start">
+  ## Démarrage rapide
+</div>
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Enable debug logging
+config.enable_debug()
+
+# Now all operations will log details
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).to_df()
+```
+
+<div id="levels">
+  ## Niveaux de journalisation
+</div>
+
+| Niveau     | Valeur | Description                              |
+| ---------- | ------ | ---------------------------------------- |
+| `DEBUG`    | 10     | Informations détaillées pour le débogage |
+| `INFO`     | 20     | Informations générales de fonctionnement |
+| `WARNING`  | 30     | Messages d’avertissement (par défaut)    |
+| `ERROR`    | 40     | Messages d’erreur                        |
+| `CRITICAL` | 50     | Défaillances critiques                   |
+
+<div id="setting-level">
+  ## Définir le niveau de journalisation
+</div>
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# Using standard logging levels
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # Default
+config.set_log_level(logging.ERROR)
+
+# Using quick preset
+config.enable_debug()  # Sets DEBUG level + verbose format
+```
+
+<div id="format">
+  ## Format des logs
+</div>
+
+<div id="simple">
+  ### Format simple (par défaut)
+</div>
+
+```python title="Query"
+config.set_log_format("simple")
+```
+
+```text title="Response"
+DEBUG - Executing SQL query
+DEBUG - Cache miss for key abc123
+```
+
+<div id="verbose">
+  ### Format verbose
+</div>
+
+```python title="Query"
+config.set_log_format("verbose")
+```
+
+```text title="Response"
+2024-01-15 10:30:45.123 DEBUG datastore.core - Executing SQL query
+2024-01-15 10:30:45.456 DEBUG datastore.cache - Cache miss for key abc123
+```
+
+***
+
+<div id="what-logged">
+  ## Ce qui est consigné
+</div>
+
+<div id="debug-logged">
+  ### Niveau DEBUG
+</div>
+
+* Requêtes SQL générées
+* Sélection du moteur d’exécution
+* Opérations du cache (hits/misses)
+* Durée des opérations
+* Informations sur la source de données
+
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - SQL: SELECT * FROM file('data.csv', 'CSVWithNames') WHERE age > 25
+DEBUG - Using engine: chdb
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+<div id="info-logged">
+  ### Niveau INFO
+</div>
+
+* Achèvement des opérations majeures
+* Modifications de la configuration
+* Connexions aux sources de données
+
+```text
+INFO - Loaded 1,000,000 rows from data.csv
+INFO - Execution engine set to: chdb
+INFO - Connected to MySQL: localhost:3306/mydb
+```
+
+<div id="warning-logged">
+  ### Niveau WARNING
+</div>
+
+* Utilisation de fonctionnalités obsolètes
+* Avertissements de performance
+* Problèmes non critiques
+
+```text
+WARNING - Large result set (>1M rows) may cause memory issues
+WARNING - Cache TTL exceeded, re-executing query
+WARNING - Column 'date' has mixed types, using string
+```
+
+<div id="error-logged">
+  ### Niveau ERROR
+</div>
+
+* Erreurs lors de l’exécution des requêtes
+* Erreurs de connexion
+* Erreurs de conversion des données
+
+```text
+ERROR - Failed to execute SQL: syntax error near 'FORM'
+ERROR - Connection to MySQL failed: timeout
+ERROR - Cannot convert column 'price' to float
+```
+
+***
+
+<div id="custom">
+  ## Configuration personnalisée de la journalisation
+</div>
+
+<div id="python-logging">
+  ### Utiliser le module de journalisation de Python
+</div>
+
+```python
+import logging
+
+# Configure root logger
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('datastore.log'),
+        logging.StreamHandler()
+    ]
+)
+
+# Get DataStore logger
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.setLevel(logging.DEBUG)
+```
+
+<div id="log-file">
+  ### Journalisation dans un fichier
+</div>
+
+```python
+import logging
+
+# Create file handler
+file_handler = logging.FileHandler('datastore_debug.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+
+# Add to DataStore logger
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.addHandler(file_handler)
+```
+
+<div id="suppress">
+  ### Désactiver la journalisation
+</div>
+
+```python
+import logging
+
+# Suppress all DataStore logs
+logging.getLogger('chdb.datastore').setLevel(logging.CRITICAL)
+
+# Or using config
+config.set_log_level(logging.CRITICAL)
+```
+
+***
+
+<div id="scenarios">
+  ## Scénarios de débogage
+</div>
+
+<div id="debug-sql">
+  ### Débogage de la génération SQL
+</div>
+
+```python
+config.enable_debug()
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').sum()
+```
+
+Sortie des logs :
+
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - Building filter: age > 25
+DEBUG - Building groupby: city
+DEBUG - Building aggregation: sum
+DEBUG - Generated SQL:
+        SELECT city, SUM(*) 
+        FROM file('data.csv', 'CSVWithNames')
+        WHERE age > 25
+        GROUP BY city
+```
+
+<div id="debug-engine">
+  ### Débogage de la sélection du moteur
+</div>
+
+```python
+config.enable_debug()
+
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+```
+
+Sortie des logs :
+
+```text
+DEBUG - filter: selecting engine (eligible: chdb, pandas)
+DEBUG - filter: using chdb (SQL-compatible)
+DEBUG - apply: selecting engine (eligible: pandas)
+DEBUG - apply: using pandas (custom function)
+```
+
+<div id="debug-cache">
+  ### Débogage des opérations du cache
+</div>
+
+```python
+config.enable_debug()
+
+# First execution
+result1 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - Cache miss for query hash abc123
+# DEBUG - Executing query...
+# DEBUG - Caching result (key: abc123, size: 1.2MB)
+
+# Second execution (same query)
+result2 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - Cache hit for query hash abc123
+# DEBUG - Returning cached result
+```
+
+<div id="debug-performance">
+  ### Débogage des problèmes de performances
+</div>
+
+```python
+config.enable_debug()
+config.enable_profiling()
+
+# Logs will show timing for each operation
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .to_df()
+)
+```
+
+Sortie des logs :
+
+```text
+DEBUG - filter: 0.002ms
+DEBUG - groupby: 0.001ms
+DEBUG - agg: 0.003ms
+DEBUG - SQL generation: 0.012ms
+DEBUG - SQL execution: 89.456ms  <- Main time spent here
+DEBUG - Result conversion: 2.345ms
+```
+
+***
+
+<div id="production">
+  ## Configuration de production
+</div>
+
+<div id="recommended">
+  ### Paramètres recommandés
+</div>
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# Production: minimal logging
+config.set_log_level(logging.WARNING)
+config.set_log_format("simple")
+config.set_profiling_enabled(False)
+```
+
+<div id="rotation">
+  ### Rotation des logs
+</div>
+
+```python
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Create rotating file handler
+handler = RotatingFileHandler(
+    'datastore.log',
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
+)
+handler.setLevel(logging.WARNING)
+
+# Add to DataStore logger
+logging.getLogger('chdb.datastore').addHandler(handler)
+```
+
+***
+
+<div id="env-vars">
+  ## Variables d’environnement
+</div>
+
+Vous pouvez également configurer la journalisation à l’aide de variables d’environnement :
+
+```bash
+# Set log level
+export CHDB_LOG_LEVEL=DEBUG
+
+# Set log format
+export CHDB_LOG_FORMAT=verbose
+```
+
+```python
+import os
+import logging
+
+# Read from environment
+log_level = os.environ.get('CHDB_LOG_LEVEL', 'WARNING')
+config.set_log_level(getattr(logging, log_level))
+```
+
+***
+
+<div id="summary">
+  ## Résumé
+</div>
+
+| Tâche                  | Commande                                               |
+| ---------------------- | ------------------------------------------------------ |
+| Activer le débogage    | `config.enable_debug()`                                |
+| Définir le niveau      | `config.set_log_level(logging.DEBUG)`                  |
+| Définir le format      | `config.set_log_format("verbose")`                     |
+| Écrire dans un fichier | Utiliser les gestionnaires du module logging de Python |
+| Désactiver les logs    | `config.set_log_level(logging.CRITICAL)`               |

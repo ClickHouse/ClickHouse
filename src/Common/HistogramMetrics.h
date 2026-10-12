@@ -13,7 +13,7 @@
 
 namespace HistogramMetrics
 {
-    using Value = Int64;
+    using Value = Float64;
     using Buckets = std::vector<Value>;
     using Labels = std::vector<String>;
     using LabelValues = std::vector<String>;

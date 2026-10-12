@@ -1,0 +1,84 @@
+---
+description: 'Руководство по интеграции библиотек Rust в ClickHouse'
+sidebarTitle: 'Библиотеки Rust'
+slug: /development/integrating_rust_libraries
+title: 'Интеграция библиотек Rust'
+doc_type: 'guide'
+---
+
+Процесс интеграции библиотеки Rust будет показан на примере интеграции хеш-функции BLAKE3.
+
+Первый шаг — добавить библиотеку в каталог /rust. Для этого нужно создать пустой проект Rust и указать нужную библиотеку в Cargo.toml. Также необходимо настроить сборку новой библиотеки как статической, добавив `crate-type = ["staticlib"]` в Cargo.toml.
+
+Далее нужно связать библиотеку с CMake с помощью библиотеки Corrosion. Сначала нужно добавить каталог библиотеки в CMakeLists.txt внутри каталога /rust. После этого следует добавить файл CMakeLists.txt в каталог библиотеки. В нем нужно вызвать функцию импорта Corrosion. Для импорта BLAKE3 использовались следующие строки:
+
+```CMake
+corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
+
+target_include_directories(_ch_rust_blake3 INTERFACE include)
+add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
+```
+
+Таким образом, мы создадим корректный target CMake с помощью Corrosion, а затем переименуем его в более удобное имя. Обратите внимание, что имя `_ch_rust_blake3` взято из Cargo.toml, где оно используется как имя проекта (`name = "_ch_rust_blake3"`).
+
+Поскольку типы данных Rust несовместимы с типами данных C/C++, мы используем наш пустой библиотечный проект, чтобы создать методы-обёртки для преобразования данных, полученных из C/C++, вызова методов библиотеки и обратного преобразования выходных данных. Например, для BLAKE3 был написан такой метод:
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+```
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+) -> *mut c_char {
+    if begin.is_null() {
+        let err_str = CString::new("input was a null pointer").unwrap();
+        return err_str.into_raw();
+    }
+    let mut hasher = blake3::Hasher::new();
+    let input_bytes = CStr::from_ptr(begin);
+    let input_res = input_bytes.to_bytes();
+    hasher.update(input_res);
+    let mut reader = hasher.finalize_xof();
+    reader.fill(std::slice::from_raw_parts_mut(out_char_data, blake3::OUT_LEN));
+    std::ptr::null_mut()
+}
+```
+
+Этот метод получает на вход C-совместимую строку, её размер и указатель на выходную строку. Затем он преобразует C-совместимые входные данные в типы, которые используются реальными методами библиотеки, и вызывает их. После этого он должен преобразовать выходные данные методов библиотеки обратно в C-совместимый тип. В данном конкретном случае библиотека поддерживала прямую запись в указатель с помощью метода `fill()`, поэтому преобразование не потребовалось. Главный совет здесь — создавать меньше методов, чтобы при каждом вызове метода требовалось меньше преобразований и не возникало большого накладного расхода.
+
+Стоит отметить, что атрибут `#[no_mangle]` и `extern "C"` обязательны для всех таких методов. Без них будет невозможно выполнить корректную C/C++-совместимую компиляцию. Более того, они необходимы для следующего этапа интеграции.
+
+После написания кода для shim-методов нам нужно подготовить заголовочный файл для библиотеки. Это можно сделать вручную, либо использовать библиотеку cbindgen для автоматической генерации. Если вы используете cbindgen, потребуется написать build-скрипт build.rs и добавить cbindgen как build-dependency.
+
+Пример build-скрипта, который может автоматически сгенерировать заголовочный файл:
+
+```rust
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    let package_name = env::var("CARGO_PKG_NAME").unwrap();
+    let output_file = ("include/".to_owned() + &format!("{}.h", package_name)).to_string();
+
+    match cbindgen::generate(&crate_dir) {
+        Ok(header) => {
+            header.write_to_file(&output_file);
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
+```
+
+Также следует использовать атрибут #[no&#95;mangle] и `extern "C"` для всех атрибутов, совместимых с C. Иначе библиотека может скомпилироваться некорректно, а cbindgen не сможет автоматически сгенерировать заголовочные файлы.
+
+После всех этих шагов вы можете протестировать свою библиотеку в небольшом проекте, чтобы выявить все проблемы с совместимостью или генерацией заголовков. Если при генерации заголовков возникают какие-либо проблемы, можно попробовать настроить её с помощью файла cbindgen.toml (шаблон можно найти здесь: [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)).
+
+Стоит отметить проблему, возникшую при интеграции BLAKE3:
+MemorySanitizer может давать ложноположительные срабатывания, поскольку не может определить, инициализированы ли некоторые переменные в Rust. Эту проблему решили, написав метод с более явным объявлением некоторых переменных, хотя такая реализация метода работает медленнее и используется только для исправления сборок MemorySanitizer.

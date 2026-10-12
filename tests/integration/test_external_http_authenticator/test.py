@@ -36,7 +36,7 @@ def run_echo_server():
 
     def check_server() -> str:
         return instance.exec_in_container(
-            ["curl", "-s", f"http://localhost:8000/health"],
+            ["curl", "-s", "http://localhost:8000/health"],
             nothrow=True,
         )
 
@@ -107,8 +107,8 @@ def test_header_failed(started_cluster: ClickHouseCluster):
                 "-H",
                 f"{header_name}: ok",
                 "--data",
-                f"SELECT 2+2",
-                f"http://localhost:8123",
+                "SELECT 2+2",
+                "http://localhost:8123",
             ],
             nothrow=True,
         )

@@ -1,7 +1,10 @@
+#include <filesystem>
 #include <memory>
+#include <DataTypes/DataTypeArray.h>
 #include <mutex>
 
 #include <IO/EmptyReadBuffer.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -23,8 +26,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -58,6 +61,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_USE_DISTRIBUTED_CACHE;
     extern const int INVALID_STATE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
@@ -102,7 +106,8 @@ public:
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
         chassert(segment_holder->size() == 1);
-        segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
+        if (auto ec = segment_holder->front().getKeyMetadata()->createBaseDirectory(); ec)
+            throw std::filesystem::filesystem_error(fmt::format("createBaseDirectory failed for {}", key), ec);
     }
 
     std::unique_ptr<WriteBuffer> write() override
@@ -142,7 +147,7 @@ public:
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();
         write_settings = context->getWriteSettings();
-        timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
+        timeouts = ConnectionTimeouts::getDistributedCacheTimeouts(context->getSettingsRef());
         receive_throttler = context->getDistributedCacheReadThrottler();
         send_throttler = context->getDistributedCacheWriteThrottler();
         distributed_cache_log = context->getDistributedCacheLog();
@@ -152,6 +157,10 @@ public:
         distributed_cache_server = DistributedCache::Registry::instance()
                                        .getSnapshot(read_settings.distributed_cache_settings.read_only_from_current_az)
                                        .chooseServer(hash.get128());
+
+        /// Both write() and read() require a non-null server for the holder's whole lifetime.
+        if (!distributed_cache_server)
+            DistributedCache::Client::throwNoServerAvailable(DistributedCache::Protocol::RequestType::Write);
     }
 
     ~TemporaryFileInDistributedCache() override
@@ -159,7 +168,11 @@ public:
         try
         {
             if (cache_client)
+            {
                 cache_client->makeDropCacheRequest(file_key, /*connection_info_hash=*/0, /*is_temporary_data=*/true);
+                /// The hold is released — the connection can be reused by someone else.
+                cache_client->setForbidReconnect(false);
+            }
         }
         catch (...)
         {
@@ -190,7 +203,7 @@ public:
             buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE;
 
         auto local_read_settings = read_settings;
-        local_read_settings.remote_fs_buffer_size = buffer_size_;
+        local_read_settings.remote_fs_settings.buffer_size = buffer_size_;
         return std::make_unique<ReadBufferFromDistributedCache>(
             file_key,
             bytes_written,
@@ -282,9 +295,9 @@ public:
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         ReadSettings settings;
-        settings.local_fs_buffer_size = buffer_size_;
-        settings.remote_fs_buffer_size = buffer_size_;
-        settings.prefetch_buffer_size = buffer_size_;
+        settings.local_fs_settings.buffer_size = buffer_size_;
+        settings.remote_fs_settings.buffer_size = buffer_size_;
+        settings.remote_fs_settings.large_buffer_size = buffer_size_;
 
         return disk->readFile(path_to_file, settings);
     }
@@ -345,10 +358,16 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 {
     return [](const TemporaryDataOnDiskSettings & settings, size_t /*max_size*/) -> std::unique_ptr<TemporaryFileHolder>
     {
-        auto global_context = Context::getGlobalContextInstance();
-        auto read_settings = global_context->getReadSettings();
-        if (!DistributedCache::Registry::instance().isReady(read_settings.distributed_cache_settings.read_only_from_current_az))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache is not ready yet");
+        /// Only the registry-wide preconditions the holder cannot recover from: a zero alignment,
+        /// still unfetched from Keeper, makes every aligned read and write throw from `alignToSize`.
+        /// Server availability is the holder's own check, resolving the ring from its own context.
+        auto & registry = DistributedCache::Registry::instance();
+        if (!registry.isInitialized() || !registry.getOffsetAlignment())
+            throw Exception(
+                ErrorCodes::CANNOT_USE_DISTRIBUTED_CACHE,
+                "Distributed cache is not ready yet: the registry is not initialized (most likely the "
+                "`distributed_cache_client` section is absent in the server config) or the offset "
+                "alignment has not been fetched from Keeper");
 
         return std::make_unique<TemporaryFileInDistributedCache>(settings);
     };
@@ -458,7 +477,7 @@ std::unique_ptr<ReadBuffer> TemporaryDataBuffer::read()
     return std::make_unique<TemporaryDataReadBuffer>(readRaw());
 }
 
-std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw()
+std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw(size_t buffer_size)
 {
     finishWriting();
 
@@ -466,7 +485,7 @@ std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw()
         return std::make_unique<ReadBufferFromEmptyFile>();
 
     /// Keep buffer size less that file size, to avoid memory overhead for large amounts of small files
-    size_t buffer_size = std::min<size_t>(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE);
+    buffer_size = std::min<size_t>(stat.compressed_size, buffer_size);
     return file_holder->read(buffer_size);
 }
 
@@ -493,6 +512,15 @@ void TemporaryDataBuffer::updateAllocAndCheck()
 
     ssize_t compressed_delta = new_compressed_size - stat.compressed_size;
     ssize_t uncompressed_delta = new_uncompressed_size - stat.uncompressed_size;
+
+    /// Report once the first bytes have reached the file, and not when the file is created: a temporary
+    /// file is often pre-created and never written to, e.g. the bucket buffers of `GraceHashJoin`.
+    if (compressed_delta > 0 && !reported_spilled_to_disk)
+    {
+        QueryExecutionCounters::markSpilledToDisk(metrics.spilled_to_disk_operator);
+        reported_spilled_to_disk = true;
+    }
+
     parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;

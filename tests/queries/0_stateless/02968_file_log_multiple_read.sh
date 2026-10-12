@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: this test exercises the FileLog -> MV streaming path which depends on
+# `BackgroundSchedulePool` task scheduling latency. Under heavy parallel load (e.g. 50x in
+# the flaky check on amd_asan_ubsan), pool contention can push file-detection latency past
+# any reasonable timeout. Sequential execution gives consistent ~10s runtime. This matches
+# the precedent set by `02026_storage_filelog_largefile.sh` and `04031_filelog_drop_mv_no_exception.sh`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,7 +28,8 @@ DROP TABLE IF EXISTS file_log_mv;
 
 CREATE TABLE file_log (
     id Int64
-) ENGINE = FileLog('${logs_dir}/', 'CSV');
+) ENGINE = FileLog('${logs_dir}/', 'CSV')
+SETTINGS poll_directory_watch_events_backoff_max = 1000;
 
 CREATE TABLE table_to_store_data (
     id Int64
@@ -51,11 +58,17 @@ function count()
 function wait_for_row_count()
 {
     local threshold="$1"
-    local timeout=30
+    # `FileLog` polls the directory using exponential backoff. With the
+    # `poll_directory_watch_events_backoff_max = 1000` setting on the table above
+    # the worst-case file-detection latency is bounded at ~1s + scheduling delay.
+    # The `no-parallel` tag avoids `BackgroundSchedulePool` contention from
+    # concurrent test instances, so this 120s timeout is a generous safety net
+    # (matching the timeout in the sibling `02889_file_log_save_errors` test).
+    local timeout=120
     local start=$EPOCHSECONDS
     while [[ $(count) -lt threshold ]]; do
         if ((EPOCHSECONDS - start > timeout)); then
-            echo "Timeout while waiting for the minimum number of rows, expected at least ${threshold} row(s)."
+            echo "Timeout (${timeout}s) waiting for the minimum number of rows, expected at least ${threshold} row(s). Got $(count)."
             exit 1
         fi
         sleep 0.5

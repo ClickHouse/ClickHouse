@@ -1,0 +1,34 @@
+---
+title: 'サポートされているデータ型'
+slug: /integrations/clickpipes/mongodb/datatypes
+description: 'MongoDB から ClickHouse への MongoDB ClickPipe のデータ型マッピングを説明するページ'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mongodb', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+MongoDB はデータレコードを BSON ドキュメントとして保存します。ClickPipes では、BSON ドキュメントを JSON または JSON String として ClickHouse に取り込むよう設定できます。以下の表は、サポートされている BSON から JSON へのフィールドの型マッピングを示しています。
+
+| MongoDB BSON 型 | ClickHouse JSON 型                            | 備考                                                                                                                                               |
+| -------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ObjectId       | String                                       |                                                                                                                                                  |
+| String         | String                                       |                                                                                                                                                  |
+| 32 ビット整数       | Int64                                        |                                                                                                                                                  |
+| 64 ビット整数       | Int64                                        |                                                                                                                                                  |
+| Double         | Float64                                      |                                                                                                                                                  |
+| Boolean        | Bool                                         |                                                                                                                                                  |
+| Date           | String                                       | ISO 8601 形式                                                                                                                                      |
+| 正規表現           | &#123;Options: String, Pattern: String&#125; | 固定フィールドを持つ MongoDB の正規表現です。Options (正規表現フラグ) および Pattern (正規表現パターン)                                                                              |
+| Timestamp      | &#123;T: Int64, I: Int64&#125;               | 固定フィールドを持つ MongoDB の内部タイムスタンプ形式です。T (タイムスタンプ) および I (増分)                                                                                         |
+| Decimal128     | String                                       |                                                                                                                                                  |
+| バイナリデータ        | &#123;Data: String, Subtype: Int64&#125;     | 固定フィールドを持つ MongoDB のバイナリデータです。Data (base64 エンコード) および Subtype ([バイナリの型](https://www.mongodb.com/docs/manual/reference/bson-types/#binary-data))  |
+| JavaScript     | String                                       |                                                                                                                                                  |
+| Null           | Null                                         |                                                                                                                                                  |
+| Array          | Dynamic                                      | 要素の型が均一な配列は Array(Nullable(T)) になります。異なるプリミティブ型を含む配列は、最も汎用的な共通型に昇格されます。互換性のない複雑な型を含む配列は Tuples になります                                             |
+| Object         | Dynamic                                      | ネストされた各フィールドは再帰的にマッピングされます                                                                                                                       |
+
+<Info>
+  ClickHouse の JSON データ型の詳細については、[ドキュメント](/ja/reference/data-types/newjson)を参照してください。
+</Info>

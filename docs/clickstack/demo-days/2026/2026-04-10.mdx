@@ -1,0 +1,74 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-10
+title: 'Demo days - 2026-04-10'
+sidebarTitle: '2026-04-10'
+description: 'ClickStack demo days for 2026-04-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Pinnable datasource filters {#pinnable-datasource-filters}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/j-b1ztSl8IQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Teams can now pin datasource filters and share them across the whole team. Clicking the pin icon on any filter gives you the choice to pin it just for yourself or share it with everyone. Shared filters appear in their own dedicated section at the top of the filter list, making them easy for every team member to find and apply without needing to know the exact filter name.
+
+This has been one of the most-requested features from the community. It means teams no longer have to communicate filter configurations out-of-band. Shared filters become visible to all users as soon as they are pinned, and specific filter values can be shared too, not just filter keys, so the full context travels with the filter.
+
+**Related PRs:** [#2047](https://github.com/hyperdxio/hyperdx/pull/2047) [HDX-2300] introduce Shared Filters for team-wide filter visibility and discoverability
+
+## Waking service from ClickStack Cloud {#waking-service-from-clickstack-cloud}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Od7X0NOCqY0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+ClickStack Cloud users can now wake a sleeping service directly from within the app. Previously, if your service had spun down, you'd see a "retry" prompt but the app would not actually wake the service for you. You had to navigate away to ClickStack Cloud, wake it manually, then come back and hit retry yourself.
+
+Now the app handles this end-to-end. When a service is sleeping, the prompt says "wake service" and takes care of the whole process without you having to leave the screen you are on. It is a small quality-of-life change that removes a frustrating multi-step interruption from your workflow, especially if you are landing in ClickStack after a period of inactivity and just want to get straight to your data.
+
+## Consistent enabling of AI features {#consistent-enabling-of-ai-features}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/zS5OekPCzC0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+AI features in ClickStack are now toggled exclusively through the ClickHouse Cloud control plane, making it the single source of truth. Previously there were two disconnected checkboxes: one in the ClickStack control plane and one inside the app itself. Enabling one did not guarantee the other was in sync, which caused confusion about whether AI was actually active.
+
+Now the checkbox inside ClickStack links out to ClickHouse Cloud and is otherwise disabled. If you flip the toggle in ClickHouse Cloud, the feature becomes available in ClickStack automatically. This makes AI enablement consistent and predictable, and removes the guesswork about which setting actually controls behavior.
+
+## Raw SQL alerting {#raw-sql-alerting}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/bYYcYHkyy2E" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Alerting is now available for raw SQL line charts, extending the existing raw SQL charting experience to support threshold-based notifications. If you have a line chart backed by a custom SQL query, you can attach an alert to it and configure it just like any other chart alert. This is currently available for line and bar charts, since both the interval and date range parameters are required for the threshold comparison to work.
+
+This unlocks some genuinely powerful use cases. The demo shows a query that counts errors in the current interval and compares it to the 30 previous intervals, flagging when the value is more than two standard deviations above the historical norm. That kind of statistical anomaly detection is now just a matter of writing the right SQL and setting a threshold. The alert configuration sits inside the chart editor in a collapsible section, keeping the UI clean until you actually need it.
+
+**Related PRs:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implement alerting for Raw SQL-based dashboard tiles, [#2085](https://github.com/hyperdxio/hyperdx/pull/2085) refactor: Create TileAlertEditor component
+
+## HyperDX TUI improvements {#hyperdx-tui-improvements}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+The HyperDX terminal UI keeps getting easier to get started with. You can now install it globally with `npm install -g @hyperdx/cli`, then run `hdx` to launch. Use the `--tui` flag to open the interactive terminal interface directly. The binary is also available via `npm` as `hdx`, so there is no separate install step once the package is in place.
+
+Two notable features landed this week alongside the install improvements. Error messages now render with proper highlighting and structured display in the terminal, matching the formatting patterns from the web frontend so you get the same level of detail whether you are in the browser or the TUI. There is also a new SQL preview so you can see the underlying query being executed. On top of that, a new alerts page is accessible via `Shift+A` from the event viewer, giving you an overview of all configured alerts and their recent trigger history without leaving the terminal.
+
+**Related PRs:** [#2095](https://github.com/hyperdxio/hyperdx/pull/2095) [HDX-3966] Improve TUI error message rendering and add SQL preview, [#2093](https://github.com/hyperdxio/hyperdx/pull/2093) [HDX-3969] Add alerts page (Shift+A) with overview and recent history, [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) [HDX-3919] Add @hyperdx/cli package, [#2101](https://github.com/hyperdxio/hyperdx/pull/2101) [HDX-3976] CLI: migrate from apiUrl to appUrl with interactive login flow

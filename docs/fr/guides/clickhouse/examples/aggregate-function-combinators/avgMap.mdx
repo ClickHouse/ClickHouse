@@ -1,0 +1,72 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMap'
+title: 'avgMap'
+description: "Exemple d’utilisation du combinateur avgMap"
+keywords: ['avg', 'map', 'combinator', 'exemples', 'avgMap']
+sidebarTitle: 'avgMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`Map`](/fr/reference/functions/aggregate-functions/combinators#-map) peut être appliqué à la fonction [`avg`](/fr/reference/functions/aggregate-functions/avg)
+pour calculer la moyenne arithmétique des valeurs d’une Map pour chaque clé, à l’aide de la fonction de combinateur d’agrégation `avgMap`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Dans cet exemple, nous allons créer une table qui stocke des codes d’état et leur nombre d’occurrences pour différents créneaux horaires,
+où chaque ligne contient une Map associant les codes d’état à leur nombre d’occurrences correspondant. Nous utiliserons
+`avgMap` pour calculer le nombre moyen pour chaque code d’état au sein de chaque créneau horaire.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    avgMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+La fonction `avgMap` calcule le nombre moyen pour chaque code d’état dans chaque intervalle de temps. Par exemple :
+
+* Dans l’intervalle de temps &#39;2000-01-01 00:00:00&#39; :
+  * Code d’état &#39;a&#39; : 15
+  * Code d’état &#39;b&#39; : 25
+  * Code d’état &#39;c&#39; : (35 + 45) / 2 = 40
+  * Code d’état &#39;d&#39; : 55
+  * Code d’état &#39;e&#39; : 65
+* Dans l’intervalle de temps &#39;2000-01-01 00:01:00&#39; :
+  * Code d’état &#39;d&#39; : 75
+  * Code d’état &#39;e&#39; : 85
+  * Code d’état &#39;f&#39; : (95 + 105) / 2 = 100
+  * Code d’état &#39;g&#39; : (115 + 125) / 2 = 120
+
+```response title="Response"
+   ┌────────────timeslot─┬─avgMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':100,'g':120}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':40,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`avg`](/fr/reference/functions/aggregate-functions/avg)
+* [`Map combinateur`](/fr/reference/functions/aggregate-functions/combinators#-map)

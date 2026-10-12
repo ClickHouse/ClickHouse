@@ -1,0 +1,143 @@
+---
+slug: '/examples/aggregate-function-combinators/avgState'
+title: 'avgState'
+description: 'avgState コンビネータの使用例'
+keywords: ['avg', 'state', 'combinator', '例', 'avgState']
+sidebarTitle: 'avgState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`State`](/ja/reference/functions/aggregate-functions/combinators#-state) コンビネータは、
+[`avg`](/ja/reference/functions/aggregate-functions/avg)
+関数に適用でき、`AggregateFunction(avg, T)` 型の中間状態を生成します。ここで、
+`T` は平均値の計算対象として指定された型です。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、`AggregateFunction` 型と `avgState` 関数を使用して、ウェブサイトのトラフィックデータを集計する方法を見ていきます。
+
+まず、ウェブサイトトラフィックデータのソーステーブルを作成します：
+
+```sql
+CREATE TABLE raw_page_views
+(
+    page_id UInt32,
+    page_name String,
+    response_time_ms UInt32,  -- ページの応答時間（ミリ秒）
+    viewed_at DateTime DEFAULT now()
+)
+ENGINE = MergeTree()
+ORDER BY (page_id, viewed_at);
+```
+
+平均レスポンスタイムを格納する集計テーブルを作成します。`avg` は複雑な
+state (合計値とカウント) を必要とするため、`SimpleAggregateFunction` 型は使用できません。
+そのため、`AggregateFunction` 型を使用します。
+
+```sql
+CREATE TABLE page_performance
+(
+    page_id UInt32,
+    page_name String,
+    avg_response_time AggregateFunction(avg, UInt32)  -- avg計算に必要なstateを格納する
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY page_id;
+```
+
+新しいデータに対してinsertトリガーとして機能し、中間状態データを上記で定義したターゲットテーブルに保存するインクリメンタルmaterialized viewを作成します：
+
+```sql
+CREATE MATERIALIZED VIEW page_performance_mv
+TO page_performance
+AS SELECT
+    page_id,
+    page_name,
+    avgState(response_time_ms) AS avg_response_time  -- -State combinatorを使用
+FROM raw_page_views
+GROUP BY page_id, page_name;
+```
+
+ソーステーブルに初期データを挿入して、ディスク上にパートを作成します：
+
+```sql
+INSERT INTO raw_page_views (page_id, page_name, response_time_ms) VALUES
+    (1, 'Homepage', 120),
+    (1, 'Homepage', 135),
+    (2, 'Products', 95),
+    (2, 'Products', 105),
+    (3, 'About', 80),
+    (3, 'About', 90);
+```
+
+さらにデータを挿入して、ディスク上に2つ目のパートを作成します：
+
+```sql
+INSERT INTO raw_page_views (page_id, page_name, response_time_ms) VALUES
+(1, 'Homepage', 150),
+(2, 'Products', 110),
+(3, 'About', 70),
+(4, 'Contact', 60),
+(4, 'Contact', 65);
+```
+
+ターゲットテーブル `page_performance` を確認します：
+
+```sql
+SELECT 
+    page_id,
+    page_name,
+    avg_response_time,
+    toTypeName(avg_response_time)
+FROM page_performance
+```
+
+```response
+┌─page_id─┬─page_name─┬─avg_response_time─┬─toTypeName(avg_response_time)──┐
+│       1 │ Homepage  │ �                 │ AggregateFunction(avg, UInt32) │
+│       2 │ Products  │ �                 │ AggregateFunction(avg, UInt32) │
+│       3 │ About     │ �                 │ AggregateFunction(avg, UInt32) │
+│       1 │ Homepage  │ �                 │ AggregateFunction(avg, UInt32) │
+│       2 │ Products  │ n                 │ AggregateFunction(avg, UInt32) │
+│       3 │ About     │ F                 │ AggregateFunction(avg, UInt32) │
+│       4 │ Contact   │ }                 │ AggregateFunction(avg, UInt32) │
+└─────────┴───────────┴───────────────────┴────────────────────────────────┘
+```
+
+`avg_response_time` カラムの型が `AggregateFunction(avg, UInt32)` であり、中間状態の情報を保持していることに注目してください。また、`avg_response_time` の行データは意味のある形では表示されず、`�, n, F, }` のような不可解な文字が現れます。これは、ターミナルがバイナリデータをテキストとして表示しようとしているためです。`AggregateFunction` 型は、効率的なストレージと計算に最適化されたバイナリフォーマットで状態を保持しており、人間が直接読むことを想定した設計ではありません。このバイナリ状態には、平均値を算出するために必要なすべての情報が含まれています。
+
+これを利用するには、`Merge` コンビネーターを使用します：
+
+```sql
+SELECT
+    page_id,
+    page_name,
+    avgMerge(avg_response_time) AS average_response_time_ms
+FROM page_performance
+GROUP BY page_id, page_name
+ORDER BY page_id;
+```
+
+これで正しい平均値が表示されます：
+
+```response
+┌─page_id─┬─page_name─┬─average_response_time_ms─┐
+│       1 │ Homepage  │                      135 │
+│       2 │ Products  │       103.33333333333333 │
+│       3 │ About     │                       80 │
+│       4 │ Contact   │                     62.5 │
+└─────────┴───────────┴──────────────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`avg`](/ja/reference/functions/aggregate-functions/avg)
+* [`State`](/ja/reference/functions/aggregate-functions/combinators#-state)

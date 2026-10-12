@@ -1,0 +1,45 @@
+---
+sidebarTitle: '概览'
+slug: /migrations/redshift-overview
+description: '从亚马逊 Redshift 迁移到 ClickHouse'
+keywords: ['Redshift']
+title: 'ClickHouse Cloud 与亚马逊 Redshift 对比'
+doc_type: 'guide'
+---
+
+> 本文档将简要介绍如何将数据从亚马逊
+> Redshift 迁移到 ClickHouse。
+
+<div id="introduction">
+  ## 简介
+</div>
+
+Amazon Redshift 是一种云数据仓库，为结构化和半结构化数据提供报表和
+分析能力。它采用与 ClickHouse 类似的
+面向列的数据库原理来设计，
+旨在处理大规模数据集上的分析型工作负载。作为
+AWS 产品的一部分，它通常是 AWS 用户满足其
+分析数据需求时默认会选择的解决方案。
+
+尽管由于与
+亚马逊生态系统的紧密集成，它对现有 AWS 用户很有吸引力，但那些使用 Redshift 来支撑实时分析
+应用的用户，往往会发现自己需要一个更适合此类场景的优化方案。因此，他们越来越多地转向 ClickHouse，以利用其更出色的
+查询性能和数据压缩能力，无论是将其作为替代方案，还是作为与现有 Redshift 工作负载一同部署的“speed layer”。
+
+<div id="clickhouse-vs-redshift">
+  ## ClickHouse 与 Redshift 对比
+</div>
+
+对于深度使用 AWS 生态系统的用户来说，在有数据仓库需求时，Redshift 是一个很自然的选择。Redshift 与 ClickHouse 的一个重要区别在于：它的引擎针对需要复杂报表和分析查询的数据仓库工作负载进行了优化。
+而在所有部署模式下，以下两个限制使得 Redshift 难以用于实时分析工作负载：
+
+* Redshift 会[为每个查询执行计划编译代码](https://docs.aws.amazon.com/redshift/latest/dg/c-query-performance.html)，这会给首次执行查询带来显著开销。当查询模式可预测，且已编译的执行计划可以存储在查询缓存中时，这种开销尚属合理。然而，这也给查询变化较大的交互式应用带来了挑战。即使 Redshift 能利用这类代码编译缓存，ClickHouse 在大多数查询上仍然更快。参见 [&quot;ClickBench&quot;](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|Rf\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-)。
+* Redshift [将所有队列的并发数限制为 50](https://docs.aws.amazon.com/redshift/latest/dg/c_workload_mngmt_classification.html)，这虽然对 BI 场景已经足够，但并不适合高并发的分析型应用。
+
+相较之下，尽管 ClickHouse 也可用于复杂分析查询，但它是为实时分析工作负载而优化的，既可以为应用提供支撑，也可以作为数据仓库加速层。因此，Redshift 用户通常会出于以下原因，使用 ClickHouse 替代或增强 Redshift：
+
+| Advantage     | Description                                                                                                                                                     |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **更低的查询延迟**   | ClickHouse 即使在高并发且伴随流式插入的情况下，也能实现更低的查询延迟，包括面对多样化查询模式时也是如此。即便查询未命中缓存——这在面向用户的交互式分析中不可避免——ClickHouse 仍然能够快速处理。                                                    |
+| **更高的并发查询限制** | ClickHouse 对并发查询的限制要高得多，这对于实时应用体验至关重要。在 ClickHouse 中，无论是自管理还是 Cloud，你都可以扩展计算资源分配，以满足各个 service 所需的并发能力。ClickHouse 允许的查询并发级别是可配置的，而 ClickHouse Cloud 的默认值为 1000。 |
+| **更出色的数据压缩**  | ClickHouse 提供更出色的数据压缩能力，这意味着你可以减少总存储量 (从而降低成本) ，或者在相同成本下保留更多数据，并从数据中获得更多实时洞察。参见下文“ClickHouse 与 Redshift 的存储效率对比”。                                               |

@@ -33,14 +33,6 @@ SELECT
 FROM s3(s3_conn, filename = '03707_cache_test.parquet', format = 'Parquet')
 SETTINGS log_comment = '03707-second-test-query', use_parquet_metadata_cache = 1;
 
--- Should not be a cache hit because we are not using the native v3 reader
-SELECT
-    id,
-    upper(name),
-    value + 1
-FROM s3(s3_conn, filename = '03707_cache_test.parquet', format = 'Parquet')
-SETTINGS log_comment = '03707-second-test-query-no-v3', use_parquet_metadata_cache = 1, input_format_parquet_use_native_reader_v3 = 0;
-
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
@@ -48,12 +40,6 @@ SELECT
     ProfileEvents['ParquetMetadataCacheMisses'] AS misses
 FROM system.query_log
 WHERE (log_comment = '03707-second-test-query') AND (type = 'QueryFinish') AND (current_database = currentDatabase());
-
-SELECT
-    ProfileEvents['ParquetMetadataCacheHits'] AS hits,
-    ProfileEvents['ParquetMetadataCacheMisses'] AS misses
-FROM system.query_log
-WHERE (log_comment = '03707-second-test-query-no-v3') AND (type = 'QueryFinish') AND (current_database = currentDatabase());
 
 SYSTEM DROP PARQUET METADATA CACHE;
 

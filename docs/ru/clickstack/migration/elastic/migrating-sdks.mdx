@@ -1,0 +1,53 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/migrating-sdks
+title: 'Миграция SDK из Elastic'
+sidebarTitle: 'Миграция SDK'
+description: 'Миграция SDK из Elastic'
+show_related_blogs: true
+keywords: ['ClickStack']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Elastic Stack предоставляет два типа SDK для разных языков программирования для инструментации приложений:
+
+1. **[Elastic Official APM agents](https://www.elastic.co/docs/reference/apm-agents/)** – Они созданы специально для использования с Elastic Stack. В настоящее время для этих SDK нет прямого пути миграции. Приложения, использующие их, потребуется заново инструментировать с помощью соответствующих [ClickStack SDKs](/ru/clickstack/ingesting-data/sdks/index).
+
+2. **[Elastic Distributions of OpenTelemetry (EDOT SDK)](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/)** – Это дистрибутивы стандартных SDK OpenTelemetry от Elastic, доступные для .NET, Java, Node.js, PHP и Python. Если ваше приложение уже использует EDOT SDK, заново инструментировать код не потребуется. Вместо этого можно просто перенастроить SDK на экспорт телеметрических данных в OTLP-коллектор, входящий в ClickStack. Дополнительные сведения см. в разделе [&quot;Миграция EDOT SDK&quot;](#migrating-edot-sdks).
+
+<Info>
+  **По возможности используйте ClickStack SDKs**
+
+  Хотя стандартные SDK OpenTelemetry поддерживаются, мы настоятельно рекомендуем использовать [**SDK, распространяемые ClickStack**](/ru/clickstack/ingesting-data/sdks/index) для каждого языка. Эти дистрибутивы включают дополнительную инструментацию, улучшенные настройки по умолчанию и специальные расширения, разработанные для бесшовной работы с конвейером и интерфейсом ClickStack. Используя ClickStack SDKs, вы можете получить доступ к расширенным возможностям, таким как трассировки стека исключений, которые недоступны в стандартных SDK OpenTelemetry или EDOT SDK.
+</Info>
+
+<div id="migrating-edot-sdks">
+  ## Миграция EDOT SDK
+</div>
+
+Подобно SDK на основе ClickStack OpenTelemetry, Elastic Distributions of the OpenTelemetry SDKs (EDOT SDKs) представляют собой адаптированные версии официальных OpenTelemetry SDK. Например, [EDOT Python SDK](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/python/) — это дистрибутив [OpenTelemetry Python SDK](https://opentelemetry.io/docs/languages/python/), адаптированный поставщиком и предназначенный для бесшовной работы с Elastic Observability.
+
+Поскольку эти SDK основаны на стандартных библиотеках OpenTelemetry, миграция на ClickStack выполняется просто — повторное инструментирование не требуется. Нужно только скорректировать конфигурацию, чтобы направлять телеметрические данные в коллектор ClickStack OpenTelemetry.
+
+Конфигурация выполняется с использованием стандартных механизмов OpenTelemetry. Для Python это обычно делается через переменные окружения, как описано в [документации OpenTelemetry по инструментированию без изменения кода](https://opentelemetry.io/docs/zero-code/python/configuration/).
+
+Типичная конфигурация EDOT SDK может выглядеть так:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://my-deployment.ingest.us-west1.gcp.cloud.es.io
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=ApiKey P....l"
+```
+
+Чтобы перейти на ClickStack, обновите конечную точку так, чтобы она указывала на локальный OTLP-коллектор, и измените заголовок авторизации:
+
+```shell
+export OTEL_RESOURCE_ATTRIBUTES=service.name=<app-name>
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>"
+```
+
+Ваш ключ API для приёма данных генерируется в приложении HyperDX; его можно найти в разделе Team Settings → API Keys.
+
+<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ключи API для приёма данных" size="lg" />

@@ -1,0 +1,420 @@
+---
+position: 4
+slug: /clickhouse-operator/guides/monitoring
+title: مراقبة ClickHouse Operator
+keywords: ['kubernetes', 'prometheus', 'المراقبة', 'المقاييس']
+description: 'كيفية جمع مقاييس المشغّل وتأمينها واستخدامها، بالإضافة إلى نقاط نهاية الفحص الصحي.'
+doc_type: 'guide'
+---
+
+يوفّر المشغّل مقاييس متوافقة مع Prometheus ومسبارات فحص Kubernetes الصحية، بحيث يمكنك مراقبة نشاط المطابقة، واكتشاف وحدات التحكم المتوقفة، وإعداد تنبيهات عند حدوث حالات فشل.
+
+يوضح هذا الدليل ما الذي يوفّره المشغّل، وكيفية جمع هذه البيانات، والاستعلامات المفيدة في العمل اليومي.
+
+<Note>
+  يتناول هذا الدليل **عملية المشغّل نفسها** (مدير وحدة التحكم). أما مقاييس ClickHouse server (الاستعلامات، والأجزاء، وتأخر النسخ المتماثل)، فاستخدم [نقطة نهاية Prometheus في ClickHouse](/ar/reference/settings/server-settings/settings#prometheus) لجمعها بشكل منفصل.
+</Note>
+
+<div id="endpoints">
+  ## نقاط النهاية
+</div>
+
+تعرض عملية المشغّل نقطتي نهاية HTTP داخل جراب manager:
+
+| نقطة النهاية | المنفذ الافتراضي                                     | المسار                | الغرض                           |
+| ------------ | ---------------------------------------------------- | --------------------- | ------------------------------- |
+| المقاييس     | `8080` (Helm) / `0` معطّل (الافتراضي للملف التنفيذي) | `/metrics`            | تنسيق عرض Prometheus            |
+| مسبار الصحة  | `8081`                                               | `/healthz`, `/readyz` | الحيوية والجاهزية في Kubernetes |
+
+تكون نقطة نهاية المقاييس **معطّلة افتراضيًا** عند تشغيل الملف التنفيذي للمشغّل مباشرةً (`--metrics-bind-address=0`). ويُفعّلها مخطط Helm باستخدام `metrics.enable: true` و `metrics.port: 8080`.
+
+تكون نقطة نهاية مسبار الصحة مفعّلة دائمًا؛ إذ يربط قالب النشر `/healthz` و `/readyz` بمسباري الحيوية والجاهزية للجراب على المنفذ `8081`.
+
+<div id="operator-binary-flags">
+  ## خيارات الملف التنفيذي للمشغّل
+</div>
+
+خيارات `manager` ذات الصلة (المعرّفة في [`cmd/main.go`](https://github.com/ClickHouse/clickhouse-operator/blob/main/cmd/main.go)):
+
+| الخيار                        | القيمة الافتراضية                             | الوصف                                                                                                                              |
+| ----------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `--metrics-bind-address`      | `0` (معطّل)                                   | عنوان الربط لنقطة نهاية المقاييس. اضبطه على `:8443` لاستخدام HTTPS أو `:8080` لاستخدام HTTP. اتركه `0` لتعطيل خادم المقاييس.       |
+| `--metrics-secure`            | `true`                                        | قدّم المقاييس عبر HTTPS مع المصادقة والتفويض. اضبطه على `false` لاستخدام HTTP العادي.                                              |
+| `--metrics-cert-path`         | فارغ                                          | الدليل الذي يحتوي على ملفات شهادة TLS (`tls.crt`, `tls.key`) لخادم المقاييس.                                                       |
+| `--metrics-cert-name`         | `tls.crt`                                     | اسم ملف الشهادة داخل `--metrics-cert-path`.                                                                                        |
+| `--metrics-cert-key`          | `tls.key`                                     | اسم ملف المفتاح داخل `--metrics-cert-path`.                                                                                        |
+| `--enable-http2`              | `false`                                       | فعّل HTTP/2 لخادمي المقاييس و**الويب هوك**. وهو معطّل افتراضيًا للتخفيف من CVE-2023-44487 / CVE-2023-39325.                        |
+| `--leader-elect`              | `false` (الملف التنفيذي) / `true` (مخطط Helm) | فعّل انتخاب القائد بحيث لا تُجري المطابقة إلا نسخة متماثلة واحدة في كل مرة. يضبط مخطط Helm هذا الخيار في `manager.args` افتراضيًا. |
+| `--health-probe-bind-address` | `:8081`                                       | عنوان الربط لكل من `/healthz` و`/readyz`.                                                                                          |
+
+<Note>
+  إن اصطلاح `8443` ‏(HTTPS) / `8080` ‏(HTTP) في نص المساعدة الخاص بالخيار هو مجرد تلميح. يقدّم مخطط Helm بروتوكول HTTPS على `8080` لأنه يضبط كلًا من `metrics.port: 8080` و`metrics.secure: true`. لا يوجد اكتشاف للوضع بناءً على المنفذ — فالخيار `--metrics-secure` هو الذي يحدد استخدام HTTPS أو HTTP.
+</Note>
+
+<div id="enable-metrics-via-helm">
+  ## تفعيل المقاييس عبر Helm
+</div>
+
+ينشئ الـ chart بالفعل مورد `Service` لمنفذ المقاييس، ويمكنه اختياريًا أيضًا إنشاء `ServiceMonitor` لـ prometheus-operator.
+
+تكون نقطة نهاية المقاييس نفسها مفعّلة افتراضيًا (`metrics.enable: true`، والمنفذ `8080`، وتُخدَّم عبر HTTPS باستخدام `metrics.secure: true`). وعادةً ما يكون الإعداد الوحيد الذي تحتاج إلى تغييره هو `prometheus.enable` لكي ينشئ الـ chart مورد `ServiceMonitor` نيابةً عنك:
+
+```yaml
+# values.yaml — minimal override
+prometheus:
+  enable: true
+```
+
+إذا كنت لا تستخدم cert-manager، فعيّن أيضًا `certManager.enable: false`، وسيقوم ServiceMonitor بجمع المقاييس باستخدام `insecureSkipVerify: true`، مع الاعتماد فقط على المصادقة عبر bearer-token.
+
+المجموعة الكاملة من القيم الافتراضية المتعلقة بالمقاييس هي:
+
+```yaml
+metrics:
+  enable: true
+  port: 8080
+  secure: true            # HTTPS with authn/authz enforced on every scrape
+
+certManager:
+  enable: true            # Issues the metrics server certificate
+
+prometheus:
+  enable: false           # Set to true to render the ServiceMonitor
+  scraping_annotations: false   # Alternative: prometheus.io/scrape pod annotations
+```
+
+تطبيق:
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+بعد التثبيت، ينشئ `chart` ما يلي:
+
+* `Service/<resource-prefix>-metrics-service` — يعرض المنفذ `8080` (HTTPS عندما تكون `metrics.secure: true`).
+* `ServiceMonitor/<resource-prefix>-controller-manager-metrics-monitor` — عند تعيين `prometheus.enable: true`.
+* `ClusterRole/<resource-prefix>-metrics-reader` — عنوان URL غير خاص بمورد `/metrics` مع الفعل `get`.
+
+<div id="securing-the-metrics-endpoint">
+  ## تأمين نقطة نهاية المقاييس
+</div>
+
+عندما تكون `metrics.secure: true`، يفرض خادم المقاييس استخدام TLS **و** المصادقة/التخويل في Kubernetes على كل عملية جمع للمقاييس. يجب أن تقوم أدوات الجلب بما يلي:
+
+1. تقديم رمز Bearer صالح لـ Kubernetes.
+2. أن تنتمي إلى ServiceAccount مرتبط بدور على مستوى المجموعة يمنح إذن `get` على عنوان URL غير المرتبط بمورد `/metrics`.
+
+ويوفّر المخطط دورًا على مستوى المجموعة من هذا النوع:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: clickhouse-operator-metrics-reader
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+```
+
+اربطه بـ ServiceAccount الذي يستخدمه جامع المقاييس لديك (عادةً Prometheus):
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-clickhouse-operator-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: clickhouse-operator-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: <prometheus-sa>
+    namespace: <prometheus-namespace>
+```
+
+<Warning>
+  إذا ظهرت لك `401 Unauthorized` أو `403 Forbidden` من نقطة نهاية المقاييس، فهذا يعني أن الجامع يستخدم HTTPS لكنه يفتقر إلى Bearer token خاص بـ Kubernetes أو غير مخوّل لاستخدامه، أو أن حساب الخدمة الخاص به يفتقر إلى الربط المذكور أعلاه. لا يُنصح بتعطيل الأمان عبر تعيين `metrics.secure: false` في العناقيد المشتركة، لأن أي شخص لديه وصول شبكي إلى الـ pod يمكنه جمع المقاييس من نقطة النهاية.
+</Warning>
+
+<div id="servicemonitor-reference">
+  ## مرجع ServiceMonitor
+</div>
+
+يعرض Helm chart مورد ServiceMonitor بهذا الشكل عندما تكون `prometheus.enable: true`:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: <release>-controller-manager-metrics-monitor
+  namespace: <operator-namespace>
+  labels:
+    control-plane: controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  endpoints:
+    - path: /metrics
+      port: https           # "http" when metrics.secure: false
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        serverName: <release>-metrics-service.<operator-namespace>.svc
+        ca:
+          secret:
+            name: metrics-server-cert
+            key: ca.crt
+        cert:
+          secret:
+            name: metrics-server-cert
+            key: tls.crt
+        keySecret:
+          name: metrics-server-cert
+          key: tls.key
+```
+
+إذا كان مثيل Prometheus لديك لا يشغّل cert-manager، فاضبط `tlsConfig.insecureSkipVerify: true` واعتمد فقط على المصادقة باستخدام bearer token — إذ ينفّذ الـ chart ذلك بالفعل عندما تكون القيمة `certManager.enable: false`.
+
+<div id="standalone-prometheus-example">
+  ## مثال Prometheus مستقل
+</div>
+
+إذا كنت لا تستخدم kube-prometheus-stack، فإن المستودع يتضمّن مثالًا متكاملًا في [`examples/prometheus_secure_metrics_scraper.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/prometheus_secure_metrics_scraper.yaml). ويُنشئ هذا المثال ServiceAccount، وRBAC اللازم، و`Prometheus` CR يختار ServiceMonitor الخاص بالمشغّل.
+
+<div id="health-probe-endpoints">
+  ## نقاط نهاية مسبار الصحة
+</div>
+
+| المسار     | يُستخدم بواسطة               | يعيد                                          |
+| ---------- | ---------------------------- | --------------------------------------------- |
+| `/healthz` | مسبار الحيوية في Kubernetes  | `200 OK` ما دام خادم المسبار في وضع الاستماع. |
+| `/readyz`  | مسبار الجاهزية في Kubernetes | `200 OK` ما دام خادم المسبار في وضع الاستماع. |
+
+يُسجَّل كلا نقطتي النهاية باستخدام فحص Ping بسيط واحد (`healthz.Ping` من `sigs.k8s.io/controller-runtime`). لذلك، فإن فشل المسبار يعني &quot;أن عملية manager لا تخدم HTTP على `:8081`&quot; — وليس &quot;أن وحدات التحكم غير سليمة&quot;. لاكتشاف المشكلات على مستوى وحدات التحكم، استخدم [مقاييس المواءمة](#reconciliation-activity) بدلًا من ذلك.
+
+تُخدَّم كلتا نقطتي النهاية على المنفذ `8081` افتراضيًا. وهما موصولتان بكائن النشر كما يلي:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+```
+
+عادةً ما يعني تكرار فشل الـ probe أن خادم الـ probe نفسه لم يبدأ العمل أصلًا — على سبيل المثال، قد يكون الـ manager قد خرج مبكرًا أثناء بدء التشغيل. تحقّق من سجلات الـ manager بحثًا عن `unable to start manager`، أو حالات فشل RBAC، أو أخطاء `cache did not sync`.
+
+<div id="metrics-catalog">
+  ## فهرس المقاييس
+</div>
+
+لا يسجّل المُشغِّل أي مُجمِّعات Prometheus مخصّصة. كل ما يلي تُتيحه مكتبَتا `controller-runtime` و`client-go` الأساسيتان. وفيما يلي السلاسل الأكثر فائدة، مُجمَّعة حسب الغرض:
+
+<div id="reconciliation-activity">
+  ### نشاط المطابقة
+</div>
+
+| المقياس                                            | النوع          | التسميات                                                                   |
+| -------------------------------------------------- | -------------- | -------------------------------------------------------------------------- |
+| `controller_runtime_reconcile_total`               | عداد           | `controller`, `result` (`success` / `error` / `requeue` / `requeue_after`) |
+| `controller_runtime_reconcile_errors_total`        | عداد           | `controller`                                                               |
+| `controller_runtime_reconcile_time_seconds_bucket` | مُدرَّج تكراري | `controller`                                                               |
+| `controller_runtime_active_workers`                | مقياس          | `controller`                                                               |
+| `controller_runtime_max_concurrent_reconciles`     | مقياس          | `controller`                                                               |
+
+تُشتق التسمية `controller` في `controller-runtime` من نوع المورد المسجَّل باستخدام `For(...)`. في الشيفرة الحالية ضمن `internal/controller/clickhouse` و`internal/controller/keeper`، تكون النتيجة `clickhousecluster` و`keepercluster` على التوالي. إذا كنت قد خصّصت المُشغِّل، فتحقّق من ذلك عبر إجراء جمع لمرة واحدة لنقطة النهاية `/metrics`.
+
+<div id="work-queue">
+  ### قائمة انتظار العمل
+</div>
+
+| المقياس                                       | النوع          | الوسوم                           |
+| --------------------------------------------- | -------------- | -------------------------------- |
+| `workqueue_depth`                             | مقياس          | `name`, `controller`, `priority` |
+| `workqueue_adds_total`                        | عدّاد          | `name`, `controller`             |
+| `workqueue_retries_total`                     | عدّاد          | `name`, `controller`             |
+| `workqueue_unfinished_work_seconds`           | مقياس          | `name`, `controller`             |
+| `workqueue_longest_running_processor_seconds` | مقياس          | `name`, `controller`             |
+| `workqueue_queue_duration_seconds_bucket`     | مُدرَّج تكراري | `name`, `controller`             |
+| `workqueue_work_duration_seconds_bucket`      | مُدرَّج تكراري | `name`, `controller`             |
+
+يحمل الوسمان `name` و`controller` القيمة نفسها (اسم وحدة التحكم).
+
+<div id="api-server-traffic">
+  ### حركة مرور خادم واجهة برمجة التطبيقات
+</div>
+
+| المقياس                      | النوع | التسميات                 |
+| ---------------------------- | ----- | ------------------------ |
+| `rest_client_requests_total` | عداد  | `code`, `method`, `host` |
+
+<div id="leader-election">
+  ### انتخاب القائد
+</div>
+
+| المقياس                         | النوع   | التسميات                             |
+| ------------------------------- | ------- | ------------------------------------ |
+| `leader_election_master_status` | `gauge` | `name` (= `d4ceba06.clickhouse.com`) |
+
+يُفعِّل مخطط Helm الخيار `--leader-elect` افتراضيًا، لذلك يظهر هذا المقياس في عمليات التثبيت القياسية باستخدام Helm. وعند تشغيل الملف التنفيذي مباشرةً من دون هذا الخيار، لا يكون هذا المقياس موجودًا.
+
+<div id="runtime">
+  ### بيئة التشغيل
+</div>
+
+مجمّعات عملية Go القياسية ومجمّعات بيئة التشغيل — `go_goroutines`, `go_memstats_*`, `process_cpu_seconds_total`, `process_resident_memory_bytes`، وما إلى ذلك.
+
+<div id="useful-promql-queries">
+  ## استعلامات PromQL المفيدة
+</div>
+
+<div id="health-overview">
+  ### لمحة عامة عن الحالة الصحية
+</div>
+
+```promql
+# Reconciliation rate per controller
+sum by (controller) (rate(controller_runtime_reconcile_total[5m]))
+
+# Error rate per controller (alert if > 0 sustained)
+sum by (controller) (rate(controller_runtime_reconcile_errors_total[5m]))
+
+# p99 reconcile latency
+histogram_quantile(
+  0.99,
+  sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket[5m]))
+)
+```
+
+<div id="backlog-detection">
+  ### كشف التراكم
+</div>
+
+```promql
+# Pending items in the work queue — a sustained value > 0 indicates a backlog,
+# but short spikes during large reconciles are normal.
+avg_over_time(workqueue_depth[10m])
+
+# Reconciles that have been running for a long time
+workqueue_longest_running_processor_seconds > 60
+```
+
+<div id="throttling-and-api-pressure">
+  ### تقييد المعدل والضغط على واجهة برمجة التطبيقات
+</div>
+
+```promql
+# Throttled requests to the API server
+sum by (code, host) (rate(rest_client_requests_total{code=~"4..|5.."}[5m]))
+```
+
+<div id="leader-status-ha-deployment">
+  ### حالة العقدة القائدة (نشر عالي التوفّر)
+</div>
+
+```promql
+# Should be exactly 1 across the replica set (Helm install enables --leader-elect by default)
+sum(leader_election_master_status{name="d4ceba06.clickhouse.com"})
+```
+
+<div id="suggested-alerts">
+  ## التنبيهات المقترحة
+</div>
+
+نقطة انطلاق لـ PrometheusRule (اضبط العتبات بما يناسب بيئتك):
+
+```yaml
+groups:
+  - name: clickhouse-operator
+    rules:
+      - alert: ClickHouseOperatorReconcileErrors
+        # > 0.1 errors/s sustained = > ~6 errors/min, filters transient conflicts.
+        expr: sum by (controller) (rate(controller_runtime_reconcile_errors_total[5m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'ClickHouse operator is failing to reconcile {{ $labels.controller }}'
+
+      - alert: ClickHouseOperatorWorkqueueBacklog
+        # avg_over_time avoids alerting on transient bursts during large reconciles.
+        expr: avg_over_time(workqueue_depth[10m]) > 5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Operator work queue backlog sustained for 30m'
+
+      - alert: ClickHouseOperatorReconcileSlow
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket[10m]))
+          ) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'p99 reconcile latency for {{ $labels.controller }} > 30s'
+
+      - alert: ClickHouseOperatorNoLeader
+        expr: absent(leader_election_master_status{name="d4ceba06.clickhouse.com"}) == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No leader for the ClickHouse operator (HA deployment)'
+```
+
+لا تكون القاعدة الأخيرة ذات معنى إلا عند تمكين آلية انتخاب القائد.
+
+<div id="verifying-the-setup">
+  ## التحقق من الإعداد
+</div>
+
+فحص سريع شامل، على افتراض أن الحزمة قد ثُبِّتت في `clickhouse-operator-system`:
+
+```bash
+NS=clickhouse-operator-system
+
+# The metrics Service exists and selects the manager pod
+kubectl -n $NS get svc -l control-plane=controller-manager
+
+# The ServiceMonitor exists (only with prometheus.enable=true)
+kubectl -n $NS get servicemonitor -l control-plane=controller-manager
+
+# Manager pod is Ready (readiness probe answers)
+kubectl -n $NS get pod -l control-plane=controller-manager
+
+# Direct scrape from inside the cluster (with the metrics-reader binding)
+kubectl -n $NS run curl-metrics --rm -it --restart=Never \
+  --image=curlimages/curl:8.10.1 -- sh -c '
+    TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+    curl -sk -H "Authorization: Bearer $TOKEN" \
+      https://<release>-metrics-service.'$NS'.svc:8080/metrics \
+      | head -20
+  '
+```
+
+إذا أعادت عملية الجمع المقاييس بتنسيق عرض Prometheus، فإن نقطة النهاية وRBAC موصولان على نحو صحيح.
+
+<div id="related-guides">
+  ## الأدلة ذات الصلة
+</div>
+
+* [التثبيت](/ar/products/kubernetes-operator/install/helm) — قيم Helm ذات الصلة بالمراقبة.
+* [الإعداد](/ar/products/kubernetes-operator/guides/configuration) — إعدادات TLS المشتركة مع خادم المقاييس.

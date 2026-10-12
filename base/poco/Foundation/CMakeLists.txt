@@ -20,6 +20,7 @@ target_compile_options (_poco_foundation_pcre
         -Wno-unreachable-code-break
         -Wno-unused-macros
         -Wno-implicit-int-conversion
+        -Wno-disabled-macro-expansion
 )
 
 # Foundation
@@ -85,7 +86,6 @@ set (SRCS
     src/Logger.cpp
     src/LoggingFactory.cpp
     src/LoggingRegistry.cpp
-    src/LogStream.cpp
     src/MD5Engine.cpp
     src/MemoryStream.cpp
     src/Message.cpp

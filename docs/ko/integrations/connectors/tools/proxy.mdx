@@ -1,0 +1,49 @@
+---
+description: 'ClickHouse에서 사용할 수 있는 타사 프록시 솔루션을 설명합니다'
+sidebarTitle: '프록시'
+slug: /interfaces/third-party/proxy
+title: '타사 개발자가 제공하는 프록시 서버'
+doc_type: 'reference'
+---
+
+<div id="chproxy">
+  ## chproxy
+</div>
+
+[chproxy](https://github.com/Vertamedia/chproxy)는 ClickHouse 데이터베이스용 HTTP 프록시이자 로드 밸런서입니다.
+
+기능:
+
+* 사용자별 라우팅 및 응답 캐싱.
+* 유연한 제한 설정.
+* SSL 인증서 자동 갱신.
+
+Go로 구현되었습니다.
+
+<div id="kittenhouse">
+  ## KittenHouse
+</div>
+
+[KittenHouse](https://github.com/VKCOM/kittenhouse)는 애플리케이션 측에서 INSERT 데이터를 버퍼링할 수 없거나 버퍼링이 번거로운 경우, ClickHouse와 애플리케이션 서버 사이에서 로컬 프록시로 사용되도록 설계되었습니다.
+
+기능:
+
+* 메모리 내 및 디스크 기반 데이터 버퍼링
+* 테이블별 라우팅
+* 로드 밸런싱 및 상태 확인
+
+Go로 구현되었습니다.
+
+<div id="clickhouse-bulk">
+  ## ClickHouse-Bulk
+</div>
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk)는 간단한 ClickHouse 삽입용 collector입니다.
+
+기능:
+
+* 요청을 그룹화하여 임계값 또는 인터벌에 따라 전송합니다.
+* 여러 원격 서버를 지원합니다.
+* 기본 인증.
+
+Go로 구현되었습니다.

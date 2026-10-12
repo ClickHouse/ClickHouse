@@ -1,0 +1,67 @@
+---
+sidebarTitle: "Clés d’ordonnancement"
+description: "Comment définir des clés d’ordonnancement personnalisées."
+slug: /integrations/clickpipes/postgres/ordering_keys
+title: "Clés d’ordonnancement"
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Les clés d’ordonnancement (autrement dit, les clés de tri) définissent la manière dont les données sont triées sur disque et indexées pour une table dans ClickHouse. Lors de la réplication depuis Postgres, ClickPipes utilise par défaut la clé primaire Postgres d’une table comme clé d’ordonnancement pour la table correspondante dans ClickHouse. Dans la plupart des cas, la clé primaire Postgres constitue une clé d’ordonnancement suffisante, car ClickHouse est déjà optimisé pour des scans rapides et des clés d’ordonnancement personnalisées ne sont souvent pas nécessaires.
+
+Comme indiqué dans le [guide de migration](/fr/get-started/migrate/postgres/migration-guide/migration-guide-part3), pour les cas d’usage à plus grande échelle, vous devez inclure des colonnes supplémentaires, au-delà de la clé primaire Postgres, dans la clé d’ordonnancement de ClickHouse afin d’optimiser les requêtes.
+
+Par défaut, avec CDC, choisir une clé d’ordonnancement différente de la clé primaire Postgres peut entraîner des problèmes de déduplication des données dans ClickHouse. Cela s’explique par le fait que la clé d’ordonnancement dans ClickHouse remplit un double rôle : elle contrôle l’indexation et le tri des données, tout en servant de clé de déduplication. Le moyen le plus simple de résoudre ce problème consiste à définir des vues matérialisées actualisables.
+
+<div id="use-refreshable-materialized-views">
+  ## Utiliser des vues matérialisées actualisables
+</div>
+
+Une façon simple de définir des clés d’ordonnancement personnalisées (`ORDER BY`) consiste à utiliser des [vues matérialisées actualisables](/fr/concepts/features/materialized-views/refreshable-materialized-view) (MV). Elles permettent de recopier périodiquement (par exemple, toutes les 5 ou 10 minutes) l’intégralité de la table avec la clé d’ordonnancement souhaitée.
+
+Vous trouverez ci-dessous un exemple de MV actualisable avec un `ORDER BY` personnalisé et la déduplication requise :
+
+```sql
+CREATE MATERIALIZED VIEW posts_final
+REFRESH EVERY 10 second ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (owneruserid,id) -- different ordering key but with suffixed postgres pkey
+AS
+SELECT * FROM posts FINAL 
+WHERE _peerdb_is_deleted = 0; -- this does the deduplication
+```
+
+<div id="custom-ordering-keys-without-refreshable-materialized-views">
+  ## Clés d’ordonnancement personnalisées sans vues matérialisées actualisables
+</div>
+
+Si les vues matérialisées actualisables ne sont pas adaptées en raison du volume de données, voici quelques recommandations pour définir des clés d’ordonnancement personnalisées sur des tables volumineuses et surmonter les problèmes liés à la déduplication.
+
+<div id="choose-ordering-key-columns-that-dont-change-for-a-given-row">
+  ### Choisissez des colonnes de clé d’ordonnancement qui ne changent pas pour une ligne donnée
+</div>
+
+Lorsque vous ajoutez des colonnes supplémentaires à la clé d’ordonnancement de ClickHouse (en plus de la clé primaire de Postgres), nous vous recommandons de choisir des colonnes qui ne changent pas pour chaque ligne. Cela permet d’éviter les problèmes de cohérence des données et de déduplication avec ReplacingMergeTree.
+
+Par exemple, dans une application SaaS multilocataire, utiliser (`tenant_id`, `id`) comme clé d’ordonnancement est un bon choix. Ces colonnes identifient chaque ligne de manière unique, et `tenant_id` reste constant pour un `id`, même si d’autres colonnes changent. Comme la déduplication par id correspond à la déduplication par (tenant&#95;id, id), cela permet d’éviter des [problèmes de déduplication](https://docs.peerdb.io/mirror/ordering-key-different) qui pourraient survenir si tenant&#95;id venait à changer.
+
+<div id="set-replica-identity-on-postgres-tables-to-custom-ordering-key">
+  ### Définir `REPLICA IDENTITY` sur les tables Postgres pour une clé d’ordonnancement personnalisée
+</div>
+
+Pour que Postgres CDC fonctionne correctement, il est important de modifier `REPLICA IDENTITY` sur les tables afin d’y inclure les colonnes de la clé d’ordonnancement. C’est indispensable pour traiter correctement les DELETE.
+
+Si `REPLICA IDENTITY` n’inclut pas les colonnes de la clé d’ordonnancement, Postgres CDC ne capturera pas les valeurs des colonnes autres que la clé primaire : il s’agit d’une limitation du logical decoding de Postgres. Toutes les colonnes de la clé d’ordonnancement autres que la clé primaire dans Postgres auront des valeurs NULL. Cela affecte la déduplication : la version précédente de la ligne risque de ne pas être dédupliquée avec la dernière version supprimée (où `_peerdb_is_deleted` est défini sur 1).
+
+Dans l’exemple ci-dessus avec `owneruserid` et `id`, si la clé primaire n’inclut pas déjà `owneruserid`, vous devez créer un `UNIQUE INDEX` sur (`owneruserid`, `id`) et le définir comme `REPLICA IDENTITY` pour la table. Cela garantit que Postgres CDC capture les valeurs de colonnes nécessaires pour une réplication et une déduplication précises.
+
+Vous trouverez ci-dessous un exemple montrant comment procéder sur la table events. Veillez à appliquer cette configuration à toutes les tables dont les clés d’ordonnancement ont été modifiées.
+
+```sql
+-- Create a UNIQUE INDEX on (owneruserid, id)
+CREATE UNIQUE INDEX posts_unique_owneruserid_idx ON posts(owneruserid, id);
+-- Set REPLICA IDENTITY to use this index
+ALTER TABLE posts REPLICA IDENTITY USING INDEX posts_unique_owneruserid_idx;
+```

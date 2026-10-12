@@ -1,0 +1,287 @@
+---
+slug: /migrations/postgresql/rewriting-queries
+title: 'PostgreSQL 쿼리 재작성하기'
+keywords: ['postgres', 'postgresql', '쿼리 재작성']
+description: 'PostgreSQL에서 ClickHouse로 마이그레이션하는 가이드의 2부'
+sidebarTitle: '2부'
+doc_type: 'guide'
+---
+
+> 이는 PostgreSQL에서 ClickHouse로 마이그레이션하는 가이드의 **2부**입니다. 실용적인 예제를 통해 실시간 복제(CDC) 방식으로 마이그레이션을 효율적으로 수행하는 방법을 보여줍니다. 여기에서 다루는 많은 개념은 PostgreSQL에서 ClickHouse로 수동으로 대량의 데이터를 전송할 때도 적용할 수 있습니다.
+
+PostgreSQL 환경의 대부분의 SQL 쿼리는 수정 없이도 ClickHouse에서 실행되며, 대체로 더 빠르게 처리됩니다.
+
+<div id="deduplication-cdc">
+  ## CDC를 사용한 중복 제거
+</div>
+
+CDC를 사용해 실시간 복제를 할 때는 업데이트 및 삭제로 인해 중복 행이 생길 수 있다는 점에 유의해야 합니다. 이를 관리하기 위해 View 및 Refreshable Materialized View를 활용하는 기법을 사용할 수 있습니다.
+
+CDC를 사용한 실시간 복제로 마이그레이션할 때 애플리케이션을 PostgreSQL에서 ClickHouse로 큰 어려움 없이 이전하는 방법은 이 [가이드](/ko/integrations/clickpipes/postgres/deduplication#query-like-with-postgres)를 참고하세요.
+
+<div id="optimize-queries-in-clickhouse">
+  ## ClickHouse에서 쿼리 최적화
+</div>
+
+최소한의 쿼리 재작성만으로 마이그레이션할 수는 있지만, 쿼리를 훨씬 더 단순하게 만들고 성능도 더욱 높이려면 ClickHouse의 기능을 활용하는 것이 좋습니다.
+
+여기서는 일반적인 쿼리 패턴을 예로 들어, ClickHouse에서 이를 어떻게 최적화할 수 있는지 보여줍니다. 예제에는 PostgreSQL과 ClickHouse에 동일한 리소스(8코어, 32GiB RAM)를 할당하고 전체 [Stack Overflow dataset](/ko/get-started/sample-datasets/stackoverflow)(2024년 4월까지)을 사용했습니다.
+
+> 단순화를 위해 아래 쿼리에서는 데이터 중복 제거 기법을 사용하지 않았습니다.
+
+> 여기의 카운트는 Postgres 데이터에는 외래 키의 참조 무결성을 만족하는 행만 포함되므로 약간 다를 수 있습니다. ClickHouse는 이런 제약이 없기 때문에 익명 사용자를 포함한 전체 데이터셋을 사용합니다.
+
+조회수가 가장 많은 사용자(질문 수 10개 초과):
+
+```sql
+-- ClickHouse
+SELECT OwnerDisplayName, sum(ViewCount) AS total_views
+FROM stackoverflow.posts
+WHERE (PostTypeId = 'Question') AND (OwnerDisplayName != '')
+GROUP BY OwnerDisplayName
+HAVING count() > 10
+ORDER BY total_views DESC
+LIMIT 5
+```
+
+```response
+┌─OwnerDisplayName─┬─total_views─┐
+│ Joan Venge       │    25520387 │
+│ Ray Vega         │    21576470 │
+│ anon             │    19814224 │
+│ Tim              │    19028260 │
+│ John             │    17638812 │
+└──────────────────┴─────────────┘
+
+5 rows in set. Elapsed: 0.360 sec. Processed 24.37 million rows, 140.45 MB (67.73 million rows/s., 390.38 MB/s.)
+Peak memory usage: 510.71 MiB.
+```
+
+```sql
+--Postgres
+SELECT OwnerDisplayName, SUM(ViewCount) AS total_views
+FROM public.posts
+WHERE (PostTypeId = 1) AND (OwnerDisplayName != '')
+GROUP BY OwnerDisplayName
+HAVING COUNT(*) > 10
+ORDER BY total_views DESC
+LIMIT 5;
+
+        ownerdisplayname        | total_views
+-------------------------+-------------
+ Joan Venge             |       25520387
+ Ray Vega               |       21576470
+ Tim                    |       18283579
+ J. Pablo Fern&#225;ndez |      12446818
+ Matt                   |       12298764
+
+Time: 107620.508 ms (01:47.621)
+```
+
+`views`가 가장 많은 `tags`:
+
+```sql
+--ClickHouse
+SELECT arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS tags,
+        sum(ViewCount) AS views
+FROM posts
+GROUP BY tags
+ORDER BY views DESC
+LIMIT 5
+```
+
+```response
+┌─tags───────┬──────views─┐
+│ javascript │ 8190916894 │
+│ python     │ 8175132834 │
+│ java       │ 7258379211 │
+│ c#         │ 5476932513 │
+│ android    │ 4258320338 │
+└────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.908 sec. Processed 59.82 million rows, 1.45 GB (65.87 million rows/s., 1.59 GB/s.)
+```
+
+```sql
+--Postgres
+WITH tags_exploded AS (
+        SELECT
+        unnest(string_to_array(Tags, '|')) AS tag,
+        ViewCount
+        FROM public.posts
+),
+filtered_tags AS (
+        SELECT
+        tag,
+        ViewCount
+        FROM tags_exploded
+        WHERE tag <> ''
+)
+SELECT tag AS tags,
+        SUM(ViewCount) AS views
+FROM filtered_tags
+GROUP BY tag
+ORDER BY views DESC
+LIMIT 5;
+
+        tags    |   views
+------------+------------
+ javascript | 7974880378
+ python         | 7972340763
+ java           | 7064073461
+ c#             | 5308656277
+ android        | 4186216900
+(5 rows)
+
+Time: 112508.083 ms (01:52.508)
+```
+
+**집계 함수**
+
+가능하면 ClickHouse의 집계 함수를 활용하는 것이 좋습니다. 아래에서는 [argMax](/ko/reference/functions/aggregate-functions/argMax) 함수를 사용해 각 연도에서 가장 많이 조회된 질문을 계산하는 방법을 보여줍니다.
+
+```sql
+--ClickHouse
+SELECT  toYear(CreationDate) AS Year,
+        argMax(Title, ViewCount) AS MostViewedQuestionTitle,
+        max(ViewCount) AS MaxViewCount
+FROM stackoverflow.posts
+WHERE PostTypeId = 'Question'
+GROUP BY Year
+ORDER BY Year ASC
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Year:                   2008
+MostViewedQuestionTitle: How to find the index for a given item in a list?
+MaxViewCount:           6316987
+
+Row 2:
+──────
+Year:                   2009
+MostViewedQuestionTitle: How do I undo the most recent local commits in Git?
+MaxViewCount:           13962748
+
+...
+
+Row 16:
+───────
+Year:                   2023
+MostViewedQuestionTitle: How do I solve "error: externally-managed-environment" every time I use pip 3?
+MaxViewCount:           506822
+
+Row 17:
+───────
+Year:                   2024
+MostViewedQuestionTitle: Warning "Third-party cookie will be blocked. Learn more in the Issues tab"
+MaxViewCount:           66975
+
+17 rows in set. Elapsed: 0.677 sec. Processed 24.37 million rows, 1.86 GB (36.01 million rows/s., 2.75 GB/s.)
+Peak memory usage: 554.31 MiB.
+```
+
+이는 해당 Postgres 쿼리보다 훨씬 더 간단하고(속도도 더 빠릅니다):
+
+```sql
+--Postgres
+WITH yearly_views AS (
+        SELECT
+        EXTRACT(YEAR FROM CreationDate) AS Year,
+        Title,
+        ViewCount,
+        ROW_NUMBER() OVER (PARTITION BY EXTRACT(YEAR FROM CreationDate) ORDER BY ViewCount DESC) AS rn
+        FROM public.posts
+        WHERE PostTypeId = 1
+)
+SELECT
+        Year,
+        Title AS MostViewedQuestionTitle,
+        ViewCount AS MaxViewCount
+FROM yearly_views
+WHERE rn = 1
+ORDER BY Year;
+ year |                                                 mostviewedquestiontitle                                                 | maxviewcount
+------+-----------------------------------------------------------------------------------------------------------------------+--------------
+ 2008 | How to find the index for a given item in a list?                                                                       |       6316987
+ 2009 | How do I undo the most recent local commits in Git?                                                                     |       13962748
+
+...
+
+ 2023 | How do I solve "error: externally-managed-environment" every time I use pip 3?                                          |       506822
+ 2024 | Warning "Third-party cookie will be blocked. Learn more in the Issues tab"                                              |       66975
+(17 rows)
+
+Time: 125822.015 ms (02:05.822)
+```
+
+**조건문과 배열**
+
+조건문과 배열 함수는 쿼리를 훨씬 더 단순하게 만들어 줍니다. 다음 쿼리는 2022년부터 2023년 사이에 증가율이 가장 큰 태그(출현 횟수가 10,000회를 넘는)를 계산합니다. 아래 ClickHouse 쿼리가 조건문, 배열 함수, 그리고 HAVING 및 SELECT 절에서 별칭을 재사용할 수 있는 기능 덕분에 얼마나 간결한지 살펴보세요.
+
+```sql
+--ClickHouse
+SELECT  arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS tag,
+        countIf(toYear(CreationDate) = 2023) AS count_2023,
+        countIf(toYear(CreationDate) = 2022) AS count_2022,
+        ((count_2023 - count_2022) / count_2022) * 100 AS percent_change
+FROM stackoverflow.posts
+WHERE toYear(CreationDate) IN (2022, 2023)
+GROUP BY tag
+HAVING (count_2022 > 10000) AND (count_2023 > 10000)
+ORDER BY percent_change DESC
+LIMIT 5
+```
+
+```response
+┌─tag─────────┬─count_2023─┬─count_2022─┬──────percent_change─┐
+│ next.js     │      13788 │      10520 │   31.06463878326996 │
+│ spring-boot │      16573 │      17721 │  -6.478189718413183 │
+│ .net        │      11458 │      12968 │ -11.644046884639112 │
+│ azure       │      11996 │      14049 │ -14.613139725247349 │
+│ docker      │      13885 │      16877 │  -17.72826924216389 │
+└─────────────┴────────────┴────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.247 sec. Processed 5.08 million rows, 155.73 MB (20.58 million rows/s., 630.61 MB/s.)
+Peak memory usage: 403.04 MiB.
+```
+
+```sql
+--Postgres
+SELECT
+        tag,
+        SUM(CASE WHEN year = 2023 THEN count ELSE 0 END) AS count_2023,
+        SUM(CASE WHEN year = 2022 THEN count ELSE 0 END) AS count_2022,
+        ((SUM(CASE WHEN year = 2023 THEN count ELSE 0 END) - SUM(CASE WHEN year = 2022 THEN count ELSE 0 END))
+        / SUM(CASE WHEN year = 2022 THEN count ELSE 0 END)::float) * 100 AS percent_change
+FROM (
+        SELECT
+        unnest(string_to_array(Tags, '|')) AS tag,
+        EXTRACT(YEAR FROM CreationDate) AS year,
+        COUNT(*) AS count
+        FROM public.posts
+        WHERE EXTRACT(YEAR FROM CreationDate) IN (2022, 2023)
+        AND Tags <> ''
+        GROUP BY tag, year
+) AS yearly_counts
+GROUP BY tag
+HAVING SUM(CASE WHEN year = 2022 THEN count ELSE 0 END) > 10000
+   AND SUM(CASE WHEN year = 2023 THEN count ELSE 0 END) > 10000
+ORDER BY percent_change DESC
+LIMIT 5;
+
+        tag     | count_2023 | count_2022 |   percent_change
+-------------+------------+------------+---------------------
+ next.js        |       13712 |         10370 |   32.22757955641273
+ spring-boot |          16482 |         17474 |  -5.677005837243905
+ .net           |       11376 |         12750 | -10.776470588235295
+ azure          |       11938 |         13966 | -14.520979521695546
+ docker         |       13832 |         16701 | -17.178612059158134
+(5 rows)
+
+Time: 116750.131 ms (01:56.750)
+```
+
+[Part 3를 보려면 여기를 클릭하세요](/ko/get-started/migrate/postgres/migration-guide/migration-guide-part3)

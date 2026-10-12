@@ -1,0 +1,89 @@
+---
+title: Как использовать параметризованные представления в ClickHouse
+description: Узнайте, как создавать параметризованные представления и выполнять запросы к ним в ClickHouse для динамической выборки данных с помощью параметров, задаваемых при выполнении запроса.
+date: 2023-08-01
+tags: ['Сценарии использования']
+keywords: ['Параметризованные представления']
+---
+
+<div id="using-parameterized-views-in-clickhouse">
+  ## Использование параметризованных представлений в ClickHouse
+</div>
+
+Параметризованные представления удобно использовать для гибкого анализа данных на лету на основе параметров, которые можно передавать при выполнении запроса.
+
+См. этот простой пример:
+
+1. создать таблицу
+
+```sql
+clickhouse-cloud :) CREATE TABLE raw_data (id UInt32, data String) ENGINE = MergeTree ORDER BY id
+
+CREATE TABLE raw_data
+(
+`id` UInt32,
+`data` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: aa21e614-1e10-4bba-88ce-4c7183a9148e
+
+Ok.
+
+0 rows in set. Elapsed: 0.332 sec.
+```
+
+2. вставьте немного случайных данных для примера
+
+```sql
+clickhouse-cloud :) INSERT INTO raw_data SELECT * FROM generateRandom('`id` UInt32,
+`data` String',1,1) LIMIT 1000000;
+
+INSERT INTO raw_data SELECT *
+FROM generateRandom('`id` UInt32,
+`data` String', 1, 1)
+LIMIT 1000000
+
+Query id: c552a34a-b72f-45e1-bed0-778923e1b5c9
+
+Ok.
+
+0 rows in set. Elapsed: 0.438 sec. Processed 1.05 million rows, 10.99 MB (2.39 million rows/s., 25.11 MB/s.)
+```
+
+3. создайте параметризованное представление:
+
+```sql
+clickhouse-cloud :) CREATE VIEW raw_data_parametrized AS SELECT * FROM raw_data WHERE id BETWEEN {id_from:UInt32} AND {id_to:UInt32}
+
+CREATE VIEW raw_data_parametrized AS
+SELECT *
+FROM raw_data
+WHERE (id >= {id_from:UInt32}) AND (id <= {id_to:UInt32})
+
+Query id: 45fb83a6-aa55-4197-a7cd-9e1ad2c76d48
+
+Ok.
+
+0 rows in set. Elapsed: 0.102 sec.
+```
+
+4. выполните запрос к параметризованному представлению, указав необходимые параметры в секции `FROM`:
+
+```sql
+clickhouse-cloud :) SELECT count() FROM raw_data_parametrized(id_from=0, id_to=50000);
+
+SELECT count()
+FROM raw_data_parametrized(id_from = 0, id_to = 50000)
+
+Query id: 5731aae1-3e68-4e63-b57f-d50f29055744
+
+┌─count()─┐
+│ 317019 │
+└─────────┘
+
+1 row in set. Elapsed: 0.004 sec. Processed 319.49 thousand rows, 319.49 KB (76.29 million rows/s., 76.29 MB/s.)
+```
+
+Подробнее см.: [https://clickhouse.com/docs/sql-reference/statements/create/view#parameterized-view](https://clickhouse.com/docs/sql-reference/statements/create/view#parameterized-view)

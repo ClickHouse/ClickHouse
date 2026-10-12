@@ -1,10 +1,12 @@
 #include <Loggers/Loggers.h>
 
+#include <Core/Types.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 
@@ -60,11 +62,23 @@ static std::string createDirectory(const std::string & file)
 static std::string renderFileNameTemplate(time_t now, const std::string & file_path)
 {
     fs::path path{file_path};
-    std::tm buf;
+    std::tm buf{};
     localtime_r(&now, &buf); /// NOLINT(cert-err33-c)
     std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ss << std::put_time(&buf, path.filename().c_str());
     return path.replace_filename(ss.str());
+}
+
+/// RFC 5424 APP-NAME: 1-48 printable ASCII characters, no spaces.
+static void validateSyslogProgramName(const std::string & program_name)
+{
+    if (program_name.empty()
+        || program_name.size() > 48
+        || std::any_of(program_name.begin(), program_name.end(), [](char c) { return c < '!' || c > '~'; }))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "logger.syslog.programname must be 1 to 48 printable ASCII characters without spaces, got '{}'",
+            program_name);
 }
 
 Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfiguration & config, const std::string & channel, bool color)
@@ -100,7 +114,11 @@ Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfi
 
 /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
-void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
+void Loggers::buildLoggers(
+    Poco::Util::AbstractConfiguration & config,
+    Poco::Logger & logger /*_root*/,
+    const std::string & cmd_name,
+    const DB::Strings & keep_loggers)
 {
     auto current_logger = config.getString("logger", "");
     if (config_logger.has_value() && *config_logger == current_logger)
@@ -180,7 +198,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(errorlog_path));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
+        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.rotation", config.getRawString("logger.size", "100M")));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
@@ -204,6 +222,14 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         max_log_level = std::max(syslog_level, max_log_level);
 
+        std::string syslog_program_name = cmd_name;
+        const bool has_program_name = config.has("logger.syslog.programname");
+        if (has_program_name)
+        {
+            syslog_program_name = config.getString("logger.syslog.programname");
+            validateSyslogProgramName(syslog_program_name);
+        }
+
         if (config.has("logger.syslog.address"))
         {
             syslog_channel = new Poco::Net::RemoteSyslogChannel();
@@ -213,6 +239,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             {
                 syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
             }
+            if (has_program_name)
+                syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
             syslog_channel->setProperty(
                 Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
@@ -220,7 +248,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         else
         {
             syslog_channel = new Poco::SyslogChannel();
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, syslog_program_name);
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
         }
@@ -304,11 +332,13 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.root().setChannel(logger.getChannel());
 
     // Set level and channel to all already created loggers
-    std::vector<std::string> names;
+    DB::Strings names;
     logger.names(names);
 
     for (const auto & name : names)
     {
+        if (std::ranges::contains(keep_loggers, name))
+            continue;
         logger.get(name).setLevel(max_log_level);
         logger.get(name).setChannel(split);
     }
@@ -385,7 +415,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.setLevel(max_log_level);
 
     // Set level to all already created loggers
-    std::vector<std::string> names;
+    DB::Strings names;
 
     logger.root().names(names);
     for (const auto & name : names)
@@ -444,6 +474,26 @@ DB::AsyncLogQueueSizes Loggers::getAsynchronousMetricsFromAsyncLogs()
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
         return async->getAsynchronousMetrics();
     return {};
+}
+
+void Loggers::stopAsyncLoggingThreads()
+{
+    /// Fail closed: the caller quiesces the process around `remapExecutable`, so a thread that could not
+    /// be joined must abort the remap rather than be left running while the text segment is rewritten.
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->closeAndJoinThreads();
+}
+
+void Loggers::startAsyncLoggingThreads()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->open();
+}
+
+void Loggers::closeAsyncLogging()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->close();
 }
 
 void Loggers::stopLogging()

@@ -57,5 +57,5 @@ Test 4e: select using ?, * and '{' + '}' wildcards
 20
 20
 Test 4f: recursive search
+32
 2
-1

@@ -1,0 +1,71 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMap'
+title: 'avgMap'
+description: 'Ejemplo de uso del combinador avgMap'
+keywords: ['avg', 'map', 'combinador', 'ejemplos', 'avgMap']
+sidebarTitle: 'avgMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descripción
+</div>
+
+El combinador [`Map`](/es/reference/functions/aggregate-functions/combinators#-map) puede aplicarse a la función [`avg`](/es/reference/functions/aggregate-functions/avg) para calcular la media aritmética de los valores de un Map para cada clave, mediante la función de combinador de agregación `avgMap`.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+En este ejemplo, crearemos una tabla que almacena códigos de estado y sus conteos para distintos intervalos de tiempo,
+donde cada fila contiene un Map de códigos de estado y sus conteos correspondientes. Usaremos
+`avgMap` para calcular el conteo promedio de cada código de estado dentro de cada intervalo de tiempo.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    avgMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+La función `avgMap` calculará el recuento medio de cada código de estado dentro de cada intervalo de tiempo. Por ejemplo:
+
+* En el intervalo de tiempo &#39;2000-01-01 00:00:00&#39;:
+  * Estado &#39;a&#39;: 15
+  * Estado &#39;b&#39;: 25
+  * Estado &#39;c&#39;: (35 + 45) / 2 = 40
+  * Estado &#39;d&#39;: 55
+  * Estado &#39;e&#39;: 65
+* En el intervalo de tiempo &#39;2000-01-01 00:01:00&#39;:
+  * Estado &#39;d&#39;: 75
+  * Estado &#39;e&#39;: 85
+  * Estado &#39;f&#39;: (95 + 105) / 2 = 100
+  * Estado &#39;g&#39;: (115 + 125) / 2 = 120
+
+```response title="Response"
+   ┌────────────timeslot─┬─avgMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':100,'g':120}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':40,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Ver también
+</div>
+
+* [`avg`](/es/reference/functions/aggregate-functions/avg)
+* [`combinador Map`](/es/reference/functions/aggregate-functions/combinators#-map)

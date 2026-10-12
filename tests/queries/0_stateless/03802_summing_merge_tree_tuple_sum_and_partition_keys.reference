@@ -1,0 +1,22 @@
+=== Test 1: Explicit column_names_to_sum with nested Tuple ===
+Explicit nested col - with FINAL:
+1	(50,(70,90))	(100,200)	1000
+2	(13,(15,17))	(50,60)	500
+Explicit nested col - after OPTIMIZE:
+1	(50,(70,90))	(100,200)	1000
+2	(13,(15,17))	(50,60)	500
+=== Test 2: Tuple in partition key ===
+Tuple partition key - with FINAL:
+1	(1,2)	(400,600)
+Tuple partition key - after OPTIMIZE:
+1	(1,2)	(400,600)
+=== Test 3: Tuple sub-columns as partition and sorting keys ===
+Tuple sub-col keys - with FINAL:
+(1,10)	(400,600)
+Tuple sub-col keys - after OPTIMIZE:
+(1,10)	(400,600)
+=== Test 4: Prefix search must not falsely skip flattened sub-columns ===
+Prefix no false skip - with FINAL:
+1	(300,120)	10
+Prefix no false skip - after OPTIMIZE:
+1	(300,120)	10

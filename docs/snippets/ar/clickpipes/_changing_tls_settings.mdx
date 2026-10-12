@@ -1,0 +1,26 @@
+---
+title: تغيير إعدادات TLS
+---
+
+افتراضيًا، سيتم إنشاء ClickPipe مع تفعيل TLS والتحقق من الشهادة. ويمكن تعديل هذه الإعدادات الافتراضية عند إنشاء ClickPipe:
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/tls-settings.webp" alt="إعدادات TLS" />
+</Frame>
+
+أو تعديلها من قسم *إعدادات الاتصال* ضمن علامة تبويب *الإعدادات* في ClickPipe المتوقّف مؤقتًا:
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-connection-settings.webp" alt="إعدادات الاتصال -> تعديل الاتصال" />
+</Frame>
+
+<Frame>
+  <img src="/images/integrations/data-ingestion/clickpipes/postgres/pipe-edit-connection.webp" alt="تعديل الاتصال" />
+</Frame>
+
+حيث:
+
+* `Disable TLS` يبدّل TLS للاتصال بين التفعيل والتعطيل. ويعني تعطيل TLS أن البيانات تُرسل كنص غير مشفّر عبر الشبكة، وقد يشمل ذلك الأسرار والبيانات الحساسة.
+* `Skip certificate verification` يبدّل التحقق من الشهادة التي تعرضها قاعدة البيانات المصدر بين التفعيل والتعطيل. يُرجى مراعاة الآثار الأمنية المترتبة على تخطي التحقق من الشهادة.
+* `TLS Host` (اختياري، والقيمة الافتراضية هي *Host* للمصدر) هو اسم المضيف الذي يجب أن يتطابق معه CN الخاص بالشهادة عند تفعيل التحقق من الشهادة.
+* `Upload CA` يمكن استخدامه لتوفير CA تُستخدم عند تفعيل التحقق من الشهادة.

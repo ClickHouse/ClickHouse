@@ -9,7 +9,6 @@
 #include <ostream>
 #include <Common/StringUtils.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {

@@ -6,7 +6,7 @@ namespace DB
 {
 
 
-class FunctionArrayEnumerateDense : public FunctionArrayEnumerateExtended<FunctionArrayEnumerateDense>
+class FunctionArrayEnumerateDense final : public FunctionArrayEnumerateExtended<FunctionArrayEnumerateDense>
 {
     using Base = FunctionArrayEnumerateExtended<FunctionArrayEnumerateDense>;
 public:

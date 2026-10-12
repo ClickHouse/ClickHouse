@@ -1,0 +1,89 @@
+sumTuple
+(12,15,18)
+avgTuple
+(4,5,6)
+minTuple
+(1,2,3)
+maxTuple
+(7,8,9)
+GROUP BY
+0	(6,9)
+1	(9,13.5)
+named tuple
+(4,6)	Tuple(\n    a Int64,\n    b Float64)
+mixed types
+(5,8,10)
+single element
+(20)
+table numeric
+1	(30,4,300)
+2	(70,8,700)
+1	(15,2,150)
+2	(35,4,350)
+1	(10,1.5,100)
+2	(30,3.5,300)
+1	(20,2.5,200)
+2	(40,4.5,400)
+TupleIf
+(6,8)
+State/Merge roundtrip
+(12,15,18)
+State/Merge GROUP BY
+0	(6,9)
+1	(9,13.5)
+State/Merge two-level
+(16,20)
+StateIf/Merge roundtrip
+(6,8)
+AggregatingMergeTree roundtrip
+1	(60,7.5,600)
+2	(70,8,700)
+nullable elements
+(6,6)
+(20,30)
+(2,1)
+quantileExactTuple
+(2,20)
+(3,30)
+([2,3,4])
+multiple nested combinators
+(7,10)
+(30,40)
+(2,3)
+(7,10)
+distinct combinators
+(10,15)
+(9,15)
+(6,11)
+(3,3.75)
+AggregateFunction(sumDistinctTuple, Tuple(Int64, Float64))
+(9,15)
+multiple tuples
+(-1)
+sparse tuple
+(1,2)
+(0.01,0.02)
+(0,0)
+(1,2)
+nullable tuple
+(6,6)
+(12,12)
+(6,6)
+0	(6,6)
+1	(6,6)
+null element with int
+(NULL,1)	Tuple(Nullable(Nothing), Int64)
+(2,NULL)	Tuple(Int64, Nullable(Nothing))
+(NULL,1,2.5)	Tuple(Nullable(Nothing), Int64, Float64)
+all only-null elements
+(NULL)	Tuple(Nullable(Nothing))
+(NULL)	Tuple(Nullable(Nothing))
+(NULL)	Tuple(Nullable(Nothing))
+(NULL,NULL)	Tuple(Nullable(Nothing), Nullable(Nothing))
+(NULL,NULL,NULL)	Tuple(Nullable(Nothing), Nullable(Nothing), Nullable(Nothing))
+quantilesTDigestTupleMerge
+([8])
+([49,89])
+quantilesTDigestTuple common type
+AggregateFunction(quantilesTDigestTuple(0.5), Tuple(Float64))
+([4])

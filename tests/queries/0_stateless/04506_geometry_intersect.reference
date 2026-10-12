@@ -1,0 +1,46 @@
+-- Cartesian: Point vs areal
+1
+0
+1
+1
+-- Cartesian: Point vs Point
+1
+0
+-- Cartesian: linear vs areal / linear
+1
+0
+1
+0
+1
+1
+-- Cartesian: areal vs areal
+1
+0
+0
+1
+-- Cartesian: Geometry (Variant) argument
+1	1
+2	0
+3	1
+4	1
+5	0
+1	1
+2	0
+3	1
+4	1
+5	0
+-- Spherical: basic
+1
+0
+1
+-- Spherical: Geometry (Variant) argument
+1
+-- Ambiguity: linear vs areal give different results
+0
+1
+0
+1
+-- Ambiguity: unnamed structural forms are rejected
+-- Unambiguous unnamed forms are still accepted
+1
+0

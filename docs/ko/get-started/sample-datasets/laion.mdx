@@ -1,0 +1,333 @@
+---
+description: '영문 이미지 캡션이 포함된 4억 개의 이미지로 구성된 데이터셋'
+sidebarTitle: 'Laion-400M 데이터셋'
+slug: /getting-started/example-datasets/laion-400m-dataset
+title: 'Laion-400M 데이터셋'
+doc_type: 'guide'
+keywords: ['예시 데이터셋', 'laion', '이미지 임베딩', '샘플 데이터', '머신 러닝']
+---
+
+[Laion-400M 데이터셋](https://laion.ai/blog/laion-400-open-dataset/)에는 영문 이미지 캡션이 포함된 4억 개의 이미지가 들어 있습니다. 현재 Laion은 [이보다 훨씬 더 큰 데이터셋](https://laion.ai/blog/laion-5b/)도 제공하지만, 다루는 방법은 비슷합니다.
+
+이 데이터셋에는 이미지 URL, 이미지와 이미지 캡션 각각에 대한 임베딩, 이미지와 이미지 캡션 사이의 유사도 점수, 그리고 메타데이터(예: 이미지 너비/높이, 라이선스, NSFW 플래그)가 포함되어 있습니다. 이 데이터셋을 사용해 ClickHouse의 [근사 최근접 이웃 검색](/ko/reference/engines/table-engines/mergetree-family/annindexes)을 시연할 수 있습니다.
+
+<div id="data-preparation">
+  ## 데이터 준비
+</div>
+
+원시 데이터에서는 임베딩과 메타데이터가 각각 별도의 파일에 저장됩니다. 데이터 준비 단계에서는 데이터를 다운로드하고 파일을 머지한 뒤,
+CSV로 변환하여 ClickHouse로 가져옵니다. 이를 위해 다음 `download.sh` 스크립트를 사용할 수 있습니다:
+
+```bash
+number=${1}
+if [[ $number == '' ]]; then
+    number=1
+fi;
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/img_emb/img_emb_${number}.npy          # 이미지 임베딩 다운로드
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/text_emb/text_emb_${number}.npy        # 텍스트 임베딩 다운로드
+wget --tries=100 https://deploy.laion.ai/8f83b608504d46bb81708ec86e912220/embeddings/metadata/metadata_${number}.parquet    # 메타데이터 다운로드
+python3 process.py $number # 파일 병합 및 CSV 변환
+```
+
+스크립트 `process.py`는 다음과 같이 정의되어 있습니다:
+
+```python
+import pandas as pd
+import numpy as np
+import os
+import sys
+
+str_i = str(sys.argv[1])
+npy_file = "img_emb_" + str_i + '.npy'
+metadata_file = "metadata_" + str_i + '.parquet'
+text_npy =  "text_emb_" + str_i + '.npy'
+
+# 모든 파일 로드
+im_emb = np.load(npy_file)
+text_emb = np.load(text_npy) 
+data = pd.read_parquet(metadata_file)
+
+# 파일 병합
+data = pd.concat([data, pd.DataFrame({"image_embedding" : [*im_emb]}), pd.DataFrame({"text_embedding" : [*text_emb]})], axis=1, copy=False)
+
+# ClickHouse에 임포트할 컬럼
+data = data[['url', 'caption', 'NSFW', 'similarity', "image_embedding", "text_embedding"]]
+
+# np.array를 리스트로 변환
+data['image_embedding'] = data['image_embedding'].apply(lambda x: x.tolist())
+data['text_embedding'] = data['text_embedding'].apply(lambda x: x.tolist())
+
+# caption에 다양한 종류의 따옴표가 포함될 수 있으므로 이 처리가 필요함
+data['caption'] = data['caption'].apply(lambda x: x.replace("'", " ").replace('"', " "))
+
+# 데이터를 CSV 파일로 내보내기
+data.to_csv(str_i + '.csv', header=False)
+
+# 원본 데이터 파일 삭제
+os.system(f"rm {npy_file} {metadata_file} {text_npy}")
+```
+
+데이터 준비 pipeline을 시작하려면 다음을 실행하세요:
+
+```bash
+seq 0 409 | xargs -P1 -I{} bash -c './download.sh {}'
+```
+
+데이터셋은 410개의 파일로 나뉘어 있으며, 각 파일에는 약 100만 개의 행이 들어 있습니다. 더 작은 부분 집합의 데이터로 작업하려면 제한값만 조정하면 됩니다. 예: `seq 0 9 | ...`.
+
+(위의 Python 스크립트는 매우 느리고(파일당 약 2~10분), 메모리를 많이 사용하며(파일당 41 GB), 결과로 생성되는 CSV 파일도 큽니다(각 10 GB). 따라서 주의하십시오. RAM이 충분하다면 더 높은 병렬 처리를 위해 `-P1` 값을 늘리십시오. 그래도 너무 느리다면 더 나은 수집 절차를 고려하십시오. 예를 들어 .npy 파일을 Parquet로 변환한 다음, 나머지 처리는 모두 ClickHouse에서 수행할 수 있습니다.)
+
+<div id="create-table">
+  ## 테이블 생성
+</div>
+
+먼저 인덱스 없이 테이블을 생성하려면 다음을 실행하세요:
+
+```sql
+CREATE TABLE laion
+(
+    `id` Int64,
+    `url` String,
+    `caption` String,
+    `NSFW` String,
+    `similarity` Float32,
+    `image_embedding` Array(Float32),
+    `text_embedding` Array(Float32)
+)
+ENGINE = MergeTree
+ORDER BY id
+```
+
+CSV 파일을 ClickHouse에 가져오려면:
+
+```sql
+INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
+```
+
+`id` 컬럼은 단지 예시를 위한 것이며, 스크립트가 중복된 값으로 채운다는 점에 유의하십시오.
+
+<div id="run-a-brute-force-vector-similarity-search">
+  ## 브루트포스 벡터 유사도 검색 실행
+</div>
+
+브루트포스 근사 벡터 검색을 수행하려면 다음을 실행하십시오:
+
+```sql
+SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:Array(Float32)}) LIMIT 10
+```
+
+`target`은 512개 요소로 이루어진 배열이며, 클라이언트 측 매개변수입니다.
+이러한 배열을 쉽게 얻는 방법은 글의 마지막에서 소개합니다.
+지금은 임의의 LEGO 세트 사진에서 추출한 임베딩을 `target`으로 사용해 볼 수 있습니다.
+
+**결과**
+
+```markdown
+    ┌─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption──────────────────────────────────────────────────────────────────────────┐
+ 1. │ https://s4.thcdn.com/productimg/600/600/11340490-9914447026352671.jpg                                                                                                                         │ LEGO Friends: Puppy Treats & Tricks (41304)                                      │
+ 2. │ https://www.avenuedelabrique.com/img/uploads/f20fd44bfa4bd49f2a3a5fad0f0dfed7d53c3d2f.jpg                                                                                                     │ Nouveau LEGO Friends 41334 Andrea s Park Performance 2018                        │
+ 3. │ http://images.esellerpro.com/2489/I/667/303/3938_box_in.jpg                                                                                                                                   │ 3938 LEGO Andreas Bunny House Girls Friends Heartlake Age 5-12 / 62 Pieces  New! │
+ 4. │ http://i.shopmania.org/180x180/7/7f/7f1e1a2ab33cde6af4573a9e0caea61293dfc58d.jpg?u=https%3A%2F%2Fs.s-bol.com%2Fimgbase0%2Fimagebase3%2Fextralarge%2FFC%2F4%2F0%2F9%2F9%2F9200000049789904.jpg │ LEGO Friends Avonturenkamp Boomhuis - 41122                                      │
+ 5. │ https://s.s-bol.com/imgbase0/imagebase/large/FC/5/5/9/4/1004004011684955.jpg                                                                                                                  │ LEGO Friends Andrea s Theatershow - 3932                                         │
+ 6. │ https://www.jucariicucubau.ro/30252-home_default/41445-lego-friends-ambulanta-clinicii-veterinare.jpg                                                                                         │ 41445 - LEGO Friends - Ambulanta clinicii veterinare                             │
+ 7. │ https://cdn.awsli.com.br/600x1000/91/91201/produto/24833262/234c032725.jpg                                                                                                                    │ LEGO FRIENDS 41336 EMMA S ART CAFÉ                                               │
+ 8. │ https://media.4rgos.it/s/Argos/6174930_R_SET?$Thumb150$&amp;$Web$                                                                                                                             │ more details on LEGO Friends Stephanie s Friendship Cake Set - 41308.            │
+ 9. │ https://thumbs4.ebaystatic.com/d/l225/m/mG4k6qAONd10voI8NUUMOjw.jpg                                                                                                                           │ Lego Friends Gymnast 30400 Polybag 26 pcs                                        │
+10. │ http://www.ibrickcity.com/wp-content/gallery/41057/thumbs/thumbs_lego-41057-heartlake-horse-show-friends-3.jpg                                                                                │ lego-41057-heartlake-horse-show-friends-3                                        │
+    └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+10 rows in set. Elapsed: 4.605 sec. Processed 100.38 million rows, 309.98 GB (21.80 million rows/s., 67.31 GB/s.)
+```
+
+<div id="run-an-approximate-vector-similarity-search-with-a-vector-similarity-index">
+  ## 벡터 유사성 인덱스를 사용해 근사 벡터 유사성 검색 수행하기
+</div>
+
+이제 테이블에 두 개의 벡터 유사성 인덱스를 정의하겠습니다.
+
+```sql
+ALTER TABLE laion ADD INDEX image_index image_embedding TYPE vector_similarity('hnsw', 'cosineDistance', 512, 'bf16', 64, 256)
+ALTER TABLE laion ADD INDEX text_index text_embedding TYPE vector_similarity('hnsw', 'cosineDistance', 512, 'bf16', 64, 256)
+```
+
+인덱스 생성과 검색에 대한 매개변수 및 성능 고려 사항은 [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)에 설명되어 있습니다.
+위의 인덱스 정의는 거리 메트릭으로 &quot;cosine distance&quot;를 사용하는 HNSW 인덱스를 지정하며, 매개변수 &quot;hnsw&#95;max&#95;connections&#95;per&#95;layer&quot;는 64로, 매개변수 &quot;hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;construction&quot;은 256으로 설정되어 있습니다.
+이 인덱스는 메모리 사용량을 최적화하기 위해 양자화 방식으로 반정밀도 brain float(bfloat16)를 사용합니다.
+
+인덱스를 빌드하고 구체화하려면 다음 SQL 문을 실행하세요 :
+
+```sql
+ALTER TABLE laion MATERIALIZE INDEX image_index;
+ALTER TABLE laion MATERIALIZE INDEX text_index;
+```
+
+인덱스를 생성하고 저장하는 데는 행 수와 HNSW 인덱스 매개변수에 따라 몇 분에서 몇 시간까지 걸릴 수 있습니다.
+
+벡터 검색을 수행하려면 같은 쿼리를 다시 실행하면 됩니다:
+
+```sql
+SELECT url, caption FROM laion ORDER BY cosineDistance(image_embedding, {target:Array(Float32)}) LIMIT 10
+```
+
+**결과**
+
+```response
+    ┌─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption──────────────────────────────────────────────────────────────────────────┐
+ 1. │ https://s4.thcdn.com/productimg/600/600/11340490-9914447026352671.jpg                                                                                                                         │ LEGO Friends: Puppy Treats & Tricks (41304)                                      │
+ 2. │ https://www.avenuedelabrique.com/img/uploads/f20fd44bfa4bd49f2a3a5fad0f0dfed7d53c3d2f.jpg                                                                                                     │ Nouveau LEGO Friends 41334 Andrea s Park Performance 2018                        │
+ 3. │ http://images.esellerpro.com/2489/I/667/303/3938_box_in.jpg                                                                                                                                   │ 3938 LEGO Andreas Bunny House Girls Friends Heartlake Age 5-12 / 62 Pieces  New! │
+ 4. │ http://i.shopmania.org/180x180/7/7f/7f1e1a2ab33cde6af4573a9e0caea61293dfc58d.jpg?u=https%3A%2F%2Fs.s-bol.com%2Fimgbase0%2Fimagebase3%2Fextralarge%2FFC%2F4%2F0%2F9%2F9%2F9200000049789904.jpg │ LEGO Friends Avonturenkamp Boomhuis - 41122                                      │
+ 5. │ https://s.s-bol.com/imgbase0/imagebase/large/FC/5/5/9/4/1004004011684955.jpg                                                                                                                  │ LEGO Friends Andrea s Theatershow - 3932                                         │
+ 6. │ https://www.jucariicucubau.ro/30252-home_default/41445-lego-friends-ambulanta-clinicii-veterinare.jpg                                                                                         │ 41445 - LEGO Friends - Ambulanta clinicii veterinare                             │
+ 7. │ https://cdn.awsli.com.br/600x1000/91/91201/produto/24833262/234c032725.jpg                                                                                                                    │ LEGO FRIENDS 41336 EMMA S ART CAFÉ                                               │
+ 8. │ https://media.4rgos.it/s/Argos/6174930_R_SET?$Thumb150$&amp;$Web$                                                                                                                             │ more details on LEGO Friends Stephanie s Friendship Cake Set - 41308.            │
+ 9. │ https://thumbs4.ebaystatic.com/d/l225/m/mG4k6qAONd10voI8NUUMOjw.jpg                                                                                                                           │ Lego Friends Gymnast 30400 Polybag 26 pcs                                        │
+10. │ http://www.ibrickcity.com/wp-content/gallery/41057/thumbs/thumbs_lego-41057-heartlake-horse-show-friends-3.jpg                                                                                │ lego-41057-heartlake-horse-show-friends-3                                        │
+    └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────┘
+
+10개 행이 조회되었습니다. 경과 시간: 0.019초. 처리된 행: 137.27천 개, 24.42 MB (초당 738만 행, 1.31 GB/s.)
+```
+
+벡터 인덱스를 사용해 최근접 이웃을 가져왔기 때문에 쿼리 지연 시간이 크게 줄었습니다.
+벡터 유사성 인덱스를 사용하는 벡터 유사도 검색은 브루트포스 검색 결과와 약간 차이가 나는 결과를 반환할 수 있습니다.
+HNSW 매개변수를 신중하게 선택하고 인덱스 품질을 평가하면, HNSW 인덱스는 재현율을 1에 가깝게(브루트포스 검색과 동일한 정확도) 달성할 수 있습니다.
+
+<div id="creating-embeddings-with-udfs">
+  ## UDF를 사용한 임베딩 생성
+</div>
+
+일반적으로 새 이미지나 새 이미지 캡션의 임베딩을 생성한 뒤, 데이터에서 유사한 이미지/이미지 캡션 쌍을 검색하게 됩니다. [UDF](/ko/reference/functions/regular-functions/udf)를 사용하면 클라이언트를 벗어나지 않고도 `target` 벡터를 생성할 수 있습니다. 데이터를 생성할 때와 검색용 새 임베딩을 생성할 때는 반드시 동일한 모델을 사용해야 합니다. 다음 스크립트에서는 데이터셋의 기반 모델이기도 한 `ViT-B/32` 모델을 사용합니다.
+
+<div id="text-embeddings">
+  ### 텍스트 임베딩
+</div>
+
+먼저, 다음 Python 스크립트를 ClickHouse 데이터 경로의 `user_scripts/` 디렉터리에 저장하고 실행 권한을 부여하세요(`chmod +x encode_text.py`).
+
+`encode_text.py`:
+
+```python
+#!/usr/bin/python3
+#!참고: 가상 환경을 사용하는 경우 위의 python3 실행 파일 경로를 변경하십시오.
+import clip
+import torch
+import numpy as np
+import sys
+
+if __name__ == '__main__':
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    for text in sys.stdin:
+        inputs = clip.tokenize(text)
+        with torch.no_grad():
+            text_features = model.encode_text(inputs)[0].tolist()
+            print(text_features)
+        sys.stdout.flush()
+```
+
+그런 다음 ClickHouse 서버 구성 파일에서 `<user_defined_executable_functions_config>/path/to/*_function.xml</user_defined_executable_functions_config>`로 참조하는 위치에 `encode_text_function.xml`을 생성합니다.
+
+```xml
+<functions>
+    <function>
+        <type>executable</type>
+        <name>encode_text</name>
+        <return_type>Array(Float32)</return_type>
+        <argument>
+            <type>String</type>
+            <name>text</name>
+        </argument>
+        <format>TabSeparated</format>
+        <command>encode_text.py</command>
+        <command_read_timeout>1000000</command_read_timeout>
+    </function>
+</functions>
+```
+
+이제 다음과 같이 간단히 사용할 수 있습니다:
+
+```sql
+SELECT encode_text('cat');
+```
+
+처음 실행은 모델을 로드하므로 느리지만, 이후 실행부터는 빠릅니다. 그런 다음 출력을 `SET param_target=...`에 복사하면 쿼리를 쉽게 작성할 수 있습니다. 또는 `encode_text()` 함수를 `cosineDistance` 함수의 인수로 직접 사용할 수도 있습니다:
+
+```SQL
+SELECT url
+FROM laion
+ORDER BY cosineDistance(text_embedding, encode_text('a dog and a cat')) ASC
+LIMIT 10
+```
+
+`encode_text()` UDF 자체도 임베딩 벡터를 계산하고 출력하는 데 몇 초 정도 걸릴 수 있다는 점에 유의하십시오.
+
+<div id="image-embeddings">
+  ### 이미지 임베딩
+</div>
+
+이미지 임베딩도 유사한 방식으로 생성할 수 있으며, 로컬 파일로 저장된 이미지의 임베딩을 생성하는 Python 스크립트도 제공합니다.
+
+`encode_image.py`
+
+```python
+#!/usr/bin/python3
+#!참고: 가상 환경을 사용하는 경우 위의 python3 실행형 경로를 변경하십시오.
+import clip
+import torch
+import numpy as np
+from PIL import Image
+import sys
+
+if __name__ == '__main__':
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-B/32", device=device)
+    for text in sys.stdin:
+        image = preprocess(Image.open(text.strip())).unsqueeze(0).to(device)
+        with torch.no_grad():
+            image_features = model.encode_image(image)[0].tolist()
+            print(image_features)
+        sys.stdout.flush()
+```
+
+`encode_image_function.xml`
+
+```xml
+<functions>
+    <function>
+        <type>executable_pool</type>
+        <name>encode_image</name>
+        <return_type>Array(Float32)</return_type>
+        <argument>
+            <type>String</type>
+            <name>path</name>
+        </argument>
+        <format>TabSeparated</format>
+        <command>encode_image.py</command>
+        <command_read_timeout>1000000</command_read_timeout>
+    </function>
+</functions>
+```
+
+검색에 사용할 예시 이미지를 가져옵니다 :
+
+```shell
+# LEGO 세트의 임의 이미지를 가져옵니다
+$ wget http://cdn.firstcry.com/brainbees/images/products/thumb/191325a.jpg
+```
+
+그런 다음 위 이미지에 대한 임베딩을 생성하려면 다음 쿼리를 실행합니다:
+
+```sql
+SELECT encode_image('/path/to/your/image');
+```
+
+전체 검색 쿼리는 다음과 같습니다:
+
+```sql
+SELECT
+    url,
+    caption
+FROM laion
+ORDER BY cosineDistance(image_embedding, encode_image('/path/to/your/image')) ASC
+LIMIT 10
+```

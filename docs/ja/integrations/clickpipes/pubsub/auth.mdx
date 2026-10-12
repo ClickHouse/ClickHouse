@@ -1,0 +1,170 @@
+---
+slug: /integrations/clickpipes/pubsub/auth
+sidebarTitle: 'Pub/Sub IAM 権限'
+title: 'Pub/Sub IAM 権限'
+description: 'この記事では、ClickPipes が Google Cloud Pub/Sub に対して認証を行い、トピックからデータを読み取るために必要な GCP IAM 権限と、それらの権限だけを付与するサービスアカウントの設定方法について説明します。'
+doc_type: 'guide'
+keywords: ['Google Cloud Pub/Sub', 'GCP IAM', 'サービスアカウント']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Note>
+  プライベートプレビューのウェイトリストには、[こちら](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview)から登録できます。
+</Note>
+
+この記事では、ClickPipes が Google Cloud Pub/Sub に対して認証を行い、トピックからデータを読み取るために必要な GCP IAM 権限と、それらの権限だけを付与するサービスアカウントの設定方法について説明します。
+
+<div id="prerequisite">
+  ## 前提条件
+</div>
+
+このガイドに従うには、以下が必要です。
+
+* 有効な ClickHouse Cloud サービス
+* 取り込み元の Pub/Sub トピックを含む GCP プロジェクト
+* そのプロジェクトで サービスアカウント を作成し、ロールを付与するための IAM 権限
+
+<div id="authentication-model">
+  ## 認証モデル
+</div>
+
+Pub/Sub 向け ClickPipes は、[サービスアカウント JSON キー](https://cloud.google.com/iam/docs/keys-create-delete)を使って GCP に認証します。パイプの作成時にキーファイルをアップロードすると、ClickPipes はそれを保存時に暗号化し、実行時には次の目的で使用します。
+
+* プロジェクト内のトピックを一覧表示して読み取る
+* メッセージの消費に ClickPipes が使用する[管理対象サブスクリプション](/ja/integrations/clickpipes/pubsub/overview#managed-subscriptions)を作成および削除する
+* そのサブスクリプションからメッセージを消費する
+* (任意で) スキーマレジストリから Pub/Sub ネイティブのスキーマを読み取る
+
+現在のところ、Workload Identity や認証情報を直接貼り付けるオプションには対応していません。サポートされている認証方式は、サービスアカウント JSON キーのみです。
+
+<div id="required-permissions">
+  ## 必要な権限
+</div>
+
+ClickPipes では、トピックを所有する GCP プロジェクトに対して、以下の IAM 権限が必要です。これらの権限は、パイプのライフサイクル全体をカバーしており、検出 (トピックの一覧表示、検証、サンプリング) 、サブスクリプション管理、定常運用時のインジェスト、クリーンアップが含まれます。
+
+<div id="topic-access">
+  ### トピックへのアクセス (検出と検証)
+</div>
+
+| Permission                         | 目的                                 |
+| ---------------------------------- | ---------------------------------- |
+| `pubsub.topics.list`               | 検出時に、プロジェクト内で利用可能なトピックを一覧表示する      |
+| `pubsub.topics.get`                | トピックの存在を検証し、スキーマ設定を取得する            |
+| `pubsub.topics.attachSubscription` | その **トピック** に対するサブスクリプションを作成する際に必要 |
+
+<div id="subscription-lifecycle">
+  ### サブスクリプションのライフサイクル (検出とインジェスト)
+</div>
+
+| Permission                     | Purpose                                                    |
+| ------------------------------ | ---------------------------------------------------------- |
+| `pubsub.subscriptions.create`  | 管理対象サブスクリプション (`clickpipes-{pipeID}`) と一時的な検出用サブスクリプションを作成 |
+| `pubsub.subscriptions.get`     | ヘルスチェック (60秒ごと) 、フォロワーのポーリング、サブスクリプションの検証                  |
+| `pubsub.subscriptions.delete`  | 一時的な検出用サブスクリプションをクリーンアップし、パイプの削除時に管理対象サブスクリプションを削除         |
+| `pubsub.subscriptions.consume` | `Receive()`、`Ack()`、`Nack()`、およびタイムスタンプへのシーク操作             |
+
+<div id="schema-access">
+  ### スキーマへのアクセス (任意 — ネイティブ Avro/Protobuf トピックに限る)
+</div>
+
+| Permission           | Purpose                               |
+| -------------------- | ------------------------------------- |
+| `pubsub.schemas.get` | Pub/Sub のスキーマレジストリからネイティブ スキーマ定義を取得する |
+
+<div id="predefined-roles">
+  ## 定義済みロール
+</div>
+
+| ロール                                                                                                  | 十分か     | 備考                                                                                                              |
+| ---------------------------------------------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------- |
+| [`roles/pubsub.editor`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.editor)         | はい      | 必要な権限をすべてカバーします。最も広範な選択肢です。                                                                                     |
+| [`roles/pubsub.subscriber`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.subscriber) | **いいえ** | `topics.list`、`topics.attachSubscription`、`subscriptions.create`、`subscriptions.delete`、`schemas.get` が不足しています。 |
+| [`roles/pubsub.viewer`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.viewer)         | **いいえ** | 読み取り専用 — サブスクリプションの管理やメッセージの消費はできません。                                                                           |
+| カスタムロール *(推奨)*                                                                                       | はい      | 最小権限でアクセスするには、上記の 7 つの中核権限 (必要に応じて `schemas.get` を追加) を使用してください。                                                |
+
+<div id="setup">
+  ## セットアップ
+</div>
+
+<div id="create-custom-role">
+  ### カスタム ロールを作成する (推奨)
+</div>
+
+最小権限の原則に従い、ClickPipes に必要な権限のみを含むカスタム ロールを作成します。
+
+これは `gcloud` CLI を使用して実行できます。
+
+```bash
+gcloud iam roles create clickpipes.pubsub.ingestion \
+  --project=YOUR_PROJECT_ID \
+  --title="ClickPipes Pub/Sub Ingestion" \
+  --description="Permissions required by ClickHouse ClickPipes to ingest from Pub/Sub" \
+  --permissions=pubsub.topics.list,pubsub.topics.get,pubsub.topics.attachSubscription,pubsub.subscriptions.create,pubsub.subscriptions.get,pubsub.subscriptions.delete,pubsub.subscriptions.consume \
+  --stage=GA
+```
+
+または、GCP Console で **IAM &amp; Admin → Roles → Create role** に移動し、[必要な権限](#required-permissions)に記載の権限を追加します。
+
+<Info>
+  **オプションの権限**
+
+  ネイティブの Pub/Sub Avro または Protobuf スキーマを使用するトピックから取り込む場合は、`--permissions` リストに `pubsub.schemas.get` を追加します。そうでない場合は、ロールを最小限に保つため追加しないでください。
+</Info>
+
+カスタム ロールを作成しない場合は、代わりに `roles/pubsub.editor` を付与できます。
+
+<div id="create-service-account">
+  ### サービスアカウントを作成する
+</div>
+
+ClickPipe専用のサービスアカウントを作成します。
+
+```bash
+gcloud iam service-accounts create clickpipes-pubsub \
+  --project=YOUR_PROJECT_ID \
+  --display-name="ClickPipes Pub/Sub Ingestion"
+```
+
+<div id="grant-role">
+  ### サービスアカウントにロールを付与する
+</div>
+
+作成したロール (または `roles/pubsub.editor`) を、プロジェクトレベルでサービスアカウントにバインドします。
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:clickpipes-pubsub@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
+```
+
+<div id="create-key">
+  ### サービスアカウント キーを作成してダウンロードする
+</div>
+
+サービスアカウント用の JSON キーを作成し、ローカルにダウンロードします。
+
+```bash
+gcloud iam service-accounts keys create clickpipes-pubsub-key.json \
+  --iam-account=clickpipes-pubsub@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+この `clickpipes-pubsub-key.json` ファイルは、パイプの作成時に ClickPipes UI でアップロードします。
+
+<Info>
+  **このキーは機密情報として扱ってください**
+
+  サービスアカウントキーには、GCP プロジェクトへのアクセス権が付与されています。ファイルは安全に保管し、ソース管理にコミットせず、定期的にローテーションしてください。ClickPipes では、アップロード後、このキーは保存時に暗号化されます。
+</Info>
+
+<div id="notes">
+  ## 注意事項
+</div>
+
+* `pubsub.topics.attachSubscription` は、サブスクリプションではなく **トピックリソース** に対して必要です。サブスクリプション レベルの権限だけを付与している場合、これを見落とすことがよくあります。
+* トピックがネイティブな Pub/Sub スキーマ (Avro または Protobuf) を使用していない場合、`pubsub.schemas.get` 権限は不要です。
+* 管理対象サブスクリプションの名前は `clickpipes-{pipeID}` で、ack deadline は 60 秒、メッセージ保持期間は 7 日間、メッセージの順序付けは有効です。
+* 一時的な 検出 サブスクリプションの名前は `clickpipes-discovery-{uuid}` で、ack deadline は 10 秒、保持期間は 10 分、24 時間で自動期限切れとなる有効期限 (TTL) が設定されます。
+* ClickPipes は `PermissionDenied` および `Unauthenticated` エラーを再試行不可として扱います。つまり、権限が不足している場合、パイプは無期限に再試行するのではなく、即座に失敗します。

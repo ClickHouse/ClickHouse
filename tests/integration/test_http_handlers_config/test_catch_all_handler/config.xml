@@ -1,0 +1,12 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <handler>
+                <type>static</type>
+                <status>200</status>
+                <content_type>text/plain; charset=UTF-8</content_type>
+                <response_content>catch-all matched</response_content>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

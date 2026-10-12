@@ -1,0 +1,43 @@
+SHOW ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW MASKING POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW ROW POLICIES query (children 1)
+ Set
+SHOW ROW POLICIES query (children 1)
+ Literal \'test.tsv\'
+SHOW ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW CREATE ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW CREATE MASKING POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW CREATE ROW POLICIES query (children 1)
+ Identifier TabSeparated
+SHOW CREATE USERS query (children 1)
+ Identifier TabSeparated
+SHOW CREATE ROLES query (children 1)
+ Identifier TabSeparated
+SHOW CREATE QUOTAS query (children 1)
+ Identifier TabSeparated
+SHOW CREATE SETTINGS PROFILES query (children 1)
+ Identifier TabSeparated
+SHOW CREATE USERS query (children 1)
+ Set
+SHOW CREATE QUOTAS query (children 1)
+ Literal \'test.tsv\'
+SHOW CREATE USER query (children 1)
+ Identifier TabSeparated
+SHOW CREATE ROW POLICY query (children 1)
+ Identifier TabSeparated
+SHOW ROW POLICIES query
+SHOW ROW POLICIES query
+SHOW MASKING POLICIES query
+SHOW CREATE USER query
+SHOW CREATE QUOTA query
+SHOW CREATE ROW POLICY query
+p_04330 ON db.tbl

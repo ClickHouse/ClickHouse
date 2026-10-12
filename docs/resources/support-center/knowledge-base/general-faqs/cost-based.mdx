@@ -1,0 +1,13 @@
+---
+title: 'Does ClickHouse have a cost-based optimizer'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/cost-based
+description: 'ClickHouse has certain cost-based optimization mechanics'
+doc_type: 'reference'
+keywords: ['CBE', 'optimizer']
+---
+
+ClickHouse has certain isolated cost-based optimization mechanics, such as: the order of reading columns is determined by the cost of reading compressed ranges of data from disk.
+
+ClickHouse also does JOIN reordering based on column statistics, however, this is (as of 2025) not nearly as advanced as CBE in Postgres, Oracle, MS SQL Server.

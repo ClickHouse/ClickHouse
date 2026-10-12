@@ -1,5 +1,4 @@
---  "0." -> CAST('0.0', 'Decimal(7, 2)') as "0." parsed as Float and did not convert to Decimal.
--- Needs to be fixed: https://github.com/ClickHouse/ClickHouse/issues/94671
+--  "0." -> CAST('0.0', 'Decimal(7, 2)'). Needs to be fixed: https://github.com/ClickHouse/ClickHouse/issues/106707
 WITH
     all_sales AS
     (

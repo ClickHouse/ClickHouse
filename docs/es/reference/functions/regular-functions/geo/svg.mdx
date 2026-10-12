@@ -1,0 +1,65 @@
+---
+description: 'Documentación sobre Svg'
+sidebarTitle: 'SVG'
+slug: /sql-reference/functions/geo/svg
+title: 'Funciones para generar imágenes SVG a partir de datos geográficos'
+doc_type: 'reference'
+---
+
+<div id="svg">
+  ## Svg
+</div>
+
+Devuelve una cadena con etiquetas de elementos SVG seleccionadas a partir de datos geográficos.
+
+**Sintaxis**
+
+```sql
+Svg(geometry,[style])
+```
+
+Alias: `SVG`, `svg`
+
+**Parámetros**
+
+* `geometry` — Datos geográficos. [Geo](/es/reference/data-types/geo).
+* `style` — Nombre de estilo opcional. [String](/es/reference/data-types/string).
+
+**Valor devuelto**
+
+* La representación SVG de la geometría. [String](/es/reference/data-types/string).
+  * Círculo SVG
+  * Polígono SVG
+  * Ruta SVG
+
+**Ejemplos**
+
+**Círculo**
+
+```sql title="Query"
+SELECT SVG((0., 0.))
+```
+
+```response title="Response"
+<circle cx="0" cy="0" r="5" style=""/>
+```
+
+**Polygon**
+
+```sql title="Query"
+SELECT SVG([(0., 0.), (10, 0), (10, 10), (0, 10)])
+```
+
+```response title="Response"
+<polygon points="0,0 0,10 10,10 10,0 0,0" style=""/>
+```
+
+**Path**
+
+```sql title="Query"
+SELECT SVG([[(0., 0.), (10, 0), (10, 10), (0, 10)], [(4., 4.), (5, 4), (5, 5), (4, 5)]])
+```
+
+```response title="Response"
+<g fill-rule="evenodd"><path d="M 0,0 L 0,10 L 10,10 L 10,0 L 0,0M 4,4 L 5,4 L 5,5 L 4,5 L 4,4 z " style=""/></g>
+```

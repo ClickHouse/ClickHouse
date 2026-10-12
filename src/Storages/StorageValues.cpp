@@ -21,8 +21,8 @@ StorageValues::StorageValues(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(std::move(virtuals_));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(std::move(virtuals_));
 }
 
 StorageValues::StorageValues(
@@ -34,8 +34,8 @@ StorageValues::StorageValues(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(std::move(virtuals_));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(std::move(virtuals_));
 }
 
 Pipe StorageValues::read(

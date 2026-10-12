@@ -1,0 +1,36 @@
+---
+description: 'عند تنفيذ الاستعلامات، يستخدم ClickHouse أنواعًا مختلفة من ذاكرات التخزين المؤقت.'
+sidebarTitle: 'ذاكرات التخزين المؤقت'
+slug: /operations/caches
+title: 'أنواع ذاكرات التخزين المؤقت'
+keywords: ['ذاكرة التخزين المؤقت']
+doc_type: 'reference'
+---
+
+عند تنفيذ الاستعلامات، يستخدم ClickHouse أنواعًا مختلفة من ذاكرات التخزين المؤقت لتسريع الاستعلامات
+وتقليل الحاجة إلى القراءة من القرص أو الكتابة إليه.
+
+الأنواع الرئيسية لذاكرات التخزين المؤقت هي:
+
+* `mark_cache` — ذاكرة التخزين المؤقت لـ [العلامات](/ar/resources/develop-contribute/introduction/architecture#merge-tree) التي تستخدمها محركات الجداول من عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+* `uncompressed_cache` — ذاكرة التخزين المؤقت للبيانات غير المضغوطة التي تستخدمها محركات الجداول من عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+* ذاكرة تخزين صفحات نظام التشغيل المؤقتة (تُستخدم بشكل غير مباشر للملفات التي تحتوي على البيانات الفعلية).
+
+توجد أيضًا مجموعة من أنواع ذاكرات التخزين المؤقت الإضافية:
+
+* ذاكرة التخزين المؤقت لـ DNS.
+* ذاكرة التخزين المؤقت لـ [Regexp](/ar/reference/formats/Regexp).
+* ذاكرة التخزين المؤقت للتعبيرات المترجمة.
+* ذاكرة التخزين المؤقت لـ [فهرس تشابه المتجهات](/ar/reference/engines/table-engines/mergetree-family/annindexes).
+* ذاكرة التخزين المؤقت لـ [فهرس النص](/ar/reference/engines/table-engines/mergetree-family/textindexes#caching).
+* ذاكرة التخزين المؤقت للمخططات الخاصة بـ [Avro format](/ar/reference/formats/Avro/Avro).
+* ذاكرة التخزين المؤقت لبيانات [Dictionaries](/ar/reference/statements/create/dictionary).
+* ذاكرة التخزين المؤقت لاستنتاج المخطط.
+* [Filesystem cache](/ar/concepts/features/configuration/server-config/storing-data) على S3 وAzure وLocal وغيرها من الأقراص.
+* [Userspace page cache](/ar/concepts/features/performance/caches/userspace-page-cache)
+* [Query cache](/ar/concepts/features/performance/caches/query-cache).
+* [Query condition cache](/ar/concepts/features/performance/caches/query-condition-cache).
+* ذاكرة التخزين المؤقت لمخطط التنسيق.
+
+إذا كنت ترغب في مسح إحدى ذاكرات التخزين المؤقت، لأغراض ضبط الأداء أو استكشاف الأخطاء وإصلاحها أو اتساق البيانات،
+فيمكنك استخدام عبارة [`SYSTEM CLEAR ... CACHE`](/ar/reference/statements/system).

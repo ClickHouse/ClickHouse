@@ -35,8 +35,6 @@ public:
 
     void ignoreWithTotals() override;
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
-
 private:
     static String getName() { return "SelectIntersectExceptQuery"; }
 

@@ -1,0 +1,12 @@
+Original:          INSERT INTO dest SELECT * FROM src SAMPLE 0.1 WHERE x > 0 OFFSET 3
+format(original):  INSERT INTO dest SELECT * FROM src SAMPLE 1 / 10 WHERE x > 0 OFFSET 3
+format(formatted): INSERT INTO dest SELECT * FROM src SAMPLE 1 / 10 WHERE x > 0 OFFSET 3
+
+Original:          INSERT INTO t SELECT * FROM (SELECT x FROM src SAMPLE 0.1 WHERE x > 0 OFFSET 3)
+format(original):  INSERT INTO t SELECT * FROM (FROM src SAMPLE 1 / 10 SELECT x WHERE x > 0 OFFSET 3)
+format(formatted): INSERT INTO t SELECT * FROM (FROM src SAMPLE 1 / 10 SELECT x WHERE x > 0 OFFSET 3)
+
+Original:          INSERT INTO t SELECT * FROM (SELECT x FROM src SAMPLE 0.1 OFFSET 3)
+format(original):  INSERT INTO t SELECT * FROM (SELECT x FROM src SAMPLE 1 / 10 OFFSET 3)
+format(formatted): INSERT INTO t SELECT * FROM (SELECT x FROM src SAMPLE 1 / 10 OFFSET 3)
+

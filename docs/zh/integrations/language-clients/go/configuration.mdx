@@ -1,0 +1,381 @@
+---
+sidebarTitle: '配置'
+keywords: ['clickhouse', 'go', 'golang', '配置', '连接', 'TLS', '身份验证']
+description: '配置 clickhouse-go 客户端：连接设置、TLS、身份验证、连接池、日志和压缩。'
+slug: /integrations/language-clients/go/configuration
+title: '配置'
+doc_type: '参考'
+---
+
+<div id="connection-settings">
+  ## 连接设置
+</div>
+
+<Tip>
+  如需查看每个选项的完整说明，包括默认值、DSN 参数、最佳实践和故障排查，请参阅[配置参考](/zh/integrations/language-clients/go/config-reference)。
+</Tip>
+
+打开连接时，可以使用 `Options` 结构体来控制客户端行为。可用设置如下：
+
+| 参数                     | 类型                                                 | 默认值                | 说明                                                                                                                                       |
+| ---------------------- | -------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `Protocol`             | `Protocol`                                         | `Native`           | 传输协议：`Native` (TCP) 或 `HTTP`。请参阅 [TCP 与 HTTP](#tcp-vs-http)。                                                                             |
+| `Addr`                 | `[]string`                                         | —                  | `host:port` 地址切片。有关多个节点的配置，请参阅 [连接到多个节点](#connecting-to-multiple-nodes)。                                                                 |
+| `Auth`                 | `Auth`                                             | —                  | 身份验证凭据 (`Database`、`Username`、`Password`) 。请参阅 [身份验证](#authentication)。                                                                  |
+| `TLS`                  | `*tls.Config`                                      | `nil`              | TLS 配置。非 `nil` 值会启用 TLS。请参阅 [TLS](#using-tls)。                                                                                           |
+| `DialContext`          | `func(ctx, addr) (net.Conn, error)`                | —                  | 自定义拨号函数，用于控制 TCP 连接的建立方式。                                                                                                                |
+| `DialTimeout`          | `time.Duration`                                    | `30s`              | 打开新连接时的最大等待时间。连接到可能处于空闲状态的 ClickHouse Cloud 服务时，请将其提高到 `1m`–`2m`——请参阅 [超时](/zh/integrations/language-clients/go/config-reference#timeouts)。 |
+| `MaxOpenConns`         | `int`                                              | `MaxIdleConns + 5` | 任意时刻允许打开的最大连接数。                                                                                                                          |
+| `MaxIdleConns`         | `int`                                              | `5`                | 连接池中保留的空闲连接数。                                                                                                                            |
+| `ConnMaxLifetime`      | `time.Duration`                                    | `1h`               | 连接池中连接的最大存活时间。请参阅 [连接池](#connection-pooling)。                                                                                            |
+| `ConnOpenStrategy`     | `ConnOpenStrategy`                                 | `ConnOpenInOrder`  | 从 `Addr` 中选择节点的策略。请参阅 [连接到多个节点](#connecting-to-multiple-nodes)。                                                                          |
+| `BlockBufferSize`      | `uint8`                                            | `2`                | 并行解码的块数。值越高，吞吐量越高，但内存开销也会增加。可通过上下文按查询覆盖。                                                                                                 |
+| `Settings`             | `Settings`                                         | —                  | 应用于每个查询的 ClickHouse 设置映射。单个查询可通过 [context](/zh/integrations/language-clients/go/clickhouse-api#using-context) 覆盖。                           |
+| `Compression`          | `*Compression`                                     | `nil`              | 块级压缩。请参阅 [压缩](#compression)。                                                                                                             |
+| `ReadTimeout`          | `time.Duration`                                    | —                  | 单次调用中，从服务器读取数据时的最大等待时间。                                                                                                                  |
+| `FreeBufOnConnRelease` | `bool`                                             | `false`            | 如果为 true，则每次查询时都会将该连接的内存缓冲区释放回池中。可降低内存使用，但会带来少量 CPU 开销。                                                                                  |
+| `Logger`               | `*slog.Logger`                                     | `nil`              | 结构化日志记录器 (Go `log/slog`) 。请参阅 [日志](#logging)。                                                                                            |
+| `Debug`                | `bool`                                             | `false`            | **已弃用。** 请改用 `Logger`。启用向 stdout 输出旧版调试信息。                                                                                               |
+| `Debugf`               | `func(string, ...any)`                             | —                  | **已弃用。** 请改用 `Logger`。自定义调试日志函数。需要 `Debug: true`。                                                                                        |
+| `GetJWT`               | `GetJWTFunc`                                       | —                  | 返回用于 ClickHouse Cloud 身份验证的 JWT 令牌的回调 (仅 HTTPS) 。                                                                                        |
+| `HttpHeaders`          | `map[string]string`                                | —                  | 每个请求都会发送的附加 HTTP 请求头 (仅 HTTP 传输) 。                                                                                                       |
+| `HttpUrlPath`          | `string`                                           | —                  | 附加到 HTTP 请求中的额外 URL 路径 (仅 HTTP 传输) 。                                                                                                     |
+| `HttpMaxConnsPerHost`  | `int`                                              | —                  | 覆盖底层 `http.Transport` 中的 `MaxConnsPerHost` (仅 HTTP 传输) 。                                                                                 |
+| `TransportFunc`        | `func(*http.Transport) (http.RoundTripper, error)` | —                  | 自定义 HTTP 传输工厂。会传入默认 `transport` 以便有选择地进行覆盖 (仅 HTTP 传输) 。                                                                                 |
+| `HTTPProxyURL`         | `*url.URL`                                         | —                  | 所有请求使用的 HTTP 代理 URL (仅 HTTP 传输) 。                                                                                                        |
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    DialContext: func(ctx context.Context, addr string) (net.Conn, error) {
+        dialCount++
+        var d net.Dialer
+        return d.DialContext(ctx, "tcp", addr)
+    },
+    Debug: true,
+    Debugf: func(format string, v ...interface{}) {
+        fmt.Printf(format, v)
+    },
+    Settings: clickhouse.Settings{
+        "max_execution_time": 60,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionLZ4,
+    },
+    DialTimeout:      time.Duration(10) * time.Second,
+    MaxOpenConns:     5,
+    MaxIdleConns:     5,
+    ConnMaxLifetime:  time.Duration(10) * time.Minute,
+    ConnOpenStrategy: clickhouse.ConnOpenInOrder,
+    BlockBufferSize: 10,
+})
+if err != nil {
+    return err
+}
+```
+
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/connect_settings.go)
+
+<div id="using-tls">
+  ## TLS
+</div>
+
+在底层，所有客户端连接方法 (`DSN/OpenDB/Open`) 都会使用 [Go tls package](https://pkg.go.dev/crypto/tls) 建立安全连接。如果 `Options` 结构体中包含一个非空的 `tls.Config` 指针，客户端就会识别并使用 TLS。
+
+```go
+env, err := GetNativeTestEnvironment()
+if err != nil {
+    return err
+}
+cwd, err := os.Getwd()
+if err != nil {
+    return err
+}
+t := &tls.Config{}
+caCert, err := ioutil.ReadFile(path.Join(cwd, "../../tests/resources/CAroot.crt"))
+if err != nil {
+    return err
+}
+caCertPool := x509.NewCertPool()
+successful := caCertPool.AppendCertsFromPEM(caCert)
+if !successful {
+    return err
+}
+t.RootCAs = caCertPool
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.SslPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    TLS: t,
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+fmt.Println(v.String())
+```
+
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ssl.go)
+
+这个最小化的 `TLS.Config` 通常足以连接到 ClickHouse server 的安全 native 端口 (通常为 9440) 。如果 ClickHouse server 没有有效的证书 (例如证书已过期、hostname 不匹配，或不是由公开认可的根证书颁发机构签发) ，则可以将 `InsecureSkipVerify` 设为 true，但强烈不建议这样做。
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.SslPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    TLS: &tls.Config{
+        InsecureSkipVerify: true,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+```
+
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ssl_no_verify.go)
+
+如果需要额外的 TLS 参数，应用程序代码应在 `tls.Config` 结构体中设置相应字段。其中可以包括指定特定的密码套件、强制使用某个 TLS 版本 (如 1.2 或 1.3) 、添加内部 CA 证书链，以及在 ClickHouse server 要求时添加客户端证书 (及其私钥) ，还包括更专门的安全配置中的大多数其他选项。
+
+<div id="authentication">
+  ## 身份验证
+</div>
+
+在连接详细信息中指定 Auth 结构体，以提供用户名和密码。
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+
+v, err := conn.ServerVersion()
+```
+
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/auth.go)
+
+<div id="connecting-to-multiple-nodes">
+  ## 连接到多个节点
+</div>
+
+可通过 `Addr` 结构体指定多个地址。
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{"127.0.0.1:9001", "127.0.0.1:9002", fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+fmt.Println(v.String())
+```
+
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/1c0d81d0b1388dbb9e09209e535667df212f4ae4/examples/clickhouse_api/multi_host.go#L26-L45)
+
+提供三种连接策略：
+
+* `ConnOpenInOrder` (默认)  - 按顺序使用地址。只有当无法使用列表中靠前的地址建立连接时，才会使用后面的地址。本质上，这是一种故障转移策略。
+* `ConnOpenRoundRobin` - 通过轮询策略在各个地址之间均衡负载。
+* `ConnOpenRandom` - 从地址列表中随机选择一个节点。
+
+可通过 `ConnOpenStrategy` 选项进行控制
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:             []string{"127.0.0.1:9001", "127.0.0.1:9002", fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    ConnOpenStrategy: clickhouse.ConnOpenRoundRobin,
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+```
+
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/1c0d81d0b1388dbb9e09209e535667df212f4ae4/examples/clickhouse_api/multi_host.go#L50-L67)
+
+<div id="connection-pooling">
+  ## 连接池
+</div>
+
+客户端会维护一个连接池，并按需在不同查询之间复用连接。任意时刻最多使用 `MaxOpenConns` 个连接，而连接池的最大空闲连接数由 `MaxIdleConns` 控制。客户端每次执行查询时都会从连接池获取一个连接，并在使用后将其归还以供复用。连接会在整个批次的生命周期内持续占用，并在调用 `Send()` 时释放。
+
+除非用户设置 `MaxOpenConns=1`，否则无法保证后续查询会继续使用连接池中的同一个连接。这种需求并不常见，但在使用临时表时可能是必需的。
+
+另外请注意，`ConnMaxLifetime` 默认值为 1 小时。如果有节点离开集群，这可能导致发往 ClickHouse 的负载分布不均。例如，当某个节点不可用时，连接会被分配到其他节点。即使该节点随后恢复并重新加入集群，这些连接默认也会继续保持，并且在 1 小时内不会重新建立。在高负载场景下，建议适当调低该值。
+
+Native (TCP) 和 HTTP 协议均启用了连接池。
+
+<div id="logging">
+  ## 日志
+</div>
+
+该客户端支持通过 `Options` 中的 `Logger` 字段，使用 Go 标准 `log/slog` 包进行结构化日志记录。旧版的 `Debug` 和 `Debugf` 字段已弃用，但为保持向后兼容性仍然可用 (优先级：`Debugf` &gt; `Logger` &gt; 空操作) 。
+
+```go
+import (
+    "log/slog"
+    "os"
+)
+
+// JSON 结构化日志
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+}))
+
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Logger: logger,
+})
+```
+
+你还可以为日志记录器添加应用级上下文：
+
+```go
+baseLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelInfo,
+}))
+enrichedLogger := baseLogger.With(
+    slog.String("service", "my-service"),
+    slog.String("environment", "production"),
+)
+
+conn, err := clickhouse.Open(&clickhouse.Options{
+    // ...
+    Logger: enrichedLogger,
+})
+```
+
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/logger_test.go)
+
+<div id="compression">
+  ## 压缩
+</div>
+
+对压缩方法的支持取决于所使用的底层协议。对于原生协议，客户端支持 `LZ4` 和 `ZSTD` 压缩。这仅在块级别进行。可通过在连接配置中加入 `Compression` 配置来启用压缩。
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionZSTD,
+    },
+    MaxOpenConns: 1,
+})
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(context.Background(), "DROP TABLE IF EXISTS example")
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            Col1 Array(String)
+    ) Engine Memory
+    `); err != nil {
+    return err
+}
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+for i := 0; i < 1000; i++ {
+    if err := batch.Append([]string{strconv.Itoa(i), strconv.Itoa(i + 1), strconv.Itoa(i + 2), strconv.Itoa(i + 3)}); err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+```
+
+[完整示例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/compression.go)
+
+使用 HTTP 传输时，还可使用其他压缩方式：`gzip`、`deflate` 和 `br`。详情请参见 [Database/SQL API - 压缩](/zh/integrations/language-clients/go/database-sql-api#compression)。
+
+<div id="tcp-vs-http">
+  ## TCP 与 HTTP
+</div>
+
+传输方式只需切换一个配置项——本指南中的其余内容对两者都适用。区别如下：
+
+|                                | TCP (原生协议)             | HTTP                                                |
+| :----------------------------- | :--------------------- | :-------------------------------------------------- |
+| **默认端口**                       | 9000 (明文) ，9440 (TLS)  | 8123 (明文) ，8443 (TLS)                               |
+| **启用**                         | 默认启用——省略 `Protocol`    | `Protocol: clickhouse.HTTP` 或使用 `http://` DSN       |
+| **压缩**                         | `lz4`, `zstd`          | `lz4`, `zstd`, `gzip`, `deflate`, `br`              |
+| **会话**                         | 内置 (始终启用)              | 显式指定——将 `session_id` 作为设置传入                         |
+| **HTTP 请求头**                   | —                      | `HttpHeaders`, `HttpUrlPath`, `HttpMaxConnsPerHost` |
+| **自定义传输层**                     | —                      | `TransportFunc`                                     |
+| **JWT 认证**                     | —                      | `GetJWT` (ClickHouse Cloud HTTPS)                   |
+| **OpenTelemetry (`WithSpan`)** | ✅                      | 服务端支持；客户端尚未发送 `traceparent` 请求头                     |
+
+要将任一 API 切换到 HTTP：
+
+```go
+// 通过 HTTP 使用 ClickHouse API
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:     []string{"host:8123"},
+    Protocol: clickhouse.HTTP,
+    // ... 认证等配置
+})
+
+// 通过 HTTP 使用 database/sql — 通过 Options
+conn := clickhouse.OpenDB(&clickhouse.Options{
+    Addr:     []string{"host:8123"},
+    Protocol: clickhouse.HTTP,
+    // ... 认证等配置
+})
+
+// 通过 HTTP 使用 database/sql — 通过 DSN
+conn, err := sql.Open("clickhouse", "http://host:8123?username=user&password=pass")
+```

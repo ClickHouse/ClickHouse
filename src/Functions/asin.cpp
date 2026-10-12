@@ -24,9 +24,9 @@ For arguments in the range `[-1, 1]` it returns the value in the range of `[-pi(
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the arcsine value of the provided argument `x`", {"Float64"}};
     FunctionDocumentation::Examples examples = {
-    {"inverse", "SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))", "1 1 1"},
+    {"inverse", "SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))", "1\t1\t0.9999999999999999"},
     {"float32", "SELECT toTypeName(asin(1.0::Float32))", "Float64"},
-    {"nan", "SELECT asin(1.1), asin(-2), asin(inf), asin(nan)", "nan nan nan nan"}
+    {"nan", "SELECT asin(1.1), asin(-2), asin(inf), asin(nan)", "nan\tnan\tnan\tnan"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;

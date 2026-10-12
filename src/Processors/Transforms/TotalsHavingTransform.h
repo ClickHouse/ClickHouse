@@ -19,7 +19,7 @@ enum class TotalsMode : uint8_t;
   * Calculates total values according to totals_mode.
   * If necessary, evaluates the expression from HAVING and filters rows. Returns the finalized and filtered blocks.
   */
-class TotalsHavingTransform : public ISimpleTransform
+class TotalsHavingTransform final : public ISimpleTransform
 {
 public:
     TotalsHavingTransform(
@@ -39,6 +39,7 @@ public:
 
     Status prepare() override;
     void work() override;
+    void onCancel() noexcept override;
 
     bool hasFilter() const { return !filter_column_name.empty(); }
 

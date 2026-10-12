@@ -13,6 +13,7 @@ SET enable_parallel_replicas = 0; -- join swap/reordering disabled with parallel
 SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 10; -- cardinality estimation needed for size-based swap decision
 SET query_plan_convert_any_join_to_semi_or_anti_join = 0; -- test is specifically about ANY join swap, prevent conversion changing join type
+SET query_plan_optimize_join_order_randomize = 0;
 
 SELECT *
 FROM lhs

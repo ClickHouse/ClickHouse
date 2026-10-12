@@ -1,6 +1,7 @@
 #include <ctime>
 #include <Core/Field.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -27,7 +28,7 @@ namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow : public IExecutableFunction
+class ExecutableFunctionNow final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow(time_t time_) : time_value(time_) {}
@@ -45,7 +46,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseNow : public IFunctionBase
+class FunctionBaseNow final : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow(time_t time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -84,7 +85,7 @@ private:
     DataTypePtr return_type;
 };
 
-class NowOverloadResolver : public IFunctionOverloadResolver
+class NowOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now";
@@ -124,7 +125,9 @@ public:
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
         }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
+        /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
+        /// otherwise `now(toLowCardinality('UTC'))` is rejected.
+        if (arguments.size() == 1 && !isStringOrFixedString(recursiveRemoveLowCardinality(arguments[0].type)))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());
@@ -190,6 +193,7 @@ SELECT NOW, CURRENT_TIMESTAMP
 
     factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("localtimestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -3,9 +3,6 @@
 #include <atomic>
 #include <memory>
 #include <variant>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -126,7 +123,9 @@ private:
             IPv4,
             IPv6,
             String,
-            Array>
+            Array,
+            Map,
+            Object>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -152,7 +151,9 @@ private:
             ContainerType<IPv4>,
             ContainerType<IPv6>,
             ContainerType<std::string_view>,
-            ContainerType<Array>>
+            ContainerType<Array>,
+            ContainerType<Map>,
+            ContainerType<Object>>
             maps;
         std::unique_ptr<Arena> string_arena;
         AttributeUnderlyingType type;

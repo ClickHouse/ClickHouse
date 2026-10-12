@@ -1,0 +1,81 @@
+---
+slug: /tips-and-tricks/too-many-parts
+sidebarTitle: 'パーツが多すぎる'
+doc_type: 'guide'
+keywords: [
+  'clickhouse パーツが多すぎる',
+  'パーツが多すぎる エラー',
+  'clickhouse insert のバッチ処理',
+  'パーツ爆発問題',
+  'clickhouse merge パフォーマンス',
+  'バッチ insert の最適化',
+  'clickhouse 非同期 INSERT',
+  '小さな insert の問題',
+  'clickhouse パーツ管理',
+  'insert パフォーマンスの最適化',
+  'clickhouse バッチ処理戦略',
+  'database insert パターン'
+]
+title: 'Lessons - パーツが多すぎる問題'
+description: 'パーツが多すぎる問題の解決策と予防策'
+---
+
+*このガイドは、コミュニティミートアップで得られた知見をまとめたコレクションの一部です。より実践的な解決策や知見については、[問題別に参照](/ja/resources/support-center/tips-and-tricks/community-wisdom)できます。*
+*パフォーマンス最適化のヒントをさらに知りたい場合は、[Performance Optimization](/ja/resources/support-center/tips-and-tricks/performance-optimization) コミュニティインサイトガイドをご覧ください。*
+
+<div id="understanding-the-problem">
+  ## 問題を理解する
+</div>
+
+ClickHouse は、深刻なパフォーマンス低下を防ぐために、「パーツが多すぎる」エラーを返します。小さなパーツは複数の問題を引き起こします。クエリ時に読み込んでマージするファイル数が増えることでクエリ性能が低下し、各パーツのメタデータをメモリ上に保持する必要があるためメモリ使用量が増加します。また、データブロックが小さいほど圧縮効率が低下し、ファイルハンドルやシーク操作が増えることで I/O オーバーヘッドも大きくなります。さらに、バックグラウンドマージが遅くなり、マージスケジューラの負荷も増加します。
+
+**関連ドキュメント**
+
+* [MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/mergetree)
+* [パーツ](/ja/concepts/core-concepts/parts)
+* [パーツ システムテーブル](/ja/reference/system-tables/parts)
+
+<div id="recognize-parts-problem">
+  ## 問題を早期に把握する
+</div>
+
+このクエリは、すべてのアクティブなテーブルにおけるパーツ数とサイズを分析し、テーブルの断片化を監視します。パーツが過剰に多い、または小さすぎるために、merge の最適化が必要になる可能性があるテーブルを特定します。断片化の問題がクエリのパフォーマンスに影響する前に検知できるよう、これを定期的に実行してください。
+
+```sql runnable editable
+-- チャレンジ: 本番環境で使用する実際のデータベース名とテーブル名に置き換えてください
+-- 実験: システムに合わせてパーツ数のしきい値 (1000, 500, 100) を調整してください
+SELECT 
+    database,
+    table,
+    count() as total_parts,
+    sum(rows) as total_rows,
+    round(avg(rows), 0) as avg_rows_per_part,
+    min(rows) as min_rows_per_part,
+    max(rows) as max_rows_per_part,
+    round(sum(bytes_on_disk) / 1024 / 1024, 2) as total_size_mb,
+    CASE 
+        WHEN count() > 1000 THEN 'CRITICAL - Too many parts (>1000)'
+        WHEN count() > 500 THEN 'WARNING - Many parts (>500)'
+        WHEN count() > 100 THEN 'CAUTION - Getting many parts (>100)'
+        ELSE 'OK - Reasonable part count'
+    END as parts_assessment,
+    CASE 
+        WHEN avg(rows) < 1000 THEN 'POOR - Very small parts'
+        WHEN avg(rows) < 10000 THEN 'FAIR - Small parts'
+        WHEN avg(rows) < 100000 THEN 'GOOD - Medium parts'
+        ELSE 'EXCELLENT - Large parts'
+    END as part_size_assessment
+FROM system.parts
+WHERE active = 1
+  AND database NOT IN ('system', 'information_schema')
+GROUP BY database, table
+ORDER BY total_parts DESC
+LIMIT 20;
+```
+
+<div id="video-sources">
+  ## 関連ビデオ
+</div>
+
+* [ClickHouse における高速・同時実行・一貫性を備えた非同期 INSERT](https://www.youtube.com/watch?v=AsMPEfN5QtM) - ClickHouse チームのメンバーが、非同期 INSERT と「パーツが多すぎる」問題について解説します
+* [大規模な本番環境での ClickHouse 運用](https://www.youtube.com/watch?v=liTgGiTuhJE) - オブザーバビリティプラットフォームにおける実践的なバッチ処理戦略

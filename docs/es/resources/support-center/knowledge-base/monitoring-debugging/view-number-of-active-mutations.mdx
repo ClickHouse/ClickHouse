@@ -1,0 +1,45 @@
+---
+date: 2023-06-07
+title: ¿Cómo puedo ver el número de mutaciones activas o en cola?
+description: Supervise el número de mutaciones activas o en cola en ClickHouse, especialmente al realizar operaciones `ALTER` o `UPDATE`. Use la tabla `system.mutations` para hacer un seguimiento de las mutaciones.
+tags: ['Tablas del sistema']
+keywords: ['Mutaciones activas', 'Mutaciones en cola']
+---
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo puedo ver el número de mutaciones activas o en cola?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Supervisar la cantidad de mutaciones activas o en cola es importante si está realizando muchas sentencias `ALTER` o `UPDATE` en sus tablas. Estas consultas reescriben partes de datos y no son atómicas: se ordenan según la parte en la que se crean y se aplican a cada parte en ese orden. Puede encontrar más detalles sobre las mutaciones en la [documentación](/es/reference/statements/alter/index#mutations).
+
+Cada mutación genera una entrada en la tabla `system.mutations`. Si realiza una gran cantidad de mutaciones, puede supervisar el número de mutaciones en ejecución y en cola con lo siguiente:
+
+```
+SELECT
+   hostname() AS host,
+   count()
+   FROM clusterAllReplicas('default', 'system.mutations') WHERE not is_done
+   GROUP BY host;
+```
+
+<Note>
+  Esta consulta asume que está ejecutando un clúster llamado `default`, que es el nombre de su clúster en ClickHouse Cloud. Sustituya `default` por el nombre de su clúster.
+
+  Si no tiene un clúster, use este comando:
+
+  ```sql
+  SELECT
+     hostname() AS host,
+     count()
+     FROM system.mutations WHERE not is_done
+     GROUP BY host;
+  ```
+</Note>
+
+También le recomendamos leer esta reciente [entrada del blog sobre actualizaciones y eliminaciones](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse).

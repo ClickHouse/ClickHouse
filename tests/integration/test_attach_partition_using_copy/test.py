@@ -24,10 +24,27 @@ def start_cluster():
         cluster.shutdown()
 
 
+# Retry parameters for queries that read from a `web` disk backed by
+# `raw.githubusercontent.com`. The endpoint occasionally returns
+# `Poco::TimeoutException: connect timed out` under CI network load,
+# so all queries that touch the source table or its data are wrapped
+# in `query_with_retry`.
+WEB_RETRY_COUNT = 5
+WEB_RETRY_SLEEP = 10
+
+
 def cleanup(nodes):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS source SYNC")
-        node.query("DROP TABLE IF EXISTS destination SYNC")
+        node.query_with_retry(
+            "DROP TABLE IF EXISTS source SYNC",
+            retry_count=WEB_RETRY_COUNT,
+            sleep_time=WEB_RETRY_SLEEP,
+        )
+        node.query_with_retry(
+            "DROP TABLE IF EXISTS destination SYNC",
+            retry_count=WEB_RETRY_COUNT,
+            sleep_time=WEB_RETRY_SLEEP,
+        )
 
 
 def create_source_table(node, table_name, replicated):
@@ -91,7 +108,7 @@ def create_destination_table(node, table_name, replicated):
         district LowCardinality(String),
         county LowCardinality(String)
         )
-        ENGINE = {engine} 
+        ENGINE = {engine}
         ORDER BY (postcode1, postcode2, addr1, addr2)
         """.format(
             table_name=table_name, engine=engine
@@ -104,18 +121,27 @@ def test_both_mergetree(start_cluster):
     create_source_table(replica1, "source", False)
     create_destination_table(replica1, "destination", False)
 
-    replica1.query(f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source")
+    replica1.query_with_retry(
+        "ALTER TABLE destination ATTACH PARTITION tuple() FROM source",
+        retry_count=WEB_RETRY_COUNT,
+        sleep_time=WEB_RETRY_SLEEP,
+    )
 
+    expected = replica1.query_with_retry(
+        "SELECT toYear(date) AS year,round(avg(price)) AS price,"
+        "bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
+        retry_count=WEB_RETRY_COUNT,
+        sleep_time=WEB_RETRY_SLEEP,
+    )
     assert_eq_with_retry(
         replica1,
-        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
-        replica1.query(
-            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"
-        ),
+        "SELECT toYear(date) AS year,round(avg(price)) AS price,"
+        "bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
+        expected,
     )
 
     assert_eq_with_retry(
-        replica1, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
+        replica1, "SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     cleanup([replica1])
@@ -127,30 +153,38 @@ def test_all_replicated(start_cluster):
     create_destination_table(replica1, "destination", True)
     create_destination_table(replica2, "destination", True)
 
-    replica1.query(f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source")
+    replica1.query_with_retry(
+        "ALTER TABLE destination ATTACH PARTITION tuple() FROM source",
+        retry_count=WEB_RETRY_COUNT,
+        sleep_time=WEB_RETRY_SLEEP,
+    )
     replica2.query("SYSTEM SYNC REPLICA destination")
 
-    assert_eq_with_retry(
-        replica1,
-        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
-        replica1.query(
-            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"
-        ),
+    expected = replica1.query_with_retry(
+        "SELECT toYear(date) AS year,round(avg(price)) AS price,"
+        "bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
+        retry_count=WEB_RETRY_COUNT,
+        sleep_time=WEB_RETRY_SLEEP,
     )
     assert_eq_with_retry(
         replica1,
-        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
-        replica2.query(
-            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC"
-        ),
+        "SELECT toYear(date) AS year,round(avg(price)) AS price,"
+        "bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
+        expected,
+    )
+    assert_eq_with_retry(
+        replica2,
+        "SELECT toYear(date) AS year,round(avg(price)) AS price,"
+        "bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
+        expected,
     )
 
     assert_eq_with_retry(
-        replica1, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
+        replica1, "SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     assert_eq_with_retry(
-        replica2, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
+        replica2, "SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     cleanup([replica1, replica2])
@@ -162,30 +196,38 @@ def test_only_destination_replicated(start_cluster):
     create_destination_table(replica1, "destination", True)
     create_destination_table(replica2, "destination", True)
 
-    replica1.query(f"ALTER TABLE destination ATTACH PARTITION tuple() FROM source")
+    replica1.query_with_retry(
+        "ALTER TABLE destination ATTACH PARTITION tuple() FROM source",
+        retry_count=WEB_RETRY_COUNT,
+        sleep_time=WEB_RETRY_SLEEP,
+    )
     replica2.query("SYSTEM SYNC REPLICA destination")
 
-    assert_eq_with_retry(
-        replica1,
-        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
-        replica1.query(
-            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC"
-        ),
+    expected = replica1.query_with_retry(
+        "SELECT toYear(date) AS year,round(avg(price)) AS price,"
+        "bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
+        retry_count=WEB_RETRY_COUNT,
+        sleep_time=WEB_RETRY_SLEEP,
     )
     assert_eq_with_retry(
         replica1,
-        f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM source GROUP BY year ORDER BY year ASC",
-        replica2.query(
-            f"SELECT toYear(date) AS year,round(avg(price)) AS price,bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC"
-        ),
+        "SELECT toYear(date) AS year,round(avg(price)) AS price,"
+        "bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
+        expected,
+    )
+    assert_eq_with_retry(
+        replica2,
+        "SELECT toYear(date) AS year,round(avg(price)) AS price,"
+        "bar(price, 0, 1000000, 80) FROM destination GROUP BY year ORDER BY year ASC",
+        expected,
     )
 
     assert_eq_with_retry(
-        replica1, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
+        replica1, "SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     assert_eq_with_retry(
-        replica2, f"SELECT town from destination LIMIT 1", "SCARBOROUGH"
+        replica2, "SELECT town from destination LIMIT 1", "SCARBOROUGH"
     )
 
     cleanup([replica1, replica2])
@@ -198,9 +240,9 @@ def test_not_work_on_different_disk(start_cluster):
     create_destination_table(replica2, "destination", False)
 
     replica1.query_and_get_error(
-        f"ALTER TABLE destination REPLACE PARTITION tuple() FROM source"
+        "ALTER TABLE destination REPLACE PARTITION tuple() FROM source"
     )
     replica1.query_and_get_error(
-        f"ALTER TABLE destination MOVE PARTITION tuple() FROM source"
+        "ALTER TABLE destination MOVE PARTITION tuple() FROM source"
     )
     cleanup([replica1, replica2])

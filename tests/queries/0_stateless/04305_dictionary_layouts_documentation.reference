@@ -1,0 +1,8 @@
+1	0	0
+cache	0	1
+complex_key_hashed	1	1
+flat	0	1
+hashed	0	1
+ip_trie	1	1
+polygon	1	1
+['sparse_hashed','complex_key_hashed','hashed_array','flat']

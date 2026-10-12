@@ -1,0 +1,149 @@
+---
+sidebarTitle: 'Gestion des modes de paiement'
+slug: /manage/manage/billing/managing-payment-methods
+title: 'Gestion des modes de paiement'
+description: 'Gérez les abonnements via la Marketplace et ajoutez une carte de crédit de secours'
+keywords: ['facturation']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce document explique comment gérer et modifier le mode de facturation de votre organisation dans ClickHouse Cloud, notamment passer de la facturation par carte de crédit à la facturation via la marketplace et inversement, ajouter une carte de crédit de secours et partager un abonnement de marketplace entre plusieurs organisations.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Vous devez avoir un rôle Admin ou Billing dans l’organisation pour mettre à jour les modes de paiement.
+* Les abonnements marketplace auxquels vous avez accès sont ceux qui sont actifs dans d’autres organisations où vous avez un rôle Admin ou Billing.
+* Pour partager un abonnement marketplace d’une autre organisation, vous devez avoir un rôle Admin ou Billing à la fois dans l’organisation actuelle et dans l’organisation propriétaire de l’abonnement marketplace.
+* Tous les services de l’organisation que vous souhaitez facturer via un abonnement marketplace doivent être sur le même fournisseur cloud que la marketplace (AWS, GCP ou Azure).
+
+<Note>
+  Vous ne pouvez pas partager la carte de crédit d’une autre organisation.
+  Si votre mode de paiement actuel est une carte de crédit et que vous souhaitez le mettre à jour, vous devez saisir les informations d’une nouvelle carte.
+</Note>
+
+<div id="add-update-cc-payment-method">
+  ## Ajouter ou mettre à jour un mode de paiement par carte de crédit
+</div>
+
+Si votre organisation est actuellement facturée par carte de crédit, vous pouvez mettre à jour les informations de votre carte depuis la page Billing.
+
+<div id="steps-add-update">
+  ### Étapes pour ajouter ou mettre à jour votre carte de crédit
+</div>
+
+1. Accédez à **Billing** dans la console ClickHouse Cloud.
+2. Si vous souhaitez ajouter une carte de crédit, cliquez sur le bouton **add a payment method** en haut de la page.
+
+<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="Ajouter un mode de paiement" size="lg" />
+
+3. Si vous souhaitez modifier votre carte de crédit, cliquez sur le bouton **edit your credit card** en haut de la page.
+
+<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="Modifier votre carte de crédit" size="lg" />
+
+4. Dans les deux cas, suivez les instructions pour ajouter ou mettre à jour l’adresse de facturation associée à votre carte de crédit.
+
+<div id="configure-billing-to-existing-mp-sub">
+  ## Configurer la facturation d&#39;une organisation avec un abonnement Marketplace existant
+</div>
+
+Si vous avez plusieurs organisations, vous pouvez :
+
+* Faire passer la facturation d&#39;une organisation de la carte bancaire à un abonnement Marketplace déjà actif sur l&#39;une de vos autres organisations.
+* Remplacer l&#39;abonnement Marketplace actuel d&#39;une organisation par celui utilisé par une autre organisation.
+
+<div id="steps-switch-org-already-active">
+  ### Étapes pour faire passer la facturation d’une organisation d’une carte de crédit à un abonnement marketplace déjà actif sur l’une de vos autres organisations
+</div>
+
+1. Accédez à la page **Billing** dans la console ClickHouse Cloud.
+2. Cliquez sur l’icône de modification à côté du **mode de paiement**.
+
+<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="Modifier le mode de paiement" size="lg" />
+
+3. Dans la boîte de dialogue **Modifier le mode de paiement**, votre carte de crédit actuelle apparaît comme mode de paiement principal.
+4. Sous la carte de crédit, les abonnements marketplace éligibles de vos autres organisations s’affichent. Chaque entrée indique le type de marketplace (par ex. AWS Marketplace) et le nom de l’organisation associée.
+5. Sélectionnez l’abonnement marketplace auquel vous souhaitez imputer l’utilisation de cette organisation.
+6. Cliquez sur **Mettre à jour le mode de paiement** pour confirmer.
+
+<div id="steps-switch-org-different-org">
+  ### Étapes pour remplacer l’abonnement Marketplace actuel d’une organisation par celui utilisé par une autre organisation
+</div>
+
+1. Accédez à la page **Billing** dans la console ClickHouse Cloud.
+2. Cliquez sur l’icône de modification à côté du **mode de paiement**.
+
+<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="Modifier le mode de paiement" size="lg" />
+
+3. Dans la boîte de dialogue **Modifier le mode de paiement**, votre abonnement Marketplace actuel apparaît comme mode de paiement.
+4. Sous l’abonnement Marketplace actuel, les autres abonnements Marketplace éligibles de vos autres organisations sont affichés. Chaque entrée indique le type de marketplace (par exemple, AWS Marketplace) et le nom de l’organisation associée.
+5. Sélectionnez le nouvel abonnement Marketplace auquel vous souhaitez imputer l’utilisation de cette organisation.
+6. Cliquez sur **Mettre à jour le mode de paiement** pour confirmer.
+
+<div id="add-backup-cc-to-marketplace-org">
+  ## Ajout d’une carte de crédit de secours à une organisation utilisant Marketplace
+</div>
+
+Si le mode de paiement principal de votre organisation est un abonnement Marketplace, vous pouvez ajouter une carte de crédit comme mode de paiement de secours. La carte de secours ne sera débitée que si nous ne sommes pas en mesure de facturer l’usage via l’abonnement Marketplace (par ex. si l’abonnement est annulé ou a expiré).
+
+<Note>
+  L’utilisation de ClickHouse Cloud exige que votre organisation dispose d’au moins un mode de facturation actif et valide configuré (abonnement Marketplace ou carte de crédit). Pour en savoir plus sur la conformité de la facturation, consultez [cette page](/fr/products/cloud/reference/billing/billing-compliance#billing-compliance).
+</Note>
+
+<div id="steps-add-backup-cc">
+  ### Étapes pour ajouter une carte de crédit de secours
+</div>
+
+1. Accédez à la page **Billing** dans la console ClickHouse Cloud.
+2. En haut de la page Billing, votre mode de paiement principal apparaîtra comme un abonnement Marketplace, et le mode de paiement de secours comme **None**.
+3. Cliquez sur le bouton **add credit card** pour définir un mode de paiement de secours.
+
+<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="Ajouter une carte de crédit de secours" size="lg" />
+
+4. Suivez les instructions pour ajouter ou mettre à jour l’adresse de facturation associée à votre carte de crédit. Une fois l’enregistrement effectué, la page **Billing** affichera la carte de crédit de secours à côté de l’abonnement Marketplace principal.
+
+<Note>
+  Après avoir configuré une carte de crédit de secours, vous pourrez également cliquer sur le bouton permettant de modifier votre carte de crédit et de la définir comme mode de paiement principal.
+  Cependant, si vous le faites, votre carte de crédit deviendra votre seul mode de paiement pour l’organisation, et votre abonnement Marketplace sera entièrement supprimé de ClickHouse Cloud.
+  Vous devrez retourner dans votre compte Marketplace pour le reconfigurer en suivant les étapes de la section [&quot;Configurer la facturation marketplace depuis votre fournisseur cloud&quot;](#set-up-marketplace-billing-from-cp).
+</Note>
+
+<div id="set-up-marketplace-billing-from-cp">
+  ## Configurer la facturation via la marketplace de votre fournisseur cloud
+</div>
+
+Vous pouvez également configurer ou mettre à jour l’abonnement Marketplace de votre organisation directement depuis la marketplace cloud, plutôt que depuis la console ClickHouse Cloud. Cela peut être utile si vous souhaitez faire passer la facturation de votre organisation ClickHouse sur un nouvel abonnement lié à un autre compte de facturation Marketplace.
+
+Suivez les instructions ci-dessous en fonction de la marketplace et du type d’abonnement :
+
+* [AWS Marketplace PAYG](/fr/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace Committed Contract](/fr/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace PAYG](/fr/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace Committed Contract](/fr/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace PAYG](/fr/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace Committed Contract](/fr/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+Une fois cette procédure terminée, la facturation de l’organisation sélectionnée sera associée au nouvel abonnement Marketplace, et la page de facturation dans la console ClickHouse Cloud affichera cette mise à jour.
+
+<div id="support">
+  ## Assistance
+</div>
+
+Si vous rencontrez le moindre problème, n’hésitez pas à [contacter notre équipe d’assistance](https://clickhouse.com/support/program).
+
+<div id="faqs">
+  ## FAQ
+</div>
+
+<div id="what-happens-to-my-usage-charges-if-i-switch-billing-methods-mid-billing-cycle">
+  ### Que deviennent mes frais d’utilisation si je change de mode de facturation en cours de cycle de facturation ?
+</div>
+
+Cela dépend du sens du changement :
+
+Passage de la facturation via Marketplace à la facturation par carte de crédit : l’utilisation entre le début du cycle de facturation et le moment du changement est transmise à Marketplace. L’utilisation restante, du moment du changement jusqu’à la fin du cycle de facturation, est facturée sur la carte de crédit à la fin du cycle de facturation.
+
+Passage de la facturation par carte de crédit à la facturation via Marketplace : toute l’utilisation non encore facturée pour l’ensemble de la période de facturation est transmise à Marketplace.

@@ -10,11 +10,11 @@ namespace DB
 class HTTPPathHints : public IHints<>
 {
 public:
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
     void add(const String & http_path);
 
 private:
-    std::vector<String> http_paths;
+    VectorWithMemoryTracking<String> http_paths;
 };
 
 using HTTPPathHintsPtr = std::shared_ptr<HTTPPathHints>;

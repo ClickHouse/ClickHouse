@@ -1,0 +1,67 @@
+---
+slug: '/examples/aggregate-function-combinators/argMaxIf'
+title: 'argMaxIf'
+description: 'مثال على استخدام المُركِّب argMaxIf'
+keywords: ['argMax', 'if', 'combinator', 'examples', 'argMaxIf']
+sidebarTitle: 'argMaxIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`If`](/ar/reference/functions/aggregate-functions/combinators#-if) على الدالة [`argMax`](/ar/reference/functions/aggregate-functions/argMax)
+للعثور على قيمة `arg` المقابلة للقيمة العظمى لـ `val` في الصفوف التي يكون فيها الشرط `true`،
+باستخدام دالة المُركِّب التجميعي `argMaxIf`.
+
+تكون الدالة `argMaxIf` مفيدة عندما تحتاج إلى العثور على القيمة المرتبطة
+بالقيمة العظمى في مجموعة بيانات، ولكن فقط في الصفوف التي تستوفي شرطًا
+محددًا.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+في هذا المثال، سنستخدم مجموعة بيانات تجريبية لمبيعات المنتجات لتوضيح كيفية عمل
+`argMaxIf`. سنبحث عن اسم المنتج ذي أعلى سعر، ولكن
+فقط للمنتجات التي بيعت 10 مرات على الأقل.
+
+```sql title="Query"
+CREATE TABLE product_sales
+(
+    product_name String,
+    price Decimal32(2),
+    sales_count UInt32
+) ENGINE = Memory;
+
+INSERT INTO product_sales VALUES
+    ('Laptop', 999.99, 10),
+    ('Phone', 499.99, 15),
+    ('Tablet', 299.99, 0),
+    ('Watch', 1199.99, 5),
+    ('Headphones', 79.99, 20);
+
+SELECT argMaxIf(product_name, price, sales_count >= 10) AS most_expensive_popular_product
+FROM product_sales;
+```
+
+ستُرجع الدالة `argMaxIf` اسم المنتج ذي أعلى سعر
+بين جميع المنتجات التي بيعَت 10 مرات على الأقل (sales&#95;count &gt;= 10).
+في هذه الحالة، ستُرجع &#39;Laptop&#39; لأنه الأعلى سعرًا (999.99)
+بين المنتجات الأكثر مبيعًا.
+
+```response title="Response"
+   ┌─most_expensi⋯lar_product─┐
+1. │ Laptop                   │
+   └──────────────────────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`argMax`](/ar/reference/functions/aggregate-functions/argMax)
+* [`argMin`](/ar/reference/functions/aggregate-functions/argMin)
+* [`argMinIf`](/ar/guides/clickhouse/examples/aggregate-function-combinators/argMinIf)
+* [`If المُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-if)

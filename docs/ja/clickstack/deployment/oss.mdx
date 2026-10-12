@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment/oss
+title: 'オープンソース版のデプロイオプション'
+description: 'オープンソース版 ClickStack のデプロイ - ClickHouse オブザーバビリティ スタック'
+doc_type: 'reference'
+keywords: ['ClickStack', 'オブザーバビリティ', 'オープンソース']
+---
+
+オープンソース版 ClickStack には、さまざまなユースケースに対応できる複数のデプロイオプションがあります。
+
+各デプロイオプションの概要を以下に示します。[Open Source Getting Started Guide](/ja/clickstack/getting-started/oss) では、ここでは網羅性のために掲載しているオプション 1 を具体的に紹介しています。
+
+| Name                | Description                                                                | Suitable For                                | Limitations                                         | Example Link                                                      |
+| ------------------- | -------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
+| オールインワン             | すべての ClickStack コンポーネントを 1 つにまとめた単一の Docker コンテナー。                         | 非本番環境でのデプロイ、デモ、概念実証                         | 本番環境には非推奨                                           | [オールインワン](/ja/clickstack/deployment/all-in-one)                      |
+| Helm                | Kubernetes ベースのデプロイ向けの公式 Helm チャート。ClickHouse Cloud と本番環境でのスケーリングをサポートします。 | Kubernetes 上の本番デプロイ                         | Kubernetes の知識が必要、Helm でのカスタマイズが必要                  | [Helm](/ja/clickstack/deployment/helm)                               |
+| Docker Compose      | Docker Compose を使用して各 ClickStack コンポーネントを個別にデプロイします。                       | ローカルテスト、概念実証、単一サーバーでの本番運用、独自の ClickHouse 環境 | 耐障害性なし、複数のコンテナーを管理する必要がある                           | [Docker Compose](/ja/clickstack/deployment/docker-compose)           |
+| HyperDX Only        | 独自の ClickHouse とスキーマを使用して HyperDX を単独で利用します。                               | 既存の ClickHouse ユーザー、カスタムイベントパイプライン          | ClickHouse は含まれず、ユーザーがインジェストとスキーマを管理する必要がある         | [HyperDX Only](/ja/clickstack/deployment/hyperdx-only)               |
+| Local Mode Only     | ローカルストレージを使ってブラウザー内だけで完全に動作します。バックエンドや永続化はありません。                           | デモ、デバッグ、HyperDX での開発                        | 認証なし、永続化なし、アラート機能なし、単一ユーザーのみ                        | [Local Mode Only](/ja/clickstack/deployment/local-mode-only)         |
+| ClickHouse Embedded | ClickStack UI が ClickHouse サーバーのバイナリに直接組み込まれています。追加コンポーネントは不要です。           | ClickStack の試用、既存の ClickHouse データの探索、デモ     | アラート機能なし、ダッシュボード/検索の永続化なし、クエリ設定のカスタマイズ不可、イベントパターンなし | [ClickHouse Embedded](/ja/clickstack/deployment/clickhouse-embedded) |

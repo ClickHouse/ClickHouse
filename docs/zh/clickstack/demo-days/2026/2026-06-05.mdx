@@ -1,0 +1,142 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-05
+title: '演示日 - 2026-06-05'
+sidebarTitle: '2026-06-05'
+description: '2026-06-05 的 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="split-trace-view-and-extended-trace-view">
+  ## 分栏 trace 视图与扩展 trace 视图
+</div>
+
+*演示者：[ @karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/L4sduqf3CR8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，trace 面板新增了分栏视图模式：当你在时间线中逐个点击 span 时，详情面板会直接在右侧更新，而不再像以前那样显示在所选 span 下方。这样一来，在你深入查看单个 span 时，整个时间线仍会保持可见。
+
+你还可以展开为扩展 trace 视图，以获得支持滚动和缩放的全宽时间线。这两个面板都可以独立打开和关闭，因此你可以更轻松地在高层概览和 span 详细检查之间切换，而不会丢失当前位置。
+
+**相关 PR：** [#2402](https://github.com/hyperdxio/hyperdx/pull/2402) feat: trace panel inline split detail
+
+<div id="source-level-required-filters">
+  ## 数据源级别的必需过滤器
+</div>
+
+*演示者 [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/RcAl8Sl5GFM" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，数据源可以声明必需过滤器，任何使用这些数据源的仪表盘都会自动显示这些过滤器。无需在每个引用某个数据源的仪表盘中手动重复添加相同的过滤器，ClickStack 会检测这一要求，并将过滤器提升到仪表盘级别——且仅作用于实际使用该数据源的卡片。
+
+如果单个卡片需要不同的过滤器值，可以覆盖仪表盘级别的值；同时，这些必需过滤器也会传递到图表编辑器预览中，这样你就可以在不移除它们的情况下验证查询。对于基于 SQL 的图表，必需的数据源过滤器还可与 SQL filters 宏集成；而在设置仪表盘到仪表盘的链接时，ClickStack 也会自动将它们纳入链接参数的候选项。
+
+<div id="fit-y-axis-to-data">
+  ## Y 轴适配数据
+</div>
+
+*演示：[ @pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cNiGHy1OqhU" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+折线图新增了“Y 轴适配数据”显示设置。默认情况下，Y 轴从 0 开始，这会在数值较大但波动幅度很小时压缩可视范围，导致趋势难以一眼看出。
+
+启用此选项后，Y 轴范围会根据实际数据范围动态计算，因此即使是高值序列中的细微波动也能清晰显示，无需手动配置坐标轴边界。
+
+**相关 PR：** [#2417](https://github.com/hyperdxio/hyperdx/pull/2417) feat(charts): add &#39;Fit Y-Axis to Data&#39; display setting for line charts
+
+<div id="anomaly-alerts">
+  ## 异常告警
+</div>
+
+*演示：[ @fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aAgN3ZlQz8M" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Himanshu 展示了我们如何利用 Z-score 检测实现基于异常的告警。无需设定固定阈值，而是通过设置偏离预期均值多少个标准差来触发告警。季节性窗口 (按小时或按天) 决定基线的计算方式，告警编辑器则会高亮显示哪些窗口会被触发，方便你在保存前调整灵敏度。
+
+这解决了阈值告警中的一个常见问题：用户往往不知道该设置什么数值。随着你调整 Z-score，潜在告警窗口会实时更新，这让你更容易找到一个既能捕捉真实尖峰、又不会产生过多噪声的阈值。你还可以将告警限定为仅在数值高于预期范围时触发 (而不是低于预期范围时) ，并通过“出现次数”设置，要求条件在连续多个数据点上成立后才触发。目前这项功能仍在开发中；当前基线是按移动平均计算的，后续计划支持指数移动平均。
+
+<div id="clearer-configuration-for-api-and-ai-agents">
+  ## 更清晰的 API 和 AI 智能体配置
+</div>
+
+*演示者：[ @alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/gpQA-Vso1XI" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack 设置中现已新增专门的 API 和 Agents 选项卡，将 API 密钥和 MCP 连接设置集中到一处。面向 Claude、Cursor 和 OpenCode 的一键按钮，省去了手动拼接连接命令的麻烦——例如，点击 Cursor 按钮会打开终端，并预先填入正确的安装命令。OpenCode 用户则会获得一段可复制的系统提示片段，可直接粘贴使用。通用的 JSON 配置选项则适用于其他 MCP 客户端。
+
+**相关 PR：** [#2407](https://github.com/hyperdxio/hyperdx/pull/2407) feat(team-settings): 连接你的 AI 助手
+
+<div id="color-selection-for-number-charts">
+  ## 数值图表的颜色选择
+</div>
+
+*演示者：[@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qsZ-I6FEsNw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，数值卡片同时支持静态颜色选择器和条件颜色规则。图表调色板也已更新为更直观的颜色名称——例如用“blue”和“gray”替代“color-1”和“color-10”——让你更清楚自己选中的是什么颜色。
+
+条件着色允许你定义按顺序生效的阈值规则，例如低于目标值时显示绿色、处于告警区间时显示琥珀色、高于严重阈值时显示红色。这让数值卡片真正成为仪表盘上的状态指示器，尤其适合错误率或 P99 延迟这类指标，因为无需细看数值就能立即获得直观的视觉反馈。
+
+**相关 PR：** [#2386](https://github.com/hyperdxio/hyperdx/pull/2386) 数值卡片条件颜色规则 (ordered thresholds) ，[#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): 数值卡片静态颜色选择器
+
+<div id="schema-migrations">
+  ## Schema 迁移
+</div>
+
+*演示：[@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qVV8vQqctfM" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack 现在在设置 (Enterprise) 中提供了一个 Schema 迁移选项卡，用于对你的数据 schema 进行受控的、带版本的 DDL 变更。你可以编写一个迁移并为其指定版本号，然后由后台任务按重试逻辑和严格顺序接手执行——如果某个迁移失败，依赖它的后续迁移在问题解决或该迁移被删除之前都不会运行。
+
+这种版本化模型也让 ClickHouse 能够将托管的 schema 优化推送给 ClickStack Cloud 团队，而无需手动执行 ALTER TABLE。团队可以查看待处理的迁移，并按自己的节奏解除阻塞。第一阶段涵盖新增式变更；主键修改计划在第二阶段支持。
+
+<div id="out-of-the-box-browser-rum-dashboards">
+  ## 开箱即用的浏览器 RUM 仪表盘
+</div>
+
+*演示：[ @teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Kmq9qwTnObw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack 现已内置一个预构建的 Browser RUM 仪表盘，覆盖完整的 Web 性能指标集。该仪表盘包含性能概览，可展示页面浏览量和 P90 加载时间，以及 Web Vitals——LCP、INP 和 CLS——并配有分层阈值，让你能够立即判断每个指标是状态良好、需要改进还是表现较差。
+
+其他部分涵盖页面浏览量趋势、长任务、设备细分、最慢页面、报错最多的会话、JavaScript 错误率以及 API 故障。自定义行操作支持你点击表格中的任意一行，深入查看相关会话或 trace 数据。页面顶部的过滤器可按服务、环境、服务版本和页面进行筛选。按国家/地区过滤功能仍在开发中，需等待 Browser SDK 改进以输出地理数据。
+
+**相关 PR：** [#2413](https://github.com/hyperdxio/hyperdx/pull/2413) feat: 添加 Browser RUM 仪表盘模板
+
+<div id="dependent-dashboard-filters">
+  ## 仪表板联动过滤器
+</div>
+
+*由 [@teeohhem](https://github.com/teeohhem) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/nTnBmZ-MvFg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+现在，仪表板过滤器之间可以设置为联动：在一个过滤器中选择某个值后，会自动收窄后续过滤器中的可选项。Kubernetes 仪表板率先采用了这一功能：现在选择某个 pod (容器组) 后，“部署”和“节点”下拉列表只会显示与该 pod (容器组) 相关的值，而不再展示整个集群中的所有选项。
+
+这意味着系统不会再提供会返回空数据的过滤器组合。该功能现已内置于 Kubernetes 仪表板模板中。

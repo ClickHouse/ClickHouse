@@ -1,0 +1,40 @@
+---
+sidebarTitle: 'Make before break (MBB)'
+slug: /cloud/features/mbb
+description: 'Página sobre as operações de Make before break (MBB) no ClickHouse Cloud'
+keywords: ['Make before break', 'MBB', 'Escalonamento', 'ClickHouse Cloud']
+title: 'Operações de Make before break (MBB) no ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O ClickHouse Cloud realiza upgrades e escalonamento de clusters usando a abordagem **Make Before Break** (MBB).
+Nessa abordagem, novas réplicas são adicionadas ao cluster antes que as réplicas antigas sejam removidas.
+Isso contrasta com a abordagem break-first, na qual as réplicas antigas seriam removidas primeiro, antes da adição de novas.
+
+A abordagem MBB tem vários benefícios:
+
+* Como a capacidade é adicionada ao cluster antes da remoção, a **capacidade geral do cluster não diminui**, ao contrário do que acontece na abordagem break-first. É claro que eventos não planejados, como falhas de nó ou de disco, ainda podem acontecer em um ambiente de nuvem.
+* Essa abordagem é especialmente útil em situações em que o cluster está sob alta carga, pois **evita que as réplicas existentes fiquem sobrecarregadas**, como aconteceria com uma abordagem break-first.
+* Como as réplicas podem ser adicionadas rapidamente, sem precisar esperar a remoção das réplicas primeiro, essa abordagem proporciona uma experiência de escalonamento **mais rápida e mais responsiva**.
+
+A imagem abaixo mostra como isso pode acontecer em um cluster com 3 réplicas, em que o serviço é escalado verticalmente:
+
+<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="Diagrama de exemplo para um cluster com 3 réplicas que é escalado verticalmente" />
+
+No geral, o MBB proporciona uma experiência de escalonamento e upgrade mais fluida e menos disruptiva em comparação com a abordagem break-first usada anteriormente.
+
+Com o MBB, há alguns comportamentos importantes dos quais você precisa estar ciente:
+
+1. As operações de MBB aguardam a conclusão das cargas de trabalho existentes nas réplicas atuais antes de encerrá-las.
+   Atualmente, esse período está definido em 1 hora, o que significa que o escalonamento ou os upgrades podem aguardar até uma hora por uma consulta de longa duração em uma réplica antes que ela seja removida.
+   Além disso, se um processo de backup estiver em execução em uma réplica, ele poderá ser concluído antes que a réplica seja encerrada.
+2. Como há um tempo de espera antes que uma réplica seja encerrada, pode haver situações em que um cluster tenha mais do que o número máximo de réplicas definido para ele.
+   Por exemplo, você pode ter um serviço com 6 réplicas no total, mas, com uma operação de MBB em andamento, 3 réplicas adicionais podem ser adicionadas ao cluster, totalizando 9 réplicas, enquanto as réplicas mais antigas ainda atendem consultas.
+   Isso significa que, por um período, o cluster terá mais réplicas do que o número desejado.
+   Além disso, várias operações de MBB podem se sobrepor, levando ao acúmulo de réplicas. Isso pode acontecer, por exemplo, em cenários em que várias solicitações de escalonamento vertical são enviadas ao cluster via API.
+   O ClickHouse Cloud tem verificações em vigor para restringir o número de réplicas que um cluster pode acumular.
+3. Com operações de MBB, os dados das tabelas de sistema são mantidos por 30 dias. Isso significa que, toda vez que uma operação de MBB acontece em um cluster, 30 dias de dados das tabelas de sistema são replicados das réplicas antigas para as novas.
+
+Se você tiver interesse em saber mais sobre a mecânica das operações de MBB, consulte esta [publicação no blog](https://clickhouse.com/blog/make-before-break-faster-scaling-mechanics-for-clickhouse-cloud) da equipe de engenharia do ClickHouse.

@@ -3,9 +3,17 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
+#include <Common/SilkFiberScheduler.h>
 #include <IO/WriteHelpers.h>
 
 #include <base/scope_guard.h>
+#include <base/sleep.h>
+
+#include "config.h"
+
+#if USE_SILK
+#include <silk/fibers/fiber.h>
+#endif
 
 #include <atomic>
 #include <limits>
@@ -53,6 +61,18 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , parent(parent_)
 {}
 
+void Throttler::sleep(UInt64 nanoseconds)
+{
+#if USE_SILK
+    if (Silk::isInsideFiber())
+    {
+        silk::FiberScheduler::sleep(nanoseconds);
+        return;
+    }
+#endif
+    sleepForNanoseconds(nanoseconds);
+}
+
 bool Throttler::throttle(size_t amount, size_t max_block_ns)
 {
     // Values obtained under lock to be checked after release
@@ -91,7 +111,7 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             : static_cast<UInt64>(block_ns_double);
 
         // Note that throwing exception from the following blocking call is safe. It is important for query cancellation.
-        sleepForNanoseconds(std::min<UInt64>(max_block_ns, block_ns));
+        sleep(std::min<UInt64>(max_block_ns, block_ns));
     }
 
     bool parent_block = false;
@@ -99,6 +119,17 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
         parent_block = parent->throttle(amount, max_block_ns);
 
     return block || parent_block;
+}
+
+bool Throttler::throttleOSPageCacheRead(size_t amount, size_t max_block_ns)
+{
+    if (!limits_block_device_bandwidth)
+        return throttle(amount, max_block_ns);
+
+    /// This throttler does not account the read, but a parent still can.
+    if (parent)
+        return parent->throttleOSPageCacheRead(amount, max_block_ns);
+    return false;
 }
 
 void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value)

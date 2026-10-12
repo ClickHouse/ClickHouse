@@ -1,0 +1,45 @@
+---
+sidebarTitle: '임계값'
+slug: /cloud/billing/payment-thresholds
+title: '임계값'
+description: 'ClickHouse Cloud의 임계값 및 자동 인보이스 발행.'
+keywords: ['청구', '임계값', '자동 인보이스 발행', '인보이스']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="threshholds">
+  ## 임계값
+</div>
+
+종량제(pay as you go) 고객의 경우, ClickHouse Cloud의 청구 주기 동안 청구 금액이 1,000 USD 또는 이에 상응하는 금액에 도달하면 조직에 설정된 결제 수단으로 자동 청구됩니다.
+
+<Tip>
+  첫 번째 인보이스 결제가 성공적으로 완료되면 임계값이 $5,000 USD로 상향됩니다. 두 번째 인보이스 결제가 성공적으로 완료되면 임계값이 $10,000 USD로 상향됩니다. 임계값 금액을 조정하려면 [지원팀에 문의하십시오](mailto:support@clickhouse.com).
+</Tip>
+
+청구가 실패하면 14일의 유예 기간 후 서비스가 중단됩니다.
+청구 주기 내에 여러 인보이스를 받는 경우, 모든 인보이스는 수령 즉시 납부해야 하며 ClickHouse Cloud 조직의 [컴플라이언스](/ko/products/cloud/reference/billing/billing-compliance)를 유지하려면 모두 결제해야 합니다.
+
+자동 결제에서 청구 실패가 발생한 경우, 설정된 신용카드에 문제가 있거나, 신용카드에 e-mandate를 설정하지 않았거나, 해당 신용카드가 반복 온라인 거래용 e-mandate 처리에 관한 인도중앙은행(Reserve Bank of India, RBI) 프레임워크를 준수하지 않기 때문일 수 있습니다.
+신용카드가 RBI 규정을 준수하지 않는 경우, RBI 규정을 준수하는 새 결제 수단을 추가하거나 카드에 e-mandate를 설정할 수 있을 때까지 수동 결제를 계속해야 합니다.
+
+아래 예시에서는 Cloud Console의 Billing UI를 보여줍니다.
+
+<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="UI에서 청구를 찾는 위치" />
+
+<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="인보이스" />
+
+위 예시에서 볼 수 있듯이, 2월 28일~3월 31일 청구 주기 동안 임계값 인보이스가 발송되었고, 같은 청구 주기 내에 1,000 USD를 초과한 나머지 사용량에 대해서도 또 다른 인보이스가 발송되었습니다.
+
+<div id="threshholds-notifications">
+  ## 임계값 알림
+</div>
+
+조직의 사용량이 임계값의 90%에 도달했고 청구 주기 중 임계값을 초과할 것으로 예상되면, 해당 조직에 연결된 청구 담당자(Billing Contact) 이메일 주소로 알림 이메일이 전송됩니다.
+임계값을 초과하면 이메일 알림과 함께 인보이스도 수신됩니다.
+
+<Note>
+  임계값 알림은 현재 후불(PAYG) 방식으로 청구되는 조직에만 지원됩니다.
+</Note>

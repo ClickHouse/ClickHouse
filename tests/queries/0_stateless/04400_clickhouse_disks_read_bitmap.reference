@@ -1,0 +1,25 @@
+--- valid (header + stats) ---
+magic:     OK
+version:   1 (Roaring32)
+body_size: 34 bytes
+crc:       stored=0xe8435bbd computed=0xe8435bbd -> VALID
+cardinality: 5 (deleted rows)
+row range:   [3, 1000000]
+--- valid (--values dumps set bits) ---
+magic:     OK
+version:   1 (Roaring32)
+body_size: 34 bytes
+crc:       stored=0xe8435bbd computed=0xe8435bbd -> VALID
+cardinality: 5 (deleted rows)
+row range:   [3, 1000000]
+values: 3 7 42 12345 1000000
+--- bad magic ---
+magic:     BAD
+not a delete-bitmap (.rbm) file (bad magic)
+--- truncated header ---
+not a delete-bitmap (.rbm) file (truncated: 3 bytes, need at least a 16-byte header)
+--- unsupported version ---
+version:   99 (UNSUPPORTED)
+unsupported delete-bitmap version 99
+--- missing file ---
+does not exist

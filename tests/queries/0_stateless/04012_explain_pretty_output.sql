@@ -1,3 +1,5 @@
+SET explain_query_plan_default = 'legacy';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
@@ -5,6 +7,7 @@ SET query_plan_join_swap_table = 0;
 SET enable_parallel_replicas = 0;
 SET use_statistics = 0;
 SET query_plan_join_shard_by_pk_ranges = 0;
+SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET query_plan_optimize_join_order_limit = 10; -- needed for row count estimates and table[N] labels in EXPLAIN output
 
 DROP TABLE IF EXISTS t1;

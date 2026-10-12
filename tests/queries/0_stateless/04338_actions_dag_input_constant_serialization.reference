@@ -1,0 +1,16 @@
+-- { echo }
+SELECT arrayMap(t -> t.2, [(number, 'a'), (number + 1, 'b')]) AS x FROM remote('127.0.0.1', numbers(3)) ORDER BY x;
+['a','b']
+['a','b']
+['a','b']
+SELECT arrayMap(t -> t.1, [(number, 'a'), (number + 1, 'b')]) AS x FROM remote('127.0.0.1', numbers(3)) ORDER BY x;
+[0,1]
+[1,2]
+[2,3]
+SELECT arrayFilter(t -> t.2 = 'b', [(number, 'a'), (number + 1, 'b')]) AS x FROM remote('127.0.0.1', numbers(3)) ORDER BY x;
+[(1,'b')]
+[(2,'b')]
+[(3,'b')]
+SELECT arraySort(arrayMap(t -> t.2, groupArray((number, toString(number))))) AS x FROM remote('127.0.0.1', numbers(3)) GROUP BY number % 2 ORDER BY x;
+['0','2']
+['1']

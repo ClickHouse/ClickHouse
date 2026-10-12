@@ -23,23 +23,7 @@ add_library(
     google_cloud_cpp_rest_internal # cmake-format: sort
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/binary_data_as_debug_string.cc
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/binary_data_as_debug_string.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_handle.cc
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_handle.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_handle_factory.cc
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_handle_factory.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_http_payload.cc
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_http_payload.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_impl.cc
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_impl.h
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_options.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_rest_client.cc
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_rest_client.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_rest_response.cc
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_rest_response.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_wrappers.cc
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_wrappers.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_writev.cc
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/curl_writev.h
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/external_account_source_format.cc
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/external_account_source_format.h
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/external_account_token_source_aws.cc
@@ -125,12 +109,15 @@ add_library(
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/tracing_rest_response.h
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/unified_rest_credentials.cc
     ${GOOGLE_CLOUD_CPP_COMMON_DIR}/internal/unified_rest_credentials.h
-    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/rest_options.h)
+    ${GOOGLE_CLOUD_CPP_COMMON_DIR}/rest_options.h
+    # ClickHouse: the HTTP transport is implemented on Poco::Net instead of libcurl.
+    ${CMAKE_CURRENT_SOURCE_DIR}/poco_rest_client.cc)
 target_link_libraries(
     google_cloud_cpp_rest_internal
-    PUBLIC absl::span google-cloud-cpp::common CURL::libcurl
+    PUBLIC absl::span google-cloud-cpp::common
            nlohmann_json::nlohmann_json)
 target_link_libraries(google_cloud_cpp_rest_internal PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(google_cloud_cpp_rest_internal PRIVATE Poco::Net Poco::Net::SSL Poco::Foundation)
 target_include_directories(
     google_cloud_cpp_rest_internal
     PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>

@@ -27,20 +27,6 @@ void ReadFromTableFunctionStep::initializePipeline(QueryPipelineBuilder &, const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "initializePipeline is not implementad for ReadFromTableFunctionStep");
 }
 
-static void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
-{
-    writeIntBinary(val.numerator, out);
-    writeIntBinary(val.denominator, out);
-}
-
-static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
-{
-    TableExpressionModifiers::Rational val;
-    readIntBinary(val.numerator, in);
-    readIntBinary(val.denominator, in);
-    return val;
-}
-
 enum class TableFunctionSerializationKind : UInt8
 {
     AST = 0,
@@ -70,7 +56,7 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
 {
-    UInt8 kind;
+    UInt8 kind = 0;
     readIntBinary(kind, ctx.in);
 
     if (kind != UInt8(TableFunctionSerializationKind::AST))
@@ -99,6 +85,7 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
 }
 
+void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ReadFromTableFunction", &ReadFromTableFunctionStep::deserialize);

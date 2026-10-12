@@ -3,6 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/MapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -11,14 +12,24 @@ class Chunk;
 
 namespace HivePartitioningUtils
 {
-using HivePartitioningKeysAndValues = std::map<std::string_view, std::string_view>;
+using HivePartitioningKeysAndValues = MapWithMemoryTracking<std::string_view, std::string_view>;
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const std::string & path);
+
+/// Builds `FormatSettings` tailored for parsing hive partition values from a path.
+/// Hive partition values are essentially a string-to-type cast, so we honour
+/// `cast_string_to_date_time_mode` (rather than `date_time_input_format`) and
+/// allow leading zeros in numeric values. If `format_settings` is provided it
+/// is used as the base; otherwise a fresh `FormatSettings` is derived from the
+/// context.
+FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & format_settings, const ContextPtr & context);
 
 void addPartitionColumnsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
-    const std::string & path);
+    const std::string & path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context);
 
 NamesAndTypesList extractHivePartitionColumnsFromPath(
     const ColumnsDescription & storage_columns,

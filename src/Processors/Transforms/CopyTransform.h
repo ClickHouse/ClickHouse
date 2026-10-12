@@ -11,13 +11,15 @@ class Block;
 
 /// Transform which has single input and num_outputs outputs.
 /// Read chunk from input and copy it to all outputs.
-class CopyTransform : public IProcessor
+class CopyTransform final : public IProcessor
 {
 public:
     CopyTransform(SharedHeader header, size_t num_outputs);
 
     String getName() const override { return "Copy"; }
     Status prepare() override;
+
+    bool requiresAllOutputsPushable() const override { return true; }
 
     InputPort & getInputPort() { return inputs.front(); }
 

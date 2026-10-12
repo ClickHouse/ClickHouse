@@ -211,6 +211,12 @@ bool SecureStreamSocketImpl::havePeerCertificate() const
 }
 
 
+bool SecureStreamSocketImpl::needHandshake() const
+{
+	return _impl.needHandshake();
+}
+
+
 X509 * SecureStreamSocketImpl::peerCertificate() const
 {
 	X509 * pCert = _impl.peerCertificate();
@@ -258,6 +264,18 @@ bool SecureStreamSocketImpl::getBlocking() const
 void SecureStreamSocketImpl::setBlocking(bool flag)
 {
     _impl.setBlocking(flag);
+}
+
+
+void SecureStreamSocketImpl::setBioMethod(const BIO_METHOD * method)
+{
+    _impl.setBioMethod(method);
+}
+
+
+void SecureStreamSocketImpl::setMutex(std::unique_ptr<SecureSocketImpl::RecursiveMutex> mutex)
+{
+    _impl.setMutex(std::move(mutex));
 }
 
 

@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorHash.h>
+#include <Common/checkStackSize.h>
 
 #include <Common/SipHash.h>
 
@@ -80,6 +81,7 @@ void FieldVisitorHash::operator() (const String & x) const
 
 void FieldVisitorHash::operator() (const Tuple & x) const
 {
+    checkStackSize();
     UInt8 type = Field::Types::Tuple;
     hash.update(type);
     hash.update(x.size());
@@ -90,6 +92,7 @@ void FieldVisitorHash::operator() (const Tuple & x) const
 
 void FieldVisitorHash::operator() (const Map & x) const
 {
+    checkStackSize();
     UInt8 type = Field::Types::Map;
     hash.update(type);
     hash.update(x.size());
@@ -100,6 +103,7 @@ void FieldVisitorHash::operator() (const Map & x) const
 
 void FieldVisitorHash::operator() (const Array & x) const
 {
+    checkStackSize();
     UInt8 type = Field::Types::Array;
     hash.update(type);
     hash.update(x.size());
@@ -110,6 +114,7 @@ void FieldVisitorHash::operator() (const Array & x) const
 
 void FieldVisitorHash::operator() (const Object & x) const
 {
+    checkStackSize();
     UInt8 type = Field::Types::Object;
     hash.update(type);
     hash.update(x.size());
@@ -178,6 +183,14 @@ void FieldVisitorHash::operator() (const bool & x) const
     UInt8 type = Field::Types::Bool;
     hash.update(type);
     hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const NumberLiteral & x) const
+{
+    UInt8 type = Field::Types::Number;
+    hash.update(type);
+    hash.update(x.value.size());
+    hash.update(x.value.data(), x.value.size());
 }
 
 void FieldVisitorHash::operator() (const CustomType & x) const

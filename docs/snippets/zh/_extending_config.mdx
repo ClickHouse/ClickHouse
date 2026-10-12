@@ -1,0 +1,94 @@
+---
+title: 扩展配置
+---
+
+<div id="extending-collector-config">
+  ### 扩展 collector 配置
+</div>
+
+ClickStack 版 OTel collector 支持通过挂载自定义配置文件并设置环境变量来扩展基础配置。
+
+如需添加自定义 receiver、处理器或管道：
+
+1. 创建一个包含附加配置的自定义配置文件
+2. 将该文件挂载到 `/etc/otelcol-contrib/custom.config.yaml`
+3. 设置环境变量 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+
+**自定义配置示例：**
+
+```yaml
+receivers:
+  # 从本地文件收集日志
+  filelog:
+    include:
+      - /var/log/**/*.log
+      - /var/log/syslog
+      - /var/log/messages
+    start_at: beginning
+
+  # 收集主机系统指标
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      network:
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+
+service:
+  pipelines:
+    # 日志管道
+    logs/host:
+      receivers: [filelog]
+      processors:
+        - memory_limiter
+        - transform
+        - batch
+      exporters:
+        - clickhouse
+    
+    # 指标管道
+    metrics/hostmetrics:
+      receivers: [hostmetrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+**使用独立收集器进行部署：**
+
+```bash
+docker run -d \
+  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
+  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+  -e CLICKHOUSE_USER=default \
+  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+  -v "$(pwd)/custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+  -p 4317:4317 -p 4318:4318 \
+  clickhouse/clickstack-otel-collector:latest
+```
+
+<Note>
+  你只需在自定义配置中定义新的接收器、处理器和管道。基础处理器 (`memory_limiter`、`batch`) 和导出器 (`clickhouse`) 已定义好——直接按名称引用即可。自定义配置会与基础配置合并，且不能覆盖现有组件。
+</Note>
+
+如需更复杂的配置，请参阅[默认 ClickStack 收集器配置](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml)和 [ClickHouse 导出器文档](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options)。
+
+<div id="configuration-structure">
+  #### 配置结构
+</div>
+
+关于如何配置 OTel collectors (包括 [`receivers`](https://opentelemetry.io/docs/collector/transforming-telemetry/)、[`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) 和 [`processors`](https://opentelemetry.io/docs/collector/configuration/#processors)) ，更多详情请参考 [OpenTelemetry collector 官方文档](https://opentelemetry.io/docs/collector/configuration)。

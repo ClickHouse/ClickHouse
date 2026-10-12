@@ -51,7 +51,7 @@ select count(), sum(number) from file('02892.orc') where indexHint(i64 between -
 select count(1), min(i64), max(i64) from file('02892.orc') where i64 between -150 and 250;
 401	-150	250
 select count(), sum(number) from file('02892.orc') where indexHint(date32 between '1992-01-01' and '2023-08-02');
-2100	5563950
+2200	6058900
 select count(1), min(date32), max(date32) from file('02892.orc') where date32 between '1992-01-01' and '2023-08-02';
 1994	1992-01-04	2023-08-02
 select count(), sum(number) from file('02892.orc') where indexHint(dt64_ms between '2000-01-01' and '2005-01-01');

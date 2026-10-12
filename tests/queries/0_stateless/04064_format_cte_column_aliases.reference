@@ -1,4 +1,5 @@
-WITH t(a, b) AS
+WITH
+    t(a, b) AS
     (
         SELECT
             1,
@@ -6,13 +7,15 @@ WITH t(a, b) AS
     )
 SELECT *
 FROM t
-WITH t(a) AS
+WITH
+    t(a) AS
     (
         SELECT 1
     )
 SELECT *
 FROM t
-WITH phrase(ph) AS
+WITH
+    phrase(ph) AS
     (
         SELECT concat(COALESCE(CAST(NULLIF(beer, 0), 'text'), 'no'), ' bottle', caseWithExpression(beer, 1, '', 's'), ' of beer')
         FROM generate_series(99, 0, -1) AS c(beer)

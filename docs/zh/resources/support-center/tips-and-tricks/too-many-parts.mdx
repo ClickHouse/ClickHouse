@@ -1,0 +1,81 @@
+---
+slug: /tips-and-tricks/too-many-parts
+sidebarTitle: 'parts 过多'
+doc_type: 'guide'
+keywords: [
+  'clickhouse parts 过多',
+  'parts 过多错误',
+  'clickhouse 插入批次处理',
+  '分片爆炸问题',
+  'clickhouse 合并性能',
+  '批量插入优化',
+  'clickhouse 异步插入',
+  '小批量插入问题',
+  'clickhouse parts 管理',
+  '插入性能优化',
+  'clickhouse 批处理策略',
+  '数据库插入模式'
+]
+title: '经验总结 - parts 过多问题'
+description: 'parts 过多的解决方案与预防方法'
+---
+
+*本指南属于社区线下交流中总结出的一系列经验之一。若想了解更多真实场景中的解决方案和实践洞见，可[按具体问题浏览](/zh/resources/support-center/tips-and-tricks/community-wisdom)。*
+*还想获取更多性能优化技巧？请查看社区洞见指南[性能优化](/zh/resources/support-center/tips-and-tricks/performance-optimization)。*
+
+<div id="understanding-the-problem">
+  ## 了解这个问题
+</div>
+
+ClickHouse 会抛出 “parts 过多” 错误，以防止性能严重下降。较小的 parts 会带来一系列问题：查询时需要读取和合并更多文件，导致查询性能变差；每个 part 都需要在内存中保存元数据，导致内存占用增加；较小的数据块压缩效果较差，导致压缩效率降低；更多的文件句柄和寻道操作会增加 I/O 开销；后台合并也会变慢，从而给合并调度器带来更大压力。
+
+**相关文档**
+
+* [MergeTree 引擎](/zh/reference/engines/table-engines/mergetree-family/mergetree)
+* [Parts](/zh/concepts/core-concepts/parts)
+* [Parts 系统表](/zh/reference/system-tables/parts)
+
+<div id="recognize-parts-problem">
+  ## 尽早发现问题
+</div>
+
+此查询通过分析所有活动表的 parts 数量和大小来监控表碎片化情况。它可识别出 parts 过多或过小、可能需要进行合并优化的表。建议定期运行此查询，以便在碎片化问题影响查询性能之前及时发现。
+
+```sql runnable editable
+-- 挑战：将数据库和表名替换为生产环境中的实际名称
+-- 实验：根据您的系统情况调整 part 数量阈值（1000、500、100）
+SELECT 
+    database,
+    table,
+    count() as total_parts,
+    sum(rows) as total_rows,
+    round(avg(rows), 0) as avg_rows_per_part,
+    min(rows) as min_rows_per_part,
+    max(rows) as max_rows_per_part,
+    round(sum(bytes_on_disk) / 1024 / 1024, 2) as total_size_mb,
+    CASE 
+        WHEN count() > 1000 THEN 'CRITICAL - Too many parts (>1000)'
+        WHEN count() > 500 THEN 'WARNING - Many parts (>500)'
+        WHEN count() > 100 THEN 'CAUTION - Getting many parts (>100)'
+        ELSE 'OK - Reasonable part count'
+    END as parts_assessment,
+    CASE 
+        WHEN avg(rows) < 1000 THEN 'POOR - Very small parts'
+        WHEN avg(rows) < 10000 THEN 'FAIR - Small parts'
+        WHEN avg(rows) < 100000 THEN 'GOOD - Medium parts'
+        ELSE 'EXCELLENT - Large parts'
+    END as part_size_assessment
+FROM system.parts
+WHERE active = 1
+  AND database NOT IN ('system', 'information_schema')
+GROUP BY database, table
+ORDER BY total_parts DESC
+LIMIT 20;
+```
+
+<div id="video-sources">
+  ## 视频资源
+</div>
+
+* [ClickHouse 中快速、并发且一致的异步插入](https://www.youtube.com/watch?v=AsMPEfN5QtM) - ClickHouse 团队成员讲解异步插入和 parts 过多问题
+* [大规模生产环境中的 ClickHouse](https://www.youtube.com/watch?v=liTgGiTuhJE) - 来自可观测性平台的实际批处理策略

@@ -27,7 +27,11 @@ SELECT count(), sum(d) FROM dst;
 
 SELECT 'REPLACE empty';
 ALTER TABLE src DROP PARTITION 1;
-ALTER TABLE dst REPLACE PARTITION 1 FROM src;
+-- The setting opt-in below preserves the legacy behavior of `REPLACE PARTITION` from an
+-- empty source, silently dropping the destination partition. Issue #23727 made this a
+-- per-query opt-in to prevent accidental data loss; this test continues to exercise the
+-- intentional-clear use case.
+ALTER TABLE dst REPLACE PARTITION 1 FROM src SETTINGS allow_replace_partition_from_empty_source = 1;
 SELECT count(), sum(d) FROM dst;
 
 

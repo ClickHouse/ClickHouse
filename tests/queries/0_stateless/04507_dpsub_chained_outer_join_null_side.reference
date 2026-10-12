@@ -1,0 +1,16 @@
+shared predicate: default
+0	Join_3_Value_0
+1	
+2	
+shared predicate: dpsub
+0	Join_3_Value_0
+1	
+2	
+unshared predicate: default
+0	Join_3_Value_0
+1	
+2	
+unshared predicate: dpsub
+0	Join_3_Value_0
+1	
+2	

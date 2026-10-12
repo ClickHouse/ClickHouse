@@ -1,0 +1,33 @@
+---
+title: 'Retirer certaines tables d’un ClickPipe'
+description: 'Retirer certaines tables d’un ClickPipe'
+sidebarTitle: 'Retirer une table'
+slug: /integrations/clickpipes/mysql/removing_tables
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'CDC', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Dans certains cas, il peut être judicieux d&#39;exclure certaines tables d&#39;un MySQL ClickPipe. Par exemple, si une table n&#39;est pas nécessaire à votre workload d&#39;analytics, l&#39;ignorer peut réduire les coûts de stockage et de réplication dans ClickHouse.
+
+<div id="remove-tables-steps">
+  ## Étapes pour supprimer des tables spécifiques
+</div>
+
+La première étape consiste à retirer la table du pipe. Pour ce faire, suivez les étapes ci-dessous :
+
+1. [Mettre en pause](/fr/integrations/clickpipes/mysql/pause-and-resume) le pipe.
+2. Cliquez sur Edit Table Settings.
+3. Repérez votre table ; vous pouvez la rechercher dans la barre de recherche.
+4. Désélectionnez la table en cliquant sur la case cochée.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+
+5. Cliquez sur update.
+6. Une fois la mise à jour effectuée avec succès, dans l’onglet **Metrics**, le statut sera **Running**. Cette table ne sera plus répliquée par ce ClickPipe.

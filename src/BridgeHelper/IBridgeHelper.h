@@ -11,7 +11,7 @@
 namespace DB
 {
 
-/// Base class for server-side bridge helpers, e.g. xdbc-bridge and library-bridge.
+/// Base class for server-side bridge helpers, e.g. xdbc-bridge.
 /// Contains helper methods to check/start bridge sync
 class IBridgeHelper: protected WithContext
 {
@@ -57,7 +57,6 @@ protected:
     virtual Poco::Timespan getHTTPTimeout() const = 0;
 
     virtual Poco::URI createBaseURI() const = 0;
-
 
 private:
     std::unique_ptr<ShellCommand> startBridgeCommand();

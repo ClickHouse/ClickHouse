@@ -1,0 +1,12 @@
+Dynamic CASE:
+1	one
+2	two
+3	other
+Dynamic CASE with strings:
+a	first
+b	second
+c	other
+Dynamic CASE with NULL:
+\N	null_val
+1	one
+3	other

@@ -1,0 +1,21 @@
+---
+title: 'Поддерживает ли ClickHouse распределённый JOIN?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/distributed-join
+description: 'ClickHouse поддерживает распределённый JOIN'
+doc_type: 'reference'
+keywords: ['distributed', 'join']
+---
+
+Да, ClickHouse поддерживает распределённые JOIN в кластере.
+
+Если данные размещены на одних и тех же узлах кластера (например, когда JOIN выполняется по идентификатору пользователя, который также является ключом сегментирования), ClickHouse позволяет выполнять JOIN без перемещения данных по сети.
+
+Если данные не размещены на одних и тех же узлах, ClickHouse поддерживает широковещательный JOIN, при котором части объединяемых данных распределяются по узлам кластера.
+
+По состоянию на 2025 год ClickHouse не выполняет shuffle JOIN, то есть ни одна из сторон JOIN не перераспределяется по сети кластера в соответствии с ключами JOIN.
+
+<Tip>
+  Более подробную информацию о JOIN в ClickHouse см. на странице [&quot;оператор JOIN&quot;](/ru/reference/statements/select/join#supported-types-of-join).
+</Tip>

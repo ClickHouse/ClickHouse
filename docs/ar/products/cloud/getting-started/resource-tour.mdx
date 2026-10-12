@@ -1,0 +1,58 @@
+---
+slug: /cloud/get-started/cloud/resource-tour
+title: 'جولة تعريفية بالموارد'
+description: 'نظرة عامة على موارد وثائق ClickHouse Cloud المتعلقة بتحسين الاستعلامات، واستراتيجيات التوسّع، والمراقبة، وأفضل الممارسات'
+keywords: ['clickhouse cloud']
+hide_title: true
+doc_type: 'guide'
+---
+
+import TableOfContentsBestPractices from '/snippets/ar/_table_of_contents.mdx';
+import TableOfContentsOptimizationAndPerformance from '/snippets/ar/_performance_optimizations_table_of_contents.mdx';
+import TableOfContentsSecurity from '/snippets/ar/_security_table_of_contents.mdx';
+
+تهدف هذه المقالة إلى تزويدك بنظرة عامة على الموارد المتاحة
+في الوثائق لتتعرف على كيفية تحقيق أقصى استفادة من بيئة ClickHouse Cloud الخاصة بك.
+استكشف الموارد المصنَّفة حسب الموضوعات التالية:
+
+* [تقنيات تحسين الاستعلام وضبط الأداء](#query-optimization)
+* [المراقبة](#monitoring)
+* [أفضل ممارسات الأمان وميزات الامتثال](#security)
+* [تحسين التكلفة والفوترة](#cost-optimization)
+
+قبل التعمق في موضوعات أكثر تحديدًا، نوصيك بالبدء بأدلة أفضل الممارسات العامة لـ
+ClickHouse، والتي تغطي أفضل الممارسات العامة التي ينبغي اتباعها عند
+استخدام ClickHouse:
+
+<TableOfContentsBestPractices />
+
+<div id="query-optimization">
+  ## تقنيات تحسين الاستعلام وضبط الأداء
+</div>
+
+<TableOfContentsOptimizationAndPerformance />
+
+<div id="monitoring">
+  ## المراقبة
+</div>
+
+| الصفحة                                                                            | الوصف                                                              |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard) | استخدم لوحة المعلومات المتقدمة المدمجة لمراقبة حالة الخدمة والأداء |
+| [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus)                | استخدم Prometheus لمراقبة خدمات Cloud                              |
+| [إمكانات مراقبة Cloud](/ar/guides/use-cases/observability/cloud-monitoring)          | تعرّف على إمكانات المراقبة المدمجة وخيارات التكامل المتاحة         |
+
+<div id="security">
+  ## الأمان
+</div>
+
+<TableOfContentsSecurity />
+
+<div id="cost-optimization">
+  ## تحسين التكلفة والفوترة
+</div>
+
+| الصفحة                                                                  | الوصف                                                                                                 |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| [نقل البيانات](/ar/products/cloud/reference/billing/network-data-transfer) | تعرّف على كيفية احتساب ClickHouse Cloud لحركة نقل البيانات الواردة والصادرة                           |
+| [الإشعارات](/ar/products/cloud/features/monitoring/notifications)          | أعدّ الإشعارات لخدمة ClickHouse Cloud الخاصة بك، على سبيل المثال عند تجاوز استخدام الرصيد حدًا معينًا |

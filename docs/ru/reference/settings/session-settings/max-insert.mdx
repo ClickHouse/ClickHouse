@@ -1,0 +1,123 @@
+---
+title: 'настройки сеанса max_insert_*'
+sidebarTitle: 'max_insert_*'
+toc_max_heading_level: 2
+description: 'Настройки сеанса ClickHouse в сгенерированной группе max_insert_*.'
+doc_type: 'reference'
+---
+
+{/*АВТОМАТИЧЕСКИ_СГЕНЕРИРОВАНО_НАЧАЛО*/}
+
+import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
+
+Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
+
+<div id="max_insert_block_size">
+  ## max_insert_block_size
+</div>
+
+**Псевдонимы**: `max_insert_block_size_rows`
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
+
+Максимальный размер блоков (по числу строк), формируемых для вставки в таблицу.
+
+Этот параметр управляет формированием блоков в двух контекстах:
+
+1. Разбор форматов: когда сервер разбирает входные построчные форматы (CSV, TSV, JSONEachRow и т. д.) через любой интерфейс (HTTP, clickhouse-client со встроенными данными, gRPC, PostgreSQL wire protocol), блоки формируются, когда:
+
+   * Достигнуты оба порога: min&#95;insert&#95;block&#95;size&#95;rows И min&#95;insert&#95;block&#95;size&#95;bytes, ИЛИ
+   * Достигнут любой из порогов: max&#95;insert&#95;block&#95;size&#95;rows ИЛИ max&#95;insert&#95;block&#95;size&#95;bytes
+
+   Примечание: при использовании clickhouse-client или clickhouse-local для чтения из файла данные разбирает сам клиент, и этот параметр применяется на стороне клиента.
+
+2. Операции INSERT: во время запросов INSERT и при прохождении данных через materialized views поведение этого параметра зависит от `use_strict_insert_block_limits`:
+
+   * Когда включено: блоки формируются, когда:
+     * Минимальные пороги (И): достигнуты оба значения min&#95;insert&#95;block&#95;size&#95;rows И min&#95;insert&#95;block&#95;size&#95;bytes
+     * Максимальные пороги (ИЛИ): достигнуто либо значение max&#95;insert&#95;block&#95;size&#95;rows, либо max&#95;insert&#95;block&#95;size&#95;bytes
+
+   * Когда отключено: блоки формируются, когда достигнуто значение min&#95;insert&#95;block&#95;size&#95;rows ИЛИ min&#95;insert&#95;block&#95;size&#95;bytes. Параметры max&#95;insert&#95;block&#95;size не применяются.
+
+Возможные значения:
+
+* Положительное целое число.
+
+<div id="max_insert_block_size_bytes">
+  ## max_insert_block_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "Новая настройка, позволяющая управлять размером блоков в байтах при разборе данных в формате Row Input Format."}]}]} />
+
+Максимальный размер блоков (в байтах), формируемых для вставки в таблицу.
+
+Эта настройка работает вместе с max&#95;insert&#95;block&#95;size&#95;rows и управляет формированием блоков в одном и том же контексте. Подробную информацию о том, когда и как применяются эти настройки, см. в описании max&#95;insert&#95;block&#95;size&#95;rows.
+
+Возможные значения:
+
+* Положительное целое число.
+* 0 — настройка не участвует в формировании блоков.
+
+<div id="max_insert_delayed_streams_for_parallel_write">
+  ## max_insert_delayed_streams_for_parallel_write
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+Максимальное количество потоков (столбцов), для которых откладывается финальный сброс части. По умолчанию — auto (100, если нижележащее хранилище поддерживает параллельную запись, например S3, в противном случае отключено)
+
+Значение по умолчанию в Cloud: `50`.
+
+<div id="max_insert_threads">
+  ## max_insert_threads
+</div>
+
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Значение по умолчанию изменено с 1 (без параллельного выполнения) на auto (0), которое соответствует числу CPU-ядер, доступных серверу, и уменьшается при нехватке памяти с помощью `max_insert_threads_min_free_memory_per_thread`. Благодаря этому `INSERT SELECT` по умолчанию выполняется параллельно. Установите значение 1, чтобы восстановить прежнее однопоточное поведение."}]}]} />
+
+Максимальное число потоков для выполнения запроса `INSERT`.
+
+Применяется как к `INSERT SELECT`, так и к обычному `INSERT`, данные для которого отправляются из
+`clickhouse-client` или через HTTP-интерфейс. Сторона записи конвейера
+(укрупнение блоков и запись в целевую таблицу) распараллеливается
+на количество потоков до указанного значения.
+
+Возможные значения:
+
+* 0 — Автоматически. Используется число CPU-ядер, доступных серверу (то же автоматическое значение, что и у [`max_threads`](/ru/reference/settings/session-settings/max-threads#max_threads)), которое при нехватке памяти уменьшается параметром [`max_insert_threads_min_free_memory_per_thread`](/ru/reference/settings/session-settings/max-insert#max_insert_threads_min_free_memory_per_thread).
+* 1 — `INSERT` выполняется в одном потоке (без параллельного выполнения). Используйте это значение, чтобы сохранить порядок вставки в `INSERT ... SELECT`.
+* Положительное целое число больше 1 — параллельное выполнение с указанным числом потоков.
+
+До версии 26.8 значением по умолчанию было `1` (без параллельного выполнения). Начиная с версии 26.8 значение по умолчанию (`0`) соответствует числу CPU-ядер, поэтому `INSERT` по умолчанию выполняется параллельно. Установите для `max_insert_threads` значение `1` (или используйте настройку `compatibility`), чтобы восстановить прежнее поведение.
+
+Значение по умолчанию в Cloud:
+
+* `1` для узлов с 8 GiB памяти
+* `2` для узлов с 16 GiB памяти
+* `4` для более крупных узлов
+
+Параллельный `INSERT SELECT` работает, только если часть `SELECT` выполняется параллельно; см. настройку [`max_threads`](/ru/reference/settings/session-settings/max-threads#max_threads).
+Для обычного `INSERT` входные данные считываются и разбираются в одном потоке, после чего конвейер для записи масштабируется до указанного количества потоков.
+Параллелизация на стороне записи применяется только к синхронным обычным `INSERT`: асинхронные вставки ([`async_insert`](/ru/reference/settings/session-settings/async-insert#async_insert) `= 1`) помещаются в очередь и сбрасываются на диск в фоновом режиме, поэтому эта настройка на них не влияет и они всегда обрабатываются в одном потоке.
+Сторона записи распараллеливается, только когда это безопасно; в противном случае она остаётся однопоточной, и эта настройка на неё не влияет. В частности, запись остаётся однопоточной, если включён [`use_strict_insert_block_limits`](/ru/reference/settings/session-settings/use#use_strict_insert_block_limits), целевая таблица (или таблица, в которую она перенаправляет данные) выполняет дедупликацию вставляемых блоков и для запроса включена дедупликация вставок (см. [`deduplicate_insert`](/ru/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)), если у пункта назначения есть зависимые materialized view — включая представления таблицы, в которую пункт назначения перенаправляет данные, например за `Alias`, — (если только не включён [`parallel_view_processing`](/ru/reference/settings/session-settings/parallel#parallel_view_processing) и в цепочках зависимых представлений отсутствуют риски дедупликации: дедупликация в представлениях отключена ([`deduplicate_blocks_in_dependent_materialized_views`](/ru/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) или ни один путь зависимых представлений не может выполнять дедупликацию), а также всегда для пунктов назначения `Buffer` и `Distributed`. `Buffer` сбрасывает данные в собственном контексте, а `Distributed` пересылает запись на удалённый шард (который сам может буферизовать данные), поэтому настройки дедупликации этого запроса не управляют конечной записью, и она остаётся однопоточной независимо от них. Непараллельная вставка с кворумом ([`insert_quorum`](/ru/reference/settings/session-settings/insert-quorum#insert_quorum) равно `2` или больше либо `'auto'`, а [`insert_quorum_parallel`](/ru/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) отключён) также остаётся однопоточной, поскольку допускает только одну незавершённую кворумную часть на таблицу.
+Более высокие значения приводят к большему использованию памяти.
+
+<div id="max_insert_threads_min_free_memory_per_thread">
+  ## max_insert_threads_min_free_memory_per_thread
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4294967296" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "4294967296"},{"label": "Новая настройка для ограничения числа потоков вставки в зависимости от объёма доступной свободной памяти"}]}]} />
+
+То же, что и `max_threads_min_free_memory_per_thread`, но применяется к `max_insert_threads`, а не к `max_threads`. Значение по умолчанию выше, поскольку конвейеры вставки обычно используют более крупные буферы на поток (части MergeTree, блоки сжатия), чем конвейеры чтения.
+
+Если объём свободной памяти меньше, чем `max_insert_threads`, умноженное на это значение, `max_insert_threads` уменьшается до допустимого значения, но не ниже `1`.
+
+Установите `0`, чтобы отключить это ограничение.
+
+{/*AUTOGENERATED_END*/}

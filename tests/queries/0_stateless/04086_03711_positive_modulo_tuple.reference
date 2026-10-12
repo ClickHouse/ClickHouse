@@ -1,0 +1,10 @@
+positiveModulo on tuple
+(3,6,2)
+modulo on tuple
+(3,6,2)
+positiveModulo negative values
+(4,4,4)
+modulo negative values
+(-3,-3,-3)
+tuplePositiveModuloByNumber
+(4,4,4)

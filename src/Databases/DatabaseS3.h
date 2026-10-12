@@ -30,6 +30,10 @@ public:
 
         bool no_sign_request = false;
 
+        /// Opt in (via a named collection) to the server's ambient credentials. Subject to the user-query
+        /// credential restriction, like the underlying `s3` table function it is flattened into.
+        bool use_environment_credentials = false;
+
         std::optional<std::string> access_key_id;
         std::optional<std::string> secret_access_key;
     };
@@ -62,8 +66,6 @@ protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     StoragePtr getTableImpl(const String & name, ContextPtr context) const;
 
-    void addTable(const std::string & table_name, StoragePtr table_storage) const;
-
     bool checkUrl(const std::string & url, ContextPtr context_, bool throw_on_error) const;
 
     std::string getFullUrl(const std::string & name) const;
@@ -71,7 +73,6 @@ protected:
 private:
     const Configuration config;
 
-    mutable Tables loaded_tables TSA_GUARDED_BY(mutex);
     LoggerPtr log;
 };
 

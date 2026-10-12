@@ -2,7 +2,10 @@
 
 #include <unordered_set>
 #include <Core/Types.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Core/Field.h>
+#include <Common/HiddenSecret.h>
+#include <optional>
 
 namespace DataLake
 {
@@ -16,24 +19,43 @@ static constexpr std::string_view FILE_PATH_PREFIX = "file:/";
 /// We use this placeholder when user ask for SHOW CREATE TABLE unreadable_table.
 static constexpr auto FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES = "Other";
 
-static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
 
-using ValueMaskingFunc = std::function<std::string(const DB::Field &)>;
+using ValueMaskingFunc = std::function<std::optional<std::string>(const DB::Field &)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
     /// Catalog credentials
-    {"catalog_credential", DEFAULT_MASKING_RULE},
-    {"auth_header", DEFAULT_MASKING_RULE},
+    {"catalog_credential", DB::hideSecretValue},
+    {"auth_header", DB::hideSecretValue},
     /// AWS credentials
-    {"aws_access_key_id", DEFAULT_MASKING_RULE},
-    {"aws_secret_access_key", DEFAULT_MASKING_RULE},
+    {"aws_access_key_id", DB::hideSecretValue},
+    {"aws_secret_access_key", DB::hideSecretValue},
+    {"aws_external_id", DB::hideSecretValue},
+    /// A trust policy can require a specific session name (`sts:RoleSessionName`), so it is a secret too.
+    {"aws_role_session_name", DB::hideSecretValue},
+    /// Legacy storage_* aliases (declared in DataLakeStorageSettings.h, originally for the Glue catalog)
+    {"storage_catalog_credential", DB::hideSecretValue},
+    {"storage_auth_header", DB::hideSecretValue},
+    {"storage_aws_access_key_id", DB::hideSecretValue},
+    {"storage_aws_secret_access_key", DB::hideSecretValue},
+    {"storage_aws_role_session_name", DB::hideSecretValue},
     /// OneLake credentials
-    {"onelake_client_secret", DEFAULT_MASKING_RULE},
+    {"onelake_client_secret", DB::hideSecretValue},
+    {"onelake_bearer_token", DB::hideSecretValue},
+    {"onelake_refresh_token", DB::hideSecretValue},
     /// Google credentials
-    {"google_adc_client_secret", DEFAULT_MASKING_RULE},
-    {"google_adc_refresh_token", DEFAULT_MASKING_RULE},
+    {"google_adc_client_secret", DB::hideSecretValue},
+    {"google_adc_refresh_token", DB::hideSecretValue},
     /// DLF credentials
-    {"dlf_access_key_id", DEFAULT_MASKING_RULE},
-    {"dlf_access_key_secret", DEFAULT_MASKING_RULE},
+    {"dlf_access_key_id", DB::hideSecretValue},
+    {"dlf_access_key_secret", DB::hideSecretValue},
 };
+
+/// The data lake table engines and table functions read `DataLakeStorageSettings`, and hide their credentials
+/// in their own `SETTINGS`.
+inline DB::SecretArgumentsSpec withSecretSettings(DB::SecretArgumentsSpec spec)
+{
+    spec.secret_settings = SETTINGS_TO_HIDE;
+    return spec;
+}
+
 }

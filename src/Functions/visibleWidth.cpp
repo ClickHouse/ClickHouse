@@ -26,7 +26,7 @@ namespace ErrorCodes
   * In fact it calculate the number of Unicode code points.
   * It does not support zero width and full width characters, combining characters, etc.
   */
-class FunctionVisibleWidth : public IFunction
+class FunctionVisibleWidth final : public IFunction
 {
 private:
     UInt64 behavior;
@@ -50,6 +50,9 @@ public:
     {
         return name;
     }
+
+    /// The setting decides the width for the same arguments, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(behavior); }
 
     size_t getNumberOfArguments() const override
     {

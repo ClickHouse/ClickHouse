@@ -30,7 +30,7 @@ class JemallocCacheAllocator
 {
 public:
     void * alloc(size_t size, size_t alignment = 0);
-    void free(void * buf, size_t size);
+    void free(void * buf, size_t size, size_t alignment = 0);
     void * realloc(void * buf, size_t old_size, size_t new_size, size_t alignment = 0);
 
 protected:

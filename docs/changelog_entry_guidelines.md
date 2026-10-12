@@ -29,7 +29,7 @@ Write:
 
 Avoid technical jargon a user might not understand without explanation. Aim for between 1-5 sentences, and
 don't be afraid to use an LLM to help catch typos, grammar mistakes or to rephrase the entry for you in a 
-user friendly way (it's not cheating, I promise!)
+user-friendly way (it's not cheating, I promise!)
 
 Instead of:
 

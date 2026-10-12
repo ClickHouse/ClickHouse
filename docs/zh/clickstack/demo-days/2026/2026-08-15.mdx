@@ -1,0 +1,118 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-15
+title: '演示日 - 2026-08-15'
+sidebarTitle: '2026-08-15'
+description: '2026-08-15 ClickStack 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="dashboard-variables">
+  ## 仪表盘变量
+</div>
+
+*由 [@pulpdrew](https://github.com/pulpdrew) 演示*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/gY2Kej-EYx4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+仪表盘变量是本周最主要的更新。它基于仪表盘已有的过滤器机制：任何现有或新建的过滤器都可以设为变量。
+
+变量默认使用过滤器的显示名称。如果该名称包含特殊字符，或有两个过滤器使用相同的显示名称，您可以指定自定义变量名。即使之后重命名过滤器，自定义名称也会保持不变。配置页面会显示引用时所需的名称；启用变量后，该名称也会显示在过滤器的工具提示中。
+
+原始 SQL 图表支持多种变量用法。`$__filter($var)` 会展开单个变量的当前选择值。它相当于现有 `$__filters` 宏的单变量版本，后者会展开所有过滤器。
+
+更值得关注的新增功能是 `$__conditionalAll(condition, $var)`。第一个参数为条件，第二个参数为变量。当变量有选择值时，该条件会包含在查询中；没有选择值时，整个表达式会变为 `1 = 1`，不影响过滤结果。
+
+这使跨数据源映射成为可能。仪表盘可以将 trace 状态码映射为 `error` 或 `info`，从而让针对日志表定义的严重程度过滤器也能过滤链路追踪表。在仪表盘级别选择 `error` 后，trace 查询便会筛选错误状态。
+
+自动补全会建议所有可用变量及其支持的格式。采纳 Brandon 的建议后，它现在会根据当前选择以内联方式显示实际展开结果。宏建议也会包含其展开结果，新增的文档章节则说明了各个宏的作用。验证功能会捕获对不存在变量的引用，以及使用错误参数调用的宏。
+
+构建器图表在大多数可编辑字段中采用相同的变量替换方式，适用于 SQL 和 Lucene 输入。变量可用于 `WHERE`、`GROUP BY`、`HAVING` 和 `ORDER BY`，并提供相同的自动补全和验证功能。Lucene 字段支持变量，但不支持宏。SQL 构建器字段提供与变量相关的宏，而非原始 SQL 中提供的完整宏集。
+
+告警有一条硬性规则：所有变量均按其空值求值。如果告警查询引用了变量，编辑器会在保存前发出警告。预览和生成的 SQL 会显示空值展开结果，告警详情页也是如此；告警任务运行时也会应用这些空值。
+
+变量配置仍受 `NEXT_PUBLIC_ENABLE_DASHBOARD_VARIABLES` 控制。未配置变量时，仪表盘行为保持不变。
+
+**相关 PR：** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) 添加过滤器变量配置，[#2873](https://github.com/hyperdxio/hyperdx/pull/2873) 在原始 SQL 图表中替换变量，[#2874](https://github.com/hyperdxio/hyperdx/pull/2874) 为 SQL 仪表盘变量添加自动补全和验证，[#2901](https://github.com/hyperdxio/hyperdx/pull/2901) 在图表构建器卡片中支持仪表盘变量，[#2910](https://github.com/hyperdxio/hyperdx/pull/2910) 在告警查询中将变量展开为空值，[#2923](https://github.com/hyperdxio/hyperdx/pull/2923) 支持依赖变量的值查询，[#2937](https://github.com/hyperdxio/hyperdx/pull/2937) 支持宏中的嵌套宏和变量引用，[#2944](https://github.com/hyperdxio/hyperdx/pull/2944) 将仪表盘变量添加到外部 API
+
+<div id="alert-detail-page-with-evaluation-history">
+  ## 包含评估历史的告警详情页
+</div>
+
+*由 [@wrn14897](https://github.com/wrn14897) 演示*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0entaRF-R8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+此前，告警仅提供一条历史记录带，几乎没有其他信息可供查看。如果想了解告警实际执行的操作，基本无从着手。
+
+新的详情页会显示每次评估。对于分组告警，页面会分别显示哪个组触发了告警，以及哪个值超过了阈值。每个条目还会显示 ClickHouse 查询耗时，并同时提供告警配置。
+
+“回填桶”列需要稍作说明。如果某次评估遗漏，下一次运行会通过处理缺失的桶来填补空缺。因此，出现回填桶意味着告警未能按计划运行。缓慢的 ClickHouse 查询如今会留下可见痕迹，而不再悄然延误后续评估。
+
+图表标记与所评估桶的起始位置对齐，更便于查看告警何时触发以及何时恢复为 OK。
+
+您还可以直接在详情页编辑或删除告警，无需返回已保存搜索的模态框或仪表盘卡片编辑器。我们仍在探索将更多告警配置纳入此页面。
+
+该页面仍受 `NEXT_PUBLIC_ENABLE_ALERT_DETAILS` 控制。
+
+**相关 PR：**[#2833](https://github.com/hyperdxio/hyperdx/pull/2833) 告警评估读取模型和 `GET /alerts/:id/evaluations`、[#2834](https://github.com/hyperdxio/hyperdx/pull/2834) 在 AlertHistory 中持久化告警评估错误和分析数据、[#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 包含评估历史的告警详情页、[#2928](https://github.com/hyperdxio/hyperdx/pull/2928) 将告警图表标记与所评估桶的起始位置对齐、[#2931](https://github.com/hyperdxio/hyperdx/pull/2931) 支持从告警详情页编辑和删除告警
+
+<div id="investigating-alerts-and-mcp-tool-annotations">
+  ## 调查告警和 MCP 工具注解
+</div>
+
+*演示者：[ @brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+已触发的告警现在提供“调查”按钮。无论是在告警页面还是告警详情页，点击该按钮都会创建一个 notebook 调查。
+
+最终目标是在告警触发时自动启动这些调查。该按钮是一个实用的过渡步骤，而非最终形态。
+
+ClickStack MCP server 中的每个工具现在也都包含注解提示。此前，server 不会说明某个工具是只读的，还是会修改或删除数据。
+
+添加 `readOnlyHint` 和 `destructiveHint` 后，client 获得了足够的信息，能够以不同方式处理这些工具。读取操作可直接继续，而破坏性操作则可等待明确批准。删除告警就是一个明显的例子：执行前应先征得您的确认。
+
+最后一项变更会影响智能体一开始选择哪些工具。由于工具集不断扩展却缺乏明确的选择策略，`clickstack_sql` 的使用量逐渐增加。即使构建器工具更适合，智能体仍会倾向于使用原始 SQL。
+
+这不仅影响查询正确性。原始 SQL 会创建静态结果卡片；构建器工具 `clickstack_table`、`clickstack_timeseries` 和 `clickstack_search` 则会生成可深入查看并进行透视分析的卡片。
+
+MCP 现在会优先引导智能体使用这些构建器工具，仅在确实无法表达查询时才使用原始 SQL。变更后，评估评分显著提升。
+
+**相关 PR：**[#2838](https://github.com/hyperdxio/hyperdx/pull/2838) 为所有工具添加 MCP 工具注解 (`readOnlyHint` 等) ；[#2840](https://github.com/hyperdxio/hyperdx/pull/2840) 引导智能体使用构建器查询工具而非原始 SQL；[#2870](https://github.com/hyperdxio/hyperdx/pull/2870) 引导仪表盘智能体使用按序列划分的卡片过滤器。“调查”按钮本身没有可链接的公开 PR。
+
+<div id="multi-series-metric-charts-in-a-single-query">
+  ## 单个查询中的多序列指标图表
+</div>
+
+*由 [@wrn14897](https://github.com/wrn14897) 演示*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/jJKgFrMfGjU" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+过去，要在一张图表中显示多个指标，需要为每个序列运行一个 ClickHouse 查询，然后在 Node 或浏览器中合并结果集。包含 N 个序列的图表会产生 N 个查询。
+
+现在，多序列图表会编译为单个 SQL 查询。每个序列都会成为一个 CTE，最后由 ClickHouse 将它们合并。比率也采用相同方式：两个序列在同一查询中生成，并在最终投影中计算比率。
+
+减少查询数量是最直接的收益。相同的查询形态也为指标公式奠定了基础。公式需要将所有序列作为同一关系中的列提供，才能在最终的 `SELECT` 中表示。现在编译器生成的正是这种结构，公式相关工作也已在此基础上推进。
+
+这项变更暴露了一个回归问题：当多序列卡片混合使用产生浮点数和整数的聚合时，无法渲染。将返回 `Float64` 的直方图 `quantile` 与返回 `Int64` 的直方图 `count` 组合使用，即可触发该问题。
+
+组合后的 `UNION ALL` 和透视操作会将所有序列通过同一列传递，导致 ClickHouse 将类型扩展为 `Variant(Float64, Int64)`。该问题现已修复。
+
+**相关 PR：** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) 扩展多序列指标合并的整数测试覆盖范围，[#2859](https://github.com/hyperdxio/hyperdx/pull/2859) 将多序列指标合并计算移至 ClickHouse，[#2907](https://github.com/hyperdxio/hyperdx/pull/2907) 多序列指标卡片的 alert-task 覆盖范围，[#2916](https://github.com/hyperdxio/hyperdx/pull/2916) 修复混合浮点数和整数聚合的多序列指标图表，[#2872](https://github.com/hyperdxio/hyperdx/pull/2872) 公式表达式模型，[#2908](https://github.com/hyperdxio/hyperdx/pull/2908) 在组合指标查询中渲染公式，[#2909](https://github.com/hyperdxio/hyperdx/pull/2909) 用于指标公式的图表编辑器 UI
+
+<div id="lucene-autocomplete-and-password-requirement-fixes">
+  ## Lucene 自动补全和密码要求修复
+</div>
+
+*演示者：[ @pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8MODmM5RT6Q" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+在测试仪表盘变量时，我们发现了另一个回归问题：Lucene 自动补全功能几乎在所有地方都悄然失效，只有搜索页面仍能正常使用。
+
+另一项改动涉及 Join Team 页面，受邀用户可在该页面设置密码。尽管后端会强制执行密码要求，但页面并未显示这些要求。输入不符合要求的内容时，只会显示一条通用的“密码无效”消息，用户只能自行猜测密码策略。
+
+现在这些要求已显示出来。在检查用于显示这些要求的共享组件时，还发现它与后端在两方面不一致：哪些特殊字符符合要求，以及密码的最大长度。这两项均已修正。
+
+**相关 PR：**[#2902](https://github.com/hyperdxio/hyperdx/pull/2902) 恢复 Lucene 自动补全功能，[#2904](https://github.com/hyperdxio/hyperdx/pull/2904) 在 Join Team 页面显示密码要求

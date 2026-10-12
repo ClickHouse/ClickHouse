@@ -2,6 +2,7 @@
 
 #include <Common/SettingsChanges.h>
 #include <Access/AuthenticationData.h>
+#include <Interpreters/ClientCertificateInfo.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SessionTracker.h>
@@ -24,6 +25,7 @@ class NamedSessionsStorage;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class SessionLog;
+class X509Certificate;
 
 /** Represents user-session from the server perspective,
  *  basically it is just a smaller subset of Context API, simplifies Context management.
@@ -60,10 +62,14 @@ public:
 
     // Verifies whether the user's validity extends beyond the current time.
     // Throws an exception if the user's validity has expired.
-    void checkIfUserIsStillValid();
+    void checkIfUserIsStillValid() const;
 
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
+
+    /// Remembers the TLS client certificate presented on this connection (if any), so that
+    /// session_log records it for the login/logout events of this session.
+    void setClientCertificate(const X509Certificate & certificate);
 
     /// Returns a reference to the session's ClientInfo.
     const ClientInfo & getClientInfo() const;
@@ -99,6 +105,13 @@ public:
     ContextMutablePtr makeQueryContext(const ClientInfo & query_client_info) const;
     ContextMutablePtr makeQueryContext(ClientInfo && query_client_info) const;
 
+    /// Makes a query context for a query that outlives the session. It is always created from a copy of
+    /// a global context, so it does not share the session state (temporary tables, transaction), but the
+    /// function assigns the session's user, current roles, settings, current database and query parameters
+    /// to this context.
+    ContextMutablePtr makeDetachedQueryContext() const { return makeDetachedQueryContext(getClientInfo()); }
+    ContextMutablePtr makeDetachedQueryContext(const ClientInfo & query_client_info) const;
+
     /// Releases the currently used session ID so it becomes available for reuse by another session.
     void releaseSessionID();
 
@@ -106,8 +119,16 @@ public:
     void closeSession(const String & session_id);
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
-    ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
+    ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached = false) const;
     void recordLoginSuccess(ContextPtr login_context) const;
+
+    /// Returns the GRANTS clause of the authentication method the user logged in with
+    /// (the access rights of the session are limited to the intersection with it), or null if there is no limit.
+    std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
+
+    /// Returns the expiry (VALID UNTIL) of the authentication method the user logged in with, or 0 if none.
+    /// Carried into the session/query context so deferred-execution paths can fail closed after expiry.
+    time_t getAuthenticationValidUntil() const;
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
@@ -120,6 +141,9 @@ private:
     std::optional<UUID> user_id;
     std::vector<UUID> external_roles;
     AuthenticationData user_authenticated_with;
+
+    /// TLS client certificate presented on this connection, if any.
+    std::optional<ClientCertificateInfo> certificate_info;
 
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;

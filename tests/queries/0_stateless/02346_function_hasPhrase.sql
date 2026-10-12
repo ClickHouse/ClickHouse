@@ -3,22 +3,25 @@ SELECT 'Negative tests';
 SELECT hasPhrase(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hasPhrase('a'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hasPhrase('a', 'b', 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
--- 1st arg must be String or FixedString
+-- 1st arg must be String, FixedString or an array of those
 SELECT hasPhrase(1, 'hello'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- 2nd arg must be const String
+SELECT hasPhrase([1, 2], 'hello'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- 2nd arg must be a const String or const Array(String)
 SELECT hasPhrase('a', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT hasPhrase(['a', 'b'], [1, 2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase('a', materialize('b')); -- { serverError ILLEGAL_COLUMN }
 -- 3rd arg (if given) must be const String (tokenizer name)
 SELECT hasPhrase('a', 'b', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase('a', 'b', 'unsupported_tokenizer'); -- { serverError BAD_ARGUMENTS }
 -- sparseGrams is not supported because gram ordering depends on context
 SELECT hasPhrase('a', 'b', 'sparseGrams'); -- { serverError BAD_ARGUMENTS }
-SELECT hasPhrase('a', 'b', 'array'); -- { serverError BAD_ARGUMENTS }
 -- NULL arguments
 SELECT hasPhrase(NULL); -- { serverError BAD_ARGUMENTS }
 SELECT hasPhrase(NULL, NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase(NULL, 'quick brown');
 SELECT hasPhrase('the quick brown fox', NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- 2nd arg must be const String, materialize(NULL) should not be accepted
+SELECT hasPhrase('', materialize(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Constants: hasPhrase should be constant';
 
@@ -66,6 +69,50 @@ SELECT hasPhrase(CAST(NULL AS Nullable(String)), 'quick brown');
 SELECT '-- Nullable(FixedString) input';
 SELECT hasPhrase(toNullable(toFixedString('the quick brown fox', 19)), 'quick brown');
 SELECT hasPhrase(CAST(NULL AS Nullable(FixedString(19))), 'quick brown');
+
+SELECT '-- Array input: elements are tokenized';
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'quick brown');
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'quick fox');
+SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'the quick brown fox');
+SELECT hasPhrase(['a b', 'c'], 'a b c');
+SELECT hasPhrase(['a', 'a', 'b'], 'a b');
+SELECT hasPhrase(['a', 'b'], 'b a');
+SELECT hasPhrase(['a', 'b'], '');
+SELECT hasPhrase(CAST([], 'Array(String)'), 'a');
+SELECT hasPhrase([], 'a');
+SELECT '-- the tokens of one row are one sequence, so a phrase spans elements';
+SELECT hasPhrase(['a b', 'c'], ['b', 'c']);
+SELECT '-- empty or NULL element is not a token';
+SELECT hasPhrase(['a', '', 'b'], 'a b');
+SELECT hasPhrase(['a', NULL, 'b'], 'a b');
+SELECT '-- Array(FixedString) input';
+SELECT hasPhrase([toFixedString('aa', 2), toFixedString('bb', 2)], ['aa', 'bb']);
+SELECT '-- a FixedString keeps its zero padding, which some tokenizers put inside a token';
+SELECT hasPhrase(toFixedString('abc', 6), 'abc', 'ngrams(3)');
+SELECT hasPhrase(toFixedString('a b', 8), 'a b');
+SELECT hasPhrase(toFixedString('quick brown', 16), 'quick brown', $$splitByRegexp('\\W+')$$);
+SELECT '-- the padding joins the last token of these, so nothing matches';
+SELECT hasPhrase(toFixedString('a b', 8), 'a b', 'splitByString([\' \'])');
+SELECT hasPhrase([toFixedString('aa', 4)], ['aa'], 'array');
+SELECT '-- Array phrase: elements are tokens';
+SELECT hasPhrase(['a b', 'c'], ['a b', 'c']);
+SELECT hasPhrase('the quick brown fox jumps', ['quick', 'brown']);
+SELECT '-- the array tokenizer is what the postprocessor rewrite passes';
+SELECT hasPhrase(['a b', 'c'], ['a b'], 'array');
+SELECT '-- tokenizer applies to input elements and a String phrase';
+SELECT hasPhrase(['a', 'b'], 'a()b', 'splitByString([\'()\'])');
+SELECT hasPhrase(['a()b', 'c'], 'a()b', 'splitByString([\'()\'])');
+
+SELECT '-- Array(String) column values';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt64, tokens Array(String)) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO tab VALUES (1, ['the', 'quick', 'brown']), (2, ['quick', 'the', 'brown']), (3, []);
+
+SELECT id FROM tab WHERE hasPhrase(tokens, 'the quick') ORDER BY id;
+SELECT id, hasPhrase(tokens, 'quick brown') FROM tab ORDER BY id;
+
+DROP TABLE tab;
 
 SELECT '-- Nullable(String) column values';
 
@@ -150,5 +197,55 @@ INSERT INTO tab VALUES
 
 SELECT id FROM tab WHERE hasPhrase(message, 'abc', 'ngrams(3)') ORDER BY id;
 SELECT id FROM tab WHERE hasPhrase(message, 'cde', 'ngrams(3)') ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT 'matchPhrase alias';
+
+SELECT hasPhrase('the quick brown fox', 'quick brown');
+SELECT matchPhrase('the quick brown fox', 'quick brown');
+
+SELECT 'asciiCJK tokenizer';
+
+SELECT hasPhrase('错误503', '错误', 'asciiCJK');
+SELECT hasPhrase('错误503', '误503', 'asciiCJK');
+SELECT hasPhrase('错误503', '错503', 'asciiCJK');
+SELECT hasPhrase('taichi张三丰in the house', '张三', 'asciiCJK');
+SELECT hasPhrase('taichi张三丰in the house', '丰in', 'asciiCJK');
+SELECT hasPhrase('taichi张三丰in the house', '张in', 'asciiCJK');
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt64, message String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO tab VALUES
+    (1, 'hello错误502需要处理kitty'),
+    (2, 'taichi张三丰in the house'),
+    (3, 'hello world'),
+    (4, '错误502需要');
+
+SELECT id FROM tab WHERE hasPhrase(message, '错误502', 'asciiCJK') ORDER BY id;
+SELECT id FROM tab WHERE hasPhrase(message, '需要处理', 'asciiCJK') ORDER BY id;
+SELECT id FROM tab WHERE hasPhrase(message, '三丰in', 'asciiCJK') ORDER BY id;
+SELECT id FROM tab WHERE hasPhrase(message, 'hello world', 'asciiCJK') ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT 'NOT hasPhrase';
+
+SELECT NOT hasPhrase('the quick brown fox', 'quick brown');
+SELECT NOT hasPhrase('the quick brown fox', 'brown quick');
+SELECT NOT hasPhrase('the quick brown fox', 'missing phrase');
+SELECT NOT hasPhrase('hello world', 'hello world');
+SELECT NOT hasPhrase('', 'hello');
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt64, message String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO tab VALUES
+    (1, 'the quick brown fox'),
+    (2, 'the slow brown turtle'),
+    (3, 'quick brown dog');
+
+SELECT id FROM tab WHERE NOT hasPhrase(message, 'quick brown') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasPhrase(message, 'brown') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasPhrase(message, 'missing phrase') ORDER BY id;
 
 DROP TABLE tab;

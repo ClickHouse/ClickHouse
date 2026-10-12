@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: fasttest-only
+# Tags: fasttest-only, no-darwin
 # Tag fasttest-only - this test requires lexer_test which is only available
 # in fast-test environment because it is built along with clickhouse but is not
-# transferred as an artifact to other test environments
+# transferred as an artifact to other test environments.
+# Tag no-darwin - the Darwin fast test runs on transferred binaries (it does not build clickhouse),
+# so lexer_test is not available there.
 
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

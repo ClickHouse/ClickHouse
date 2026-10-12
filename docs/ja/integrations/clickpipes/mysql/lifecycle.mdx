@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'MySQL ClickPipeのライフサイクル'
+description: '各種ステータスとその意味'
+slug: /integrations/clickpipes/mysql/lifecycle
+title: 'MySQL ClickPipeのライフサイクル'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+このドキュメントでは、MySQL ClickPipeの各フェーズ、取り得るステータスの種類とその意味について説明します。MariaDBにも適用されます。
+
+<div id="provisioning">
+  ## プロビジョニング
+</div>
+
+`Create ClickPipe` ボタンをクリックすると、ClickPipe は `Provisioning` 状態で作成されます。プロビジョニングでは、サービス用の ClickPipes を実行するための基盤となるインフラストラクチャを立ち上げるとともに、パイプの初期メタデータを登録します。サービス内の ClickPipes ではコンピュートが共有されるため、2 つ目の ClickPipe は 1 つ目よりもはるかに速く作成されます。これは、インフラストラクチャがすでに整っているためです。
+
+<div id="setup">
+  ## セットアップ
+</div>
+
+パイプがプロビジョニングされると、`Setup` 状態に移行します。この状態では、宛先の ClickHouse テーブルを作成します。また、ソーステーブルのテーブル定義もここで取得して記録します。
+
+<div id="snapshot">
+  ## スナップショット
+</div>
+
+セットアップが完了すると、`Snapshot` 状態に入ります (CDC のみのパイプを除き、その場合は `Running` に遷移します) 。`Snapshot`、`Initial Snapshot`、`Initial Load` (より一般的な呼び方) は、同じ意味で使われます。この状態では、ソースの MySQL テーブルのスナップショットを取得し、ClickHouse にロードします。バイナリログの保持期間の設定では、初期ロードにかかる時間を考慮する必要があります。初期ロードの詳細については、[並列初期ロードのドキュメント](/ja/integrations/clickpipes/mysql/parallel-initial-load)を参照してください。また、再同期がトリガーされたときや、既存のパイプに新しいテーブルが追加されたときにも、パイプは `Snapshot` 状態に入ります。
+
+<div id="running">
+  ## 実行中
+</div>
+
+初期ロードが完了すると、パイプは `Running` 状態になります (スナップショットのみのパイプの場合は、`Completed` に遷移します) 。この時点で、パイプは `CDC（変更データキャプチャ）` を開始します。この状態では、ソースデータベースのバイナリログの読み取りを開始し、データをバッチ単位で ClickHouse に同期します。CDC の制御方法については、[CDC の制御に関するドキュメント](/ja/integrations/clickpipes/mysql/controlling-sync)を参照してください。
+
+<div id="paused">
+  ## 一時停止
+</div>
+
+パイプが`Running`状態になると、一時停止できます。これにより CDC プロセスが停止し、パイプは`Paused`状態になります。この状態では、ソースデータベースから新しいデータは取り込まれませんが、ClickHouse 内の既存のデータはそのまま保持されます。この状態からパイプを再開できます。
+
+<div id="paused">
+  ## 一時停止
+</div>
+
+<Note>
+  この状態は近日中に利用可能になる予定です。[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) をご利用の場合は、リリース後もインテグレーションが引き続き動作するよう、今のうちにこの状態への対応を追加しておくことをご検討ください。
+</Note>
+
+`Pause` ボタンをクリックすると、パイプは `Pausing` 状態に入ります。これは一時的な状態で、CDC プロセスの停止処理が進行中であることを示します。CDC プロセスが完全に停止すると、パイプは `Paused` 状態に入ります。
+
+<div id="modifying">
+  ## 変更中
+</div>
+
+<Note>
+  この状態は近日中に提供予定です。[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) を使用している場合は、リリース後もインテグレーションが引き続き動作するよう、今のうちに対応を追加しておくことをご検討ください。
+</Note>
+
+現在、これはパイプがテーブルの削除処理中であることを示します。
+
+<div id="resync">
+  ## 再同期
+</div>
+
+<Note>
+  この状態は近日中に追加される予定です。[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) を使用している場合は、リリース後もインテグレーションが継続して動作するよう、今のうちにこの状態への対応を追加しておくことを検討してください。
+</Note>
+
+この状態は、パイプが再同期フェーズにあり、`_resync` テーブルと元のテーブルのアトミックなスワップを実行していることを示します。再同期の詳細については、[再同期のドキュメント](/ja/integrations/clickpipes/mysql/resync) を参照してください。
+
+<div id="completed">
+  ## 完了
+</div>
+
+この状態はスナップショットのみのパイプに適用され、スナップショットが完了しており、これ以上行う作業がないことを示します。
+
+<div id="failed">
+  ## 失敗
+</div>
+
+パイプで回復不能なエラーが発生すると、`Failed` 状態に移行します。この状態から回復するには、サポートに問い合わせるか、パイプを[再同期](/ja/integrations/clickpipes/mysql/resync)してください。
