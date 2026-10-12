@@ -1044,13 +1044,17 @@ Record the user who initiated each mutation in the mutation entry (the on-disk
 entry for `MergeTree`, the ClickHouse Keeper entry for `ReplicatedMergeTree`)
 and show it in the `author` column of the `system.mutations` table.
 
-When disabled, the serialized mutation entry stays byte-for-byte identical to
-the format used by servers that do not know about the `author` field, so
-mixed-version clusters and downgrades are unaffected. When enabled, the entry
-is written with `format version: 2` carrying the `author` field; servers that
-do not support this format cannot read such entries and fail with an explicit
-`UNKNOWN_FORMAT_VERSION` error, so enable it only after the whole cluster has
-been upgraded.
+While disabled, newly created mutation entries stay byte-for-byte identical
+to the format used by servers that do not know about the `author` field. When
+enabled, the entry is written with `format version: 2` carrying the `author`
+field; servers that do not support this format cannot read such entries and
+fail with an explicit `UNKNOWN_FORMAT_VERSION` error, so enable it only after
+the whole cluster has been upgraded.
+
+Disabling the setting again does not rewrite the `format version: 2` entries
+that were created while it was enabled. A downgrade to a server that does not
+support this format remains unsafe until all such mutations have finished and
+their entries have been removed.
 
 For `ReplicatedMergeTree` tables, changing this setting cannot be mixed with
 replicated `ALTER` commands in a single query: setting changes are applied
