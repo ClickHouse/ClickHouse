@@ -398,6 +398,9 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
         readBinaryBigEndian(num_records, in);
         header.num_records_is_streaming = num_records == std::numeric_limits<UInt32>::max();
         header.num_records = header.num_records_is_streaming ? 0 : num_records;
+
+        if (!header.num_records_is_streaming && num_records > static_cast<UInt32>(std::numeric_limits<Int32>::max()))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of records in the NetCDF header");
     }
 
     UInt64 num_dimensions = readListHeader(in, header.version, NC_DIMENSION, "dimensions");
