@@ -92,9 +92,31 @@ private:
     const ASTFunction * function = nullptr;
 };
 
+/// Whether the locator of `Backup(database_name, S3(...))` is tagged as `BACKUP_NAME` and therefore masks
+/// itself with the `BACKUP ... TO` rule when it is formatted.
+inline bool backupS3LocatorMasksItself(const ASTFunction & backup)
+{
+    if (!backup.arguments || backup.arguments->children.size() != 2 || !backup.arguments->children[0]->as<ASTLiteral>())
+        return false;
+
+    const auto * locator = backup.arguments->children[1]->as<ASTFunction>();
+    return locator && locator->name == "S3" && locator->getKind() == ASTFunction::Kind::BACKUP_NAME
+        && !locator->parameters && locator->tryGetAlias().empty() && !locator->isWindowFunction()
+        && locator->getNullsAction() == NullsAction::EMPTY;
+}
+
 /// The secret arguments of a function as the installed finder sees them.
 inline SecretArgumentsResult findSecretArguments(const ASTFunction & function)
 {
+    /// The `Backup` database rule is chosen by name rather than by kind, so that the kind tags of a JSON AST
+    /// supplied by a client cannot bypass it. A tagged `S3` locator masks itself as `BACKUP_NAME`.
+    if (function.name == "Backup" && function.arguments && !function.arguments->children.empty())
+    {
+        if (backupS3LocatorMasksItself(function))
+            return {};
+        return getSecretArgumentsFinder().find(ASTFunction::Kind::DATABASE_ENGINE, FunctionAST(function));
+    }
+
     /// Codecs, statistics, window functions and lambdas take no secrets, so the programs that format only
     /// those (`keeper` and `compressor` format codecs) need no finder.
     switch (function.getKind())

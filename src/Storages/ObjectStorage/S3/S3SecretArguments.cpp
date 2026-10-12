@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <Common/HiddenSecret.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/StringUtils.h>
 #include <Common/maskURIPassword.h>
@@ -31,6 +32,32 @@ constexpr std::string_view s3_secret_keys[]
     = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id",
        "role_session_name"};
 
+bool isBinaryEquals(const AbstractFunction & argument)
+{
+    return argument.name() == "equals" && argument.hasArguments() && argument.arguments->size() == 2;
+}
+
+bool backupS3MapHasUnsafeVisibleArgument(const AbstractFunction & map)
+{
+    if (!map.hasArguments())
+        return true;
+
+    for (size_t i = 0; i < map.arguments->size(); ++i)
+    {
+        const auto child = map.arguments->at(i)->getFunction();
+        if (!child || !isBinaryEquals(*child))
+            continue;
+
+        String key;
+        if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*child->arguments->at(0), &key))
+            return true;
+        if (map.name() == "extra_credentials" && isNonSecretExtraCredentialsKey(key)
+            && !FunctionSecretArgumentsFinder::tryGetStringFromArgument(*child->arguments->at(1), nullptr))
+            return true;
+    }
+    return false;
+}
+
 /// Single source of truth for reading an S3-style argument list the way the S3 parsers do:
 /// `headers(..)` / `extra_credentials(..)` can appear at any position and are stripped before
 /// positional slots are assigned; `key = value` arguments are named, and those with a key from
@@ -57,7 +84,7 @@ std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, 
             const auto name = f->name();
             if (name == "headers" || name == "extra_credentials")
                 continue;
-            if (name == "equals" && f->hasArguments() && f->arguments->size() == 2)
+            if (isBinaryEquals(*f))
             {
                 seen_named = true;
                 String key;
@@ -290,25 +317,96 @@ void findS3DatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
     }
 }
 
+void maskBackupS3VisibleArguments(FunctionSecretArgumentsFinder & finder, const std::vector<size_t> & positional)
+{
+    const auto & function = finder.function;
+    auto & result = finder.result;
+
+    for (const size_t index : positional)
+    {
+        if (result.masked_arguments.contains(index) || result.replaced_arguments.contains(index))
+            continue;
+        String value;
+        if (!function->arguments->at(index)->tryGetString(&value, /* allow_identifier= */ false))
+        {
+            finder.markSecretArgument(index);
+            continue;
+        }
+        if (maskS3URICredentials(value))
+            result.replaced_arguments[index] = quoteString(value);
+    }
+
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        const auto named = function->arguments->at(i)->getFunction();
+        if (!named)
+            continue;
+
+        if ((named->name() == "headers" || named->name() == "extra_credentials")
+            && backupS3MapHasUnsafeVisibleArgument(*named))
+        {
+            result.replaced_arguments[i] = HIDDEN_SECRET_LITERAL;
+            continue;
+        }
+
+        if (!isBinaryEquals(*named))
+            continue;
+        if (!FunctionSecretArgumentsFinder::tryGetStringFromArgument(*named->arguments->at(0), nullptr))
+        {
+            finder.markSecretArgument(i);
+            continue;
+        }
+        if (result.masked_arguments.contains(i) || result.replaced_arguments.contains(i))
+            continue;
+        String value;
+        if (named->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true) && maskS3URICredentials(value))
+            finder.markSecretArgument(i, /* argument_is_named= */ true);
+    }
+}
+
 void findS3BackupSecretArguments(FunctionSecretArgumentsFinder & finder)
 {
-    if (finder.isNamedCollectionName(0))
+    const auto & function = finder.function;
+    const bool is_named_collection = finder.isNamedCollectionName(0);
+    const auto positional = classifyS3Arguments(finder, is_named_collection ? 1 : 0, /* positionals_allowed_after_named= */ true);
+    /// `BackupInfo::fromAST` reads only literals as positionals (a last function is the credential clause)
+    /// and rejects anything else after the statement is logged, so such a locator has no valid triple.
+    bool only_literals = true;
+    for (const size_t index : positional)
+    {
+        if (!function->arguments->at(index)->tryGetLiteralText(nullptr))
+        {
+            finder.markSecretArgument(index);
+            only_literals = false;
+        }
+    }
+    if (is_named_collection)
     {
         /// BACKUP ... TO S3(named_collection[, 'filename'], ..., secret_access_key = '...', ...):
         /// unlike the other named-collection S3 forms, the backup locator accepts one positional
         /// (the non-secret filename), in any position relative to the named overrides; anything
         /// positional beyond it is invalid, so fail closed there.
-        maskS3PositionalsFrom(finder, classifyS3Arguments(finder, 1, /* positionals_allowed_after_named= */ true), 1);
-        return;
+        maskS3PositionalsFrom(finder, positional, 1);
     }
-    /// BACKUP ... TO S3(url [, aws_access_key_id, aws_secret_access_key] [, session_token = ..., ...]):
-    /// the locator accepts exactly one or three positionals; the valid triple keeps the url and
-    /// access_key_id visible and hides the secret at slot 2. Any other positional count is invalid
-    /// but logged before validation, and the intended slots are unknowable, so fail closed on
-    /// everything after the url.
-    const auto positional = classifyS3Arguments(finder, 0, /* positionals_allowed_after_named= */ true);
-    maskS3UrlArgument(finder, positional, 0);
-    maskS3PositionalsFrom(finder, positional, positional.size() == 3 ? 2 : 1);
+    else
+    {
+        /// `BackupInfo::fromAST` also rejects a function other than `key = value` before the last argument, such as a
+        /// map skipped above, so such a locator has no valid triple either.
+        bool has_function_before_last = false;
+        for (size_t i = 0; i + 1 < function->arguments->size() && !has_function_before_last; ++i)
+        {
+            const auto f = function->arguments->at(i)->getFunction();
+            has_function_before_last = f && f->name() != "equals";
+        }
+        /// BACKUP ... TO S3(url [, aws_access_key_id, aws_secret_access_key] [, session_token = ..., ...]):
+        /// the locator accepts exactly one or three positionals; the valid triple keeps the url and
+        /// access_key_id visible and hides the secret at slot 2. Any other positional count is invalid
+        /// but logged before validation, and the intended slots are unknowable, so fail closed on
+        /// everything after the url.
+        maskS3UrlArgument(finder, positional, 0);
+        maskS3PositionalsFrom(finder, positional, positional.size() == 3 && only_literals && !has_function_before_last ? 2 : 1);
+    }
+    maskBackupS3VisibleArguments(finder, positional);
 }
 
 }
@@ -339,24 +437,28 @@ bool maskS3URICredentials(String & url)
     return changed;
 }
 
+/// `classifyS3Arguments` reads the interleaved named arguments and the nested maps itself, before any generic
+/// positional pass could hide a map that follows a named argument whole.
+
 SecretArgumentsSpec s3TableFunctionSecretArguments(bool is_cluster_function)
 {
     /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
     /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
     return {.custom = [is_cluster_function](FunctionSecretArgumentsFinder & finder)
-            { findS3FunctionSecretArguments(finder, is_cluster_function); }};
+            { findS3FunctionSecretArguments(finder, is_cluster_function); },
+            .custom_reads_named_arguments = true};
 }
 
 SecretArgumentsSpec s3TableEngineSecretArguments()
 {
     /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
-    return {.custom = findS3TableEngineSecretArguments};
+    return {.custom = findS3TableEngineSecretArguments, .custom_reads_named_arguments = true};
 }
 
 SecretArgumentsSpec s3DatabaseSecretArguments()
 {
     /// S3('url', 'access_key_id', 'secret_access_key')
-    return {.custom = findS3DatabaseSecretArguments};
+    return {.custom = findS3DatabaseSecretArguments, .custom_reads_named_arguments = true};
 }
 
 SecretArgumentsSpec s3BackupSecretArguments()

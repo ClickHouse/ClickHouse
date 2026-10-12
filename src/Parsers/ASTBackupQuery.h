@@ -12,6 +12,14 @@ using DatabaseAndTableName = std::pair<String, String>;
 class ASTFunction;
 class ASTSnapshotQuery;
 
+/// Snapshot destinations and `UNLOCK SNAPSHOT` sources use the same locators as backups.
+/// Format those locators as function calls here: a `Backup` database also tags its nested `S3`
+/// as `BACKUP_NAME` for masking, but must keep `key = value` in its original SQL.
+void formatBackupOrSnapshotLocator(const IAST & locator, WriteBuffer & ostr, const IAST::FormatSettings & settings);
+void formatBackupOrSnapshotLocator(
+    const IAST & locator, WriteBuffer & ostr, const IAST::FormatSettings & settings,
+    IAST::FormatState & state, IAST::FormatStateStacked frame);
+
 
 /** BACKUP { TABLE [db.]table_name [AS [db.]table_name_in_backup] [PARTITION[S] partition_expr [,...]] [EXCEPT DATA FROM TABLE [db.]table_name] |
   *          DICTIONARY [db.]dictionary_name [AS [db.]dictionary_name_in_backup] [EXCEPT DATA FROM TABLE [db.]dictionary_name] |
