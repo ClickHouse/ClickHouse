@@ -375,10 +375,10 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
             create.handler_name, fmt::join(handler->methods, ", "));
     }
 
-    /// The `readonly` enforcement above cannot fence off queries whose side effects survive `readonly = 2` - the
-    /// mode that safe methods set: `BACKUP` / `RESTORE` write durable data, and `SET` / `SET ROLE` / `USE` /
-    /// transaction control / `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` / an `INSERT`, `DROP` or
-    /// `TRUNCATE` that may target an existing temporary table mutate session state that
+    /// The `readonly` enforcement above cannot be relied on to fence off queries whose side effects survive
+    /// `readonly = 2` - the mode that safe methods set: `BACKUP` / `RESTORE` write durable data, and `SET` /
+    /// `SET ROLE` / `USE` / transaction control / `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` / an
+    /// `INSERT`, `DROP` or `TRUNCATE` that may target an existing temporary table mutate session state that
     /// persists across requests when `session_id` is in use. A safe method must never trigger them - `GET` is
     /// expected to be side-effect-free, and a declared `GET` is also served for `HEAD` (see `HTTPHandlerFactory`),
     /// where the suppressed response body would hide the effect entirely. So require *every* allowed method of
@@ -387,7 +387,7 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
         && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Handler `{}` runs {}. The read-only mode of safe HTTP methods does not prevent these side effects, "
+            "Handler `{}` runs {}. The read-only mode of safe HTTP methods cannot be relied on to prevent these side effects, "
             "but the handler's allowed HTTP methods ({}) include read-only ones. "
             "List only mutating methods (POST, PUT, or DELETE) in the METHODS clause.",
             create.handler_name,
