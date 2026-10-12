@@ -45,7 +45,6 @@ public:
 
     NextMetadataResult generateNextMetadata(
         FileNamesGenerator & generator,
-        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
         Int64 parent_snapshot_id,
         Int64 added_files,
         Int64 added_records,
@@ -63,8 +62,11 @@ public:
     /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
     NextMetadataResult generateManifestOnlySnapshot(
         FileNamesGenerator & generator,
-        const Iceberg::IcebergPathFromMetadata & metadata_file_path,
         Int64 parent_snapshot_id);
+
+    /// Records the file this metadata object was read from in `metadata-log`.
+    /// Call it before anything changes `last-updated-ms`.
+    void addPreviousMetadataFile(const Iceberg::IcebergPathFromMetadata & previous_metadata_file);
 
     /// Callers that retry a commit generate the id once so their manifests stay valid across attempts.
     Int64 generateSnapshotId();
