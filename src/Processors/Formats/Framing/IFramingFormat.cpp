@@ -1,5 +1,6 @@
 #include <Processors/Formats/Framing/IFramingFormat.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -13,6 +14,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -62,6 +64,13 @@ void IFramingFormat::setProfileEventsQueue(const InternalProfileEventsQueuePtr &
     profile_events_period_us = period_us;
 }
 
+void IFramingFormat::setProfileTracesQueue(const InternalProfileTracesQueuePtr & queue, UInt64 period_us, bool defer_until_finalize)
+{
+    profile_traces_queue = queue;
+    profile_traces_period_us = period_us;
+    defer_profile_traces_until_finalize = defer_until_finalize;
+}
+
 bool IFramingFormat::failClosedAfterPartialWrite()
 {
     if (!writing)
@@ -82,7 +91,13 @@ void IFramingFormat::onPayload(FramedPacketKind kind)
     extractAndWritePayload(kind);
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
+    /// Ordinary result delivery remains part of the query profile; only trace delivery is suppressed.
     flushOut();
+    if (profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        pumpProfileTraces(/*force=*/ false);
+    }
 }
 
 void IFramingFormat::onProgress(const Progress & progress)
@@ -94,6 +109,11 @@ void IFramingFormat::onProgress(const Progress & progress)
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
     flushOut();
+    if (profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        pumpProfileTraces(/*force=*/ false);
+    }
 }
 
 void IFramingFormat::setFinalProgress(const Progress & progress)
@@ -127,8 +147,13 @@ void IFramingFormat::finalize()
         extractAndWritePayload(FramedPacketKind::Data);
     pumpLogs();
     pumpProfileEvents(/*force=*/ true);
+    if (profile_traces_queue)
+    {
+        ProfileTracesBlocker blocker;
+        pumpProfileTraces(/*force=*/ true);
+    }
 
-    /// The final progress is written after the logs and profile events above, so a successful
+    /// The final progress is written after the logs, profile events and traces above, so a successful
     /// stream ends with it (see `setFinalProgress`). It is suppressed once an exception was
     /// recorded: the final `progress` packet with the final counters is the success terminator of
     /// the stream, and a failed stream must end with the `exception` packet instead. The counters
@@ -286,6 +311,38 @@ void IFramingFormat::pumpProfileEvents(bool force)
     profile_events_watch.restart();
 }
 
+void IFramingFormat::pumpProfileTraces(bool force)
+{
+    /// The caller's guard also suppresses samples from this function's entry and return paths.
+    chassert(ProfileTracesBlocker::isBlocked());
+
+    if (!profile_traces_queue)
+        return;
+
+    if (!force && (defer_profile_traces_until_finalize || profile_traces_watch.elapsedMicroseconds() < profile_traces_period_us))
+        return;
+
+    if (force)
+        profile_traces_queue->finish();
+
+    /// Normal pumping is bounded to one block so a busy sampler cannot delay query output.
+    /// After `finish` no new samples are accepted, so the terminal drain is finite.
+    bool emitted_traces = false;
+    do
+    {
+        Block block = profile_traces_queue->getBlock();
+        if (block.rows() == 0)
+            break;
+        emitToOut([&] { writeProfileTracesPacket(block); });
+        emitted_traces = true;
+    }
+    while (force);
+
+    profile_traces_watch.restart();
+    if (emitted_traces)
+        flushOut();
+}
+
 static void writeDateTimeWithMicrosecondsJSON(UInt32 datetime, UInt32 microseconds, WriteBuffer & buf)
 {
     writeChar('"', buf);
@@ -309,7 +366,7 @@ void IFramingFormat::writeJSONStringValidUTF8(std::string_view s, WriteBuffer & 
     /// and its destructor catches and suppresses any exception from `finalize` (see
     /// `WriteBufferValidUTF8::~WriteBufferValidUTF8`). Here it writes straight into the live response
     /// stream, so relying on the destructor would swallow a failure to write the tail of a `log`,
-    /// `profile_events` or `exception` string: the packet would be left truncated on the wire while
+    /// `profile_events`, `profile_traces` or `exception` string: the packet would be left truncated on the wire while
     /// `emitToOut` clears `writing` and the stream keeps going. Flush explicitly so such a failure
     /// propagates into the fail-close path instead.
     validating_buf.finalize();
@@ -364,6 +421,54 @@ void IFramingFormat::writeProfileEventRowJSON(const Block & block, size_t row_nu
     writeJSONStringValidUTF8(name.getDataAt(row_num), buf, format_settings);
     writeCString(",\"value\":\"", buf);
     writeIntText(value[row_num], buf);
+    writeCString("\"}", buf);
+}
+
+void IFramingFormat::writeProfileTraceRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const
+{
+    const auto & trace_host_name = assert_cast<const ColumnString &>(*block.getByName("host_name").column);
+    const auto & query_id = assert_cast<const ColumnString &>(*block.getByName("query_id").column);
+    const auto & trace_type = assert_cast<const ColumnString &>(*block.getByName("trace_type").column);
+    const auto & thread_id = assert_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    const auto & event_time_microseconds = assert_cast<const ColumnUInt64 &>(*block.getByName("event_time_microseconds").column).getData();
+    const auto & trace = assert_cast<const ColumnArray &>(*block.getByName("trace").column);
+    const auto & addresses = assert_cast<const ColumnUInt64 &>(trace.getData()).getData();
+    const auto & symbols = assert_cast<const ColumnArray &>(*block.getByName("symbols").column);
+    const auto & names = assert_cast<const ColumnString &>(symbols.getData());
+    const auto & size = assert_cast<const ColumnInt64 &>(*block.getByName("size").column).getData();
+
+    writeCString("{\"host_name\":", buf);
+    writeJSONStringValidUTF8(trace_host_name.getDataAt(row_num), buf, format_settings);
+    writeCString(",\"query_id\":", buf);
+    writeJSONStringValidUTF8(query_id.getDataAt(row_num), buf, format_settings);
+    writeCString(",\"trace_type\":", buf);
+    writeJSONStringValidUTF8(trace_type.getDataAt(row_num), buf, format_settings);
+    writeCString(",\"thread_id\":\"", buf);
+    writeIntText(thread_id[row_num], buf);
+    writeCString("\",\"event_time_microseconds\":\"", buf);
+    writeIntText(event_time_microseconds[row_num], buf);
+    writeCString("\",\"trace\":[", buf);
+    const auto trace_begin = row_num ? trace.getOffsets()[row_num - 1] : 0;
+    const auto trace_end = trace.getOffsets()[row_num];
+    for (size_t i = trace_begin; i < trace_end; ++i)
+    {
+        if (i != trace_begin)
+            writeChar(',', buf);
+        writeChar('"', buf);
+        writeIntText(addresses[i], buf);
+        writeChar('"', buf);
+    }
+    writeCString("],\"symbols\":[", buf);
+    const auto symbols_begin = row_num ? symbols.getOffsets()[row_num - 1] : 0;
+    const auto symbols_end = symbols.getOffsets()[row_num];
+    for (size_t i = symbols_begin; i < symbols_end; ++i)
+    {
+        if (i != symbols_begin)
+            writeChar(',', buf);
+        writeJSONStringValidUTF8(names.getDataAt(i), buf, format_settings);
+    }
+    writeCString("],\"size\":\"", buf);
+    writeIntText(size[row_num], buf);
     writeCString("\"}", buf);
 }
 

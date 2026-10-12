@@ -1,0 +1,2 @@
+trace-only HTTP payload flushes are excluded from streamed samples
+ordinary HTTP result compression remains visible in streamed samples
