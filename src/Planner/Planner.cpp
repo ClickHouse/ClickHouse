@@ -1505,17 +1505,60 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         auto & before_interpolate_actions = sort_analysis_result.before_interpolate_actions;
         addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets);
 
+        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
+        auto & interpolate_list_nodes = interpolate_list_node.getNodes();
+
+        NameSet target_names;
+        for (const auto & interpolate_node : interpolate_list_nodes)
+            target_names.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
+
+        /// The interpolated values are only in the target columns, the columns of the target expressions keep
+        /// their pre-fill values, so a target expression read by an INTERPOLATE expression reads the target.
+        NameToNameMap target_by_expression_name;
+        NameSet ambiguous_expression_names;
+        for (const auto & interpolate_node : interpolate_list_nodes)
+        {
+            const auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+            /// An alias named like a constant would also replace the literals of the same value.
+            if (interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
+                continue;
+
+            auto expression_name = calculateActionNodeName(interpolate_node_typed.getExpression(), *planner_context);
+            /// The filling writes the ORDER BY columns and the targets itself.
+            if (order_by_column_names.contains(expression_name) || target_names.contains(expression_name))
+                continue;
+
+            /// Several targets backed by one expression: a read of it does not tell which target it means.
+            if (!target_by_expression_name.emplace(expression_name, interpolate_node_typed.getExpressionName()).second)
+                ambiguous_expression_names.insert(expression_name);
+        }
+
+        for (const auto & expression_name : ambiguous_expression_names)
+            target_by_expression_name.erase(expression_name);
+
         ActionsDAG interpolate_actions_dag;
+        std::unordered_map<String, const ActionsDAG::Node *> input_by_name;
         auto query_plan_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
+            if (target_by_expression_name.contains(query_plan_column.name))
+                continue;
+
             /// INTERPOLATE actions dag input columns must be non constant
             query_plan_column.column = nullptr;
-            interpolate_actions_dag.addInput(query_plan_column);
+            const auto & input_node = interpolate_actions_dag.addInput(query_plan_column);
+            input_by_name.emplace(input_node.result_name, &input_node);
         }
 
-        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
-        auto & interpolate_list_nodes = interpolate_list_node.getNodes();
+        for (const auto & [expression_name, target_name] : target_by_expression_name)
+        {
+            auto it = input_by_name.find(target_name);
+            if (it == input_by_name.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE target {} is not present in the block {}",
+                    target_name, query_plan.getCurrentHeader()->dumpNames());
+
+            interpolate_actions_dag.addAlias(*it->second, expression_name);
+        }
 
         if (interpolate_list_nodes.empty())
         {
@@ -1531,6 +1574,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             ActionsDAG rename_dag;
 
+            /// The outputs are named like the inputs they replace, so they are added after every expression is built.
+            std::vector<std::pair<const ActionsDAG::Node *, String>> interpolated_columns;
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
@@ -1559,9 +1604,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                         planner_context->getQueryContext());
                 }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
-                interpolate_actions_dag.getOutputs().push_back(alias_node);
+                interpolated_columns.emplace_back(interpolate_expression, interpolate_node_typed.getExpressionName());
             }
+
+            for (const auto & [interpolate_expression, target_name] : interpolated_columns)
+                interpolate_actions_dag.getOutputs().push_back(&interpolate_actions_dag.addAlias(*interpolate_expression, target_name));
 
             if (!rename_dag.getOutputs().empty())
                 interpolate_actions_dag = ActionsDAG::merge(std::move(rename_dag), std::move(interpolate_actions_dag));

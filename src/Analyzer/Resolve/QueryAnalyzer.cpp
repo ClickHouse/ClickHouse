@@ -4893,19 +4893,34 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     for (const auto & sort_node : query_node_typed.getOrderBy().getNodes())
         ready_columns.push_back(sort_node->as<SortNode &>().getExpression());
 
-    for (auto & interpolate_node : interpolate_node_list_typed.getNodes())
+    auto & interpolate_nodes = interpolate_node_list_typed.getNodes();
+    for (auto & interpolate_node : interpolate_nodes)
+        resolveExpressionNode(interpolate_node->as<InterpolateNode &>().getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    for (auto & interpolate_node : interpolate_nodes)
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
         auto column_to_interpolate_name = interpolate_node_typed.getExpressionName();
-
-        resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
         IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
         auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), static_pointer_cast<ITableExpressionNode>(interpolate_node));
         interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
+
+        /// A read of a constant target would resolve to the constant itself, so it is bound to the target here.
+        for (const auto & target_node : interpolate_nodes)
+        {
+            const auto & target = target_node->as<const InterpolateNode &>();
+            if (target.getExpression()->getNodeType() != QueryTreeNodeType::CONSTANT)
+                continue;
+
+            auto target_column_node = std::make_shared<ColumnNode>(
+                NameAndTypePair(target.getExpressionName(), target.getExpression()->getResultType()),
+                static_pointer_cast<ITableExpressionNode>(target_node));
+            interpolate_scope.expression_argument_name_to_node.emplace(target.getExpressionName(), std::move(target_column_node));
+        }
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
