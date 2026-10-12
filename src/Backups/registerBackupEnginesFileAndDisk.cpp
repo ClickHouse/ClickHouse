@@ -99,22 +99,35 @@ namespace
             path = first_allowed_path / path;
         }
 
-        size_t counter = 0;
-        while (true)
+        /// With overlapping entries, return the deepest one containing the path, so the durability
+        /// boundary does not depend on the order of the entries in the config.
+        std::optional<fs::path> deepest_allowed_path;
+        size_t deepest_depth = 0;
+        for (size_t counter = 0; config.has(key); key = "backups.allowed_path[" + std::to_string(++counter) + "]")
         {
             auto allowed_path = fs::path(config.getString(key));
             if (allowed_path.is_relative())
                 allowed_path = data_dir / allowed_path;
+            allowed_path = allowed_path.lexically_normal();
+            if (!allowed_path.has_filename())
+                allowed_path = allowed_path.parent_path();
             auto rel = path.lexically_proximate(allowed_path);
             bool path_ok = rel.empty() || (rel.is_relative() && (*rel.begin() != ".."));
-            if (path_ok)
-                return allowed_path.lexically_normal();
-            key = "backups.allowed_path[" + std::to_string(++counter) + "]";
-            if (!config.has(key))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Path {} is not allowed for backups, see the 'backups.allowed_path' configuration parameter",
-                                quoteString(path.c_str()));
+            if (!path_ok)
+                continue;
+            size_t depth = std::distance(allowed_path.begin(), allowed_path.end());
+            if (!deepest_allowed_path || depth > deepest_depth)
+            {
+                deepest_allowed_path = allowed_path;
+                deepest_depth = depth;
+            }
         }
+
+        if (!deepest_allowed_path)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Path {} is not allowed for backups, see the 'backups.allowed_path' configuration parameter",
+                            quoteString(path.c_str()));
+        return *deepest_allowed_path;
     }
 
     ResolvedLocalBackupLocation resolveLocalBackupLocation(const BackupInfo & backup_info, ContextPtr context)
