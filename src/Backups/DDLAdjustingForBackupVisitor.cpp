@@ -30,6 +30,18 @@ namespace
         create.reset(create.comment);
     }
 
+    void visitStorageAliasTableEngine(const DDLAdjustingForBackupVisitor::Data & data)
+    {
+        /// Precondition: engine_name == "Alias"
+
+        /// An `Alias` has no schema of its own, it always resolves the columns of its target table.
+        /// Servers before 26.10 inlined the resolved columns into the stored definition, newer ones don't.
+        /// Remove them so that a definition written by an older server compares equal to a definition
+        /// written by a newer one, and so that a new backup doesn't carry a schema which doesn't belong to it.
+        auto & create = data.create_query->as<ASTCreateQuery &>();
+        create.reset(create.columns_list);
+    }
+
     void visitStorageReplicatedTableEngine(ASTStorage & storage, const DDLAdjustingForBackupVisitor::Data & data)
     {
         /// Precondition: engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree")
@@ -92,6 +104,8 @@ namespace
         const String & engine_name = storage.engine->name;
         if (engine_name.starts_with("System"))
             visitStorageSystemTableEngine(storage, data);
+        else if (engine_name == "Alias")
+            visitStorageAliasTableEngine(data);
         else if (engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree"))
             visitStorageReplicatedTableEngine(storage, data);
         else if (engine_name == "Replicated")
