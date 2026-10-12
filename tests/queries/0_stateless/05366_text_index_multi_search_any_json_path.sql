@@ -1,6 +1,7 @@
--- Tests multiSearchAny and its variants over a JSON path with a text index on JSONAllValues: the rows match a full scan.
+-- Tags: no-fasttest, use-vectorscan
 
-DROP TABLE IF EXISTS tab_json;
+-- Tests multiSearchAny, its variants and multiMatchAny over a JSON path with a text index on JSONAllValues: the rows match a full scan.
+
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
@@ -37,6 +38,8 @@ SELECT 'multiSearchAnyCaseInsensitive', arraySort(groupArray(id)) FROM tab_json 
 SELECT 'multiSearchAnyCaseInsensitive, no index', arraySort(groupArray(id)) FROM tab_json WHERE multiSearchAnyCaseInsensitive(json.t, ['POINTEREXC']) SETTINGS use_skip_indexes = 0;
 SELECT 'multiSearchAnyCaseInsensitiveUTF8', arraySort(groupArray(id)) FROM tab_json WHERE multiSearchAnyCaseInsensitiveUTF8(json.t, ['POINTEREXC']);
 SELECT 'multiSearchAnyCaseInsensitiveUTF8, no index', arraySort(groupArray(id)) FROM tab_json WHERE multiSearchAnyCaseInsensitiveUTF8(json.t, ['POINTEREXC']) SETTINGS use_skip_indexes = 0;
+SELECT 'multiMatchAny', arraySort(groupArray(id)) FROM tab_json WHERE multiMatchAny(json.t, ['PointerExc']);
+SELECT 'multiMatchAny, no index', arraySort(groupArray(id)) FROM tab_json WHERE multiMatchAny(json.t, ['PointerExc']) SETTINGS use_skip_indexes = 0;
 SELECT 'CAST', arraySort(groupArray(id)) FROM tab_json WHERE multiSearchAny(json.b::String, ['PointerExc']);
 SELECT 'CAST, no index', arraySort(groupArray(id)) FROM tab_json WHERE multiSearchAny(json.b::String, ['PointerExc']) SETTINGS use_skip_indexes = 0;
 
