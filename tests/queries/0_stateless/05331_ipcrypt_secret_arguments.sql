@@ -15,3 +15,13 @@ SYSTEM FLUSH LOGS query_log;
 SELECT query FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT ipcrypt%'
 ORDER BY event_time_microseconds;
+
+-- A malformed named `key` argument written before the positional span must be hidden too.
+SELECT ipcryptEncrypt(key = '0123456789abcdef0123456789abcdef', '1.2.3.4') FORMAT Null; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT ipcryptDecrypt(key = '0123456789abcdef0123456789abcdef') FORMAT Null; -- { serverError UNKNOWN_IDENTIFIER }
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT query FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'ExceptionBeforeStart' AND query LIKE 'SELECT ipcrypt%'
+ORDER BY event_time_microseconds;

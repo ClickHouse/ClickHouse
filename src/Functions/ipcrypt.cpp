@@ -366,6 +366,11 @@ private:
 
 static void findIPCryptSecretArguments(FunctionSecretArgumentsFinder & finder)
 {
+    /// The function takes no named arguments, but the query is formatted for logging before it is rejected,
+    /// and a malformed `key = '...'` argument can be written at any position, outside the span hidden below:
+    /// ipcryptEncrypt(key = 'key', 'ip') -> ipcryptEncrypt(key = '[HIDDEN]', '[HIDDEN]')
+    finder.findSecretNamedArgument("key");
+
     if (finder.function->arguments->size() < 2)
         return;
 
