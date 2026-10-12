@@ -24,6 +24,12 @@ $CH --max_execution_time=0.00001 --query "ALTER TABLE ${TABLE} EXECUTE remove_or
 $CH --max_execution_time=0.00001 --query "ALTER TABLE ${TABLE} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)" 2>&1 | grep -o -m1 'TIMEOUT_EXCEEDED'
 snapshots
 
+# Under `timeout_overflow_mode = 'break'` they stop as well instead of finishing the work.
+$CH --max_execution_time=0.00001 --timeout_overflow_mode=break --query "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files(older_than = '2023-01-01 00:00:00')" > /dev/null 2>&1
+[ -f "${ORPHAN}" ] && echo "orphan kept"
+$CH --max_execution_time=0.00001 --timeout_overflow_mode=break --query "ALTER TABLE ${TABLE} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)" > /dev/null 2>&1
+snapshots
+
 # Without the limit both commands do their work, so the checks above could have failed.
 $CH --query "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files(older_than = '2023-01-01 00:00:00')" > /dev/null
 [ -f "${ORPHAN}" ] || echo "orphan deleted"

@@ -659,6 +659,7 @@ void deleteExpiredFiles(
             LOG_WARNING(log, "Failed to delete file {}: {}", file_path, getCurrentExceptionMessage(false));
         }
     }
+    throwIfQueryCancelled(context);
 }
 
 }

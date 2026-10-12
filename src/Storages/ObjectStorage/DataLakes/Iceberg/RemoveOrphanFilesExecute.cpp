@@ -194,6 +194,7 @@ DeleteOrphanResult deleteOrphanFiles(
                 LOG_WARNING(log, "Failed to delete orphan file {}: {}", path, getCurrentExceptionMessage(false));
             }
         }
+        throwIfQueryCancelled(context);
     }
     catch (Exception & e)
     {
@@ -286,6 +287,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (!object_storage->existsOrHasAnyChild(scan_path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scan path '{}' does not exist", scan_path);
     RelativePathsWithMetadata actual_files;
+    throwIfQueryCancelled(context);
     auto files_iterator = object_storage->iterate(scan_path, /* max_keys = */ 0, /* with_tags = */ false, /* start_after = */ std::nullopt);
     while (true)
     {
