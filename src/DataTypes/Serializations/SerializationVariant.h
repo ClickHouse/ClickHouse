@@ -5,6 +5,8 @@
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -243,6 +245,10 @@ private:
     bool tryDeserializeWholeTextImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextCSVImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextJSONImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
+    /// Settings for deserializing a JSON value read with `readJSONField` into the variants.
+    /// Either `settings` or `adjusted_settings` after it is filled.
+    const FormatSettings & getSettingsForDeserializingJSONField(
+        const String & field, const FormatSettings & settings, std::optional<FormatSettings> & adjusted_settings) const;
 
     bool tryDeserializeImpl(
         IColumn & column,
@@ -255,6 +261,8 @@ private:
     VariantSerializations variant_serializations;
     std::vector<String> variant_names;
     std::vector<size_t> deserialize_text_order;
+    /// Whether some variant contains `DateTime64`, which understands the MongoDB shell `ISODate("...")` wrapper in JSON.
+    bool has_datetime64_in_variants = false;
     /// Name of Variant data type for better exception messages.
     String variant_name;
 };
