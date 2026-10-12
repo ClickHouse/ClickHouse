@@ -1154,12 +1154,12 @@ class FunctionLayer : public Layer
 {
 public:
     explicit FunctionLayer(
-        String function_name_,
+        std::optional<String> function_name_,
         bool allow_function_parameters_ = true,
         bool is_compound_name_ = false,
         bool is_operator_ = false,
         ASTPtr query_parameter_name_ = {})
-        : function_name(function_name_)
+        : function_name(std::move(function_name_))
         , query_parameter_name(std::move(query_parameter_name_))
         , allow_function_parameters(allow_function_parameters_)
         , is_compound_name(is_compound_name_)
@@ -1303,9 +1303,14 @@ public:
         if (state == 2)
         {
             if (has_distinct)
-                function_name += "Distinct";
+            {
+                /// `{name:Identifier}(DISTINCT ...)` has no meaning for a table function.
+                if (!function_name)
+                    return false;
+                *function_name += "Distinct";
+            }
 
-            auto function_node = makeASTFunction(function_name, std::move(elements));
+            auto function_node = makeASTFunction(function_name.value_or(""), std::move(elements));
             function_node->setIsCompoundName(is_compound_name);
             function_node->setIsOperator(is_operator);
             if (query_parameter_name)
@@ -1368,7 +1373,8 @@ private:
     const char * contents_begin{};
     const char * contents_end{};
 
-    String function_name;
+    /// Empty while the name is a query parameter, see `query_parameter_name`.
+    std::optional<String> function_name;
     ASTPtr query_parameter_name;
     ASTPtr parameters;
 
@@ -3193,7 +3199,7 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
     {
         chassert(is_table_function);
         return std::make_unique<FunctionLayer>(
-            "",
+            std::nullopt,
             allow_function_parameters_,
             identifier_node->compound(),
             /*is_operator_=*/ false,

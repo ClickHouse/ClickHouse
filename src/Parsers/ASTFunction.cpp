@@ -93,7 +93,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 
     if (query_parameter_name)
-        query_parameter_name->appendColumnName(ostr);
+        writeString(query_parameter_name->formatForErrorMessage(), ostr);
     else
         writeString(name, ostr);
 
