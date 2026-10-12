@@ -4,6 +4,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/GetAggregatesVisitor.h>
@@ -1181,6 +1183,13 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
         scanAggregatesSafe(child, out);
 }
 
+/// A sub-query runs on a thread group of its own context: code that takes the query context from the thread
+/// (e.g. distributed plan stage tasks) must see the oracle's settings, not the fuzzed query's.
+ThreadGroupSwitcher switchToThreadGroupOf(const ContextPtr & oracle_context)
+{
+    return ThreadGroupSwitcher(ThreadGroup::createForQuery(oracle_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
+}
+
 }
 
 
@@ -1443,6 +1452,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 {
     auto oracle_context = makeOracleContext(context);
     oracle_context->setDefaultFormat("TabSeparated");
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     /// Use the ReadBuffer/WriteBuffer executeQuery API — this is crash-safe because
     /// ClickHouse handles all column serialization within the pipeline internally,
@@ -1478,6 +1488,7 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
 Field QueryOracleChecker::executeScalar(const String & query, const ContextMutablePtr & context)
 {
     auto oracle_context = makeOracleContext(context);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     auto result = executeQuery(query, oracle_context, QueryFlags{.internal = true});
 
@@ -1524,6 +1535,7 @@ QueryOracleChecker::executeWithSettings(
     oracle_context->setDefaultFormat("TabSeparated");
     for (const auto & [name, value] : settings)
         oracle_context->setSetting(name, value);
+    auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     ReadBufferFromString istr(query);
     WriteBufferFromOwnString ostr;
