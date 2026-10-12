@@ -59,6 +59,9 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
+    /// The id of an inner target table from the definition (with the generated name), known while the table is detached.
+    StorageID getInnerTableID(ViewTarget::Kind target_kind) const;
+
     /// Whether this table has a target of the given kind (the RecentSamples target is optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 

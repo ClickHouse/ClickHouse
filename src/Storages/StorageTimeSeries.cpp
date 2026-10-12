@@ -391,6 +391,15 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
     return target->is_inner_table;
 }
 
+StorageID StorageTimeSeries::getInnerTableID(ViewTarget::Kind target_kind) const
+{
+    const auto * target = tryGetTarget(target_kind);
+    if (!target || !target->is_inner_table)
+        return StorageID::createEmpty();
+    auto table_id = getStorageID();
+    return {table_id.database_name, getTimeSeriesInnerTableName(target_kind, table_id, getVersion()), target->table_id.uuid};
+}
+
 
 void StorageTimeSeries::createOrDropTagsDeduplicationCache()
 {
