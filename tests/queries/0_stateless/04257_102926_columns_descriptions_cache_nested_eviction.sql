@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: a reattach rebuilds the table, which resets `columns_descriptions_cache_size` under test
+
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/102926
 -- `decrefColumnsDescriptionForColumns` must evict cache entries for schemas with
 -- `Nested` columns where `Nested::collect` produces a distinct `with_collected_nested`.

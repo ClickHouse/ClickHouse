@@ -3090,26 +3090,6 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// so name the whole hook here; the nested guards the internal statements set restore this one on exit.
     auto component_guard = Coordination::setCurrentComponent("reattachTablesUsedInQuery");
 
-    /// The internal `DETACH`/`ATTACH` pair inherits the outer query's process list element, so it allocates
-    /// through the outer query's memory tracker, where `memory_tracker_fault_probability` of the outer query
-    /// is in effect (the internal context resets the settings, but not the tracker). An injected fault after
-    /// the `DETACH` has removed the table makes the recovery `ATTACH` likely to fail the same way, which leaves
-    /// the table detached and fails every later query with `UNKNOWN_TABLE`. The faults are meant for the
-    /// statement under test, not for this hook, so suspend them for its duration.
-    std::optional<scope_guard> restore_fault_probability;
-    if (auto thread_group = CurrentThread::getGroup())
-    {
-        double fault_probability = thread_group->memory_tracker.getFaultProbability();
-        if (fault_probability > 0.0)
-        {
-            thread_group->memory_tracker.setFaultProbability(0.0);
-            restore_fault_probability.emplace([thread_group, fault_probability]
-            {
-                thread_group->memory_tracker.setFaultProbability(fault_probability);
-            });
-        }
-    }
-
     CollectTablesData data(context);
     /// The aliases of the outermost scope — the one a statement that is not a `SELECT` carries its
     /// expressions in (`ALTER TABLE t DELETE WHERE ...`, ...). For a `SELECT` this collects nothing, because
@@ -3523,21 +3503,38 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             process_list_element && process_list_element->isKilled())
             return;
 
+        /// Run an internal statement on a thread group of its own. Resetting the settings of the internal
+        /// context is not enough: much of what the `ATTACH` does takes its settings not from the context it
+        /// was given, but from the query context of the current thread — e.g. `getReadSettings`, which the
+        /// loading of the parts uses, also on the threads of the parts loading pool, which attach to the
+        /// current thread group. Under the outer query's thread group, that is the outer query's context, so
+        /// `04757_distributed_cache_client_id_validation` still saw its deliberately invalid
+        /// `distributed_cache_client_id` while loading the parts and the `ATTACH` back failed. A thread group
+        /// of its own also keeps the pair off the outer query's memory tracker, where the outer query's
+        /// `memory_tracker_fault_probability` is in effect: an injected fault after the `DETACH` would make
+        /// the recovery `ATTACH` likely to fail the same way and leave the table detached. The server logs of
+        /// the pair are still sent to the client of the outer query, like those of the outer query itself.
+        auto execute_internal = [&](const String & internal_query)
+        {
+            auto internal_context = make_internal_context();
+            auto internal_thread_group = ThreadGroup::createForQuery(internal_context);
+            if (const auto outer_thread_group = CurrentThread::getGroup())
+            {
+                const auto outer_shared_data = outer_thread_group->getSharedData();
+                if (const auto logs_queue = outer_shared_data.logs_queue_ptr.lock())
+                    internal_thread_group->attachInternalTextLogsQueue(logs_queue, outer_shared_data.client_logs_level);
+            }
+            ThreadGroupSwitcher thread_group_switcher(internal_thread_group, getThreadName(), /*allow_existing_group=*/ true);
+            auto io = executeQuery(internal_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
+            executeTrivialBlockIO(io, internal_context);
+        };
+
         bool detached = false;
         try
         {
-            {
-                auto internal_context = make_internal_context();
-                auto detach = executeQuery(detach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
-                executeTrivialBlockIO(detach, internal_context);
-                detached = true;
-            }
-
-            {
-                auto internal_context = make_internal_context();
-                auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
-                executeTrivialBlockIO(attach, internal_context);
-            }
+            execute_internal(detach_query);
+            detached = true;
+            execute_internal(attach_query);
         }
         catch (...)
         {
@@ -3563,9 +3560,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             {
                 try
                 {
-                    auto internal_context = make_internal_context();
-                    auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
-                    executeTrivialBlockIO(attach, internal_context);
+                    execute_internal(attach_query);
                 }
                 catch (...)
                 {
