@@ -961,7 +961,15 @@ ThreadCache * threadCacheCreateExplicit(ThreadState & thread_state)
     threadCacheDefaultSettingsInit(thread_cache_slow);
     threadCacheInit(thread_state, thread_cache_slow, thread_cache, memory, threadCacheGetDefaultNumCachedMax());
 
-    threadCacheArenaAssociate(&thread_state, thread_cache_slow, thread_cache, arenaChooseInternal(thread_state, nullptr));
+    Arena * arena = arenaChooseInternal(thread_state, nullptr);
+    if (ALLOCATOR_UNLIKELY(arena == nullptr))
+    {
+        /// Out of memory while initializing an arena. The tcache is not associated or published yet, so it is enough
+        /// to free its memory. jemalloc passes the null arena to `tcache_arena_associate` here.
+        internalDeallocateFull(&thread_state, memory, nullptr, nullptr, true, true);
+        return nullptr;
+    }
+    threadCacheArenaAssociate(&thread_state, thread_cache_slow, thread_cache, arena);
 
     return thread_cache;
 }

@@ -332,7 +332,12 @@ ALLOCATOR_ALWAYS_INLINE ThreadCache * explicitThreadCachesGet(ThreadState & thre
     }
     else if (ALLOCATOR_UNLIKELY(element->thread_cache == EXPLICIT_THREAD_CACHES_ELEMENT_NEED_REINIT))
     {
-        element->thread_cache = threadCacheCreateExplicit(thread_state);
+        /// On out of memory, proceed without a tcache and keep the element marked for reinitialization, so that the
+        /// id stays valid. jemalloc stores the null tcache, which makes the id invalid.
+        ThreadCache * thread_cache = threadCacheCreateExplicit(thread_state);
+        if (ALLOCATOR_UNLIKELY(thread_cache == nullptr))
+            return nullptr;
+        element->thread_cache = thread_cache;
     }
     return element->thread_cache;
 }
