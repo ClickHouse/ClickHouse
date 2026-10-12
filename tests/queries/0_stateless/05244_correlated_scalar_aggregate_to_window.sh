@@ -42,6 +42,9 @@ INSERT INTO fk VALUES (0, 1), (-0, 2), (nan, 3), (nan, 4), (1.5, 5);
 # Starting a client per query is too slow in sanitizer builds, so the cases are collected first and then sent
 # in three batches: without the rewrite, with it, and the plans. A marker line separates the results of the cases.
 # The rewrite relies on runtime join filters and the automatic swap of the join sides, which are randomized.
+# The batches run concurrently, so that the test fits into the time limit in debug and sanitizer builds.
+# With parallel replicas, the plan with the rewrite is built on the replicas and `EXPLAIN` does not show it.
+PLAN_CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas=0"
 MARKER='--- next case ---'
 ITEMS=()
 QUERIES=()
@@ -78,19 +81,25 @@ function split_results()
 
 function run_batch()
 {
-    local setting="$1" prefix="$2" suffix="$3"
+    local client="$1" setting="$2" prefix="$3" suffix="$4"
     local query
     for query in "${QUERIES[@]}"; do
         printf "SELECT '%s';\n%s%s%s;\n" "$MARKER" "$prefix" "$query" "$suffix"
-    done | $CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window="$setting" --enable_join_runtime_filters=1 --query_plan_join_swap_table=auto
+    done | $client --optimize_correlated_scalar_aggregate_to_window="$setting" --enable_join_runtime_filters=1 --query_plan_join_swap_table=auto
 }
 
 function run_all()
 {
-    local off on fired
-    split_results off < <(run_batch 0)
-    split_results on < <(run_batch 1)
-    split_results fired < <(run_batch 1 "SELECT count() FROM (EXPLAIN " ") WHERE explain LIKE '%Window step for window%'")
+    local off on fired batch
+    local out="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+    run_batch "$CLICKHOUSE_CLIENT" 0 > "$out.off" &
+    run_batch "$CLICKHOUSE_CLIENT" 1 > "$out.on" &
+    run_batch "$PLAN_CLIENT" 1 "SELECT count() FROM (EXPLAIN " ") WHERE explain LIKE '%Window step for window%'" > "$out.fired" &
+    wait
+    for batch in off on fired; do
+        split_results "$batch" < "$out.$batch"
+        rm "$out.$batch"
+    done
 
     local item i=0
     for item in "${ITEMS[@]}"; do
@@ -152,7 +161,7 @@ check "FINAL on both" "SELECT u.k AS k, r.v AS v, (SELECT max(v) FROM r AS s FIN
 check "additional_table_filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS additional_table_filters = {'t': 'v < 20'}"
 check "subcolumn" "SELECT o.k AS k, o.s AS s FROM ts AS o WHERE o.k > 0 AND length(o.s) * 2 < (SELECT sum(length(s)) FROM ts AS z WHERE z.k = o.k) ORDER BY k, s"
 # The window reads the subcolumn `s.size` instead of the whole column.
-section "$($CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --optimize_functions_to_subcolumns=1 -q "
+section "$($PLAN_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --optimize_functions_to_subcolumns=1 -q "
     SELECT 'subcolumn: rewritten', countIf(explain LIKE '%Window step for window%'), 'reads the whole column', countIf(explain LIKE '%s String%') > 0
     FROM (EXPLAIN header = 1, actions = 1
     SELECT o.k AS k FROM ts AS o WHERE o.k > 0 AND length(o.s) * 2 < (SELECT sum(length(s)) FROM ts AS z WHERE z.k = o.k))")"
@@ -164,7 +173,7 @@ check "NULL key, correlated to the same table" "SELECT o.k AS k, o.v AS v, (SELE
 check "NULL key and an argument that may throw" "SELECT o.k AS k, o.v AS v, (SELECT sum(intDiv(10, toInt32(s.v) - 5)) FROM nn AS s WHERE s.k = o.k) AS c FROM nn AS o WHERE o.k IS NULL OR o.k > 0 ORDER BY k, v"
 # Without short-circuit, `and` evaluates the condition also for the row with a NULL key. Only the plan is checked:
 # the query without the rewrite does not guarantee it either (e.g. with `PREWHERE`).
-section "$($CLICKHOUSE_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --short_circuit_function_evaluation=disable -q "
+section "$($PLAN_CLIENT --optimize_correlated_scalar_aggregate_to_window=1 --short_circuit_function_evaluation=disable -q "
     SELECT 'NULL key and a condition that may throw without short-circuit: rewritten', count() FROM (EXPLAIN
     SELECT o.k AS k, (SELECT count() FROM nn AS s WHERE s.k = o.k AND intDiv(10, toInt32(s.v) - 5) > 0) AS c FROM nn AS o WHERE o.k IS NULL OR o.k > 0)
     WHERE explain LIKE '%Window step for window%'")"
