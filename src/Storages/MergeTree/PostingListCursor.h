@@ -93,7 +93,7 @@ public:
 
     /// Fully-materialized posting list over a pre-flattened, shared, immutable sorted array (analyzer-folded
     /// or already-decoded postings). Cardinality, density and the row-id range derive from the array itself.
-    explicit PostingListCursor(FlatPostingsPtr shared_values_);
+    explicit PostingListCursor(PaddedPODArrayPtr shared_values_);
 
     /// Sets bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     /// Returns the range of rows for which bytes were set.
@@ -172,7 +172,7 @@ private:
     double density_val = 0;
 
     /// Set for the shared-array cursor: the postings are read from this shared, immutable, sorted array.
-    FlatPostingsPtr shared_values;
+    PaddedPODArrayPtr shared_values;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
