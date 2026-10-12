@@ -12,7 +12,10 @@ DROP TABLE IF EXISTS payloads;
 CREATE TABLE events (Time DateTime, Id String) ENGINE = MergeTree ORDER BY Time;
 INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SECOND AS Time, toString(number) AS Id FROM numbers(10000);
 
-CREATE TABLE payloads (Payload String, Id String) ENGINE = MergeTree ORDER BY tuple();
+-- A `Join`-engine table uses `FilledJoinStep`. It must receive the same parallel-replica
+-- protection as `JoinStep`, because its probe side may otherwise choose `WithOrder` while a
+-- remote replica chooses `Default`.
+CREATE TABLE payloads (Payload String, Id String) ENGINE = Join(ANY, LEFT, Id);
 INSERT INTO payloads SELECT concat('Payload ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(100);
 
 SET enable_analyzer = 1;
@@ -31,7 +34,7 @@ SELECT 'Without parallel replicas:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT events.Time, events.Id, payloads.Payload
-    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -46,7 +49,7 @@ SELECT 'With parallel replicas, sorting through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT events.Time, events.Id, payloads.Payload
-    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -55,7 +58,7 @@ SELECT 'With parallel replicas, aggregation through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT toStartOfHour(events.Time) AS t, count()
-    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
     GROUP BY t
     ORDER BY t
     LIMIT 3
@@ -65,7 +68,7 @@ SELECT 'With parallel replicas, distinct through JOIN:';
 SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT DISTINCT events.Time
-    FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+    FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
     ORDER BY events.Time
     LIMIT 3
 ) WHERE explain LIKE '%ReadType%';
@@ -74,21 +77,21 @@ SELECT arraySort(groupArray(trim(explain))) FROM (
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT events.Time, events.Id, payloads.Payload
-FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT toStartOfHour(events.Time) AS t, count()
-FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
 GROUP BY t ORDER BY t LIMIT 3
 FORMAT Null;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 SELECT DISTINCT events.Time
-FROM events LEFT JOIN payloads ON events.Id = payloads.Id
+FROM events ANY LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
 

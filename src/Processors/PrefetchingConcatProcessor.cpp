@@ -1,0 +1,133 @@
+#include <Processors/PrefetchingConcatProcessor.h>
+#include <Processors/Port.h>
+
+namespace DB
+{
+
+PrefetchingConcatProcessor::PrefetchingConcatProcessor(
+    SharedHeader header, size_t num_inputs, size_t max_buffered_bytes_, size_t min_buffered_chunks_)
+    : IProcessor(InputPorts(num_inputs, header), OutputPorts{header})
+    , max_buffered_bytes(max_buffered_bytes_)
+    , min_buffered_chunks(min_buffered_chunks_)
+    , buffers(num_inputs)
+{
+}
+
+PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
+{
+    auto & output = outputs.front();
+
+    /// Output finished — close everything.
+    if (output.isFinished())
+    {
+        for (auto & input : inputs)
+            input.close();
+        return Status::Finished;
+    }
+
+    /// Output is not needed downstream — propagate backpressure to inputs so
+    /// upstream sources stop producing while we wait. Without this, inputs
+    /// remain in their previous `needed` state and buffers grow indefinitely.
+    if (!output.isNeeded())
+    {
+        for (auto & input : inputs)
+            input.setNotNeeded();
+        return Status::PortFull;
+    }
+
+    /// Pull available data from inputs into their buffers and toggle each input's `needed`
+    /// state based on whether its buffer has room. Setting `needed` on inputs with room is
+    /// what drives parallel prefetching: the pipeline executor schedules the upstream sources
+    /// for all "needed" inputs simultaneously. Clearing `needed` on full buffers is what stops
+    /// upstream from over-producing. The current input is included so its upstream keeps
+    /// producing into the buffer rather than stalling between consecutive `pull` calls.
+    ///
+    /// The budget is granted in input order: an input has room while the inputs from the
+    /// current one up to and including it buffer less than `max_buffered_bytes`. The current
+    /// input (or every input if `max_buffered_bytes` is 0) also has room while it buffers fewer
+    /// than `min_buffered_chunks` chunks. The inputs before `current_input_idx` are finished
+    /// and drained.
+    ///
+    /// `pull(set_not_needed=true)` is required because the input may legitimately
+    /// have `IS_NEEDED == 0` here: an upstream chunk can race with our previous
+    /// `setNotNeeded` (e.g. set when the output became not-needed, or when the
+    /// buffer hit capacity), arriving after the flag was cleared.
+    {
+        size_t bytes_in_previous_buffers = 0;
+        size_t idx = 0;
+        for (auto & input : inputs)
+        {
+            auto & buffer = buffers[idx];
+            /// The head start of `min_buffered_chunks` is not counted in the budget only for the
+            /// current input, which must make progress, or for every input when there is no budget.
+            /// Otherwise the buffered bytes would grow with the number of inputs regardless of it.
+            const bool head_start = idx == current_input_idx || max_buffered_bytes == 0;
+            auto has_room = [&]
+            {
+                return (head_start && buffer.chunks.size() < min_buffered_chunks)
+                    || bytes_in_previous_buffers + buffer.bytes < max_buffered_bytes;
+            };
+
+            if (has_room() && input.hasData())
+            {
+                auto chunk = input.pull(true);
+                buffer.bytes += chunk.allocatedBytes();
+                buffer.chunks.push_back(std::move(chunk));
+            }
+
+            if (!input.isFinished())
+            {
+                if (has_room())
+                    input.setNeeded();
+                else
+                    input.setNotNeeded();
+            }
+
+            if (idx >= current_input_idx)
+                bytes_in_previous_buffers += buffer.bytes;
+            ++idx;
+        }
+    }
+
+    /// Skip finished inputs with empty buffers.
+    {
+        auto it = inputs.begin();
+        std::advance(it, current_input_idx);
+        while (it != inputs.end() && it->isFinished() && buffers[current_input_idx].chunks.empty())
+        {
+            ++it;
+            ++current_input_idx;
+        }
+    }
+
+    if (current_input_idx >= buffers.size())
+    {
+        output.finish();
+        return Status::Finished;
+    }
+
+    /// Try to output from the current input's buffer.
+    if (!output.canPush())
+        return Status::PortFull;
+
+    if (!buffers[current_input_idx].chunks.empty())
+    {
+        auto & buffer = buffers[current_input_idx];
+        auto chunk = std::move(buffer.chunks.front());
+        buffer.chunks.pop_front();
+        buffer.bytes -= std::min<size_t>(buffer.bytes, chunk.allocatedBytes());
+        output.push(std::move(chunk));
+        return Status::PortFull;
+    }
+
+    /// Buffer is empty — request data from the current input.
+    {
+        auto it = inputs.begin();
+        std::advance(it, current_input_idx);
+        it->setNeeded();
+    }
+
+    return Status::NeedData;
+}
+
+}
