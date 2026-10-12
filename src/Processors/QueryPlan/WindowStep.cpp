@@ -183,8 +183,29 @@ QueryPlanStepPtr WindowStep::clone() const
     return std::make_unique<WindowStep>(*this);
 }
 
-static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out)
+static void serializeIntervalKind(const IntervalKind & kind, WriteBuffer & out)
 {
+    writeIntBinary(kind.toBinary(), out);
+}
+
+static IntervalKind deserializeIntervalKind(ReadBuffer & in)
+{
+    UInt8 kind = 0;
+    readIntBinary(kind, in);
+    return IntervalKind::fromBinary(kind);
+}
+
+static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out, UInt64 step_version, UInt64 version)
+{
+    /// Step version 0 has no room for the `IntervalKind`, and a peer reading it would apply the count of
+    /// units as a plain offset, so fail closed instead of shipping a frame it would evaluate differently.
+    bool has_interval_kind = frame.begin_offset_interval_kind || frame.end_offset_interval_kind;
+    if (has_interval_kind && step_version < 1)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "A Window step with an INTERVAL window frame offset requires query plan serialization version >= {} "
+            "(Window step version 1), but the peer only supports version {}; all nodes must be upgraded",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL, version);
+
     UInt8 flags = 0;
     if (frame.is_default)
         flags |= 1;
@@ -192,6 +213,10 @@ static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out)
         flags |= 2;
     if (frame.end_preceding)
         flags |= 4;
+    if (frame.begin_offset_interval_kind)
+        flags |= 8;
+    if (frame.end_offset_interval_kind)
+        flags |= 16;
     writeIntBinary(flags, out);
 
     writeIntBinary(static_cast<UInt8>(frame.type), out);
@@ -200,9 +225,14 @@ static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out)
 
     writeFieldBinary(frame.begin_offset, out);
     writeFieldBinary(frame.end_offset, out);
+
+    if (frame.begin_offset_interval_kind)
+        serializeIntervalKind(*frame.begin_offset_interval_kind, out);
+    if (frame.end_offset_interval_kind)
+        serializeIntervalKind(*frame.end_offset_interval_kind, out);
 }
 
-static WindowFrame deserializeWindowFrame(ReadBuffer & in)
+static WindowFrame deserializeWindowFrame(ReadBuffer & in, UInt64 step_version)
 {
     WindowFrame frame;
 
@@ -211,6 +241,12 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
     frame.is_default = bool(flags & 1);
     frame.begin_preceding = bool(flags & 2);
     frame.end_preceding = bool(flags & 4);
+    bool has_begin_interval_kind = bool(flags & 8);
+    bool has_end_interval_kind = bool(flags & 16);
+
+    if ((has_begin_interval_kind || has_end_interval_kind) && step_version < 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "WindowStep: INTERVAL window frame offset is not expected in Window step version {}", step_version);
 
     /// The plan may be client-supplied (TCPHandler::receiveQueryPlan), so reject out-of-range enum
     /// values instead of casting an arbitrary byte into the enum (which downstream switches would not
@@ -235,6 +271,11 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
 
     frame.begin_offset = readFieldBinary(in);
     frame.end_offset = readFieldBinary(in);
+
+    if (has_begin_interval_kind)
+        frame.begin_offset_interval_kind = deserializeIntervalKind(in);
+    if (has_end_interval_kind)
+        frame.end_offset_interval_kind = deserializeIntervalKind(in);
 
     return frame;
 }
@@ -342,7 +383,7 @@ void WindowStep::serialize(Serialization & ctx) const
     serializeSortDescription(window_description.partition_by, ctx.out, ctx.version);
     serializeSortDescription(window_description.order_by, ctx.out, ctx.version);
 
-    serializeWindowFrame(window_description.frame, ctx.out);
+    serializeWindowFrame(window_description.frame, ctx.out, ctx.step_version, ctx.version);
 
     serializeWindowFunctions(window_functions, ctx.out);
 }
@@ -369,7 +410,7 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
     deserializeSortDescription(window_description.partition_by, ctx.in, ctx.version, ctx.max_type_complexity);
     deserializeSortDescription(window_description.order_by, ctx.in, ctx.version, ctx.max_type_complexity);
 
-    window_description.frame = deserializeWindowFrame(ctx.in);
+    window_description.frame = deserializeWindowFrame(ctx.in, ctx.step_version);
 
     /// `full_sort_description` is not serialized: it is the concatenation of PARTITION BY and
     /// ORDER BY, reconstructed here exactly as the planner builds it (see PlannerWindowFunctions).
@@ -391,7 +432,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 void registerWindowStep(QueryPlanStepRegistry & registry);
 void registerWindowStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Window", WindowStep::deserialize);
+    registry.registerStep("Window", WindowStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_FRAME_INTERVAL}});
 }
 
 }
