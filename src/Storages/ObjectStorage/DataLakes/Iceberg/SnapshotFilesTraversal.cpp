@@ -131,7 +131,7 @@ ReachableFilesResult collectReachableFiles(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier)
 {
-    auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+    auto [version, metadata_path, _] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
         catalog,
         table_identifier,
@@ -150,7 +150,6 @@ ReachableFilesResult collectReachableFiles(
         persistent_table_components.metadata_cache,
         context,
         log,
-        compression_method,
         persistent_table_components.table_uuid);
 
     std::unordered_set<String> reachable;
