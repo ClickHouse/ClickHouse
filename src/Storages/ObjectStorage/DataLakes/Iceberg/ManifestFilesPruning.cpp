@@ -229,6 +229,20 @@ PartitionKeyFromSpec buildPartitionKeyFromSpec(
     return result;
 }
 
+std::optional<Int64> getIntegerTruncateWidth(const PartitionSpecsEntry & partition_field, const DB::DataTypePtr & key_type)
+{
+    const auto transform = parseTransformAndArgument(partition_field.transform_name);
+    if (!transform || transform->transform_name != "icebergTruncate" || !transform->argument.has_value())
+        return {};
+
+    const size_t width = *transform->argument;
+    if (width < 1 || width > static_cast<size_t>(std::numeric_limits<Int64>::max())
+        || !WhichDataType(removeNullable(key_type)).isNativeInteger())
+        return {};
+
+    return static_cast<Int64>(width);
+}
+
 std::vector<IntegerTruncateField> getIntegerTruncateFields(
     const PartitionSpecification & partition_specification, const DB::DataTypes & partition_key_types)
 {
@@ -238,24 +252,19 @@ std::vector<IntegerTruncateField> getIntegerTruncateFields(
         if (partition_field.tuple_index < 0 || static_cast<size_t>(partition_field.tuple_index) >= partition_key_types.size())
             return {};
 
-        const auto transform = parseTransformAndArgument(partition_field.transform_name);
-        if (!transform || transform->transform_name != "icebergTruncate" || !transform->argument.has_value())
-            continue;
-
-        const size_t width = *transform->argument;
-        const auto & key_type = partition_key_types[partition_field.tuple_index];
-        if (width < 1 || width > static_cast<size_t>(std::numeric_limits<Int64>::max())
-            || !WhichDataType(removeNullable(key_type)).isNativeInteger())
-            continue;
-
-        result.push_back({static_cast<size_t>(partition_field.tuple_index), static_cast<Int64>(width)});
+        if (const auto width = getIntegerTruncateWidth(partition_field, partition_key_types[partition_field.tuple_index]))
+            result.push_back({static_cast<size_t>(partition_field.tuple_index), *width});
     }
     return result;
 }
 
 bool isLegacyTruncateValue(const DB::Field & value, Int64 width)
 {
-    return value.getType() == Field::Types::Int64 && value.safeGet<Int64>() % width != 0;
+    if (value.getType() != Field::Types::Int64)
+        return false;
+
+    const Int64 stored = value.safeGet<Int64>();
+    return stored < 0 && stored % width != 0;
 }
 
 namespace

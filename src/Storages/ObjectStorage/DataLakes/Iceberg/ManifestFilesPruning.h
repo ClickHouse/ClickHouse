@@ -52,9 +52,13 @@ struct IntegerTruncateField
     Int64 width;
 };
 
+std::optional<Int64> getIntegerTruncateWidth(const PartitionSpecsEntry & partition_field, const DB::DataTypePtr & key_type);
+
 std::vector<IntegerTruncateField> getIntegerTruncateFields(
     const PartitionSpecification & partition_specification, const DB::DataTypes & partition_key_types);
 
+/// An old value that is not a multiple of `W` is negative, while a spec value that is not a multiple
+/// (the subtraction wrapping near `INT64_MIN`) is positive.
 bool isLegacyTruncateValue(const DB::Field & value, Int64 width);
 
 /// NOTE: tricky part to support RENAME column.

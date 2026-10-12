@@ -53,4 +53,11 @@ SELECT ProfileEvents['IcebergPartitionPrunedManifestFiles']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05366_spec_value_probe';
 
+-- Mutations are refused on a table holding such a value. The predicates match no row, so even
+-- without the refusal nothing would be written and the shared fixture stays untouched.
+SET allow_insert_into_iceberg = 1;
+ALTER TABLE t_legacy DELETE WHERE s = '05366 no such row'; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_legacy UPDATE s = 'x' WHERE s = '05366 no such row'; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM t_legacy SETTINGS use_iceberg_partition_pruning = 0;
+
 DROP TABLE t_legacy;
