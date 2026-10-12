@@ -178,6 +178,125 @@ void NO_INLINE compareConstantVector(T a, const T * b, UInt8 * c, size_t size)
         c[i] = Op::apply(a, b[i]);
 }
 
+/// The values whose product with `multiplier` fits into `T`.
+template <typename T>
+struct ScaleBounds
+{
+    T multiplier;
+    T max_multiplicand;
+    T min_multiplicand;
+
+    explicit ScaleBounds(T multiplier_)
+        : multiplier(multiplier_)
+        , max_multiplicand(std::numeric_limits<T>::max() / multiplier_)
+        , min_multiplicand(std::numeric_limits<T>::min() / multiplier_)
+    {
+    }
+
+    bool fits(T value) const { return value >= min_multiplicand && value <= max_multiplicand; }
+};
+
+/// Compares `x` and `y` with one of them multiplied by `bounds.multiplier`. A product that does not fit into `T`
+/// is beyond every value of the other side, so its sign decides the result.
+template <typename T, typename Op, bool scale_left>
+ALWAYS_INLINE UInt8 compareScaled(T x, T y, const ScaleBounds<T> & bounds)
+{
+    T & scaled = scale_left ? x : y;
+    if (!bounds.fits(scaled))
+    {
+        const T sign = scaled > 0 ? T(1) : T(-1);
+        return scale_left ? Op::apply(sign, T(0)) : Op::apply(T(0), sign);
+    }
+    scaled = common::mulIgnoreOverflow(scaled, bounds.multiplier);
+    return Op::apply(x, y);
+}
+
+template <typename T, typename Op>
+UInt8 NO_INLINE compareScaledValues(T x, T y, T multiplier, bool scale_left)
+{
+    const ScaleBounds<T> bounds(multiplier);
+    if (scale_left)
+        return compareScaled<T, Op, true>(x, y, bounds);
+    return compareScaled<T, Op, false>(x, y, bounds);
+}
+
+/// Compares the column `v` with the constant `k`, one of them (`scale_vector`) multiplied by `multiplier`.
+template <typename T, typename Op>
+void NO_INLINE compareScaledVectorConstant(const T * v, T k, T multiplier, bool scale_vector, bool v_is_left, UInt8 * c, size_t size)
+{
+    const UInt8 if_v_below = v_is_left ? Op::apply(T(0), T(1)) : Op::apply(T(1), T(0));
+    const UInt8 if_v_above = v_is_left ? Op::apply(T(1), T(0)) : Op::apply(T(0), T(1));
+
+    if (scale_vector)
+    {
+        /// With `q = floor(k / multiplier)`: for a zero remainder `v * multiplier` compares with `k` as `v` with `q`;
+        /// otherwise it is below `k` iff `v <= q`, which comparing `v` with `q` or `q + 1` gives (unless `Op` is (not) equals).
+        T q = k / multiplier;
+        const T remainder = k % multiplier;
+        if (remainder < 0)
+            q -= 1;
+        k = q;
+        if (remainder != 0)
+        {
+            if (if_v_below == if_v_above)
+            {
+                memset(c, if_v_below, size);
+                return;
+            }
+            if (Op::apply(T(0), T(0)) != if_v_below)
+                k += 1;
+        }
+    }
+    else
+    {
+        const ScaleBounds<T> bounds(multiplier);
+        if (!bounds.fits(k))
+        {
+            /// `k * multiplier` is beyond every value of `v`.
+            memset(c, k > 0 ? if_v_below : if_v_above, size);
+            return;
+        }
+        k = common::mulIgnoreOverflow(k, multiplier);
+    }
+
+    if (v_is_left)
+        compareVectorConstant<T, Op>(v, k, c, size);
+    else
+        compareConstantVector<T, Op>(k, v, c, size);
+}
+
+/// With x86-64-v3 the per-row bounds check keeps this loop scalar, 1.5-2x slower than comparing without the check;
+/// x86-64-v4 (AVX-512) vectorizes the bounds checks and the comparison.
+MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T, typename Op, bool scale_left> void NO_INLINE
+), compareScaledVectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
+    const T * a, const T * b, ScaleBounds<T> bounds, UInt8 * c, size_t size)
+{
+    for (size_t i = 0; i < size; ++i)
+        c[i] = compareScaled<T, Op, scale_left>(a[i], b[i], bounds);
+}))
+
+template <typename T, typename Op>
+void NO_INLINE compareScaledVectorVector(const T * a, const T * b, T multiplier, bool scale_left, UInt8 * c, size_t size)
+{
+    const ScaleBounds<T> bounds(multiplier);
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        if (scale_left)
+            compareScaledVectorVectorImpl_x86_64_v4<T, Op, true>(a, b, bounds, c, size);
+        else
+            compareScaledVectorVectorImpl_x86_64_v4<T, Op, false>(a, b, bounds, c, size);
+        return;
+    }
+#endif
+    if (scale_left)
+        compareScaledVectorVectorImpl<T, Op, true>(a, b, bounds, c, size);
+    else
+        compareScaledVectorVectorImpl<T, Op, false>(a, b, bounds, c, size);
+}
+
 }
 
 template <typename A, typename B, template <typename, typename> typename Operation>
@@ -196,6 +315,13 @@ public:
     static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right, bool check_overflow)
     {
         Shift shift = getScales<A, B>(col_left.type, col_right.type);
+
+        /// `common::mulOverflow` does not detect the overflow of big integers; `applyMixed` applies the scale exactly.
+        if constexpr (is_big_int_v<CompareInt>)
+        {
+            if (check_overflow && !shift.none())
+                return applyMixed<true>(col_left.column, col_right.column, shift);
+        }
 
         if constexpr (std::is_same_v<A, B>)
         {
@@ -228,6 +354,17 @@ public:
             shift.a = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<B>(scale_b - scale_a));
         if (scale_a > scale_b)
             shift.b = static_cast<CompareInt>(DecimalUtils::scaleMultiplier<A>(scale_a - scale_b));
+
+        if constexpr (is_big_int_v<CompareInt>)
+        {
+            if (check_overflow && !shift.none())
+            {
+                namespace Helper = DecimalComparisonHelper;
+                CompareInt x = Helper::convertForCompare<CompareInt, true>(a, CompareInt(1), false);
+                CompareInt y = Helper::convertForCompare<CompareInt, true>(b, CompareInt(1), false);
+                return Helper::compareScaledValues<CompareInt, Op>(x, y, shift.left() ? shift.a : shift.b, shift.left());
+            }
+        }
 
         if (check_overflow)
             return applyWithScale<true>(a, b, shift);
@@ -355,8 +492,8 @@ private:
         return c_res;
     }
 
-    /// Column-level comparison of a mixed-type pair. Converts each side to `CompareInt`
-    /// with shared helpers and compares same-type; see `DecimalComparisonHelper`.
+    /// Column-level comparison of a mixed-type pair, or of a rescaled big-integer pair with the check on. Converts each
+    /// side to `CompareInt` with shared helpers and compares same-type; see `DecimalComparisonHelper`.
     template <bool check_overflow>
     static ColumnPtr applyMixed(const ColumnPtr & c0, const ColumnPtr & c1, const Shift & shift)
     {
@@ -365,6 +502,17 @@ private:
         /// As in `applyWithScale`: the left scale takes priority, at most one side is scaled.
         bool scale_a = shift.left();
         bool scale_b = !scale_a && shift.right();
+
+        /// Big integers: convert without the scale and let the comparison apply it (see `compareScaled`).
+        constexpr bool exact_scale = check_overflow && is_big_int_v<CompareInt>;
+        [[maybe_unused]] const bool scale_left = scale_a;
+        const bool scale_in_compare = exact_scale && (scale_a || scale_b);
+        [[maybe_unused]] const CompareInt multiplier = scale_a ? shift.a : shift.b;
+        if (scale_in_compare)
+        {
+            scale_a = false;
+            scale_b = false;
+        }
 
         bool c0_is_const = isColumnConst(*c0);
         bool c1_is_const = isColumnConst(*c1);
@@ -377,6 +525,11 @@ private:
             CompareInt x = Helper::convertForCompare<CompareInt, check_overflow>(c0_const.template getValue<A>(), shift.a, scale_a);
             CompareInt y = Helper::convertForCompare<CompareInt, check_overflow>(c1_const.template getValue<B>(), shift.b, scale_b);
 
+            if constexpr (exact_scale)
+            {
+                if (scale_in_compare)
+                    return Helper::createConstResult(c0->size(), Helper::compareScaledValues<CompareInt, Op>(x, y, multiplier, scale_left));
+            }
             return Helper::createConstResult(c0->size(), Op::apply(x, y));
         }
 
@@ -403,6 +556,14 @@ private:
 
             PaddedPODArray<CompareInt> tmp;
             const CompareInt * b_data = Helper::prepareForCompare<CompareInt, check_overflow>(c1_vec->getData(), tmp, shift.b, scale_b);
+            if constexpr (exact_scale)
+            {
+                if (scale_in_compare)
+                {
+                    Helper::compareScaledVectorConstant<CompareInt, Op>(b_data, x, multiplier, !scale_left, false, res_data, size);
+                    return c_res;
+                }
+            }
             Helper::compareConstantVector<CompareInt, Op>(x, b_data, res_data, size);
         }
         else if (c1_is_const)
@@ -416,6 +577,14 @@ private:
 
             PaddedPODArray<CompareInt> tmp;
             const CompareInt * a_data = Helper::prepareForCompare<CompareInt, check_overflow>(c0_vec->getData(), tmp, shift.a, scale_a);
+            if constexpr (exact_scale)
+            {
+                if (scale_in_compare)
+                {
+                    Helper::compareScaledVectorConstant<CompareInt, Op>(a_data, y, multiplier, scale_left, true, res_data, size);
+                    return c_res;
+                }
+            }
             Helper::compareVectorConstant<CompareInt, Op>(a_data, y, res_data, size);
         }
         else
@@ -429,6 +598,14 @@ private:
             PaddedPODArray<CompareInt> tmp_b;
             const CompareInt * a_data = Helper::prepareForCompare<CompareInt, check_overflow>(c0_vec->getData(), tmp_a, shift.a, scale_a);
             const CompareInt * b_data = Helper::prepareForCompare<CompareInt, check_overflow>(c1_vec->getData(), tmp_b, shift.b, scale_b);
+            if constexpr (exact_scale)
+            {
+                if (scale_in_compare)
+                {
+                    Helper::compareScaledVectorVector<CompareInt, Op>(a_data, b_data, multiplier, scale_left, res_data, size);
+                    return c_res;
+                }
+            }
             Helper::compareVectorVector<CompareInt, Op>(a_data, b_data, res_data, size);
         }
 
