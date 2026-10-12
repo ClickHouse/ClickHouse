@@ -126,7 +126,7 @@ echo "$page" | grep -q -F 'tokens[i + 1].type === TT.QuotedIdentifier' && echo '
 # `src/Parsers/tests/gtest_play_detect_framing_setting.cpp` / `gtest_play_detect_explicit_format.cpp`
 # (every case runs through both tokenizations).
 echo "$page" | grep -q -F 'function fallbackTokenize(text)' && echo 'fallback tokenizer present: OK'
-[ "$(echo "$page" | grep -c 'await tokenizeWithFallback(')" -eq 2 ] && echo 'both detectors use the fallback tokenizer: OK'
+[ "$(echo "$page" | grep -c 'const raw_tokens = await tokenizeWithFallback(query);')" -eq 2 ] && echo 'both detectors use the fallback tokenizer: OK'
 # The embedded SQL lexer must not hang or truncate on a large query: its buffers live at the
 # module's `__heap_base` (below it, the module's own shadow stack overwrote them - the cause of an
 # infinite tokenize loop on a ~64 KiB query), the memory grows to fit the text, the lexer is
@@ -282,7 +282,7 @@ echo "$page" | grep -q -F 'persistPinnedColumns(this._ownerCell);' && echo 'pins
 # target of the page and is allowed, which is what text cells document.
 echo "$page" | grep -q -F "if (scheme) return /^(https?|mailto)\$/i.test(scheme[1]) ? trimmed : '';" && echo 'markdown schemes restricted: OK'
 echo "$page" | grep -q -F "if (probe.startsWith('//')) return '';" && echo 'protocol-relative markdown URLs rejected: OK'
-echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' && echo 'toggles replayed per tab: OK'
+echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable, planAvailable)' && echo 'toggles replayed per tab: OK'
 # The realtime resource meters are cell-owned too: CPU counters in `profile_events` packets are
 # per-packet increments, so a backgrounded cell's batches keep accumulating on the cell
 # (`accumulateResourceEvents`) instead of being dropped, and `syncActiveTabChrome` re-adopts the
