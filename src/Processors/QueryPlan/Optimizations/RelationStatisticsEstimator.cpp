@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -370,7 +371,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     /// These steps pass every input row through unchanged.
     if (typeid_cast<const WindowStep *>(step) || typeid_cast<const BuildRuntimeFilterStep *>(step)
-        || typeid_cast<const SaveSubqueryResultToBufferStep *>(step) || typeid_cast<const StreamInQueryResultCacheStep *>(step))
+        || typeid_cast<const SaveSubqueryResultToBufferStep *>(step) || typeid_cast<const StreamInQueryResultCacheStep *>(step)
+        || typeid_cast<const DelayedCreatingSetsStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter);
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);

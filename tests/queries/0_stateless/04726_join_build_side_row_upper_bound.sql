@@ -232,8 +232,9 @@ SELECT 'arrayJoin-expanded side keeps orientation',
 DROP TABLE aj_l_04726;
 DROP TABLE aj_r_04726;
 
--- A condition on one side kept in the ON clause filters that side before the join, so the unfiltered
--- estimate of `pf_r_04726` (1000 rows, none with `pad = 1`) must not move it off the build side.
+-- A condition on one side kept in the ON clause, also inside a disjunct of an OR, filters that side
+-- before the join, so the unfiltered estimate of `pf_r_04726` (1000 rows, none with `pad = 1` or
+-- `pad = 2`) must not move it off the build side.
 CREATE TABLE pf_l_04726 (id UInt64, tag String) ENGINE = MergeTree ORDER BY id
     SETTINGS auto_statistics_types = '';
 CREATE TABLE pf_r_04726 (id UInt64, pad UInt8) ENGINE = MergeTree ORDER BY id
@@ -249,6 +250,15 @@ SELECT 'single-side ON condition keeps orientation',
     SELECT count() FROM pf_l_04726 JOIN pf_r_04726 ON pf_l_04726.id = pf_r_04726.id AND pf_r_04726.pad = 1
     WHERE pf_l_04726.tag = 'keep'
     SETTINGS query_plan_split_filter = 0
+) WHERE explain ILIKE '%Join:%';
+
+SELECT 'single-side condition in an OR keeps orientation',
+        countIf(explain ILIKE '%pf\_r\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: pf\_l\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM pf_l_04726 JOIN pf_r_04726
+        ON (pf_l_04726.id = pf_r_04726.id AND pf_r_04726.pad = 1) OR (pf_l_04726.id + 1 = pf_r_04726.id AND pf_r_04726.pad = 2)
+    WHERE pf_l_04726.tag = 'keep'
 ) WHERE explain ILIKE '%Join:%';
 
 DROP TABLE pf_l_04726;
@@ -278,9 +288,9 @@ SELECT 'nested exact-empty sub-join keeps orientation',
     SETTINGS query_plan_optimize_join_order_limit = 2
 ) WHERE explain ILIKE '%Join:%';
 
--- A semi, anti or ANY join emits each row of its preserved side at most once, so the bound of the filtered
--- `dim_04726` must survive one even when the key table makes the product of both bounds exceed
--- `fact_04726`. The first condition keeps each assertion non-vacuous if the key table stops appearing.
+-- A semi, anti or ANY join emits each row of one input at most once, so the sub-join must stay bounded
+-- below `fact_04726` even when the key table makes the product of both bounds exceed it. The first
+-- condition keeps each assertion non-vacuous if the key table stops appearing.
 CREATE TABLE keys_04726 (id Int32) ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = '';
 INSERT INTO keys_04726 SELECT number * 2 FROM numbers(10000);
 
@@ -312,6 +322,37 @@ SELECT 'ANY sub-join keeps orientation',
     FROM (SELECT dim_04726.id AS id FROM dim_04726 ANY LEFT JOIN keys_04726 ON dim_04726.id = keys_04726.id
           WHERE dim_04726.nation_id = 5) AS d
     JOIN fact_04726 ON d.id = fact_04726.id
+) WHERE explain ILIKE '%Join:%';
+
+SELECT 'INNER ANY sub-join keeps orientation',
+        countIf(explain ILIKE '%keys\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT dim_04726.id AS id FROM dim_04726 ANY INNER JOIN keys_04726 ON dim_04726.id = keys_04726.id
+          WHERE dim_04726.nation_id = 5) AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
+) WHERE explain ILIKE '%Join:%';
+
+SELECT 'INNER ANY ON 1 sub-join keeps orientation',
+        countIf(explain ILIKE '%keys\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT dim_04726.id AS id FROM dim_04726 ANY INNER JOIN keys_04726 ON 1 WHERE dim_04726.nation_id = 5) AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
+) WHERE explain ILIKE '%Join:%';
+
+-- With partial_merge, or with a non-equi ON condition, an INNER ANY join emits one row per row of its
+-- probe side, so the bound of `d` is that of `fact_04726` and the key table must stay on the build side.
+SELECT 'INNER ANY sub-join is bounded by its larger input',
+        countIf(explain ILIKE '%Join: d%') > 0
+    AND countIf(explain ILIKE '%Join: keys\_04726%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT dim_04726.id AS id, val FROM dim_04726 ANY INNER JOIN fact_04726 ON dim_04726.id = fact_04726.id
+          WHERE dim_04726.nation_id = 5) AS d
+    JOIN keys_04726 ON d.id = keys_04726.id
 ) WHERE explain ILIKE '%Join:%';
 
 DROP TABLE keys_04726;
@@ -352,6 +393,17 @@ SELECT 'OFFSET subquery keeps orientation',
     SELECT avg(val)
     FROM (SELECT id FROM dim_04726 WHERE nation_id = 5) AS d
     JOIN (SELECT id, val FROM fact_04726 LIMIT 50000 OFFSET 10) AS ol ON d.id = ol.id
+);
+
+-- An `IN (subquery)` puts a set-building step into its query's join input, which passes every row
+-- through. The first condition keeps the assertion non-vacuous if that step stops appearing.
+SELECT 'IN subquery keeps orientation',
+        countIf(explain ILIKE '%CreatingSets%') > 0
+    AND countIf(explain ILIKE '%Join: fact\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT id FROM dim_04726 WHERE nation_id IN (SELECT nation_id FROM nation_04726 WHERE name = '0')) AS d
+    JOIN fact_04726 ON d.id = fact_04726.id
 );
 
 -- The plan arms above assert the orientation; this one asserts the effect it exists for, so a

@@ -222,7 +222,8 @@ inline std::optional<UInt64> estimateJoinCardinality(
 }
 
 /// A join emits at most the cartesian product of its inputs, floored by a preserved side's rows; a
-/// LEFT or RIGHT semi, anti or ANY join emits each row of its preserved side at most once.
+/// LEFT or RIGHT semi, anti or ANY join emits each row of its preserved side at most once, and an
+/// INNER ANY join each row of one input, which one depending on the algorithm and the orientation.
 /// Saturating integer arithmetic: `double` rounds products above 2^53 in either direction, and a
 /// bound rounded down is below the true row count.
 inline std::optional<UInt64> boundJoinRows(
@@ -238,6 +239,9 @@ inline std::optional<UInt64> boundJoinRows(
 
     if (!left_rows || !right_rows)
         return {};
+
+    if (strictness == JoinStrictness::Any && isInner(join_kind))
+        return std::max(*left_rows, *right_rows);
 
     constexpr UInt64 saturated = std::numeric_limits<UInt64>::max();
 

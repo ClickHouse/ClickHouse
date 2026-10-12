@@ -949,13 +949,28 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     /// Relation estimates are taken before the join applies its ON clause: a condition on a single
-    /// relation filters it first, so its estimate is not a lower bound, and an `arrayJoin` in the
-    /// join expressions can change the row count of an input either way, so no bound holds.
-    for (const auto & edge : query_graph_builder.join_edges)
+    /// relation, also one inside a disjunct of an OR, filters it first, so its estimate is not a lower
+    /// bound, and an `arrayJoin` in the join expressions can change the row count of an input either
+    /// way, so no bound holds.
+    auto drop_lower_bound_if_single_relation = [&](const JoinActionRef & condition)
     {
-        auto relation = edge.getSourceRelations().getSingleBit();
+        auto relation = condition.getSourceRelations().getSingleBit();
         if (relation && *relation < query_graph_builder.relation_stats.size())
             query_graph_builder.relation_stats[*relation].estimated_rows_is_lower_bound = false;
+    };
+    for (const auto & edge : query_graph_builder.join_edges)
+    {
+        drop_lower_bound_if_single_relation(edge);
+        if (!edge.isFunction(JoinConditionOperator::Or))
+            continue;
+        for (const auto & disjunct : edge.getArguments())
+        {
+            if (!disjunct.isFunction(JoinConditionOperator::And))
+                drop_lower_bound_if_single_relation(disjunct);
+            else
+                for (const auto & conjunct : disjunct.getArguments())
+                    drop_lower_bound_if_single_relation(conjunct);
+        }
     }
 
     if (auto dag = query_graph_builder.expression_actions.getActionsDAG(); dag && dag->hasArrayJoin())
@@ -1129,12 +1144,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// See `graph_has_mixed_strictness` above: keep each entry's own strictness in a mixed
             /// graph, otherwise stamp the graph's single strictness.
             if (!graph_has_mixed_strictness)
-            {
                 join_operator.strictness = join_strictness;
-                /// The solver bounded this entry as an `All` join.
-                entry->estimated_rows_upper = boundJoinRows(
-                    entry->left->estimated_rows_upper, entry->right->estimated_rows_upper, join_operator.kind, join_strictness);
-            }
 
             /// The optimizer reconstructs an unconnected Inner pair (e.g. `INNER JOIN ... ON 1`,
             /// which produces no join edges) as Cross. That is equivalent only for ALL strictness:
@@ -1143,6 +1153,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// constant-key join (`__lhs_const = __rhs_const`) that preserves strictness semantics.
             if (join_strictness != JoinStrictness::All && join_operator.kind == JoinKind::Cross)
                 join_operator.kind = JoinKind::Inner;
+
+            /// The solver bounded this entry as an `All` join.
+            if (!graph_has_mixed_strictness)
+                entry->estimated_rows_upper = boundJoinRows(
+                    entry->left->estimated_rows_upper, entry->right->estimated_rows_upper, join_operator.kind, join_strictness);
             auto left_rels = entry->left->relations;
             auto right_rels = entry->right->relations;
 
