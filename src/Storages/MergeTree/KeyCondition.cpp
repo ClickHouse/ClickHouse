@@ -1634,6 +1634,9 @@ KeyCondition::KeyCondition(
 
     rpn = std::move(builder).extractRPN();
 
+    for (size_t i = 0; i < rpn.size(); ++i)
+        rpn[i].position_in_filter_rpn = i;
+
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 }
 
@@ -5753,6 +5756,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
             collapsed_elem.relaxed = true;
             collapsed_elem.key_columns = elem.key_columns;
             collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(hyperrectangle);
+            collapsed_elem.position_in_filter_rpn = elem.position_in_filter_rpn;
 
             new_rpn.push_back(std::move(collapsed_elem));
             continue;
@@ -5777,6 +5781,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
                 collapsed_elem.key_columns = cond1.key_columns;
                 collapsed_elem.space_filling_curve_args_hyperrectangle
                     = intersect(cond1.space_filling_curve_args_hyperrectangle, cond2.space_filling_curve_args_hyperrectangle);
+                collapsed_elem.position_in_filter_rpn = cond1.position_in_filter_rpn;
 
                 /// Replace the AND operation with its arguments to the collapsed condition
 
@@ -7347,12 +7352,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    /// The reported position is the element's index in `rpn`: the disjunction bitset is read positionally
-    /// against the template RPN. A position that is never reported keeps the bitset's all-true default.
-    for (size_t element_idx = 0; element_idx < rpn.size(); ++element_idx)
+    /// The reported position is the element's position in the RPN built from the filter, which is the layout
+    /// the disjunction bitset is read against. A position that is never reported keeps the bitset's all-true default.
+    for (const auto & element : rpn)
     {
-        const auto & element = rpn[element_idx];
-
         if (element.argument_num_of_space_filling_curve.has_value())
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
@@ -7778,8 +7781,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
 
-        if (update_partial_disjunction_result_fn)
-            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+        if (update_partial_disjunction_result_fn && element.position_in_filter_rpn)
+            update_partial_disjunction_result_fn(*element.position_in_filter_rpn, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
     }
 
     if (rpn_stack.size() != 1)
