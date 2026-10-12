@@ -46,7 +46,10 @@ const IAST * getMatcherQualifier(const IAST & ast)
     return nullptr;
 }
 
-bool isColumnMatcher(const IAST & ast, const IsColumnQualifier & is_column_qualifier)
+/// The number of enclosing lambdas that define each parameter name.
+using LambdaParametersInScope = UnorderedMapWithMemoryTracking<String, size_t>;
+
+bool isColumnMatcher(const IAST & ast, const IsColumnQualifier & is_column_qualifier, const LambdaParametersInScope & lambda_parameters)
 {
     if (ast.as<ASTAsterisk>() || ast.as<ASTColumnsRegexpMatcher>() || ast.as<ASTColumnsListMatcher>())
         return true;
@@ -56,7 +59,17 @@ bool isColumnMatcher(const IAST & ast, const IsColumnQualifier & is_column_quali
         return false;
 
     const auto * qualifier_identifier = qualifier->as<ASTIdentifier>();
-    return !qualifier_identifier || !is_column_qualifier(*qualifier_identifier);
+    if (!qualifier_identifier)
+        return true;
+
+    /// The analyzer resolves the qualifier in the scope of the expression first, where a parameter of an enclosing
+    /// lambda shadows the table, e.g. `x.*` in `arrayExists(x -> greatest(x.*) > 0, [tup])` expands into the elements
+    /// of the `Tuple` argument. Its type is only known to the analyzer, which rejects a non-`Tuple` one itself.
+    const auto & parts = qualifier_identifier->name_parts;
+    if (!qualifier_identifier->isParam() && !parts.empty() && lambda_parameters.contains(parts[0]))
+        return false;
+
+    return !is_column_qualifier(*qualifier_identifier);
 }
 
 using ParameterToArgument = UnorderedMapWithMemoryTracking<String, ASTPtr>;
@@ -180,13 +193,41 @@ ASTPtr getSubstitutedUDFBody(const ASTFunction & function, const IAST & udf)
 }
 
 ASTPtr findColumnMatcherInExpressionImpl(
-    const ASTPtr & ast, const IsColumnQualifier & is_column_qualifier, UnorderedSetWithMemoryTracking<String> & udfs_in_progress)
+    const ASTPtr & ast,
+    const IsColumnQualifier & is_column_qualifier,
+    UnorderedSetWithMemoryTracking<String> & udfs_in_progress,
+    LambdaParametersInScope & lambda_parameters)
 {
-    if (isColumnMatcher(*ast, is_column_qualifier))
+    if (isColumnMatcher(*ast, is_column_qualifier, lambda_parameters))
         return ast;
 
-    if (const auto * function = ast->as<ASTFunction>())
+    if (auto * function = ast->as<ASTFunction>())
     {
+        if (auto [parameters, body] = getLambdaParametersAndBody(*function); body)
+        {
+            Names added_parameters;
+            for (const auto & parameter : *parameters)
+            {
+                if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                {
+                    ++lambda_parameters[parameter_identifier->name()];
+                    added_parameters.push_back(parameter_identifier->name());
+                }
+            }
+
+            auto matcher = (*body)->as<ASTSelectQuery>()
+                ? nullptr
+                : findColumnMatcherInExpressionImpl(*body, is_column_qualifier, udfs_in_progress, lambda_parameters);
+
+            for (const auto & name : added_parameters)
+            {
+                auto it = lambda_parameters.find(name);
+                if (--it->second == 0)
+                    lambda_parameters.erase(it);
+            }
+            return matcher;
+        }
+
         /// The body is walked with the arguments of the call substituted, because a parameter may be the qualifier
         /// of a matcher, e.g. `x.*` in `(x) -> greatest(x.*)` is a `Tuple` expansion for the call `f(tup)`.
         /// A UDF that is already being walked is skipped, so that a cycle among them cannot make this recurse forever.
@@ -194,7 +235,8 @@ ASTPtr findColumnMatcherInExpressionImpl(
         if (udf && udfs_in_progress.insert(function->name).second)
         {
             auto substituted_body = getSubstitutedUDFBody(*function, *udf);
-            auto matcher = findColumnMatcherInExpressionImpl(substituted_body ? substituted_body : udf, is_column_qualifier, udfs_in_progress);
+            auto matcher = findColumnMatcherInExpressionImpl(
+                substituted_body ? substituted_body : udf, is_column_qualifier, udfs_in_progress, lambda_parameters);
             udfs_in_progress.erase(function->name);
             if (matcher)
                 return matcher;
@@ -205,7 +247,7 @@ ASTPtr findColumnMatcherInExpressionImpl(
     {
         if (child->as<ASTSelectQuery>())
             continue;
-        if (auto matcher = findColumnMatcherInExpressionImpl(child, is_column_qualifier, udfs_in_progress))
+        if (auto matcher = findColumnMatcherInExpressionImpl(child, is_column_qualifier, udfs_in_progress, lambda_parameters))
             return matcher;
     }
 
@@ -217,7 +259,8 @@ ASTPtr findColumnMatcherInExpressionImpl(
 ASTPtr findColumnMatcherInExpression(const ASTPtr & ast, const IsColumnQualifier & is_column_qualifier)
 {
     UnorderedSetWithMemoryTracking<String> udfs_in_progress;
-    return findColumnMatcherInExpressionImpl(ast, is_column_qualifier, udfs_in_progress);
+    LambdaParametersInScope lambda_parameters;
+    return findColumnMatcherInExpressionImpl(ast, is_column_qualifier, udfs_in_progress, lambda_parameters);
 }
 
 IsColumnQualifier makeTupleColumnQualifierCheck(
