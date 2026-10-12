@@ -2521,7 +2521,7 @@ void InterpreterSystemQuery::clearStatisticsCaches(const ContextPtr & system_con
     {
         for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
         {
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(it->table(), DeferredTable::Skip).get())
                 merge_tree->resetPartEstimates();
         }
     }

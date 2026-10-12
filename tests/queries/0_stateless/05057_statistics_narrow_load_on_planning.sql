@@ -1,5 +1,6 @@
--- Tags: no-parallel, no-random-settings
+-- Tags: no-parallel, no-fasttest, no-random-settings
 -- Tag no-parallel: toggles a server-global failpoint.
+-- Tag no-fasttest: tests that toggle a fail point run alone, which the fast test does not do.
 -- Tag no-random-settings: keeps the statistics paths and settings deterministic.
 
 -- Building the selectivity estimator must read the statistics of the referenced columns only,
