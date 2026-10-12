@@ -1395,8 +1395,24 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     err = instance.query_and_get_error(
         f"RESTORE TABLE sample FROM {backup_destination} SETTINGS create_table = 'must-exist'"
     )
-    assert "CANNOT_RESTORE_TABLE" in err and f"must have its UUID {sample_uuid}" in err, err
+    assert "CANNOT_RESTORE_TABLE" in err and f"the table with UUID {sample_uuid} in the backup has UUID" in err, err
     instance.query("DROP TABLE sample SYNC")
+
+    # An existing materialized view with its UUID from the backup but another inner table doesn't see the data either.
+    other_inner_uuid = str(uuid.uuid4())
+    instance.query(
+        f"""
+        ATTACH TABLE `.inner_id.{mv_uuid}` UUID '{other_inner_uuid}' (key Int) ENGINE = MergeTree ORDER BY key
+        SETTINGS storage_policy = '{policy}', index_granularity = 8192;
+        ATTACH MATERIALIZED VIEW mv UUID '{mv_uuid}' TO INNER UUID '{other_inner_uuid}' (key Int) ENGINE = MergeTree ORDER BY key
+        SETTINGS storage_policy = '{policy}', index_granularity = 8192 AS SELECT key FROM src;
+        """
+    )
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE mv FROM {backup_destination} SETTINGS create_table = 'must-exist'"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and f"the table with UUID {inner_uuid} in the backup has UUID {other_inner_uuid}" in err, err
+    instance.query("DROP TABLE mv SYNC")
 
     instance.query(f"RESTORE TABLE sample, TABLE mv FROM {backup_destination}")
     assert get_uuid("sample") == sample_uuid

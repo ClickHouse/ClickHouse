@@ -163,16 +163,19 @@ bool isInnerTable(const String & /* database_name */, const String & table_name)
     return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
 }
 
-bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context)
+namespace
 {
-    /// The storages that keep the data of `storage`.
-    std::vector<StoragePtr> data_storages;
+
+/// The storages that keep the data of `storage`, each with the kind of the inner table it is, if it is one.
+std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> getDataStorages(const StoragePtr & storage, const ContextPtr & context)
+{
+    std::vector<std::pair<std::optional<ViewTarget::Kind>, StoragePtr>> data_storages;
     if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
     {
         if (materialized_view->hasInnerTable())
         {
             if (auto target = materialized_view->tryGetTargetTable())
-                data_storages.push_back(target);
+                data_storages.emplace_back(ViewTarget::To, target);
         }
     }
     else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
@@ -182,17 +185,25 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const C
             if (time_series->isInnerTable(target_kind))
             {
                 if (auto target = time_series->tryGetTargetTable(target_kind, context))
-                    data_storages.push_back(target);
+                    data_storages.emplace_back(target_kind, target);
             }
         }
     }
     else
     {
-        data_storages.push_back(storage);
+        data_storages.emplace_back(std::nullopt, storage);
     }
+    return data_storages;
+}
+
+}
+
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context)
+{
+    auto data_storages = getDataStorages(storage, context);
 
     size_t num_on_backup_metadata_only_policy = 0;
-    for (const auto & data_storage : data_storages)
+    for (const auto & [_, data_storage] : data_storages)
     {
         auto policy = data_storage->getStoragePolicy();
         if (policy && policy->isBackupMetadataOnly())
@@ -207,6 +218,22 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const C
             storage->getStorageID().getNameForLogs());
 
     return num_on_backup_metadata_only_policy != 0;
+}
+
+std::vector<std::pair<UUID, UUID>> getUUIDsOfDataStorages(
+    const StoragePtr & storage, const ASTCreateQuery & create_query_from_backup, const ContextPtr & context)
+{
+    std::vector<std::pair<UUID, UUID>> res;
+    for (const auto & [target_kind, data_storage] : getDataStorages(storage, context))
+    {
+        UUID uuid_in_backup = UUIDHelpers::Nil;
+        if (!target_kind)
+            uuid_in_backup = create_query_from_backup.uuid;
+        else if (create_query_from_backup.targets)
+            uuid_in_backup = create_query_from_backup.targets->getInnerUUID(*target_kind);
+        res.emplace_back(data_storage->getStorageID().uuid, uuid_in_backup);
+    }
+    return res;
 }
 
 bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)

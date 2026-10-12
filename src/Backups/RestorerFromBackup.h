@@ -109,7 +109,7 @@ private:
 
     /// The data of a table on a storage policy marked `backup_metadata_only` is not restored, see `BackupUtils`.
     void skipTableDataOnBackupMetadataOnlyStoragePolicy(
-        const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions, const UUID & uuid_in_backup) const;
+        const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions, const ASTPtr & create_table_query_from_backup) const;
 
     void runDataRestoreTasks();
 

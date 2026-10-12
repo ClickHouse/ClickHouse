@@ -1063,20 +1063,19 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     StoragePtr storage;
     String data_path_in_backup;
     std::optional<ASTs> partitions;
-    UUID uuid_in_backup = UUIDHelpers::Nil;
+    ASTPtr create_table_query_from_backup;
     {
         std::lock_guard lock{mutex};
         auto & table_info = table_infos.at(table_name);
         storage = table_info.storage;
         data_path_in_backup = table_info.data_path_in_backup;
         partitions = table_info.partitions;
-        if (const auto * create_table_query = table_info.create_table_query ? table_info.create_table_query->as<ASTCreateQuery>() : nullptr)
-            uuid_in_backup = create_table_query->uuid;
+        create_table_query_from_backup = table_info.create_table_query;
     }
 
     if (BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context))
     {
-        skipTableDataOnBackupMetadataOnlyStoragePolicy(table_name, storage, partitions, uuid_in_backup);
+        skipTableDataOnBackupMetadataOnlyStoragePolicy(table_name, storage, partitions, create_table_query_from_backup);
         return;
     }
 
@@ -1086,7 +1085,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
 }
 
 void RestorerFromBackup::skipTableDataOnBackupMetadataOnlyStoragePolicy(
-    const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions, const UUID & uuid_in_backup) const
+    const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions, const ASTPtr & create_table_query_from_backup) const
 {
     if (partitions)
         throw Exception(
@@ -1095,27 +1094,36 @@ void RestorerFromBackup::skipTableDataOnBackupMetadataOnlyStoragePolicy(
             "all the data of its storage and the partition filter cannot be applied",
             tableNameWithTypeToString(table_name.database, table_name.table, false));
 
-    /// The table finds its data on the storage under a path derived from its UUID, so it must keep its UUID from the backup.
-    /// `createTable` keeps it when it sees the policy in the definition of the table, this catches the cases it doesn't.
-    /// A table without a UUID, e.g. in an `Ordinary` database, keeps its data under a path derived from its name, which
-    /// `RESTORE ... AS` or a restore into another database changes, so it is refused too.
-    auto uuid = storage->getStorageID().uuid;
-    if (uuid == UUIDHelpers::Nil || uuid_in_backup == UUIDHelpers::Nil)
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TABLE,
-            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it must "
-            "have its UUID from the backup to find the data on the storage, but {}",
-            tableNameWithTypeToString(table_name.database, table_name.table, false),
-            uuid == UUIDHelpers::Nil ? "its database doesn't give tables UUIDs" : "the backup records no UUID for it");
+    /// A table finds its data on the storage under a path derived from its UUID, so every table keeping the data (the table
+    /// itself, or the inner tables of a materialized view or a `TimeSeries` table) must have its UUID from the backup.
+    /// `createTable` keeps them when it sees the policy in the definition of the table, this catches the cases it doesn't,
+    /// e.g. an existing table restored with `create_table = 'must-exist'`. A table without a UUID, e.g. in an `Ordinary`
+    /// database, keeps its data under a path derived from its name, which `RESTORE ... AS` or a restore into another
+    /// database changes, so it is refused too.
+    const auto * create_query = create_table_query_from_backup ? create_table_query_from_backup->as<ASTCreateQuery>() : nullptr;
+    if (!create_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup has no definition of {}", tableNameWithTypeToString(table_name.database, table_name.table, false));
 
-    if (uuid != uuid_in_backup)
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TABLE,
-            "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and it must "
-            "have its UUID {} from the backup to find the data on the storage, but it has UUID {}",
-            tableNameWithTypeToString(table_name.database, table_name.table, false),
-            toString(uuid_in_backup),
-            toString(uuid));
+    for (const auto & [uuid, uuid_in_backup] : BackupUtils::getUUIDsOfDataStorages(storage, *create_query, context))
+    {
+        if (uuid == UUIDHelpers::Nil || uuid_in_backup == UUIDHelpers::Nil)
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and the "
+                "tables keeping it must have their UUIDs from the backup to find the data on the storage, but {}",
+                tableNameWithTypeToString(table_name.database, table_name.table, false),
+                uuid == UUIDHelpers::Nil ? "its database doesn't give tables UUIDs" : "the backup records no UUID for one of them");
+
+        if (uuid != uuid_in_backup)
+            throw Exception(
+                ErrorCodes::CANNOT_RESTORE_TABLE,
+                "Cannot restore {}: it is on a storage policy marked backup_metadata_only, so its data is not restored and the "
+                "tables keeping it must have their UUIDs from the backup to find the data on the storage, but the table with "
+                "UUID {} in the backup has UUID {}",
+                tableNameWithTypeToString(table_name.database, table_name.table, false),
+                toString(uuid_in_backup),
+                toString(uuid));
+    }
 
     LOG_INFO(log, "Not restoring the data of {}: it is on a storage policy marked backup_metadata_only",
         tableNameWithTypeToString(table_name.database, table_name.table, false));
