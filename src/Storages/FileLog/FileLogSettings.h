@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Common/SettingsChanges.h>
 
 namespace DB
 {
@@ -57,6 +58,8 @@ struct FileLogSettings
     FILELOG_SETTINGS_SUPPORTED_TYPES(FileLogSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void loadFromQuery(ASTStorage & storage_def);
+
+    SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
 
