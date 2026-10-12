@@ -1,0 +1,8 @@
+--- First query (analyzer, cache miss expected)
+A	49995000	10000
+B	49995000	10000
+0	2
+--- Second query (analyzer, cache hit expected)
+A	49995000	10000
+B	49995000	10000
+2	0
