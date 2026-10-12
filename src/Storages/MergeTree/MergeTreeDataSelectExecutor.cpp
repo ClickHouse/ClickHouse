@@ -1765,6 +1765,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     bool allow_top_k_prewhere_query_condition_cache,
     bool use_sampling,
+    bool consult_where,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
@@ -2034,7 +2035,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     /// A row policy needs no extra guard here: `optimizePrimaryKeyConditionAndLimit` ANDs it into
     /// `filter_actions_dag`, so a restricted read keys on a different condition than an unrestricted one.
-    if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
+    if (const auto & filter_actions_dag = select_query_info.filter_actions_dag; filter_actions_dag && consult_where)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
         /// Reaching this point with a TopK read implies `use_query_condition_cache_for_top_k` is on

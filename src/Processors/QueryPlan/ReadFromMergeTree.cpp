@@ -3745,6 +3745,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 top_k_filter_info,
                 allow_top_k_prewhere_query_condition_cache_,
                 result.sampling.use_sampling,
+                /*consult_where=*/true,
                 mutations_snapshot,
                 *indexes,
                 context_,
@@ -4194,29 +4195,25 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 
     updateSortDescription();
 
-    /// `analyzed_result_ptr` already carries the cache verdict of the conditions it was analyzed with: probe only the new PREWHERE.
-    SelectQueryInfo probe_query_info = query_info;
-    probe_query_info.filter_actions_dag = nullptr;
-
     /// The cache key (table, part, condition) cannot express the rows a unique key hides, the values a masking policy rewrites
-    /// for this user, or a non-deterministic virtual column's value. A TopK read keys its PREWHERE entries on the dropped filter too.
-    /// `analyzed_result_ptr` already carries the verdict of a PREWHERE probed before, so restoring it must not count the cache again.
+    /// for this user, or a non-deterministic virtual column's value. Only a PREWHERE not probed before is probed, and a TopK read
+    /// only until its pending dynamic filter is installed: installing it yields the PREWHERE the pending probe already used.
     if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
-        && query_info.prewhere_info != query_condition_cache_probed_prewhere
+        && query_info.prewhere_info && query_info.prewhere_info != query_condition_cache_probed_prewhere
         && !(is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
-        && !top_k_filter_info
+        && (!top_k_filter_info || top_k_filter_info->dynamic_filter_pending)
         && !storage_snapshot->metadata->hasUniqueKey()
         && !data.hasEnabledMaskingPolicies(context)
         && !filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info)
         && MergeTreeDataSelectExecutor::canFilterPartsByQueryConditionCache(
-            probe_query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
+            query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
     {
         query_condition_cache_probed_prewhere = query_info.prewhere_info;
 
         RangesInDataParts narrowed = analyzed_result_ptr->parts_with_ranges;
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
-            narrowed, probe_query_info, vector_search_parameters, top_k_filter_info,
-            allow_top_k_prewhere_query_condition_cache, analyzed_result_ptr->sampling.use_sampling, mutations_snapshot, *indexes, context, log);
+            narrowed, query_info, vector_search_parameters, top_k_filter_info, allow_top_k_prewhere_query_condition_cache,
+            analyzed_result_ptr->sampling.use_sampling, /*consult_where=*/false, mutations_snapshot, *indexes, context, log);
 
         UInt64 marks = 0;
         UInt64 ranges = 0;

@@ -105,6 +105,30 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryF
   AND current_database = currentDatabase() AND log_comment = 'qcc_pr_join_r2'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
+SELECT '-- a TopK read under a JOIN must prune the second run too';
+-- `ORDER BY ... LIMIT` makes the joined read a TopK read, whose PREWHERE gets `__topKFilter` and keys the cache on it.
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT count() FROM (SELECT k FROM tab WHERE v = 7 ORDER BY v LIMIT 3) AS t INNER JOIN dim ON t.k = dim.k
+    SETTINGS use_top_k_dynamic_filtering = 1, use_query_condition_cache_for_top_k = 1, query_plan_max_limit_for_top_k_optimization = 0, query_plan_max_step_description_length = 1000)
+WHERE explain ILIKE '%prewhere filter column: and(\_\_topKFilter(v), %';
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM (SELECT k FROM tab WHERE v = 7 ORDER BY v LIMIT 3) AS t INNER JOIN dim ON t.k = dim.k
+SETTINGS use_top_k_dynamic_filtering = 1, use_query_condition_cache_for_top_k = 1, query_plan_max_limit_for_top_k_optimization = 0, log_comment = 'qcc_topk_join_r1';
+SELECT count() FROM (SELECT k FROM tab WHERE v = 7 ORDER BY v LIMIT 3) AS t INNER JOIN dim ON t.k = dim.k
+SETTINGS use_top_k_dynamic_filtering = 1, use_query_condition_cache_for_top_k = 1, query_plan_max_limit_for_top_k_optimization = 0, log_comment = 'qcc_topk_join_r2';
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['QueryConditionCacheHits'],
+       ProfileEvents['SelectedMarks'] = ProfileEvents['SelectedMarksTotal']
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND log_comment = 'qcc_topk_join_r1'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+SELECT ProfileEvents['QueryConditionCacheHits'],
+       ProfileEvents['SelectedMarks'] <= 3
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND log_comment = 'qcc_topk_join_r2'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
 SELECT '-- control: the same JOIN without join reordering already pruned';
 -- Join reordering is what asks the read for a row estimate, so switching it off is the one arm that
 -- pruned before this fix. Without it a green arm above could not be told from a fixture that never

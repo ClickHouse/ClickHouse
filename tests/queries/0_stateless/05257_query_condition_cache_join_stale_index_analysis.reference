@@ -10,6 +10,12 @@
 1
 0	2	1
 1	1	1	2	1
+-- a TopK read under a JOIN must prune the second run too
+1
+1
+1
+0	1
+1	1
 -- control: the same JOIN without join reordering already pruned
 1
 1
