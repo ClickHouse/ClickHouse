@@ -2,8 +2,8 @@
 
 #include <Common/HiddenSecret.h>
 #include <Common/StringUtils.h>
+#include <Common/Hex.h>
 #include <Common/maskURIPassword.h>
-#include <base/hex.h>
 
 #include <array>
 #include <string>

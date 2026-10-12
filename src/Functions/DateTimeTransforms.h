@@ -1335,6 +1335,40 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
 };
 
 
+/// The lookup table holds at most one UTC offset change per local day, so equal factors mean no change lies between them.
+struct ToDayAndUTCOffsetFactorImpl
+{
+    static constexpr auto name = "toDayAndUTCOffsetFactor";
+
+    static std::pair<Int64, Int64> execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        /// Outside the lookup table no two points share a factor.
+        if (!DateLUTImpl::isTimeInLUTRange(t))
+            return {std::numeric_limits<Int64>::min(), t};
+        return {time_zone.toDayNum(t).toUnderType(), time_zone.timezoneOffset(t)};
+    }
+    static std::pair<Int64, Int64> execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return execute(static_cast<Int64>(t), time_zone);
+    }
+    /// `Date` and `Date32` are rejected by the functions themselves.
+    static std::pair<Int64, Int64> execute(Int32 d, const DateLUTImpl &) { return {d, 0}; }
+    static std::pair<Int64, Int64> execute(UInt16 d, const DateLUTImpl &) { return {d, 0}; }
+
+    using FactorTransform = ZeroTransform;
+};
+
+/// Reads a `DateTime64` through its whole part, as `toTimeWithFixedDate` does.
+struct ToTimeWithFixedDateFactorImpl : ToDayAndUTCOffsetFactorImpl
+{
+    using ToDayAndUTCOffsetFactorImpl::execute;
+
+    static std::pair<Int64, Int64> execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
+    {
+        return execute(static_cast<Int64>(t.whole), time_zone);
+    }
+};
+
 struct ToTimeWithFixedDateImpl
 {
     /// When transforming to time, the date will be equated to 1970-01-02.
@@ -1366,7 +1400,7 @@ struct ToTimeWithFixedDateImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ToDateImpl<>;
+    using FactorTransform = ToTimeWithFixedDateFactorImpl;
 };
 
 struct ToStartOfMinuteImpl
@@ -2383,7 +2417,7 @@ struct TimezoneOffsetImpl
     }
 
     static constexpr bool hasPreimage() { return false; }
-    using FactorTransform = ToTimeWithFixedDateImpl;
+    using FactorTransform = ToDayAndUTCOffsetFactorImpl;
 };
 
 struct ToMinuteImpl
