@@ -396,8 +396,9 @@ protected:
         const auto & part = state->parts[part_idx];
         UInt64 count = computeCountForPart(part, *resolved, reader_settings, check_cancelled);
 
-        /// The whole part is answered, so report its rows as processed instead of the one-row output chunk.
-        progress(part.data_part->rows_count, 0);
+        /// Report the rows of the selected ranges as processed instead of the one-row output chunk,
+        /// the same as `ReadFromMergeTree` does, so `read_rows` and the `READ_ROWS` quota match the unoptimized read.
+        progress(part.getRowsCount(), 0);
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
         return Chunk(Columns{createSingleCountStateColumn(agg_count, count)}, 1);
     }
@@ -439,9 +440,7 @@ void ReadFromTextIndexCount::initializePipeline(QueryPipelineBuilder & pipeline,
 
     size_t streams = std::max<size_t>(1, std::min(num_streams, state->parts.size()));
 
-    size_t total_rows = 0;
-    for (const auto & part : state->parts)
-        total_rows += part.data_part->rows_count;
+    size_t total_rows = state->parts.getRowsCountAllParts();
 
     Pipes pipes;
     for (size_t i = 0; i < streams; ++i)

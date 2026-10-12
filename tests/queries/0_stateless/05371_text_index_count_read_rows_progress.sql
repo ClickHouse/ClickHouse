@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas
--- `ReadFromTextIndexCount` reports the rows of the answered parts as read rows, not one row per part.
+-- `ReadFromTextIndexCount` reports the rows of the selected ranges of the answered parts as read rows, not one row per part.
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
@@ -21,7 +21,8 @@ CREATE TABLE tab
     INDEX idx text TYPE text(tokenizer = splitByNonAlpha)
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 SYSTEM STOP MERGES tab;
 
@@ -30,16 +31,41 @@ INSERT INTO tab SELECT number, if(number % 4 = 0, 'alpha epsilon', 'zeta') FROM 
 
 SELECT count() FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha')) WHERE explain LIKE '%ReadFromTextIndexCount%';
 
-SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS log_comment = '05319_single_token';
+SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS log_comment = '05371_single_token';
 -- The second part has no `beta`, so it is pruned and not processed.
-SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS log_comment = '05319_all_tokens';
-SELECT count() FROM tab WHERE hasAnyTokens(text, ['beta', 'zeta']) SETTINGS log_comment = '05319_any_tokens';
+SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS log_comment = '05371_all_tokens';
+SELECT count() FROM tab WHERE hasAnyTokens(text, ['beta', 'zeta']) SETTINGS log_comment = '05371_any_tokens';
+
+-- The index prunes the granules without the token inside a part: only the rows of the selected granules are read,
+-- the same as without the optimization.
+DROP TABLE IF EXISTS tab_ranges;
+
+CREATE TABLE tab_ranges
+(
+    id UInt64,
+    text String,
+    INDEX idx text TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_ranges SELECT number, if(number < 100, 'needle', 'hay') FROM numbers(1000);
+
+SELECT count() FROM (EXPLAIN SELECT count() FROM tab_ranges WHERE hasToken(text, 'needle')) WHERE explain LIKE '%ReadFromTextIndexCount%';
+SELECT count() FROM tab_ranges WHERE hasToken(text, 'needle') SETTINGS log_comment = '05371_selected_ranges';
+SELECT count() FROM tab_ranges WHERE hasToken(text, 'needle') SETTINGS query_plan_optimize_count_from_text_index = 0, log_comment = '05371_selected_ranges_off';
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, read_rows, read_bytes
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05319_single_token', '05319_all_tokens', '05319_any_tokens')
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('05371_single_token', '05371_all_tokens', '05371_any_tokens', '05371_selected_ranges')
 ORDER BY event_time_microseconds;
 
+SELECT log_comment, read_rows
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05371_selected_ranges_off';
+
 DROP TABLE tab;
+DROP TABLE tab_ranges;
