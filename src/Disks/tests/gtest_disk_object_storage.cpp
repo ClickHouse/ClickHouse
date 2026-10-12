@@ -17,6 +17,7 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 
 #include <Core/Defines.h>
@@ -146,6 +147,12 @@ namespace FailPoints
     extern const char write_file_operation_fail_on_read[];
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event BlobKillerThreadRuns;
+    extern const Event BlobKillerThreadRemoveBlobsErrors;
 }
 
 class DiskObjectStorageTest : public testing::Test
@@ -1147,6 +1154,55 @@ try
     EXPECT_EQ(via_read_file, file_content);
     EXPECT_EQ(via_pipeline, file_content);
     EXPECT_EQ(via_read_file, via_pipeline);
+}
+catch (...)
+{
+    FAIL() << DB::getCurrentExceptionMessage(true);
+}
+
+
+TEST_F(DiskObjectStorageTest, BlobRemovalWaitStopsWhenRemovalFails)
+try
+{
+    auto disk = getDiskObjectStorage();
+
+    std::string file_name = getTestName() + "_file";
+
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(getTestName() + "_file_content", *wb);
+        wb->finalize();
+    }
+
+    waitBlobsCount(disk, 1);
+
+    fs::path blob_path;
+    for (const auto & entry : fs::recursive_directory_iterator("./local_blob_storage_dir"))
+        if (entry.is_regular_file())
+            blob_path = entry.path();
+    ASSERT_FALSE(blob_path.empty());
+    fs::remove(blob_path);
+    fs::create_directory(blob_path);
+
+    const auto rounds_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns];
+    const auto errors_before = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors];
+
+    disk->removeFile(file_name);
+
+    const auto rounds = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRuns] - rounds_before;
+    const auto errors = ProfileEvents::global_counters[ProfileEvents::BlobKillerThreadRemoveBlobsErrors] - errors_before;
+    std::cout << "Cleanup rounds: " << rounds << ", removal errors: " << errors << std::endl;
+
+    EXPECT_GT(errors, 0u);
+    EXPECT_LT(rounds, 8u);
+
+    auto metadata_storage = disk->getMetadataStorage();
+    EXPECT_GT(metadata_storage->getDeadBlobsQueueEstimate(), 0);
+
+    fs::remove(blob_path);
+    for (size_t i = 0; i < 100 && metadata_storage->getDeadBlobsQueueEstimate() > 0; ++i)
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    EXPECT_EQ(metadata_storage->getDeadBlobsQueueEstimate(), 0);
 }
 catch (...)
 {
