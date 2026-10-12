@@ -14,8 +14,11 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
 
@@ -46,14 +49,20 @@ bool indexFileExistsInChecksums(
     if (checksums.files.contains(hash + extension))
         return true;
 
-    /// Packed substreams: not listed in checksums.txt as individual entries, but the
-    /// storage overlay reports their existence via the skp_idx.packed index.
+    /// Packed substreams: not listed in checksums.txt as individual entries, but the archive
+    /// itself is, and its index names the members. Ask for archive membership specifically:
+    /// `IDataPartStorage::existsFile` falls back to the loose file on disk when the archive does
+    /// not hold the name, and a loose `skp_idx_*` file next to `skp_idx.packed` that is in neither
+    /// `checksums.txt` nor the archive is an orphan the part does not own (#109595).
     if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
     {
-        if (storage->existsFile(path_prefix + extension))
-            return true;
-        if (storage->existsFile(hash + extension))
-            return true;
+        if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage))
+        {
+            if (disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
+                return true;
+            if (disk_storage->isFileInPackedSkipIndicesArchive(hash + extension))
+                return true;
+        }
     }
 
     return false;
@@ -308,6 +317,8 @@ const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part)
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPartStorage(); }
+String getMarksFileExtension(const IMergeTreeDataPart & part) { return part.getMarksFileExtension(); }
+String getMarksFileExtension(const IMergeTreeDataPartInfoForReader & part) { return part.getIndexGranularityInfo().mark_type.getFileExtension(); }
 
 template <typename Part>
 bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & part)
@@ -403,6 +414,26 @@ MergeTreeIndexFormat getDeserializedFormatImpl(
     /// query then answers correctly without it.
     if (!isPartTypeCompatibleImpl(skip_index, part))
         return {0 /*unknown*/, {}};
+
+    /// Physical discovery proves only the substreams its index type looks at (the base `.idx`, and
+    /// for `text` also the optional `.pos`), while `MergeTreeIndexReader::initStreamIfNeeded` opens
+    /// EVERY substream of the returned layout and, for each of them, the marks file that
+    /// `MergeTreeIndexGranularityInfo` names. A part that holds only a part of that layout - a
+    /// `text` index whose dictionary or postings stream is gone, or any index whose marks file the
+    /// part does not own - therefore cannot serve the index at all. Report it as not deserializable
+    /// so the query answers without the index, instead of routing into the index and throwing on
+    /// the missing file. `system.parts.secondary_indices_materialized` asks the same question, so
+    /// the column and the readers agree by construction.
+    const String marks_extension = getMarksFileExtension(part);
+    const auto & checksums = getChecksums(part);
+    const auto & storage = getStorage(part);
+    for (const auto & substream : format.substreams)
+    {
+        const String substream_prefix = relative_path_prefix + substream.suffix;
+        if (!indexFileExistsInChecksums(checksums, substream_prefix, substream.extension, &storage)
+            || !indexFileExistsInChecksums(checksums, substream_prefix, marks_extension, &storage))
+            return {0 /*unknown*/, {}};
+    }
 
     return format;
 }
