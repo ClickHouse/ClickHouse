@@ -134,6 +134,7 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
+        case TypeIndex::UInt32:
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
         case TypeIndex::String:
@@ -161,6 +162,27 @@ bool isNaNPartitionValue(const Field & field, DataTypePtr type)
             return !field.isNull() && std::isnan(field.safeGet<Float64>());
         default:
             return false;
+    }
+}
+
+/// The unscaled value of a decimal `Field`, whatever carrier it uses. A partition value read out of a
+/// manifest is canonicalized to `Decimal256` (see `normalizePartitionValue`), so its carrier does not
+/// have to be the carrier of the ClickHouse type of the column it belongs to.
+Int256 getDecimalUnscaledValue(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32:
+            return Int256(field.safeGet<DecimalField<Decimal32>>().getValue().value);
+        case Field::Types::Decimal64:
+            return Int256(field.safeGet<DecimalField<Decimal64>>().getValue().value);
+        case Field::Types::Decimal128:
+            return Int256(field.safeGet<DecimalField<Decimal128>>().getValue().value);
+        case Field::Types::Decimal256:
+            return field.safeGet<DecimalField<Decimal256>>().getValue().value;
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Expected a decimal value of an Iceberg column, got {}", field.getTypeName());
     }
 }
 
@@ -194,11 +216,11 @@ std::vector<uint8_t> dumpDecimalValue(const Field & field)
     }
     else
     {
-        const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+        const Int256 unscaled_value = getDecimalUnscaledValue(field);
 
         bytes.resize(sizeof(NativeType));
         for (size_t i = 0; i < sizeof(NativeType); ++i)
-            bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+            bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & Int256(0xFF)));
     }
 
     size_t first = 0;
@@ -239,10 +261,10 @@ avro::GenericDatum makeDecimalFixedDatum(const Field & field, const avro::NodePt
     }
     else
     {
-        const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+        const Int256 unscaled_value = getDecimalUnscaledValue(field);
         bytes.assign(size, unscaled_value < 0 ? 0xFF : 0x00);
         for (size_t i = 0; i < size && i < sizeof(NativeType); ++i)
-            bytes[size - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+            bytes[size - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & Int256(0xFF)));
     }
 
     avro::GenericDatum datum(schema);
@@ -279,8 +301,8 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
-        case TypeIndex::UInt32:
             return dumpValue(static_cast<Int32>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field)));
+        case TypeIndex::UInt32:
         case TypeIndex::UInt64:
             return dumpValue(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field));
         case TypeIndex::DateTime64:
@@ -443,6 +465,8 @@ void setVersionedField(avro::GenericRecord & rec, const std::optional<T> & value
         setVersionedFieldNull(rec, field_name);
 }
 
+}
+
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
 {
     Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
@@ -457,7 +481,6 @@ Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadat
         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
         "Not found schema with current-schema-id {} in the schemas list",
         current_schema_id);
-}
 }
 
 void generateManifestFile(

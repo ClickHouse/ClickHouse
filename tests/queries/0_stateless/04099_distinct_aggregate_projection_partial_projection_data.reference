@@ -20,7 +20,7 @@ SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection ORDER BY a, b;
 4	40
 5	50
 6	60
-EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1;
 Expression (Project names)
   Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
@@ -34,7 +34,7 @@ Expression (Project names)
 SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a <= 2 ORDER BY a, b;
 1	10
 2	20
-EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a <= 2 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a <= 2 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1;
 Expression (Project names)
   Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
@@ -50,7 +50,7 @@ SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a >= 4 ORD
 4	40
 5	50
 6	60
-EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a >= 4 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a >= 4 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1;
 Expression (Project names)
   Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
@@ -64,7 +64,7 @@ Expression (Project names)
               ReadFromMergeTree (p)
 SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a = 3 ORDER BY a, b;
 3	30
-EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a = 3 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+EXPLAIN SELECT DISTINCT a, b FROM test_distinct_proj_partial_projection WHERE a = 3 ORDER BY a, b SETTINGS optimize_move_to_prewhere = 1;
 Expression (Project names)
   Distinct (DISTINCT)
     Sorting (Sorting for ORDER BY)
