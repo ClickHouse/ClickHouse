@@ -65,6 +65,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     ContextPtr context_,
     const String & format_,
     const String & compression_method_,
+    FormatFilterInfoPtr format_filter_info_,
     size_t split_on_write_by_size_bytes_,
     GetNextPathCallback get_next_path_,
     PublishPathCallback publish_path_,
@@ -77,6 +78,7 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     , context(context_)
     , format(format_)
     , compression_method(compression_method_)
+    , format_filter_info(std::move(format_filter_info_))
     , split_on_write_by_size_bytes(split_on_write_by_size_bytes_)
     , get_next_path(std::move(get_next_path_))
     , publish_path(std::move(publish_path_))
@@ -110,8 +112,9 @@ void StorageObjectStorageSink::initialize()
     /// With the parallel formatting, the data is written into the buffer by a background thread,
     /// and the amount of the written data cannot be checked after every block without a data race.
     writer = split_on_write_by_size_bytes
-        ? FormatFactory::instance().getOutputFormat(format, getWriteBuffer(), *sample_block, context, format_settings)
-        : FormatFactory::instance().getOutputFormatParallelIfPossible(format, getWriteBuffer(), *sample_block, context, format_settings);
+        ? FormatFactory::instance().getOutputFormat(format, getWriteBuffer(), *sample_block, context, format_settings, format_filter_info)
+        : FormatFactory::instance().getOutputFormatParallelIfPossible(
+            format, getWriteBuffer(), *sample_block, context, format_settings, format_filter_info);
 }
 
 WriteBuffer & StorageObjectStorageSink::getWriteBuffer()
@@ -292,6 +295,7 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         context,
         configuration->format,
         configuration->compression_method,
+        /* format_filter_info = */ nullptr,
         query_settings.split_on_write_by_size_bytes,
         std::move(get_next_path),
         std::move(publish_path),

@@ -997,6 +997,7 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         local_context,
         configuration->format,
         configuration->compression_method,
+        /* format_filter_info = */ nullptr,
         settings.split_on_write_by_size_bytes,
         std::move(get_next_path),
         std::move(publish_path),

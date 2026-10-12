@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <functional>
@@ -32,6 +33,7 @@ public:
         ContextPtr context_,
         const String & format_,
         const String & compression_method_,
+        FormatFilterInfoPtr format_filter_info_ = nullptr,
         size_t split_on_write_by_size_bytes_ = 0,
         GetNextPathCallback get_next_path_ = {},
         PublishPathCallback publish_path_ = {},
@@ -59,6 +61,7 @@ private:
     const ContextPtr context;
     const String format;
     const String compression_method;
+    const FormatFilterInfoPtr format_filter_info;
     const size_t split_on_write_by_size_bytes;
     const GetNextPathCallback get_next_path;
     const PublishPathCallback publish_path;

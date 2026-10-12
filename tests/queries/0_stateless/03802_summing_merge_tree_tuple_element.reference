@@ -56,6 +56,8 @@ Tuple before sort key - after OPTIMIZE:
 2	(450,165,(45))
 === Test 8: SummingMergeTree Zero Row Deletion ===
 Zero row - with FINAL:
+1	(0,0,(0))
+2	(0,0,(0))
 3	(400,100,(0))
 Zero row - after OPTIMIZE:
 3	(400,100,(0))
