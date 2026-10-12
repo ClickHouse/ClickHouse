@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Storages/ObjectStorage/GCS/Configuration.h>
 
 namespace DB
 {
@@ -87,6 +88,9 @@ void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, C
     fillDataImpl(res_columns, StorageURL::getSchemaCache(context), "URL");
 #if USE_AZURE_BLOB_STORAGE
     fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageAzureConfiguration::type_name), "Azure");
+#endif
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+    fillDataImpl(res_columns, StorageObjectStorage::getSchemaCache(context, StorageGCSConfiguration::type_name), "GCS");
 #endif
 }
 

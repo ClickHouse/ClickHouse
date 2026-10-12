@@ -823,6 +823,10 @@ static DatabaseDataLakeStorageType toDataLakeStorageType(ObjectStorageType type)
     {
         case ObjectStorageType::S3:
             return DatabaseDataLakeStorageType::S3;
+        /// Catalogs report a `gs://` location as `S3` storage (see `ICatalog`), and the native GCS
+        /// backend reaches the same buckets.
+        case ObjectStorageType::GCS:
+            return DatabaseDataLakeStorageType::S3;
         case ObjectStorageType::Azure:
             return DatabaseDataLakeStorageType::Azure;
         case ObjectStorageType::HDFS:

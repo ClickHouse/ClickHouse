@@ -88,6 +88,10 @@ include(google_cloud_cpp_storage)
 # Common
 list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES "${GOOGLE_CLOUD_CPP_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
 
+# `poco_rest_options.h`: options of the Poco-based REST transport that ClickHouse substitutes for the
+# libcurl-based one. Public, because the code building the client options has to name them.
+list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}")
+
 set(GRPC_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/grpc")
 list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES "${GRPC_INCLUDE_DIR}/include" "${GRPC_INCLUDE_DIR}/spm-cpp-include")
 

@@ -69,9 +69,9 @@ private:
                 "Lazy materialization: no object metadata was captured for {} in the main reading pass",
                 object.getPath());
 
-        /// For S3 with `s3_validate_etag_on_read` (and Azure with `azure_validate_etag_on_read`), the GET
-        /// itself is pinned to the captured ETag (see `ReadBufferFromS3`, `ReadBufferFromAzureBlobStorage`),
-        /// which is race-free; an extra HEAD here would buy nothing.
+        /// For S3 and native GCS with `s3_validate_etag_on_read` (and Azure with `azure_validate_etag_on_read`),
+        /// the GET itself is pinned to the captured ETag (see `ReadBufferFromS3`, `ReadBufferFromGCS`,
+        /// `ReadBufferFromAzureBlobStorage`), which is race-free; an extra HEAD here would buy nothing.
         if (etag_validated_on_read && !captured->etag.empty())
             return;
 
@@ -219,7 +219,8 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
 
     const auto & settings = context->getSettingsRef();
     const bool etag_validated_on_read
-        = (object_storage->getType() == ObjectStorageType::S3 && settings[Setting::s3_validate_etag_on_read])
+        = ((object_storage->getType() == ObjectStorageType::S3 || object_storage->getType() == ObjectStorageType::GCS)
+            && settings[Setting::s3_validate_etag_on_read])
         || (object_storage->getType() == ObjectStorageType::Azure && settings[Setting::azure_validate_etag_on_read]);
     auto iterator = std::make_shared<LazyRowsObjectIterator>(
         std::move(rows->rows_in_files), object_storage, etag_validated_on_read, configuration->dataFilesAreImmutable());
