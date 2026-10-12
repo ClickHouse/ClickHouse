@@ -250,7 +250,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place);
         const auto & b = data(rhs);
@@ -355,7 +355,6 @@ createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, con
 }
 
 
-void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -392,9 +391,9 @@ INSERT INTO largestTriangleThreeBuckets_test VALUES
 SELECT largestTriangleThreeBuckets(4)(x, y) FROM largestTriangleThreeBuckets_test;
         )",
         R"(
-┌─largestTriangleThreeBuckets(4)(x, y)─┐
-│ [(1,10),(3,15),(9,55),(10,70)]       │
-└──────────────────────────────────────┘
+┌────────largestTriangleThreeBuckets(4)(x, y)───────────┐
+│           [(1,10),(3,15),(9,55),(10,70)]              │
+└───────────────────────────────────────────────────────┘
         )"
     }
     };

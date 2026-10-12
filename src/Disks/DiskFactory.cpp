@@ -14,27 +14,10 @@ DiskFactory & DiskFactory::instance()
     return factory;
 }
 
-void DiskFactory::registerDiskType(const String & disk_type, Creator creator, Documentation documentation)
+void DiskFactory::registerDiskType(const String & disk_type, Creator creator)
 {
     if (!registry.emplace(disk_type, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskFactory: the disk type '{}' is not unique", disk_type);
-    documentations.emplace(disk_type, std::move(documentation));
-}
-
-std::vector<String> DiskFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
-{
-    std::vector<String> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    result.reserve(registry.size());
-    for (const auto & pair : registry)
-        result.push_back(pair.first);
-    return result;
-}
-
-Documentation DiskFactory::getDocumentation(const String & disk_type) const
-{
-    if (auto it = documentations.find(disk_type); it != documentations.end())
-        return it->second;
-    return {};
 }
 
 DiskPtr DiskFactory::create(
@@ -68,6 +51,5 @@ DiskPtr DiskFactory::create(
 void DiskFactory::clearRegistry()
 {
     registry.clear();
-    documentations.clear();
 }
 }

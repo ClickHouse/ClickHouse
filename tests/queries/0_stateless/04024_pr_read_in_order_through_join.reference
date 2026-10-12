@@ -1,5 +1,5 @@
 Without parallel replicas:
-['ReadType: Default','ReadType: InOrder']
+['ReadType: InOrder','ReadType: Default']
 With parallel replicas, sorting through JOIN:
 ['ReadType: Default','ReadType: Default']
 With parallel replicas, aggregation through JOIN:

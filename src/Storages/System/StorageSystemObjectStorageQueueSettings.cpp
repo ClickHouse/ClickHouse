@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -11,7 +10,6 @@
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
-#include <Storages/StorageProxy.h>
 
 
 namespace DB
@@ -20,11 +18,10 @@ namespace DB
 template <ObjectStorageType type>
 ColumnsDescription StorageSystemObjectStorageQueueSettings<type>::getColumnsDescription()
 {
-    constexpr auto engine_name = (type == ObjectStorageType::S3) ? "S3Queue" : "AzureQueue";
     return ColumnsDescription
     {
-        {"database", std::make_shared<DataTypeString>(), fmt::format("Database of the table with {} engine.", engine_name)},
-        {"table", std::make_shared<DataTypeString>(), fmt::format("Name of the table with {} engine.", engine_name)},
+        {"database", std::make_shared<DataTypeString>(), "Database of the table with S3Queue Engine."},
+        {"table", std::make_shared<DataTypeString>(), "Name of the table with S3Queue Engine."},
         {"name",        std::make_shared<DataTypeString>(), "Setting name."},
         {"value",       std::make_shared<DataTypeString>(), "Setting value."},
         {"type",        std::make_shared<DataTypeString>(), "Setting type (implementation specific string value)."},
@@ -32,8 +29,8 @@ ColumnsDescription StorageSystemObjectStorageQueueSettings<type>::getColumnsDesc
         {"description", std::make_shared<DataTypeString>(), "Setting description."},
         {"alterable",    std::make_shared<DataTypeUInt8>(),
             "Shows whether the current user can change the setting via ALTER TABLE MODIFY SETTING: "
-            "0 — Current user can't change the setting, "
-            "1 — Current user can change the setting."
+            "0 — Current user can change the setting, "
+            "1 — Current user can't change the setting."
         },
     };
 }
@@ -67,7 +64,7 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
             for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
-                if (auto queue_table = castStorage<StorageObjectStorageQueue>(storage, DeferredTable::Skip))
+                if (auto * queue_table = dynamic_cast<StorageObjectStorageQueue *>(storage.get()))
                 {
                     add_table(iterator, *queue_table);
                 }
@@ -80,7 +77,3 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
 template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>;
 template class StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>;
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>) }
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>) }

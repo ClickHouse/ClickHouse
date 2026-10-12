@@ -6,10 +6,10 @@ namespace DB
 namespace
 {
 
-template <typename T, typename Allocator>
-void applyPermutation(std::vector<T, Allocator> & data, const std::vector<size_t> & permutation)
+template <typename T>
+void applyPermutation(std::vector<T> & data, const std::vector<size_t> & permutation)
 {
-    std::vector<T, Allocator> res;
+    std::vector<T> res;
     res.reserve(permutation.size());
     for (size_t i : permutation)
         res.push_back(data[i]);

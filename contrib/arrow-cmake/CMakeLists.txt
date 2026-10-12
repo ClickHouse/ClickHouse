@@ -13,18 +13,15 @@
 # make -j8
 # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
 
-# `ENABLE_PARQUET` is declared in `contrib/CMakeLists.txt`, before `flatbuffers-cmake`.
+set (ENABLE_PARQUET_DEFAULT ${ENABLE_LIBRARIES})
+if (OS_FREEBSD)
+    set (ENABLE_PARQUET_DEFAULT OFF)
+endif()
+option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
+
 if (NOT ENABLE_PARQUET)
     message(STATUS "Not using parquet")
     return()
-endif()
-
-# ORC lives here because Arrow has an adapter for it, but nothing about reading Parquet needs it.
-# It is also the only thing in the whole tree that runs `protoc`, and on a cross-compile that means
-# bootstrapping a native protobuf first, so turning it off is what makes a Parquet-only build cheap.
-option (ENABLE_ORC "Enable ORC (pulls in protobuf and, when cross-compiling, a native protoc)" ON)
-if (NOT ENABLE_ORC)
-    message(STATUS "Not using ORC")
 endif()
 
 # Support C11
@@ -72,7 +69,7 @@ set(ORC_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include")
 set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set(PROTOBUF_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
     set(GRPC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/grpc-cmake/grpc_cpp_plugin")
 else ()
@@ -81,82 +78,34 @@ else ()
 endif()
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
 
-if (ENABLE_ORC)
-    add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
-            COMMAND ${PROTOBUF_EXECUTABLE}
-            -I ${PROTO_DIR}
-            --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-            "${PROTO_DIR}/orc_proto.proto"
-            # Without these, the generated sources are not regenerated when the schema or
-            # `protoc` itself changes, and a stale `orc_proto.pb.h` is compiled instead.
-            DEPENDS "${PROTO_DIR}/orc_proto.proto" ${PROTOBUF_EXECUTABLE})
-endif()
+add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
+        COMMAND ${PROTOBUF_EXECUTABLE}
+        -I ${PROTO_DIR}
+        --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+        "${PROTO_DIR}/orc_proto.proto"
+        # Without these, the generated sources are not regenerated when the schema or
+        # `protoc` itself changes, and a stale `orc_proto.pb.h` is compiled instead.
+        DEPENDS "${PROTO_DIR}/orc_proto.proto" ${PROTOBUF_EXECUTABLE})
 
-# === Arrow IPC metadata bindings
-# Arrow's pre-generated `generated/*_generated.h` are pinned by a `static_assert` to the FlatBuffers
-# version they were produced with, so regenerate them with our `flatc`. The flags are from Arrow's
-# `cpp/build-support/update-flatbuffers.sh`, minus `--scoped-enums`, which Arrow's code does not use.
+# === flatbuffers
+set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
+set(FLATBUFFERS_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
+set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_SRC_DIR}/include")
 
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
-    set(FLATC_EXECUTABLE "${PROJECT_BINARY_DIR}/native/contrib/flatbuffers-cmake/flatc")
-else ()
-    set(FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
-endif()
+set(FLATBUFFERS_SRCS
+  ${FLATBUFFERS_SRC_DIR}/src/idl_parser.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/idl_gen_text.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/reflection.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/util.cpp)
 
-set(ARROW_FORMAT_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/format")
-# The bindings live in a "generated" subdirectory of the include directory, because that is how
-# Arrow's sources spell them: #include "generated/Message_generated.h".
-set(ARROW_IPC_GENERATED_INCLUDE_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
-set(ARROW_IPC_GENERATED_DIR "${ARROW_IPC_GENERATED_INCLUDE_DIR}/generated")
-
-set(ARROW_FBS
-  ${ARROW_FORMAT_DIR}/File.fbs
-  ${ARROW_FORMAT_DIR}/Message.fbs
-  ${ARROW_FORMAT_DIR}/Schema.fbs
-  ${ARROW_FORMAT_DIR}/SparseTensor.fbs
-  ${ARROW_FORMAT_DIR}/Tensor.fbs
-  ${ARROW_SRC_DIR}/arrow/ipc/feather.fbs)
-
-set(ARROW_IPC_GENERATED_HEADERS
-  ${ARROW_IPC_GENERATED_DIR}/File_generated.h
-  ${ARROW_IPC_GENERATED_DIR}/Message_generated.h
-  ${ARROW_IPC_GENERATED_DIR}/Schema_generated.h
-  ${ARROW_IPC_GENERATED_DIR}/SparseTensor_generated.h
-  ${ARROW_IPC_GENERATED_DIR}/Tensor_generated.h
-  ${ARROW_IPC_GENERATED_DIR}/feather_generated.h)
-
-add_custom_command(OUTPUT ${ARROW_IPC_GENERATED_HEADERS}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${ARROW_IPC_GENERATED_DIR}"
-        COMMAND ${FLATC_EXECUTABLE}
-        --cpp
-        --cpp-std c++11
-        --no-warnings
-        -o "${ARROW_IPC_GENERATED_DIR}"
-        ${ARROW_FBS}
-        DEPENDS ${ARROW_FBS} ${FLATC_EXECUTABLE})
-
-add_custom_target(_arrow_ipc_generated DEPENDS ${ARROW_IPC_GENERATED_HEADERS})
-
-# Interface target exposing only the FlatBuffers-generated Arrow IPC metadata headers
-# (Message_generated.h, Schema_generated.h, File_generated.h) plus the FlatBuffers library.
-# The native Arrow IPC reader/writer (src/Processors/Formats/Impl/ArrowIPC) links this instead
-# of the Apache Arrow C++ runtime: it parses/builds the IPC metadata with FlatBuffers and decodes
-# the buffers directly to/from ClickHouse columns. The include base ".../cpp/src" lets the code
-# use <generated/Message_generated.h> while the generated headers' own relative includes resolve.
-add_library(_arrow_ipc_metadata INTERFACE)
-target_include_directories(_arrow_ipc_metadata SYSTEM INTERFACE "${ARROW_IPC_GENERATED_INCLUDE_DIR}" "${ARROW_SRC_DIR}")
-target_link_libraries(_arrow_ipc_metadata INTERFACE ch_contrib::flatbuffers)
-add_dependencies(_arrow_ipc_metadata _arrow_ipc_generated)
-add_library(ch_contrib::arrow_ipc_metadata ALIAS _arrow_ipc_metadata)
+add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
+target_include_directories(_flatbuffers PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
+target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 
 
 # ===  hdfs
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
 set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/")
-
-# Everything down to the end of the `_orc` target below is ORC. Left un-indented inside the
-# condition to keep it comparable with the Arrow build description it was transcribed from.
-if (ENABLE_ORC)
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard.
@@ -280,8 +229,6 @@ target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_BUILD_SRC_DIR}
     ${ORC_ADDITION_SOURCE_DIR}
     ${ARROW_SRC_DIR})
-
-endif() # ENABLE_ORC
 
 # === arrow
 
@@ -525,11 +472,6 @@ set(ARROW_SRCS
         "${ARROW_SRC_DIR}/arrow/adapters/orc/options.cc"
         )
 
-if (NOT ENABLE_ORC)
-    # The Arrow-to-ORC adapter is the one part of Arrow that includes `orc/OrcFile.hh`.
-    list (FILTER ARROW_SRCS EXCLUDE REGEX "/adapters/orc/")
-endif()
-
 add_definitions(-DARROW_WITH_BROTLI)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
 
@@ -549,43 +491,13 @@ add_definitions(-DARROW_WITH_ZSTD)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
 
 
-# Enable Arrow's SIMD codepaths (bit unpacking, byte stream split, UTF-8 validation); otherwise they fall back
-# to scalar. These headers include <xsimd/xsimd.hpp>, hence the xsimd dependency. Our production target is ARM,
-# where NEON is part of the aarch64 baseline. On x86 we follow X86_ARCH_LEVEL: the build already targets
-# x86-64-v${X86_ARCH_LEVEL}, so when it is >= 3 (AVX2/BMI2 guaranteed) the AVX2 sources compile under the base
-# -march with no extra flags. Lower levels keep the scalar path.
-#
-# The defines are applied with target_compile_definitions(... PUBLIC) below rather than add_definitions(),
-# because Arrow's SIMD entry points are inline in headers: ClickHouse code that includes them (e.g. the native
-# Parquet decoder calling ByteStreamSplitDecode) must see the same defines to pick the SIMD path.
-set(ARROW_SIMD_DEFS "")
-if (ARCH_AARCH64)
-    set(ARROW_SIMD_DEFS ARROW_HAVE_NEON)
-elseif (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
-    set(ARROW_SIMD_DEFS
-        ARROW_HAVE_SSE4_2 ARROW_HAVE_AVX2 ARROW_HAVE_BMI2
-        ARROW_HAVE_RUNTIME_SSE4_2 ARROW_HAVE_RUNTIME_AVX2 ARROW_HAVE_RUNTIME_BMI2)
-    # bpacking's unpack() has no compile-time AVX2 path, only a runtime-dispatched one, so its source is needed.
-    SET(ARROW_SRCS ${ARROW_SRCS}
-        "${LIBRARY_DIR}/util/bpacking_simd_256.cc"
-        "${LIBRARY_DIR}/util/byte_stream_split_internal_avx2.cc")
-    if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 4)
-        list (APPEND ARROW_SIMD_DEFS ARROW_HAVE_AVX512 ARROW_HAVE_RUNTIME_AVX512)
-        SET(ARROW_SRCS ${ARROW_SRCS} "${LIBRARY_DIR}/util/bpacking_simd_avx512.cc")
-    endif ()
-endif ()
-
-
 add_library(_arrow ${ARROW_SRCS})
-if (ARROW_SIMD_DEFS)
-    target_compile_definitions(_arrow PUBLIC ${ARROW_SIMD_DEFS})
-endif ()
 add_library(ch_contrib::arrow ALIAS _arrow)
 
 target_link_libraries(_arrow PRIVATE
     boost::filesystem
 
-    ch_contrib::flatbuffers
+    _flatbuffers
 
     ch_contrib::double_conversion
 
@@ -595,21 +507,19 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::zstd
     ch_contrib::brotli
     ch_contrib::bzip2
+    ch_contrib::curl
 )
-# PUBLIC so the xsimd headers are visible to _parquet too (it links _arrow PUBLIC).
+# Arrow 25 uses xsimd unconditionally (`cpu_info.cc` calls `xsimd::cpu_features`, and
+# `bpacking_simd_128.cc` includes `bpacking_simd_kernel_internal.h`), independently of the
+# ARROW_HAVE_* SIMD defines. PUBLIC so the headers are visible to _parquet too (it links _arrow
+# PUBLIC).
 target_link_libraries(_arrow PUBLIC ch_contrib::xsimd)
+target_link_libraries(_arrow PUBLIC _orc)
 
-if (ENABLE_ORC)
-    target_link_libraries(_arrow PUBLIC _orc)
-    # ORC is the only thing here with generated protobuf sources.
-    add_dependencies(_arrow protoc)
-endif()
+add_dependencies(_arrow protoc)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
-# Must come before ${ARROW_SRC_DIR}, so that our generated bindings shadow the ones Arrow ships.
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_IPC_GENERATED_INCLUDE_DIR})
-add_dependencies(_arrow _arrow_ipc_generated)
 
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
 
@@ -633,6 +543,7 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/benchmark_util.cc"
         "${LIBRARY_DIR}/bloom_filter.cc"
         "${LIBRARY_DIR}/bloom_filter_reader.cc"
+        "${LIBRARY_DIR}/bloom_filter_writer.cc"
         "${LIBRARY_DIR}/chunker_internal.cc"
         "${LIBRARY_DIR}/column_reader.cc"
         "${LIBRARY_DIR}/column_scanner.cc"
@@ -681,23 +592,12 @@ set(PARQUET_SRCS
         "${GEN_LIBRARY_DIR}/parquet_types.cpp"
         )
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
-
-# The Bloom filter dispatch table references `FindHashBlockAvx2` whenever AVX2 is available, so the
-# kernel has to be built. Unlike `level_comparison_avx2.cc` this one is x86-only (it instantiates
-# `xsimd::batch<uint32_t, xsimd::avx2>`), so it must not be added on other architectures.
-if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
-    list (APPEND PARQUET_SRCS "${LIBRARY_DIR}/bloom_filter_avx2.cc")
-endif ()
-
 add_library(_parquet ${PARQUET_SRCS})
 add_library(ch_contrib::parquet ALIAS _parquet)
 target_include_directories(_parquet SYSTEM BEFORE
     PUBLIC
-        # Same as for `_arrow`: must come before the Arrow source directory.
-        "${ARROW_IPC_GENERATED_INCLUDE_DIR}"
         "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src")
-add_dependencies(_parquet _arrow_ipc_generated)
 target_link_libraries(_parquet
     PUBLIC
         _arrow
@@ -708,7 +608,7 @@ target_link_libraries(_parquet
         OpenSSL::Crypto OpenSSL::SSL
         ch_contrib::rapidjson)
 
-if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
+if (SANITIZE STREQUAL "undefined")
     target_compile_options(_parquet PRIVATE -fno-sanitize=undefined)
     target_compile_options(_arrow PRIVATE -fno-sanitize=undefined)
 endif ()
