@@ -255,3 +255,35 @@ remote_read:
       username: default
       password: <password>
 ```
+
+## Recording rules {#recording-rules}
+
+ClickHouse doesn't evaluate Prometheus rule files. A [refreshable materialized view](/reference/statements/create/view#refreshable-materialized-view) can do the work of a [recording rule](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/): it evaluates a PromQL expression on a schedule and appends the result to a `TimeSeries` table. The following view records `sum by (job) (rate(http_requests_total[5m]))` as `job:http_requests:rate5m` every minute:
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+Each refresh evaluates the expression at the start of the current minute, sets the metric name with `mapUpdate`, and appends one sample for each series of the result. Extra labels can be added to the same map, for example `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`. The recorded series is queried like any other metric:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+The time and the error of the last evaluation are shown in [`system.view_refreshes`](/reference/system-tables/view_refreshes).
+
+A view differs from a Prometheus recording rule in these ways:
+
+- The evaluation time is `now()` when the refresh runs. Besides the schedule, a view refreshes right after it's created (unless it's created with `EMPTY`), after a server restart if its refreshes are not coordinated (a view outside a Replicated or Shared database, or one with `all_replicas = 1`, doesn't remember its last refresh), and when `SYSTEM START VIEW` resumes it after it missed a scheduled refresh. Round `now()` down to the interval as the example does, so that these refreshes don't add samples between the scheduled ones. An extra refresh can still write a second sample at the same rounded timestamp. For a five-minute rule, use `toStartOfInterval(now(), INTERVAL 5 MINUTE)`.
+- Missed evaluations are not caught up. After the server was down or the view was stopped, the view evaluates only the current interval, and the intervals before it stay empty. The same happens when a refresh takes longer than the interval.
+- A series that drops out of the result gets no staleness marker, so queries keep returning its last recorded value for the lookback period, 5 minutes by default.
+- There is no rule file: each rule is a separate view. The rules are not listed by `/api/v1/rules`.
