@@ -1054,10 +1054,11 @@ void MemoryWorker::updateResidentMemoryThread()
 #endif
             if (rebaseline_tracker) [[unlikely]]
             {
-#if USE_JEMALLOC
-                MemoryTracker::updateAllocated(getJemallocAllocated(), /*log_change=*/true);
-#elif defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+                /// The sanitizer allocator bytes take precedence, like in `getMemoryUsage`: the tracker follows that allocator.
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/true);
+#elif USE_JEMALLOC
+                MemoryTracker::updateAllocated(getJemallocAllocated(), /*log_change=*/true);
 #else
                 MemoryTracker::updateAllocated(0, /*log_change=*/true);
 #endif

@@ -69,24 +69,16 @@ struct DirtyDecayDisabler
         setForAllArenas(previous_decay_ms);
     }
 
-    /// Best-effort, like `MemoryWorker::setDirtyDecayForAllArenas`: some arenas may be inaccessible. It also runs
-    /// from the destructor, where an exception would terminate the whole test binary. If the decay is not disabled
-    /// for some arena, the test checks below that the freed pages are still resident fail with a clear message.
-    static void setForAllArenas(ssize_t decay_ms) noexcept
+    /// Best-effort, like `MemoryWorker::setDirtyDecayForAllArenas`: some arenas may be inaccessible, and
+    /// `Jemalloc::setValue` ignores the failure for them. If the decay is not disabled for some arena,
+    /// the test checks below that the freed pages are still resident fail with a clear message.
+    static void setForAllArenas(ssize_t decay_ms)
     {
         unsigned narenas = 0;
         if (!DB::Jemalloc::tryGetValue("arenas.narenas", narenas))
             return;
         for (unsigned i = 0; i < narenas; ++i)
-        {
-            try
-            {
-                DB::Jemalloc::setValue<ssize_t>(fmt::format("arena.{}.dirty_decay_ms", i).c_str(), decay_ms);
-            }
-            catch (...) // Ok: some arenas might not exist or be accessible, skip them
-            {
-            }
-        }
+            DB::Jemalloc::setValue<ssize_t>(fmt::format("arena.{}.dirty_decay_ms", i).c_str(), decay_ms);
     }
 };
 
