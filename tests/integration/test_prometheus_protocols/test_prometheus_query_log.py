@@ -193,14 +193,15 @@ def test_remote_write_failure_records_http_status_in_span_log():
     )
 
 
-def test_query_api_setup_failure_records_http_status_in_span_log():
+@pytest.mark.parametrize("bad_param", ["no_such_setting_for_span_test=1", "stacktrace=wat"])
+def test_query_api_setup_failure_records_http_status_in_span_log(bad_param):
     """
-    A request that fails before the query runs, here on an unknown setting, should still
+    A request that fails before the query runs, on a bad parameter, should still
     record a PrometheusRequestHandler span with the HTTP status that the client got.
     """
     trace_id = str(uuid.uuid4())
     traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
-    url = f"http://{node.ip_address}:9093/api/v1/query?query=up&no_such_setting_for_span_test=1"
+    url = f"http://{node.ip_address}:9093/api/v1/query?query=up&{bad_param}"
     response = get_response_to_http_api(url, headers={"traceparent": traceparent})
     assert response.status_code >= 400
 

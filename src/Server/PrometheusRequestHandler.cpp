@@ -150,14 +150,6 @@ protected:
             params.reset();
         });
 
-        const auto & method = request.getMethod();
-        if (shouldParseFormFromRequestBody(request)
-            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
-            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
-        else
-            params = std::make_unique<HTMLForm>(default_settings, request);
-        parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
-
         session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
 
         /// Parse the OpenTelemetry traceparent header.
@@ -184,6 +176,14 @@ protected:
 
         try
         {
+            const auto & method = request.getMethod();
+            if (shouldParseFormFromRequestBody(request)
+                && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
+                params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
+            else
+                params = std::make_unique<HTMLForm>(default_settings, request);
+            parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
+
             /// If the user is not authenticated yet, the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
             /// and `request_credentials` must be preserved until the next request or until any exception.
             if (authenticateUser(request, response))
