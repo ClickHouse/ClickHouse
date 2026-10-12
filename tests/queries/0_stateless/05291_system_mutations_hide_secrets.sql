@@ -3,7 +3,7 @@
 
 -- A mutation entry keeps the real text of its commands, because the mutation is executed from it (on every
 -- replica, for replicated tables). `system.mutations.command` must still hide the credentials of the table
--- functions in the mutation subqueries, the way `system.query_log` does.
+-- functions in the mutation subqueries, the way the query log does.
 
 SET mutations_sync = 0;
 SET lightweight_deletes_sync = 0;
@@ -31,6 +31,9 @@ DELETE FROM t_05291 WHERE id IN
     (SELECT c1::UInt64 FROM s3('http://127.0.0.1:1/nope.csv', 'AKIAFAKEKEYID', 'SECRET05291LIGHTWEIGHT', 'CSV', 'c1 String'));
 ALTER TABLE t_05291_replicated DELETE WHERE id IN
     (SELECT c1::UInt64 FROM s3('http://127.0.0.1:1/nope.csv', 'AKIAFAKEKEYID', 'SECRET05291REPLICATED', 'CSV', 'c1 String'));
+
+-- The replica loads the mutations from ZooKeeper asynchronously; `PULL` fetches them synchronously.
+SYSTEM SYNC REPLICA t_05291_replicated PULL;
 
 SELECT table, command FROM system.mutations WHERE database = currentDatabase() ORDER BY table, mutation_id;
 
