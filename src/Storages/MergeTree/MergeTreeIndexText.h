@@ -458,7 +458,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const override;
+    void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState & state) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return sorted_tokens.empty(); }

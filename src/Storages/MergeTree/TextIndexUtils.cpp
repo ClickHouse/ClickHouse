@@ -230,7 +230,7 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         writer_settings);
 
     writeMarks(streams, writer_settings.can_use_adaptive_granularity);
-    granule->serializeBinaryWithMultipleStreams(streams);
+    granule->serializeBinaryWithMultipleStreams(streams, /*state=*/ {});
 
     for (auto & stream : streams_holders)
         stream->finalize();

@@ -468,7 +468,7 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
     return substreams;
 }
 
-void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
+void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState &) const
 {
     auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
     serializeBinary(stream->compressed_hashing);

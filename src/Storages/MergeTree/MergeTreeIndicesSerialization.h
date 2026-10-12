@@ -71,6 +71,17 @@ struct MergeTreeIndexFormat
 using MergeTreeIndexWriterStream = MergeTreeWriterStream;
 using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexWriterStream *>;
 
+class MergeTreeIndexGranularity;
+
+struct MergeTreeIndexSerializationState
+{
+    /// Granularity of the part the index is written to. Null for the temporary segments of the text index materialization.
+    const MergeTreeIndexGranularity * index_granularity = nullptr;
+    bool can_use_adaptive_granularity = false;
+    /// Marks to prewarm the mark cache, by stream name. Marks written by the index itself must be added here too.
+    PlainMarksByName * cached_marks = nullptr;
+};
+
 using MergeTreeIndexReaderStream = MergeTreeReaderStream;
 using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexReaderStream *>;
 
