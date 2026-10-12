@@ -21,6 +21,13 @@
 1000995	1000995
 1000992	1000992
 66798
+--- with a predicate on _path
+100998	100998
+100995	100995
+100992	100992
+100998	100998
+100995	100995
+100992	100992
 --- a new snapshot
 100999
 100998
@@ -50,6 +57,8 @@ nowhere_plain	0	0
 nowhere_asc	1	0
 where_1	1	0
 where_2	1	1
+where_path_1	1	0
+where_path_2	1	1
 deleted_nowhere_1	1	0
 deleted_where_1	1	0
 deleted_nowhere_2	1	1
