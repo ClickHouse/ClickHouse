@@ -686,20 +686,23 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
-    /// What removing the columns at `unneeded_output_positions` comes to, worked out on the given filters, which it
-    /// prunes: the output positions that go away, the columns the read reads then, and whether a filter changed.
+    /// What removing the columns at `unneeded_output_positions` comes to, worked out without changing anything.
     struct ColumnPruning
     {
+        /// The output positions that go away.
         std::vector<size_t> dropped_output_positions;
-        Names column_names;
-        bool changes_filters = false;
+        /// The output positions of the row policy filter, which PREWHERE reads, that nothing needs.
+        std::vector<size_t> unneeded_row_level_output_positions;
+        /// The positions in `all_column_names` the read stops reading, sorted.
+        std::vector<size_t> dropped_storage_positions;
+        /// For each output position, the position in `all_column_names` of the column it is, unchanged, if it is one.
+        std::vector<std::optional<size_t>> storage_position_of_output;
     };
-    ColumnPruning pruneColumns(
-        const std::vector<size_t> & unneeded_output_positions,
-        const PrewhereInfoPtr & prewhere_info,
-        const FilterDAGInfoPtr & row_level_filter) const;
-    /// Makes this read read `pruning.column_names`, with the filters it was worked out on.
-    RemoveUnusedColumnsResult applyColumnPruning(ColumnPruning pruning);
+    ColumnPruning pruneColumns(const std::vector<size_t> & unneeded_output_positions) const;
+    /// Of the dropped output positions, the ones a lazy read can read: storage columns the read stops reading.
+    std::vector<size_t> getLazilyReadablePositions(const ColumnPruning & pruning) const;
+    /// Prunes the filters and the columns of this read as `pruning` says.
+    RemoveUnusedColumnsResult applyColumnPruning(const ColumnPruning & pruning);
 
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
