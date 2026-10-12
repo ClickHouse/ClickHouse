@@ -169,6 +169,19 @@ inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
     return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
 }
 
+/// A `ColumnSet` argument arrives wrapped in `ColumnConst` whether or not its set has been built, so
+/// const-ness alone does not make it foldable: an unbuilt set carries no value yet, and `in` over it
+/// can only answer with the dummy it reserves for a not-ready set.
+inline bool columnHoldsUnbuiltSet(const IColumn & column)
+{
+    const auto * column_set = typeid_cast<const ColumnSet *>(&column);
+    if (!column_set)
+        return false;
+
+    auto future_set = column_set->getData();
+    return !future_set || !future_set->get();
+}
+
 /// Whether the body of a lambda can be evaluated once and its value reused for every row of the query.
 /// Every function in the body has to allow constant folding, and it also has to keep the same value for the
 /// whole query: a folded lambda becomes a constant `ColumnFunction`, which makes the higher-order function
@@ -196,12 +209,8 @@ inline bool isLambdaBodySuitableForConstantFolding(const ExpressionActions & exp
                 {
                     /// Same check getFunctionArguments does for direct children: an IN set
                     /// that has not been built yet cannot be substituted at plan time.
-                    if (const auto * column_set = typeid_cast<const ColumnSet *>(&inner_node.column->getDataColumn()))
-                    {
-                        auto future_set = column_set->getData();
-                        if (!future_set || !future_set->get())
-                            return false;
-                    }
+                    if (columnHoldsUnbuiltSet(inner_node.column->getDataColumn()))
+                        return false;
 
                     /// A nested lambda, folded into a constant `ColumnFunction`, together with the lambdas nested in it.
                     if (!allColumnFunctions(*inner_node.column, function_can_be_folded))
@@ -322,13 +331,18 @@ public:
 
         auto function = std::make_unique<FunctionExpression>(capture, expression_actions);
 
-        /// If all the captured arguments are constant, let's also return ColumnConst (with ColumnFunction inside it).
+        /// If all the captured arguments are constant and already carry a value, let's also return ColumnConst
+        /// (with ColumnFunction inside it).
         /// Consequently, it allows to treat higher order functions with constant arrays and constant captured columns
         /// as constant expressions.
         /// Consequently, it allows its usage in contexts requiring constants, such as the right hand side of IN.
         bool constant_folding = capture->allow_constant_folding
             && std::all_of(arguments.begin(), arguments.end(),
-            [](const auto & arg) { return arg.column->isConst(); });
+            [](const auto & arg)
+            {
+                const auto * column_const = typeid_cast<const ColumnConst *>(arg.column.get());
+                return column_const && !columnHoldsUnbuiltSet(column_const->getDataColumn());
+            });
 
         if (constant_folding)
         {
