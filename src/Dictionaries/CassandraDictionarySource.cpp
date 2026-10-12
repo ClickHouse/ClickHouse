@@ -8,6 +8,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <IO/WriteHelpers.h>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
 #include <ranges>
@@ -118,7 +119,7 @@ Setting fields:
 | `consistency` | Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`. |
 | `where` | Optional selection criteria. |
 | `max_threads` | The maximum number of idle connections to keep open for loading data, for example, from multiple partitions in compose key dictionaries. Default value is `8`. |
-| `query` | The custom query. Optional. For dictionaries with complex keys and the `cache` or `direct` layouts, it must contain the `{condition}` placeholder, which is replaced with the condition on the requested keys, because CQL does not support subqueries. |
+| `query` | The custom query. Optional. For dictionaries with complex keys and the `cache` or `direct` layouts, it must contain the `{condition}` placeholder, which is replaced with the condition on the requested keys, because CQL does not support subqueries. The placeholder must follow `WHERE` or `AND`, because it is removed together with them when the whole dictionary is loaded. |
 
 <Note>
 The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
@@ -139,6 +140,7 @@ The `column_family` or `where` fields cannot be used together with the `query` f
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
+#include <Common/StringUtils.h>
 #include <Dictionaries/CassandraSource.h>
 
 namespace DB
@@ -213,6 +215,58 @@ VectorWithMemoryTracking<String> CassandraDictionarySource::splitHosts(const Str
     return res;
 }
 
+/// For a full load, the `{condition}` placeholder of a custom query has to be removed:
+/// replacing it with a tautology like `ExternalQueryBuilder` does is not possible, because CQL has no such expressions.
+/// The placeholder is removed together with the preceding `AND`, or with `WHERE` if it is the only condition.
+static String removeConditionPlaceholderFromCQL(const String & query)
+{
+    auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
+    if (condition_position == std::string::npos)
+        return query;
+
+    String prefix = query.substr(0, condition_position);
+    String suffix = query.substr(condition_position + CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size());
+    boost::algorithm::trim_right(prefix);
+    boost::algorithm::trim_left(suffix);
+
+    auto ends_with_word = [](const String & str, std::string_view word)
+    {
+        return boost::algorithm::iends_with(str, word)
+            && (str.size() == word.size() || isWhitespaceASCII(str[str.size() - word.size() - 1]));
+    };
+
+    auto starts_with_word = [](const String & str, std::string_view word)
+    {
+        return boost::algorithm::istarts_with(str, word)
+            && (str.size() == word.size() || isWhitespaceASCII(str[word.size()]));
+    };
+
+    if (ends_with_word(prefix, "AND"))
+    {
+        prefix.resize(prefix.size() - 3);
+    }
+    else if (ends_with_word(prefix, "WHERE"))
+    {
+        /// `WHERE {condition} AND ...` - keep `WHERE` and remove the following `AND`.
+        if (starts_with_word(suffix, "AND"))
+            suffix.erase(0, 3);
+        else
+            prefix.resize(prefix.size() - 5);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "The {} placeholder in a custom query of a Cassandra dictionary source must follow WHERE or AND: '{}'",
+            CONDITION_PLACEHOLDER_TO_REPLACE_VALUE, query);
+    }
+
+    boost::algorithm::trim_right(prefix);
+    boost::algorithm::trim_left(suffix);
+    if (suffix.empty() || suffix.starts_with(';'))
+        return prefix + suffix;
+    return prefix + ' ' + suffix;
+}
+
 CassandraDictionarySource::CassandraDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
@@ -260,7 +314,7 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
 
 BlockIO CassandraDictionarySource::loadAll()
 {
-    String query = query_builder.composeLoadAllQuery();
+    String query = configuration.query.empty() ? query_builder.composeLoadAllQuery() : removeConditionPlaceholderFromCQL(configuration.query);
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading all using query: {}", query);
     BlockIO io;

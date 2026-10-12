@@ -207,3 +207,102 @@ def test_errors(started_cluster, paging_table):
         assert "ALL_CONNECTION_TRIES_FAILED" in error
     finally:
         node.query("DROP DICTIONARY unreachable_dict")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT id, value FROM paging.t",
+        "SELECT id, value FROM paging.t WHERE {condition}",
+        "SELECT id, value FROM paging.t WHERE {condition} AND value > \\'\\' ALLOW FILTERING",
+        "SELECT id, value FROM paging.t WHERE value > \\'\\' AND {condition} ALLOW FILTERING;",
+    ],
+)
+def test_custom_query_load_all(started_cluster, paging_table, query):
+    """
+    A full load with a custom query, with and without the `{condition}` placeholder,
+    which is removed together with `WHERE` or `AND` for a full load, because CQL has no tautologies.
+    """
+    node.query(
+        f"""
+        CREATE DICTIONARY query_all_dict (id UInt64, value String)
+        PRIMARY KEY id
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            query '{query}'))
+        LAYOUT(HASHED())
+        LIFETIME(0)
+        """
+    )
+    try:
+        assert node.query(
+            "SELECT count(), sum(id), sum(length(value)) FROM query_all_dict"
+        ) == node.query(
+            f"SELECT count(), sum(number), sum(length('value_' || toString(number))) FROM numbers({PAGING_ROWS})"
+        )
+    finally:
+        node.query("DROP DICTIONARY query_all_dict")
+
+
+@pytest.mark.parametrize("layout", ["DIRECT", "COMPLEX_KEY_DIRECT"])
+def test_custom_query_selective_load(started_cluster, paging_table, layout):
+    """
+    A selective load with a custom query, where `{condition}` is replaced with
+    the condition on the requested keys (`loadIds` for `DIRECT`, `loadKeys` for `COMPLEX_KEY_DIRECT`).
+    """
+    node.query(
+        f"""
+        CREATE DICTIONARY query_selective_dict (id UInt64, value String)
+        PRIMARY KEY id
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            query 'SELECT id, value FROM paging.t WHERE {{condition}}'))
+        LAYOUT({layout}())
+        """
+    )
+    try:
+        key = "12345::UInt64" if layout == "DIRECT" else "tuple(12345::UInt64)"
+        missing_key = (
+            f"{PAGING_ROWS}::UInt64"
+            if layout == "DIRECT"
+            else f"tuple({PAGING_ROWS}::UInt64)"
+        )
+        assert (
+            node.query(f"SELECT dictGet('query_selective_dict', 'value', {key})")
+            == "value_12345\n"
+        )
+        assert (
+            node.query(
+                f"SELECT dictGetOrDefault('query_selective_dict', 'value', {missing_key}, 'missing')"
+            )
+            == "missing\n"
+        )
+    finally:
+        node.query("DROP DICTIONARY query_selective_dict")
+
+
+def test_custom_query_selective_load_without_condition(started_cluster, paging_table):
+    """
+    CQL does not support subqueries, so loading keys with a custom query requires `{condition}`.
+    """
+    node.query(
+        f"""
+        CREATE DICTIONARY query_no_condition_dict (id UInt64, value String)
+        PRIMARY KEY id
+        SOURCE(CASSANDRA(
+            host '{started_cluster.cassandra_host}'
+            port {started_cluster.cassandra_port}
+            query 'SELECT id, value FROM paging.t'))
+        LAYOUT(COMPLEX_KEY_DIRECT())
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            "SELECT dictGet('query_no_condition_dict', 'value', tuple(1::UInt64))"
+        )
+        assert "UNSUPPORTED_METHOD" in error
+        assert "{condition}" in error
+    finally:
+        node.query("DROP DICTIONARY query_no_condition_dict")
