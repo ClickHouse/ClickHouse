@@ -185,7 +185,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .part_info = *data_part_info,
             .index = *index,
             .readable_ranges = readable_ranges,
-            .skip_postings_deserialization = false,
+            .text_index_read_postings = true,
             .reader_settings = settings,
         };
 
