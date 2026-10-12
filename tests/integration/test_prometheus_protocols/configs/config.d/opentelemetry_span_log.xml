@@ -1,0 +1,12 @@
+<clickhouse>
+    <opentelemetry_span_log>
+        <engine>
+            engine = MergeTree
+            PARTITION BY toYYYYMM(finish_date)
+            ORDER BY (finish_date, finish_time_us, trace_id)
+        </engine>
+        <database>system</database>
+        <table>opentelemetry_span_log</table>
+        <flush_interval_milliseconds>300</flush_interval_milliseconds>
+    </opentelemetry_span_log>
+</clickhouse>
