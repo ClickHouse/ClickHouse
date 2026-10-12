@@ -14,8 +14,6 @@ namespace DB
 
 /// A model of the stages ("query fragments") of a distributed query plan and of the exchanges between them,
 /// built from the output of `makeDistributedPlan`. It is used to explain the shape of a distributed query.
-/// The `IN`-subquery sets of the query are fragments of the same graph: the fragment that fills a set and its
-/// worker stages hand the set to its readers through `SetValues` exchanges.
 
 /// An edge from a producer fragment to the fragment that consumes its output.
 struct FragmentDependency

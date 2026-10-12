@@ -294,10 +294,7 @@ FragmentDependency::Type classifyDependency(
 }
 
 /// Scans with no dependencies come out at level 0 and the root at the top. The ids assigned by the
-/// cutter already ascend from producers to consumers; the topological sort here does not rely on that:
-/// it computes the depth and rejects a cycle, a missing producer, or a graph without exactly one root
-/// (a fragment no other fragment depends on) with the `Initiator` role. Several fragments may have the
-/// `Initiator` role, because the fragments that fill `IN`-subquery sets also run on the initiator.
+/// cutter already ascend from producers to consumers; the topological sort here does not rely on that
 void computeLevels(FragmentGraph & graph)
 {
     const size_t num_fragments = graph.fragments.size();
