@@ -1,4 +1,5 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunner.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunOrder.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -12,8 +13,6 @@
 #include <Common/ThreadStatus.h>
 #include <base/scope_guard.h>
 
-#include <algorithm>
-#include <limits>
 #include <utility>
 
 namespace DB
@@ -26,35 +25,6 @@ namespace ErrorCodes
 
 namespace Runtime::V2
 {
-
-constexpr UInt64 light_work_ns = 5'000;
-
-static void sortRunnable(VectorWithMemoryTracking<ExecutingProcessor *> & runnable, const ExecutingProcessor & picked)
-{
-    const auto works = [](const ExecutingProcessor * record)
-    {
-        const auto status = record->status.load();
-        return status == ExecutingProcessor::Status::Work || status == ExecutingProcessor::Status::AsyncReady;
-    };
-
-    UInt64 heaviest_parallel = 0;
-    for (const auto * record : runnable)
-        if (works(record) && record->siblings > 1 && record->work_ns >= light_work_ns)
-            heaviest_parallel = std::max(heaviest_parallel, record->work_ns);
-
-    const auto cost = [&](const ExecutingProcessor * record)
-    {
-        if (!works(record))
-            return UInt64(0);
-        if (record->siblings > 1)
-            return record->work_ns >= light_work_ns ? record->work_ns : UInt64(0);
-        if (record == &picked && record->work_ns < heaviest_parallel)
-            return std::numeric_limits<UInt64>::max();
-        return UInt64(0);
-    };
-
-    std::stable_sort(runnable.begin(), runnable.end(), [&](const ExecutingProcessor * left, const ExecutingProcessor * right) { return cost(left) > cost(right); });
-}
 
 void ProcessorRunner::runPrepare(ExecutingProcessor & picked)
 {

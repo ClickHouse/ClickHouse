@@ -24,14 +24,13 @@ class Worker
     bool keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag);
     ExecutingProcessor * pick(WorkerSlot & slot, std::atomic_bool * yield_flag);
     ExecutingProcessor * tryPick();
-    ExecutingProcessor * pickFromBatch(std::span<ExecutingProcessor *> batch);
+    ExecutingProcessor * pickFromBatch(std::span<ExecutingProcessor *> batch, bool source_not_empty);
     ExecutingProcessor * pickFromFired(std::span<ExecutingProcessor *> fired);
     size_t trySteal(size_t rounds);
     bool anyWorkHasAppeared() const;
 
     /// Population.
     void pushManyLifo(std::span<ExecutingProcessor * const> many);
-    bool worthWaking(std::span<ExecutingProcessor * const> found) const;
     void wakeWorker();
     void execute(ExecutingProcessor & executing);
     void finishRun();

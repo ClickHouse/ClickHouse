@@ -1,5 +1,6 @@
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunOrder.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Enabled.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
@@ -25,7 +26,6 @@ constexpr size_t steal_rounds = 4;
 constexpr size_t max_take_from_global = LocalQueue::capacity / 2;
 constexpr double shuffle_probability = 0.125;
 constexpr double early_offload_probability = 0.125;
-constexpr UInt64 cheap_work_ns = 5'000;
 
 void injectShuffle(std::span<ExecutingProcessor *> batch)
 {
@@ -138,7 +138,7 @@ ExecutingProcessor * Worker::tryPick()
     if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
     {
         metrics.global_picks += 1;
-        return pickFromBatch(std::span(tmp_buffer).first(count));
+        return pickFromBatch(std::span(tmp_buffer).first(count), pool.global_tasks.size() > 0);
     }
 
     if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
@@ -156,17 +156,18 @@ ExecutingProcessor * Worker::tryPick()
         pool.coordinator.stopStealing();
         metrics.steal_picks += count > 0;
         metrics.steal_misses += count == 0;
-        return count > 0 ? pickFromBatch(std::span(tmp_buffer).first(count)) : nullptr;
+        return count > 0 ? pickFromBatch(std::span(tmp_buffer).first(count), true) : nullptr;
     }
 
     return nullptr;
 }
 
-ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor *> batch)
+ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor *> batch, bool source_not_empty)
 {
     injectShuffle(batch);
     pushManyLifo(batch.first(batch.size() - 1));
-    wakeWorker();
+    if (batch.size() > 1 || source_not_empty)
+        wakeWorker();
     return batch.back();
 }
 
@@ -177,7 +178,7 @@ ExecutingProcessor * Worker::pickFromFired(std::span<ExecutingProcessor *> fired
 
     metrics.poll_picks += 1;
     metrics.polled_records += fired.size();
-    return pickFromBatch(fired);
+    return pickFromBatch(fired, pool.poller.pending() > 0);
 }
 
 size_t Worker::trySteal(size_t rounds)
@@ -225,17 +226,6 @@ void Worker::pushManyLifo(std::span<ExecutingProcessor * const> many)
     local_tasks.pushManyLifo(many.last(kept));
 }
 
-bool Worker::worthWaking(std::span<ExecutingProcessor * const> found) const
-{
-    for (const auto * record : found)
-    {
-        const bool cheap = record->status.load() == ExecutingProcessor::Status::Work && record->work_ns > 0 && record->work_ns < cheap_work_ns;
-        if (!cheap)
-            return true;
-    }
-    return false;
-}
-
 void Worker::wakeWorker()
 {
     if (pool.coordinator.hasStealer())
@@ -270,7 +260,7 @@ void Worker::execute(ExecutingProcessor & executing)
     pool.pipeline.recordAsFinished(finished_processors);
 
     const size_t published = runnable.size() + poll_requests.size();
-    if (published > 1 && (!poll_requests.empty() || worthWaking(runnable)))
+    if (published > 1 && (!poll_requests.empty() || !allLightWork(runnable)))
         wakeWorker();
 }
 
