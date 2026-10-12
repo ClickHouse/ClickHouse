@@ -154,16 +154,15 @@ namespace
                 DB::ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive merge.");
     }
 
-    /// Emplaces a staged key into `table` with its routing hash. String-like keys were
-    /// staged as raw characters and are rebuilt here, pointing into the record: the records of a
-    /// partition are freed only after every table holding its keys is converted or written.
-    template <typename Key, typename Table>
-    void ALWAYS_INLINE emplaceStagedKey(
-        Table & table, const char * key_pos, size_t key_size, size_t routing_hash, typename Table::LookupResult & it, bool & inserted)
+    /// Reads a staged key back from its record. String-like keys were staged as raw characters and are rebuilt pointing
+    /// into the record: the records of a partition are freed only after every table holding its keys is converted or
+    /// written.
+    template <typename Key>
+    Key ALWAYS_INLINE readStagedKey(const char * key_pos, [[maybe_unused]] size_t key_size, [[maybe_unused]] size_t routing_hash)
     {
         if constexpr (std::is_same_v<Key, std::string_view>)
         {
-            table.emplace(std::string_view(key_pos, key_size), it, inserted, routing_hash);
+            return std::string_view(key_pos, key_size);
         }
         else if constexpr (std::is_same_v<Key, PackedStringRef>)
         {
@@ -171,14 +170,20 @@ namespace
             /// (`DefaultHash<PackedStringRef>` returns it), so the rebuild reuses it instead of
             /// re-hashing the key bytes; `build` consults the functor only for lengths that
             /// store a hash, which is exactly the range the staged hash was derived from.
-            const auto key = PackedStringRef::build(
-                key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
-            table.emplace(key, it, inserted, routing_hash);
+            return PackedStringRef::build(key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
         }
         else
         {
-            table.emplace(unalignedLoad<Key>(key_pos), it, inserted, routing_hash);
+            return unalignedLoad<Key>(key_pos);
         }
+    }
+
+    /// Emplaces a staged key, read back by `readStagedKey`, into `table` with its routing hash.
+    template <typename Key, typename Table>
+    void ALWAYS_INLINE emplaceStagedKey(
+        Table & table, const char * key_pos, size_t key_size, size_t routing_hash, typename Table::LookupResult & it, bool & inserted)
+    {
+        table.emplace(readStagedKey<Key>(key_pos, key_size, routing_hash), it, inserted, routing_hash);
     }
 
     /// Emplaces the key of a source table's cell into `table` with the cell's hash. The key of a string table is a view
