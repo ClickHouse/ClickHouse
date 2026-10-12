@@ -2033,7 +2033,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
         parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
         sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
 
-    if not info.is_local_run:
+    # The export adds `Distributed` tables and materialized views to every
+    # server. The targeted and flaky checks pack many modules (or many copies of
+    # a module) into one job with higher parallelism, and with the export on, the
+    # `Integration tests (amd_asan_ubsan, db disk, targeted)` job hit its memory
+    # budget for `/docker` once `helpers/cluster.py` made it run about 1000
+    # tests. The regular shards already cover every test, so the logs are not
+    # lost.
+    if not info.is_local_run and not is_targeted_check and not is_flaky_check:
         setup_ci_logs_export_env(sw.start_time)
 
     # Setup environment variables for tests
