@@ -54,6 +54,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
@@ -1059,8 +1060,11 @@ std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
         || static_cast<Int64>(*current_file_last_modified) + version_settle_seconds > static_cast<Int64>(time(nullptr)))
         return {};
 
+    /// The URL can carry credentials (`user:password@`) or a signature in its query parameters. The cache
+    /// exposes the part name of an entry in `system.query_condition_cache` and in its logs, so the entry is
+    /// keyed by a hash of the URL instead of the URL itself.
     return QueryConditionCache::makeFilePartName(
-        curr_uri.toString(), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
+        sipHash128String(curr_uri.toString()), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
 }
 
 void StorageURLSource::writeQueryConditionCacheEntry() const
