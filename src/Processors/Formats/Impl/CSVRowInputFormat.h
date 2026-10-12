@@ -107,6 +107,11 @@ protected:
     /// only for String and FixedString, so the answer depends on nothing but the column type and is
     /// worked out once in `setDataTypes` rather than for every field of every row.
     std::vector<UInt8> skip_whitespaces_before_field;
+
+    /// Whether an empty field has to be kept as an empty value (an empty string) instead of being replaced with `NULL`, for every column of the header.
+    /// The answer depends on nothing but the column type and never changes while a file is read, so it is worked out
+    /// once in `setDataTypes` rather than for every empty field of every row.
+    std::vector<UInt8> keep_empty_value_for_field;
 };
 
 class CSVSchemaReader final : public FormatWithNamesAndTypesSchemaReader
