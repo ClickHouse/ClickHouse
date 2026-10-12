@@ -119,6 +119,12 @@
 === Try load data from 04057_empty_row_group.parquet
 
 \N	\N	\N	0	\N
+=== Try load data from 04695_variant_nested_per_row_metadata.parquet
+0	{"arr":[{"a":1},{"a":"s","p1":7}],"k0":"x"}	1	5566253437731914567
+1	{"arr":[{"a":3,"p2":8}],"k2":"y"}	1	4365366312114439503
+2	{"arr":[{"a":4},{"a":5},{"a":6,"p3":9}],"k9":"z"}	1	6956363067551263764
+
+\N	{"arr":[]}	3	16887982817397617834
 === Try load data from 68131.parquet
 0	[1,2]	1	5845551876324623491
 

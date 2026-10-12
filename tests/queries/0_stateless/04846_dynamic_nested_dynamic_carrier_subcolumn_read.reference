@@ -1,0 +1,25 @@
+named variants
+1	Array(Dynamic(max_types=2))
+2	Array(Dynamic(max_types=5))
+3	Int64
+1	[1]
+2	['x']
+3	[]
+1	[1]
+2	['x']
+3	[]
+1	[1]
+2	['x']
+3	[]
+shared variant
+1	Array(Dynamic(max_types=2))
+2	Array(Dynamic(max_types=5))
+3	Int64
+1	[1]
+2	['x']
+3	[]
+nested variant carrier stays absent
+1	Array(Variant(Int64, JSON(a UInt64)))
+2	Array(Variant(Int64, JSON))
+1	[]
+2	[42]
