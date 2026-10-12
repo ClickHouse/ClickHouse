@@ -27,7 +27,6 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_statistics;
-extern const SettingsBool use_iceberg_manifest_statistics;
 }
 
 namespace QueryPlanOptimizations
@@ -208,10 +207,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
     {
-        if (!reading->getContext()->getSettingsRef()[Setting::use_iceberg_manifest_statistics])
-            return RelationStats{};
-
-        auto estimate = reading->estimateReadFromDataLakeMetadata();
+        const auto estimate = reading->getOrCreateDataLakeReadEstimate();
         if (!estimate)
             return RelationStats{};
 

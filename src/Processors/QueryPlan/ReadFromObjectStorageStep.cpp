@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool s3_validate_etag_on_read;
     extern const SettingsBool use_iceberg_manifest_column_statistics;
+    extern const SettingsBool use_iceberg_manifest_statistics;
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_statistics;
 }
@@ -140,20 +141,18 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     data_lake_read_estimate.reset();
 }
 
-std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromDataLakeMetadata() const
+std::shared_ptr<const DataLakeReadEstimate> ReadFromObjectStorageStep::getOrCreateDataLakeReadEstimate() const
 {
+    const auto & settings = getContext()->getSettingsRef();
     /// The initiator assigns the files of this replica, so its own metadata may describe other files.
-    if (distributed_processing)
-        return std::nullopt;
-
-    if (!data_lake_read_estimate)
+    if (!data_lake_read_estimate && !distributed_processing && settings[Setting::use_iceberg_manifest_statistics])
     {
         /// Column statistics cost a bound decoding per file and column, so they are computed only when they can be used.
-        const auto & settings = getContext()->getSettingsRef();
         Names column_names;
         if (settings[Setting::use_statistics] && settings[Setting::use_iceberg_manifest_column_statistics])
             column_names = requiredSourceColumns();
-        data_lake_read_estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), column_names, getContext());
+        if (auto estimate = configuration->estimateRead(storage_snapshot->metadata, filter_actions_dag.get(), column_names, getContext()))
+            data_lake_read_estimate = std::make_shared<const DataLakeReadEstimate>(std::move(*estimate));
     }
     return data_lake_read_estimate;
 }

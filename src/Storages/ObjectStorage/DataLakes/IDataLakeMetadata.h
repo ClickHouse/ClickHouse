@@ -69,6 +69,8 @@ struct DataLakeReadEstimate
     ConditionSelectivityEstimatorPtr column_statistics;
     /// By storage column name: the number of distinct values that replaces the estimator's guess.
     std::unordered_map<String, UInt64> num_distinct_values;
+    /// By storage column name: the compressed size of the column in the remaining data files, when every file gives it.
+    std::unordered_map<String, UInt64> column_compressed_bytes;
 };
 
 class IDataLakeMetadata : boost::noncopyable
