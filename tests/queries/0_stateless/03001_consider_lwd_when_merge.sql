@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+-- no-random-detach: test checks system.parts
 DROP TABLE IF EXISTS lwd_merge;
 
 CREATE TABLE lwd_merge (id UInt64 CODEC(NONE))

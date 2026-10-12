@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings, no-replicated-database, no-object-storage, no-parallel-replicas
+# Tags: no-fasttest, no-parallel, no-random-settings, no-replicated-database, no-object-storage, no-parallel-replicas, no-random-detach
 # no-parallel: enables a global pauseable failpoint which pauses every filesystem cache write on the server.
+# no-random-detach: a random DETACH/ATTACH deadlocks against the paused cache writes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

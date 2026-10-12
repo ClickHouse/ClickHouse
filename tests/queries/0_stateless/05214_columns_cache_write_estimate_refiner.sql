@@ -1,9 +1,10 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-replicated-database, no-random-detach
 -- - no-parallel -- `SYSTEM DROP COLUMNS CACHE` is server-wide
 -- - no-random-settings, no-random-merge-tree-settings -- the test sets the refiner, the estimate
 --   budget and the part format itself
 -- - no-parallel-replicas -- another replica would do the reading
 -- - no-replicated-database -- the cache is per server
+-- - no-random-detach -- the internal `DETACH` destroys the parts of the table, which removes their entries from the columns cache
 
 -- The columns cache write estimate charges every mark the read selects, before anything is read.
 -- A read ranges refiner (`use_indexes_refiner_in_read_pools`) drops marks of those ranges when it

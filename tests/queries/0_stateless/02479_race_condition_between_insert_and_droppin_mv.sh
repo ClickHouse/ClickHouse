@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest, long
+# Tags: no-random-settings, no-fasttest, long, no-random-detach
+# no-random-detach: race condition test, DETACH/ATTACH makes it worse
 
 set -e
 

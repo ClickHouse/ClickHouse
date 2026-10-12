@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-random-detach
+-- no-random-detach: test uses Merge engine reading from multiple tables
 
 drop table if exists merge;
 set enable_analyzer = 1;

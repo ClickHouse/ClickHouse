@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Tags: long
-# ^ long: waits for the background merge pool to make progress within a bounded time window.
+# Tags: long, no-random-detach
+# ^ long: waits for the background merge pool to make progress within a bounded time window. The
+# window is generous (up to 120 s per control wait): under heavy load - e.g. a parallel test run with
+# random DETACH/ATTACH enabled suite-wide, which adds background-pool and metadata-lock contention -
+# the background merge/TTL scheduler can take much longer than usual to make progress on a table.
 # The waits are bounded by wall clock, not by a poll count: on slow builds (sanitizers, coverage) each
 # poll spawns a client whose startup alone can take seconds, and an iteration-counted loop would
 # multiply that overhead past the per-test timeout instead of giving up after the intended window.
+# no-random-detach: the test polls a control table until a background merge / TTL merge makes progress
+# within a bounded time window; a random DETACH/ATTACH before a polling query restarts the table's
+# background merge scheduling, so the merge may never complete in time and the test flakes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

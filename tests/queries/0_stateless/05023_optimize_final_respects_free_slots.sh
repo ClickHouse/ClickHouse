@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, no-random-detach
 # - no-parallel: the test toggles the server-global failpoint `merge_task_projection_stage_pause`.
 # - no-fasttest: failpoints are not available in the fast test build.
+# - no-random-detach: concurrent queries; the internal `DETACH` makes the table briefly unknown to the others.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

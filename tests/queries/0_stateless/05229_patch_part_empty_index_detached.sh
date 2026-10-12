@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-merge-tree, no-parallel, no-fasttest
+# Tags: no-replicated-database, no-shared-merge-tree, no-parallel, no-fasttest, no-random-detach
 # no-replicated-database, no-shared-merge-tree: the test reloads the table and reads
 #   `system.detached_parts`, which a replicated table recovers from another replica.
 # no-parallel: `patch_part_index_write_empty` is server-global, so a concurrent lightweight
 #   `UPDATE` would write a corrupted patch part too.
+# no-random-detach: a reattach before the checks loads and detaches the corrupted patch part too early.
 
 # A patch part carries the index of the parts it patches in `source_parts.dat`. An index without
 # source parts belongs to an empty covering part alone: for a patch part that holds rows it means the

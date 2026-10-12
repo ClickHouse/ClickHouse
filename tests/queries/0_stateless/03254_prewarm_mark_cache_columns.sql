@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
 
 SET use_columns_cache = 0;
 

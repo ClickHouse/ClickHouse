@@ -1,4 +1,5 @@
--- Tags: long, no-replicated-database, no-fasttest
+-- Tags: long, no-replicated-database, no-fasttest, no-random-detach
+-- no-random-detach: test checks deduplication
 -- Tag no-replicated-database: Unsupported type of ALTER query
 
 -- Suppress error logs because `temporary_directories_lifetime` is 1 seconds (the default value is 1 day).

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: random DETACH during async insert causes UNKNOWN_TABLE errors
 # Test that concurrent async inserts with same param names but different values
 # don't cross-contaminate data
 
