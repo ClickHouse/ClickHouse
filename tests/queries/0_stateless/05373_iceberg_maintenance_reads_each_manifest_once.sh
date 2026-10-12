@@ -2,8 +2,9 @@
 # `remove_orphan_files` and `expire_snapshots` read each manifest once, not once per snapshot that lists
 # it, and still collect every file it references.
 #
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
+# - no-replicated-database: `ALTER TABLE ... EXECUTE` runs as replicated DDL there and returns no result rows
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
