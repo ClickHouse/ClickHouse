@@ -78,7 +78,7 @@ check '(s, n) < Nullable((E, 4))' "(s, n) < toNullable(($E, 4))"
 check '(s, n) < Dynamic((E, 4))' "(s, n) < CAST(($E, 4) AS Dynamic)"
 check '(s, n) < Variant((E, 4))' "(s, n) < $VT"
 check '(s, n) IN (Nullable((E, 3)))' "(s, n) IN (toNullable(($E, 3)))"
-# A one-element tuple key: the local set holds the Enum's value as text, and the pushed filter follows it.
+# A one-element tuple key: the local set holds the Enum's name, like a bare `IN` list, and the pushed filter follows it.
 check 'tuple(s) IN (tuple(E))' "tuple(s) IN (tuple($E))"
 check 'tuple(s) IN (tuple(E), tuple(E2))' "tuple(s) IN (tuple($E), tuple($E2))"
 

@@ -14,12 +14,14 @@
 #include <Columns/ColumnVariant.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertColumnToType.h>
 
@@ -157,6 +159,20 @@ std::optional<ColumnWithTypeAndName> renderEnumLeaves(const ColumnPtr & column, 
     return ColumnWithTypeAndName{result, result_type, ""};
 }
 
+/// Whether every leaf of `type` is a string or NULL, so that no member of a set built from a constant of this type is
+/// rendered to `String` with a text serialization.
+bool holdsOnlyStrings(const DataTypePtr & type)
+{
+    auto value_type = removeLowCardinalityAndNullable(type);
+    if (isStringOrFixedString(value_type) || isNothing(value_type))
+        return true;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(value_type.get()))
+        return holdsOnlyStrings(array_type->getNestedType());
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get()))
+        return std::ranges::all_of(tuple_type->getElements(), holdsOnlyStrings);
+    return false;
+}
+
 bool holdsEnumConstant(const QueryTreeNodePtr & node)
 {
     if (const auto * constant_node = node->as<ConstantNode>())
@@ -284,11 +300,13 @@ private:
         return std::make_shared<ConstantNode>(ColumnConst::create(rendered->column, 1), rendered->type);
     }
 
-    /// The members of the set the local query builds for `lhs IN rhs`, as a scalar, a row or a list of them.
+    /// The members of the set the local query builds for `lhs IN rhs`, as a scalar, a row or a list of them. It is needed
+    /// when the constant holds an `Enum`, or when a `String` key gets a member of another type, which the local set holds
+    /// in its text serialization with the query's format settings (`true` as `bool_true_representation`).
     QueryTreeNodePtr renderInSet(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs) const
     {
         const auto * constant_node = rhs->as<ConstantNode>();
-        if (!constant_node || !holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType()))
+        if (!constant_node)
             return nullptr;
 
         /// Keys as `getSetElementsForConstantValue` sees them: a one-element tuple stays packed. A `FixedString` key gets
@@ -308,6 +326,11 @@ private:
             }
         }
         DataTypePtr set_lhs_type = lhs_tuple_type ? std::make_shared<DataTypeTuple>(key_types) : key_types.front();
+
+        bool has_string_key = std::ranges::any_of(key_types, [](const auto & key_type) { return isString(removeLowCardinalityAndNullable(key_type)); });
+        if (!holdsEnumValue(constant_node->getColumn()->getDataColumnPtr(), constant_node->getResultType())
+            && !(has_string_key && !holdsOnlyStrings(constant_node->getResultType())))
+            return nullptr;
 
         auto set = getSetElementsForConstantValue(set_lhs_type, constant_node->getColumn(), constant_node->getResultType(), set_params);
         if (set.empty() || set.front().column->empty())
@@ -347,6 +370,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     PrepareForExternalDatabaseVisitor visitor(GetSetElementParams{
         .transform_null_in = settings[Setting::transform_null_in],
         .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+        .format_settings = getFormatSettings(context),
     });
     visitor.visit(new_tree);
     auto * query_node = new_tree->as<QueryNode>();

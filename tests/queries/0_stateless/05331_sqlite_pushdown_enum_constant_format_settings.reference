@@ -1,0 +1,12 @@
+(s, b) IN ((E, true))
+7:yes
+Query: SELECT `s`, `b` FROM `tbl` WHERE (`s`, `b`) IN (('7', 'yes'))
+(s, b) IN ((E, true), (x, true))
+7:yes,x:yes
+Query: SELECT `s`, `b` FROM `tbl` WHERE (`s`, `b`) IN (('7', 'yes'), ('x', 'yes'))
+b IN (true)
+7:yes,x:yes
+Query: SELECT `s`, `b` FROM `tbl` WHERE `b` IN ('yes')
+(s, b) IN ((x, true))
+x:yes
+Query: SELECT `s`, `b` FROM `tbl` WHERE (`s`, `b`) IN (('x', 'yes'))
