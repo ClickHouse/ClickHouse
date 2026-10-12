@@ -1,0 +1,25 @@
+-- fixture
+al_a	Alias
+al_b	Alias
+al_c	Alias
+al_d_inner	Alias
+al_d_outer	Alias
+al_f	Alias
+al_g	Alias
+al_h	Alias
+mem_c	Memory
+mem_g	Memory
+mt_a	MergeTree
+mt_d	MergeTree
+mt_e	MergeTree
+mt_h	MergeTree
+rmt_b	ReplicatedMergeTree
+-- arms
+A_alias_to_mergetree blocked=0 rows_after=0
+B_alias_to_replicated_mergetree blocked=0 rows_after=0
+C_alias_to_memory blocked=1 rows_after=300
+D_alias_chain_to_mergetree blocked=0 rows_after=0
+E_direct_mergetree blocked=0 rows_after=0
+G_direct_reader_of_memory_target blocked=1 rows_after=300
+H_direct_reader_of_mergetree_target blocked=0 rows_after=0
+F_dangling_alias err=UNKNOWN_TABLE
