@@ -33,6 +33,8 @@ class PullingPipelineExecutor;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
+struct ParquetCachedStatisticsFilter;
+
 class StorageFile final : public IStorage
 {
 public:
@@ -387,6 +389,10 @@ private:
     /// key was made for; `still_holds` is false if the file has changed since it was opened.
     void checkTopKQueryConditionCacheKeyHolds(bool still_holds) const;
 
+    /// Whether the statistics kept with the cached Parquet metadata of the current file version show that no row
+    /// group of it can match the filter, so that the file need not be opened.
+    bool canSkipFileByCachedStatistics();
+
     /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
     void writePendingTopKQueryConditionCacheEntries();
 
@@ -407,6 +413,9 @@ private:
     /// settle check in `generate`). The query condition cache skips data based on the
     /// token, so it must fail close and stay bypassed while this is false.
     bool current_file_version_settled = false;
+    /// For `canSkipFileByCachedStatistics`, prepared for the first file that may be skipped; nullptr if none can be.
+    bool cached_statistics_filter_prepared = false;
+    std::shared_ptr<const ParquetCachedStatisticsFilter> cached_statistics_filter;
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;

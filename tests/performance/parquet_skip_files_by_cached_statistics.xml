@@ -1,0 +1,25 @@
+<!--
+    Filtered reads of a glob of 100 Parquet files of 4 row groups each. The ranges of `k` are disjoint per file, so
+    once a read has kept the statistics of `k` with the cached metadata of the files, later reads skip the files
+    whose row groups cannot match without opening them. Every file holds every value of `m`, so nothing is skipped
+    for it.
+-->
+<test>
+    <fill_query>
+        INSERT INTO FUNCTION file('test_parquet_skip_cached_stats_{{_partition_id}}.parquet', Parquet) PARTITION BY intDiv(k, 40000)
+        SELECT
+            number AS k, number % 1000 AS m, sipHash64(number) AS h, toInt32(number % 77) AS i32, toInt64(number) - 2000000 AS i64,
+            toFloat64(number) / 3 AS f64, toFloat32(number % 1000) AS f32, toDate('2020-01-01') + number % 1000 AS d,
+            toDateTime('2020-01-01 00:00:00') + number AS dt, toDecimal64(number, 4) AS dec, toUInt8(number % 2) AS flag,
+            toString(sipHash64(number, 1)) AS s1, repeat('x', number % 20) AS s2, toString(number % 100) AS s3,
+            concat('user_', toString(number % 5000)) AS s4, toFixedString(toString(number % 10), 1) AS fs,
+            toLowCardinality(toString(number % 10)) AS lc, if(number % 3 = 0, NULL, number) AS n, number * 2 AS k2, number % 7 AS w
+        FROM numbers(4000000)
+        SETTINGS output_format_parquet_row_group_size = 10000, max_block_size = 10000, max_threads = 1, max_insert_threads = 1,
+            engine_file_truncate_on_insert = 1
+    </fill_query>
+
+    <query>SELECT count(), sum(m) FROM file('test_parquet_skip_cached_stats_*.parquet') WHERE k BETWEEN 1000000 AND 1100000 SETTINGS max_threads = 4 FORMAT Null</query>
+    <query>SELECT count(), sum(m) FROM file('test_parquet_skip_cached_stats_*.parquet') WHERE k IN (5, 2000001, 3999999) SETTINGS max_threads = 4 FORMAT Null</query>
+    <query>SELECT count(), sum(k) FROM file('test_parquet_skip_cached_stats_*.parquet') WHERE m = 7 SETTINGS max_threads = 4 FORMAT Null</query>
+</test>

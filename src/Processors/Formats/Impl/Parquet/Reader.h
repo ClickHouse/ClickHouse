@@ -602,6 +602,13 @@ struct Reader
     /// `footer_read_size` overrides the initial footer read size; 0 reads 64 KiB of a local file and sizes the read to the file otherwise.
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+
+    /// The min/max statistics ranges of the columns the key condition uses, for every non-empty row group in file
+    /// order, as `prefilterAndInitRowGroups` checked them: the column's position in `extended_sample_block` and its
+    /// ranges. Complete only if every row group was checked by statistics alone (filter push-down, no spatial
+    /// conditions, no row selection of lazy materialization). See `ParquetV3BlockInputFormat::cacheFilterColumnStatistics`.
+    std::vector<std::pair<size_t, std::vector<Range>>> key_condition_column_ranges;
+    bool key_condition_column_ranges_complete = false;
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.

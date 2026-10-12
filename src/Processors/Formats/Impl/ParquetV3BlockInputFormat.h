@@ -35,6 +35,8 @@ struct ParquetBucketSplitter : public IBucketSplitter
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
 
+class KeyCondition;
+
 class ParquetV3BlockInputFormat final : public IInputFormat
 {
 public:
@@ -68,6 +70,9 @@ public:
     bool isTopKFilterApplied() const override;
     bool isMinMaxFromStatisticsApplied() const override { return min_max_from_statistics; }
 
+    /// Keeps the statistics ranges of the filter columns, as the reader checked them, with the cached metadata.
+    void cacheFilterColumnStatistics() override;
+
 private:
     Chunk read() override;
 
@@ -97,7 +102,39 @@ private:
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
 
-    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
+    parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher);
+
+    /// The cache cell of this file's metadata and its key, if it came from the metadata cache.
+    ParquetMetadataCache::MappedPtr metadata_cache_cell;
+    std::optional<ParquetMetadataCacheKey> metadata_cache_key;
+};
+
+/// Whether the statistics that earlier reads kept with the cached metadata of a file version (see
+/// `ParquetV3BlockInputFormat::cacheFilterColumnStatistics`) show that no row group of it can satisfy the filter,
+/// so that the file need not be opened: the reader would skip every row group by the same statistics.
+struct ParquetCachedStatisticsFilter
+{
+    /// nullptr if no file can be skipped: filter push-down off, no key condition or one the statistics cannot
+    /// decide, a column mapper, or a header that `FormatFactory::getInputImpl` would change for the format.
+    static std::shared_ptr<const ParquetCachedStatisticsFilter> create(
+        const FormatFilterInfoPtr & format_filter_info, const Block & header, const FormatSettings & format_settings);
+
+    /// If the kept ranges exclude every row group of the file version, the number of row groups of the file.
+    std::optional<size_t> canSkipFile(ParquetMetadataCache & metadata_cache, const String & path, const String & version) const;
+
+    /// Counts a skipped file as the reader would have counted it.
+    static void countSkippedFile(size_t num_row_groups);
+
+    /// Identifies the statistics ranges of a column in a cache cell: the column and the settings that change how
+    /// the reader finds it in the file and converts its statistics.
+    static String makeColumnKey(const String & column_name, const IDataType & type, const FormatSettings & format_settings);
+
+private:
+    std::shared_ptr<const KeyCondition> key_condition;
+    /// The positions of the columns that `key_condition` uses and their keys.
+    std::vector<std::pair<size_t, String>> column_keys;
+    /// The types of the header followed by `FormatFilterInfo::additional_columns`, as `key_condition` was built for.
+    DataTypes key_types;
 };
 
 class NativeParquetSchemaReader final : public ISchemaReader

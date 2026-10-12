@@ -1073,6 +1073,14 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     std::vector<RowGroupCandidate> candidates;
     bool some_top_k_range_to_read = false;
     size_t total_rows = 0;
+    key_condition_column_ranges.clear();
+    key_condition_column_ranges_complete = false;
+    const bool record_key_condition_ranges = options.format.parquet.filter_push_down && format_filter_info->key_condition
+        && spatial_key_conditions.empty() && !rows_to_read;
+    if (record_key_condition_ranges)
+        for (size_t idx : format_filter_info->key_condition->getUsedColumnsInOrder())
+            if (idx < extended_sample_block.columns())
+                key_condition_column_ranges.emplace_back(idx, std::vector<Range>{});
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
@@ -1107,6 +1115,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
             getHyperrectangleForRowGroup(meta, hyperrectangle, only_spatial_bbox);
         }
+        if (record_key_condition_ranges)
+            for (auto & [idx, ranges] : key_condition_column_ranges)
+                ranges.push_back(hyperrectangle[idx]);
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
         {
@@ -1154,6 +1165,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
             some_top_k_range_to_read = true;
     }
+
+    key_condition_column_ranges_complete = record_key_condition_ranges;
 
     /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
     /// threshold, so that it tightens early. Any order is correct when the output order is free.

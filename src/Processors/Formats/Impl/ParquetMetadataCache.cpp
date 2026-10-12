@@ -32,6 +32,7 @@ size_t ParquetMetadataCacheKeyHash::operator()(const ParquetMetadataCacheKey & k
 ParquetMetadataCacheCell::ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_)
     : metadata(std::move(metadata_))
     , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
+    , kept_statistics(std::make_shared<ParquetKeptStatistics>(std::max<size_t>(memory_bytes / 4, MIN_KEPT_STATISTICS_BYTES)))
 {
 }
 size_t ParquetMetadataCacheCell::calculateMemorySize() const
@@ -96,9 +97,48 @@ size_t ParquetMetadataCacheCell::calculateMemorySize() const
     return total_size;
 }
 
+namespace
+{
+
+size_t heapBytesOfField(const Field & field)
+{
+    return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
+}
+
+}
+
+bool ParquetKeptStatistics::add(const String & column_key, const Ranges & ranges)
+{
+    std::lock_guard lock(mutex);
+    if (ranges_by_column.contains(column_key))
+        return false;
+
+    size_t bytes = sizeof(Ranges) + column_key.size() + ranges.size() * sizeof(Range);
+    for (const auto & range : ranges)
+        bytes += heapBytesOfField(range.left) + heapBytesOfField(range.right);
+    if (total_bytes + bytes > max_bytes)
+        return false;
+    total_bytes += bytes;
+    ranges_by_column.emplace(column_key, std::make_shared<const Ranges>(ranges));
+    return true;
+}
+
+ParquetKeptStatistics::RangesPtr ParquetKeptStatistics::get(const String & column_key) const
+{
+    std::lock_guard lock(mutex);
+    auto it = ranges_by_column.find(column_key);
+    return it == ranges_by_column.end() ? nullptr : it->second;
+}
+
+size_t ParquetKeptStatistics::bytes() const
+{
+    std::lock_guard lock(mutex);
+    return total_bytes;
+}
+
 size_t ParquetMetadataCacheWeightFunction::operator()(const ParquetMetadataCacheCell & cell) const
 {
-    return cell.memory_bytes;
+    return cell.memory_bytes + cell.kept_statistics->bytes();
 }
 
 ParquetMetadataCache::ParquetMetadataCache(
@@ -119,6 +159,12 @@ ParquetMetadataCacheKey ParquetMetadataCache::createKey(const String & file_path
 {
     return ParquetMetadataCacheKey{file_path, file_attr};
 }
+void ParquetMetadataCache::updateWeight(const ParquetMetadataCacheKey & key, const MappedPtr & cell)
+{
+    /// `set` recomputes the weight.
+    Base::replaceIfMatches(key, cell, cell);
+}
+
 void ParquetMetadataCache::onEntryRemoval(const size_t weight_loss, const MappedPtr &)
 {
     LOG_TRACE(log, "cache eviction");
