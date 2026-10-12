@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
@@ -1089,10 +1090,7 @@ static bool readsDynamicOrVariantValues(const RPNBuilderTreeNode & node)
     if (!path_node)
         return true;
 
-    const auto & path_type = *path_node->result_type;
-    bool holds_values_of_different_types = isDynamic(path_type) || isVariant(path_type);
-    path_type.forEachChild([&](const IDataType & child) { holds_values_of_different_types |= isDynamic(child) || isVariant(child); });
-    return holds_values_of_different_types;
+    return anyInTypeTree(*path_node->result_type, [](const IDataType & type) { return isDynamic(type) || isVariant(type); });
 }
 
 /// With a string needle, these functions accept only a string haystack.
