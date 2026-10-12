@@ -1,0 +1,49 @@
+---
+noindex: true
+title: "Configurar alertas para o ClickHouse"
+sidebarTitle: "Configurar alertas"
+description: "Configure alvos de coleta e alertas do Prometheus para o ClickHouse Server, o Keeper e o operador."
+---
+
+Configure alvos de coleta e alertas do Prometheus para o ClickHouse Server, o Keeper e o operador.
+
+<div id="set-up-prometheus-scrape-targets-for-clickhouse-server">
+  ## Configure alvos de coleta do Prometheus para o ClickHouse Server
+</div>
+
+Os pods do ClickHouse Server incluem annotations `prometheus.io/*` que expõem métricas básicas. Para o conjunto completo de métricas (incluindo `ClickHouse_CustomMetrics_*`), configure o endpoint `:8123/metrics` como alvo de coleta do Prometheus em cada pod do servidor por meio de um PodMonitor ou equivalente.
+
+Esse endpoint **requer autenticação**. Autentique-se com um usuário dedicado que tenha privilégios de somente leitura.
+
+<div id="set-up-podmonitor-for-keeper">
+  ## Configure o PodMonitor para o Keeper
+</div>
+
+Crie um PodMonitor voltado para o endpoint `:8001/metrics` nos pods do Keeper para coletar métricas do Keeper.
+
+<div id="alert-rules">
+  ## Regras de alerta
+</div>
+
+Para a lista completa de definições de alerta recomendadas (expressões do Prometheus, limiares e ações), consulte [reference/metrics-and-alerts.md](/pt-BR/products/clickhouse-private/reference/metrics-and-alerts-reference).
+
+Os principais alertas incluem:
+
+| Alerta                                     | Métrica                                                | Finalidade                                                        |
+| ------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------- |
+| Operador não está reconciliando            | `last_cluster_reconcile`                               | O operador não realizou a reconciliação dentro da janela esperada |
+| Erros de reconciliação do operador         | `controller_runtime_reconcile_errors_total`            | A taxa de erro excede 5% das tentativas de reconciliação          |
+| Partes desanexadas corrompidas             | `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`  | Mais de 100 partes desanexadas corrompidas por mais de 60 minutos |
+| Perda de dados                             | `ClickHouse_CustomMetric_LostPartCount`                | Partes perdidas detectadas (possível perda de dados)              |
+| Servidor travado durante o desligamento    | `ClickHouseMetrics_IsServerShuttingDown`               | O servidor está em processo de desligamento há mais de uma hora   |
+| Réplicas de tabela em modo somente leitura | `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds` | Tabela em modo somente leitura por mais de uma hora               |
+
+<div id="standard-kubernetes-alerts">
+  ## Alertas padrão do Kubernetes
+</div>
+
+Além dos alertas específicos do ClickHouse, adicione alertas padrão do Kubernetes para:
+
+* pods em CrashLoop
+* pods com falha de agendamento
+* outros problemas de infraestrutura específicos do seu ambiente

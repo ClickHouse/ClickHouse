@@ -8,8 +8,7 @@ robot_token_secret = Secret.Config(
 )
 
 release_job = Job.Config(
-    # Differs from the workflow name: both results share one S3 key otherwise
-    name="Create Release",
+    name="CreateRelease",
     runs_on=["self-hosted", "amd-release-maker"],
     command="PYTHONPATH=. python3 ./ci/jobs/release_job.py",
     timeout=2 * 3600,
@@ -22,7 +21,6 @@ release_job = Job.Config(
 
 workflow = Workflow.Config(
     name="CreateRelease",
-    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
     secrets=SECRETS + [robot_token_secret],
@@ -34,10 +32,7 @@ workflow = Workflow.Config(
     # Route the job's pass/fail to the Slack Praktika app (the praktika-native
     # replacement for the dropped CIBuddy notifications), as master /
     # release_branches / pull_request do, so a failed release is not silent.
-    enable_concurrency_queue=True,
     enable_slack_feed=True,
-    # Uploads the job's `Result.files` (the reprepro, createrepo_c and geesefs logs) to S3
-    enable_report=True,
     inputs=[
         Workflow.Config.InputConfig(
             name="ref",
@@ -46,15 +41,22 @@ workflow = Workflow.Config(
             default_value="",
         ),
         Workflow.Config.InputConfig(
-            name="skip-repo",
-            description="Skip repo updates (package export/test); for recovery/rerun",
+            name="type",
+            description="Release type - new for a new release branch, patch for a patch release",
+            is_required=True,
+            default_value="patch",
+            options=["patch", "new"],
+        ),
+        Workflow.Config.InputConfig(
+            name="only-repo",
+            description="Run only repo updates including docker (repo-recovery, tests)",
             is_required=False,
             default_value="false",
             is_boolean=True,
         ),
         Workflow.Config.InputConfig(
-            name="skip-docker",
-            description="Skip docker image builds; for recovery/rerun",
+            name="only-docker",
+            description="Run only docker builds (repo-recovery, tests)",
             is_required=False,
             default_value="false",
             is_boolean=True,

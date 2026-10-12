@@ -26,14 +26,17 @@ set(SRCS
 
 add_library(_roaring ${SRCS})
 
-# Page-align roaring_bitmap_and_cardinality, see page_aligned_functions.h.
-set_source_files_properties("${LIBRARY_DIR}/src/roaring.c" PROPERTIES
-    COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/page_aligned_functions.h")
-
 # croaring expects bswap64() in portability.h from FreeBSD's byteswap.h,
 # but there is only bswap_64 and __bswap64.
 if (OS_FREEBSD)
     target_compile_definitions(_roaring PRIVATE bswap64=__bswap64)
+endif()
+
+# clang-21 MemorySanitizer checks the value instead of the shadow of the index operand of AVX-512
+# `vpermi2var`/`vpermt2var` intrinsics (https://github.com/llvm/llvm-project/pull/148785, fixed in clang-22),
+# which produces false positives in croaring's AVX-512 kernels (e.g. `avx512_emit_unique16`).
+if (SANITIZE STREQUAL "memory")
+    target_compile_definitions(_roaring PUBLIC CROARING_COMPILER_SUPPORTS_AVX512=0)
 endif()
 
 target_include_directories(_roaring PRIVATE "${LIBRARY_DIR}/include/roaring")
