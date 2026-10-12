@@ -2,6 +2,8 @@
 -- Tag no-fasttest: depends on MinIO via s3_conn for write and HTTP read, on Azurite, and on Iceberg (Avro).
 -- Tag no-parallel-replicas: the assertions read ProfileEvents of the local query_log rows.
 -- Tag no-replicated-database: the replicated DDL worker evaluates the `IcebergLocal` arguments without the session, so it does not see the `TEMPORARY TABLE iceberg_path`
+-- Random settings limits: max_block_size=(10000, None)
+-- max_block_size: `_1.parquet` has 10 row groups of 1000 rows (10 `s3Cluster` buckets) only when its 10000 rows are written as one block.
 
 -- `min` / `max` of Parquet columns read from object storage (`s3`, `azureBlobStorage`) or over HTTP (`url`) come from
 -- the column chunk statistics (`ParquetReadMinMaxFromStatistics` = 1 per file) with the same values as reading the data;
