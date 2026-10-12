@@ -108,16 +108,16 @@ void runShape(benchmark::State & state, Executor executor, const Build & build)
 const VectorWithMemoryTracking<Shape> shapes
 {
     {"Chain", [](ContextPtr context, size_t) { return chain(context, Load{}); }},
-    {"FanOut", [](ContextPtr context, size_t threads) { return fanOut(context, threads, Load{}); }},
-    {"FanIn", [](ContextPtr context, size_t threads) { return fanIn(context, threads, Load{}); }},
+    {"FanOut", [](ContextPtr context, size_t threads) { return fanOut(context, threads, Load{.chunks = 40 * threads}); }},
+    {"FanIn", [](ContextPtr context, size_t threads) { return fanIn(context, threads, Load{.chunks = 40 * threads}); }},
     {"Hub", [](ContextPtr context, size_t threads) { return hub(context, threads, Load{.chunks = 30}); }},
     {"ShortQuery", [](ContextPtr context, size_t) { return chain(context, Load{.chunks = 5}); }},
-    {"FanInMerge", [](ContextPtr context, size_t threads) { return fanInMerge(context, 4 * threads, Load{}); }},
+    {"FanInMerge", [](ContextPtr context, size_t threads) { return fanInMerge(context, 4 * threads, Load{.chunks = 40 * 4 * threads, .rows_per_chunk = 8192}); }},
     {"ManySources", [](ContextPtr context, size_t threads) { return manySources(context, 1000, threads, Load{.chunks = 1000, .rows_per_chunk = 8192}); }},
-    {"WideFanIn", [](ContextPtr context, size_t) { return fanIn(context, 64, Load{}); }},
+    {"WideFanIn", [](ContextPtr context, size_t) { return fanIn(context, 64, Load{.chunks = 40 * 64}); }},
     {"Delayed", [](ContextPtr context, size_t) { return delayed(context, Load{}); }},
     {"FanInAggregate", [](ContextPtr context, size_t threads) { return fanInAggregate(context, threads, Load{}); }},
-    {"Aggregate", [](ContextPtr context, size_t threads) { return aggregate(context, threads, Load{}); }},
+    {"Aggregate", [](ContextPtr context, size_t threads) { return aggregate(context, threads, Load{.chunks = 40 * threads}); }},
     {"ManyPartsInOrder", [](ContextPtr context, size_t threads) { return manyPartsInOrder(context, 1000, threads, Load{.rows_per_chunk = 8192}); }},
 };
 

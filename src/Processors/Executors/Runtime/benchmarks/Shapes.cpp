@@ -37,29 +37,34 @@ SharedHeader numbersHeader()
     return std::make_shared<const Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number")});
 }
 
-Chunk numbersChunk(size_t rows_per_chunk, UInt64 first)
+Chunk numbersChunk(size_t rows_per_chunk, UInt64 first, UInt64 stride)
 {
     auto column = ColumnUInt64::create(rows_per_chunk);
     auto & values = column->getData();
-    std::iota(values.begin(), values.end(), first);
+    for (size_t row = 0; row < rows_per_chunk; ++row)
+        values[row] = first + row * stride;
     return Chunk(Columns{std::move(column)}, rows_per_chunk);
 }
 
-Chunks numbers(size_t chunks, size_t rows_per_chunk, UInt64 first)
+Chunks numbers(size_t chunks, size_t rows_per_chunk, UInt64 first, UInt64 stride = 1)
 {
     Chunks result;
     for (size_t index = 0; index < chunks; ++index)
-        result.push_back(numbersChunk(rows_per_chunk, first + index * rows_per_chunk));
+        result.push_back(numbersChunk(rows_per_chunk, first + index * rows_per_chunk * stride, stride));
     return result;
 }
 
 Pipe numbersPipe(size_t streams, Load load)
 {
     const size_t chunks_per_stream = std::max<size_t>(1, load.chunks / streams);
+    const UInt64 stride = load.interleaved ? streams : 1;
 
     Pipes pipes;
     for (size_t stream = 0; stream < streams; ++stream)
-        pipes.emplace_back(std::make_shared<SourceFromChunks>(numbersHeader(), numbers(chunks_per_stream, load.rows_per_chunk, stream * chunks_per_stream * load.rows_per_chunk)));
+    {
+        const UInt64 first = load.interleaved ? stream : stream * chunks_per_stream * load.rows_per_chunk;
+        pipes.emplace_back(std::make_shared<SourceFromChunks>(numbersHeader(), numbers(chunks_per_stream, load.rows_per_chunk, first, stride)));
+    }
     return Pipe::unitePipes(std::move(pipes));
 }
 
@@ -194,6 +199,7 @@ std::shared_ptr<Processors> hub(ContextPtr context, size_t streams, Load load)
 
 std::shared_ptr<Processors> fanInMerge(ContextPtr context, size_t streams, Load load)
 {
+    load.interleaved = true;
     auto plan = readNumbers(streams, load);
     addMerge(plan, "number", load.rows_per_chunk);
     return finish(context, std::move(plan));

@@ -12,6 +12,7 @@ struct Load
 {
     size_t chunks = 150;
     size_t rows_per_chunk = 65409;
+    bool interleaved = false;
 };
 
 std::shared_ptr<Processors> chain(ContextPtr context, Load load);
