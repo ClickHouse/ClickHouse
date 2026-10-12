@@ -325,7 +325,7 @@ uint32_t ConfluentSchemaRegistry::registerSchema(
                         subject, registry_message);
                 }
 
-                assertResponseIsOk(request.getURI(), response, response_stream, false, requestCredentialSecrets(request));
+                assertResponseIsOk(request.getURI(), response, response_stream, false);
 
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(response_stream).extract<Poco::JSON::Object::Ptr>();

@@ -30,6 +30,13 @@ SET max_block_size=65409;
 -- expected values calibrated under the default thresholds. Pin them to the defaults.
 SET group_by_two_level_threshold=100000, group_by_two_level_threshold_bytes=50000000;
 
+-- For the same reason, disable the adaptive aggregator. Its per-thread tables stay single-level
+-- until one of them reaches `adaptive_aggregator_freeze_threshold` keys and freezes, which converts
+-- the data to two-level. Whether a thread crosses the threshold depends on how the marks happen to be
+-- distributed between the reading threads, so `query_12` randomly took the two-level bucket merge,
+-- whose estimate (~6.6M) is 2.5x the single-level one the expected values are calibrated for.
+SET enable_adaptive_aggregator=0;
+
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`

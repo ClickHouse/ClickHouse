@@ -1,6 +1,7 @@
 #include <Dictionaries/HTTPDictionarySource.h>
-#include <Common/HTTPHeaderFilter.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Formats/formatBlock.h>
@@ -38,6 +39,29 @@ namespace Setting
 }
 
 static const UInt64 max_block_size = 8192;
+
+/// Hides the credentials a url can carry: the `user:password@` userinfo and sensitive query parameters
+/// (`access_token`, `sig`, ...). Returns whether anything was masked.
+static bool maskURLCredentials(String & url)
+{
+    bool masked = maskURIPassword(&url);
+    String without_parameters = maskSensitiveQueryParametersInURI(url);
+    masked |= without_parameters != url;
+    url = std::move(without_parameters);
+    return masked;
+}
+
+/// The same for a url given as an SQL string literal in a dictionary `SOURCE`, keeping its quotes.
+static bool maskQuotedURLCredentials(String & literal)
+{
+    if (literal.size() < 2 || literal.front() != '\'' || literal.back() != '\'')
+        return maskURLCredentials(literal);
+    String url = literal.substr(1, literal.size() - 2);
+    if (!maskURLCredentials(url))
+        return false;
+    literal = "'" + url + "'";
+    return true;
+}
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
     "url",
@@ -158,10 +182,9 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
-    std::string uri_for_logging = uri.toString();
-    /// Mask userinfo and presigned parameters, like ReadWriteBufferFromHTTP.
-    maskURICredentials(uri_for_logging);
-    LOG_TRACE(log, "loadUpdatedAll {}", uri_for_logging);
+    String masked_uri = uri.toString();
+    maskURLCredentials(masked_uri);
+    LOG_TRACE(log, "loadUpdatedAll {}", masked_uri);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -266,11 +289,10 @@ DictionarySourcePtr HTTPDictionarySource::clone() const
 
 std::string HTTPDictionarySource::toString() const
 {
-    Poco::URI uri(configuration.url);
-    /// Feeds system.dictionaries.source and the server log; mask userinfo and presigned parameters.
-    std::string name = uri.toString();
-    maskURICredentials(name);
-    return name;
+    /// Shown in `system.dictionaries` and in the logs.
+    String uri = Poco::URI(configuration.url).toString();
+    maskURLCredentials(uri);
+    return uri;
 }
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
@@ -381,7 +403,18 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
-    factory.registerSource("http", create_table_source, Documentation{
+    /// The `url` and `endpoint` can carry credentials in the userinfo and in the query parameters.
+    factory.registerSource(
+        "http",
+        create_table_source,
+        SecretArgumentsSpec{
+            .secret_keys = {"headers", "header"},
+            .partial = {
+                {"url", maskQuotedURLCredentials},
+                {"endpoint", maskQuotedURLCredentials},
+            },
+        },
+        Documentation{
         .description = R"DOCS_MD(
 # HTTP(S) dictionary source
 

@@ -1,14 +1,12 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
-#include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/SecretArguments.h>
 
 namespace DB
 {
@@ -16,31 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-}
-
-namespace
-{
-    /// Keys of a dictionary source whose value must not be shown. Besides the password, this covers
-    /// the TLS credentials that are given as the contents of a certificate or a key file (a path is
-    /// not accepted from a `CREATE DICTIONARY` query in the first place), and the custom HTTP headers
-    /// of the `HTTP` source, whose values often carry API tokens. The headers are hidden as a whole,
-    /// names included: the query is logged before the dictionary source validates its structure,
-    /// so a malformed definition must not leak either.
-    bool isSecretKey(const String & key)
-    {
-        return key == "password"
-            || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
-            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
-            || key == "headers" || key == "header";
-    }
-
-    /// Keys of a dictionary source whose value is a URI that may embed credentials in its userinfo
-    /// (`scheme://user:password@host`) or in presigned-URL query parameters. Both spellings are in
-    /// use: the `HTTP` source takes `url`, other sources take `uri`.
-    bool isURIKey(const String & key)
-    {
-        return key == "uri" || key == "url";
-    }
 }
 
 String ASTPair::getID(char) const
@@ -102,53 +75,24 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
     if (second_with_brackets)
         ostr << "(";
 
-    if (!settings.show_secrets && isSecretKey(first))
+    /// Hide the secrets each dictionary source declares, e.g. the password:
+    /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
+    String masked;
+    if (!settings.show_secrets)
     {
-        /// Hide the password and the TLS credentials in the definition of a dictionary:
-        /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-        ostr << "'[HIDDEN]'";
+        WriteBufferFromOwnString temp_buf;
+        FormatSettings tmp_settings(settings.one_line);
+        FormatState tmp_state;
+        second->format(temp_buf, tmp_settings, tmp_state, frame);
+        masked = temp_buf.str();
+        if (!getSecretArgumentsFinder().maskDictionarySourceValue(first, masked))
+            masked.clear();
     }
-    else if (!settings.show_secrets && (isURIKey(first) || first == "options"))
-    {
-        /// Mask the credentials embedded in a URI value. The `HTTP` source `url` has its whole
-        /// userinfo (`scheme://user:password@host`) and its presigned-URL query parameters masked,
-        /// the same way an S3 URL is masked in `FunctionSecretArgumentsFinder`. A MongoDB connection
-        /// string or option list (`uri`/`options`) additionally has its secret options masked.
-        auto mask = [&](String & value)
-        {
-            if (first == "url")
-                return maskURICredentials(value);
-            return maskMongoDBConnectionString(value);
-        };
 
-        const auto * literal = second->as<ASTLiteral>();
-        const auto * identifier = second->as<ASTIdentifier>();
-        if (literal && literal->value.getType() == Field::Types::String)
-        {
-            String value = literal->value.safeGet<String>();
-            if (mask(value))
-                make_intrusive<ASTLiteral>(Field(value))->format(ostr, settings, state, frame);
-            else
-                second->format(ostr, settings, state, frame);
-        }
-        else if (identifier)
-        {
-            String value = identifier->name();
-            if (mask(value))
-                make_intrusive<ASTIdentifier>(value)->format(ostr, settings, state, frame);
-            else
-                second->format(ostr, settings, state, frame);
-        }
-        else
-        {
-            /// An expression is evaluated only after the query is logged.
-            ostr << "'[HIDDEN]'";
-        }
-    }
+    if (!masked.empty())
+        ostr << masked;
     else
-    {
         second->format(ostr, settings, state, frame);
-    }
 
     if (second_with_brackets)
         ostr << ")";
@@ -157,7 +101,11 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || isURIKey(first) || first == "options" || second->hasSecretParts();
+    /// A partly secret value (a `uri` with a password) is a secret part only when its masker finds one.
+    String value = second->formatWithSecretsOneLine();
+    if (getSecretArgumentsFinder().maskDictionarySourceValue(first, value))
+        return true;
+    return second->hasSecretParts();
 }
 
 
