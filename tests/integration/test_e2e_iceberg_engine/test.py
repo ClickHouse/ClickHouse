@@ -904,7 +904,9 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
     )
     # With a hierarchical namespace, Azure lists directories too; cleanup takes them for orphans and
     # cannot delete them because they are not empty: https://github.com/ClickHouse/ClickHouse/issues/125462
-    failed = removed.pop("failed_deletions_count", 0) if is_azure else 0
+    failed = removed.pop("failed_deletions_count") if is_azure else 0
+    # The `data` and `metadata` directories, and nothing else.
+    assert failed == (2 if is_azure else 0)
     assert removed == {"deleted_data_files_count": 1}
 
     node.query("SYSTEM FLUSH LOGS query_log")
