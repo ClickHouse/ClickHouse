@@ -299,6 +299,20 @@ void MergeTreeDeduplicationLog::prepareToWrite()
     chassert(current_writer != nullptr);
 }
 
+bool MergeTreeDeduplicationLog::containsAny(const std::vector<std::string> & block_ids)
+{
+    std::lock_guard lock(state_mutex);
+
+    if (deduplication_window == 0)
+        return false;
+
+    for (const auto & block_id : block_ids)
+        if (deduplication_map.contains(block_id))
+            return true;
+
+    return false;
+}
+
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
