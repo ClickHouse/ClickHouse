@@ -463,12 +463,16 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
     return hash.get128();
 }
 
+static bool collectFiltersFromQuerySettings(
+    const IAST & ast, const Settings & settings, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names = nullptr);
+
 /// Parses the filter expressions a query inherits from settings rather than from its own text:
 /// every value of `additional_table_filters` and the `additional_result_filter` expression. They are
 /// applied by the interpreter/planner only after the referenced-tables walk runs, and they can contain
 /// subqueries (e.g. `x IN (SELECT x FROM t2)`) whose tables never appear in the query AST, so the walk
-/// has to see them too. Returns false when a filter cannot be parsed (the query itself will fail on it
-/// later with the same error) - the caller then fails closed.
+/// has to see them too. A filter can carry filters of its own in the `SETTINGS` clause of a subquery,
+/// so these are collected as well. Returns false when a filter cannot be parsed (the query itself will
+/// fail on it later with the same error) - the caller then fails closed.
 static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names = nullptr)
 {
     const Settings & settings = context->getSettingsRef();
@@ -478,14 +482,16 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
         auto parse_filter = [&](const String & filter)
         {
             ParserExpression parser;
-            filter_asts.push_back(parseQuery(
+            ASTPtr filter_ast = parseQuery(
                 parser,
                 filter.data(),
                 filter.data() + filter.size(),
                 "additional filter",
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]));
+                settings[Setting::max_parser_backtracks]);
+            filter_asts.push_back(filter_ast);
+            return collectFiltersFromQuerySettings(*filter_ast, settings, filter_asts, additional_table_filters_matchable_names);
         };
 
         /// Without the set of names the query can reach, all entries are collected: hashing a superset
@@ -495,12 +501,13 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
             const auto & tuple = entry.safeGet<Tuple>();
             if (additional_table_filters_matchable_names && !additional_table_filters_matchable_names->contains(tuple.at(0).safeGet<String>()))
                 continue;
-            parse_filter(tuple.at(1).safeGet<String>());
+            if (!parse_filter(tuple.at(1).safeGet<String>()))
+                return false;
         }
 
         const String & additional_result_filter = settings[Setting::additional_result_filter];
-        if (!additional_result_filter.empty())
-            parse_filter(additional_result_filter);
+        if (!additional_result_filter.empty() && !parse_filter(additional_result_filter))
+            return false;
     }
     catch (...)
     {
@@ -514,9 +521,10 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
 
 static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const ContextPtr & context, NameSet & names, size_t depth);
 
-/// Adds the names an `additional_table_filters` key can match for `table_id` - the table name, which
-/// matches when the table is in the current database, and the qualified name - and recurses into the
-/// tables the storage reads itself. Returns false when that set cannot be enumerated.
+/// Adds the names an `additional_table_filters` key can match for `table_id` - the table name, but only
+/// when the table is in the current database (the same rule as the planner and the interpreter), and the
+/// qualified name - and recurses into the tables the storage reads itself. Returns false when that set
+/// cannot be enumerated.
 static bool collectTableNamesMatchableByAdditionalTableFilters(const StorageID & table_id, const ContextPtr & context, NameSet & names, size_t depth)
 {
     StorageID resolved_id = StorageID::createEmpty();
@@ -535,7 +543,8 @@ static bool collectTableNamesMatchableByAdditionalTableFilters(const StorageID &
         return false;
 
     const auto storage_id = storage->getStorageID();
-    names.insert(storage_id.getTableName());
+    if (storage_id.getDatabaseName() == context->getCurrentDatabase())
+        names.insert(storage_id.getTableName());
     names.insert(storage_id.getFullNameNotQuoted());
 
     /// The filters propagate only into the query behind a view whose body runs with the caller's settings:
@@ -601,11 +610,12 @@ static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const 
 /// Collects the filter expressions of the `additional_table_filters` entries and the
 /// `additional_result_filter` in the `SETTINGS` clauses of `ast` itself (e.g. the stored query of a view,
 /// or a subquery). Unlike the filters of the query's context, they are not visible through
-/// `parseFilterASTsInjectedFromSettings`. With `additional_table_filters_matchable_names`, only the
-/// `additional_table_filters` entries keyed by one of these names are collected. Returns false when one
+/// `parseFilterASTsInjectedFromSettings`. A collected filter can carry filters of its own in the `SETTINGS`
+/// clause of a subquery, so it is walked the same way. With `additional_table_filters_matchable_names`, only
+/// the `additional_table_filters` entries keyed by one of these names are collected. Returns false when one
 /// cannot be parsed or has an unexpected shape.
 static bool collectFiltersFromQuerySettings(
-    const IAST & ast, const Settings & settings, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names = nullptr)
+    const IAST & ast, const Settings & settings, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names)
 {
     for (const auto & child : ast.children)
         if (!collectFiltersFromQuerySettings(*child, settings, filter_asts, additional_table_filters_matchable_names))
@@ -620,14 +630,16 @@ static bool collectFiltersFromQuerySettings(
         auto parse_filter = [&](const String & filter)
         {
             ParserExpression parser;
-            filter_asts.push_back(parseQuery(
+            ASTPtr filter_ast = parseQuery(
                 parser,
                 filter.data(),
                 filter.data() + filter.size(),
                 "additional filter",
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]));
+                settings[Setting::max_parser_backtracks]);
+            filter_asts.push_back(filter_ast);
+            return collectFiltersFromQuerySettings(*filter_ast, settings, filter_asts, additional_table_filters_matchable_names);
         };
 
         for (const auto & change : set_query->changes)
@@ -637,8 +649,8 @@ static bool collectFiltersFromQuerySettings(
                 if (change.value.getType() != Field::Types::String)
                     return false;
                 const auto & filter = change.value.safeGet<String>();
-                if (!filter.empty())
-                    parse_filter(filter);
+                if (!filter.empty() && !parse_filter(filter))
+                    return false;
                 continue;
             }
             if (change.name != "additional_table_filters")
@@ -650,7 +662,8 @@ static bool collectFiltersFromQuerySettings(
                 const auto & tuple = entry.safeGet<Tuple>();
                 if (additional_table_filters_matchable_names && !additional_table_filters_matchable_names->contains(tuple.at(0).safeGet<String>()))
                     continue;
-                parse_filter(tuple.at(1).safeGet<String>());
+                if (!parse_filter(tuple.at(1).safeGet<String>()))
+                    return false;
             }
         }
     }
@@ -663,27 +676,32 @@ static bool collectFiltersFromQuerySettings(
     return true;
 }
 
-std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context)
+std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context, const NameSet * seed_names)
 {
     const Settings & settings = context->getSettingsRef();
 
     /// The filters given in the query's own `SETTINGS` clauses (e.g. in the stored query of a view) are
     /// matched against the same names, and their subqueries are planned with them too.
     ASTs query_filter_roots;
-    if (!collectFiltersFromQuerySettings(*ast, settings, query_filter_roots))
+    if (ast && !collectFiltersFromQuerySettings(*ast, settings, query_filter_roots))
         return {};
 
-    if (settings[Setting::additional_table_filters].value.empty() && query_filter_roots.empty())
-        return NameSet{};
-
     NameSet names;
-    if (!collectNamesMatchableByAdditionalTableFiltersImpl(ast->clone(), context, names, /*depth=*/ 0))
+    if (seed_names)
+        names = *seed_names;
+
+    if (settings[Setting::additional_table_filters].value.empty() && query_filter_roots.empty())
+        return names;
+
+    if (ast && !collectNamesMatchableByAdditionalTableFiltersImpl(ast->clone(), context, names, /*depth=*/ 0))
         return {};
 
     /// The filters themselves are planned with the same settings, so a table read by the subquery of a
     /// filter that applies can match an entry as well. Only the filters keyed by an already collected
-    /// name (and `additional_result_filter`, which always applies) are walked, until the set stops
-    /// growing: a filter of an unrelated table never runs, so the tables it reads cannot match anything.
+    /// name (including the seed names, e.g. of a view whose own entry applies to the rows it returns, so
+    /// the closure also covers the filters reachable only through that entry), and
+    /// `additional_result_filter`, which always applies, are walked, until the set stops growing: a filter
+    /// of an unrelated table never runs, so the tables it reads cannot match anything.
     static constexpr size_t max_iterations = 32;
     for (size_t iteration = 0;; ++iteration)
     {
@@ -693,7 +711,7 @@ std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast,
         ASTs filters;
         if (!parseFilterASTsInjectedFromSettings(context, filters, &names))
             return {};
-        if (!collectFiltersFromQuerySettings(*ast, settings, filters, &names))
+        if (ast && !collectFiltersFromQuerySettings(*ast, settings, filters, &names))
             return {};
 
         const size_t names_before = names.size();
@@ -703,6 +721,49 @@ std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast,
         if (names.size() == names_before)
             return names;
     }
+}
+
+/// Hashes the dependencies of the given filters, applying the same rules as to the query itself (fail
+/// closed on non-deterministic functions, `dictGet`-like calls, SQL UDFs, ...). The filters come in the
+/// order of the settings map, which carries no meaning, so their hashes are sorted (keeping multiplicity)
+/// the same way as the per-table hashes: reordering the entries of an otherwise identical
+/// `additional_table_filters` must not move the hash.
+static std::optional<std::vector<UInt128>> computeFiltersModificationHashes(const ASTs & filter_asts, const ContextPtr & context)
+{
+    std::vector<UInt128> filter_hashes;
+    filter_hashes.reserve(filter_asts.size());
+    for (const auto & filter_ast : filter_asts)
+    {
+        auto filter_hash = computeReferencedTablesModificationHashImpl(filter_ast->clone(), context);
+        if (!filter_hash)
+            return {};
+        filter_hashes.push_back(*filter_hash);
+    }
+    std::sort(filter_hashes.begin(), filter_hashes.end());
+    return filter_hashes;
+}
+
+std::optional<UInt128> computeAdditionalFiltersModificationHash(ContextPtr context, const NameSet & seed_names, NameSet & matchable_names)
+{
+    auto names = collectNamesMatchableByAdditionalTableFilters(nullptr, context, &seed_names);
+    if (!names)
+        return {};
+
+    ASTs filter_asts;
+    if (!parseFilterASTsInjectedFromSettings(context, filter_asts, &*names))
+        return {};
+
+    auto filter_hashes = computeFiltersModificationHashes(filter_asts, context);
+    if (!filter_hashes)
+        return {};
+
+    SipHash hash;
+    hash.update(filter_hashes->size());
+    for (const auto & filter_hash : *filter_hashes)
+        hash.update(filter_hash);
+
+    matchable_names = std::move(*names);
+    return hash.get128();
 }
 
 std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context, const NameSet * extra_matchable_names)
@@ -728,9 +789,7 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
 
     /// Only the `additional_table_filters` entries that can apply to a table the query reads take part,
     /// so that an entry for an unrelated table does not move the hash.
-    auto matchable_names = collectNamesMatchableByAdditionalTableFilters(ast, context);
-    if (matchable_names && extra_matchable_names)
-        matchable_names->insert(extra_matchable_names->begin(), extra_matchable_names->end());
+    auto matchable_names = collectNamesMatchableByAdditionalTableFilters(ast, context, extra_matchable_names);
 
     ASTs filter_asts;
     if (!parseFilterASTsInjectedFromSettings(context, filter_asts, matchable_names ? &*matchable_names : nullptr))
@@ -749,25 +808,14 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     if (filter_asts.empty())
         return query_hash;
 
-    /// Fold the dependencies of the injected filters into the query's own hash, applying the
-    /// same rules (fail closed on non-deterministic functions, `dictGet`-like calls, SQL UDFs, ...).
-    /// The filters come in the order of the settings map, which carries no meaning, so sort their hashes
-    /// (keeping multiplicity) the same way as the per-table hashes: reordering the entries of an
-    /// otherwise identical `additional_table_filters` must not move the hash.
-    std::vector<UInt128> filter_hashes;
-    filter_hashes.reserve(filter_asts.size());
-    for (const auto & filter_ast : filter_asts)
-    {
-        auto filter_hash = computeReferencedTablesModificationHashImpl(filter_ast->clone(), context);
-        if (!filter_hash)
-            return {};
-        filter_hashes.push_back(*filter_hash);
-    }
-    std::sort(filter_hashes.begin(), filter_hashes.end());
+    /// Fold the dependencies of the injected filters into the query's own hash.
+    auto filter_hashes = computeFiltersModificationHashes(filter_asts, context);
+    if (!filter_hashes)
+        return {};
 
     SipHash combined;
     combined.update(*query_hash);
-    for (const auto & filter_hash : filter_hashes)
+    for (const auto & filter_hash : *filter_hashes)
         combined.update(filter_hash);
     return combined.get128();
 }

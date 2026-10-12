@@ -979,7 +979,26 @@ void StorageMaterializedView::alter(
 
     setInMemoryMetadata(new_metadata);
 
-    if (refresher)
+    /// `alterRefreshParams` makes a refresh that races with this `ALTER` discard its watermark and run
+    /// again under the new definition, which in `APPEND` mode appends the same rows twice. So skip it for
+    /// an `ALTER` that does not change what a refresh reads and produces, e.g. a `MODIFY COMMENT`.
+    auto refresh_definition_hash = [](const StorageInMemoryMetadata & metadata)
+    {
+        SipHash hash;
+        if (metadata.refresh)
+            metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
+        if (metadata.select.select_query)
+            metadata.select.select_query->updateTreeHash(hash, /*ignore_aliases=*/ false);
+        hash.update(metadata.sql_security_type.has_value());
+        if (metadata.sql_security_type)
+            hash.update(static_cast<UInt8>(*metadata.sql_security_type));
+        hash.update(metadata.definer.has_value());
+        if (metadata.definer)
+            hash.update(*metadata.definer);
+        hash.update(metadata.getColumns().toString(/*include_comments=*/ false));
+        return hash.get128();
+    };
+    if (refresher && refresh_definition_hash(new_metadata) != refresh_definition_hash(*view_metadata))
         refresher->alterRefreshParams(new_metadata.refresh->as<const ASTRefreshStrategy &>());
 }
 
@@ -1221,9 +1240,16 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// The read is pushed straight into the target storage, which does not apply the
         /// `additional_table_filters` entries keyed by the target table, so only the entries keyed by
         /// the names of the materialized view itself can apply (see `collectNamesMatchableByAdditionalTableFilters`).
+        /// Such an entry can read other tables in its subqueries, which in turn can have entries of their
+        /// own, so the dependencies of that whole closure are hashed as well.
         const auto & storage_id = getStorageID();
-        const NameSet additional_table_filters_matchable_names{storage_id.getTableName(), storage_id.getFullNameNotQuoted()};
+        const NameSet own_names{storage_id.getTableName(), storage_id.getFullNameNotQuoted()};
+        NameSet additional_table_filters_matchable_names;
+        auto filters_hash = computeAdditionalFiltersModificationHash(effective_context, own_names, additional_table_filters_matchable_names);
+        if (!filters_hash)
+            return {};
         updateHashWithRowAffectingSettings(hash, effective_context->getSettingsRef(), &additional_table_filters_matchable_names);
+        hash.update(*filters_hash);
         hash.update(*target_hash);
         return hash.get128();
     }

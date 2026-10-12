@@ -894,9 +894,7 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         /// Purely operational settings are left out: a definer's profile carries them without
         /// changing a single row.
         /// An `additional_table_filters` entry keyed by neither the view nor a table it reads is left out.
-        auto additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(inner_query, effective_context);
-        if (additional_table_filters_matchable_names)
-            additional_table_filters_matchable_names->insert(own_names.begin(), own_names.end());
+        auto additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(inner_query, effective_context, &own_names);
         updateHashWithRowAffectingSettings(
             hash,
             effective_context->getSettingsRef(),
