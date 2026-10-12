@@ -21,7 +21,7 @@ function body()
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM url('${URL}', $(body plain))"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM urlCluster('test_shard_localhost', '${URL}', $(body cluster))"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM url('${URL}', $(body replicas)) SETTINGS enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'test_shard_localhost', parallel_replicas_for_cluster_engines = 1"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM url('${URL}', $(body replicas)) SETTINGS enable_parallel_replicas = 1, cluster_for_parallel_replicas = 'test_shard_localhost', parallel_replicas_for_cluster_engines = 1, automatic_parallel_replicas_mode = 0"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM urlCluster('test_shard_localhost', '${URL}', 'JSONEachRow', 'x UInt8', $(body explicit))"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
