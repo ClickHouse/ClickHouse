@@ -187,11 +187,15 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
 -- A `FilterStep` is a valid parent too: its own condition is computed below the `Sorting`, so the
 -- sort carries a `UInt8` instead of the `String`. `query_plan_filter_push_down = 0` keeps the
 -- filter above the sort, which is what makes this shape reachable.
+-- `optimize_push_subcolumns_into_subqueries = 0` is pinned for the same reason as
+-- `optimize_functions_to_subcolumns = 0` above: `notEmpty(s)` over a subquery is otherwise served
+-- by the `s.size` subcolumn, the `String` is never read and there is nothing left to push down.
 SELECT 'plan: filter step as parent — pushdown applied';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
 FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT id FROM (SELECT id, s FROM volume_reducing_function_push_down ORDER BY id) WHERE notEmpty(s)
-    SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_filter_push_down = 0);
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_filter_push_down = 0,
+        optimize_push_subcolumns_into_subqueries = 0);
 
 SELECT 'plan: filter step as parent — no pushdown when disabled';
 SELECT countIf(explain LIKE '%[volume-reducing functions]%')
@@ -259,7 +263,8 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT length(a)
     FROM (SELECT s, s AS a FROM volume_reducing_function_push_down)
     WHERE notEmpty(a)
-    SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_remove_unused_columns = 0, optimize_functions_to_subcolumns = 0);
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_remove_unused_columns = 0, optimize_functions_to_subcolumns = 0,
+        optimize_push_subcolumns_into_subqueries = 0);
 
 -- ----------------------------------------------------------------------------
 -- Default-behavior regression: the existing `tryExecuteFunctionsAfterSorting`
