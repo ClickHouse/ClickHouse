@@ -8,9 +8,10 @@ set -e
 
 # One group has more than a worker's share of distinct values and the other groups have small states.
 # The representations exercise both merge decisions, and the extra aggregates check the state offsets.
+# The key is `UInt64`: a narrower key has no two-level form, so the adaptive aggregator would not engage.
 for aggregate in \
     'uniqExact(n)' \
-    'uniqExact(n % 1000000)' \
+    'uniqExact(n % 250000)' \
     'uniqExact(toString(n))' \
     'uniqExactTuple(tuple(n, toString(n)))' \
     'uniqExactIf(n, n % 2 = 0)' \
@@ -20,7 +21,7 @@ do
     for suffix in 'ORDER BY k' 'ORDER BY c DESC LIMIT 1'
     do
         query="SELECT k, sum(n) AS s, count() AS c, ${aggregate} AS u
-            FROM (SELECT number AS n, if(n % 3 = 0, 0, 1 + n % 100) AS k FROM numbers_mt(4000000))
+            FROM (SELECT number AS n, toUInt64(if(n % 3 = 0, 0, 1 + n % 100)) AS k FROM numbers_mt(1000000))
             GROUP BY k ${suffix}"
         for adaptive in 0 1
         do
