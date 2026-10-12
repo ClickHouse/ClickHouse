@@ -681,10 +681,22 @@ private:
     /// Checks every value of a boolean parameter, because a client may repeat it.
     bool hasParamValue(const String & name, bool value) const
     {
+        bool found = false;
         for (const auto & param_value : params->getAll(name))
-            if (parse<bool>(param_value) == value)
-                return true;
-        return false;
+            found |= (parseBoolParam(name, param_value) == value);
+        return found;
+    }
+
+    /// Accepts the spellings of Go's strconv.ParseBool, which Thanos uses for these parameters.
+    static bool parseBoolParam(const String & name, const String & value)
+    {
+        static const NameSet true_values{"1", "t", "T", "true", "TRUE", "True"};
+        static const NameSet false_values{"0", "f", "F", "false", "FALSE", "False"};
+        if (true_values.contains(value))
+            return true;
+        if (false_values.contains(value))
+            return false;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the '{}' parameter: '{}', expected a boolean", name, value);
     }
 
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter

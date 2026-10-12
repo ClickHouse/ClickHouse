@@ -416,8 +416,10 @@ def test_ignored_params():
 def test_thanos_params():
     query = 'foo{shape="square"}'
     expected = execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150)
+    # The spellings of false that Thanos accepts.
     for name in ["dedup", "partial_response"]:
-        assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params={name: "false"}) == expected
+        for value in ["false", "0", "f", "F", "False"]:
+            assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=150, params={name: value}) == expected
     for name, value, error in [
         ("dedup", "true", "The 'dedup=true' parameter is not supported"),
         ("partial_response", "true", "The 'partial_response=true' parameter is not supported"),
@@ -432,6 +434,11 @@ def test_thanos_params():
         response = requests.get(url, params=[("query", query), ("time", "150"), (name, "false"), (name, "true")])
         assert response.status_code == 400
         assert f"The '{name}=true' parameter is not supported" in extract_error_from_http_api_response(response)
+    # Every value is checked, so a malformed one is an error in any position.
+    for values in [["1", "garbage"], ["garbage", "1"]]:
+        response = requests.get(url, params=[("query", query), ("time", "150")] + [("nocache", value) for value in values])
+        assert response.status_code == 400
+        assert "Invalid value of the 'nocache' parameter: 'garbage'" in response.text
 
 
 # `nocache=1` bypasses the query cache that a settings profile enables.
