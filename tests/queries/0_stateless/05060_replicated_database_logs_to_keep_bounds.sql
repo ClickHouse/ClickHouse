@@ -1,8 +1,9 @@
 -- Tags: need-query-parameters
 
--- `logs_to_keep` of a Replicated database is bounded by the DDL log counter, which is 32-bit:
--- `DDLTaskBase::getLogEntryNumber` returns `UInt32` and `/max_log_ptr` is written from it. A larger
--- value could never take effect, so a `CREATE` naming one is rejected instead of silently wrapping.
+-- `logs_to_keep` of a Replicated database must not exceed `2147483647` (`Int32::max`), and a `CREATE`
+-- naming a larger value is rejected instead of silently wrapping. The bound is below `UINT32_MAX`
+-- because older replicas evaluate `entry_number + logs_to_keep` in 32-bit arithmetic, and any value
+-- from 2^31 on can wrap there and make them delete the whole DDL log.
 
 -- Every case starts from a clean slate. Without that, a rejection that fails to happen leaves the
 -- database behind, and the next case reports `DATABASE_ALREADY_EXISTS` instead of the rejection it
@@ -18,15 +19,26 @@ DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/' || currentDatabase() || '/05060', 's1', 'r1')
 SETTINGS logs_to_keep = 4294967300; -- { serverError BAD_ARGUMENTS }
 
+-- `UINT32_MAX` itself fits the 32-bit type, but on an older replica `entry_number + 4294967295` wraps
+-- to `entry_number - 1`, so it is rejected too.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/' || currentDatabase() || '/05060', 's1', 'r1')
+SETTINGS logs_to_keep = 4294967295; -- { serverError BAD_ARGUMENTS }
+
+-- Just above the maximum.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/' || currentDatabase() || '/05060', 's1', 'r1')
+SETTINGS logs_to_keep = 2147483648; -- { serverError BAD_ARGUMENTS }
+
 -- The non-zero half of the type still holds.
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/' || currentDatabase() || '/05060', 's1', 'r1')
 SETTINGS logs_to_keep = 0; -- { serverError BAD_ARGUMENTS }
 
--- `UINT32_MAX` itself is in range.
+-- The maximum itself is in range.
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/test/' || currentDatabase() || '/05060', 's1', 'r1')
-SETTINGS logs_to_keep = 4294967295;
+SETTINGS logs_to_keep = 2147483647;
 
 SELECT value FROM system.zookeeper
 WHERE path = '/test/' || currentDatabase() || '/05060' AND name = 'logs_to_keep';
