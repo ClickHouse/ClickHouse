@@ -1,0 +1,56 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on AWS
+
+-- The fixture was written by ClickHouse 26.8 with PARTITION BY (icebergTruncate(10, i32), icebergTruncate(100, i64)).
+-- Before 26.9 a negative source value got a partition value that is not a multiple of the width
+-- (-1 -> -6 instead of -10), so the table cannot be produced by a current server.
+
+DROP TABLE IF EXISTS t_legacy;
+CREATE TABLE t_legacy ENGINE = IcebergS3(s3_conn, filename = 'iceberg_truncate_negative_legacy');
+
+SELECT partition FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_legacy' ORDER BY partition;
+
+-- Each row: both pruning layers on, only per-file partition pruning, no partition pruning.
+SELECT 'i32 = -1',
+    (SELECT count() FROM t_legacy WHERE i32 = -1 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_legacy WHERE i32 = -1 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_legacy WHERE i32 = -1 SETTINGS use_iceberg_partition_pruning = 0);
+SELECT 'i32 = -3',
+    (SELECT count() FROM t_legacy WHERE i32 = -3 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_legacy WHERE i32 = -3 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_legacy WHERE i32 = -3 SETTINGS use_iceberg_partition_pruning = 0);
+SELECT 'i32 = -12',
+    (SELECT count() FROM t_legacy WHERE i32 = -12 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_legacy WHERE i32 = -12 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_legacy WHERE i32 = -12 SETTINGS use_iceberg_partition_pruning = 0);
+SELECT 'i32 BETWEEN -5 AND -1',
+    (SELECT count() FROM t_legacy WHERE i32 BETWEEN -5 AND -1 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_legacy WHERE i32 BETWEEN -5 AND -1 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_legacy WHERE i32 BETWEEN -5 AND -1 SETTINGS use_iceberg_partition_pruning = 0);
+SELECT 'i32 IN (-1, -12)',
+    (SELECT count() FROM t_legacy WHERE i32 IN (-1, -12) SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_legacy WHERE i32 IN (-1, -12) SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_legacy WHERE i32 IN (-1, -12) SETTINGS use_iceberg_partition_pruning = 0);
+SELECT 'i64 = -1',
+    (SELECT count() FROM t_legacy WHERE i64 = -1 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_legacy WHERE i64 = -1 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_legacy WHERE i64 = -1 SETTINGS use_iceberg_partition_pruning = 0);
+SELECT 'i64 = -150',
+    (SELECT count() FROM t_legacy WHERE i64 = -150 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_legacy WHERE i64 = -150 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_legacy WHERE i64 = -150 SETTINGS use_iceberg_partition_pruning = 0);
+SELECT 'i32 = 23',
+    (SELECT count() FROM t_legacy WHERE i32 = 23 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_legacy WHERE i32 = 23 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_legacy WHERE i32 = 23 SETTINGS use_iceberg_partition_pruning = 0);
+
+-- A spec-valid key still skips every other manifest.
+SELECT count() FROM t_legacy WHERE i32 = 23
+SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1, log_comment = '05366_spec_value_probe';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['IcebergPartitionPrunedManifestFiles']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05366_spec_value_probe';
+
+DROP TABLE t_legacy;

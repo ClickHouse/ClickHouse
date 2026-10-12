@@ -8,6 +8,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 namespace DB::Iceberg
@@ -31,6 +32,7 @@ private:
     {
         DB::KeyDescription partition_key;
         DB::KeyCondition condition;
+        std::vector<IntegerTruncateField> integer_truncate_fields;
     };
 
     std::unordered_map<Int32, SpecCondition> conditions_by_spec_id;
