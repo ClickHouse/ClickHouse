@@ -156,6 +156,8 @@ curl --user default:<password> \
   --data-urlencode "table=metrics"
 ```
 
+With [`use_query_cache=1`](/reference/settings/session-settings/use-query#use_query_cache), the results of range queries and of instant queries with an explicit `time` are stored in the [query cache](/concepts/features/performance/caches/query-cache).
+
 Use the format-query endpoint to parse and format a PromQL expression without evaluating it:
 
 ```bash
