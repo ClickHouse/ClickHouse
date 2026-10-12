@@ -413,6 +413,9 @@ public:
     bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
+
+    /// Whether the FINAL merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
+    bool canUseVirtualRowWithFinal() const;
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -776,6 +779,13 @@ private:
         /// Index of this split when reading in-order with parallel replicas; nullopt means
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
+
+    /// The columns of a virtual row: the leading primary key columns the conversions read.
+    Block makeVirtualRowHeader() const;
+
+    /// The virtual row following a FINAL merge over `parts` (see `spreadMarkRangesAmongStreamsFinal`);
+    /// nullopt when the index of a part lacks the value.
+    std::optional<Block> getFinalMergeVirtualRow(const RangesInDataParts & parts, const Block & pk_header, bool read_in_reverse) const;
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
