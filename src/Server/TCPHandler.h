@@ -316,7 +316,7 @@ private:
     void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
     void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
 
-    bool processUnexpectedData();
+    bool processUnexpectedData(QueryState & state);
     [[noreturn]] void processUnexpectedQuery();
     [[noreturn]] void processUnexpectedHello();
     [[noreturn]] void processUnexpectedTablesStatusRequest();
@@ -373,6 +373,9 @@ private:
     bool connectionLimitReached();
 
     Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
+    /// `getClientAddress(session->getClientInfo())` that falls back to the peer address instead of throwing on a
+    /// malformed forwarded address, so a rejected interserver connection stays `AUTHENTICATION_FAILED`.
+    Poco::Net::SocketAddress getClientAddressNoThrow();
 };
 
 }

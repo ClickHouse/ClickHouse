@@ -1776,6 +1776,36 @@ TEST(PromQLParser, DurationUnitOrder)
 }
 
 
+TEST(PromQLParser, LineComments)
+{
+    /// A line comment is terminated either by an end of line or by the end of the query.
+    for (const auto * const query : {
+             "up # comment",
+             "up # comment\n",
+             "up # comment\r",
+             "up # comment\r\n",
+             "up #!comment",
+         })
+        EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
+
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse("# comment", 3, &error_message, &error_pos));
+    EXPECT_EQ(error_pos, 9);
+
+    /// EOF comments use the same `# ` / `#!` prefix contract as the shared SQL lexer.
+    for (const auto * const query : {"up #", "up #comment"})
+    {
+        error_message.clear();
+        error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 0, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_pos, 3) << query;
+    }
+}
+
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
@@ -1991,4 +2021,78 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\uE000")"), "\xEE\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
+}
+
+TEST(PromQLParser, UnimplementedCalls)
+{
+    EXPECT_EQ(parse("start()"), R"(
+start()
+
+PrometheusQueryTree(SCALAR):
+    Function(start)
+)");
+
+    EXPECT_EQ(parse("end()"), R"(
+end()
+
+PrometheusQueryTree(SCALAR):
+    Function(end)
+)");
+
+    EXPECT_EQ(parse("step()"), R"(
+step()
+
+PrometheusQueryTree(SCALAR):
+    Function(step)
+)");
+
+    EXPECT_EQ(parse("range()"), R"(
+range()
+
+PrometheusQueryTree(SCALAR):
+    Function(range)
+)");
+
+    EXPECT_EQ(parse(R"(sort_by_label(up, "job"))"), R"(
+sort_by_label(up, "job")
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_by_label):
+        InstantSelector:
+            __name__ EQ 'up'
+        StringLiteral('job')
+)");
+
+    EXPECT_EQ(parse(R"(sort_by_label_desc(up, "job"))"), R"(
+sort_by_label_desc(up, "job")
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_by_label_desc):
+        InstantSelector:
+            __name__ EQ 'up'
+        StringLiteral('job')
+)");
+
+    EXPECT_EQ(parse("double_exponential_smoothing(up[5m], 0.01, 0.1)"), R"(
+double_exponential_smoothing(up[5m], 0.01, 0.1)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(double_exponential_smoothing):
+        RangeSelector:
+            range: 300
+            InstantSelector:
+                __name__ EQ 'up'
+        Scalar(0.01)
+        Scalar(0.1)
+)");
+
+    EXPECT_EQ(parse("limit_ratio(0.5, up)"), R"(
+limit_ratio(0.5, up)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(limit_ratio)
+        Scalar(0.5)
+        InstantSelector:
+            __name__ EQ 'up'
+)");
 }
