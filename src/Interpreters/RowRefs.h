@@ -442,6 +442,30 @@ struct RefWordSelection
     RefWordShape shape = RefWordShape::Flat;
 };
 
+/// Describes how a join output column is read from a `StoredBlock`: directly from `columns[index]`
+/// (`Columns`), or as a `(field_offset, field_size)` slice of the block's row store (`RowStore`).
+struct ColumnAccessIndex
+{
+    enum Type : uint8_t { Columns, RowStore };
+
+    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false)
+        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_)
+    {
+    }
+
+    Type type;
+    size_t index;
+
+    /// Valid only when type is RowStore.
+    size_t field_offset;
+    size_t field_size;
+    bool is_nullable;
+
+    bool operator==(const ColumnAccessIndex &) const = default;
+};
+
+using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
+
 struct GatherNode;
 
 /// One level of a gather source descriptor: the `ColumnPlanes` of a stored column, per block,
@@ -487,13 +511,17 @@ struct GatherColumn
     const GatherNode * node = nullptr;
     /// Indexed by block_no; null when no block stores this column as `ColumnReplicated`.
     const GatherRowRemap * remap_by_block = nullptr;
+    bool in_row_store = false;
 };
 
-/// One column an emit table is asked for. The destination type is part of the request: it decides
-/// what an unmatched row writes, and its column class has to be the stored one.
+/// One column an emit table is asked for. `position` is the column's position in the saved block
+/// sample, which keys the table; `access` says where a stored block keeps it. The destination type
+/// is part of the request: it decides what an unmatched row writes, and its column class has to
+/// be the stored one.
 struct EmitColumnRequest
 {
     size_t position = 0;
+    ColumnAccessIndex access;
     DataTypePtr type;
 };
 
@@ -505,7 +533,9 @@ struct EmitColumnRequest
 /// the build phase is finished.
 ///
 /// On top of the block map it builds the emit table: a resolved gather source per requested output
-/// column, whose raw plane pointers let the kernels skip the stored block and its column vector.
+/// column, whose raw plane pointers let the kernels skip the stored block and its column vector. A
+/// column kept in the block's row store resolves the same way, its planes being `row_length`-strided
+/// slices of the row-major buffer rather than columns of their own.
 /// `resolveEmitColumns` builds the requested positions lazily under `mutex` and hands back the per-column
 /// descriptors. Positions already built for the current generation are reused. The table is keyed by
 /// `blocks_generation`, bumped whenever the stored blocks change (add/clearEntry, and in-place column
@@ -535,6 +565,7 @@ public:
         VectorWithMemoryTracking<GatherRowRemap> gather_remap_by_block;
         /// Owns the shape when no live block resolved one - see `resolveEmitColumns`.
         MutableColumnPtr shape_prototype;
+        bool in_row_store = false;
     };
 
     /// Registers a stored block, returns its block_no. Throws when the 2^31 limit
@@ -547,9 +578,6 @@ public:
 
     /// Raw pointer for hot decode loops. Must not be called before the build phase is finished.
     const StoredBlock * const * blocksData() const { return blocks.data(); }
-
-    /// Per-block row store base pointers (block_no -> RowDataStore*). A block without a row store stores nullptr.
-    const RowDataStore * const * rowStoresData() const { return row_stores.data(); }
 
     /// Number of registered blocks. Must not be called before the build phase is finished.
     size_t size() const { return blocks.size(); }

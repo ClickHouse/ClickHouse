@@ -220,7 +220,7 @@ void MergeTreeIndexReader::loadGranule(MergeTreeIndexGranulePtr & res, size_t ma
         .part_info = *data_part_info,
         .index = *index,
         .readable_ranges = readable_ranges,
-        .skip_postings_deserialization = false,
+        .text_index_read_postings = true,
         .reader_settings = settings,
     };
 

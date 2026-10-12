@@ -249,6 +249,8 @@ A value of `0` (default) means unlimited.
     DECLARE(UInt64, max_local_read_bandwidth_for_server, 0, R"(
 The maximum speed of local reads in bytes per second.
 
+The limit applies to the data read from the block devices: reads that are served from the OS page cache are not accounted for, as long as the read method can detect them (which is the case for the default `local_filesystem_read_method = 'pread_threadpool'`, for `pread`, and for the reads of the filesystem cache files).
+
 <Note>
 A value of `0` means unlimited.
 </Note>
@@ -1598,6 +1600,9 @@ See [Controlling behavior on server CPU overload](/concepts/features/configurati
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
+    DECLARE(Bool, tcp_with_proxy_allow_interserver_mode, true, R"(
+Allows clients connected through `tcp_with_proxy_port` to use the native protocol's interserver mode. Disable this setting when `tcp_with_proxy_port` is exposed to untrusted clients through a proxy. Connections to `tcp_port` and `tcp_port_secure` are not affected.
+)", 0) \
     DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire handshake phase of a native protocol (Hello and Addendum), MySQL or PostgreSQL connection, including the TLS negotiation. Limits how long an unauthenticated connection can hold a thread: the deadline is checked on every read, and the socket receive timeout is clamped to it, so a client that sends nothing cannot outlast the budget either. That clamp keeps a floor of 100 milliseconds, so a small value overdraws the budget slightly rather than cutting reads too short. Set to 0 to disable.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
@@ -1686,6 +1691,7 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. The only supported value is 'wasmtime'.", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
+    DECLARE(String, allow_experimental_cluster_discovery, "", R"(Cluster discovery is no longer experimental and is always enabled for clusters with the `discovery` section in `remote_servers`. The setting is deprecated and has no effect. It is kept as a `String` so that any previously accepted value, including an empty tag, is still accepted.)", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, allow_experimental_webterminal, true, R"(Former (experimental) name of `enable_webterminal`. Still honored for backward compatibility when `enable_webterminal` is not set. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
     DECLARE(UInt64, max_open_files, 0, R"(
@@ -1929,6 +1935,8 @@ At startup the server installs a [`seccomp`](https://man7.org/linux/man-pages/ma
 
 Creating a namespace is refused in every form it takes: `unshare` and `setns` are not allowed at all, a `clone` that asks for a namespace among its flags is refused, and `clone3` - whose arguments live in a structure that a filter cannot read, so that a namespace cannot be told from a thread - is refused as a whole, with `ENOSYS`. That is how a libc discovers that it has to use `clone` instead, so making threads and processes keeps working; `docker` and `systemd` refuse `clone3` the same way in their own policies.
 
+The extended-attribute system calls are refused with `ENOSYS` as well. ClickHouse does not use them, but the NSS modules of the host run inside the server process, and `nss-resolve` of `systemd` probes whether it may tag its socket with an attribute before doing so; `ENOSYS` is the answer it takes for "no" and goes on without the tag, whereas `SIGSYS` in the `trap` mode would terminate the server at the first host name lookup.
+
 Possible values:
 
 - `trap` - the kernel sends `SIGSYS` to the offending thread. ClickHouse treats it as any other fatal signal: the system call number and a stack trace go to the log, and the server terminates.
@@ -1937,7 +1945,7 @@ Possible values:
 - `log` - the system call is allowed, and only recorded. No system call is refused, so this mode enforces no policy at all; use it to check the policy against your workload before turning it on. `PR_SET_NO_NEW_PRIVS` is still set in this mode, because the kernel asks for it before it accepts a filter at all, so a setuid program the server runs does not get to elevate even here.
 - `disabled` - no filter is installed.
 
-The default is `log`, so that the policy enforces nothing until it has been validated against a workload: run the server with it, watch the kernel audit log for a system call the policy does not cover, and only then switch the setting to `trap`, `kill` or `errno`.
+The default is `log`, so that the policy enforces nothing until it has been validated against a workload: run the server with it, watch the kernel audit log for a system call the policy does not cover, and only then switch the setting to `trap`, `kill` or `errno`. The configuration file shipped with the server packages and the Docker image sets it to `trap`.
 
 Where the kernel cannot install a filter with the `log` action - it predates Linux 4.14, it is built without `CONFIG_SECCOMP_FILTER`, or an outer sandbox such as a container runtime refuses the `seccomp` system call - the `log` mode logs a warning with the reason and the server runs without a filter, since there is nothing the filter would have enforced. `PR_SET_NO_NEW_PRIVS` is set all the same. The enforcing modes do not do that: if their filter cannot be installed, the server does not start.
 
@@ -1945,7 +1953,9 @@ In every mode but `disabled` the kernel also records the offending system call i
 
 A filter cannot be removed or relaxed once installed, and it is inherited across both `fork` and `execve`, so it also applies to executable dictionaries and executable user defined functions, to the library and ODBC bridges, and to the OOM canary. A script run by one of those is subject to the same policy, which is worth keeping in mind if it does something unusual.
 
-The policy is only implemented for x86-64 and AArch64, since it is a list of architecture-specific system call numbers. On any other architecture the server logs a warning at startup and runs without a filter, but `PR_SET_NO_NEW_PRIVS`, which does not depend on the architecture, is still set in every mode but `disabled`.
+The policy is only implemented for x86-64 and AArch64, since it is a list of architecture-specific system call numbers. On any other architecture the server logs a warning at startup and runs without a filter, but `PR_SET_NO_NEW_PRIVS`, which does not depend on the architecture, is still set in every mode but `disabled`. seccomp is a facility of the Linux kernel: on other operating systems the server logs a warning at startup for any mode but `disabled` and runs without a filter.
+
+`system.server_settings` reports the mode of the filter in force, not the configured one: `disabled` wherever the server runs without a filter - on an operating system other than Linux, on an architecture without a policy, or in the `log` mode when the kernel cannot install its filter - and the mode set at startup otherwise, even after the configuration is reloaded with another value.
 
 **Example**
 
@@ -2034,6 +2044,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(UInt64, openssl_server_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.server.verificationDepth") \
     DECLARE(Bool, openssl_server_load_default_ca_file, true, R"(Determines whether the default CA certificates will be used. ClickHouse looks for them in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`), in the file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`), and in other well-known locations of various distributions. If no CA certificates are found on the filesystem, no explicit `caConfig` is configured, and the binary was built with embedded CA certificates (the default, controlled by the `ENABLE_EMBEDDED_CA_CERTIFICATES` build option), the embedded certificates are used instead, so TLS works even in a minimal environment without any files, e.g. in a container built "from scratch". In builds without embedded CA certificates, an error is thrown in this case.)", 0, "openSSL.server.loadDefaultCAFile") \
     DECLARE(String, openssl_server_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.server.cipherList") \
+    DECLARE(String, openssl_server_cipher_suites, "", R"(Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `<cipherList>` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.)", 0, "openSSL.server.cipherSuites") \
     DECLARE(Bool, openssl_server_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.server.cacheSessions") \
     DECLARE(String, openssl_server_session_id_context, "application.name", R"(A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `<SSL_MAX_SSL_SESSION_ID_LENGTH>`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.)", 0, "openSSL.server.sessionIdContext") \
     DECLARE(UInt64, openssl_server_session_cache_size, 20480, R"(The maximum number of sessions that the server caches. A value of 0 means unlimited sessions.)", 0, "openSSL.server.sessionCacheSize") \
@@ -2054,6 +2065,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(UInt64, openssl_client_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.client.verificationDepth") \
     DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Determines whether the default CA certificates will be used. ClickHouse looks for them in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`), in the file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`), and in other well-known locations of various distributions. If no CA certificates are found on the filesystem, no explicit `caConfig` is configured, and the binary was built with embedded CA certificates (the default, controlled by the `ENABLE_EMBEDDED_CA_CERTIFICATES` build option), the embedded certificates are used instead, so TLS works even in a minimal environment without any files, e.g. in a container built "from scratch". In builds without embedded CA certificates, an error is thrown in this case.)", 0, "openSSL.client.loadDefaultCAFile") \
     DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
+    DECLARE(String, openssl_client_cipher_suites, "", R"(Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `<cipherList>` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.)", 0, "openSSL.client.cipherSuites") \
     DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
     DECLARE(Bool, openssl_client_extended_verification, true, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
     DECLARE(Bool, openssl_client_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1") \
@@ -2259,7 +2271,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "zookeeper",
         "keeper",
         "auxiliary_zookeepers",
-        "allow_experimental_cluster_discovery",
         "macros",
         "interserver_http_credentials",
         "replica_group_name",
@@ -3788,18 +3799,21 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"enable_read_through_distributed_cache", {std::to_string(context->getReadThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
             {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
 
+            /// The server-wide throttlers, not `getRemoteReadThrottler()` and friends: those compose the
+            /// reading request's own per-query limit, and (for the remote pair and the distributed-cache
+            /// read) its per-user limit, on top of the server-wide one.
             {"max_remote_read_network_bandwidth_for_server",
-             {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideRemoteReadThrottler() ? std::to_string(context->getServerWideRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
-             {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideRemoteWriteThrottler() ? std::to_string(context->getServerWideRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_local_read_bandwidth_for_server",
-             {context->getLocalReadThrottler() ? std::to_string(context->getLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideLocalReadThrottler() ? std::to_string(context->getServerWideLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_local_write_bandwidth_for_server",
-             {context->getLocalWriteThrottler() ? std::to_string(context->getLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideLocalWriteThrottler() ? std::to_string(context->getServerWideLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_read_bandwidth_for_server",
-             {context->getDistributedCacheReadThrottler() ? std::to_string(context->getDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideDistributedCacheReadThrottler() ? std::to_string(context->getServerWideDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_write_bandwidth_for_server",
-             {context->getDistributedCacheWriteThrottler() ? std::to_string(context->getDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideDistributedCacheWriteThrottler() ? std::to_string(context->getServerWideDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
 #if ENABLE_DISTRIBUTED_CACHE
             {"distributed_cache_write_pool_size",
              {std::to_string(WriteBufferFromDistributedCache::getBackgroundWritePoolSize()), ChangeableWithoutRestart::Yes}},
