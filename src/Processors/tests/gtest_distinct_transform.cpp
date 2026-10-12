@@ -2,6 +2,7 @@
 
 #include <numeric>
 #include <thread>
+#include <tuple>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -16,9 +17,11 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 using namespace DB;
 
@@ -312,5 +315,51 @@ TEST(DistinctTransformMemory, PassThroughBeforeFilteringExceedsQueryThreshold)
         repeated.addColumn(std::move(empty_payload));
         static_cast<ISimpleTransform &>(transform).transform(repeated);
         EXPECT_EQ(repeated.getNumRows(), 2);
+    }).join();
+}
+
+TEST(DistinctTransformMemory, PassThroughBeforePackingDuplicateKeys)
+{
+    MemoryTracker query{&total_memory_tracker, VariableContext::Process, false};
+    std::thread([&]
+    {
+        ThreadStatus thread_status;
+        thread_status.memory_tracker.setParent(&query);
+        thread_status.untracked_memory_limit = 0;
+        for (const bool packed : {false, true})
+        {
+            SCOPED_TRACE(packed);
+            Block block{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+            if (packed)
+                block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeUInt8>(), "other"));
+            const auto header = std::make_shared<const Block>(std::move(block));
+            constexpr UInt64 threshold = 1 << 20;
+            DistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
+                /*allow_abandoning_=*/ false, /*skip_null_keys_=*/ false, threshold);
+            std::vector<UInt64> keys(2049);
+            std::iota(keys.begin(), keys.end(), 0);
+            auto first = makeChunk(keys);
+            if (packed)
+                first.addColumn(ColumnUInt8::create(keys.size(), UInt8{1}));
+            static_cast<ISimpleTransform &>(transform).transform(first);
+            ASSERT_EQ(first.getNumRows(), keys.size());
+            first.clear();
+
+            constexpr size_t rows = 4096;
+            Chunk duplicates(Columns{ColumnUInt64::create(rows, UInt64{0})}, rows);
+            if (packed)
+                duplicates.addColumn(ColumnUInt8::create(rows, UInt8{1}));
+
+            /// The table has room for another chunk, and masks and filtering copies fit in 64 KiB.
+            /// Packing the duplicate composite keys needs a 128 KiB buffer before any lookup occurs.
+            const Int64 pressure = threshold - query.get() - (64 << 10);
+            ASSERT_GT(pressure, 0);
+            std::ignore = CurrentMemoryTracker::alloc(pressure);
+            SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
+            query.setHardLimit(threshold);
+            SCOPE_EXIT(query.setHardLimit(0));
+            ASSERT_NO_THROW(static_cast<ISimpleTransform &>(transform).transform(duplicates));
+            EXPECT_EQ(duplicates.getNumRows(), packed ? rows : 0);
+        }
     }).join();
 }

@@ -65,6 +65,33 @@ EXCLUDE=(
     # malformed on purpose, so loading it here would print an exception.
     05035_delta_byte_array_zero_values.parquet
     05035_delta_byte_array_decimal.parquet
+    # Variant fixtures for the 04928-04933 tests. This test hashes a file through GROUP BY, which
+    # rejects the Dynamic columns they are read as, so there is nothing for it to check here.
+    04928_variant_spark.parquet
+    04929_variant_all_types.parquet
+    04930_variant_shredded.parquet
+    04931_variant_max_dynamic_types.parquet
+    04932_variant_null.parquet
+    04933_variant_binary_and_string.parquet
+    05227_variant_nested_types.parquet
+    05296_variant_json_objects.parquet
+    05297_variant_json_shared_data.parquet
+    # Its object has a duplicate path on purpose, so loading it here would print an exception.
+    05298_variant_json_duplicate_path.parquet
+    05299_variant_read_as_json.parquet
+    # Intentionally truncated variant blobs for the 05228 malformed-input test.
+    05228_variant_malformed.parquet
+    # Unsupported `VARIANT` specification version and one-sided null leaves, on purpose.
+    05306_variant_unsupported_version.parquet
+    05307_variant_one_sided_null.parquet
+    # Hand-crafted files with only min or only max statistics for the 05230 partial-statistics test.
+    05230_date_max_only_statistics.parquet
+    05230_date_min_only_statistics.parquet
+    # Hand-crafted RLE-encoded files for the 05318 filter-in-decoder test.
+    05318_parquet_dictionary_bit_width_0.parquet
+    05318_parquet_rle_boolean.parquet
+    # File for the 05334 test of string filters with `DELTA_BYTE_ARRAY` pages.
+    string_filters_delta_byte_array.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do
