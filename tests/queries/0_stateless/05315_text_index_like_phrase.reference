@@ -1,0 +1,79 @@
+like	[101,102,103]
+like, no index	[101,102,103]
+like, punctuation	[107]
+like, punctuation, no index	[107]
+like, short last word	[101,102,103]
+like, short last word, no index	[101,102,103]
+ilike	[101,102,103,105,106,108]
+ilike, no index	[101,102,103,105,106,108]
+ilike, three words	[108]
+ilike, three words, no index	[108]
+ilike, kelvin sign	[113]
+ilike, kelvin sign, no index	[113]
+ilike, only word with k	[114]
+ilike, only word with k, no index	[114]
+ilike, only word with s	[111,112]
+ilike, only word with s, no index	[111,112]
+ilike, two searchable words	[]
+ilike, two searchable words, no index	[]
+not like	61
+not like, no index	61
+not ilike	58
+not ilike, no index	58
+like and ilike	[102]
+like and ilike, no index	[102]
+postings budget exhausted	[201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216]
+postings budget exhausted, no index	[201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216]
+ilike prefix	[11,12,13,14,15,16,17,18,19,20]
+ilike prefix, no index	[11,12,13,14,15,16,17,18,19,20]
+every dictionary block	[11,12,13,14,15,16,17,18,19,20]
+05315_ilike	3	0	1
+05315_ilike_all_blocks	14	0	1
+05315_ilike_k	0	0	0
+05315_ilike_kelvin	3	0	1
+05315_ilike_prefix	5	0	1
+05315_ilike_s	0	0	0
+05315_ilike_three	3	0	1
+05315_like	1	0	1
+05315_like_and_ilike	3	0	1
+05315_like_budget	1	1	0
+05315_like_punctuation	1	0	1
+05315_like_short	0	0	0
+05315_ilike	9
+05315_ilike_kelvin	9
+05315_ilike_three	7
+05315_ilike_two_words	1
+05315_like	5
+05315_like_punctuation	1
+Nullable
+like	[101]
+like, no index	[101]
+ilike	[101,103]
+ilike, no index	[101,103]
+not like	14
+not like, no index	14
+not ilike	13
+not ilike, no index	13
+05315_nullable_ilike	1
+05315_nullable_like	1
+Preprocessor
+like	[101]
+like, no index	[101]
+ilike	[101,102,103]
+ilike, no index	[101,102,103]
+not ilike	17
+not ilike, no index	17
+05315_lower_ilike	1
+05315_lower_like	0
+Array tokenizer
+ilike prefix	[11,12,13,14,15,16,17,18,19,20,101,102,103]
+ilike prefix, no index	[11,12,13,14,15,16,17,18,19,20,101,102,103]
+ilike exact	[12,102]
+ilike exact, no index	[12,102]
+ilike prefix with s	[104,105,106]
+ilike prefix with s, no index	[104,105,106]
+ilike prefix with k	[107,108]
+ilike prefix with k, no index	[107,108]
+05315_array_exact	2
+05315_array_prefix	4
+05315_array_s	12

@@ -59,6 +59,7 @@
   <query>SELECT count() FROM tab WHERE message ILIKE '%TOXX12%'</query>
 
   <query>SELECT count() FROM tab WHERE message LIKE 'toxx12%'</query>
+  <query>SELECT count() FROM tab WHERE message ILIKE 'TOXX12%'</query>
   <query>SELECT count() FROM tab WHERE message LIKE '%toxx12'</query>
 
   <query>SELECT count() FROM tab WHERE startsWith(message, 'toxx12')</query>
