@@ -40,7 +40,12 @@ extern const Event AsyncLoggingSyslogTotalMessages;
 
 namespace DB
 {
-    class SensitiveDataMasker;
+class SensitiveDataMasker;
+
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 }
 
 
