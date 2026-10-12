@@ -68,14 +68,24 @@ namespace
         }
     }
 
+    void formatScope(const AccessRightsElement & element, const AccessFlags & group_flags, WriteBuffer & buffer)
+    {
+        /// Only a standalone global self-service leaf omits `ON`; mixed groups keep their scope.
+        if (group_flags == AccessFlags{AccessType::ALTER_USER_SELF_AUTHENTICATION}
+            && element.anyDatabase() && element.anyParameter() && element.anyColumn()
+            && !element.hasFilter() && !element.wildcard)
+            return;
+
+        buffer << " ";
+        element.formatONClause(buffer);
+    }
+
     String toStringImpl(const AccessRightsElement & element, bool with_options)
     {
         String result;
         formatAccessFlagsWithColumns(element, result);
-        result += " ";
-
         WriteBufferFromOwnString buffer;
-        element.formatONClause(buffer);
+        formatScope(element, element.access_flags, buffer);
         result += buffer.str();
 
         if (with_options)
@@ -90,6 +100,7 @@ namespace
 
         String result;
         String part;
+        AccessFlags group_flags;
 
         for (size_t i = 0; i != elements.size(); ++i)
         {
@@ -98,6 +109,7 @@ namespace
             if (!part.empty())
                 part += ", ";
             formatAccessFlagsWithColumns(element, part);
+            group_flags |= element.access_flags;
 
             bool next_element_uses_same_table_and_options = false;
             if (i != elements.size() - 1)
@@ -111,10 +123,10 @@ namespace
 
             if (!next_element_uses_same_table_and_options)
             {
-                part += " ";
                 WriteBufferFromOwnString buffer;
-                element.formatONClause(buffer);
+                formatScope(element, group_flags, buffer);
                 part += buffer.str();
+                group_flags = {};
 
                 if (with_options)
                     formatOptions(element.grant_option, element.is_partial_revoke, part);
@@ -464,6 +476,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
     /// to avoid duplicate keywords after backward-compatible conversion
     /// (e.g., READ ON FILE and WRITE ON FILE both become FILE after makeBackwardCompatible).
     AccessFlags group_flags;
+    AccessFlags scope_flags;
 
     for (size_t i = 0; i != size(); ++i)
     {
@@ -473,6 +486,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
         auto keywords = element.access_flags.toKeywords();
         if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
             continue;
+        scope_flags |= element.access_flags;
 
         /// Deduplicate keywords only for table-wide grants (anyColumn()).
         /// Column-scoped grants (e.g., SELECT(a), SELECT(b)) must output each
@@ -509,9 +523,9 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) co
 
         if (!next_element_on_same_db_and_table)
         {
-            buffer << " ";
-            element.formatONClause(buffer);
+            formatScope(element, scope_flags, buffer);
             group_flags = {};
+            scope_flags = {};
         }
     }
 

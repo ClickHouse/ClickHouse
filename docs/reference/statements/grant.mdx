@@ -143,6 +143,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `ALTER ROW POLICY`
     - `ALTER SETTINGS PROFILE`
     - `ALTER USER`
+    - `ALTER USER SELF AUTHENTICATION`
     - `CREATE QUOTA`
     - `CREATE ROLE`
     - `CREATE ROW POLICY`
@@ -556,7 +557,8 @@ Allows a user to execute queries that manage users, roles and row policies.
 
 - `ACCESS MANAGEMENT`. Level: `GROUP`
   - `CREATE USER`. Level: `GLOBAL`
-  - `ALTER USER`. Level: `GLOBAL`
+  - `ALTER USER`. Level: `USER_NAME`
+  - `ALTER USER SELF AUTHENTICATION`. Level: `GLOBAL`
   - `DROP USER`. Level: `GLOBAL`
   - `CREATE ROLE`. Level: `GLOBAL`
   - `ALTER ROLE`. Level: `GLOBAL`
@@ -580,6 +582,31 @@ Allows a user to execute queries that manage users, roles and row policies.
   - `ALLOW SQL SECURITY NONE`. Level: `GLOBAL`. Aliases: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
 
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
+
+#### Self-service authentication {#self-service-authentication}
+
+`ALTER USER SELF AUTHENTICATION` permits a user to replace, add, or reset authentication methods on their own account. It is a global privilege attached to the recipient, rather than a privilege on a target user name. Its standalone syntax has no object-target `ON` clause:
+
+```sql
+GRANT ALTER USER SELF AUTHENTICATION TO alice;
+GRANT ALTER USER SELF AUTHENTICATION TO self_credential_rotation;
+REVOKE ALTER USER SELF AUTHENTICATION FROM alice;
+```
+
+When `self_credential_rotation` is an enabled role, each member can manage their own credentials. Administrative account renames preserve this permission. Supported authentication methods include `no_password`; the privilege does not restrict users to password-based methods.
+
+The permission requires a single target matching the authenticated account, local execution after existing cluster-clause processing, and no explicit access-storage selector. Other account fields, mixed changes, and either form of explicit `VALID UNTIL` require full `ALTER USER`. Existing credential validation, read-only restrictions, and storage restrictions still apply.
+
+Grant options are independent:
+
+```sql
+GRANT ALTER USER SELF AUTHENTICATION TO alice WITH GRANT OPTION;
+REVOKE GRANT OPTION FOR ALTER USER SELF AUTHENTICATION FROM alice;
+```
+
+Full `ALTER USER` on a target allows altering that target, but does not authorize granting the global self-service privilege. `ALL` and `ACCESS MANAGEMENT` include the self-service privilege directly. Revoking full `ALTER USER` from these group grants does not remove self-service authority; revoke the self-service privilege and any role supplying it to remove that authority.
+
+Standalone `ON bob`, `ON *.*`, and column lists are rejected. `ON CLUSTER` remains an execution modifier. Mixed global groups, such as `GRANT SELECT, ALTER USER SELF AUTHENTICATION ON *.* TO alice`, retain normal scope syntax; an explicitly named self-service entry cannot be combined with a table or user-name scope. Ordinary grant display and persistence use the short standalone form. `GRANT CURRENT GRANTS(ALTER USER SELF AUTHENTICATION) TO alice` copies explicit grantable self-service rights.
 
 ### SYSTEM {#system}
 

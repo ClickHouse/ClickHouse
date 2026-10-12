@@ -290,3 +290,90 @@ def test_drop_role_cascades_to_disk():
         DROP QUOTA    IF EXISTS q_104298;
         """
     )
+
+
+@pytest.mark.parametrize("grant_option", [False, True])
+def test_self_authentication_grants_survive_restart(grant_option):
+    direct = "self_auth_direct_05055"
+    member = "self_auth_member_05055"
+    recipient = "self_auth_recipient_05055"
+    role = "self_auth_role_05055"
+    password = "InitialPassword_05055"
+    privilege = "ALTER USER SELF AUTHENTICATION"
+    option = " WITH GRANT OPTION" if grant_option else ""
+
+    def own_change(user):
+        instance.query(
+            f"ALTER USER {user} IDENTIFIED WITH sha256_password BY '{password}'",
+            user=user,
+            password=password,
+        )
+        assert instance.query("SELECT 1", user=user, password=password) == "1\n"
+
+    def delegate():
+        query = f"GRANT {privilege} TO {recipient}"
+        if grant_option:
+            instance.query(query, user=direct, password=password)
+        else:
+            assert "ACCESS_DENIED" in instance.query_and_get_error(
+                query, user=direct, password=password
+            )
+
+    try:
+        instance.query(
+            f"""
+            CREATE USER {direct} IDENTIFIED WITH sha256_password BY '{password}';
+            CREATE USER {member} IDENTIFIED WITH sha256_password BY '{password}';
+            CREATE USER {recipient};
+            CREATE ROLE {role};
+            GRANT {privilege} TO {direct}{option};
+            GRANT SELECT, {privilege} ON *.* TO {role}{option};
+            GRANT {role} TO {member};
+            """
+        )
+        direct_grants = instance.query(f"SHOW GRANTS FOR {direct}")
+        assert direct_grants == f"GRANT {privilege} TO {direct}{option}\n"
+        role_grants = instance.query(f"SHOW GRANTS FOR {role}")
+        assert privilege in role_grants and f"ON *.* TO {role}" in role_grants
+        member_grants = instance.query(f"SHOW GRANTS FOR {member}")
+        own_change(direct)
+        own_change(member)
+        delegate()
+
+        # Disk loading parses serialized ATTACH grants through the same short-form parser.
+        instance.restart_clickhouse()
+        assert instance.query(f"SHOW GRANTS FOR {direct}") == direct_grants
+        assert instance.query(f"SHOW GRANTS FOR {role}") == role_grants
+        assert instance.query(f"SHOW GRANTS FOR {member}") == member_grants
+        own_change(direct)
+        own_change(member)
+        delegate()
+
+        instance.query(
+            f"REVOKE GRANT OPTION FOR {privilege} FROM {direct};"
+            f"GRANT ALTER USER ON {direct} TO {direct} WITH GRANT OPTION;"
+        )
+        revoked_grants = instance.query(f"SHOW GRANTS FOR {direct}")
+        instance.restart_clickhouse()
+        assert instance.query(f"SHOW GRANTS FOR {direct}") == revoked_grants
+        assert "ACCESS_DENIED" in instance.query_and_get_error(
+            f"GRANT {privilege} TO {recipient}", user=direct, password=password
+        )
+        own_change(direct)
+
+        instance.query(f"REVOKE ALTER USER ON {direct} FROM {direct}")
+        own_change(direct)
+        instance.query(f"REVOKE {privilege} FROM {direct}")
+        instance.restart_clickhouse()
+        assert instance.query(f"SHOW GRANTS FOR {direct}") == ""
+        assert "ACCESS_DENIED" in instance.query_and_get_error(
+            f"ALTER USER {direct} IDENTIFIED BY '{password}'",
+            user=direct,
+            password=password,
+        )
+        own_change(member)
+    finally:
+        instance.query(
+            f"DROP USER IF EXISTS {direct}, {member}, {recipient};"
+            f"DROP ROLE IF EXISTS {role};"
+        )

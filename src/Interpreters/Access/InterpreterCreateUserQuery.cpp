@@ -268,10 +268,14 @@ BlockIO InterpreterCreateUserQuery::execute()
         const bool self_service = isAuthenticationOnlyAlter(query)
             && names.size() == 1 && query.cluster.empty() && query.storage_name.empty()
             && authenticated_user_id && names.front() == getContext()->getUserName();
-        const auto required_access = self_service ? AccessType::ALTER_USER_AUTHENTICATION : AccessType::ALTER_USER;
-
-        for (const auto & name : names)
-            access->checkAccess(required_access, name);
+        /// Prefer full user authority when present; a scoped grant does not imply a global self-service grant.
+        if (self_service && !access->getAccessRightsWithImplicit()->isGranted(AccessType::ALTER_USER, names.front()))
+            access->checkAccess(AccessType::ALTER_USER_SELF_AUTHENTICATION);
+        else
+        {
+            for (const auto & name : names)
+                access->checkAccess(AccessType::ALTER_USER, name);
+        }
 
         if (self_service)
         {

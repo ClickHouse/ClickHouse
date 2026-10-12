@@ -122,12 +122,6 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if (res & alter_table)
             res |= alter_view;
 
-        /// `ALTER_USER` => `ALTER_USER_AUTHENTICATION` at this node's resolved scope.
-        /// Explicit grants and revokes remain independent. The traversal applies this rule
-        /// separately to normal and grant-option rights, after enabled-role rights are combined.
-        if (res & AccessType::ALTER_USER)
-            res |= AccessType::ALTER_USER_AUTHENTICATION;
-
         /// CREATE TABLE (on any database/table) => CREATE_TEMPORARY_TABLE (global)
         static const AccessFlags create_temporary_table = AccessType::CREATE_TEMPORARY_TABLE;
         if ((level == 0) && (max_flags_with_children & create_table))

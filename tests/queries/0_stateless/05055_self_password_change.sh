@@ -52,9 +52,11 @@ expect_error()
     description="$1"
     if [[ "$1" == as_user ]]; then
         description="user=$2 query=$4"
+    elif [[ "$1" == admin ]]; then
+        description="query=$2"
     fi
     if output=$("$@" 2>&1); then
-        if [[ "$1" == as_user && "$4" == GRANT* ]]; then
+        if [[ "$1" == as_user && "${4:-}" == GRANT* ]]; then
             # Show both explicit and effective sources when a delegation check unexpectedly succeeds.
             admin "SHOW GRANTS FOR $2; SHOW GRANTS FOR $2 FINAL WITH IMPLICIT;" >&2
         fi
@@ -105,12 +107,32 @@ admin "CREATE USER $alice IDENTIFIED WITH sha256_password BY '$alice_password';
 
 echo "Explicit permission and privilege metadata"
 deny_change "ALTER USER $alice IDENTIFIED BY '$denied_password'"
-admin "GRANT ALTER USER AUTHENTICATION ON $alice TO $alice"
+admin "GRANT ALTER USER SELF AUTHENTICATION TO $alice"
 assert_query "SELECT count() FROM system.privileges
-              WHERE privilege = 'ALTER USER AUTHENTICATION'
-                AND level = 'USER_NAME' AND parent_group = 'ACCESS MANAGEMENT'" 1
+              WHERE privilege = 'ALTER USER SELF AUTHENTICATION'
+                AND level = 'GLOBAL' AND parent_group = 'ACCESS MANAGEMENT'" 1
 grants=$(admin "SHOW GRANTS FOR $alice FORMAT TSVRaw")
-[[ "$grants" == "GRANT ALTER USER AUTHENTICATION ON $alice TO $alice" ]] || fail "Incorrect explicit grant: $grants"
+[[ "$grants" == "GRANT ALTER USER SELF AUTHENTICATION TO $alice" ]] || fail "Incorrect explicit grant: $grants"
+
+echo "Short syntax, mixed groups and global scope validation"
+for verb in "GRANT" "REVOKE"; do
+    recipient="TO"
+    [[ "$verb" != REVOKE ]] || recipient="FROM"
+    expect_error SYNTAX_ERROR admin "$verb ALTER USER SELF AUTHENTICATION ON $bob $recipient $replay"
+    expect_error SYNTAX_ERROR admin "$verb ALTER USER SELF AUTHENTICATION ON *.* $recipient $replay"
+    expect_error INVALID_GRANT admin "$verb SELECT, ALTER USER SELF AUTHENTICATION ON ${CLICKHOUSE_DATABASE}.a_table $recipient $replay"
+done
+expect_error SYNTAX_ERROR admin "GRANT ALTER USER SELF AUTHENTICATION(x) ON *.* TO $replay"
+expect_error SYNTAX_ERROR admin "GRANT ALTER USER SELF AUTHENTICATION, SELECT TO $replay"
+expect_error SYNTAX_ERROR admin "GRANT CREATE USER TO $replay"
+assert_query "SELECT position(formatQuery('GRANT ALTER USER SELF AUTHENTICATION ON CLUSTER a_cluster TO $replay'), 'ON CLUSTER') > 0" 1
+admin "GRANT SELECT, ALTER USER SELF AUTHENTICATION ON *.* TO $replay"
+grants=$(admin "SHOW GRANTS FOR $replay FORMAT TSVRaw")
+[[ "$grants" == *" ON *.* TO $replay"* ]] || fail "Mixed global grants lost their scope: $grants"
+admin "REVOKE ALL ON *.* FROM $replay; GRANT CURRENT GRANTS(ALTER USER SELF AUTHENTICATION) TO $replay;"
+grants=$(admin "SHOW GRANTS FOR $replay FORMAT TSVRaw")
+[[ "$grants" == "GRANT ALTER USER SELF AUTHENTICATION TO $replay" ]] || fail "Incorrect current-grants copy: $grants"
+admin "REVOKE ALL ON *.* FROM $replay"
 
 echo "Replacement, addition and reset with fresh connections"
 old_password="$alice_password"
@@ -165,7 +187,6 @@ deny_change "ALTER USER $alice IDENTIFIED BY '$denied_password' VALID UNTIL '210
 deny_change "ALTER USER $alice ADD IDENTIFIED WITH sha256_password BY '$denied_password' VALID UNTIL '2100-01-01'"
 
 echo "Self-service boundary and other account operations"
-admin "GRANT ALTER USER AUTHENTICATION ON $bob TO $alice"
 deny_change "ALTER USER $bob IDENTIFIED BY '$denied_password'"
 deny_change "ALTER USER $alice, $bob IDENTIFIED BY '$denied_password'"
 deny_change "ALTER USER $bob, $alice IDENTIFIED BY '$denied_password'"
@@ -189,98 +210,102 @@ expect_error READONLY as_user "$alice" "$alice_password" "ALTER USER $alice IDEN
 assert_login "$alice" "$alice_password"
 expect_error AUTHENTICATION_FAILED as_user "$alice" "$denied_password" "SELECT 1"
 
-echo "Implicit full access and independent ordinary revokes"
+echo "Full user access and independent ordinary revokes"
 admin "REVOKE ALL ON *.* FROM $alice; GRANT ALTER USER ON $alice TO $alice;"
 grants=$(admin "SHOW GRANTS FOR $alice FORMAT TSVRaw")
-[[ "$grants" == "GRANT ALTER USER ON $alice TO $alice" ]] || fail "Full privilege acquired an explicit authentication grant"
+[[ "$grants" == "GRANT ALTER USER ON $alice TO $alice" ]] || fail "Full privilege acquired an explicit self-service grant"
 implicit_grants=$(admin "SHOW GRANTS FOR $alice WITH IMPLICIT FORMAT TSVRaw")
-[[ "$implicit_grants" == *"ALTER USER AUTHENTICATION"* ]] || fail "Missing implicit authentication privilege"
+[[ "$implicit_grants" != *"ALTER USER SELF AUTHENTICATION"* ]] || fail "Scoped full access implied a global self-service privilege"
 as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password' HOST ANY SETTINGS max_threads = 2"
 as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password' VALID UNTIL '2100-01-01'"
-admin "GRANT ALTER USER AUTHENTICATION ON $alice TO $alice; REVOKE ALTER USER ON $alice FROM $alice;"
+admin "GRANT ALTER USER SELF AUTHENTICATION TO $alice; REVOKE ALTER USER ON $alice FROM $alice;"
 as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password'"
 deny_change "ALTER USER $alice HOST ANY"
-admin "REVOKE ALTER USER AUTHENTICATION ON $alice FROM $alice"
+admin "REVOKE ALTER USER SELF AUTHENTICATION FROM $alice"
 deny_change "ALTER USER $alice IDENTIFIED BY '$denied_password'"
-admin "GRANT ALTER USER, ALTER USER AUTHENTICATION ON $alice TO $alice;
-       REVOKE ALTER USER AUTHENTICATION ON $alice FROM $alice;"
+admin "GRANT ALTER USER ON $alice TO $alice;
+       GRANT ALTER USER SELF AUTHENTICATION TO $alice;
+       REVOKE ALTER USER SELF AUTHENTICATION FROM $alice;"
 as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password'"
 
-echo "Prefix, global and group-grant scopes"
-admin "REVOKE ALL ON *.* FROM $alice; GRANT ALTER USER AUTHENTICATION ON ${prefix}* TO $alice;"
-as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password'"
-deny_change "ALTER USER $bob IDENTIFIED BY '$denied_password'"
-admin "REVOKE ALL ON *.* FROM $alice; GRANT ALTER USER AUTHENTICATION ON * TO $alice;"
+echo "Global self-service and administrative scopes"
+admin "REVOKE ALL ON *.* FROM $alice; GRANT ALTER USER ON $bob TO $alice;"
+as_user "$alice" "$alice_password" "ALTER USER $bob IDENTIFIED BY '$bob_password' HOST ANY"
+deny_change "ALTER USER $alice IDENTIFIED BY '$denied_password'"
+admin "REVOKE ALL ON *.* FROM $alice; GRANT ALTER USER SELF AUTHENTICATION TO $alice;"
 as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password'"
 deny_change "ALTER USER $bob IDENTIFIED BY '$denied_password'"
 admin "REVOKE ALL ON *.* FROM $alice; GRANT ACCESS MANAGEMENT ON *.* TO $alice;
        REVOKE ALTER USER ON $alice FROM $alice;"
-# A group grant contains the independent authentication leaf even with a full-user exclusion.
+# A group grant contains the independent self-service leaf even with a full-user exclusion.
 as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password'"
 deny_change "ALTER USER $alice HOST ANY"
-admin "REVOKE ALTER USER AUTHENTICATION ON $alice FROM $alice"
+admin "REVOKE ALTER USER SELF AUTHENTICATION FROM $alice"
 deny_change "ALTER USER $alice IDENTIFIED BY '$denied_password'"
 # The test administrator may lack unrelated sensitive privileges, so delegate its grantable rights.
 admin "REVOKE ALL ON *.* FROM $alice; GRANT CURRENT GRANTS ON *.* TO $alice;"
 as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password'"
 
-echo "Enabled roles and scoped implication"
+echo "Enabled roles supply each member's self-service permission"
 admin "REVOKE ALL ON *.* FROM $alice;
-       GRANT ALTER USER ON ${prefix}* TO $role;
-       REVOKE ALTER USER ON $alice FROM $role;
-       GRANT $role TO $alice;
-       ALTER USER $alice DEFAULT ROLE NONE;"
-deny_change "SET ROLE $role; ALTER USER $alice IDENTIFIED BY '$denied_password'"
-admin "GRANT ALTER USER AUTHENTICATION ON $alice TO $role"
+       GRANT ALTER USER SELF AUTHENTICATION TO $role;
+       GRANT $role TO $alice, $bob;
+       ALTER USER $alice DEFAULT ROLE NONE;
+       ALTER USER $bob DEFAULT ROLE NONE;"
 as_user "$alice" "$alice_password" "SET ROLE $role; ALTER USER $alice IDENTIFIED BY '$alice_password'"
+as_user "$bob" "$bob_password" "SET ROLE $role; ALTER USER $bob IDENTIFIED BY '$bob_password'"
 deny_change "SET ROLE NONE; ALTER USER $alice IDENTIFIED BY '$denied_password'"
+deny_change "SET ROLE $role; ALTER USER $bob IDENTIFIED BY '$denied_password'"
 deny_change "SET ROLE $role; ALTER USER $alice HOST ANY"
-admin "GRANT ALTER USER ON $alice TO $role; REVOKE ALTER USER AUTHENTICATION ON $alice FROM $role;"
+admin "GRANT ALTER USER SELF AUTHENTICATION TO $alice;
+       REVOKE ALTER USER SELF AUTHENTICATION FROM $alice;
+       GRANT ALTER USER ON $bob TO $role WITH GRANT OPTION;"
 as_user "$alice" "$alice_password" "SET ROLE $role; ALTER USER $alice IDENTIFIED BY '$alice_password'"
-admin "GRANT ALTER USER AUTHENTICATION ON $alice TO $alice;
-       REVOKE ALTER USER AUTHENTICATION ON $alice FROM $alice;
-       GRANT ALTER USER ON ${prefix}* TO $role WITH GRANT OPTION;
-       REVOKE GRANT OPTION FOR ALTER USER ON $bob FROM $role;"
-as_user "$alice" "$alice_password" "SET ROLE $role; ALTER USER $alice IDENTIFIED BY '$alice_password'"
-as_user "$alice" "$alice_password" "SET ROLE $role; GRANT ALTER USER AUTHENTICATION ON $alice TO $bob"
-expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "SET ROLE $role; GRANT ALTER USER AUTHENTICATION ON $bob TO $bob"
-admin "GRANT ALTER USER AUTHENTICATION ON $bob TO $role WITH GRANT OPTION"
-as_user "$alice" "$alice_password" "SET ROLE $role; GRANT ALTER USER AUTHENTICATION ON $bob TO $bob"
-admin "REVOKE $role FROM $alice"
+expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "SET ROLE $role; GRANT ALTER USER SELF AUTHENTICATION TO $replay"
+admin "GRANT ALTER USER SELF AUTHENTICATION TO $role WITH GRANT OPTION"
+as_user "$alice" "$alice_password" "SET ROLE $role; GRANT ALTER USER SELF AUTHENTICATION TO $replay"
+expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "SET ROLE NONE; GRANT ALTER USER SELF AUTHENTICATION TO $replay"
+admin "REVOKE $role FROM $alice, $bob; REVOKE ALL ON *.* FROM $replay;"
 deny_change "ALTER USER $alice IDENTIFIED BY '$denied_password'"
 
-echo "Delegation and independent grant-option revokes"
-admin "GRANT ALTER USER ON $bob TO $alice"
-expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $bob"
+echo "Independent delegation and grant-option revokes"
+# Even full user-administration grant option on every account does not include the self-service bit.
+admin "GRANT ALTER USER ON * TO $alice WITH GRANT OPTION"
+as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password'"
+expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob"
+admin "REVOKE ALL ON *.* FROM $alice"
 admin "GRANT ALTER USER ON $bob TO $alice WITH GRANT OPTION"
-# The special copy path intersects explicit grants; it must not materialize the implication.
-as_user "$alice" "$alice_password" "GRANT CURRENT GRANTS(ALTER USER AUTHENTICATION ON $bob) TO $replay"
-assert_query "SELECT count() FROM system.grants WHERE user_name = '$replay' AND access_type = 'ALTER USER AUTHENTICATION'" 0
-as_user "$alice" "$alice_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $replay"
-assert_query "SELECT count() FROM system.grants WHERE user_name = '$replay' AND access_type = 'ALTER USER AUTHENTICATION'" 1
-as_user "$alice" "$alice_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $bob WITH GRANT OPTION"
+expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob"
+as_user "$alice" "$alice_password" "GRANT CURRENT GRANTS(ALTER USER SELF AUTHENTICATION) TO $replay"
+assert_query "SELECT count() FROM system.grants WHERE user_name = '$replay' AND access_type = 'ALTER USER SELF AUTHENTICATION'" 0
+admin "GRANT ALTER USER SELF AUTHENTICATION TO $alice WITH GRANT OPTION"
+as_user "$alice" "$alice_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob WITH GRANT OPTION"
 as_user "$bob" "$bob_password" "ALTER USER $bob IDENTIFIED BY '$bob_password'"
 expect_error ACCESS_DENIED as_user "$bob" "$bob_password" "GRANT ALTER USER ON $bob TO $replay"
-as_user "$bob" "$bob_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $replay"
-admin "GRANT ALTER USER AUTHENTICATION ON $bob TO $alice WITH GRANT OPTION;
-       REVOKE GRANT OPTION FOR ALTER USER ON $bob FROM $alice;"
-as_user "$alice" "$alice_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $bob"
+as_user "$bob" "$bob_password" "GRANT ALTER USER SELF AUTHENTICATION TO $replay"
+admin "REVOKE GRANT OPTION FOR ALTER USER ON $bob FROM $alice"
+as_user "$alice" "$alice_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob"
 expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "GRANT ALTER USER ON $bob TO $bob"
 admin "GRANT ALTER USER ON $bob TO $alice WITH GRANT OPTION;
-       REVOKE GRANT OPTION FOR ALTER USER AUTHENTICATION ON $bob FROM $alice;"
-as_user "$alice" "$alice_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $bob"
-admin "REVOKE GRANT OPTION FOR ALTER USER ON $bob FROM $alice"
-expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $bob"
-# Revoking grant option alone retains ordinary full-user authority.
+       REVOKE GRANT OPTION FOR ALTER USER SELF AUTHENTICATION FROM $alice;"
+expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob"
+# Revoking grant option alone retains ordinary self-service and administrative authority.
+as_user "$alice" "$alice_password" "ALTER USER $alice IDENTIFIED BY '$alice_password'"
 as_user "$alice" "$alice_password" "ALTER USER $bob IDENTIFIED BY '$bob_password' HOST ANY"
+admin "REVOKE ALL ON *.* FROM $replay;
+       GRANT ALTER USER SELF AUTHENTICATION TO $alice WITH GRANT OPTION;"
+as_user "$alice" "$alice_password" "GRANT CURRENT GRANTS(ALTER USER SELF AUTHENTICATION) TO $replay"
+assert_query "SELECT count() FROM system.grants WHERE user_name = '$replay' AND access_type = 'ALTER USER SELF AUTHENTICATION'" 1
+admin "REVOKE ALTER USER SELF AUTHENTICATION FROM $alice"
+deny_change "ALTER USER $alice IDENTIFIED BY '$denied_password'"
 
 echo "Grant replay preserves explicit scoped rights and grant options"
 admin "REVOKE ALL ON *.* FROM $alice; REVOKE ALL ON *.* FROM $replay;
        GRANT ALTER USER ON ${prefix}* TO $alice WITH GRANT OPTION;
        REVOKE ALTER USER ON $alice FROM $alice;
        REVOKE GRANT OPTION FOR ALTER USER ON $bob FROM $alice;
-       GRANT ALTER USER AUTHENTICATION ON $alice TO $alice WITH GRANT OPTION;"
-expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $bob"
+       GRANT ALTER USER SELF AUTHENTICATION TO $alice WITH GRANT OPTION;"
+expect_error ACCESS_DENIED as_user "$alice" "$alice_password" "GRANT ALTER USER ON $bob TO $bob"
 grants=$(admin "SHOW GRANTS FOR $alice FORMAT TSVRaw")
 [[ "$grants" == *"REVOKE GRANT OPTION FOR ALTER USER ON $bob FROM $alice"* ]] || fail "Grant export lost the scoped grant-option revoke: $grants"
 while IFS= read -r statement; do
@@ -292,16 +317,27 @@ replayed_grants=$(admin "SHOW GRANTS FOR $replay FORMAT TSVRaw")
 replayed_grants="${replayed_grants// TO $replay/ TO $alice}"
 replayed_grants="${replayed_grants// FROM $replay/ FROM $alice}"
 [[ "$grants" == "$replayed_grants" ]] || fail "Explicit grants changed during replay"
-as_user "$replay" "$bob_password" "GRANT ALTER USER AUTHENTICATION ON $alice TO $bob"
+as_user "$replay" "$bob_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob"
 expect_error ACCESS_DENIED as_user "$replay" "$bob_password" "GRANT ALTER USER ON $alice TO $bob"
-expect_error ACCESS_DENIED as_user "$replay" "$bob_password" "GRANT ALTER USER AUTHENTICATION ON $bob TO $bob"
-admin "REVOKE ALTER USER AUTHENTICATION ON $alice FROM $replay"
-expect_error ACCESS_DENIED as_user "$replay" "$bob_password" "GRANT ALTER USER AUTHENTICATION ON $alice TO $bob"
+expect_error ACCESS_DENIED as_user "$replay" "$bob_password" "GRANT ALTER USER ON $bob TO $bob"
+admin "REVOKE ALTER USER SELF AUTHENTICATION FROM $replay"
+expect_error ACCESS_DENIED as_user "$replay" "$bob_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob"
+# A scoped full-user grant option still cannot delegate the independent global permission.
 admin "GRANT ALTER USER ON $alice TO $replay WITH GRANT OPTION"
-as_user "$replay" "$bob_password" "GRANT ALTER USER AUTHENTICATION ON $alice TO $bob"
+expect_error ACCESS_DENIED as_user "$replay" "$bob_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob"
+admin "GRANT ALTER USER SELF AUTHENTICATION TO $replay WITH GRANT OPTION"
+as_user "$replay" "$bob_password" "GRANT ALTER USER SELF AUTHENTICATION TO $bob"
+
+echo "Renaming an account preserves its self-service permission"
+admin "REVOKE ALL ON *.* FROM $alice;
+       GRANT ALTER USER SELF AUTHENTICATION TO $alice;
+       ALTER USER $alice RENAME TO $renamed;"
+as_user "$renamed" "$alice_password" "ALTER USER $renamed IDENTIFIED BY '$alice_password'"
+admin "ALTER USER $renamed RENAME TO $alice"
+assert_login "$alice" "$alice_password"
 
 echo "No-password replacement retains existing method semantics"
-admin "REVOKE ALL ON *.* FROM $alice; GRANT ALTER USER AUTHENTICATION ON $alice TO $alice;"
+admin "REVOKE ALL ON *.* FROM $alice; GRANT ALTER USER SELF AUTHENTICATION TO $alice;"
 as_user "$alice" "$alice_password" "ALTER USER $alice NOT IDENTIFIED"
 alice_password=""
 assert_login "$alice" "$alice_password"

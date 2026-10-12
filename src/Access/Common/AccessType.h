@@ -283,7 +283,7 @@ enum class AccessType : uint8_t
                                                          identified by its ZooKeeper path */\
     \
     M(CREATE_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
-    M(ALTER_USER_AUTHENTICATION, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(ALTER_USER_SELF_AUTHENTICATION, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(ALTER_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
     M(DROP_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
     M(CREATE_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
