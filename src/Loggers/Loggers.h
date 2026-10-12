@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Types_fwd.h>
 #include <Loggers/OwnSplitChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
@@ -25,12 +24,7 @@ namespace Poco::Util
 class Loggers
 {
 public:
-    /// Loggers named in `keep_loggers` keep their channel, and their level unless `logger.levels` sets it.
-    void buildLoggers(
-        Poco::Util::AbstractConfiguration & config,
-        Poco::Logger & logger,
-        const std::string & cmd_name = "",
-        const DB::Strings & keep_loggers = {});
+    void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
 
     void updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger);
 
