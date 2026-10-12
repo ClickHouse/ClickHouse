@@ -91,7 +91,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\\nPARTITION BY icebergDay(datetime)\\nORDER BY symbol\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -367,6 +367,7 @@ def started_cluster():
         cluster.add_instance(
             "node1",
             main_configs=[
+                "configs/disks.xml",
                 "configs/query_log.xml",
                 "configs/text_log.xml",
             ],
@@ -808,7 +809,7 @@ def test_timestamps(started_cluster):
     df = pa.Table.from_pylist(data)
     table.append(df)
 
-    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\\nPARTITION BY icebergDay(timestamp)\\nORDER BY timestamptz\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 
@@ -899,13 +900,14 @@ def test_create_without_engine_arguments_no_database_location(started_cluster, e
     glue_client.create_database(DatabaseInput={"Name": root_namespace})
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    with pytest.raises(Exception) as exc:
-        node.query(
-            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
-            settings={"allow_experimental_database_glue_catalog": 1},
-        )
-    assert "cannot tell where table" in str(exc.value), str(exc.value)
-    assert table_name not in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+        settings={"allow_experimental_database_glue_catalog": 1},
+    )
+
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert f"warehouse-glue/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
 @pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
@@ -921,16 +923,14 @@ def test_create_without_engine_arguments_missing_database(started_cluster, engin
     )
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    for _ in range(2):
-        with pytest.raises(Exception) as exc:
-            node.query(
-                f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
-                settings={"allow_experimental_database_glue_catalog": 1},
-            )
-        assert "cannot tell where table" in str(exc.value), str(exc.value)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+        settings={"allow_experimental_database_glue_catalog": 1},
+    )
 
-    with pytest.raises(glue_client.exceptions.EntityNotFoundException):
-        glue_client.get_database(Name=root_namespace)
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert f"warehouse-glue/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
 def test_create_gzip_metadata(started_cluster):
@@ -984,6 +984,68 @@ def test_create_gzip_metadata(started_cluster):
     # Reopen through the catalog (fresh database) and confirm read still works.
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_native_create_gzip_metadata(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_gzip_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "iceberg_metadata_compression_method": "gzip",
+        },
+    )
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert metadata_location.endswith(".gz.metadata.json"), metadata_location
+
+    assert metadata_location.startswith("s3://"), metadata_location
+    bucket, _, key = metadata_location[len("s3://") :].partition("/")
+    metadata_bytes = started_cluster.minio_client.get_object(bucket, key).read()
+    assert metadata_bytes[:2] == b"\x1f\x8b", metadata_bytes[:16]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
+
+
+def test_create_table_engine_backend_mismatch_rejected(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_engine_backend_mismatch_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    for engine in [
+        "IcebergAzure('http://acc.blob.core.windows.net/cont/tbl/', 'acc', 'key')",
+        "IcebergLocal('/var/lib/clickhouse/user_files/tbl/')",
+        "IcebergHDFS('hdfs://namenode:9000/tbl/')",
+        "Iceberg('/var/lib/clickhouse/user_files/tbl/') SETTINGS disk = 'local_blob_disk'",
+    ]:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.mismatch` (x String) ENGINE = {engine}",
+            settings={
+                "allow_experimental_database_glue_catalog": 1,
+                "allow_database_glue_catalog": 1,
+            },
+        )
+        assert (
+            "would be reopened with the catalog's storage backend and become unreadable" in error
+        ), error
+        assert "stores tables on S3" in error, error
 
 
 def test_schema_evolution(started_cluster):
@@ -1068,6 +1130,12 @@ def test_drop_table(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     assert len(catalog.list_tables(root_namespace)) == 1
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
+
+    error = node.query_and_get_error(
+        f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` SETTINGS data_lake_delete_data_on_drop = 1"
+    )
+    assert "not supported for the Glue catalog" in error
+    assert len(catalog.list_tables(root_namespace)) == 1
 
     drop_clickhouse_glue_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0
