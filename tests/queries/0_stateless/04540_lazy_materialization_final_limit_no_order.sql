@@ -15,6 +15,9 @@ INSERT INTO t_lazy_final_limit SELECT number, if(number < 1000, 7, 999), 'v2_' |
 SET enable_analyzer = 1, max_threads = 4;
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000;
 SET optimize_move_to_prewhere = 1;
+-- Lazy final rewrites the FINAL plan, which flips the 'FINAL no limit' assertion below to 1.
+-- The assertions here are about lazy *materialization*, so pin lazy final off (its default).
+SET query_plan_optimize_lazy_final = 0;
 
 -- FINAL with a filter and a small LIMIT without ORDER BY: lazy materialization applies
 -- (the filter cannot be moved to PREWHERE, so this is the only way to avoid reading

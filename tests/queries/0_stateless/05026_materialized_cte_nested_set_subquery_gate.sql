@@ -2,6 +2,10 @@
 -- The set subquery's plan is executed as a standalone pipeline, so it has to carry its own
 -- materialization gate: nothing above it can gate its readers.
 
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the index analysis
+-- and key lookups by the set that this test checks do not happen.
+SET max_bytes_before_external_set = 0;
+
 SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 SET use_index_for_in_with_subqueries = 1;

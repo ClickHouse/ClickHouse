@@ -25,11 +25,14 @@ ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE IF EXISTS t_merge_missing_znode_r1 SYNC;
 DROP TABLE IF EXISTS t_merge_missing_znode_r2 SYNC;
 
+-- The non-recursive \`rm\` below fails on the part's znode if the full header gives it children.
 CREATE TABLE t_merge_missing_znode_r1 (id UInt64, v UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_merge_missing_znode', 'r1') ORDER BY id;
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_merge_missing_znode', 'r1') ORDER BY id
+SETTINGS use_minimalistic_part_header_in_zookeeper = 1;
 
 CREATE TABLE t_merge_missing_znode_r2 (id UInt64, v UInt64)
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_merge_missing_znode', 'r2') ORDER BY id;
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_merge_missing_znode', 'r2') ORDER BY id
+SETTINGS use_minimalistic_part_header_in_zookeeper = 1;
 
 INSERT INTO t_merge_missing_znode_r1 SELECT number, number FROM numbers(50);
 INSERT INTO t_merge_missing_znode_r1 SELECT number + 50, number + 50 FROM numbers(50);

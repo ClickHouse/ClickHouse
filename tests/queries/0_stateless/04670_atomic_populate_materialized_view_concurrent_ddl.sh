@@ -29,7 +29,10 @@ $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT atomic_populate_pause_before_subs
 # Pauses after the view is published, before it is subscribed to the source. Whether this `CREATE`
 # succeeds is up to the race with the `RENAME` below - renaming a view away while it is being populated is
 # allowed to fail the population - so its result is deliberately not asserted on.
+# The fail point only exists on the atomic path, so the `SYSTEM WAIT FAILPOINT ... PAUSE` below would
+# never be reached if the setting were randomized off.
 $CLICKHOUSE_CLIENT -q "
+    SET materialized_views_populate_atomically = 1;
     CREATE MATERIALIZED VIEW mv_04670 ENGINE = MergeTree ORDER BY n POPULATE AS SELECT n FROM src_04670
 " > /dev/null 2>&1 &
 CREATE_PID=$!

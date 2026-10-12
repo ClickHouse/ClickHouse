@@ -13,6 +13,21 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # partition between the pruning and the block number allocation; the rows of that partition
 # must not escape the mutation.
 
+FAILPOINT="rmt_mutation_prune_pause_before_block_allocation"
+
+# The failpoint is global and stays enabled until something disables it, so leaving it behind parks
+# every later predicate mutation on this server. The trap covers the exits it can - a failing step,
+# Ctrl-C locally - but not a harness timeout, which allows 0.1s between `SIGTERM` and `SIGKILL`, less
+# than a client round trip. Hence also the cleanup on the way in, which is what actually recovers a
+# server poisoned by a previous killed run.
+function cleanup()
+{
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}" 2>/dev/null ||:
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_mut_prune_race SYNC" 2>/dev/null ||:
+}
+trap cleanup EXIT INT TERM
+cleanup
+
 $CLICKHOUSE_CLIENT --query "
     SET insert_keeper_fault_injection_probability = 0.0;
 
@@ -24,14 +39,16 @@ $CLICKHOUSE_CLIENT --query "
 
     INSERT INTO t_mut_prune_race SELECT 1, number FROM numbers(10);
 
-    SYSTEM ENABLE FAILPOINT rmt_mutation_prune_pause_before_block_allocation;
+    SYSTEM ENABLE FAILPOINT ${FAILPOINT};
 "
 
-# Only partition 1 exists when the pruned partition set is computed.
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_mut_prune_race DELETE WHERE p >= 1 SETTINGS mutations_sync = 1" &
+# Only partition 1 exists when the pruned partition set is computed. Pinning the pruning setting is
+# load-bearing: with it off the mutation takes the unpruned path, the failpoint below is never
+# reached, and the wait never returns.
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_mut_prune_race DELETE WHERE p >= 1 SETTINGS mutations_sync = 1, optimize_mutations_with_partition_pruning = 1" &
 
 # Wait until the mutation is paused between pruning and block number allocation.
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT rmt_mutation_prune_pause_before_block_allocation PAUSE"
+$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${FAILPOINT} PAUSE"
 
 # Create a new partition that also matches the predicate.
 $CLICKHOUSE_CLIENT --query "
@@ -39,7 +56,7 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_mut_prune_race SELECT 2, number FROM numbers(10);
 "
 
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT rmt_mutation_prune_pause_before_block_allocation"
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"
 
 wait
 

@@ -1,4 +1,7 @@
 SET enable_analyzer = 1;
+-- This test asserts that redundant comparisons are removed, so it cannot run with
+-- the optimization off (CI randomizes it).
+SET optimize_redundant_comparisons = 1;
 
 DROP TABLE IF EXISTS 02668_logical_optimizer;
 

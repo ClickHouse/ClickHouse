@@ -14,6 +14,9 @@ SELECT DISTINCT zookeeperName FROM system.zookeeper WHERE path = '/' AND zookeep
 
 SELECT count() FROM system.zookeeper WHERE path IN '/' AND zookeeperName = 'zookeeper3'; -- { serverError BAD_ARGUMENTS }
 
+-- The contradictory filters below reach `system.zookeeper` as two different `zookeeperName`
+-- equalities (BAD_ARGUMENTS) unless comparison-chain folding collapses them to constant false
+SET optimize_redundant_comparisons = 1;
 SELECT count() = 0 FROM system.zookeeper WHERE path IN '/' AND zookeeperName = 'default' AND zookeeperName = 'zookeeper2';
 SELECT count() > 0 FROM system.zookeeper WHERE path IN '/' AND zookeeperName = 'zookeeper2' AND zookeeperName = 'zookeeper2';
 

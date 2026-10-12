@@ -21,6 +21,9 @@ SET join_runtime_filter_min_probe_rows = 0;
 -- randomized join-order perturbation must be off (it reproducibly flips the result, see issue).
 SET query_plan_optimize_join_order_randomize = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_join_swap_table = 'false';
 -- Under parallel replicas the pruning is split among the replicas, so the per-query counters this

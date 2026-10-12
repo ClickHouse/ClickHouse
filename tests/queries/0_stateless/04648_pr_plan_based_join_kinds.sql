@@ -23,6 +23,9 @@ SET automatic_parallel_replicas_mode = 0;
 -- changes which side is coordinated.
 SET parallel_replicas_local_plan = 1;
 SET query_plan_optimize_join_order_randomize = 0;
+-- Same pin, for the rest of the join-order search: another algorithm or conflict detector reorders
+-- the CROSS join into a shape that is distributed, and the step list below gains ReadFromParallelReplicas.
+SET query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_conflict_detector = '';
 SET query_plan_join_swap_table = 'false';
 
 -- For each kind: the row count (equal to non-parallel execution) and the plan steps. The steps show *how*

@@ -18,6 +18,9 @@ SET join_use_nulls = 0;
 -- plain source and sent to the replicas as a temporary table, so getJoinLocked is not called at
 -- all and none of its rejections apply, neither the new one nor the pre-existing ones.
 SET enable_parallel_replicas = 0;
+-- optimize_and_compare_chain_max_hash_work is load-bearing: a small budget rewrites the AND chain
+-- of the mixed ON condition, so the query no longer reaches the guard whose errors are asserted.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS sj_all_left;

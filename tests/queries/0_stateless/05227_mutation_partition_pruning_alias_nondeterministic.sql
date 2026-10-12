@@ -7,6 +7,9 @@
 -- against the storage.
 
 SET mutations_sync = 0, allow_nondeterministic_mutations = 1;
+-- The pruning this file is about is the feature under test, so it cannot be left to the randomizer:
+-- with it off no partition is ever pruned and every expectation below gains the second partition.
+SET optimize_mutations_with_partition_pruning = 1;
 
 DROP TABLE IF EXISTS t_prune_alias;
 CREATE TABLE t_prune_alias (p UInt32, x UInt64, r UInt32 ALIAS toUnixTimestamp(now()))

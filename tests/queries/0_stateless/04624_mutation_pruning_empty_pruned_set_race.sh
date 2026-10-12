@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # The predicate matches only partition 2, which does not exist yet, so the pruned set is empty.
-$CLICKHOUSE_CLIENT --query "ALTER TABLE t_mut_prune_empty_race DELETE WHERE p = 2 SETTINGS mutations_sync = 1" &
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_mut_prune_empty_race DELETE WHERE p = 2 SETTINGS mutations_sync = 1, optimize_mutations_with_partition_pruning = 1" &
 
 # Wait until the mutation is paused between pruning and block number allocation.
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT rmt_mutation_prune_pause_before_block_allocation PAUSE"

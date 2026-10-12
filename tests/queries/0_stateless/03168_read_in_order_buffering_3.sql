@@ -27,10 +27,12 @@ FROM (SELECT p, countIf(notEmpty(vals)) AS with_values, countIf(empty(vals)) AS 
 -- Consuming the rowless chunk is `Logical error: 'max_rows > 0'` in debug and sanitizer builds. Every
 -- setting below is load-bearing, and the query must run bare: an enclosing aggregate lets
 -- `query_plan_remove_redundant_sorting` drop the sort, and with it the merge the rowless chunk has to
--- reach.
+-- reach. `read_in_order_use_virtual_row_per_block = 1` takes `BufferChunksTransform` out of the plan
+-- entirely, so it is pinned off here rather than left to the randomizer.
 SELECT k, x FROM t_read_in_order_3 FINAL ARRAY JOIN vals AS x ORDER BY k
 SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
-    read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1
+    read_in_order_use_buffering = 1, read_in_order_use_virtual_row_per_block = 0,
+    max_threads = 1, max_block_size = 1
 FORMAT Null;
 
 -- A mis-merge drops rows, so the counts move. `query_plan_remove_redundant_sorting = 0` keeps the
@@ -40,7 +42,8 @@ SELECT count(), sum(k), sum(x) FROM
     SELECT k, x FROM t_read_in_order_3 FINAL ARRAY JOIN vals AS x ORDER BY k
 )
 SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
-    read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1,
+    read_in_order_use_buffering = 1, read_in_order_use_virtual_row_per_block = 0,
+    max_threads = 1, max_block_size = 1,
     query_plan_remove_redundant_sorting = 0;
 
 -- Each query above only reaches the merge while the plan still puts buffering in front of a sorted
@@ -50,7 +53,8 @@ SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order
 SELECT countIf(explain LIKE '%BufferChunks%') > 0, countIf(explain LIKE '%MergingSortedTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, x FROM t_read_in_order_3 FINAL ARRAY JOIN vals AS x ORDER BY k
       SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
-          read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1);
+          read_in_order_use_buffering = 1, read_in_order_use_virtual_row_per_block = 0,
+          max_threads = 1, max_block_size = 1);
 
 SELECT countIf(explain LIKE '%BufferChunks%') > 0, countIf(explain LIKE '%MergingSortedTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT count(), sum(k), sum(x) FROM
@@ -58,7 +62,8 @@ FROM (EXPLAIN PIPELINE SELECT count(), sum(k), sum(x) FROM
           SELECT k, x FROM t_read_in_order_3 FINAL ARRAY JOIN vals AS x ORDER BY k
       )
       SETTINGS do_not_merge_across_partitions_select_final = 1, optimize_read_in_order = 1,
-          read_in_order_use_buffering = 1, max_threads = 1, max_block_size = 1,
+          read_in_order_use_buffering = 1, read_in_order_use_virtual_row_per_block = 0,
+          max_threads = 1, max_block_size = 1,
           query_plan_remove_redundant_sorting = 0);
 
 DROP TABLE t_read_in_order_3;

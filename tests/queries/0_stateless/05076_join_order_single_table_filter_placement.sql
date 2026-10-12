@@ -34,6 +34,10 @@ INSERT INTO t3 VALUES (0, 'Join_3_Value_0'), (1, 'Join_3_Value_1'), (4, 'Join_3_
 INSERT INTO t4 VALUES (0, 'Join_4_Value_0'), (1, 'Join_4_Value_1'), (5, 'Join_4_Value_5');
 
 SET enable_analyzer = 1;
+-- Pin (randomized in CI): the arms below force bare 'dpsize' on three- and four-relation joins, and
+-- a small budget makes that search give up with EXPERIMENTAL_FEATURE_ERROR before the greedy and
+-- dpsize result sets are ever compared, so the placement under test stops being exercised.
+SET query_plan_optimize_join_order_max_searched_plans = 100000;
 
 -- Filter on a relation that is introduced last, against an already-joined subplan (relation id >= 2).
 SELECT 'filter deep relation greedy:';
