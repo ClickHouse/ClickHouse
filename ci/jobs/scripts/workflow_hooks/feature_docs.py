@@ -27,15 +27,51 @@ embedded_doc_suffixes = [
     "Settings.h",
 ]
 
+source_owned_doc_files = embedded_doc_files + [
+    "src/Common/AsynchronousMetrics.cpp",
+    "src/Interpreters/ServerAsynchronousMetrics.cpp",
+    "src/Coordination/KeeperAsynchronousMetrics.cpp",
+]
 
-def file_contains_marker(file_path, marker):
-    """Check if a file contains the given marker string."""
+source_owned_doc_paths = inline_doc_paths + [
+    "src/Databases/",
+    "src/DataTypes/",
+    "src/Processors/Formats/",
+    "src/Storages/",
+]
+
+source_owned_doc_markers = (
+    "FunctionDocumentation",
+    "Documentation{",
+    'R"DOCS',
+)
+settings_doc_markers = ("DECLARE_SETTING", "DECLARE(")
+
+
+def file_contains_any_marker(file_path, markers):
+    """Check if a file contains any of the given marker strings."""
     try:
         with open(file_path) as f:
             content = f.read()
-        return marker in content
+        return any(marker in content for marker in markers)
     except OSError:
         return False
+
+
+def is_source_owned_doc(file_path):
+    if file_path in source_owned_doc_files:
+        return True
+
+    if any(
+        file_path.startswith(path) for path in source_owned_doc_paths
+    ) and file_contains_any_marker(file_path, source_owned_doc_markers):
+        return True
+
+    return (
+        file_path.startswith("src/")
+        and file_path.endswith(tuple(embedded_doc_suffixes))
+        and file_contains_any_marker(file_path, settings_doc_markers)
+    )
 
 
 def check_docs():
@@ -48,25 +84,11 @@ def check_docs():
             "See the Config Workflow logs for the underlying error."
         )
         has_doc_changes = any(
-            file.startswith("docs/")
-            or file in embedded_doc_files
-            or (
-                any(file.startswith(path) for path in inline_doc_paths)
-                and file_contains_marker(file, "FunctionDocumentation")
-            )
-            or (
-                any(file.endswith(suffix) for suffix in embedded_doc_suffixes)
-                and (
-                    file_contains_marker(file, "DECLARE_SETTING")
-                    or file_contains_marker(file, "DECLARE(")
-                )
-            )
+            file.startswith("docs/") or is_source_owned_doc(file)
             for file in changed_files
         )
         if not has_doc_changes:
-            print(
-                "No documentation changes found, please update the documentation"
-            )
+            print("No documentation changes found, please update the documentation")
             return False
     return True
 

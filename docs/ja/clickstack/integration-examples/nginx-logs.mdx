@@ -32,9 +32,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 * Nginx の設定ファイルを変更するためのアクセス権
 
 <Steps>
-  <Step>
-    #### Nginx のログフォーマットを設定する
-
+  <Step title="Nginx のログフォーマットを設定する" id="configure-nginx">
     まず、ログをパースしやすくするために、Nginx が JSON フォーマットでログを出力するよう設定します。このログフォーマット定義を `nginx.conf` に追加してください。
 
     `nginx.conf` ファイルは通常、次の場所にあります。
@@ -69,9 +67,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     この変更を行った後、Nginx を再読み込みします。
   </Step>
 
-  <Step>
-    #### カスタム OTel collector 設定を作成する
-
+  <Step title="カスタム OTel collector 設定を作成する" id="custom-otel">
     ClickStack では、カスタム設定ファイルをマウントし、環境変数を設定することで、ベースの OpenTelemetry Collector 設定を拡張できます。カスタム設定は、HyperDX が OpAMP 経由で管理するベース設定にマージされます。
 
     以下の内容で、`nginx-monitoring.yaml` という名前のファイルを作成します。
@@ -122,9 +118,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### ClickStack でカスタム設定を読み込むように構成する
-
+  <Step title="#### ClickStack でカスタム設定を読み込むように構成する" id="load-custom">
     既存の ClickStack デプロイメントでカスタム collector の設定を有効にするには、以下を行う必要があります。
 
     1. カスタム設定ファイルを /etc/otelcol-contrib/custom.config.yaml にマウントする
@@ -138,14 +132,14 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 既存の設定 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... その他の環境変数 ...
+          # ... other environment variables ...
         volumes:
           - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/nginx:/var/log/nginx:ro
-          # ... その他のボリューム ...
+          # ... other volumes ...
     ```
 
     ##### オプション 2: Docker Run (オールインワンイメージ)
@@ -166,9 +160,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step>
-    #### HyperDXでログを確認する
-
+  <Step title="HyperDXでログを確認する" id="verifying-logs">
     設定が完了したら、HyperDX にログインし、ログが取り込まれていることを確認します。
 
     1. Search view に移動します
@@ -189,9 +181,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 本番環境を構成する前に nginx インテグレーションを試したいユーザー向けに、実際のトラフィックパターンに近い、事前生成済みの nginx アクセスログのサンプルデータセットを用意しています。
 
 <Steps>
-  <Step>
-    #### サンプルデータセットをダウンロードする
-
+  <Step title="サンプルデータセットをダウンロードする" id="download-sample">
     ```bash
     # ログをダウンロード
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/access.log
@@ -205,9 +195,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     * 現実的なレスポンス時間とバイト数
   </Step>
 
-  <Step>
-    #### テスト用の collector 設定を作成する
-
+  <Step title="テスト用の collector 設定を作成する" id="test-config">
     以下の設定内容で、`nginx-demo.yaml` という名前のファイルを作成します。
 
     ```yaml
@@ -242,9 +230,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### デモ設定で ClickStack を実行する
-
+  <Step title="デモ設定で ClickStack を実行する" id="run-demo">
     デモログと設定を使って ClickStack を実行します。
 
     ```bash
@@ -257,9 +243,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### HyperDX でログを確認する
-
+  <Step title="HyperDX でログを確認する" id="verify-demo-logs">
     ClickStack が起動したら、次の手順を実行します。
 
     1. [HyperDX](http://localhost:8080/) を開いてアカウントにログインします (先にアカウントの作成が必要な場合があります)
@@ -284,16 +268,14 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   ## ダッシュボードと可視化
 </div>
 
-ClickStack で nginx の監視をすぐに開始できるよう、Nginx Logs 用の基本的な可視化を用意しています。
+ClickStack で nginx の監視をすぐに開始できるよう、Nginx ログ用の基本的な可視化を用意しています。
 
 <Steps>
-  <Step>
-    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>する
+  <Step title="ダッシュボード設定をダウンロードする" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロードする</TrackedLink>。
   </Step>
 
-  <Step>
-    #### あらかじめ用意されたダッシュボードをインポートする
-
+  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
     1. HyperDX を開き、Dashboards セクションに移動します。
     2. 右上の三点メニューから「Import Dashboard」をクリックします。
 
@@ -304,9 +286,7 @@ ClickStack で nginx の監視をすぐに開始できるよう、Nginx Logs 用
     <Image img="/images/clickstack/finish-nginx-logs-import.webp" alt="インポートの完了" />
   </Step>
 
-  <Step>
-    #### 事前設定済みの可視化を含むダッシュボードが作成されます
-
+  <Step title="事前設定済みの可視化を含むダッシュボードが作成されます" id="created-dashboard">
     <Note>
       デモデータセットでは、時間範囲を **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が指定されていません。
     </Note>
@@ -380,4 +360,4 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
   ## 本番環境への移行
 </div>
 
-このガイドでは、すばやくセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を使用します。本番環境でデプロイする場合は、独自の OTel Collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+このガイドでは、手早くセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を拡張して使用します。本番環境にデプロイする場合は、独自の OTel collector を実行し、データを ClickStack の OTLP エンドポイントに送信することをお勧めします。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

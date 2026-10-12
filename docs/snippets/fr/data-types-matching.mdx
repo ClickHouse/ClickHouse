@@ -4,13 +4,13 @@ title: Correspondance des types de données
 
 Le tableau ci-dessous indique tous les types de données pris en charge par le format Apache Avro, ainsi que les [types de données](/fr/reference/data-types/index) ClickHouse correspondants dans les requêtes `INSERT` et `SELECT`.
 
-| Type de données Avro `INSERT`               | Type de données ClickHouse                                                                      | Type de données Avro `SELECT` |
+| Avro data type `INSERT`                     | ClickHouse data type                                                                            | Avro data type `SELECT`       |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
 | `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/fr/reference/data-types/int-uint), [UInt(8\16\32)](/fr/reference/data-types/int-uint) | `int`                         |
 | `boolean`, `int`, `long`, `float`, `double` | [Int64](/fr/reference/data-types/int-uint), [UInt64](/fr/reference/data-types/int-uint)               | `long`                        |
 | `boolean`, `int`, `long`, `float`, `double` | [Float32](/fr/reference/data-types/float)                                                          | `float`                       |
 | `boolean`, `int`, `long`, `float`, `double` | [Float64](/fr/reference/data-types/float)                                                          | `double`                      |
-| `bytes`, `string`, `fixed`, `enum`          | [String](/fr/reference/data-types/string)                                                          | `bytes` ou `string` *         |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/fr/reference/data-types/string)                                                          | `bytes` or `string` *         |
 | `bytes`, `string`, `fixed`                  | [FixedString(N)](/fr/reference/data-types/fixedstring)                                             | `fixed(N)`                    |
 | `enum`                                      | [Enum(8\16)](/fr/reference/data-types/enum)                                                        | `enum`                        |
 | `array(T)`                                  | [Array(T)](/fr/reference/data-types/array)                                                         | `array(T)`                    |
@@ -30,12 +30,12 @@ Le tableau ci-dessous indique tous les types de données pris en charge par le f
 | `fixed(32)`                                 | [Int256/UInt256](/fr/reference/data-types/int-uint)                                                | `fixed(32)`                   |
 | `record`                                    | [Tuple](/fr/reference/data-types/tuple)                                                            | `record`                      |
 
-* `bytes` est la valeur par défaut, contrôlée par le paramètre [`output_format_avro_string_column_pattern`](/fr/reference/settings/formats#output_format_avro_string_column_pattern)
+* `bytes` est la valeur par défaut, contrôlée par le paramètre [`output_format_avro_string_column_pattern`](/fr/reference/settings/formats/output-format#output_format_avro_string_column_pattern)
 
 **  Le [type Variant](/fr/reference/data-types/variant) accepte implicitement `null` comme valeur de champ. Ainsi, par exemple, le `union(T1, T2, null)` d’Avro sera converti en `Variant(T1, T2)`.
-Par conséquent, lors de la génération d’Avro à partir de ClickHouse, nous devons toujours inclure le type `null` dans le `union` d’Avro, car nous ne savons pas, lors de l’inférence du schéma, si une valeur est effectivement `null`.
+Par conséquent, lors de la génération d’Avro à partir de ClickHouse, nous devons toujours inclure le type `null` dans l’ensemble des types du `union` Avro, car nous ne savons pas, lors de l’inférence du schéma, si une valeur est effectivement `null`.
 
-*** [Types logiques Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+*** [Types logiques Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Types de données logiques Avro non pris en charge :
 

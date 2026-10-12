@@ -165,78 +165,78 @@ def _started_cluster():
 
 def test_load_then_hit_single_node():
     _create_tbl(ch1, "c_tbl", 1)
-    _query(ch1, "SELECT count() FROM c_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=0, log_comment='load' FORMAT Null")
+    _query(ch1, "SELECT count() FROM c_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=0, log_comment='load' FORMAT Null")
     _assert_load(ch1, "load")
     _wait_hit(
         ch1, "hit",
-        "SELECT count() FROM c_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='hit' FORMAT Null"
+        "SELECT count() FROM c_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='hit' FORMAT Null"
     )
 
 def test_session_toggle_does_not_corrupt_cache():
     _create_tbl(ch1, "toggle_tbl", 1)
     _wait_hit(
         ch1, "toggle-hit1",
-        "SELECT count() FROM toggle_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='toggle-hit1' FORMAT Null"
+        "SELECT count() FROM toggle_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='toggle-hit1' FORMAT Null"
     )
-    _query(ch1, "SELECT count() FROM toggle_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=0, log_comment='toggle-load' FORMAT Null")
+    _query(ch1, "SELECT count() FROM toggle_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=0, log_comment='toggle-load' FORMAT Null")
     _assert_load(ch1, "toggle-load")
     _wait_hit(
         ch1, "toggle-hit2",
-        "SELECT count() FROM toggle_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='toggle-hit2' FORMAT Null"
+        "SELECT count() FROM toggle_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='toggle-hit2' FORMAT Null"
     )
 
 def test_interval_zero_disables_cache():
     _create_tbl(ch1, "z_tbl", 1)
     _wait_hit(
         ch1, "z-warm",
-        "SELECT count() FROM z_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='z-warm' FORMAT Null"
+        "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-warm' FORMAT Null"
     )
     _query_retry(ch1, "ALTER TABLE z_tbl MODIFY SETTING refresh_statistics_interval = 0")
     _query_retry(ch1, "DETACH TABLE z_tbl; ATTACH TABLE z_tbl")
-    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='z-load1' FORMAT Null")
+    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-load1' FORMAT Null")
     _assert_load(ch1, "z-load1")
-    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='z-load2' FORMAT Null")
+    _query(ch1, "SELECT count() FROM z_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='z-load2' FORMAT Null")
     _assert_load(ch1, "z-load2")
 
 def test_staleness_after_inserts_stays_hit():
     _create_tbl(ch1, "ins_tbl", 1)
     _wait_hit(
         ch1, "ins-hit1",
-        "SELECT count() FROM ins_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='ins-hit1' FORMAT Null"
+        "SELECT count() FROM ins_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='ins-hit1' FORMAT Null"
     )
     _query(ch1, f"INSERT INTO ins_tbl SELECT number+{ROWS_SMALL}, toFloat64(rand())/4294967296.0 FROM numbers({ROWS_SMALL})")
     _wait_hit(
         ch1, "ins-hit2",
-        "SELECT count() FROM ins_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='ins-hit2' FORMAT Null"
+        "SELECT count() FROM ins_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='ins-hit2' FORMAT Null"
     )
 
 def test_mutation_optimize_replace_drop_keep_hit():
     _create_src_tbl(ch1, "mut_tbl", 1)
     _wait_hit(
         ch1, "mut-warm",
-        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='mut-warm' FORMAT Null"
+        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='mut-warm' FORMAT Null"
     )
     _query_retry(ch1, "ALTER TABLE mut_tbl UPDATE v = v + 0.001 WHERE k%2=0")
     _wait_hit(
         ch1, "mut-after-update",
-        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='mut-after-update' FORMAT Null"
+        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='mut-after-update' FORMAT Null"
     )
     _query_retry(ch1, "OPTIMIZE TABLE mut_tbl FINAL")
     _wait_hit(
         ch1, "mut-after-opt",
-        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='mut-after-opt' FORMAT Null"
+        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='mut-after-opt' FORMAT Null"
     )
     _create_src_tbl(ch1, "mut_src", 1)
     _query_retry(ch1, "ALTER TABLE mut_tbl REPLACE PARTITION 202410 FROM mut_src")
     _wait_hit(
         ch1, "mut-after-replace",
-        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='mut-after-replace' FORMAT Null"
+        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='mut-after-replace' FORMAT Null"
     )
     part = _query(ch1, "SELECT name FROM system.parts WHERE database=currentDatabase() AND table='mut_tbl' AND active LIMIT 1 FORMAT TabSeparated").strip()
     _query_retry(ch1, f"ALTER TABLE mut_tbl DROP PART '{part}'")
     _wait_hit(
         ch1, "mut-after-drop",
-        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='mut-after-drop' FORMAT Null"
+        "SELECT count() FROM mut_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='mut-after-drop' FORMAT Null"
     )
 
 def test_join_load_then_hit_and_parallel_readers():
@@ -283,17 +283,17 @@ def test_join_load_then_hit_and_parallel_readers():
 
 def test_alter_interval_requires_detach_attach():
     _create_tbl(ch1, "alt_tbl", 0)
-    _query(ch1, "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='alt-pre' FORMAT Null")
+    _query(ch1, "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='alt-pre' FORMAT Null")
     _assert_load(ch1, "alt-pre")
     _query_retry(ch1, "ALTER TABLE alt_tbl MODIFY SETTING refresh_statistics_interval = 1")
     _wait_hit(
         ch1, "alt-post",
-        "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='alt-post' FORMAT Null"
+        "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='alt-post' FORMAT Null"
     )
     _query_retry(ch1, "DETACH TABLE alt_tbl; ATTACH TABLE alt_tbl")
     _wait_hit(
         ch1, "detach-attach-post",
-        "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='detach-attach-post' FORMAT Null"
+        "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='detach-attach-post' FORMAT Null"
     )
 
 def test_types_smoke_and_nullable():
@@ -304,7 +304,7 @@ def test_types_smoke_and_nullable():
     _query_retry(ch1, "ALTER TABLE t_cm MATERIALIZE STATISTICS ALL")
     _wait_hit(
         ch1, "t-cm",
-        "SELECT count() FROM t_cm WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=1, log_comment='t-cm' FORMAT Null"
+        "SELECT count() FROM t_cm WHERE cat='PROMO' AND k>0 SETTINGS use_statistics_cache=1, log_comment='t-cm' FORMAT Null"
     )
 
     _query_retry(ch1, "DROP TABLE IF EXISTS t_mm SYNC")
@@ -314,13 +314,13 @@ def test_types_smoke_and_nullable():
     _query_retry(ch1, "ALTER TABLE t_mm MATERIALIZE STATISTICS ALL")
     _wait_hit(
         ch1, "t-mm",
-        "SELECT count() FROM t_mm WHERE x BETWEEN 900000 AND 950000 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='t-mm' FORMAT Null"
+        "SELECT count() FROM t_mm WHERE x BETWEEN 900000 AND 950000 AND k>0 SETTINGS use_statistics_cache=1, log_comment='t-mm' FORMAT Null"
     )
 
     _create_tbl(ch1, "t_tdg", 1)
     _wait_hit(
         ch1, "t-tdg",
-        "SELECT count() FROM t_tdg WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='t-tdg' FORMAT Null"
+        "SELECT count() FROM t_tdg WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='t-tdg' FORMAT Null"
     )
 
     _query_retry(ch1, "DROP TABLE IF EXISTS t_tdg_null SYNC")
@@ -330,7 +330,7 @@ def test_types_smoke_and_nullable():
     _query_retry(ch1, "ALTER TABLE t_tdg_null MATERIALIZE STATISTICS ALL")
     _wait_hit(
         ch1, "t-tdg-null",
-        "SELECT count() FROM t_tdg_null WHERE v IS NOT NULL AND v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='t-tdg-null' FORMAT Null"
+        "SELECT count() FROM t_tdg_null WHERE v IS NOT NULL AND v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='t-tdg-null' FORMAT Null"
     )
 
 def test_countmin_lowcardinality_supported_load_then_hit():
@@ -339,11 +339,11 @@ def test_countmin_lowcardinality_supported_load_then_hit():
     _query(ch1, f"INSERT INTO t_cm_lc SELECT number, if(number%4=0,'PROMO',concat('X',toString(number%1000))) FROM numbers({ROWS_SMALL})")
     _query_retry(ch1, "ALTER TABLE t_cm_lc ADD STATISTICS cat TYPE CountMin")
     _query_retry(ch1, "ALTER TABLE t_cm_lc MATERIALIZE STATISTICS ALL")
-    _query(ch1, "SELECT count() FROM t_cm_lc WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=0, log_comment='cm-lc-load' FORMAT Null")
+    _query(ch1, "SELECT count() FROM t_cm_lc WHERE cat='PROMO' AND k>0 SETTINGS use_statistics_cache=0, log_comment='cm-lc-load' FORMAT Null")
     _assert_load(ch1, "cm-lc-load")
     _wait_hit(
         ch1, "cm-lc-hit",
-        "SELECT count() FROM t_cm_lc WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=1, log_comment='cm-lc-hit' FORMAT Null"
+        "SELECT count() FROM t_cm_lc WHERE cat='PROMO' AND k>0 SETTINGS use_statistics_cache=1, log_comment='cm-lc-hit' FORMAT Null"
     )
 
 def test_drop_statistics_means_no_load_and_bypass_still_loads():
@@ -351,7 +351,7 @@ def test_drop_statistics_means_no_load_and_bypass_still_loads():
     _query_retry(ch1, "ALTER TABLE drop_tbl DROP STATISTICS v")
 
     _query(ch1,
-           "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 "
+           "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>0 "
            "SETTINGS use_statistics_cache=0, log_comment='drop-bypass' FORMAT Null")
     # after optimization, there is no load after `drop statistics`
     _assert_hit(ch1, "drop-bypass")
@@ -360,12 +360,12 @@ def test_replication_inserts_keep_hit():
     table = _create_rep(1)
     _wait_hit(
         r1, "rep-warm",
-        f"SELECT count() FROM {table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-warm' FORMAT Null"
+        f"SELECT count() FROM {table} WHERE v>0.99 AND id>0 SETTINGS use_statistics_cache=1, log_comment='rep-warm' FORMAT Null"
     )
     _query(r2, f"INSERT INTO {table} SELECT number+{ROWS_SMALL}, toFloat64(rand())/4294967296.0 FROM numbers(100000)")
     _wait_hit(
         r1, "rep-post",
-        f"SELECT count() FROM {table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-post' FORMAT Null"
+        f"SELECT count() FROM {table} WHERE v>0.99 AND id>0 SETTINGS use_statistics_cache=1, log_comment='rep-post' FORMAT Null"
     )
 
 def test_auto_statistics_types_load_then_hit():
@@ -393,16 +393,16 @@ def test_auto_statistics_types_load_then_hit():
     """)
     _query_retry(ch1, "ALTER TABLE auto_tbl MATERIALIZE STATISTICS ALL")
 
-    _query(ch1, "SELECT count() FROM auto_tbl WHERE val>0.99 AND k>=0 SETTINGS use_statistics_cache=0, log_comment='auto-td-load' FORMAT Null")
+    _query(ch1, "SELECT count() FROM auto_tbl WHERE val>0.99 AND k>0 SETTINGS use_statistics_cache=0, log_comment='auto-td-load' FORMAT Null")
     _assert_load(ch1, "auto-td-load")
     _wait_hit(
         ch1, "auto-td-hit",
-        "SELECT count() FROM auto_tbl WHERE val>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='auto-td-hit' FORMAT Null"
+        "SELECT count() FROM auto_tbl WHERE val>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='auto-td-hit' FORMAT Null"
     )
 
-    _query(ch1, "SELECT count() FROM auto_tbl WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=0, log_comment='auto-cm-load' FORMAT Null")
+    _query(ch1, "SELECT count() FROM auto_tbl WHERE cat='PROMO' AND k>0 SETTINGS use_statistics_cache=0, log_comment='auto-cm-load' FORMAT Null")
     _assert_load(ch1, "auto-cm-load")
     _wait_hit(
         ch1, "auto-cm-hit",
-        "SELECT count() FROM auto_tbl WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=1, log_comment='auto-cm-hit' FORMAT Null"
+        "SELECT count() FROM auto_tbl WHERE cat='PROMO' AND k>0 SETTINGS use_statistics_cache=1, log_comment='auto-cm-hit' FORMAT Null"
     )

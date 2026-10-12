@@ -30,9 +30,7 @@ ClickHouse предоставляет полный датасет с векто�
 </div>
 
 <Steps>
-  <Step>
-    ### Создание таблицы
-
+  <Step title="Создание таблицы" id="create-table">
     Создайте таблицу `hackernews` для хранения публикаций, их эмбеддингов &amp; связанных с ними атрибутов:
 
     ```sql
@@ -63,21 +61,17 @@ ClickHouse предоставляет полный датасет с векто�
     как поиск векторов по сходству сочетается с постфильтрацией/префильтрацией, как описано в [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step>
-    ### Загрузка данных
-
+  <Step title="Загрузка данных" id="load-table">
     Чтобы загрузить данные из файла в формате `Parquet`, выполните следующий оператор SQL:
 
     ```sql
-    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
     Вставка 28,74 миллиона строк в таблицу займет несколько минут.
   </Step>
 
-  <Step>
-    ### Создайте индекс векторного сходства
-
+  <Step title="Создайте индекс векторного сходства" id="build-vector-similarity-index">
     Выполните следующий SQL-запрос, чтобы определить и создать индекс векторного сходства на столбце `vector` таблицы `hackernews`:
 
     ```sql
@@ -94,9 +88,7 @@ ClickHouse предоставляет полный датасет с векто�
     Построение и сохранение индекса для полного набора данных из 28,74 млн записей может занять от нескольких минут до часа — в зависимости от количества доступных ядер CPU и пропускной способности хранилища.
   </Step>
 
-  <Step>
-    ### Выполните ANN-поиск
-
+  <Step title="Выполните ANN-поиск" id="perform-ann-search">
     После построения индекса векторного сходства запросы векторного поиска будут автоматически использовать этот индекс:
 
     ```sql title="Query"
@@ -110,9 +102,7 @@ ClickHouse предоставляет полный датасет с векто�
     Первичная загрузка векторного индекса в память может занять от нескольких секунд до нескольких минут.
   </Step>
 
-  <Step>
-    ### Генерация эмбеддингов для поискового запроса
-
+  <Step title="Генерация эмбеддингов для поискового запроса" id="generating-embeddings-for-search-query">
     [Sentence Transformers](https://www.sbert.net/) — это локальные, простые в использовании модели векторных представлений для захвата семантического смысла предложений и абзацев.
 
     Этот набор данных HackerNews содержит векторные эмбеддинги, сгенерированные моделью
@@ -134,38 +124,39 @@ ClickHouse предоставляет полный датасет с векто�
     chclient = clickhouse_connect.get_client() # ClickHouse credentials here
 
     while True:
-        # Получить поисковый запрос от пользователя
+        # Take the search query from user
         print("Enter a search query :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Запустить модель и получить вектор поиска
+        # Run the model and obtain search vector
         print("Generating the embedding for ", input_query);
         embeddings = model.encode(texts)
 
-        print("Выполняется запрос к ClickHouse...")
+        print("Querying ClickHouse...")
         params = {'v1':list(embeddings[0]), 'v2':20}
         result = chclient.query("SELECT id, title, text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
         print("Results :")
         for row in result.result_rows:
             print(row[0], row[2][:100])
             print("---------")
+
     ```
 
     Ниже приведён пример запуска указанного выше Python-скрипта и результаты поиска по сходству
     (выводятся только первые 100 символов из каждого из 20 наиболее релевантных постов):
 
     ```text
-    Инициализация...
+    Initializing...
 
-    Введите поисковый запрос :
+    Enter a search query :
     Are OLAP cubes useful
 
-    Генерация эмбеддинга для  "Are OLAP cubes useful"
+    Generating the embedding for  "Are OLAP cubes useful"
 
-    Запрос к ClickHouse...
+    Querying ClickHouse...
 
-    Результаты :
+    Results :
 
     27742647 smartmic:
     slt2021: OLAP Cube is not dead, as long as you use some form of:<p>1. GROUP BY multiple fi
@@ -235,9 +226,7 @@ ClickHouse предоставляет полный датасет с векто�
     4. Использует `LangChain` и Chat API OpenAI `gpt-3.5-turbo`, чтобы **кратко изложить** содержимое, полученное на шаге #3.
        Посты/комментарии, полученные на шаге #3, передаются в Chat API как *контекст* и служат ключевым связующим звеном в Generative AI.
 
-    Ниже сначала приведён пример работы приложения для суммаризации, а затем — его исходный код.
-    Для запуска приложения необходимо задать API-ключ OpenAI в переменной окружения
-    `OPENAI_API_KEY`. API-ключ OpenAI можно получить после регистрации на https://platform.openai.com.
+    Ниже сначала приведён пример запуска приложения для суммаризации, за которым следует код самого приложения. Для запуска требуется задать в переменных окружения API-ключ OpenAI в переменной `OPENAI_API_KEY`. API-ключ OpenAI можно получить после регистрации на https://platform.openai.com.
 
     Данное приложение демонстрирует сценарий использования Generative AI, применимый в различных корпоративных областях, таких как:
     анализ тональности обращений клиентов, автоматизация технической поддержки, анализ диалогов пользователей, юридические документы, медицинские записи,
@@ -298,12 +287,12 @@ ClickHouse предоставляет полный датасет с векто�
     chclient = clickhouse_connect.get_client(compress=False) # ClickHouse credentials here
 
     while True:
-        # Получить поисковый запрос от пользователя
+        # Take the search query from user
         print("Enter a search topic :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # Запустить модель и получить поисковый или эталонный вектор
+        # Run the model and obtain search or reference vector
         print("Generating the embedding for ----> ", input_query);
         embeddings = model.encode(texts)
 
@@ -311,7 +300,7 @@ ClickHouse предоставляет полный датасет с векто�
         params = {'v1':list(embeddings[0]), 'v2':100}
         result = chclient.query("SELECT id,title,text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
 
-        # Объединить все результаты поиска
+        # Just join all the search results
         doc_results = ""
         for row in result.result_rows:
             doc_results = doc_results + "\n" + row[2]

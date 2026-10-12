@@ -109,7 +109,7 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
 
 当你在会话时间线中选中某个网络请求或错误时，可以点击 **Trace** 选项卡，沿着请求一路追踪到后端服务——查看这次用户交互触发的相关日志、span 和数据库查询。
 
-之所以能够实现这一点，是因为 `tracePropagationTargets` 配置会通过 `traceparent` 请求头将浏览器 span 与服务器 span 关联起来，从而形成一条连贯的分布式 trace，从用户点击一直延伸到数据库。若想查看这一过程在实际中的详细演示，包括如何同时为前端和后端添加埋点，请参阅 [使用 OpenTelemetry 和 ClickStack 为你的 NextJS 应用添加埋点](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack)。
+之所以能够实现这一点，是因为 `tracePropagationTargets` 配置会通过 `traceparent` 请求头将浏览器 span 与服务器 span 关联起来，从而形成一条连贯的分布式 trace，从用户点击一直延伸到数据库。若想查看这一过程在实际中的详细演示，包括如何同时为前端和后端添加埋点，请参阅 [使用 OpenTelemetry 和 ClickStack 为你的 NextJS 应用添加埋点](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack)。
 
 <Frame>
   <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="在 ClickStack 中从会话回放深入查看后端链路追踪" />
@@ -119,7 +119,7 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
   ### 从 trace 到会话回放
 </div>
 
-这种关联在反向场景下同样成立。在 **Search** 视图中查看某个 trace 时，点击它打开 trace 详情，然后选择 **Session replay** 标签页，即可看到用户在该 trace 发生时的实际体验。这在排查 error 或请求缓慢时尤其有用——你可以从 backend 问题入手，立即切换到用户视角。
+这种关联在反向场景下同样成立。在 **搜索** 视图中查看某个 trace 时，点击它打开 trace 详情，然后选择 **会话回放** 标签页，即可看到用户在该 trace 发生时的实际体验。这在排查 error 或请求缓慢时尤其有用——你可以从 backend 问题入手，立即切换到用户视角。
 
 <Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="会话回放 trace 视图" size="lg" />
 
@@ -144,9 +144,9 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
   ## 了解更多
 </div>
 
-* [会话回放演示](/zh/clickstack/example-datasets/session-replay) — 带有分步说明的交互式本地演示应用
+* [会话回放演示](/zh/clickstack/example-datasets/session-replay) — 带分步说明的交互式本地演示应用
 * [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser) — 完整的 SDK 选项、source map、自定义操作和高级配置
-* [搜索](/zh/clickstack/features/search) — 用于过滤会话和事件的搜索语法
-* [仪表盘](/zh/clickstack/features/dashboards/overview) — 基于会话和 trace 数据构建可视化和仪表盘
+* [搜索](/zh/clickstack/features/search) — 用于筛选会话和事件的搜索语法
+* [仪表盘](/zh/clickstack/features/dashboards/overview) — 基于会话和链路追踪数据构建可视化内容和仪表盘
 * [告警](/zh/clickstack/features/alerts) — 针对错误、延迟和其他信号设置告警
-* [ClickStack 架构](/zh/clickstack/architecture) — ClickHouse、HyperDX 和 OTel collector 如何配合工作
+* [ClickStack 架构](/zh/clickstack/architecture) — ClickHouse、HyperDX 和 OTel collector 如何协同配合

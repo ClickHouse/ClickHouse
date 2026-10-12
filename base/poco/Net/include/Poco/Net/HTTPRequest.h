@@ -157,6 +157,16 @@ namespace Net
         static const std::string UPGRADE;
         static const std::string EXPECT;
 
+        void setSuppressKeepAliveHeader(bool suppress);
+        /// Suppresses the hop-by-hop `Keep-Alive: timeout=..., max=...` request header that
+        /// HTTPClientSession::sendRequest would otherwise add. The header is deprecated by RFC 7230
+        /// and some peers reject it outright: Amazon S3 Tables answers `S3TablesUnsupportedHeader`
+        /// to any PUT carrying it. Keep-alive itself and connection reuse are unaffected -- they are
+        /// driven by the `Connection` header and by ClickHouse's own connection pool.
+
+        bool getSuppressKeepAliveHeader() const;
+        /// Returns true if the `Keep-Alive` request header is suppressed for this request.
+
     protected:
         void getCredentials(const std::string & header, std::string & scheme, std::string & authInfo) const;
         /// Returns the authentication scheme and additional authentication
@@ -179,6 +189,7 @@ namespace Net
 
         std::string _method;
         std::string _uri;
+        bool _suppress_keep_alive_header = false;
 
         HTTPRequest(const HTTPRequest &);
         HTTPRequest & operator=(const HTTPRequest &);
@@ -197,6 +208,18 @@ namespace Net
     inline const std::string & HTTPRequest::getURI() const
     {
         return _uri;
+    }
+
+
+    inline void HTTPRequest::setSuppressKeepAliveHeader(bool suppress)
+    {
+        _suppress_keep_alive_header = suppress;
+    }
+
+
+    inline bool HTTPRequest::getSuppressKeepAliveHeader() const
+    {
+        return _suppress_keep_alive_header;
     }
 
 

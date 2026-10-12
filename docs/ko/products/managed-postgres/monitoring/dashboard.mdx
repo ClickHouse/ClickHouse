@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/monitoring/dashboard
 sidebarTitle: '대시보드'
-title: 'Managed Postgres 모니터링 대시보드'
-description: 'Managed Postgres 서비스용 Cloud Console 기본 제공 대시보드'
+title: 'ClickHouse Managed Postgres 모니터링 대시보드'
+description: 'ClickHouse Managed Postgres 서비스용 Cloud Console 기본 제공 대시보드'
 keywords: ['managed postgres', '모니터링', '대시보드', 'cloud console', 'cpu', '메모리', 'iops']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
@@ -16,7 +16,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 선택한 시간 범위의 리소스 사용량과 데이터베이스 활동을
 실시간으로 보여주는 차트가 표시됩니다.
 
-<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="IOPS, CPU 사용량, 메모리, 디스크, 네트워크 트래픽, 데이터베이스 크기, 연결, 처리량, 트랜잭션, 캐시 적중률, 교착 상태를 보여주는 모니터링 대시보드" size="lg" border />
+<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="IOPS, 사용량, 메모리, 디스크, 네트워크 트래픽, 데이터베이스 크기, 연결, 처리량, 트랜잭션, 캐시 적중률, 교착 상태를 보여주는 모니터링 대시보드" size="lg" border />
 
 <div id="panels">
   ## 패널
@@ -52,5 +52,5 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 관련 페이지
 </div>
 
-* [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) — 동일한 메트릭을 자체 관측성 스택으로 스크레이프
-* [메트릭 참고](/ko/products/managed-postgres/monitoring/metrics) — 타입 및 레이블이 포함된 전체 메트릭 목록
+* [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) — 자체 관측성 스택으로 동일한 메트릭을 스크레이프합니다
+* [메트릭 참고](/ko/products/managed-postgres/monitoring/metrics) — 유형과 레이블을 포함한 전체 메트릭 목록

@@ -40,7 +40,9 @@ spec:
 
 * Quando `accessModes` é omitido, o operador usa `ReadWriteOnce` por padrão.
 * O PVC por réplica é mantido quando o cluster é excluído, então os dados sobrevivem à
-  exclusão e recriação do `Custom Resource`.
+  exclusão e recriação do `recurso personalizado`. Para dados em uma
+  [política criptografada](#at-rest-encryption), isso também exige preservar a
+  chave de criptografia — veja a observação nessa seção.
 * O mesmo campo existe em `KeeperCluster` e se comporta da mesma forma.
 
 <div id="ephemeral-storage">
@@ -152,12 +154,54 @@ Consulte a
 [documentação de armazenamento do ClickHouse](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)
 para ver os campos da política.
 
+<div id="at-rest-encryption">
+  ## Criptografia em repouso
+</div>
+
+A configuração `spec.settings.encryption` habilita a criptografia em repouso dos dados da
+tabela. O operador gera uma chave AES de 16 bytes — armazenada no Secret do cluster gerenciado ou
+fornecida por meio de `externalSecret` — e uma política de armazenamento dedicada que reveste cada
+disco de dados com o tipo de disco `encrypted` do ClickHouse.
+
+```yaml
+spec:
+  settings:
+    encryption: {}   # enables the feature; the policy defaults to "encrypted"
+```
+
+A criptografia é opcional por tabela; a política de armazenamento padrão continua sem criptografia. Selecione
+a política criptografada ao criar uma tabela:
+
+```sql
+CREATE TABLE secret_data (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS storage_policy = 'encrypted';
+```
+
+Defina `encryption.policyName` para usar um nome de política diferente.
+
+<Note>
+  Isso criptografa as partes de dados do MergeTree gravadas por meio da política
+  criptografada com AES-128-CTR. Os metadados do servidor ClickHouse e os logs na
+  raiz dos dados não são abrangidos — use criptografia em nível de disco, como LUKS
+  ou um driver CSI, para isso.
+  Habilitar a criptografia em um cluster em execução aciona uma reinicialização gradual única para
+  injetar a chave; as réplicas podem, por um breve período, relatar um erro de recarregamento de configuração até
+  que essa reinicialização seja concluída.
+
+  A chave é armazenada no Secret do cluster gerenciado pelo operador, que pertence ao
+  recurso personalizado e é excluído com ele. As partes criptografadas ficam ilegíveis sem a
+  chave: se os dados criptografados precisarem continuar acessíveis após a exclusão do CR (os PVCs são mantidos), forneça
+  a chave por meio de `externalSecret` ou faça backup da entrada `disk-encryption-key`
+  antes da exclusão. Não exclua o Secret gerenciado — o operador geraria
+  uma nova chave, e as partes criptografadas existentes se tornariam ilegíveis.
+</Note>
+
 <div id="immutability">
   ## O que você não pode alterar após a criação
 </div>
 
-O layout de armazenamento fica praticamente definido depois que um cluster é criado. O webhook de admissão rejeita
-atualizações que deixariam PersistentVolumeClaims órfãos ou os reatribuiriam:
+O layout de armazenamento fica praticamente definido depois que um cluster é criado. Atualizações que deixariam
+dados órfãos ou reatribuiriam PersistentVolumeClaims são rejeitadas na etapa de admissão:
 
 * A presença de `dataVolumeClaimSpec` é imutável — você não pode **adicionar** um volume de
   dados a um cluster criado sem ele, nem **removê-lo** de um cluster criado
@@ -166,23 +210,28 @@ atualizações que deixariam PersistentVolumeClaims órfãos ou os reatribuiriam
   **remover** ou **renomear** entradas após a criação.
 * Expandir `resources.requests.storage` em uma entrada existente **é** permitido (sujeito
   ao suporte da StorageClass; veja [Expansão do armazenamento](#expanding-storage)).
+* A criptografia não pode ser **desabilitada** depois de habilitada, e `encryption.policyName` não pode
+  ser **renomeado** — tabelas que já usam a política criptografada ficariam inacessíveis.
 
 <div id="validation-reference">
   ## Referência de validação
 </div>
 
-| Condição                                                                                 | Resultado                                                             |
-| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Sem `dataVolumeClaimSpec` e sem volume personalizado em `/var/lib/clickhouse`            | Aviso — possível perda de dados ao reiniciar                          |
-| Volume personalizado montado em `/var/lib/clickhouse` com `dataVolumeClaimSpec` definido | Rejeitado                                                             |
-| `additionalVolumeClaimTemplates` definido, mas `dataVolumeClaimSpec` ausente             | Rejeitado                                                             |
-| Disco adicional chamado `default`                                                        | Rejeitado — reservado pelo disco padrão do ClickHouse                 |
-| Disco adicional chamado `clickhouse-storage-volume`                                      | Rejeitado — entra em conflito com o nome do volume de dados principal |
-| Nome de disco adicional duplicado                                                        | Rejeitado                                                             |
-| Nome que não corresponde a `^[a-z]([-a-z0-9]*[a-z0-9])?$` ou tem mais de 63 caracteres   | Rejeitado pelo esquema da CRD                                         |
-| Adicionar ou remover `dataVolumeClaimSpec` após a criação                                | Rejeitado                                                             |
-| Adicionar, remover ou renomear `additionalVolumeClaimTemplates` após a criação           | Rejeitado                                                             |
-| Nome de volume reservado em `podTemplate.volumes`                                        | Rejeitado                                                             |
+| Condição                                                                                 | Resultado                                                                                      |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Sem `dataVolumeClaimSpec` e sem volume personalizado em `/var/lib/clickhouse`            | Aviso — possível perda de dados ao reiniciar                                                   |
+| Volume personalizado montado em `/var/lib/clickhouse` com `dataVolumeClaimSpec` definido | Rejeitado                                                                                      |
+| `additionalVolumeClaimTemplates` definido, mas `dataVolumeClaimSpec` ausente             | Rejeitado                                                                                      |
+| Disco adicional chamado `default`                                                        | Rejeitado — reservado pelo disco padrão do ClickHouse                                          |
+| Nome de disco adicional terminando em `-encrypted`                                       | Rejeitado — entra em conflito com os nomes de discos criptografados gerados                    |
+| Disco adicional chamado `clickhouse-storage-volume`                                      | Rejeitado — entra em conflito com o nome do volume de dados principal                          |
+| Nome de disco adicional duplicado                                                        | Rejeitado                                                                                      |
+| Nome que não corresponde a `^[a-z]([-a-z0-9]*[a-z0-9])?$` ou tem mais de 63 caracteres   | Rejeitado pelo esquema da CRD                                                                  |
+| Adicionar ou remover `dataVolumeClaimSpec` após a criação                                | Rejeitado                                                                                      |
+| Adicionar, remover ou renomear `additionalVolumeClaimTemplates` após a criação           | Rejeitado                                                                                      |
+| Nome de volume reservado em `podTemplate.volumes`                                        | Rejeitado                                                                                      |
+| `encryption.policyName` definido como `default`                                          | Rejeitado pelo esquema da CRD — a política criptografada não deve substituir a política padrão |
+| Desabilitar `encryption` ou renomear sua política após a criação                         | Rejeitado pelo esquema da CRD                                                                  |
 
 <div id="related-guides">
   ## Guias relacionados

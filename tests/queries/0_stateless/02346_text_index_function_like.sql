@@ -341,3 +341,101 @@ SELECT trimLeft(explain) AS explain FROM (
 LIMIT 2, 3;
 
 DROP TABLE tab;
+
+SELECT 'The optimization is only a hint for an index built on a container';
+
+-- When the index is built on `mapValues(m)` or `JSONAllValues(json)` but the predicate reads a single
+-- element out of it, the dictionary scan only proves a match somewhere in the container, not at the
+-- requested key or path. The original condition must therefore still be evaluated on every surviving row.
+
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_direct_read_from_text_index = 1;
+SET query_plan_text_index_add_hint = 1;
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+SELECT '-- Index on mapValues';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    attributes Map(String, String),
+    INDEX idx mapValues(attributes) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab VALUES
+    (1, {'a': 'foobar value', 'b': 'other value'}),
+    (2, {'a': 'other value', 'b': 'foobar value'}),
+    (3, {'a': 'nothing', 'b': 'nothing'});
+
+SELECT groupArray(id) FROM tab WHERE attributes['a'] LIKE '%foobar%';
+SELECT groupArray(id) FROM tab WHERE attributes['a'] LIKE '%foobar%' SETTINGS use_skip_indexes = 0;
+
+SELECT groupArray(id) FROM tab WHERE attributes['a'] ILIKE '%FOOBAR%';
+SELECT groupArray(id) FROM tab WHERE attributes['a'] ILIKE '%FOOBAR%' SETTINGS use_skip_indexes = 0;
+
+-- The index is used as a hint, so the original condition must still be part of the plan.
+SELECT countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION like(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE attributes['a'] LIKE '%foobar%');
+
+DROP TABLE tab;
+
+SELECT '-- Index on mapValues with the array tokenizer';
+
+-- The array tokenizer stores each map value as a whole token, which does not make the match exact
+-- either: the token still only proves that some value of the map matches.
+
+CREATE TABLE tab
+(
+    id UInt32,
+    attributes Map(String, String),
+    INDEX idx mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab VALUES
+    (1, {'a': 'foobar value', 'b': 'other value'}),
+    (2, {'a': 'other value', 'b': 'foobar value'}),
+    (3, {'a': 'nothing', 'b': 'nothing'});
+
+SELECT groupArray(id) FROM tab WHERE attributes['a'] LIKE '%foobar%';
+SELECT groupArray(id) FROM tab WHERE attributes['a'] LIKE '%foobar%' SETTINGS use_skip_indexes = 0;
+
+SELECT groupArray(id) FROM tab WHERE attributes['a'] ILIKE '%FOOBAR%';
+SELECT groupArray(id) FROM tab WHERE attributes['a'] ILIKE '%FOOBAR%' SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
+SELECT '-- Index on JSONAllValues';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    data JSON,
+    INDEX idx JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab VALUES (1, '{"a": "foobar value", "b": "other value"}');
+INSERT INTO tab VALUES (2, '{"a": "other value", "b": "foobar value"}');
+INSERT INTO tab VALUES (3, '{"a": "nothing", "b": "nothing"}');
+
+SELECT groupArray(id) FROM tab WHERE data.a LIKE '%foobar%';
+SELECT groupArray(id) FROM tab WHERE data.a LIKE '%foobar%' SETTINGS use_skip_indexes = 0;
+
+SELECT groupArray(id) FROM tab WHERE data.a::String LIKE '%foobar%';
+SELECT groupArray(id) FROM tab WHERE data.a::String LIKE '%foobar%' SETTINGS use_skip_indexes = 0;
+
+SELECT groupArray(id) FROM tab WHERE data.a ILIKE '%FOOBAR%';
+SELECT groupArray(id) FROM tab WHERE data.a ILIKE '%FOOBAR%' SETTINGS use_skip_indexes = 0;
+
+-- The index is used as a hint, so the original condition must still be part of the plan.
+SELECT countIf(explain LIKE '%\_\_text_index\_%') > 0, countIf(explain LIKE '%FUNCTION like(%') > 0
+FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE data.a LIKE '%foobar%');
+
+DROP TABLE tab;

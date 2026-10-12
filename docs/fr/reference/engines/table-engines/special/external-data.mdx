@@ -17,7 +17,7 @@ Les données externes peuvent être envoyées à l&#39;aide du client en ligne d
 Dans le client en ligne de commande, vous pouvez spécifier une section de paramètres au format
 
 ```bash
---external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...] [--scalar]
 ```
 
 Vous pouvez avoir plusieurs sections comme celle-ci, en fonction du nombre de tables transmises.
@@ -28,6 +28,7 @@ Une seule table peut être lue depuis stdin.
 
 Les paramètres suivants sont facultatifs : **–name**– Nom de la table. S&#39;il est omis, &#95;data est utilisé.
 **–format** – Format des données dans le fichier. S&#39;il est omis, TabSeparated est utilisé.
+**–scalar** – Envoie les données sous forme de scalaire au lieu d&#39;une table temporaire. Les données doivent contenir exactement une ligne ; si elles contiennent plusieurs colonnes, elles sont regroupées dans un seul tuple. La valeur est accessible dans la requête via `__getScalar('name')`.
 
 L&#39;un des paramètres suivants est requis :**–types** – Une liste de types de colonnes séparés par des virgules. Par exemple : `UInt64,String`. Les colonnes seront nommées &#95;1, &#95;2, ...
 **–structure**– La structure de la table au format`UserID UInt64`, `URL String`. Définit les noms et les types des colonnes.
@@ -45,6 +46,8 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/bash       4
 /usr/sbin/nologin       1
 /bin/sync       1
+$ echo 41 | clickhouse-client --query="SELECT __getScalar('threshold') + 1" --external --scalar --name=threshold --file=- --types=UInt64
+42
 ```
 
 Lors de l&#39;utilisation de l&#39;interface HTTP, les données externes sont transmises au format multipart/form-data. Chaque table est envoyée sous la forme d&#39;un fichier distinct. Le nom de la table est déduit du nom du fichier. `query_string` reçoit les paramètres `name_format`, `name_types` et `name_structure`, où `name` désigne le nom de la table à laquelle ces paramètres correspondent. La signification de ces paramètres est la même que lors de l&#39;utilisation du client en ligne de commande.

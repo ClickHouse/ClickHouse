@@ -1,0 +1,200 @@
+---
+title: 'DataStore: واجهة برمجة تطبيقات متوافقة مع pandas مع تحسينات SQL'
+sidebarTitle: 'نظرة عامة'
+slug: /chdb/datastore
+description: 'يوفر DataStore واجهة برمجة تطبيقات متوافقة مع pandas مع تحسينات SQL لتحليل بيانات عالي الأداء'
+keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+DataStore هي واجهة برمجة تطبيقات chDB المتوافقة مع pandas، وتجمع بين واجهة pandas DataFrame المألوفة وقوة تحسين استعلامات SQL، ما يتيح لك كتابة شيفرة بأسلوب pandas مع الحصول على أداء ClickHouse.
+
+<div id="key-features">
+  ## الميزات الرئيسية
+</div>
+
+* **التوافق مع pandas**: ‏209 طريقة في pandas DataFrame، و56 طريقة لـ `.str`، وأكثر من 42 طريقة لـ `.dt`
+* **تحسين SQL**: تُترجَم العمليات تلقائيًا إلى استعلامات SQL مُحسَّنة
+* **التقييم الكسول**: تُؤجَّل العمليات إلى أن تصبح النتائج مطلوبة
+* **أكثر من 630 طريقة في واجهة برمجة تطبيقات**: واجهة برمجة تطبيقات شاملة لمعالجة البيانات
+* **امتدادات ClickHouse**: ملحقات إضافية (`.arr`, `.json`, `.url`, `.ip`, `.geo`) غير متوفرة في pandas
+
+<div id="architecture">
+  ## معمارية
+</div>
+
+<Image size="md" img="/images/chdb/datastore_architecture.png" alt="معمارية DataStore" />
+
+يستخدم DataStore **التقييم الكسول** مع **تنفيذ ثنائي المحرك**:
+
+1. **سلسلة عمليات كسولة**: تُسجَّل العمليات ولا تُنفَّذ فورًا
+2. **اختيار ذكي للمحرك**: يوجّه QueryPlanner كل جزء إلى المحرك الأنسب (chDB لـ SQL، وPandas للعمليات المعقدة)
+3. **تخزين مؤقت وسيط**: تُخزَّن النتائج مؤقتًا عند كل خطوة لتسريع الاستكشاف التكراري
+
+راجع [نموذج التنفيذ](/ar/chdb/datastore/execution-model) لمزيد من التفاصيل.
+
+<div id="migration">
+  ## الترحيل من Pandas بسطر واحد
+</div>
+
+```python
+# Before (pandas)
+import pandas as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+
+# After (DataStore) - just change the import!
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+```
+
+تعمل شيفرة pandas الحالية لديك كما هي، لكنها تعمل الآن على محرك ClickHouse.
+
+<div id="performance">
+  ## مقارنة الأداء
+</div>
+
+يوفّر DataStore تحسينات ملحوظة في الأداء مقارنةً بـ pandas، لا سيما في عمليات التجميع ومسارات المعالجة المعقّدة:
+
+| العملية          | Pandas  | DataStore | التسريع    |
+| ---------------- | ------- | --------- | ---------- |
+| GroupBy count    | 347ms   | 17ms      | **19.93x** |
+| Complex pipeline | 2,047ms | 380ms     | **5.39x**  |
+| Filter+Sort+Head | 1,537ms | 350ms     | **4.40x**  |
+| GroupBy agg      | 406ms   | 141ms     | **2.88x**  |
+
+*اختبار قياس أداء على 10M صف. راجع [برنامج نصي لقياس الأداء](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py) و[دليل الأداء](/ar/chdb/guides/pandas-performance) للاطلاع على التفاصيل.*
+
+<div id="when-to-use">
+  ## متى تستخدم DataStore
+</div>
+
+**استخدم DataStore عندما:**
+
+* تعمل مع مجموعات بيانات كبيرة (ملايين الصفوف)
+* تُجري عمليات التجميع وGroupBy
+* تستعلم عن البيانات من الملفات أو قواعد البيانات أو التخزين السحابي
+* تبني مسارات بيانات معقدة
+* تريد واجهة pandas البرمجية مع أداء أفضل
+
+**استخدم واجهة برمجة تطبيقات Raw SQL عندما:**
+
+* تفضل كتابة SQL مباشرةً
+* تحتاج إلى تحكم دقيق في تنفيذ الاستعلامات
+* تعمل مع ميزات خاصة بـ ClickHouse غير المتاحة في واجهة pandas البرمجية
+
+<div id="comparison">
+  ## مقارنة الميزات
+</div>
+
+| الميزة                               | Pandas | Polars | DuckDB | DataStore        |
+| ------------------------------------ | ------ | ------ | ------ | ---------------- |
+| متوافق مع واجهة برمجة تطبيقات Pandas | -      | جزئي   | لا     | **كامل**         |
+| التقييم الكسول                       | لا     | نعم    | نعم    | **نعم**          |
+| دعم استعلامات SQL                    | لا     | نعم    | نعم    | **نعم**          |
+| دوال ClickHouse                      | لا     | لا     | لا     | **نعم**          |
+| ملحقات الخاصة بـ String/DateTime     | نعم    | نعم    | لا     | **نعم + إضافات** |
+| Array/JSON/URL/IP/Geo                | لا     | جزئي   | لا     | **نعم**          |
+| الاستعلام المباشر من الملفات         | لا     | نعم    | نعم    | **نعم**          |
+| دعم التخزين السحابي                  | لا     | محدود  | نعم    | **نعم**          |
+
+<div id="api-stats">
+  ## إحصاءات واجهة برمجة التطبيقات
+</div>
+
+| الفئة                                | العدد    | التغطية                         |
+| ------------------------------------ | -------- | ------------------------------- |
+| طرق DataFrame                        | 209      | 100% من pandas                  |
+| accessor ‏Series.str                 | 56       | 100% من pandas                  |
+| accessor ‏Series.dt                  | 42+      | 100%+ (يتضمن إضافات ClickHouse) |
+| accessor ‏Series.arr                 | 37       | خاص بـ ClickHouse               |
+| accessor ‏Series.json                | 13       | خاص بـ ClickHouse               |
+| accessor ‏Series.url                 | 15       | خاص بـ ClickHouse               |
+| accessor ‏Series.ip                  | 9        | خاص بـ ClickHouse               |
+| accessor ‏Series.geo                 | 14       | خاص بـ ClickHouse               |
+| **إجمالي طرق واجهة برمجة التطبيقات** | **630+** | -                               |
+
+<div id="navigation">
+  ## التنقّل في الوثائق
+</div>
+
+<div id="getting-started">
+  ### البدء
+</div>
+
+* [البدء السريع](/ar/chdb/datastore/quickstart) - التثبيت والاستخدام الأساسي
+* [الترحيل من Pandas](/ar/chdb/guides/migration-from-pandas) - دليل الترحيل خطوة بخطوة
+
+<div id="api-reference">
+  ### مرجع واجهة برمجة التطبيقات
+</div>
+
+* [دوال المصنع](/ar/chdb/datastore/factory-methods) - إنشاء DataStore من مصادر متنوعة
+* [بناء الاستعلامات](/ar/chdb/datastore/query-building) - عمليات استعلام بأسلوب SQL
+* [التوافق مع pandas](/ar/chdb/datastore/pandas-compat) - جميع الأساليب الـ 209 المتوافقة مع pandas
+* [Accessors](/ar/chdb/datastore/accessors) - ملحقات String وDateTime وArray وJSON وURL وIP وGeo
+* [التجميع](/ar/chdb/datastore/aggregation) - الدوال التجميعية ودوال النافذة
+* [عمليات الإدخال والإخراج](/ar/chdb/datastore/io) - قراءة البيانات وكتابتها
+
+<div id="advanced-topics">
+  ### موضوعات متقدمة
+</div>
+
+* [نموذج التنفيذ](/ar/chdb/datastore/execution-model) - التقييم الكسول والتخزين المؤقت
+* [مرجع الفئة](/ar/chdb/datastore/class-reference) - المرجع الكامل لواجهة برمجة التطبيقات
+
+<div id="configuration-debugging">
+  ### الإعداد واستكشاف الأخطاء وإصلاحها
+</div>
+
+* [الإعداد](/ar/chdb/configuration/index) - جميع خيارات الإعداد
+* [وضع الأداء](/ar/chdb/configuration/performance-mode) - وضع يعتمد على SQL أولًا لتحقيق أقصى معدل نقل
+* [استكشاف الأخطاء وإصلاحها](/ar/chdb/debugging/index) - Explain، وتحليل الأداء، والتسجيل
+
+<div id="pandas-user-guides">
+  ### أدلة مستخدمي Pandas
+</div>
+
+* [دليل وصفات Pandas](/ar/chdb/guides/pandas-cookbook) - الأنماط الشائعة
+* [الاختلافات الرئيسية](/ar/chdb/guides/pandas-differences) - اختلافات مهمة عن pandas
+* [دليل الأداء](/ar/chdb/guides/pandas-performance) - نصائح لتحسين الأداء
+* [SQL لمستخدمي Pandas](/ar/chdb/guides/pandas-to-sql) - فهم SQL وراء عمليات pandas
+
+<div id="quick-example">
+  ## مثال سريع
+</div>
+
+```python
+from chdb import datastore as pd
+
+# Read data from various sources
+ds = pd.read_csv("sales.csv")
+# or: ds = pd.DataStore.uri("s3://bucket/sales.parquet")
+# or: ds = pd.DataStore.from_mysql("mysql://user:pass@host/db/table")
+
+# Familiar pandas operations - automatically optimized to SQL
+result = (ds
+    .filter(ds['amount'] > 1000)           # WHERE amount > 1000
+    .groupby('region')                      # GROUP BY region
+    .agg({'amount': ['sum', 'mean']})       # SUM(amount), AVG(amount)
+    .sort_values('sum', ascending=False)    # ORDER BY sum DESC
+    .head(10)                               # LIMIT 10
+)
+
+# View the generated SQL
+print(result.to_sql())
+
+# Execute and get results
+df = result.to_df()  # Returns pandas DataFrame
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* **هل تستخدم DataStore للمرة الأولى؟** ابدأ بـ[دليل البدء السريع](/ar/chdb/datastore/quickstart)
+* **هل تنتقل من pandas؟** اقرأ [دليل الترحيل](/ar/chdb/guides/migration-from-pandas)
+* **هل تريد معرفة المزيد؟** اطّلع على [مرجع واجهة برمجة التطبيقات](/ar/chdb/datastore/class-reference)

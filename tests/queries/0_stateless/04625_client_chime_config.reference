@@ -1,0 +1,2 @@
+1. chime-threshold-seconds=1 from config, no --chime, 1.5s query, pty stderr: BEL
+2. chime-threshold-seconds=1 from config, CLI --chime 0 wins, 1.5s query, pty stderr: no BEL

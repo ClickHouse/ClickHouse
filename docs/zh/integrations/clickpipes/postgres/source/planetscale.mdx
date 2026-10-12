@@ -38,17 +38,17 @@ ClickPipes 支持 Postgres 12 及以上版本。
    SHOW wal_level;
    ```
 
-   默认情况下，输出应为 `logical`。如果不是，请登录 PlanetScale Console，前往 `Cluster configuration->Parameters`，然后向下滚动到 `Write-ahead log` 进行修改。
+   默认情况下，输出应为 `logical`。如果不是，请登录 PlanetScale 控制台，前往 `Cluster configuration->Parameters`，然后向下滚动到 `Write-ahead log` 进行修改。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="在 PlanetScale Console 中调整 wal_level" size="md" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="在 PlanetScale 控制台中调整 wal_level" size="md" border />
 
 <Warning>
-  在 PlanetScale Console 中更改此项将触发重启。
+  在 PlanetScale 控制台中更改此项将触发重启。
 </Warning>
 
-2. 此外，建议将 `max_slot_wal_keep_size` 从默认的 4GB 调大。这同样需要在 PlanetScale Console 中完成：前往 `Cluster configuration->Parameters`，然后向下滚动到 `Write-ahead log`。如需帮助确定新的值，请参阅[此处](/zh/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)。
+2. 此外，建议将 `max_slot_wal_keep_size` 从默认的 4GB 调大。这同样需要在 PlanetScale 控制台中完成：前往 `Cluster configuration->Parameters`，然后向下滚动到 `Write-ahead log`。如需帮助确定新的值，请参阅[此处](/zh/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="在 PlanetScale Console 中调整 max_slot_wal_keep_size" size="md" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="在 PlanetScale 控制台中调整 max_slot_wal_keep_size" size="md" border />
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## 创建具有相应权限和 publication 的用户
@@ -94,7 +94,7 @@ ClickPipes 支持 Postgres 12 及以上版本。
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含由指定表生成的一组变更事件，后续将用于摄取复制流。
+`clickpipes` publication 定义了其变更事件将流式传输到 ClickPipes 的那组表。除非您打算复制每一张表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
 <div id="caveats">
   ## 注意事项

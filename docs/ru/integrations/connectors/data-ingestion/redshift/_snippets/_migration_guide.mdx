@@ -51,7 +51,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Перенос данных из Redshift в ClickHouse по схеме Pull
 </div>
 
-В сценарии Pull используется ClickHouse JDBC Bridge: он позволяет напрямую подключаться к кластеру Redshift из ClickHouse и выполнять запросы `INSERT INTO ... SELECT`:
+В сценарии Pull используется ClickHouse JDBC Bridge: он позволяет напрямую подключаться к кластеру Redshift из экземпляра ClickHouse и выполнять запросы `INSERT INTO ... SELECT`:
 
 <Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="PULL из Redshift в ClickHouse" />
 
@@ -79,9 +79,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Чтобы использовать этот вариант, необходимо настроить ClickHouse JDBC Bridge. ClickHouse JDBC Bridge — это автономное Java-приложение, которое обеспечивает подключение по JDBC и выступает в роли прокси между экземпляром ClickHouse и источниками данных. В этом руководстве мы использовали предварительно заполненный экземпляр Redshift с [тестовой базой данных](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html).
 
 <Steps>
-  <Step>
-    #### Разверните ClickHouse JDBC Bridge
-
+  <Step title="Разверните ClickHouse JDBC Bridge" id="deploy-clickhouse-jdbc-bridge">
     Разверните ClickHouse JDBC Bridge. Подробнее см. в нашем руководстве пользователя по [JDBC для внешних источников данных](/ru/integrations/connectors/data-ingestion/jdbc-with-clickhouse)
 
     <Note>
@@ -89,9 +87,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step>
-    #### Настройте источник данных Redshift
-
+  <Step title="Настройте источник данных Redshift" id="configure-your-redshift-datasource">
     Настройте источник данных Redshift для ClickHouse JDBC Bridge. Например, `/etc/clickhouse-jdbc-bridge/config/datasources/redshift.json `
 
     ```json
@@ -113,9 +109,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### Выполните запрос к экземпляру Redshift из ClickHouse
-
+  <Step title="Выполните запрос к экземпляру Redshift из ClickHouse" id="query-your-redshift-instance-from-clickhouse">
     Когда ClickHouse JDBC Bridge будет развернут и запущен, вы сможете выполнять запросы к экземпляру Redshift из ClickHouse
 
     ```sql
@@ -153,9 +147,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    #### Импортируйте данные из Redshift в ClickHouse
-
+  <Step title="Импортируйте данные из Redshift в ClickHouse" id="import-data-from-redshift-to-clickhouse">
     Ниже показано, как импортировать данные с помощью оператора `INSERT INTO ... SELECT`
 
     ```sql
@@ -221,9 +213,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    #### Экспортируйте данные в S3 бакет с помощью UNLOAD
-
+  <Step title="Экспортируйте данные в S3 бакет с помощью UNLOAD" id="export-data-into-an-s3-bucket-using-unload">
     С помощью возможности [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) в Redshift экспортируйте данные в существующий закрытый S3 бакет:
 
     <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="UNLOAD из Redshift в S3" background="white" />
@@ -233,9 +223,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="Данные в S3" background="white" />
   </Step>
 
-  <Step>
-    #### Создайте таблицу в ClickHouse
-
+  <Step title="Создайте таблицу в ClickHouse" id="create-the-table-in-clickhouse">
     Создайте таблицу в ClickHouse:
 
     ```sql
@@ -261,9 +249,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Это особенно хорошо работает, когда данные находятся в формате, содержащем информацию о типах данных, например в Parquet.
   </Step>
 
-  <Step>
-    #### Загрузите файлы из S3 в ClickHouse
-
+  <Step title="Загрузите файлы из S3 в ClickHouse" id="load-s3-files-into-clickhouse">
     Загрузите файлы из S3 в ClickHouse с помощью оператора `INSERT INTO ... SELECT`:
 
     ```sql
@@ -280,7 +266,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
 
     <Note>
-      В этом примере в качестве промежуточного формата использовался CSV. Однако для промышленных рабочих нагрузок мы рекомендуем Apache Parquet как оптимальный вариант для крупных миграций, поскольку он поддерживает сжатие и позволяет снизить затраты на хранение, одновременно сокращая время передачи. (По умолчанию каждая группа строк сжимается с помощью SNAPPY). ClickHouse также использует колоночную организацию Parquet для ускорения ингестии данных.
+      В этом примере в качестве промежуточного формата использовался CSV. Однако для рабочих нагрузок в продакшне мы рекомендуем Apache Parquet как оптимальный вариант для крупных миграций, поскольку он поддерживает сжатие и позволяет снизить затраты на хранилище, одновременно сокращая время передачи. (По умолчанию каждая группа строк сжимается с помощью SNAPPY). ClickHouse также использует колоночную организацию Parquet для ускорения ингестии данных.
     </Note>
   </Step>
 </Steps>

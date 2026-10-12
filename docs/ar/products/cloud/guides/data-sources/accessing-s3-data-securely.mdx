@@ -63,12 +63,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 5. اضبط CloudFormation stack. في ما يلي معلومات إضافية عن هذه Parameters.
 
-| Parameter                 |     Default Value    | Description                                                                                                                                  |
-| :------------------------ | :------------------: | :------------------------------------------------------------------------------------------------------------------------------------------- |
-| RoleName                  | ClickHouseAccess-001 | اسم الدور الجديد الذي سيستخدمه ClickHouse Cloud للوصول إلى حاوية S3 الخاصة بك.                                                               |
-| Role Session Name         |           *          | يمكن استخدام Role Session Name باعتباره secret مشتركًا لتوفير حماية إضافية للـ حاوية الخاصة بك.                                              |
-| ClickHouse Instance Roles |                      | قائمة مفصولة بفواصل بأدوار دور IAM الخاصة بخدمة ClickHouse التي يمكنها استخدام تكامل S3 الآمن هذا.                                          |
-| Bucket Access             |         Read         | يحدد مستوى الوصول إلى الـ حاويات المُدخلة.                                                                                                  |
+| Parameter                 |     Default Value    | Description                                                                                                                               |
+| :------------------------ | :------------------: | :---------------------------------------------------------------------------------------------------------------------------------------- |
+| RoleName                  | ClickHouseAccess-001 | اسم الدور الجديد الذي سيستخدمه ClickHouse Cloud للوصول إلى حاوية S3 الخاصة بك.                                                            |
+| Role Session Name         |           *          | يمكن استخدام Role Session Name باعتباره secret مشتركًا لتوفير حماية إضافية للـ حاوية الخاصة بك.                                           |
+| ClickHouse Instance Roles |                      | قائمة مفصولة بفواصل بأدوار دور IAM الخاصة بخدمة ClickHouse التي يمكنها استخدام تكامل S3 الآمن هذا.                                        |
+| Bucket Access             |         Read         | يحدد مستوى الوصول إلى الـ حاويات المُدخلة.                                                                                                |
 | Bucket Names              |                      | قائمة مفصولة بفواصل بأسماء الـ حاويات التي سيكون لهذا الدور حق الوصول إليها. **ملاحظة:** استخدم اسم الـ حاوية، وليس ARN الكامل للـ حاوية. |
 
 6. حدّد مربع الاختيار **I acknowledge that AWS CloudFormation might create IAM resources with custom names.**
@@ -167,14 +167,14 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   ## التحكم المتقدم في الإجراءات
 </div>
 
-لتحقيق تحكم أكثر صرامة في الوصول، يمكن تقييد سياسة الـ حاوية بحيث لا تقبل إلا الطلبات الصادرة من VPC endpoints الخاصة بـ ClickHouse Cloud باستخدام [`aws:SourceVpce` condition](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). للحصول على VPC endpoints الخاصة بمنطقة ClickHouse Cloud لديك، افتح الطرفية وشغّل:
+لفرض تحكم أكثر صرامة في الوصول، يمكن تقييد سياسة الحاوية بحيث لا تقبل إلا الطلبات الصادرة من نقاط نهاية VPC الخاصة بـ ClickHouse Cloud باستخدام الشرط [`aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). للحصول على نقاط نهاية VPC الخاصة بمنطقة ClickHouse Cloud، افتح الطرفية وشغّل:
 
 ```bash
 # Replace <your-region> with your ClickHouse Cloud region
 curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
 ```
 
-بعد ذلك، أضِف قاعدة رفض إلى سياسة IAM باستخدام نقاط النهاية التي تم إرجاعها:
+ثم أضِف قاعدة منع إلى سياسة IAM باستخدام نقاط النهاية التي تم إرجاعها:
 
 ```json
 {
@@ -213,4 +213,4 @@ curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.r
 }
 ```
 
-لمزيد من التفاصيل حول كيفية الوصول إلى نقاط النهاية لخدمات ClickHouse Cloud، راجع [عناوين IP لـ Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api).
+لمزيد من التفاصيل حول الوصول إلى نقاط النهاية لخدمات ClickHouse Cloud، راجع [عناوين IP في Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api).

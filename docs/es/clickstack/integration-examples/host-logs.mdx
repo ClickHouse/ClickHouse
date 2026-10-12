@@ -34,19 +34,17 @@ Si desea probar la integración de logs del host antes de configurar su propio e
 * Acceso para modificar los archivos de configuración de ClickStack
 
 <Steps>
-  <Step>
-    #### Verifique que existan archivos de syslog
-
+  <Step title="Verifique que existan archivos de syslog" id="verify-syslog">
     Primero, verifique que su sistema esté generando archivos de syslog:
 
     ```bash
-    # Compruebe si existen archivos de syslog (Linux)
+    # Check if syslog files exist (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # O en macOS
+    # Or on macOS
     ls -la /var/log/system.log
 
-    # Ver entradas recientes
+    # View recent entries
     tail -20 /var/log/syslog
     ```
 
@@ -57,9 +55,7 @@ Si desea probar la integración de logs del host antes de configurar su propio e
     * **macOS**: `/var/log/system.log`
   </Step>
 
-  <Step>
-    #### Crear una configuración personalizada del OTel collector
-
+  <Step title="Crear una configuración personalizada del OTel collector" id="custom-otel">
     ClickStack permite extender la configuración base del OpenTelemetry Collector montando un archivo de configuración personalizado y estableciendo una variable de entorno.
 
     Cree un archivo llamado `host-logs-monitoring.yaml` con la configuración de su sistema:
@@ -203,9 +199,7 @@ Si desea probar la integración de logs del host antes de configurar su propio e
     </Note>
   </Step>
 
-  <Step>
-    #### Configurar ClickStack para cargar una configuración personalizada
-
+  <Step title="Configurar ClickStack para cargar una configuración personalizada" id="load-custom">
     Para habilitar una configuración personalizada del collector en tu despliegue actual de ClickStack, debes:
 
     1. Montar el archivo de configuración personalizado en `/etc/otelcol-contrib/custom.config.yaml`
@@ -219,14 +213,14 @@ Si desea probar la integración de logs del host antes de configurar su propio e
     ```yaml
     services:
       clickstack:
-        # ... configuración existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... otras variables de entorno ...
+          # ... other environment variables ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... otros volúmenes ...
+          # ... other volumes ...
     ```
 
     ##### Opción 2: Docker Run (imagen todo en uno)
@@ -247,9 +241,7 @@ Si desea probar la integración de logs del host antes de configurar su propio e
     </Note>
   </Step>
 
-  <Step>
-    #### Verificar los logs en HyperDX
-
+  <Step title="Verificar los logs en HyperDX" id="verifying-logs">
     Una vez configurado, inicia sesión en HyperDX y verifica que los logs se estén recibiendo correctamente:
 
     1. Ve a la vista de Búsqueda
@@ -270,9 +262,7 @@ Si desea probar la integración de logs del host antes de configurar su propio e
 Para los usuarios que quieran probar la integración de logs del host antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos de ejemplo con logs del sistema pregenerados y patrones realistas.
 
 <Steps>
-  <Step>
-    #### Descargar el conjunto de datos de ejemplo
-
+  <Step title="Descargar el conjunto de datos de ejemplo" id="download-sample">
     Descargue el archivo de log de ejemplo:
 
     ```bash
@@ -290,9 +280,7 @@ Para los usuarios que quieran probar la integración de logs del host antes de c
     * Una combinación de operaciones normales y eventos destacados
   </Step>
 
-  <Step>
-    #### Crear la configuración de prueba del collector
-
+  <Step title="Crear la configuración de prueba del collector" id="test-config">
     Cree un archivo llamado `host-logs-demo.yaml` con la siguiente configuración:
 
     ```yaml
@@ -334,9 +322,7 @@ Para los usuarios que quieran probar la integración de logs del host antes de c
     ```
   </Step>
 
-  <Step>
-    #### Ejecutar ClickStack con la configuración de demostración
-
+  <Step title="Ejecutar ClickStack con la configuración de demostración" id="run-demo">
     Ejecute ClickStack con los logs de demostración y esta configuración:
 
     ```bash
@@ -350,13 +336,10 @@ Para los usuarios que quieran probar la integración de logs del host antes de c
 
     <Note>
       **Esto monta el archivo de log directamente en el contenedor. Se hace con fines de prueba usando datos de demostración estáticos.**
-
     </Note>
   </Step>
 
-  <Step>
-    #### Verificar los logs en HyperDX
-
+  <Step title="Verificar los logs en HyperDX" id="verify-demo-logs">
     Una vez que ClickStack esté en ejecución:
 
     1. Abra [HyperDX](http://localhost:8080/) e inicie sesión en su cuenta (puede que primero tenga que crear una cuenta)
@@ -382,13 +365,11 @@ Para los usuarios que quieran probar la integración de logs del host antes de c
 Para ayudarte a empezar a monitorizar los logs del host con ClickStack, proporcionamos visualizaciones esenciales para los logs del sistema.
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Descargar</TrackedLink> la configuración del dashboard
+  <Step title="Descargar la configuración del dashboard" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importar el dashboard preconfigurado
-
+  <Step title="Importar el dashboard preconfigurado" id="import-dashboard">
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, en el menú de puntos suspensivos
 
@@ -399,9 +380,7 @@ Para ayudarte a empezar a monitorizar los logs del host con ClickStack, proporci
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Finish Import" />
   </Step>
 
-  <Step>
-    #### Ver el dashboard
-
+  <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones preconfiguradas:
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="Dashboard de logs" />
@@ -516,4 +495,4 @@ Si el formato no coincide, selecciona la pestaña de configuración adecuada en 
   ## Paso a producción
 </div>
 
-Esta guía se basa en el OpenTelemetry Collector integrado de ClickStack para ofrecer una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones en producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.

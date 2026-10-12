@@ -46,7 +46,8 @@ SELECT sum(length(URL)) FROM test.hits WHERE CounterID IN (SELECT a % 100000 FRO
 
 SELECT sum(length(URL)) FROM test.hits WHERE WatchID IN (SELECT a % 1000000 FROM t) FORMAT Null SETTINGS log_comment='3800_autopr_reuse_index_analysis_query_5';
 
--- For Global IN-s now we can execute subquery twice with automatic parallel replicas :(
+-- The probe plan is costed and usually discarded, so it no longer materializes the `GLOBAL IN`
+-- subquery. That leaves the same number of index analysis rounds as the non-global case above.
 SELECT sum(length(URL)) FROM test.hits WHERE WatchID GLOBAL IN (SELECT a % 1000000 FROM t) FORMAT Null SETTINGS log_comment='3800_autopr_reuse_index_analysis_query_6';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;

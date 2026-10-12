@@ -1,0 +1,11 @@
+freezes	1
+staged records	1
+staged bytes	1
+sealed chunks	1
+merge-time drained records	1
+probe bypasses	1
+thaws	1
+give-ups	1
+pressure sweeps	1
+pressure-drained records	1
+lazy FINAL replacement freezes	1

@@ -28,7 +28,8 @@ INSERT INTO t2
 
 {% for join_algorithm in ['default', 'full_sorting_merge', 'grace_hash'] -%}
 
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';
+-- The threshold has to stay above the size of an empty hash table, or the buckets keep splitting.
+SET max_bytes_before_external_join = '{% if join_algorithm == 'grace_hash' %}16Mi{% else %}0{% endif %}';
 
 SELECT '-- {{ join_algorithm }} --';
 SET join_algorithm = '{{ join_algorithm }}';
@@ -137,7 +138,7 @@ ORDER BY t1.key1, t1.key2, t1.key3, t2.key1, t2.key2, t2.key3, t2.s
 ;
 
 SET join_use_nulls = 0;
-SET max_bytes_in_join = 0;
+SET max_bytes_before_external_join = 0;
 
 {% endfor -%}
 

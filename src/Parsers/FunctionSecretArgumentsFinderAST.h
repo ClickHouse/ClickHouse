@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Parsers/FunctionSecretArgumentsFinder.h>
+#include <Common/FieldVisitorToString.h>
+#include <Parsers/SecretArguments.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
@@ -23,6 +25,7 @@ public:
             return nullptr;
         }
         bool isIdentifier() const override { return argument->as<ASTIdentifier>(); }
+        bool isSettings() const override { return argument->as<ASTSetQuery>(); }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
             if (const auto * literal = argument->as<ASTLiteral>())
@@ -45,6 +48,15 @@ public:
             }
 
             return false;
+        }
+        bool tryGetLiteralText(String * res) const override
+        {
+            const auto * literal = argument->as<ASTLiteral>();
+            if (!literal)
+                return false;
+            if (res)
+                *res = applyVisitor(FieldVisitorToString(), literal->value);
+            return true;
         }
     private:
         const IAST * argument = nullptr;
@@ -80,32 +92,25 @@ private:
     const ASTFunction * function = nullptr;
 };
 
-/// Finds arguments of a specified function which should not be displayed for most users for security reasons.
-/// That involves passwords and secret keys.
-class FunctionSecretArgumentsFinderAST : public FunctionSecretArgumentsFinder
+/// The secret arguments of a function as the installed finder sees them.
+inline SecretArgumentsResult findSecretArguments(const ASTFunction & function)
 {
-public:
-    explicit FunctionSecretArgumentsFinderAST(const ASTFunction & function_)
-        : FunctionSecretArgumentsFinder(std::make_unique<FunctionAST>(function_))
+    /// Codecs, statistics, window functions and lambdas take no secrets, so the programs that format only
+    /// those (`keeper` and `compressor` format codecs) need no finder.
+    switch (function.getKind())
     {
-        if (!function->hasArguments())
-            return;
-
-        switch (function_.getKind())
-        {
-            case ASTFunction::Kind::ORDINARY_FUNCTION: findOrdinaryFunctionSecretArguments(); break;
-            case ASTFunction::Kind::WINDOW_FUNCTION: break;
-            case ASTFunction::Kind::LAMBDA_FUNCTION: break;
-            case ASTFunction::Kind::CODEC: break;
-            case ASTFunction::Kind::STATISTICS: break;
-            case ASTFunction::Kind::TABLE_ENGINE: findTableEngineSecretArguments(); break;
-            case ASTFunction::Kind::DATABASE_ENGINE: findDatabaseEngineSecretArguments(); break;
-            case ASTFunction::Kind::BACKUP_NAME: findBackupNameSecretArguments(); break;
-        }
+        case ASTFunction::Kind::ORDINARY_FUNCTION:
+        case ASTFunction::Kind::TABLE_ENGINE:
+        case ASTFunction::Kind::DATABASE_ENGINE:
+        case ASTFunction::Kind::BACKUP_NAME:
+            break;
+        case ASTFunction::Kind::WINDOW_FUNCTION:
+        case ASTFunction::Kind::LAMBDA_FUNCTION:
+        case ASTFunction::Kind::CODEC:
+        case ASTFunction::Kind::STATISTICS:
+            return {};
     }
-
-    FunctionSecretArgumentsFinder::Result getResult() const { return result; }
-};
-
+    return getSecretArgumentsFinder().find(function.getKind(), FunctionAST(function));
+}
 
 }

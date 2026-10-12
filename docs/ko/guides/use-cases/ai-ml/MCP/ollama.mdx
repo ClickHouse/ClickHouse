@@ -11,9 +11,7 @@ doc_type: 'guide'
 > 이 가이드에서는 Ollama와 ClickHouse MCP 서버를 사용하는 방법을 설명합니다.
 
 <Steps>
-  <Step>
-    ## Ollama 설치
-
+  <Step title="Ollama 설치" id="install-ollama">
     Ollama는 로컬 머신에서 대규모 언어 모델(LLM)을 실행하기 위한 라이브러리입니다.
     [다양한 모델을 제공](https://ollama.com/library)하며 사용하기도 쉽습니다.
 
@@ -84,9 +82,7 @@ doc_type: 'guide'
     이 출력에서 기본 qwen3 모델의 매개변수가 80억 개를 약간 넘는다는 것을 확인할 수 있습니다.
   </Step>
 
-  <Step>
-    ## MCPHost 설치
-
+  <Step title="MCPHost 설치" id="install-mcphost">
     이 글을 작성하는 시점(2025년 7월)에는 Ollama를 MCP 서버와 함께 사용할 수 있는 네이티브 기능이 없습니다.
     하지만 [MCPHost](https://github.com/mark3labs/mcphost)를 사용하면 Ollama 모델을 MCP 서버와 함께 실행할 수 있습니다.
 
@@ -100,9 +96,7 @@ doc_type: 'guide'
     실행 파일은 `~/go/bin` 아래에 설치되므로, 해당 디렉터리가 경로에 포함되어 있는지 확인해야 합니다.
   </Step>
 
-  <Step>
-    ## ClickHouse MCP 서버 구성
-
+  <Step title="ClickHouse MCP 서버 구성" id="configure-clickhouse-mcp-server">
     MCPHost를 사용하면 YAML 또는 JSON 파일에서 MCP 서버를 구성할 수 있습니다.
     MCPHost는 홈 디렉터리에서 다음 순서대로 구성 파일을 찾습니다:
 
@@ -150,9 +144,7 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step>
-    ## MCPHost 실행
-
+  <Step title="MCPHost 실행" id="running-mcphost">
     ClickHouse MCP 서버 구성을 완료했다면 다음 명령으로 MCPHost를 실행할 수 있습니다.
 
     ```bash
@@ -187,7 +179,7 @@ doc_type: 'guide'
       ┃   MCPHost System (09:52)                                                            ┃
       ┃                                                                                     ┃
 
-      Enter your prompt (명령어는 /help, 종료는 Ctrl+C, 생성 취소는 ESC를 입력하세요)
+      Enter your prompt (Type /help for commands, Ctrl+C to quit, ESC to cancel generation)
     ```
 
     `/servers` 명령을 사용하여 MCP 서버를 확인할 수 있습니다:

@@ -1,7 +1,8 @@
 #include <Common/maskSensitiveQueryParameters.h>
 
+#include <Common/HiddenSecret.h>
 #include <Common/StringUtils.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 #include <array>
 #include <string>
@@ -83,7 +84,7 @@ bool isSensitiveParameterName(std::string_view raw_name)
 
     for (auto needle : sensitive_name_substrings)
     {
-        if (lower.find(needle) != std::string::npos)
+        if (lower.contains(needle))
             return true;
     }
     return false;
@@ -96,8 +97,6 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
     const auto question = uri.find('?');
     if (question == std::string::npos)
         return uri;
-
-    constexpr std::string_view hidden = "[HIDDEN]";
 
     std::string result;
     result.reserve(uri.size());
@@ -130,7 +129,7 @@ std::string maskSensitiveQueryParametersInURI(const std::string & uri)
             result.append(name.data(), name.size());
             result += '=';
             if (isSensitiveParameterName(name))
-                result.append(hidden.data(), hidden.size());
+                result.append(HIDDEN_SECRET);
             else
                 result.append(pair.data() + eq + 1, pair.size() - eq - 1);
         }

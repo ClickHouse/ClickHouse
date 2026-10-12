@@ -31,6 +31,7 @@ namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
@@ -62,12 +63,16 @@ public:
     {
         const auto & settings = context_->getSettingsRef();
         return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
+            settings[Setting::allow_execute_multiif_columnar],
+            settings[Setting::use_variant_as_common_type],
+            settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_)
+    explicit FunctionMultiIf(
+        bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_ = false)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
         , use_variant_as_common_type(use_variant_as_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
     {}
 
     String getName() const override { return name; }
@@ -145,9 +150,9 @@ public:
         });
 
         if (use_variant_as_common_type)
-            return getLeastSupertypeOrVariant(types_of_branches);
+            return getLeastSupertypeOrVariant(types_of_branches, allow_lossy_numeric_supertype);
 
-        return getLeastSupertype(types_of_branches);
+        return getLeastSupertype(types_of_branches, allow_lossy_numeric_supertype);
     }
 
     struct Instruction
@@ -534,6 +539,7 @@ private:
 
     const bool allow_execute_multiif_columnar;
     const bool use_variant_as_common_type;
+    const bool allow_lossy_numeric_supertype;
 };
 
 }
@@ -541,11 +547,11 @@ private:
 REGISTER_FUNCTION(MultiIf)
 {
     FunctionDocumentation::Description description = R"(
-Allows writing the [`CASE`](/sql-reference/operators#conditional-expression) operator more compactly in the query.
+Allows writing the [`CASE`](/reference/operators#conditional-expression) operator more compactly in the query.
 Evaluates each condition in order. For the first condition that is true (non-zero and not `NULL`), returns the corresponding branch value.
 If none of the conditions are true, returns the `else` value.
 
-Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls
+Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls
 whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true.
 
@@ -598,9 +604,9 @@ FROM LEFT_RIGHT;
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type, allow_lossy_numeric_supertype));
 }
 
 }

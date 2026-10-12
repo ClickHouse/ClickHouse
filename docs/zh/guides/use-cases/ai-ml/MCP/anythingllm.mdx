@@ -2,7 +2,7 @@
 slug: /use-cases/AI/MCP/anythingllm
 sidebarTitle: '集成 AnythingLLM'
 title: '在 AnythingLLM 中使用 ClickHouse MCP 服务器'
-description: '本指南介绍如何使用 Docker 为 AnythingLLM 配置 ClickHouse MCP 服务器。'
+description: '本指南介绍如何使用 Docker 为 AnythingLLM 设置 ClickHouse MCP 服务器。'
 keywords: ['AI', 'AnythingLLM', 'MCP']
 show_related_blogs: true
 doc_type: 'guide'
@@ -10,28 +10,24 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-> 本指南介绍如何使用 Docker 为 [AnythingLLM](https://anythingllm.com/) 配置 ClickHouse MCP 服务器，
+> 本指南介绍如何使用 Docker 配置 [AnythingLLM](https://anythingllm.com/) 与 ClickHouse MCP 服务器，
 > 并将其连接到 ClickHouse 示例数据集。
 
 <Steps>
-  <Step>
-    ## 安装 Docker
-
-    您需要使用 Docker 来运行 LibreChat 和 MCP 服务器。获取 Docker 的方法如下：
+  <Step title="安装 Docker" id="install-docker">
+    你需要 Docker 来运行 LibreChat 和 MCP 服务器。获取 Docker 的方法如下：
 
     1. 访问 [docker.com](https://www.docker.com/products/docker-desktop)
-    2. 下载适用于您的操作系统的 Docker Desktop
-    3. 按照对应操作系统的说明安装 Docker
-    4. 打开 Docker Desktop，并确认其正在运行
+    2. 下载适用于你的操作系统的 Docker Desktop
+    3. 按照你的操作系统对应的说明安装 Docker
+    4. 打开 Docker Desktop，并确保其正在运行
 
     <br />
 
     更多信息，请参阅 [Docker 文档](https://docs.docker.com/get-docker/)。
   </Step>
 
-  <Step>
-    ## 拉取 AnythingLLM Docker 镜像
-
+  <Step title="拉取 AnythingLLM Docker 镜像" id="pull-anythingllm-docker-image">
     运行以下命令，将 AnythingLLM Docker 镜像拉取到本机：
 
     ```bash
@@ -39,10 +35,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 设置存储位置
-
-    创建存储目录并初始化环境文件：
+  <Step title="设置存储位置" id="setup-storage-location">
+    创建用于存储的目录，并初始化环境文件：
 
     ```bash
     export STORAGE_LOCATION=$PWD/anythingllm && \
@@ -51,16 +45,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## 配置 MCP 服务器配置文件
-
+  <Step title="配置 MCP 服务器配置文件" id="configure-mcp-server-config-file">
     创建 `plugins` 目录：
 
     ```bash
     mkdir -p "$STORAGE_LOCATION/plugins"
     ```
 
-    在 `plugins` 目录中创建名为 `anythingllm_mcp_servers.json` 的文件，并添加以下内容：
+    在 `plugins` 目录中创建一个名为 `anythingllm_mcp_servers.json` 的文件，并添加以下内容：
 
     ```json
     {
@@ -85,15 +77,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     }
     ```
 
-    如果要探索您自己的数据，
-    可以使用您自己的 ClickHouse Cloud 服务的
-    [host、username 和 password](/zh/get-started/setup/cloud#connect-with-your-app)。
+    如果你想查看自己的数据，可以使用你自己的 ClickHouse Cloud 服务的
+    [host、用户名和密码](/zh/get-started/setup/cloud#connect-with-your-app)。
   </Step>
 
-  <Step>
-    ## 启动 AnythingLLM Docker 容器
-
-    运行以下命令启动 AnythingLLM Docker 容器：
+  <Step title="启动 AnythingLLM Docker 容器" id="start-anythingllm-docker-container">
+    运行以下命令以启动 AnythingLLM Docker 容器：
 
     ```bash
     docker run -p 3001:3001 \
@@ -105,27 +94,23 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
 
     启动后，在浏览器中访问 `http://localhost:3001`。
-    选择要使用的模型，并提供您的 API key。
+    选择你要使用的模型，并提供你的 API 密钥。
   </Step>
 
-  <Step>
-    ## 等待 MCP 服务器 启动
-
+  <Step title="等待 MCP 服务器启动" id="wait-for-mcp-servers-to-start-up">
     点击 UI 左下角的工具图标：
 
     <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="工具图标" size="md" />
 
-    点击 `Agent Skills`，然后查看 `MCP 服务器` 部分。
-    等待直到 `Mcp ClickHouse` 显示为 `On`。
+    点击 `Agent Skills`，然后查看 `MCP servers` 部分。
+    等待直到你看到 `Mcp ClickHouse` 显示为 `On`
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCP 服务器已就绪" size="md" />
+    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="MCP servers 已就绪" size="md" />
   </Step>
 
-  <Step>
-    ## 在 AnythingLLM 中与 ClickHouse MCP 服务器聊天
-
-    现在可以开始聊天了。
-    要让 MCP 服务器 可用于聊天，需要在 conversation 的第一条消息前加上 `@agent` 前缀。
+  <Step title="使用 AnythingLLM 与 ClickHouse MCP 服务器聊天" id="chat-with-clickhouse-mcp-server-with-anythingllm">
+    现在已经可以开始聊天了。
+    要让 MCP 服务器可用于聊天，你需要在对话的第一条消息前加上 `@agent` 前缀。
 
     <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="对话" size="md" />
   </Step>

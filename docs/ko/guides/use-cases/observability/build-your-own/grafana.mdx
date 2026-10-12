@@ -18,19 +18,19 @@ Grafana는 ClickHouse의 관측성 데이터를 시각화하는 데 권장되는
   ## OpenTelemetry 통합
 </div>
 
-Grafana에서 ClickHouse 데이터 소스를 구성할 때 플러그인에서 로그와 트레이스에 사용할 기본 데이터베이스와 테이블, 그리고 해당 테이블이 OTel schema를 따르는지 여부를 지정할 수 있습니다. 이를 통해 플러그인은 Grafana에서 로그와 트레이스를 올바르게 렌더링하는 데 필요한 컬럼을 반환할 수 있습니다. 기본 OTel schema를 변경해 자체 컬럼 이름을 사용하려는 경우 해당 이름을 지정할 수 있습니다. 시간(`Timestamp`), 로그 수준(`SeverityText`), 메시지 본문(`Body`)과 같은 컬럼에 기본 OTel 컬럼 이름을 사용하면 별도 변경이 필요하지 않습니다.
+Grafana에서 ClickHouse 데이터 소스를 구성할 때 플러그인에서 로그와 트레이스에 사용할 기본 데이터베이스와 테이블, 그리고 해당 테이블이 OTel 스키마를 따르는지 여부를 지정할 수 있습니다. 이를 통해 플러그인은 Grafana에서 로그와 트레이스를 올바르게 렌더링하는 데 필요한 컬럼을 반환할 수 있습니다. 기본 OTel 스키마를 변경해 자체 컬럼 이름을 사용하려는 경우 해당 이름을 지정할 수 있습니다. 시간(`Timestamp`), 로그 레벨(`SeverityText`), 메시지 본문(`Body`)과 같은 컬럼에 기본 OTel 컬럼 이름을 사용하면 별도 변경이 필요하지 않습니다.
 
 <Info>
   **HTTP 또는 Native**
 
-  Grafana는 HTTP 또는 Native protocol을 통해 ClickHouse에 연결할 수 있습니다. Native protocol은 성능상 약간의 이점을 제공하지만, Grafana 사용자가 실행하는 집계 쿼리에서는 그 차이를 체감하기 어려운 경우가 많습니다. 반면 HTTP protocol은 일반적으로 프록시로 구성하고 내부 동작을 점검하기가 더 간단합니다.
+  Grafana는 HTTP 또는 Native protocol을 통해 ClickHouse에 연결할 수 있습니다. 후자는 성능상 약간의 이점을 제공하지만, Grafana 사용자가 실행하는 집계 쿼리에서는 그 차이를 체감하기 어려운 경우가 많습니다. 반면 HTTP protocol은 일반적으로 프록시로 구성하고 내부 동작을 검사하기가 더 간단합니다.
 </Info>
 
-로그를 올바르게 렌더링하려면 Logs 구성에 시간, 로그 수준, 메시지 컬럼이 필요합니다.
+로그를 올바르게 렌더링하려면 Logs 구성에 시간, 로그 레벨, 메시지 컬럼이 필요합니다.
 
-트레이스 구성은 약간 더 복잡합니다(전체 목록은 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)에서 확인할 수 있습니다). 여기서 필요한 컬럼은 전체 trace profile을 구성하는 후속 쿼리를 추상화할 수 있도록 하기 위한 것입니다. 이러한 쿼리는 데이터가 OTel과 유사한 방식으로 구조화되어 있다고 가정하므로, 표준 schema에서 크게 벗어난 경우 이 기능을 활용하려면 뷰를 사용해야 합니다.
+Traces 구성은 약간 더 복잡합니다(전체 목록은 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)에서 확인할 수 있습니다). 여기서 필요한 컬럼은 전체 trace profile을 구성하는 후속 쿼리를 추상화할 수 있도록 하기 위한 것입니다. 이러한 쿼리는 데이터가 OTel과 유사한 방식으로 구조화되어 있다고 가정하므로, 표준 스키마에서 크게 벗어난 경우 이 기능을 활용하려면 뷰를 사용해야 합니다.
 
-<Image img="/images/use-cases/observability/observability-15.webp" alt="커넥터 구성" size="sm" />
+<Image img="/images/use-cases/observability/observability-15.webp" alt="Connector config" size="sm" />
 
 구성이 완료되면 [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)로 이동해 로그와 트레이스 검색을 시작할 수 있습니다.
 

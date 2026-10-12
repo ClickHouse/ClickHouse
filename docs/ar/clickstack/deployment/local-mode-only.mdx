@@ -34,19 +34,15 @@ import JSONSupport from '/snippets/ar/_json_support.mdx';
 <br />
 
 <Steps>
-  <Step>
-    ### النشر باستخدام Docker
-
-    يؤدي الوضع المحلي إلى نشر واجهة HyperDX UI على المنفذ 8080.
+  <Step title="النشر باستخدام Docker" id="deploy-with-docker">
+    يؤدي وضع محلي إلى نشر واجهة HyperDX UI على المنفذ 8080.
 
     ```shell
     docker run -p 8080:8080 clickhouse/clickstack-local:latest
     ```
   </Step>
 
-  <Step>
-    ### انتقل إلى HyperDX UI
-
+  <Step title="انتقل إلى HyperDX UI" id="navigate-to-hyperdx-ui">
     زُر [http://localhost:8080](http://localhost:8080) للوصول إلى HyperDX UI.
 
     **لن يُطلب منك إنشاء مستخدم، لأن المصادقة غير مفعّلة في وضع النشر هذا.**

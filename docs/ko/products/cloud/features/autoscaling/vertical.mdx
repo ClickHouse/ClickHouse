@@ -9,20 +9,20 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="자동 수직 스케일링" />
 
-Scale 및 Enterprise tier 서비스는 CPU 및 메모리 사용량을 기준으로 자동 스케일링을 지원합니다. 서비스 사용량은 스케일링 결정을 내리기 위해 lookback 윈도우 동안 지속적으로 모니터링됩니다. 사용량이 특정 임계값을 초과하거나 그보다 낮아지면, 수요에 맞춰 서비스가 적절하게 스케일링됩니다.
+표준 `1:4` 프로필을 사용하는 Scale tier 서비스 및 Enterprise 티어 서비스는 CPU 및 메모리 사용량을 기준으로 자동 스케일링을 지원합니다. 서비스 사용량은 스케일링 결정을 내리기 위해 lookback 윈도우 동안 지속적으로 모니터링됩니다. 사용량이 특정 임계값을 초과하거나 그보다 낮아지면, 수요에 맞춰 서비스가 적절하게 스케일링됩니다.
 
 <div id="configuring-vertical-auto-scaling">
   ## 수직 자동 스케일링 구성
 </div>
 
-ClickHouse Cloud Scale 또는 Enterprise 서비스의 스케일링은 **관리자** 역할을 가진 조직 구성원이 조정할 수 있습니다. 수직 자동 스케일링을 구성하려면 서비스의 **설정** 탭으로 이동하여 아래와 같이 최소 메모리와 최대 메모리, 그리고 CPU 설정을 조정하십시오.
+**관리자** 역할을 가진 조직 구성원은 Scale 서비스 및 표준 `1:4` 프로필을 사용하는 Enterprise 서비스에 수직 자동 스케일링을 구성할 수 있습니다. 서비스의 **설정** 탭으로 이동하여 아래와 같이 최소 메모리와 최대 메모리, 그리고 CPU 설정을 조정하십시오. 사용자 지정 프로필을 사용하는 Enterprise 서비스는 지원팀의 도움을 받아 수직 크기를 조정해야 합니다.
 
 <Note>
-  단일 레플리카 서비스는 모든 티어에서 스케일링할 수 있는 것은 아닙니다.
+  단일 레플리카 Scale 서비스와 표준 `1:4` 프로필을 사용하는 Enterprise 서비스는 수직 자동 스케일링을 지원합니다. 사용자 지정 프로필을 사용하는 Enterprise 서비스는 지원팀의 도움을 받아 수직 크기를 조정해야 합니다. Basic 티어 서비스는 크기가 고정되어 있어 스케일링할 수 없습니다.
 </Note>
 
 <Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="스케일링 설정 페이지" border />
@@ -34,5 +34,5 @@ ClickHouse Cloud Scale 또는 Enterprise 서비스의 스케일링은 **관리�
 이 경우 클러스터의 모든 자동 스케일링이 비활성화되며, 서비스는 이 설정을 초과하는 CPU 또는 메모리 사용량 증가에 대해 보호되지 않습니다.
 
 <Note>
-  Enterprise 티어 서비스의 경우 표준 1:4 프로필은 수직 자동 스케일링을 지원합니다. 사용자 지정 프로필은 수직 자동 스케일링이나 수동 수직 스케일링을 지원하지 않습니다. 다만 이러한 서비스는 지원팀에 문의하여 수직으로 스케일링할 수 있습니다.
+  Enterprise 티어 서비스의 경우 표준 `1:4` 프로필은 수직 자동 스케일링을 지원합니다. 사용자 지정 프로필은 수직 자동 스케일링이나 수동 수직 스케일링을 지원하지 않습니다. 수직 크기 조정은 지원팀에 문의하십시오.
 </Note>

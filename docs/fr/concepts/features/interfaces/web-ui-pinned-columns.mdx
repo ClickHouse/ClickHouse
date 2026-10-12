@@ -1,0 +1,48 @@
+---
+description: 'Documentation sur les colonnes épinglées (sticky) dans la Web SQL UI intégrée (`/play`)'
+sidebarTitle: 'Colonnes épinglées de la Web UI'
+slug: /interfaces/web-ui-pinned-columns
+title: 'Colonnes épinglées de la Web UI'
+doc_type: 'reference'
+sidebar: false
+---
+
+La Web SQL UI intégrée (`play.html`, accessible via le chemin [`/play`](/fr/concepts/features/interfaces/http) sur n’importe quel port HTTP de ClickHouse) peut garder visibles les colonnes choisies d’un résultat pendant que le reste du tableau défile horizontalement. Une colonne épinglée reste fixée au bord proche de la zone de résultats au lieu de défiler hors de vue, de sorte qu’une colonne clé — un identifiant, un nom, une date — reste visible à côté des colonnes situées tout à droite que vous consultez.
+
+<div id="pinning-a-column">
+  ## Épingler une colonne
+</div>
+
+Une icône en forme de punaise 📌 apparaît à gauche de chaque en-tête de colonne. Cliquez dessus pour épingler la colonne, puis cliquez de nouveau pour la désépingler. L’icône est un véritable bouton : les utilisateurs du clavier peuvent donc y accéder avec la touche Tab et l’actionner au clavier, et son état d’épinglage est exposé aux technologies d’assistance.
+
+Sur les appareils dotés d’un pointeur permettant le survol (une souris), l’icône n’est affichée que lorsque l’en-tête est survolé ou que le bouton a le focus, afin de rester discrète le reste du temps ; sur les appareils tactiles et autres appareils à pointeur imprécis, qui ne permettent pas le survol, l’icône est toujours affichée afin de pouvoir être touchée directement. Une colonne épinglée conserve son icône affichée à pleine intensité pour indiquer qu’elle est épinglée.
+
+<div id="when-pinning-is-available">
+  ## Quand l’épinglage est disponible
+</div>
+
+L’épinglage n’est proposé que lorsque la table est suffisamment large pour permettre un défilement horizontal. Lorsque la table entière tient dans la zone d’affichage, il n’y a rien à faire défiler horizontalement ; le bouton bascule d’épinglage est donc désactivé et retiré de l’ordre de tabulation au clavier. Dès que le résultat devient défilable horizontalement — résultat large, fenêtre étroite ou résultat diffusé en flux qui s’élargit horizontalement — les boutons bascule deviennent actifs.
+
+<div id="how-a-pinned-column-behaves-when-scrolling">
+  ## Comportement d’une colonne épinglée lors du défilement
+</div>
+
+Une colonne épinglée se déplace avec le contenu lors du défilement horizontal jusqu’à ce qu’elle soit sur le point de sortir de la zone d’affichage ; à ce moment-là, elle se fixe au bord le plus proche — le bord gauche pour les colonnes de gauche, le bord droit pour les colonnes de droite — et reste visible. Plusieurs colonnes épinglées s’empilent le long du bord dans leur ordre d’origine, chacune étant séparée du contenu défilant par une bordure. Une cellule épinglée s’affiche par-dessus les cellules ordinaires qui défilent en dessous, y compris une cellule sélectionnée, de sorte qu’elle reste toujours lisible.
+
+<div id="shared-across-results">
+  ## Partagé entre les résultats
+</div>
+
+Les épingles sont associées au nom de la colonne et partagées entre tous les tableaux de résultats de la page, de la même manière que les [modes de codage couleur](/fr/concepts/features/interfaces/web-ui-color-coding) par colonne. Si vous épinglez une colonne nommée `id` dans un résultat, une colonne nommée `id` restera épinglée dans les autres résultats ainsi que dans les requêtes suivantes qui renvoient la même colonne.
+
+<div id="persistence">
+  ## Persistance
+</div>
+
+L’ensemble épinglé est mémorisé dans l’URL de la page, dans l’historique du navigateur et dans l’instantané des résultats propre à chaque onglet. Ainsi, le rechargement de la page, le partage du lien ou la navigation d’avant en arrière le conservent. Seules les colonnes épinglées sont stockées — un ensemble vide n’ajoute rien à l’URL ni à l’état de l’historique — afin de conserver un format compact.
+
+<div id="limitations">
+  ## Limitations
+</div>
+
+* La présentation verticale (transposée) sur une seule ligne ne comporte pas de colonnes à défilement horizontal ; elle ne permet donc pas l’épinglage.

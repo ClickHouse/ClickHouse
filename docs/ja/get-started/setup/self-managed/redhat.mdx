@@ -11,18 +11,14 @@ doc_type: 'guide'
 import Recommendations from '/snippets/ja/recommendations.mdx';
 
 > **CentOS**、**RedHat**、およびその他すべての rpm ベースの
-> Linux ディストリビューションでは、公式の事前コンパイル済み `rpm` パッケージを使用することを推奨します。
+> Linux ディストリビューションでは、公式のコンパイル済み `rpm` パッケージの使用を推奨します。
 
 <Steps>
-  <Step>
-    ## 推奨事項を確認する
-
+  <Step title="推奨事項を確認する" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## RPM リポジトリを設定する
-
+  <Step title="RPM リポジトリを設定する" id="setup-the-rpm-repository">
     次のコマンドを実行して、公式リポジトリを追加します。
 
     ```bash
@@ -37,21 +33,19 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
     ```
 
-    以下の手順では、使用しているパッケージマネージャーに応じて
+    以下の手順では、使用しているパッケージマネージャーに応じて、
     `yum install` を `zypper install` に置き換えることができます。
   </Step>
 
-  <Step>
-    ## ClickHouse server と client をインストールする
-
+  <Step title="ClickHouse server と client をインストールする" id="install-clickhouse-server-and-client-1">
     ClickHouse をインストールするには、次のコマンドを実行します。
 
     ```bash
     sudo yum install -y clickhouse-server clickhouse-client
     ```
 
-    * 必要に応じて異なる[リリース種別](/ja/resources/support-center/knowledge-base/setup-installation/production)を利用するには、`stable` を `lts` に置き換えることができます。
-    * [packages.clickhouse.com/rpm](https://packages.clickhouse.com/rpm/stable) からパッケージを手動でダウンロードしてインストールすることもできます。
+    * 必要に応じて別の [リリース種別](/ja/resources/support-center/knowledge-base/setup-installation/production) を使用するには、`stable` を `lts` に置き換えることができます。
+    * パッケージは [packages.clickhouse.com/rpm](https://packages.clickhouse.com/rpm/stable) から手動でダウンロードしてインストールすることもできます。
     * 特定のバージョンを指定するには、パッケージ名の末尾に `-$version` を追加します。
       例:
 
@@ -60,9 +54,7 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## ClickHouse server を起動する
-
+  <Step title="ClickHouse server を起動する" id="start-clickhouse-server-1">
     ClickHouse server を起動するには、次を実行します。
 
     ```bash
@@ -77,20 +69,18 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     clickhouse-client
     ```
 
-    server にパスワードを設定している場合は、次を実行する必要があります。
+    サーバーにパスワードを設定している場合は、次を実行する必要があります。
 
     ```bash
     clickhouse-client --password
     ```
   </Step>
 
-  <Step>
-    ## スタンドアロンの ClickHouse Keeper をインストールする
-
+  <Step title="スタンドアロンの ClickHouse Keeper をインストールする" id="install-standalone-clickhouse-keeper-1">
     <Tip>
       本番環境では、ClickHouse Keeper は専用ノードで実行することを強く推奨します。
-      テスト環境で ClickHouse Server と ClickHouse Keeper を同じサーバーで実行する場合は、
-      ClickHouse server に含まれているため、ClickHouse Keeper をインストールする必要はありません。
+      テスト環境で ClickHouse Server と ClickHouse Keeper を同じサーバー上で実行する場合、
+      ClickHouse server には ClickHouse Keeper が含まれているため、ClickHouse Keeper をインストールする必要はありません。
     </Tip>
 
     スタンドアロンの ClickHouse Keeper サーバーに `clickhouse-keeper` をインストールするには、次を実行します。
@@ -100,9 +90,7 @@ import Recommendations from '/snippets/ja/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## ClickHouse Keeper を有効化して起動する
-
+  <Step title="ClickHouse Keeper を有効化して起動する" id="enable-and-start-clickhouse-keeper-1">
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

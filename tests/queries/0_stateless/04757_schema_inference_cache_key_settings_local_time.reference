@@ -1,0 +1,6 @@
+-- Parquet local_time_as_utc, utc=1 first
+Nullable(DateTime64(3, \'UTC\'))
+Nullable(DateTime64(3))
+-- Parquet local_time_as_utc, utc=0 first
+Nullable(DateTime64(3))
+Nullable(DateTime64(3, \'UTC\'))

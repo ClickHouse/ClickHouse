@@ -99,25 +99,25 @@ SHOW  wal_level;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication 将包含指定表生成的一组变更事件，后续将用于摄取复制流。
+`clickpipes` publication 定义了其变更事件将流式传输到 ClickPipes 的那组表。除非你打算复制每一张表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
 <div id="configure-network-access">
   ## 配置网络访问
 </div>
 
-<Note>
-  ClickPipes 不支持 Private Service Connect (PSC) 连接。如果你不允许公开访问 AlloyDB 实例，可以[使用 SSH 隧道](#configure-network-access)进行安全连接。未来将支持 PSC。
-</Note>
-
-接下来，你必须允许 ClickPipes 连接到你的 AlloyDB 实例。
+接下来，选择 ClickPipes 连接到 AlloyDB 实例的方式。
 
 <Tabs>
+  <Tab title="使用 Private Service Connect">
+    对于从托管在 GCP 上的 ClickHouse Cloud 服务建立的私有连接，请按照 [GCP Private Service Connect 指南](/zh/integrations/clickpipes/networking/gcp-psc)，为 AlloyDB 实例配置反向专用终结点。
+  </Tab>
+
   <Tab title="允许 ClickPipes IP">
     1. 在 Google Cloud Console 中，前往 AlloyDB 的 [Clusters](https://console.cloud.google.com/alloydb/clusters) 页面。选择你的主节点实例，打开 **Overview** 页面。
 
     2. 向下滚动到 **Instances in your cluster**，然后点击 **Edit primary**。
 
-    3. 勾选 **Enable Public IP** 复选框，以允许通过公共互联网连接到该实例。在 **Authorized external networks** 下，输入你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
+    3. 勾选 **Enable Public IP** 复选框，以允许通过公网连接到该实例。在 **Authorized external networks** 下，输入你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/networking/static-ips)。
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="配置公共访问和 IP 允许列表的网络设置" size="lg" border />
 
@@ -137,7 +137,7 @@ SHOW  wal_level;
        * 确保 GCE 实例与你的 AlloyDB 实例位于同一个 Virtual Private Network (VPC) 中。
        * 确保 GCE 实例具有一个[静态公网 IP 地址](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address)。将 ClickPipes 连接到 SSH 堡垒机主机时，你需要使用此 IP 地址。
 
-    2. 更新 SSH 堡垒机主机的防火墙规则，以允许来自你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips) 的流量。
+    2. 更新 SSH 堡垒机主机的防火墙规则，以允许来自你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/networking/static-ips) 的流量。
 
     3. 更新 AlloyDB 的防火墙规则，以允许来自 SSH 堡垒机主机的流量。
   </Tab>

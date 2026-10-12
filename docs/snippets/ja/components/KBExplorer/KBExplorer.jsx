@@ -121,20 +121,20 @@ export const KBExplorer = ({ index, featured = [] }) => {
     window.location.assign(withBase(href))
   }
 
-  // Featured articles, in the order listed in `featured`. Each keeps its banner
-  // image; the href falls back to the conventional KB path if the index hasn't
-  // loaded yet so the cards are clickable immediately.
+  // Featured articles, in the order listed in `featured`. The banner art is
+  // drawn in code from the title (see below), so no per-locale image is needed.
+  // The href falls back to the conventional KB path if the index hasn't loaded
+  // yet so the cards are clickable immediately.
   const featuredArticles = featured
     .map((f) => {
       const article = data.articles.find((a) => a.id === f.id)
       return {
         id: f.id,
-        image: f.image,
         href: (article && article.href) || `/ja/resources/support-center/knowledge-base/${f.id}`,
         title: (article && article.title) || ""
       }
     })
-    .filter((f) => f.image)
+    .filter((f) => f.title)
 
   // Expandable filter component
   const Expandable = ({ label, options, selectedOptions, onToggle, isOpen, setIsOpen }) => {
@@ -202,14 +202,15 @@ export const KBExplorer = ({ index, featured = [] }) => {
                     onClick={(e) => handleCardClick(e, article.href)}
                     className="group block rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 transition-all hover:border-black dark:hover:border-[#FAFF69] hover:shadow-md"
                   >
-                    {/* Rendered as a background image (not <img>) so Mintlify's
-                        click-to-zoom doesn't hijack the link navigation. */}
-                    <div
-                      role="img"
-                      aria-label={article.title}
-                      className="w-full aspect-[3/1] lg:aspect-[16/9] bg-cover bg-center transition-transform duration-200 group-hover:scale-[1.02]"
-                      style={{ backgroundImage: `url(${withBase(article.image)})` }}
-                    />
+                    {/* Banner art is drawn in code from the title so it
+                        translates automatically — no per-locale PNG needed. */}
+                    <div className="relative w-full aspect-[2/1] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 pb-12">
+                      <span className="relative z-10 mx-auto max-w-[90%] text-center text-base font-bold leading-tight text-black line-clamp-4">{article.title}</span>
+                      <div className="absolute inset-x-0 bottom-0 h-12 bg-[#E7EA5B] flex items-center justify-between px-5">
+                        <img src={withBase("/images/clickhouse.svg")} alt="" aria-hidden="true" className="h-[18px] w-auto" style={{ borderRadius: 0, filter: "brightness(0)" }} />
+                        <span className="text-sm font-medium text-black">人気</span>
+                      </div>
+                    </div>
                   </a>
                 ))}
               </div>
@@ -356,14 +357,14 @@ export const KBExplorer = ({ index, featured = [] }) => {
                               ? "border-gray-300 dark:border-white/20 bg-white dark:bg-[#1B1B18] text-black dark:text-white hover:border-[#FAFF69] cursor-pointer"
                               : "border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1B1B18]/50 text-gray-300 dark:text-white/20 cursor-not-allowed"
                           }`}
-                          aria-label="前のページ"
+                          aria-label="Previous page"
                         >
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         </button>
                         <span className="text-sm text-gray-600 dark:text-gray-400">
-                          {currentPage} / {totalPages} ページ
+                          Page {currentPage} / {totalPages}
                         </span>
                         <button
                           onClick={() => hasNext && setCurrentPage((prev) => prev + 1)}
@@ -373,7 +374,7 @@ export const KBExplorer = ({ index, featured = [] }) => {
                               ? "border-gray-300 dark:border-white/20 bg-white dark:bg-[#1B1B18] text-black dark:text-white hover:border-[#FAFF69] cursor-pointer"
                               : "border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#1B1B18]/50 text-gray-300 dark:text-white/20 cursor-not-allowed"
                           }`}
-                          aria-label="次のページ"
+                          aria-label="Next page"
                         >
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />

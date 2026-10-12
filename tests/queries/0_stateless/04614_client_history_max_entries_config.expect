@@ -1,0 +1,55 @@
+#!/usr/bin/expect -f
+
+# Verify that <history_max_entries/> in a config file is respected and is not
+# silently overwritten by the CLI default (1000000). This guards the
+# !defaulted() precedence fix in ClientBase::addOptionsToTheClientConfiguration
+# for history_max_entries: without it, the CLI default value always wins over
+# the value loaded from the client XML config.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+set config_file $CLICKHOUSE_TMP/$basename.config.xml
+
+exec bash -c "rm -f $history_file"
+exec bash -c "printf '<config><history_max_entries>1</history_max_entries></config>' > $config_file"
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --config $config_file --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT 'first_query'\r"
+expect "first_query"
+expect ":) "
+
+send -- "SELECT 'second_query'\r"
+expect "second_query"
+expect ":) "
+
+# Exit cleanly so the history file is written.
+send -- "\4"
+expect eof
+
+# With history_max_entries = 1 from the config, only the most recent query is
+# kept in the history file. If the CLI default (1000000) had won, both queries
+# would be present.
+spawn bash -c "grep -c SELECT $history_file"
+expect "1"
+expect eof
+
+exec bash -c "rm -f $history_file $config_file"

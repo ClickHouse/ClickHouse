@@ -1,0 +1,94 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-26
+title: 'Demo days - 2026-06-26'
+sidebarTitle: '2026-06-26'
+sidebar_label: '2026-06-26'
+sidebar_position: 626
+description: 'ClickStack demo days for 2026-06-26'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Anomaly detection for alerting continues with bar charts {#anomaly-detection-for-alerting-continues-with-bar-charts}
+
+*Demo by [@fleon](https://github.com/fleon)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/AeibhN5dGQY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Still very much an experiment. The normal distribution bands used to highlight anomalies work well on line charts, but they're much harder to represent on bar charts. Himanshu experimented with error bands and even hollow bar charts to make the bands more visible, but the results still feel cluttered. Overlaying a band as a line on top of a solid bar has the same issue, as the bar dominates the visual and makes the band difficult to distinguish.
+
+For now, we'll likely steer users toward the line chart when they want to inspect anomaly bands and revisit the bar chart design later. Himanshu is looking for feedback on the best approach before this ships.
+
+## External onclick actions for tables {#external-onclick-actions-for-tables}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/8CV7ZEbFqhk" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Drew demoed a small but useful addition to dashboard tables: the ability to link rows directly to external tools.
+
+Table rows already support drilling into Search or another dashboard. This introduces a third option, "External", which builds a URL using values from the selected row before opening it. In the demo, clicking a row from a product catalog inserted the product name into a Google search URL to illustrate the concept, but the same mechanism works just as well for linking into Grafana, internal runbooks, ticketing systems, or any other tool that accepts parameters in a URL.
+
+It's a straightforward feature, but an important one. Instead of treating ClickStack as a destination, it becomes another part of the wider observability workflow, making it easy to jump from a dashboard directly into the tools needed to continue an investigation.
+
+**Related PRs:** [#2523](https://github.com/hyperdxio/hyperdx/pull/2523) feat: support external links via dashboard table on-click behavior
+
+## OTel profiling {#otel-profiling}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/-yAP8lXA2D8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Profiling is beginning to make its way into ClickStack, although it's clearly still taking shape. Spencer demoed an early prototype that ingests OpenTelemetry profiling samples, the same data used to generate flame graphs and consumed by tools like pprof. Using a Grafana dashboard backed by ClickHouse, he visualized a small program repeatedly sorting data, drilling into individual call stack blocks as new profiling samples streamed in.
+
+The implementation is still fairly rough, and the query reflects that. Each row combines elements of logs and traces, storing long arrays of function names and addresses that represent a span or slice of a flame graph. Reconstructing the format Grafana expects requires joining and aggregating across those arrays, while the exporter has to unwind the raw profiling frames before writing them into ClickHouse. The schema still relies on bloom filters, with full text search now added as well, prompting a discussion about compatibility. Since ClickHouse Cloud already supports full text search, the team debated how much longer the open source path without it needs to be maintained.
+
+The work is currently under review in an open PR. The plan is to land the core functionality in open source first before integrating it into ClickStack.
+
+## Autocomplete for OTel metric sources {#autocomplete-for-otel-metric-sources}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/lvcv7IV2Bs8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Brandon demoed a small quality-of-life improvement for metrics onboarding. When creating an OpenTelemetry Metrics source, the metric table fields now autocomplete by matching table names in the selected database instead of requiring each one to be selected manually. It also brings metrics into line with the onboarding experience that logs and traces already provide.
+
+**Related PRs:** [#2524](https://github.com/hyperdxio/hyperdx/pull/2524) feat(app): auto-fill metric table dropdowns in Create Source form
+
+## Eval framework for dashboards {#eval-framework-for-dashboards}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/cg2pYb5rsKU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+AI-generated dashboards are improving, but judging progress by eye only gets you so far. Brandon is building an evaluation framework to measure whether dashboard generation is actually getting better, and just as importantly, where it still falls short.
+
+The evaluation prompts the model to generate a dashboard that deliberately exercises as many features as possible, including collapsible sections, tabs, heatmaps, pie charts, raw SQL alongside source-backed tiles, service-level filters, and drill-down links between dashboards.
+
+A grading pass then validates that everything rendered and behaved as expected. In the process, it's already uncovered genuine issues, including markdown tiles that consistently render too short. It also follows the drill-down links enabled by Drew's new onclick feature to verify that navigation into a second AI-generated dashboard works correctly. As new dashboard capabilities are added, they'll be folded into the evaluation so regressions are caught automatically instead of relying on manual testing. Brandon is hoping to open a PR with the framework soon.
+
+**Related PRs:** [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): add dashboard-build eval scenario (in progress)
+
+## Connecting to Prometheus {#connecting-to-prometheus}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/qvM8-6A4two" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Aaron demoed an early bridge between ClickStack and Prometheus. A new "Prometheus compatible" option in a source's advanced settings tells ClickStack to treat the configured host as a Prometheus API endpoint, Thanos in the demo, instead of a ClickHouse instance. Once enabled, dashboard tiles can execute PromQL directly against that endpoint. Aaron demonstrated this with a chart grouping CPU usage across pods, with the query sent straight to Prometheus rather than translated through ClickHouse. The demo itself was fairly small, but it prompted a broader discussion about the user experience.
+
+Longer term, the goal is native Prometheus support within ClickStack. This feature is intended as a practical first step, allowing teams that already depend on Prometheus to continue using it while adopting ClickStack, rather than forcing everything through ClickHouse from day one. In parallel, we continue to work on supporting PromQL natively within ClickHouse.
+
+**Related PRs:** [#2518](https://github.com/hyperdxio/hyperdx/pull/2518) feat: add ability to connect to external prometheus datastore

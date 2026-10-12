@@ -10,7 +10,13 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Common/NaNUtils.h>
+
 #include <Core/Settings.h>
+
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -48,6 +54,16 @@ Field zeroField(const Field & value)
     }
 
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
+}
+
+/// `x * value` and `x / value` keep the order of `x` and distribute over `sum` only for a finite non-zero `value`.
+bool isFiniteNonZero(const Field & value)
+{
+    if (value.isNull())
+        return false;
+    if (value.getType() == Field::Types::Float64)
+        return isFinite(value.safeGet<Float64>()) && value.safeGet<Float64>() != 0;
+    return value != zeroField(value);
 }
 
 /** Rewrites:   sum([multiply|divide]) -> [multiply|divide](sum)
@@ -107,6 +123,41 @@ public:
         if (!left_argument_constant_node && !right_argument_constant_node)
             return;
 
+        /** Arithmetic with a `Decimal` operand does not distribute over these aggregate functions. It computes
+          * in the native width of the decimal, into which the other operand is truncated, with an overflow
+          * check on every row, and `divide` drops the fractional digits beyond the scale of the decimal on
+          * every row. The hoisted operation runs once, on the aggregate, often in a wider type: for
+          * `a Decimal32(0)`, `sum(a / 2)` over `{1, 1}` is `0`, but `sum(a) / 2` is `1`, and `sum(a * 3)`
+          * throws `DECIMAL_OVERFLOW` for a row `999999999`, but `sum(a) * 3` does not.
+          */
+        /// Nor with an operand that is not an integer or a float, except a date, a time or an interval under `min` or `max`:
+        /// `min` and `max` order an `Array` or a `Tuple` lexicographically, which an element-wise operation does not preserve,
+        /// `sum` and `avg` reject an IP address, and `avg` of a date, a time or an interval is rounded to its unit.
+        const bool is_min_or_max = lower_aggregate_function_name == "min" || lower_aggregate_function_name == "max";
+        bool has_date_time_argument = false;
+        bool has_day_or_longer_interval = false;
+        for (const auto & argument : arithmetic_function_arguments_nodes)
+        {
+            const auto argument_type = removeNullable(removeLowCardinality(argument->getResultType()));
+            const WhichDataType which(argument_type);
+            if (!which.isInteger() && !which.isFloat()
+                && !(is_min_or_max && (which.isInterval() || which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())))
+                return;
+
+            has_date_time_argument |= which.isDateTimeOrDateTime64() || which.isTime64();
+            if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(argument_type.get()))
+                has_day_or_longer_interval |= interval_type->getKind() >= IntervalKind(IntervalKind::Kind::Day);
+        }
+
+        /// A day or longer is added to a `DateTime` or a `Time64` in the calendar of its time zone, which is not monotone
+        /// across a DST change or a month end: a month before both `12-30 23:55` and `12-31 00:00` is on `11-30`.
+        if (has_date_time_argument && has_day_or_longer_interval)
+            return;
+
+        const auto * constant_node = right_argument_constant_node ? right_argument_constant_node : left_argument_constant_node;
+        if ((arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && !isFiniteNonZero(constant_node->getValue()))
+            return;
+
         /** Need reverse max <-> min for:
           *
           * max(-1*value) -> -1*min(value)
@@ -132,6 +183,7 @@ public:
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
             const auto & left_argument_constant_value_literal = left_argument_constant_node->getValue();
+
             bool need_reverse = (arithmetic_function_name == "multiply" && left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
                 || (arithmetic_function_name == "minus");
 
@@ -144,6 +196,7 @@ public:
         {
             /// Rewrite `aggregate_function(inner_function(argument, constant))` into `inner_function(aggregate_function(argument), constant)`
             const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
+
             bool need_reverse = (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal);
 
             if (need_reverse)

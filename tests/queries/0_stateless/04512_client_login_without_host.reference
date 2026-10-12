@@ -1,0 +1,3 @@
+Could not retrieve authentication endpoints for host 'localhost'
+Could not retrieve authentication endpoints for host 'host-from-env.invalid'
+Could not retrieve authentication endpoints for host 'host-from-connection.invalid'

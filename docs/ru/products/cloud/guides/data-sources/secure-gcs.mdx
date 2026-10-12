@@ -42,9 +42,7 @@ ClickHouse Cloud подключается к GCS с помощью HMAC-ключ
 </div>
 
 <Steps>
-  <Step>
-    ### Создайте сервисный аккаунт Google Cloud
-
+  <Step title="Создайте сервисный аккаунт Google Cloud" id="create-gcs-account">
     1. В консоли Google Cloud перейдите в IAM &amp; Admin → Service Accounts
 
     <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
@@ -82,9 +80,7 @@ ClickHouse Cloud подключается к GCS с помощью HMAC-ключ
     <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
   </Step>
 
-  <Step>
-    ### Предоставьте сервисному аккаунту доступ к бакету
-
+  <Step title="Предоставьте сервисному аккаунту доступ к бакету" id="grant-bucket-access-to-service-account">
     Вы можете предоставить доступ либо на уровне проекта, либо на уровне отдельного бакета.
 
     #### Вариант 1: Предоставить доступ к конкретным бакетам (рекомендуется)
@@ -117,9 +113,7 @@ ClickHouse Cloud подключается к GCS с помощью HMAC-ключ
     </Warning>
   </Step>
 
-  <Step>
-    ### Сгенерируйте HMAC-ключи для сервисного аккаунта
-
+  <Step title="Сгенерируйте HMAC-ключи для сервисного аккаунта" id="generate-hmac-keys-for-service-account">
     Перейдите в `Cloud Storage` → `Settings` → `Interoperability`:
 
     <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />

@@ -48,7 +48,7 @@ doc_type: 'reference'
 
 ClickHouse는 레플리카 메타데이터를 저장하기 위해 [ClickHouse Keeper](/ko/guides/oss/deployment-and-scaling/keeper/index)를 사용합니다. ZooKeeper 3.4.5 이상을 사용할 수도 있지만, ClickHouse Keeper 사용을 권장합니다.
 
-복제를 사용하려면 [zookeeper](/ko/reference/settings/server-settings/settings#zookeeper) 서버 구성 섹션에서 매개변수를 설정하십시오.
+복제를 사용하려면 [zookeeper](/ko/reference/settings/server-settings/settings/zookeeper#zookeeper) 서버 구성 섹션에서 매개변수를 설정하십시오.
 
 <Note>
   보안 설정을 소홀히 하지 마십시오. ClickHouse는 ZooKeeper 보안 하위 시스템의 `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl)을 지원합니다.
@@ -112,23 +112,23 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
 
 기존 ZooKeeper 클러스터를 지정할 수 있으며, 시스템은 자체 데이터를 저장할 디렉터리로 해당 클러스터의 디렉터리를 사용합니다(이 디렉터리는 복제 가능한 테이블을 생성할 때 지정합니다).
 
-구성 파일에 ZooKeeper가 설정되어 있지 않으면 복제된 테이블(Replicated Table)을 생성할 수 없으며, 기존 복제된 테이블은 모두 읽기 전용이 됩니다.
+구성 파일에 ZooKeeper가 설정되어 있지 않으면 복제된 테이블을 생성할 수 없으며, 기존 복제된 테이블은 모두 읽기 전용이 됩니다.
 
-ZooKeeper는 복제가 `SELECT` 쿼리의 성능에 영향을 주지 않으므로 `SELECT` 쿼리에서는 사용되지 않으며, 쿼리는 비복제 테이블과 동일한 속도로 실행됩니다. 분산 복제 테이블에 쿼리할 때 ClickHouse의 동작은 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ko/reference/settings/session-settings#max_replica_delay_for_distributed_queries) 및 [fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/ko/reference/settings/session-settings#fallback_to_stale_replicas_for_distributed_queries) 설정으로 제어됩니다.
+ZooKeeper는 복제가 `SELECT` 쿼리의 성능에 영향을 주지 않으므로 `SELECT` 쿼리에서는 사용되지 않으며, 쿼리는 비복제 테이블과 동일한 속도로 실행됩니다. 분산 복제 테이블에 쿼리할 때 ClickHouse의 동작은 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ko/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) 및 [fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/ko/reference/settings/session-settings/other#fallback_to_stale_replicas_for_distributed_queries) 설정으로 제어됩니다.
 
 각 `INSERT` 쿼리마다 여러 트랜잭션을 통해 ZooKeeper에 약 10개의 엔트리가 추가됩니다. (더 정확히는, 삽입되는 각 데이터 블록마다 그렇습니다. `INSERT` 쿼리에는 하나의 블록 또는 `max_insert_block_size = 1048576`행마다 하나의 블록이 포함됩니다.) 이로 인해 `INSERT`의 지연 시간은 비복제 테이블보다 약간 더 길어집니다. 하지만 데이터를 초당 `INSERT` 1회를 넘지 않는 batch로 삽입하라는 권장 사항을 따르면 문제를 일으키지 않습니다. 하나의 ZooKeeper 클러스터로 조정되는 전체 ClickHouse 클러스터는 초당 총 수백 개의 `INSERTs`를 처리합니다. 데이터 삽입 처리량(초당 행 수)은 비복제 데이터와 동일하게 높습니다.
 
 매우 큰 클러스터에서는 서로 다른 세그먼트에 서로 다른 ZooKeeper 클러스터를 사용할 수 있습니다. 그러나 약 300대의 서버로 구성된 production 클러스터를 운영한 경험상, 이것이 필요했던 경우는 없었습니다.
 
-복제는 비동기식이며 멀티 마스터입니다. `INSERT` 쿼리(`ALTER`도 마찬가지)는 사용 가능한 어느 서버로든 보낼 수 있습니다. 데이터는 쿼리가 실행된 서버에 삽입된 다음, 다른 서버로 복사됩니다. 비동기식이므로 방금 삽입된 데이터는 약간의 지연 후 다른 레플리카에 반영됩니다. 일부 레플리카를 사용할 수 없는 경우에는, 해당 레플리카를 다시 사용할 수 있게 되면 데이터가 기록됩니다. 레플리카를 사용할 수 있다면, 지연 시간은 압축된 데이터 블록을 네트워크로 전송하는 데 걸리는 시간입니다. 복제된 테이블의 백그라운드 작업을 수행하는 스레드 수는 [background&#95;schedule&#95;pool&#95;size](/ko/reference/settings/server-settings/settings#background_schedule_pool_size) 설정으로 지정할 수 있습니다.
+복제는 비동기식이며 멀티 마스터입니다. `INSERT` 쿼리(`ALTER`도 마찬가지)는 사용 가능한 어느 서버로든 보낼 수 있습니다. 데이터는 쿼리가 실행된 서버에 삽입된 다음, 다른 서버로 복사됩니다. 비동기식이므로 방금 삽입된 데이터는 약간의 지연 후 다른 레플리카에 반영됩니다. 일부 레플리카를 사용할 수 없는 경우에는, 해당 레플리카를 다시 사용할 수 있게 되면 데이터가 기록됩니다. 레플리카를 사용할 수 있다면, 지연 시간은 압축된 데이터 블록을 네트워크로 전송하는 데 걸리는 시간입니다. 복제된 테이블의 백그라운드 작업을 수행하는 스레드 수는 [background&#95;schedule&#95;pool&#95;size](/ko/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size) 설정으로 지정할 수 있습니다.
 
-`ReplicatedMergeTree` 엔진은 복제 fetches를 위해 별도의 스레드 풀을 사용합니다. 이 풀의 크기는 [background&#95;fetches&#95;pool&#95;size](/ko/reference/settings/server-settings/settings#background_fetches_pool_size) 설정으로 제한되며, 서버를 재시작하면 조정할 수 있습니다.
+`ReplicatedMergeTree` 엔진은 복제 fetches를 위해 별도의 스레드 풀을 사용합니다. 이 풀의 크기는 [background&#95;fetches&#95;pool&#95;size](/ko/reference/settings/server-settings/settings/background#background_fetches_pool_size) 설정으로 제한되며, 서버를 재시작하면 조정할 수 있습니다.
 
 기본적으로 INSERT 쿼리는 하나의 레플리카에서 데이터 쓰기 확인만 기다립니다. 데이터가 하나의 레플리카에만 성공적으로 기록된 상태에서 그 레플리카가 있는 서버가 더 이상 존재하지 않게 되면, 저장된 데이터는 손실됩니다. 여러 레플리카로부터 데이터 쓰기 확인을 받으려면 `insert_quorum` 옵션을 사용하십시오.
 
 각 데이터 블록은 원자적으로 기록됩니다. INSERT 쿼리는 최대 `max_insert_block_size = 1048576`행의 블록으로 나뉩니다. 즉, `INSERT` 쿼리에 1048576행보다 적은 행이 있으면 원자적으로 수행됩니다.
 
-데이터 블록은 중복 제거됩니다. 동일한 데이터 블록(같은 크기이며 동일한 순서로 같은 행을 포함하는 데이터 블록)을 여러 번 기록하더라도 해당 블록은 한 번만 기록됩니다. 이는 네트워크 장애가 발생했을 때 클라이언트 애플리케이션이 데이터가 DB에 기록되었는지 알 수 없더라도 `INSERT` 쿼리를 그대로 다시 실행할 수 있도록 하기 위한 것입니다. 동일한 데이터를 가진 `INSERTs`가 어느 레플리카로 전송되었는지는 중요하지 않습니다. `INSERTs`는 멱등적입니다. 중복 제거 매개변수는 [merge&#95;tree](/ko/reference/settings/server-settings/settings#merge_tree) 서버 설정으로 제어됩니다.
+데이터 블록은 중복 제거됩니다. 동일한 데이터 블록(같은 크기이며 동일한 순서로 같은 행을 포함하는 데이터 블록)을 여러 번 기록하더라도 해당 블록은 한 번만 기록됩니다. 이는 네트워크 장애가 발생했을 때 클라이언트 애플리케이션이 데이터가 DB에 기록되었는지 알 수 없더라도 `INSERT` 쿼리를 그대로 다시 실행할 수 있도록 하기 위한 것입니다. 동일한 데이터를 가진 `INSERTs`가 어느 레플리카로 전송되었는지는 중요하지 않습니다. `INSERTs`는 멱등적입니다. 중복 제거 매개변수는 [merge&#95;tree](/ko/reference/settings/server-settings/settings/merge#merge_tree) 서버 설정으로 제어됩니다.
 
 복제 중에는 삽입할 원본 데이터만 네트워크를 통해 전송됩니다. 이후의 데이터 변환(머지)은 모든 레플리카에서 동일한 방식으로 조정되고 수행됩니다. 따라서 네트워크 사용량이 최소화되며, 레플리카가 서로 다른 datacenter에 위치해 있어도 복제가 잘 작동합니다. (서로 다른 datacenter에 데이터를 중복 저장하는 것이 복제의 주된 목적이라는 점에 유의하십시오.)
 
@@ -187,7 +187,7 @@ SAMPLE BY intHash32(UserID);
   ```
 </details>
 
-예시에서 볼 수 있듯이, 이 매개변수에는 `{}` 형태의 치환을 포함할 수 있습니다. 치환된 값은 설정 파일의 [macros](/ko/reference/settings/server-settings/settings#macros) 섹션에서 가져옵니다.
+예시에서 볼 수 있듯이, 이 매개변수에는 `{}` 형태의 치환을 포함할 수 있습니다. 치환된 값은 설정 파일의 [macros](/ko/reference/settings/server-settings/settings/other#macros) 섹션에서 가져옵니다.
 
 예시:
 
@@ -198,7 +198,7 @@ SAMPLE BY intHash32(UserID);
 </macros>
 ```
 
-ClickHouse Keeper에서 테이블의 경로는 각 복제된 테이블(Replicated Table)마다 고유해야 합니다. 서로 다른 세그먼트의 테이블은 서로 다른 경로를 사용해야 합니다.
+ClickHouse Keeper에서 테이블의 경로는 각 복제된 테이블마다 고유해야 합니다. 서로 다른 세그먼트의 테이블은 서로 다른 경로를 사용해야 합니다.
 이 경우 경로는 다음 부분으로 구성됩니다.
 
 `/clickhouse/tables/`는 공통 접두사입니다. 정확히 이 값을 그대로 사용할 것을 권장합니다.
@@ -242,7 +242,7 @@ CREATE TABLE table_name (
 ORDER BY x;
 ```
 
-각 레플리카에서 `CREATE TABLE` 쿼리를 실행하세요. 이 쿼리는 새 복제된 테이블(Replicated Table)을 생성하거나, 기존 테이블에 새 레플리카를 추가합니다.
+각 레플리카에서 `CREATE TABLE` 쿼리를 실행하세요. 이 쿼리는 새 복제된 테이블을 생성하거나, 기존 테이블에 새 레플리카를 추가합니다.
 
 다른 레플리카에 이미 일부 데이터가 있는 상태에서 새 레플리카를 추가하면, 쿼리 실행 후 다른 레플리카의 데이터가 새 레플리카로 복사됩니다. 즉, 새 레플리카가 다른 레플리카와 자동으로 동기화됩니다.
 
@@ -348,8 +348,8 @@ ClickHouse Keeper의 데이터가 유실되거나 손상된 경우, 앞에서 �
 
 **관련 항목**
 
-* [background&#95;schedule&#95;pool&#95;size](/ko/reference/settings/server-settings/settings#background_schedule_pool_size)
-* [background&#95;fetches&#95;pool&#95;size](/ko/reference/settings/server-settings/settings#background_fetches_pool_size)
-* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/ko/reference/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
-* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/ko/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
-* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/ko/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
+* [background&#95;schedule&#95;pool&#95;size](/ko/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size)
+* [background&#95;fetches&#95;pool&#95;size](/ko/reference/settings/server-settings/settings/background#background_fetches_pool_size)
+* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/ko/reference/settings/merge-tree-settings/other#execute_merges_on_single_replica_time_threshold)
+* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/ko/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/ko/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)

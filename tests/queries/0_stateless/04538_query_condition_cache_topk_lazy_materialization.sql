@@ -1,4 +1,4 @@
--- Tags: long, no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1M rows for the QCC to populate (a granule-spanning chunk must be
 --   fully filtered before the LIMIT cancels the pipeline).
@@ -24,8 +24,6 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 1000;
 SET optimize_move_to_prewhere = 0;
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 SET max_threads = 1;
 

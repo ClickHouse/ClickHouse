@@ -18,6 +18,7 @@ bool tryBuildPrewhereSteps(
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
-    const ColumnsDescription * columns = nullptr);
+    const ColumnsDescription * columns = nullptr,
+    bool read_ahead_columns = false);
 
 }

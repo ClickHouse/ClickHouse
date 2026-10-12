@@ -1,74 +1,158 @@
 ---
 title: 'Enrutamiento con reconocimiento de réplicas'
 slug: /manage/replica-aware-routing
-description: 'Cómo usar el enrutamiento con reconocimiento de réplicas para aumentar la reutilización de caché'
-keywords: ['nube', 'endpoints con afinidad', 'afinidad', 'endpoints', 'enrutamiento con afinidad', 'enrutamiento', 'enrutamiento con reconocimiento de réplicas', 'session_id']
+description: 'Dirige solicitudes relacionadas a la misma réplica de ClickHouse Cloud para tablas temporales, sesiones, reutilización de caché y consistencia de lectura después de la escritura'
+keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency', 'sni', 'tls-sni-override']
 doc_type: 'guide'
-noindex: true
 ---
 
-import PrivatePreviewBadge from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
-El enrutamiento con reconocimiento de réplicas (también conocido como sticky sessions, enrutamiento con afinidad o afinidad de sesión) aumenta la probabilidad de reutilizar la caché al enrutar de forma coherente las solicitudes relacionadas a la misma réplica de ClickHouse. Es de mejor esfuerzo y no garantiza el aislamiento.
+<EnterprisePlanFeatureBadge feature="Enrutamiento con reconocimiento de réplicas" />
 
-<Warning>
-  **Compatibilidad de protocolo — solo HTTP/HTTPS**
+El enrutamiento con reconocimiento de réplicas (también conocido como sesiones persistentes, enrutamiento con afinidad o afinidad de sesión) dirige las solicitudes relacionadas a la misma réplica de ClickHouse. Úselo cuando necesite que las [tablas temporales](/es/reference/statements/create/table/temporary-table) o el [estado de sesión con nombre](/es/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) sigan estando disponibles entre consultas, cuando quiera que las consultas relacionadas reutilicen las cachés locales de la misma réplica o cuando necesite [consistencia de lectura después de la escritura](#read-after-write-consistency) entre una escritura y las lecturas posteriores.
 
-  El enrutamiento con reconocimiento de réplicas se aplica en la capa de proxy sobre la **interfaz HTTP/HTTPS**, usando el parámetro de consulta `session_id` (véase a continuación). **No está disponible a través del protocolo nativo** (puerto nativo; por ejemplo, el driver `clickhouse-go` en su modo nativo predeterminado). Si necesita enrutamiento con afinidad desde un client que use el protocolo nativo, conecte esa carga de trabajo a través de la interfaz HTTP; para `clickhouse-go` (v2), establezca `Protocol: clickhouse.HTTP` en la conexión.
-</Warning>
+Funciona según el mejor esfuerzo y no garantiza el aislamiento. El proxy asigna cada routing value a una réplica. La asignación se mantiene estable mientras no cambie el número de réplicas; al escalar el servicio, el valor puede asignarse a una réplica diferente.
 
-<div id="http-based-routing">
-  ## Enrutamiento basado en HTTP (session_id)
-</div>
+El enrutamiento con reconocimiento de réplicas está disponible en ambas interfaces:
 
-Para fijar una carga de trabajo a una réplica, establece el parámetro de consulta `session_id` en la interfaz HTTPS. El proxy procesa la solicitud y aplica hash consistente al `session_id` para seleccionar una réplica, por lo que todas las solicitudes que comparten el mismo `session_id` se enrutan al mismo servidor, hasta que cambie la topología del clúster.
+* A través de [HTTP/HTTPS](#http-based-routing), mediante el encabezado `X-ClickHouse-Replica-Tag`.
+* A través del [protocolo nativo](#native-protocol-routing), mediante una sobrescritura de TLS Server Name Indication (SNI).
+
+Ambas se habilitan por separado y utilizan el mismo hash consistente detrás del proxy.
+
+## Prerrequisitos {#prerequisites}
+
+* Tu servicio necesita **2 o más réplicas**. En un servicio con una sola réplica, no hay ninguna a la que anclarlo.
+* Un servicio de nivel **Enterprise**.
+* Compatible con los servicios estándar de ClickHouse Cloud y [BYOC](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview)
+
+## Configurar el enrutamiento con reconocimiento de réplicas {#configuring-replica-aware-routing}
+
+Los clientes Enterprise habilitan el enrutamiento con reconocimiento de réplicas desde la página de configuración del servicio en la ClickHouse Cloud console. Abra su servicio, vaya a **Settings** y active el toggle de la interfaz que desee:
+
+* Un toggle habilita el enrutamiento basado en HTTP mediante el encabezado `X-ClickHouse-Replica-Tag`.
+* Otro toggle independiente habilita el enrutamiento por protocolo nativo mediante la sobrescritura de SNI.
+
+Puede habilitar uno de los dos o ambos. No es necesario reiniciar y puede surtir efecto en menos de un minuto.
+
+Los toggles se están desplegando progresivamente en los planes del tier Enterprise. Si aún no están disponibles en su servicio, abra un ticket de [soporte](https://clickhouse.com/support/program) indicando el ID de su servicio para que se active la feature antes.
+
+## Enrutamiento basado en HTTP {#http-based-routing}
+
+Para asignar una carga de trabajo a una réplica concreta, envíe un encabezado `X-ClickHouse-Replica-Tag` a través de la [interfaz HTTPS](/es/concepts/features/interfaces/http). El proxy aplica hash consistente al valor del encabezado, por lo que las solicitudes que lo comparten se dirigen a la misma réplica mientras el número de réplicas no cambie. Un valor distinto se procesa como hash de forma independiente y puede asignarse a la misma réplica o a otra, pero no puede elegir *a qué* réplica se asigna un valor.
+
+Use el nombre del host de su servicio existente. No se requieren nombres del host sticky especiales ni cambios en DNS. El valor del encabezado puede ser cualquier cadena que elija, como un nombre de aplicación, un ID de usuario o una etiqueta de carga de trabajo. Las solicitudes sin el encabezado mantienen el balanceo de carga normal.
+
+Establezca el encabezado `X-ClickHouse-Replica-Tag` en cada solicitud:
 
 ```bash
 echo 'SELECT hostName()' | curl \
-  -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: <password>' \
-  'https://<host>:8443/?session_id=my-workload-1' -d @-
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
 ```
 
-Cada solicitud que incluya `session_id=my-workload-1` se enruta a la misma réplica. Un valor de `session_id` distinto se somete a hash de forma independiente y puede enrutar la solicitud a la misma réplica o a otra distinta; la asignación es coherente, pero no eliges *a qué* réplica se asigna un valor determinado.
+Para clickhouse-go (v2), configure `Protocol: clickhouse.HTTP` y pase el encabezado mediante la [opción de conexión `HttpHeaders`](/es/integrations/language-clients/go/configuration#connection-settings).
 
-<div id="subdomain-based-routing-deprecated">
-  ## Enrutamiento basado en subdominios (obsoleto)
-</div>
+<Info>
+  `X-ClickHouse-Replica-Tag` proporciona afinidad con una réplica sin crear una sesión HTTP de ClickHouse. Las solicitudes concurrentes pueden reutilizar la misma etiqueta sin encontrarse con `SESSION_IS_LOCKED`.
+</Info>
 
-<Danger>
-  **Obsoleto**
+## Routing mediante protocolo nativo {#native-protocol-routing}
 
-  El mecanismo basado en subdominios que se describe a continuación está **obsoleto** y ya no está habilitado en los servicios nuevos. No escala (cada endpoint persistente requiere su propio certificado TLS). Use en su lugar el [método `session_id` basado en HTTP](#http-based-routing).
-</Danger>
+A través del [protocolo nativo](/es/interfaces/tcp), pase el routing value como nombre de servidor TLS con el formato `<routing-value>.sticky.<host>`. Conéctese al nombre del host habitual de su service como de costumbre. [ClickHouse Client](/es/interfaces/client) toma el routing value a través de `--tls-sni-override`:
 
-Anteriormente, habilitar el enrutamiento con reconocimiento de réplicas permitía usar un subdominio comodín sobre el nombre del host del servicio. En un servicio con el nombre del host `abcxyz123.us-west-2.aws.clickhouse.cloud`, cualquier hostname que coincidiera con `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud` (por ejemplo, `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`) era procesado con hash por Envoy y asignado de forma consistente a una réplica. El hostname original seguía usando el balanceo de carga `LEAST_CONNECTION`, el algoritmo de enrutamiento predeterminado.
+```bash
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT hostName()'
+```
 
-<div id="limitations-of-replica-aware-routing">
-  ## Limitaciones del enrutamiento con reconocimiento de réplicas
-</div>
+`--host` es el nombre del host habitual de su service, `--secure` activa TLS y `--tls-sni-override` transporta el routing value. TLS es obligatorio. No se necesita ningún certificate adicional ni entry de DNS.
 
-<div id="replica-aware-routing-does-not-guarantee-isolation">
-  ### enrutamiento con reconocimiento de réplicas no garantiza el aislamiento
-</div>
+## Consistencia de lectura después de la escritura {#read-after-write-consistency}
 
-Cualquier interrupción del servicio —reinicios del pod de Kubernetes del servidor (actualización de versión, fallo, escalado vertical) o el escalado horizontal del servidor (de salida o de entrada)— provocará una alteración en el anillo hash de enrutamiento. Esto hará que las solicitudes que comparten el mismo `session_id` terminen en un pod de Kubernetes del servidor distinto.
+En un service con múltiples réplicas, una escritura realizada en una réplica puede no ser visible en las demás hasta que la replicación se ponga al día. Envíe la escritura con un routing value y reutilice ese mismo valor en las lecturas posteriores. El proxy dirige ambas operaciones a la misma réplica, de modo que lee su propia escritura incluso mientras las demás réplicas siguen rezagadas. Este patrón funciona para workloads que escriben y leen de inmediato los mismos datos, como aplicaciones interactivas o jobs de ETL que validan los inserts antes de continuar.
 
-<div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
-  ### El enrutamiento con reconocimiento de réplicas no funciona de forma predeterminada con Private Link
-</div>
+También resulta útil tras un cambio de schema que aún no se ha replicado, ya que reutilizar el routing value mantiene los inserts en una réplica que ya cuenta con el nuevo schema.
 
-Al usar el método de subdominio obsoleto, los clientes deben agregar manualmente una entrada DNS para que la resolución de nombres funcione con el nuevo patrón de hostname. Si se usa incorrectamente, esto puede provocar un desequilibrio en la carga de los servidores.
+Por HTTP, reutilice el valor del encabezado:
 
-<div id="replica-aware-routing-requires-http">
-  ### El enrutamiento con reconocimiento de réplicas requiere el protocolo HTTP
-</div>
+```bash
+# Write, tagged with a routing value
+echo "INSERT INTO events VALUES (now(), 'signup')" | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
 
-El enrutamiento con afinidad se basa en el parámetro de consulta `session_id`, que solo existe en la interfaz HTTP/HTTPS. El protocolo binario nativo no incluye ningún parámetro de este tipo que el proxy pueda usar para calcular el hash, por lo que el enrutamiento con reconocimiento de réplicas no está disponible a través del protocolo nativo. Los clients del protocolo nativo deben trasladar la carga de trabajo correspondiente a la interfaz HTTP para usar esta funcionalidad.
+# Read it back on the same replica, using the same value
+echo 'SELECT count() FROM events' | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+```
 
-<div id="configuring-replica-aware-routing">
-  ## Configuración del enrutamiento con reconocimiento de réplicas
-</div>
+A través del protocolo nativo, reutilice la sobrescritura de SNI:
 
-Para habilitar el enrutamiento con reconocimiento de réplicas, ponte en contacto con [nuestro equipo de soporte](https://clickhouse.com/support/program).
+```bash
+# Write with a routing value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query "INSERT INTO events VALUES (now(), 'signup')"
+
+# Read it back on the same replica, using the same value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT count() FROM events'
+```
+
+Para obtener garantías más amplias en todas las réplicas, también puede definir [`select_sequential_consistency`](/es/reference/settings/session-settings#select_sequential_consistency) con el valor `1` en ClickHouse Cloud.
+
+## Compruebe qué réplica se ha utilizado {#check-which-replica}
+
+Ejecute de nuevo uno de los ejemplos `SELECT hostName()` con el mismo routing value. Debería obtener el mismo nombre del host mientras el número de réplicas no cambie. Un routing value diferente puede asignarse a otra réplica.
+
+## Limitaciones del enrutamiento con reconocimiento de réplicas {#limitations-of-replica-aware-routing}
+
+### La afinidad cambia cuando cambia el número de réplicas {#replica-aware-routing-does-not-guarantee-isolation}
+
+El escalado horizontal, tanto de ampliación como de reducción, cambia el anillo hash de enrutamiento. Las solicitudes que comparten el mismo routing value pueden acabar llegando a una réplica diferente. Si depende de tablas temporales o de configuración a nivel de sesión, prepárese para volver a crearlas tras una reasignación. `SELECT hostName()` siempre le indica en qué réplica se encuentra.
+
+### El enrutamiento con reconocimiento de réplicas no es aislamiento de cargas de trabajo {#not-workload-isolation}
+
+El enrutamiento con afinidad solo controla *qué* réplica gestiona una petición. Esa réplica puede seguir atendiendo otro tráfico. Para tener cómputo dedicado, usa [compute-compute separation](/es/products/cloud/features/infrastructure/warehouses).
+
+### Redes privadas {#private-networking}
+
+Tanto el enrutamiento basado en HTTP como el del protocolo nativo funcionan con [redes privadas](/es/products/cloud/guides/security/connectivity/private-networking) en el nombre del host habitual de tu servicio. No se requieren registros DNS adicionales.
+
+### El enrutamiento por protocolo nativo requiere TLS {#native-protocol-routing-requires-tls}
+
+El enrutamiento por protocolo nativo requiere TLS, por lo que debe pasar `--secure`. Una conexión nativa sin cifrar mantiene el balanceo de carga normal.
+
+## Solución de problemas {#troubleshooting}
+
+**Las consultas siguen llegando a réplicas distintas con el mismo routing value**
+
+* Confirme que el toggle de la interfaz que está utilizando está habilitado en la página de configuración del servicio. Los métodos HTTP y nativo se habilitan por separado.
+* A través de HTTP, confirme que cada solicitud incluya el encabezado `X-ClickHouse-Replica-Tag` y que todas las solicitudes utilicen exactamente el mismo valor.
+* A través del protocolo nativo, confirme que `--secure` está configurado y que `--tls-sni-override` tiene el formato `<routing-value>.sticky.<host>`.
+* Espere unos instantes tras la activación. Los cambios pueden tardar menos de un minuto en aplicarse.
+* Compruebe si el número de réplicas ha cambiado recientemente; es normal que se reasignen después del escalado. Use `SELECT hostName()` para descubrir la nueva correspondencia.
+
+**Errores de certificado a través del protocolo nativo**
+
+* Confirme que `--host` es el nombre del host habitual de su servicio y que el routing value se pasa mediante `--tls-sni-override` en lugar de `--host`.

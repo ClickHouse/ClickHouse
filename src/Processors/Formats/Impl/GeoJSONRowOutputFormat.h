@@ -22,8 +22,8 @@ class ISerialization;
 /// Writes a result set as a single GeoJSON `FeatureCollection`, one `Feature` per row (RFC 7946).
 ///
 /// Column mapping:
-///   - geometry: the single geo-typed column (`Point`, `Ring`, `LineString`, `MultiLineString`,
-///     `Polygon`, `MultiPolygon`, or `Geometry`). Exactly one is required.
+///   - geometry: the single geo-typed column (`Point`, `MultiPoint`, `Ring`, `LineString`,
+///     `MultiLineString`, `Polygon`, `MultiPolygon`, or `Geometry`). Exactly one is required.
 ///   - id: a column named `id`, emitted as the Feature `id` when present and non-NULL.
 ///   - properties: the remaining columns. A lone object-typed column named `properties` is emitted
 ///     directly as the `properties` object (so GeoJSON read by the input format round-trips);
