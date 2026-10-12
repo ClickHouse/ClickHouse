@@ -65,8 +65,11 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 
     IQueryPlanStep * step = node.step.get();
 
-    if (typeid_cast<DistinctStep *>(step))
-        return true;
+    /// A preliminary `DISTINCT` deduplicates each stream independently, so it keeps the shards. A final one
+    /// merges its input into a single stream, which leaves this side with one stream while the other side
+    /// is still split into shards, and a `YShaped` join cannot fall back to a regular join in that case.
+    if (auto * distinct = typeid_cast<DistinctStep *>(step))
+        return distinct->isPreliminary();
 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
     {
