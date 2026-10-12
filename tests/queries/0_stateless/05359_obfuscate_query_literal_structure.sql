@@ -50,9 +50,18 @@ SELECT match(d, '^SELECT ''[0-9]{4}-[0-9]{2}-[0-9]{2}''$') AS date_shape_kept,
        parseDateTimeOrNull(extract(dt, '[0-9-]{10} [0-9:]{8}'), '%Y-%m-%d %H:%i:%S') IS NOT NULL AS datetime_still_parses,
        parseDateTimeOrNull('2023-04-05 99:99:99', '%Y-%m-%d %H:%i:%S') IS NULL AS input_time_is_not_a_valid_time;
 
--- A real IPv4 address keeps its four groups, and the octets 0, 1 and 255 are kept as is.
-SELECT match(obfuscateQueryWithSeed('SELECT ''192.168.1.255''', 1),
-             '^SELECT ''[0-9]{1,3}\\.[0-9]{1,3}\\.1\\.255''$') AS ipv4_shape_kept;
+-- A real IPv4 address keeps its four groups, and the octets 0, 1 and 255 are kept as is. The
+-- address path parses every octet and writes it back with `writeIntText`, which never emits a
+-- leading zero, while the plain number path copies a leading digit `0` verbatim and would keep
+-- `010` as `010`. The first octet therefore tells the two paths apart structurally, and the
+-- other three octets `255`, `1` and `255` must survive verbatim. The first octet is 10, which is
+-- none of the preserved values, so its replacement is always drawn from 2..255; only that range
+-- is a contract, never the value.
+WITH obfuscateQueryWithSeed('SELECT ''010.255.1.255''', 1) AS o,
+     splitByChar('.', extract(o, '[0-9.]+')) AS groups
+SELECT match(o, '^SELECT ''[0-9]{1,3}\\.255\\.1\\.255''$') AS ipv4_shape_and_sentinel_octets_kept,
+       NOT startsWith(groups[1], '0') AS first_octet_has_no_leading_zero,
+       toUInt16(groups[1]) BETWEEN 2 AND 255 AS first_octet_in_range;
 
 -- A dotted number with a fifth group is not an IPv4 address: the leading group goes through
 -- the plain number path and only the last four groups through the address path. The two paths
