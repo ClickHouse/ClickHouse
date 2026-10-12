@@ -1,0 +1,22 @@
+# TYPE h histogram
+h_bucket{le="-1",m="a"} 0 0
+h_bucket{le="2.5",m="a"} 1 0
+h_bucket{le="10",m="a"} 4 0
+h_bucket{le="+Inf",m="a"} 5 0
+h_count{m="a"} 5 0
+h_sum{m="a"} 9.5 0
+h_bucket{m="b",le="1e-1"} 0 0
+h_bucket{m="b",le="+Inf"} 1 0
+h_count{m="b"} 1 0
+# EOF
+# TYPE s summary
+s{quantile="0.05"} 1 0
+s{quantile="0.5"} 5 0
+s{quantile="0.99"} 9 0
+s_count 10 0
+s_sum 50 0
+# EOF
+h_bucket	[('le','+Inf')]
+h_bucket	[('le','0.5')]
+s	[('quantile','0')]
+s	[('quantile','1')]
