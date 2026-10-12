@@ -21,6 +21,7 @@
 namespace DB::ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONVERT_TYPE;
@@ -516,12 +517,16 @@ GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
         std::string_view covers;
         SettingsWriteFormat format;
         std::function<void(WriteBuffer &)> write_wire;
+        /// A setting name is an identifier, so a name declared longer than `MAX_SETTING_NAME_SIZE` is
+        /// refused before it is read at all, instead of running out of buffer.
+        int expected_code = DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
     };
 
     const std::vector<Case> cases = {
         {"the setting name, i.e. every BaseSettingsHelpers::readString carrier",
          SettingsWriteFormat::STRINGS_WITH_FLAGS,
-         [&](WriteBuffer & out) { writeVarUInt(declared_size, out); }},
+         [&](WriteBuffer & out) { writeVarUInt(declared_size, out); },
+         DB::ErrorCodes::TOO_LARGE_STRING_SIZE},
         {"SettingFieldString::readBinary",
          SettingsWriteFormat::BINARY,
          [&](WriteBuffer & out)
@@ -581,7 +586,7 @@ GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
         }
         catch (const DB::Exception & e)
         {
-            EXPECT_EQ(e.code(), DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF) << e.displayText();
+            EXPECT_EQ(e.code(), test_case.expected_code) << e.displayText();
         }
     }
 }

@@ -392,8 +392,9 @@ def main():
                 print("Data already downloaded, skipping")
                 return True
             if not Shell.check(
-                f"wget -q -O {data_archive} {data_url}",
+                f"wget -nv --retry-connrefused --retry-on-host-error -O {data_archive} {data_url}",
                 verbose=True,
+                retries=3,
             ):
                 return False
             if not Shell.check(
