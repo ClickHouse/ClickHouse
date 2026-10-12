@@ -1309,6 +1309,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
+                FunctionOverloadResolverPtr index_hint_resolver;
                 if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
                 {
                     if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
@@ -1319,10 +1320,16 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         for (auto & arg : children)
                             arg = &cloneDAGWithInversionPushDown(
                                 *arg, inverted_dag, inputs_mapping, context, /* need_inversion */ false, boolean_context);
+
+                        /// `node.function_base` is built for no arguments; the copy gets the hint's arguments as children.
+                        index_hint_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(adaptor->getFunction());
                     }
                 }
 
-                res = &inverted_dag.addFunction(node.function_base, children, "");
+                if (index_hint_resolver)
+                    res = &inverted_dag.addFunction(index_hint_resolver, children, "");
+                else
+                    res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
             else if (name == "materialize" && !isNothing(removeNullable(node.result_type)))
@@ -1633,6 +1640,9 @@ KeyCondition::KeyCondition(
     });
 
     rpn = std::move(builder).extractRPN();
+
+    for (size_t i = 0; i < rpn.size(); ++i)
+        rpn[i].position_in_filter_rpn = i;
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 }
@@ -2856,6 +2866,35 @@ static bool applyDeterministicDagToColumn(
 }
 
 
+/// Whether a value of `input_type`, the column a deterministic key expression consumes, may hold a `NULL`
+/// that the key value of `key_type` no longer reveals: a top-level `NULL` mapped to a non-`Nullable` key,
+/// or a `NULL` nested in a `Tuple`. `toString` of a `Tuple(Nullable(Int32), Int32)` turns `(NULL, 1)`
+/// into the ordinary string `'(NULL,1)'`. Only `Tuple` elements are descended: an `Array` or a `Map`
+/// comparison is `compareAt`-based and answers a definite value for a nested `NULL`.
+static bool tupleTypeMayHoldNestedNull(const DataTypePtr & type)
+{
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(removeLowCardinalityAndNullable(type).get());
+    if (!tuple)
+        return false;
+
+    for (const auto & element : tuple->getElements())
+        if (isNullableOrLowCardinalityNullable(element) || tupleTypeMayHoldNestedNull(element))
+            return true;
+    return false;
+}
+
+static bool deterministicTransformMayHideNull(
+    const DataTypePtr & input_type, const DataTypePtr & key_type, bool nested_null_is_ordinary_value)
+{
+    if (!input_type || !key_type)
+        return true;
+
+    if (isNullableOrLowCardinalityNullable(input_type) && !isNullableOrLowCardinalityNullable(key_type))
+        return true;
+
+    return !nested_null_is_ordinary_value && tupleTypeMayHoldNestedNull(input_type);
+}
+
 /// Returns true if `output_name` depends on `input_name` and the whole sub-DAG is injective w.r.t. that input
 /// Assumes this sub-DAG depends only on `input_name` (checked by the caller)
 /// May not catch all cases, but should be sufficient for most practical cases
@@ -3048,6 +3087,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
+    bool nested_null_is_ordinary_value,
     bool & out_atom_is_exact)
 {
     out_atom_is_exact = false;
@@ -3140,10 +3180,18 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     /// The comparison reads the constant in the domain of the column the key expression consumes, where a
     /// NaN equals no value, not even itself. The transform maps it to an ordinary key value that the index
     /// compares as equal, so the atom is stricter than the predicate and its `can_be_false` is not usable.
+    ///
+    /// A `NULL` inside a value of that column makes the comparison `NULL` at row level, which `WHERE`
+    /// rejects. When the transform maps such a value to an ordinary key value, the index compares it as
+    /// unequal to the constant, so a negated atom claims the row as matching, and `mayReadNullKeyValue`
+    /// cannot see it from the key type. The atom is not exact then either. A null-safe comparison never
+    /// answers `NULL`, so a `NULL` nested in a `Tuple` does not matter for it.
+    ///
     /// A normalization that lost information leaves the key point with more than one preimage, so the
     /// atom is stricter than the predicate for the same reason a non-injective transform is.
     out_atom_is_exact = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name)
         && !transform_input_has_nan
+        && !deterministicTransformMayHideNull(dag.input_type, out_key_column_type, nested_null_is_ordinary_value)
         && cast_is_exact;
 
     Field transformed_value = (*transformed_const_column)[0];
@@ -4890,6 +4938,68 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
+namespace
+{
+
+/// A real NULL or a NaN. A `Null` field also carries the `-inf`/`+inf` stand-ins of a key range,
+/// which neither a constant nor a key value ever is, so ask for a real NULL.
+bool isRealNullOrNaN(const Field & field)
+{
+    const bool is_real_null = field.isNull() && !field.isPositiveInfinity() && !field.isNegativeInfinity();
+    return is_real_null || field.isNaN();
+}
+
+/// Whether `field`, or a value inside it below a chain of `Tuple`s, satisfies `predicate` -
+/// for `hasNullOrNaNInside`, whether it is a `NULL` or a `NaN`.
+/// `Field::isNull` and `Field::isNaN` only look at the top level, while a whole-tuple comparison carries
+/// its `NULL`s and `NaN`s inside a `Tuple`. An `Array` or a `Map` is not descended: its comparison is
+/// `compareAt`-based, so it answers a definite value for a nested `NULL` and orders a nested `NaN`
+/// exactly where the index does.
+///
+/// In a constant either makes the comparison against it "not true" for every row - `NULL` for a `NULL`
+/// element and false for a `NaN` one - whatever the key values are. In key order both have a definite
+/// position instead, so the range built from such a constant covers granules whose rows the predicate
+/// rejects.
+///
+/// In a key bound it is the mirror case: a granule whose bound holds one cannot be proven wholly inside
+/// a comparison range, because the row-level comparison of such a value is false (for a `NaN`) or
+/// `NULL` (for a `NULL`), and `WHERE` rejects both, while key order gives the value a definite position.
+///
+/// A bound comes from stored key data, so the walk uses an explicit worklist that keeps the nesting
+/// depth of the value off the native stack.
+bool anyFieldBelowTuplesSatisfies(const Field & field, bool (*predicate)(const Field &))
+{
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
+    {
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        if (predicate(*current))
+            return true;
+
+        if (current->getType() == Field::Types::Tuple)
+            for (const Field & element : current->safeGet<Tuple>())
+                pending.push_back(&element);
+    }
+
+    return false;
+}
+
+bool hasNullOrNaNInside(const Field & field)
+{
+    return anyFieldBelowTuplesSatisfies(field, isRealNullOrNaN);
+}
+
+/// Like `hasNullOrNaNInside`, but for a `NaN` only.
+bool hasNaNInside(const Field & field)
+{
+    return anyFieldBelowTuplesSatisfies(field, isNaNField);
+}
+
+}
+
 /// A `Variant`/`Dynamic` constant holds exactly one value, hence exactly one active member type, while its
 /// declared type is only the wrapper and `tryGetConstant` hands out the nested value.
 /// Returns that member type, or nullptr when it cannot be determined.
@@ -5241,6 +5351,24 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 return false;
             }
 
+            /// The two checks above only look at the top level of the constant. A `NULL` or a `NaN`
+            /// nested in a `Tuple` - what a whole-tuple comparison carries - slips past them, and it
+            /// makes an atom built from that constant unsound: at row level the comparison is `NULL`
+            /// or false for every row, while in key order the constant has a definite position, so the
+            /// range covers granules whose rows the predicate rejects. Nothing is pruned by such a
+            /// range anyway, and the exact-count optimization would count those rows without ever
+            /// evaluating the filter. The same holds once a key transform maps the constant into key
+            /// space, which is where the nested value stops being visible at all.
+            ///
+            /// `isNotDistinctFrom` is the exception for a `NULL`: it compares a `Tuple` element-wise in
+            /// the null-safe way, so a nested `NULL` is an ordinary value that matches only a `NULL` at
+            /// the same position, and key order puts it in the same place for the key and the constant.
+            /// A `NaN` nested in a `Tuple` is still rejected for it: `(nan, 1) <=> (nan, 1)` is false. One
+            /// inside an `Array` or a `Map` is not: `[nan] <=> [nan]` is true, as in key order.
+            const bool nested_null_is_ordinary_value = func_name == "isNotDistinctFrom";
+            if (nested_null_is_ordinary_value ? hasNaNInside(const_value) : hasNullOrNaNInside(const_value))
+                return false;
+
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;
 
@@ -5280,7 +5408,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 bool atom_is_exact = false;
                 if (!canConstantBeWrappedByDeterministicFunctions(
-                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, atom_is_exact))
+                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, nested_null_is_ordinary_value, atom_is_exact))
                     return false;
 
                 condition_is_relaxed = !atom_is_exact;
@@ -5635,6 +5763,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
             collapsed_elem.relaxed = true;
             collapsed_elem.key_columns = elem.key_columns;
             collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(hyperrectangle);
+            collapsed_elem.position_in_filter_rpn = elem.position_in_filter_rpn;
 
             new_rpn.push_back(std::move(collapsed_elem));
             continue;
@@ -5659,6 +5788,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
                 collapsed_elem.key_columns = cond1.key_columns;
                 collapsed_elem.space_filling_curve_args_hyperrectangle
                     = intersect(cond1.space_filling_curve_args_hyperrectangle, cond2.space_filling_curve_args_hyperrectangle);
+                collapsed_elem.position_in_filter_rpn = cond1.position_in_filter_rpn;
 
                 /// Replace the AND operation with its arguments to the collapsed condition
 
@@ -7054,12 +7184,54 @@ static void tupleRangeToBoundingBox(const Range & tuple_range, Float64 & x_min, 
 namespace
 {
 
-/// Whether the analysed range of a key column may hold a NULL value. A NULL key value is analysed as
-/// the `+inf` stand-in of the `NULLS LAST` order, so every range that reaches `+inf` may hold one.
-bool rangeOfKeyColumnMayHoldNull(const Range & key_range, const DataTypes & key_types, size_t key_position)
+/// Whether a value of a `Tuple` key type may carry a `NULL` or a `NaN` below its top level. Such a value
+/// compares as `NULL` or false at row level, while key order gives it a definite position, and nothing in
+/// a key range reveals it: a granule of `Tuple(Int32, Nullable(Int32))` values `(2, 1), (2, NULL), (3, 0)`
+/// has the ordinary bounds `[(2, 1), (3, 0)]`. The top level itself is analysed from the range, see below.
+/// Only `Tuple` elements are descended: an `Array` or a `Map` comparison is `compareAt`-based, so it
+/// answers a definite value for a nested `NULL` and orders a nested `NaN` exactly where the index does.
+bool keyTypeMayHoldNestedNullOrNaN(const DataTypePtr & key_type)
 {
-    return key_range.right.isPositiveInfinity() && key_position < key_types.size() && key_types[key_position]
-        && isNullableOrLowCardinalityNullable(key_types[key_position]);
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(removeNullable(removeLowCardinality(key_type)).get());
+    if (!tuple)
+        return false;
+
+    for (const auto & element : tuple->getElements())
+    {
+        const auto unwrapped = removeLowCardinality(element);
+        if (unwrapped->isNullable() || WhichDataType(removeNullable(unwrapped)).isFloat()
+            || keyTypeMayHoldNestedNullOrNaN(unwrapped))
+            return true;
+    }
+    return false;
+}
+
+/// Whether a range atom can be wrong about a key value that carries a nested `NULL` or `NaN`. Key order
+/// puts such a value above every value that shares its prefix, and a row whose first differing position
+/// holds one compares greater than the constant at row level too, or is `NULL`, which `WHERE` rejects
+/// as well. So a range bounded above by an ordinary value excludes it on both sides, and only a range
+/// that reaches `+inf` can claim it as matching, while a negated range may claim it either way. A set
+/// atom is not affected: both the set index and the row-level `IN` compare whole tuples by hash, so a
+/// nested `NULL` or `NaN` matches only its identical copy on both sides.
+bool atomMayClaimNestedNullOrNaN(const KeyCondition::RPNElement & element)
+{
+    return element.function == KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE
+        || (element.function == KeyCondition::RPNElement::FUNCTION_IN_RANGE && element.range.right.isPositiveInfinity());
+}
+
+/// Whether the analysed range of a key column, read by `element`, may hold a NULL value. A NULL key
+/// value is analysed as the `+inf` stand-in of the `NULLS LAST` order, so every range that reaches
+/// `+inf` may hold one. A `NULL` or a `NaN` nested in a composite key value may sit anywhere inside the
+/// range, see `atomMayClaimNestedNullOrNaN` for which atoms that matters for.
+bool rangeOfKeyColumnMayHoldNull(
+    const KeyCondition::RPNElement & element, const Range & key_range, const DataTypes & key_types, size_t key_position)
+{
+    if (key_position >= key_types.size() || !key_types[key_position])
+        return false;
+
+    const auto & key_type = key_types[key_position];
+    return (key_range.right.isPositiveInfinity() && isNullableOrLowCardinalityNullable(key_type))
+        || (atomMayClaimNestedNullOrNaN(element) && keyTypeMayHoldNestedNullOrNaN(key_type));
 }
 
 /// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
@@ -7095,7 +7267,8 @@ bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
 /// reports a granule of NULLs as wholly matching a negated comparison - and the exact-count
 /// optimization then counts the very rows the `WHERE` throws away. So the exactness of the whole
 /// analysis is gone as soon as one such atom reads a `Nullable` key column whose range may hold a
-/// NULL. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
+/// NULL, or a composite key column whose values may carry a nested `NULL` or `NaN`, which is the same
+/// "neither true nor false" at row level. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
 /// the algebra describes them exactly. Only `can_be_false` is affected; `can_be_true`, and with it
 /// every pruning decision, is left alone.
 bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
@@ -7106,7 +7279,7 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
             continue;
 
         for (size_t key_column : element.key_columns)
-            if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(hyperrectangle[key_column], key_types, key_column))
+            if (key_column < hyperrectangle.size() && rangeOfKeyColumnMayHoldNull(element, hyperrectangle[key_column], key_types, key_column))
                 return true;
     }
 
@@ -7130,7 +7303,7 @@ bool KeyCondition::mayReadNullKeyValue(
 
             const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_column]);
             if (sparse_pos < sparse_hyperrectangle.size()
-                && rangeOfKeyColumnMayHoldNull(sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
+                && rangeOfKeyColumnMayHoldNull(element, sparse_hyperrectangle[sparse_pos], sparse_key_types, sparse_pos))
                 return true;
         }
     }
@@ -7186,12 +7359,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    /// The reported position is the element's index in `rpn`: the disjunction bitset is read positionally
-    /// against the template RPN. A position that is never reported keeps the bitset's all-true default.
-    for (size_t element_idx = 0; element_idx < rpn.size(); ++element_idx)
+    /// The reported position is the element's position in the RPN built from the filter, which is the layout
+    /// the disjunction bitset is read against. A position that is never reported keeps the bitset's all-true default.
+    for (const auto & element : rpn)
     {
-        const auto & element = rpn[element_idx];
-
         if (element.argument_num_of_space_filling_curve.has_value())
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
@@ -7261,12 +7432,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
             ///   so no comparison condition can be true.
             /// - If only right bound is NaN: the range extends into NaN territory,
             ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+            /// - A NaN or a NULL nested in a Tuple bound - the bound of a whole-tuple key comparison - is
+            ///   invisible to `Field::isNaN` and `Field::isNull`, and key order does not reproduce the
+            ///   row-level comparison for it either, so the containment claim is dropped.
+            ///   `intersects` is left alone: keeping the granule is the safe direction.
             if (unlikely(key_range.left.isNaN()))
             {
                 intersects = false;
                 contains = false;
             }
             else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
+            {
+                contains = false;
+            }
+            else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
             {
                 contains = false;
             }
@@ -7609,8 +7788,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
 
-        if (update_partial_disjunction_result_fn)
-            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+        if (update_partial_disjunction_result_fn && element.position_in_filter_rpn)
+            update_partial_disjunction_result_fn(*element.position_in_filter_rpn, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
     }
 
     if (rpn_stack.size() != 1)
@@ -7705,12 +7884,18 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     ///   so no comparison condition can be true.
                     /// - If only right bound is NaN: the range extends into NaN territory,
                     ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+                    /// - A NaN or a NULL nested in a Tuple bound is invisible to `Field::isNaN` and
+                    ///   `Field::isNull`, so only the containment claim is dropped.
                     if (unlikely(key_range.left.isNaN()))
                     {
                         intersects = false;
                         contains = false;
                     }
                     else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
+                    {
+                        contains = false;
+                    }
+                    else if (unlikely(hasNullOrNaNInside(key_range.left) || hasNullOrNaNInside(key_range.right)))
                     {
                         contains = false;
                     }

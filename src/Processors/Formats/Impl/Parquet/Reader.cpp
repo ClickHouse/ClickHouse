@@ -512,6 +512,137 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     return !tracker.isValueInsideThreshold(boundary);
 }
 
+std::optional<Chunk> Reader::readMinMaxFromStatistics(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read) const
+{
+    /// Statistics cannot describe a subset of rows inside a row group.
+    if (format_filter_info->rows_to_read)
+        return std::nullopt;
+
+    const size_t num_columns = sample_block->columns();
+    std::vector<const PrimitiveColumnInfo *> columns_info(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const auto & output_idx = sample_block_to_output_columns_idx.at(i);
+        if (!output_idx.has_value())
+            return std::nullopt;
+        const OutputColumnInfo & output_info = output_columns.at(*output_idx);
+        if (output_info.is_missing_column || !output_info.is_primitive)
+            return std::nullopt;
+        const PrimitiveColumnInfo & column_info = primitive_columns.at(output_info.primitive_start);
+        if (!column_info.decoder.allow_stats || column_info.levels.back().rep > 0)
+            return std::nullopt;
+        /// Without the `TYPE_ORDER` column order, `min_value` / `max_value` have no defined meaning (parquet.thrift).
+        if (!file_metadata.__isset.column_orders || column_info.column_idx >= file_metadata.column_orders.size()
+            || !file_metadata.column_orders[column_info.column_idx].__isset.TYPE_ORDER)
+            return std::nullopt;
+
+        /// Statistics of these types are the exact extremes in `min` / `max` order; strings may be truncated, floats
+        /// omit `nan`, and `Bool` or physical `BOOLEAN` statistics can hold integers above 1.
+        const DataTypePtr type = removeNullable(sample_block->getByPosition(i).type);
+        const WhichDataType which(type);
+        if (isBool(type) || column_info.decoder.physical_type == parq::Type::BOOLEAN
+            || !(which.isNativeInt() || which.isNativeUInt() || which.isDate() || which.isDate32()
+                || which.isDateTime() || which.isDateTime64() || which.isDecimal()))
+            return std::nullopt;
+
+        columns_info[i] = &column_info;
+    }
+
+    std::vector<Field> mins(num_columns);
+    std::vector<Field> maxs(num_columns);
+    bool has_rows = false;
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    {
+        const auto & meta = file_metadata.row_groups[row_group_idx];
+        if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
+            return std::nullopt;
+        if (meta.num_rows == 0 || (row_groups_to_read.has_value() && !row_groups_to_read->contains(row_group_idx)))
+            continue;
+        has_rows = true;
+
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            const PrimitiveColumnInfo & column_info = *columns_info[i];
+            const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
+            if (!column_meta.__isset.statistics)
+                return std::nullopt;
+            const auto & statistics = column_meta.statistics;
+            const IDataType & output_type = *sample_block->getByPosition(i).type;
+
+            /// Statistics describe non-null values only, but a null read into a non-`Nullable` column becomes a value.
+            if (column_info.levels.back().def > 0)
+            {
+                if (!statistics.__isset.null_count || statistics.null_count < 0 || statistics.null_count > meta.num_rows)
+                    return std::nullopt;
+                if (statistics.null_count > 0 && !output_type.isNullable())
+                    return std::nullopt;
+                if (statistics.null_count == meta.num_rows)
+                    continue;
+            }
+
+            if (!statistics.__isset.min_value || !statistics.__isset.max_value)
+                return std::nullopt;
+
+            /// Bounds may be inexact: fixed-width integers are exact unless flagged otherwise, binary values only if flagged exact.
+            switch (column_info.decoder.physical_type)
+            {
+                case parq::Type::INT32:
+                case parq::Type::INT64:
+                    if ((statistics.__isset.is_min_value_exact && !statistics.is_min_value_exact)
+                        || (statistics.__isset.is_max_value_exact && !statistics.is_max_value_exact))
+                        return std::nullopt;
+                    break;
+                case parq::Type::BYTE_ARRAY:
+                case parq::Type::FIXED_LEN_BYTE_ARRAY:
+                    if (!statistics.__isset.is_min_value_exact || !statistics.is_min_value_exact
+                        || !statistics.__isset.is_max_value_exact || !statistics.is_max_value_exact)
+                        return std::nullopt;
+                    break;
+                default:
+                    return std::nullopt;
+            }
+
+            try
+            {
+                /// Both bounds must be exactly representable in the output type, so the conversion moves no value across them.
+                Range range = Range::createWholeUniverse();
+                column_info.decoder.decodeField(statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_type, range.left);
+                column_info.decoder.decodeField(statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_type, range.right);
+                if (range.left.isNull() || range.right.isNull())
+                    return std::nullopt;
+                Field left = tryConvertFieldToType(range.left, output_type, /*from_type_hint=*/ nullptr, /*format_settings=*/ {}, /*strict=*/ true);
+                Field right = tryConvertFieldToType(range.right, output_type, /*from_type_hint=*/ nullptr, /*format_settings=*/ {}, /*strict=*/ true);
+                if (left.isNull() || right.isNull())
+                    return std::nullopt;
+                if (accurateLess(right, left))
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Statistics have min_value > max_value: {} > {}.", left, right);
+
+                if (mins[i].isNull() || accurateLess(left, mins[i]))
+                    mins[i] = std::move(left);
+                if (maxs[i].isNull() || accurateLess(maxs[i], right))
+                    maxs[i] = std::move(right);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("in column chunk statistics for column '{}'; use optimize_min_max_from_files=0 to ignore", column_info.name);
+                throw;
+            }
+        }
+    }
+
+    MutableColumns columns = sample_block->cloneEmptyColumns();
+    if (!has_rows)
+        return Chunk(std::move(columns), 0);
+
+    /// A column without a single non-null value is `Nullable` (checked above): NULL in both rows.
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        columns[i]->insert(mins[i]);
+        columns[i]->insert(maxs[i]);
+    }
+    return Chunk(std::move(columns), 2);
+}
+
 void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) const
 {
     if (column.empty())
@@ -793,6 +924,13 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             chassert(!sample_block_to_output_columns_idx.at(*idx).has_value());
             sample_block_to_output_columns_idx.at(*idx) = i;
         }
+    }
+
+    if (format_filter_info->min_max_from_statistics)
+    {
+        min_max_chunk = readMinMaxFromStatistics(row_groups_to_read);
+        if (min_max_chunk.has_value())
+            return;
     }
 
     if (format_filter_info->key_condition)
