@@ -196,7 +196,14 @@ TEST(ThreadPoolCallbackRunner, DroppedCallbacksKeepTheirSubmissionPhase)
             ThreadStatus status;
             auto group = ThreadGroup::createForMergeMutate(getContext().context);
             ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
-            ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+            /// Capacity includes the blocked worker and both callbacks queued behind it.
+            ThreadPool pool(
+                CurrentMetrics::LocalThread,
+                CurrentMetrics::LocalThreadActive,
+                CurrentMetrics::LocalThreadScheduled,
+                /*max_threads=*/ 1,
+                /*max_free_threads=*/ 1,
+                /*queue_size=*/ 3);
             std::promise<void> release;
             auto gate = release.get_future().share();
             pool.scheduleOrThrowOnError([gate]
