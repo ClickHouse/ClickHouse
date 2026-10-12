@@ -78,8 +78,7 @@ $CLICKHOUSE_CLIENT $settings -q "
     INSERT INTO t_nonnull VALUES (5, 1, 1), (7, 1, 1);
     INSERT INTO t_nonnull VALUES (5, 0, 2), (7, 0, 2);
 
-    -- 6. Nullable(Float64) holding both nan and NULL. Also a broken shape before the fix,
-    -- and it pins that the fix reaches a float key rather than only integers and strings.
+    -- 6. Nullable(Float64) holding both nan and NULL, which sort next to each other in the key.
     CREATE TABLE t_null_f64 (k Nullable(Float64), flag UInt8, version UInt64)
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
