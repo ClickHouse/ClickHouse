@@ -1184,6 +1184,10 @@ public:
     /// table was created with. Called right after the table is constructed.
     void setCustomDiskRegistration(CustomDiskRegistrationPtr registration) { custom_disk_registration = std::move(registration); }
 
+    /// Releases the disk kept by `checkAlterEligibility` for an `ALTER` that failed before `changeSettings`
+    /// took the disk over.
+    void discardPendingAlterDiskRegistration() const;
+
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
@@ -1820,7 +1824,7 @@ protected:
 
     /// The registration of the new disk of an `ALTER TABLE ... MODIFY SETTING disk = ...` that passed
     /// `checkAlterEligibility`, kept until `changeSettings` takes the disk over. If the `ALTER` fails
-    /// after the check, it is kept until the next change of the settings or until the table is gone.
+    /// after the check, it is released by `discardPendingAlterDiskRegistration`.
     mutable std::mutex pending_alter_disk_registration_mutex;
     mutable CustomDiskRegistrationPtr pending_alter_disk_registration TSA_GUARDED_BY(pending_alter_disk_registration_mutex);
 

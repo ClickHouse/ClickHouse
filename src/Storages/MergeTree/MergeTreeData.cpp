@@ -6920,6 +6920,17 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 }
 
+void MergeTreeData::discardPendingAlterDiskRegistration() const
+{
+    CustomDiskRegistrationPtr registration;
+    {
+        std::lock_guard lock(pending_alter_disk_registration_mutex);
+        registration = std::move(pending_alter_disk_registration);
+    }
+    /// The disk may be released here, outside of the mutex.
+    registration.reset();
+}
+
 static bool hasTextIndexMaterialization(const MutationCommands & commands, StorageMetadataPtr metadata_snapshot)
 {
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
