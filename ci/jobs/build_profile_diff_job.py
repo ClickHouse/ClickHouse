@@ -22,8 +22,8 @@ are incomparable to master's (observed on a no-op PR as an apparent -73%
 binary size and -39% link time):
 
   * `Build (arm_release_pr_cache_warmup)` - the master sccache-warmup build,
-    compiled with exactly the PR flags but never linked. Baseline for object
-    file sizes and per-TU compile times.
+    compiled with exactly the PR flags, profiled for its object files only.
+    Baseline for object file sizes and per-TU compile times.
   * `Build (arm_release)` - the official master build. Baseline for the
     artifacts that do not depend on debug info: the stripped binary size and
     the per-symbol sizes of the linked binaries, plus per-function ThinLTO
@@ -350,13 +350,16 @@ def resolve_run(
     repo: str,
     table: str = "binary_sizes",
     check_name: str = CHECK_NAME,
+    extra_where: str = "",
 ) -> Optional[Side]:
     """The newest uploaded build run for one side, or None if there is no data.
 
     Resolved from `binary_sizes` by default (the canonical, always-complete
     table); the resulting (check_start_time, instance_id) is reused for every
-    other table of the same build.
+    other table of the same build. `extra_where` limits it to the runs that
+    have matching rows.
     """
+    where = f"\n            AND {extra_where}" if extra_where else ""
     rows = db.query(
         f"""SELECT check_start_time, instance_id
         FROM {table}
@@ -364,7 +367,7 @@ def resolve_run(
             AND {repo_condition(repo)}
             AND pull_request_number = {pr_number}
             AND commit_sha = {quote(sha)}
-            AND check_name = {quote(check_name)}
+            AND check_name = {quote(check_name)}{where}
         ORDER BY check_start_time DESC
         LIMIT 1"""
     )
@@ -776,13 +779,13 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: s
 def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str, repo: str) -> Optional[str]:
     """The most recent master commit with uploaded warmup-build profile data.
 
-    The warmup build compiles with the PR flags but does not link, so its
+    The warmup build (PR flags) is profiled for its objects only, so its
     canonical data is the object files, not MAIN_BINARY. May legitimately be
     absent while master catches up with profiling the warmup build.
 
-    As in `find_baseline`, the `binary_sizes` row is the completion marker: it
-    is uploaded after the time trace, so a warmup commit selected here also has
-    the per-TU compile times the drill-down reads.
+    As in `find_baseline`, an object-file `binary_sizes` row is the completion
+    marker: it is uploaded after the time trace, so a warmup commit selected
+    here also has the per-TU compile times the drill-down reads.
     """
     candidates = [sha for sha in master_shas if sha != pr_sha][:100]
     if not candidates:
@@ -794,6 +797,7 @@ def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condi
             AND {repo_condition(repo)}
             AND pull_request_number = 0
             AND check_name = {quote(WARMUP_CHECK_NAME)}
+            AND {OBJECT_FILTER}
             AND commit_sha IN ({in_list(candidates)})"""
     )
     with_data = {row["commit_sha"] for row in rows}
@@ -1628,7 +1632,7 @@ def run_comparison(db, info, args, pr_number: int, pr_sha: str):
         raise RuntimeError("Could not resolve a concrete build run for one of the sides")
     # The warmup baseline may lag while master catches up with profiling the
     # warmup build; the sections that depend on it degrade to a catch-up note.
-    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, repo, check_name=WARMUP_CHECK_NAME) if warmup_sha else None
+    warmup_side = resolve_run(db, windows["base"], 0, warmup_sha, repo, check_name=WARMUP_CHECK_NAME, extra_where=OBJECT_FILTER) if warmup_sha else None
     # The per-TU compile baseline looks back TU_BASE_DAYS - far past the ~100
     # commits of the anchored chain - so its candidate set is extended with
     # older ancestors (see extend_master_shas).

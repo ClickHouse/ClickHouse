@@ -26,12 +26,12 @@ _PROFILED_BUILDS = (
     "amd_release",
     "arm_release",
     # The sccache-warmup build compiles master with the PR release build's
-    # exact cmake flags (no official-build flag, debug symbols stripped, no
-    # PGO/BOLT) and skips linking. Its object sizes and compile traces are the
-    # only master data directly comparable to a PR build, so the "Build profile
-    # diff" check baselines its object-size and per-TU compile-time sections on
-    # it. The upload is reduced (see check) and small: only TUs recompiled by
-    # the merged commits appear in the trace.
+    # exact cmake flags (no official-build flag, debug symbols stripped). Its
+    # object sizes and compile traces are the only master data directly
+    # comparable to a PR build, so the "Build profile diff" check baselines its
+    # object-size and per-TU compile-time sections on it. The upload is reduced
+    # (see check) and small: only TUs recompiled by the merged commits appear in
+    # the trace.
     "arm_release_pr_cache_warmup",
     # "amd_debug",
     # "arm_debug",
@@ -66,8 +66,9 @@ _PROFILED_BUILDS_PR = ("arm_release",)
 _REQUIRED_ARTIFACTS = {
     "amd_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
     "arm_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
-    # The warmup build does not link: no binaries, no link trace, no symbols
-    # (the per-object nm pass is skipped under LTO). On a master push where
+    # The warmup build uploads the profile of its objects only
+    # (_OBJECTS_ONLY_BUILDS): no server-binary link trace, no symbols (the
+    # per-object nm pass is skipped under LTO). On a master push where
     # every TU is an sccache hit even the time trace is legitimately empty -
     # a broken trace extractor is told apart from that case by
     # _verify_trace_extraction instead.
@@ -146,6 +147,10 @@ _FINAL_BINARIES = ("programs/clickhouse", "programs/clickhouse-keeper")
 # reads the stripped binary. It carries no symbols by construction, so only its
 # size row is required.
 _SIZE_ONLY_BINARIES = ("programs/clickhouse-stripped",)
+
+# These builds link the server binary only as the reference of the PR performance
+# comparison, so its link trace and symbols are kept out of their upload.
+_OBJECTS_ONLY_BUILDS = ("arm_release_pr_cache_warmup",)
 
 
 def _any_line(artifact_file, matches):
@@ -255,7 +260,12 @@ def check():
     print("Prepare build profile data")
     profiles_dir = Path("./ci/tmp") / "profiles_source"
     profiles_dir.mkdir(parents=True, exist_ok=True)
+    objects_only = build_type in _OBJECTS_ONLY_BUILDS
     try:
+        if objects_only:
+            # lld writes the link trace next to its output.
+            for rel in _FINAL_BINARIES:
+                (Path(build_dir) / f"{rel}.time-trace").unlink(missing_ok=True)
         Shell.check(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"{build_dir} {profiles_dir.absolute()}",
@@ -293,17 +303,13 @@ def check():
                 reduced=is_pr or build_type == "arm_release_pr_cache_warmup",
             )
 
-        _upload_profile_artifacts(
-            build_type,
-            check_start_time,
-            # Listed in _UPLOAD_ORDER, which is also what the upload follows:
-            # binary_sizes.txt last, as the completion marker.
-            [
-                (insert_profile_data, profile_data_file),
-                (queries.insert_binary_symbol_data, binary_symbol_file),
-                (queries.insert_build_size_data, build_size_file),
-            ],
-        )
+        # Listed in _UPLOAD_ORDER, which is also what the upload follows:
+        # binary_sizes.txt last, as the completion marker.
+        artifacts = [(insert_profile_data, profile_data_file)]
+        if not objects_only:
+            artifacts.append((queries.insert_binary_symbol_data, binary_symbol_file))
+        artifacts.append((queries.insert_build_size_data, build_size_file))
+        _upload_profile_artifacts(build_type, check_start_time, artifacts)
     except Exception:
         # Fail loudly on any error producing, assembling, or uploading the
         # profile data: never let the post-hook pass silently.
