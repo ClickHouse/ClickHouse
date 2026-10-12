@@ -1139,7 +1139,7 @@ void SchemaConverter::processPrimitiveColumn(
 
     /// The physical type is read from the file as an integer and may be out of the range of the enum.
     /// Check it without loading it as the enum, which would be undefined behavior.
-    Int32 raw_type;
+    Int32 raw_type = 0;
     static_assert(sizeof(raw_type) == sizeof(element.type));
     memcpy(&raw_type, &element.type, sizeof(raw_type));
     if (raw_type < parq::Type::BOOLEAN || raw_type > parq::Type::FIXED_LEN_BYTE_ARRAY)
