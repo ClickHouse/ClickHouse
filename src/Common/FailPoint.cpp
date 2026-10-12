@@ -36,6 +36,7 @@ static struct InitFiu
     ONCE(replicated_queue_fail_next_entry) \
     ONCE(nats_fail_resubscribe_within_query) \
     REGULAR(replicated_queue_unfail_entries) \
+    ONCE(executable_udf_fail_handback_measurement) \
     REGULAR(executing_graph_add_node_fail) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \

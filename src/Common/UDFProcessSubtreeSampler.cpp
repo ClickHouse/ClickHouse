@@ -361,6 +361,14 @@ void UDFProcessSubtreeSampler::recordReleased()
     if (!borrow_acquired)
         return;
 
+    /// Called more than once for a borrow whose worker is discarded: once by the teardown, before
+    /// it does anything that ends the worker, and once by the ordinary end-of-borrow path. Only
+    /// the first call can measure anything - by the second the pid is gone, and a walk that finds
+    /// nothing would leave `peak_memory_byte_seconds` at zero over the value already taken.
+    if (released_recorded)
+        return;
+    released_recorded = true;
+
     elapsed_us = borrow_watch.elapsedMicroseconds();
 
     if (root_pid <= 0)

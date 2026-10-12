@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/OSThreadNiceValue.h>
@@ -36,6 +37,11 @@ namespace ProfileEvents
     extern const Event MemoryAllocatorPurgeTimeMicroseconds;
     extern const Event MemoryWorkerRun;
     extern const Event MemoryWorkerRunElapsedMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTrackingUnmeasured;
 }
 
 namespace DB
@@ -679,7 +685,7 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
     total_memory_tracker.setHardLimit(limit_to_apply);
 }
 
-std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
+std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit([[maybe_unused]] Int64 unmeasured)
 {
 #if defined(OS_LINUX)
     /// When running in a cgroup with a finite limit, the host-wide `/proc/meminfo` is
@@ -758,8 +764,11 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
                     /// `cgroups_reader`. v1 does not traverse the hierarchy.
                     /// `cgroups_reader->readMemoryUsage` already excludes reclaimable memory
                     /// (it sums anon + sock + non-reclaimable kernel), so no further adjustment
-                    /// is needed here.
-                    used = cgroups_reader->readMemoryUsage();
+                    /// is needed for that. It excludes the shared-memory pages of executable UDFs
+                    /// as well, which `resident` - the baseline the headroom is added to - includes
+                    /// (`unmeasured`, the same snapshot): counted there and not here, they would
+                    /// raise the limit by their own size. In v2 `memory.current` holds them already.
+                    used = cgroups_reader->readMemoryUsage() + static_cast<uint64_t>(std::max<Int64>(0, unmeasured));
                 }
 
                 auto decision = MemoryWorkerHelpers::decideCgroupLevelAvailability(first_token, used, host_memory_bytes);
@@ -879,7 +888,20 @@ void MemoryWorker::updateResidentMemoryThread()
 
             Stopwatch total_watch;
 
-            const MemoryUsage memory_usage = getMemoryUsage(first_run);
+            MemoryUsage memory_usage = getMemoryUsage(first_run);
+
+            /// Shared-memory pages charged to the trackers are absent from jemalloc's resident
+            /// size, sanitizer allocator statistics, and the cgroup's `anon`/`rss` measurements.
+            /// Include the same snapshot in both RSS and allocated memory before computing any
+            /// headroom. Otherwise `updateRSS` drops these charges on every tick, allowing the
+            /// combined footprint to exceed the server limit when tracker correction is disabled
+            /// or sanitizer overhead makes RSS larger than the allocated counter.
+            /// The purge decision below included: its threshold is a share of the server's limit, which
+            /// these pages count against too, so they are part of the pressure a purge relieves - even
+            /// though what it returns are only jemalloc's dirty pages.
+            const Int64 unmeasured = CurrentMetrics::get(CurrentMetrics::MemoryTrackingUnmeasured);
+            memory_usage.resident += unmeasured;
+            memory_usage.allocated += unmeasured;
 
             /// Speculatively reserve growth headroom on top of the observed RSS.
             /// `resident - prev_resident` is how much RSS actually grew during the last tick;
@@ -1052,7 +1074,7 @@ void MemoryWorker::updateResidentMemoryThread()
                     /// "metric is genuinely zero" (`0`, real high-pressure signal). Skipping
                     /// on `0` would keep the previous (larger) hard limit in place exactly
                     /// when ClickHouse should be shrinking its budget the most.
-                    std::optional<uint64_t> available_opt = readAvailableForDynamicLimit();
+                    std::optional<uint64_t> available_opt = readAvailableForDynamicLimit(unmeasured);
                     if (available_opt)
                     {
                         uint64_t available = *available_opt;
