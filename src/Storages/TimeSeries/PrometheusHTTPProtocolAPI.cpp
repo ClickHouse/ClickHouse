@@ -218,16 +218,28 @@ void writeFederateLabelValue(std::string_view value, WriteBuffer & out)
 void writeFederateValue(Float64 value, WriteBuffer & out)
 {
     if (std::isnan(value))
-        return writeString("NaN", out);
+    {
+        writeString("NaN", out);
+        return;
+    }
     if (std::isinf(value))
-        return writeString((value > 0) ? "+Inf" : "-Inf", out);
+    {
+        writeString((value > 0) ? "+Inf" : "-Inf", out);
+        return;
+    }
     if (value == 0)
-        return writeChar('0', out);
+    {
+        writeChar('0', out);
+        return;
+    }
 
     /// Both use the shortest digits, but Go switches to the exponent form from 1e6 on, while fmt does it from 1e16 on.
     String text = fmt::format("{}", value);
-    if ((std::abs(value) < 1e6) || (text.find('e') != String::npos))
-        return writeString(text, out);
+    if ((std::abs(value) < 1e6) || text.contains('e'))
+    {
+        writeString(text, out);
+        return;
+    }
 
     bool negative = (text[0] == '-');
     String digits = text.substr(negative ? 1 : 0);
@@ -1127,8 +1139,9 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
 
             for (size_t row = 0; row < block.rows(); ++row)
             {
+                const size_t start = (row == 0) ? 0 : offsets[row - 1];
                 std::string_view metric_name;
-                for (size_t j = offsets[row - 1]; j < offsets[row]; ++j)
+                for (size_t j = start; j < offsets[row]; ++j)
                     if (tag_names.getDataAt(j) == TimeSeriesTagNames::MetricName)
                         metric_name = tag_values.getDataAt(j);
 
@@ -1146,7 +1159,7 @@ void PrometheusHTTPProtocolAPI::federate(WriteBuffer & response, const Strings &
                 writeFederateName(metric_name, response);
                 char separator = '{';
                 bool has_instance = false;
-                for (size_t j = offsets[row - 1]; j < offsets[row]; ++j)
+                for (size_t j = start; j < offsets[row]; ++j)
                 {
                     auto name = tag_names.getDataAt(j);
                     auto value = tag_values.getDataAt(j);
