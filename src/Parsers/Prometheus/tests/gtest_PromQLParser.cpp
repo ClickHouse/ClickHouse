@@ -2022,3 +2022,86 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
 }
+
+
+TEST(PromQLParser, FunctionNames)
+{
+    /// Any name without ':' followed by '(' is a function name, even an unknown one.
+    EXPECT_EQ(parse("foo_bar(x)"), R"(
+foo_bar(x)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(foo_bar):
+        InstantSelector:
+            __name__ EQ 'x'
+)");
+
+    /// Whitespace and comments may separate a function name from '('.
+    EXPECT_EQ(parse("foo_bar (x)"), parse("foo_bar(x)"));
+    EXPECT_EQ(parse("foo_bar # comment\n (x)"), parse("foo_bar(x)"));
+    EXPECT_EQ(parse("foo_bar # comment\r (x)"), parse("foo_bar(x)"));
+    EXPECT_EQ(parse("rate (x[5m])"), parse("rate(x[5m])"));
+    expectRoundTrip("min_of (1, 2)", "min_of(1, 2)");
+
+    /// A function name not followed by '(' is a metric name.
+    EXPECT_EQ(parse("rate"), R"(
+rate
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'rate'
+)");
+
+    expectRoundTrip(R"(time{job="x"} + rate)", R"(time{job="x"} + rate)");
+
+    /// `start` and `end` are function names too, except in the @ modifier.
+    EXPECT_EQ(parse("vector(start())"), R"(
+vector(start())
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(vector):
+        Function(start)
+)");
+    expectRoundTrip("end() - start()", "end() - start()");
+    expectRoundTrip("x @ end() - start ()", "x @ end() - start()");
+
+    /// `start()`, `end()`, `range()` and `step()` return scalars, as in Prometheus.
+    EXPECT_EQ(parse("start()"), R"(
+start()
+
+PrometheusQueryTree(SCALAR):
+    Function(start)
+)");
+    for (const auto * const query : {"end()", "range()", "step()", "end() - start()"})
+        EXPECT_NE(parse(query).find("PrometheusQueryTree(SCALAR)"), String::npos) << query;
+
+    /// A name with ':' cannot be called.
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = 0;
+    EXPECT_FALSE(query_tree.tryParse("foo:bar(x)", 3, &error_message, &error_pos));
+    EXPECT_FALSE(error_message.empty());
+
+    /// Function names are case-sensitive, so `START()` calls an unknown function `START`, as in Prometheus.
+    EXPECT_NE(parse("START()").find("Function(START)"), String::npos);
+    EXPECT_EQ(parse("x @ START()"), parse("x @ start()"));
+}
+
+
+TEST(PromQLParser, LimitRatio)
+{
+    /// `limit_ratio` is an aggregation operator, not a function, so `by` and `without` can go on either side of its parameters.
+    const String by_before = parse("limit_ratio by (job) (0.5, up)");
+    EXPECT_NE(by_before.find("AggregationOperator(limit_ratio)"), String::npos) << by_before;
+    EXPECT_EQ(parse("limit_ratio(0.5, up) by (job)"), by_before);
+    EXPECT_EQ(parse("LIMIT_RATIO by(job) (0.5, up)"), by_before);
+
+    const String without_after = parse("limit_ratio(0.5, up) without (job)");
+    EXPECT_NE(without_after.find("AggregationOperator(limit_ratio)"), String::npos) << without_after;
+    EXPECT_EQ(parse("limit_ratio without (job) (0.5, up)"), without_after);
+
+    EXPECT_NE(parse("limit_ratio(0.5, up)").find("AggregationOperator(limit_ratio)"), String::npos);
+
+    /// Without '(' it is a metric name, like any other aggregation operator keyword.
+    EXPECT_NE(parse("limit_ratio").find("__name__ EQ 'limit_ratio'"), String::npos);
+}
