@@ -6,16 +6,39 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/HTTPHeaderEntries.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/ProtocolDefines.h>
 #include <base/types.h>
+#include <fmt/format.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const ContextPtr & context)
+/// W3C `traceparent`/`tracestate` headers carrying the current trace context to the worker. Sent with the start request only
+HTTPHeaderEntries getTraceContextHeaders()
+{
+    HTTPHeaderEntries headers;
+    const auto & current_trace_context = OpenTelemetry::CurrentContext();
+    if (current_trace_context.isTraceEnabled())
+    {
+        headers.emplace_back("traceparent", current_trace_context.composeTraceparentHeader());
+        if (!current_trace_context.tracestate.empty())
+            headers.emplace_back("tracestate", current_trace_context.tracestate);
+    }
+    return headers;
+}
+
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -40,6 +63,9 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
     uri.addQueryParameter("temp_path",   unique_temp_file_path);
+    /// Absent when nothing is collected, so an older worker sees the request it has always seen.
+    if (collectors.any())
+        uri.addQueryParameter("collect", collectors.toString());
 
     auto write_body_callback = [&task_serializer] (std::ostream & os)
     {
@@ -53,6 +79,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
         .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
         .withTimeouts(timeouts)
         .withSettings(read_settings)
+        .withHeaders(getTraceContextHeaders())
         .withOutCallback(write_body_callback)
         .withDelayInit(false)
         .create(creds);
@@ -68,14 +95,34 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
 
 
-String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const ContextPtr & context)
+String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const TaskCollectors & collectors, const ContextPtr & context)
 {
+    /// The dispatch request is the trace hop to the worker, so the worker's spans hang under it.
+    const Poco::URI uri(endpoint_uri);
+    OpenTelemetry::SpanHolder span(
+        "StatelessWorkerClient::sendTask",
+        OpenTelemetry::SpanKind::CLIENT,
+        {
+            {"clickhouse.distributed.task_id", task_description.task.task_id},
+            {"clickhouse.initial_query_id", task_description.initial_query_id},
+            {"clickhouse.target_host", fmt::format("{}:{}", uri.getHost(), uri.getPort())},
+        });
+
     auto task_serializer = [task_description] (WriteBuffer & buf)
     {
         serializeTask(task_description, buf);
     };
 
-    return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, context);
+    try
+    {
+        return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, collectors, context);
+    }
+    catch (...)
+    {
+        /// Otherwise a dispatch that never reached the worker leaves a span that looks successful.
+        span.addAttribute(std::current_exception());
+        throw;
+    }
 }
 
 /// Get task status by its id.
@@ -105,7 +152,7 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     {
         timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
         timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
-        /// Safe to retry: read-only.
+        /// Retrying is fine: a retry can lose drained log lines, which is accepted.
         read_settings.http_settings.max_tries = 3;
         read_settings.http_settings.retry_initial_backoff_ms = 200;
         read_settings.http_settings.retry_max_backoff_ms = 1000;
@@ -127,7 +174,10 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
 
     DistributedQueryTaskStatus result;
     result.read(*in, DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS);
-    in->eof();
+    /// Nothing may follow the end tag.
+    if (!in->eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unexpected trailing data in stateless worker task status response for task {}", task_id);
 
     return result;
 }
