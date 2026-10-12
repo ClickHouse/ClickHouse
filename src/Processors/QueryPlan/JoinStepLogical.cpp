@@ -30,7 +30,6 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/if.h>
 #include <Functions/isNotDistinctFrom.h>
-#include <Functions/isNull.h>
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
@@ -1003,7 +1002,7 @@ static void preferNullableRightKey(
 static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
 {
     const auto value_type = removeLowCardinalityAndNullable(key.getType());
-    auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(std::make_shared<FunctionIsNull>()));
+    auto is_null = JoinActionRef::transform({key}, JoinActionRef::AddFunction(FunctionFactory::instance().get("isNull", nullptr)));
     auto value = JoinActionRef::transform(
         {is_null, key},
         [&value_type](ActionsDAG & dag, std::vector<JoinExpressionActions::NodeRawPtr> nodes)
