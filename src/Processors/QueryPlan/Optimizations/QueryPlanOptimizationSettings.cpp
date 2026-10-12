@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
+    extern const SettingsBool optimize_min_max_from_files;
     extern const SettingsBool query_plan_read_in_order_through_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -229,6 +230,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     top_k_optimization_shared_boundary = from[Setting::group_by_top_k_optimization_shared_boundary];
     enable_group_by_top_k_dynamic_filtering = from[Setting::enable_group_by_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
+    min_max_from_files = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_min_max_from_files];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];
     if (query_plan_optimize_join_order_limit > 64)

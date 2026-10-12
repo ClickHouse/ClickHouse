@@ -45,10 +45,26 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
     ColumnUInt8::MutablePtr null_map = nullptr;
     if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(col.get()))
     {
-        null_map = ColumnUInt8::create();
-        null_map->insertRangeFrom(col_nullable->getNullMapColumn(), 0, col_nullable->size());
+        /// Do not create the null map of a column without NULLs.
+        if (const auto * col_null_map = col_nullable->tryGetNullMapColumn())
+        {
+            null_map = ColumnUInt8::create();
+            null_map->insertRangeFrom(*col_null_map, 0, col_nullable->size());
+        }
+        else
+        {
+            null_map = ColumnUInt8::create(col_nullable->size(), static_cast<UInt8>(0));
+        }
     }
     return null_map;
+}
+
+ColumnPtr createNullableResult(IColumn::MutablePtr col_to, ColumnUInt8::MutablePtr null_map)
+{
+    const auto & null_map_data = null_map->getData();
+    if (memoryIsZero(null_map_data.data(), 0, null_map_data.size()))
+        return ColumnNullable::create(std::move(col_to));
+    return ColumnNullable::create(std::move(col_to), std::move(null_map));
 }
 
 }
