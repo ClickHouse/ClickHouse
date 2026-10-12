@@ -60,6 +60,9 @@ struct SelectQueryOptions
     /// instance might have multiple shards and scalars can only hold one value.
     std::optional<UInt32> shard_num;
     std::optional<UInt32> shard_count;
+    /// The shard numbering `shard_num` belongs to (`Cluster::getShardScopeIdentity`), recorded next to it in
+    /// the `_shard_num` scalar so that parallel replicas apply the shard scope only to that numbering.
+    String shard_scope_identity;
 
     bool build_logical_plan = false;
     bool is_local_shard_plan = false;
@@ -186,10 +189,11 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions & setShardInfo(UInt32 shard_num_, UInt32 shard_count_)
+    SelectQueryOptions & setShardInfo(UInt32 shard_num_, UInt32 shard_count_, const String & shard_scope_identity_)
     {
         shard_num = shard_num_;
         shard_count = shard_count_;
+        shard_scope_identity = shard_scope_identity_;
         return *this;
     }
 

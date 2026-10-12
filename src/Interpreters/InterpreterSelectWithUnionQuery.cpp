@@ -248,7 +248,7 @@ SharedHeader InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & quer
             options = options.subquery();
         if (is_create_parameterized_view)
             options = options.createParameterizedView();
-        return InterpreterSelectWithUnionQuery(query_ptr_, context_, std::move(options.analyze())).getSampleBlock();
+        return InterpreterSelectWithUnionQuery(query_ptr_, context_, options.analyze()).getSampleBlock();
     }
 
     /// Using query string because query_ptr changes for every internal SELECT
@@ -265,7 +265,7 @@ SharedHeader InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & quer
     if (is_create_parameterized_view)
         options = options.createParameterizedView();
 
-    auto sample_block = InterpreterSelectWithUnionQuery(query_ptr_, context_, std::move(options.analyze())).getSampleBlock();
+    auto sample_block = InterpreterSelectWithUnionQuery(query_ptr_, context_, options.analyze()).getSampleBlock();
     auto [cache, lock] = context_->getSampleBlockCache();
     return (*cache)[key] = sample_block;
 }

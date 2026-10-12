@@ -1,4 +1,5 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/logger_useful.h>
@@ -58,9 +59,7 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getMaxThreadsForAvailableMemory(context->getSettingsRef()[Setting::max_threads], context->getSettingsRef()[Setting::max_threads_min_free_memory_per_thread]))
 {
     if (options.shard_num)
-        context->addSpecialScalar(
-                "_shard_num",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
+        context->addSpecialScalar("_shard_num", ClusterProxy::makeShardNumScalar(*options.shard_num, options.shard_scope_identity));
     if (options.shard_count)
         context->addSpecialScalar(
                 "_shard_count",
