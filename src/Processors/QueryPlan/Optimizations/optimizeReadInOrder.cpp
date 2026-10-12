@@ -1872,7 +1872,9 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
