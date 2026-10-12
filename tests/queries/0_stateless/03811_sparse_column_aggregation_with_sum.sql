@@ -1,3 +1,7 @@
+-- The S3-storage lane may successfully retry transient AWS 5xx responses after logging them at
+-- error level. This test checks query completion and results, not intermediate retry diagnostics.
+SET send_logs_level = 'fatal';
+
 CREATE TABLE 03811_sparse_column_aggregation_with_sum(key UInt128, val UInt16) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO 03811_sparse_column_aggregation_with_sum

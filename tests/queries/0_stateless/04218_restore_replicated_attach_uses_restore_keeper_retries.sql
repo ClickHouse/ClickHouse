@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-fasttest, no-shared-merge-tree
+-- Tag no-parallel: uses a process-global failpoint
 -- Uses a global one-shot failpoint in `ReplicatedMergeTreeSink::commitPart`.
 -- no-shared-merge-tree: this test verifies the `ReplicatedMergeTree` restore attach retry path.
 

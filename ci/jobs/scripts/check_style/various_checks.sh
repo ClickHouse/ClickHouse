@@ -208,29 +208,61 @@ find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py'
 # Skip comment lines and EXPLAIN SYNTAX (the parser grammar test uses the bare form).
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e "system\s*flush\s*async\s*insert\s*queue\s*(;|\$|\"|')" | grep -vE ':[[:space:]]*(--|#)' | grep -vi 'EXPLAIN' && echo "Please use SYSTEM FLUSH ASYNC INSERT QUEUE table over global SYSTEM FLUSH ASYNC INSERT QUEUE"
 
-# Tests with SYSTEM DROP should have no-parallel tag, because SYSTEM DROP commands
-# (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
-# and interfere with other tests running concurrently.
-#
-# Known exceptions where the command does not affect the shared server:
-# - 04307, 04339, 04350: the SYSTEM DROP text appears only inside SQL string literals passed to
-#   parseQueryToJSON/formatQueryFromJSON for AST round-trip and validation testing; nothing is executed.
-# - 05316, 05321: every SYSTEM DROP runs in a separate clickhouse-local process with its own configuration and
-#   filesystem cache directory, so it does not touch the shared server.
-tests_with_system_drop=( $(
+# Unscoped cache clears affect every test sharing the server. Scoped forms such as
+# `FOR TABLE`, query-cache `TAG`, and named filesystem caches are parallel-safe.
+# The `query cache` branch must come after `query condition`, otherwise the shorter
+# alternative would never let the more specific cache name be recognised.
+# Occurrences inside `formatQuery`/`parseQuery`-style calls are query *text*, never executed,
+# so they are skipped along with `EXPLAIN SYNTAX` (also as a quoted string literal) and
+# `clickhouse-local` invocations (`$CLICKHOUSE_LOCAL` or `${CLICKHOUSE_LOCAL}`).
+# `04836_system_cache_on_cluster_access_types` checks unscoped commands with a user
+# lacking cache privileges, so they fail before execution; permitted clears use a per-run `TAG`.
+tests_with_global_cache_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep -liP 'system\s+drop' |
-        grep -vP '04307_ast_json_roundtrip_lossless|04339_ast_json_review_followup_hardening|04350_ast_json_parser_impossible_field_combinations|05316_query_cache_on_disk_drop|05321_query_cache_on_disk_drop_keeps_other_data' |
+        xargs grep -liP '^(?!\s*(?:--|#|['\''\"]?EXPLAIN\s+SYNTAX|SELECT\s+(?:format|parse|normalize)Query|\$\{?CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+(?:(?:mark|primary\s+index|uncompressed|index\s+mark|index\s+uncompressed|vector\s+similarity\s+index|text\s+index(?:\s+(?:tokens|header|postings))?|query\s+condition|query|compiled\s+expression|parquet\s+metadata|iceberg\s+metadata|page)\s+cache|text\s+index\s+caches)(?![^;\n]*(?:for\s+table|for\s+source|\btag\b))' |
+        grep -v '/04836_system_cache_on_cluster_access_types\.sh$' |
         sort -u
 ) )
-for test_case in "${tests_with_system_drop[@]}"; do
-    # `SYSTEM DROP FILESYSTEM CACHE '<name>'` affects only the named cache, not the
-    # server-wide state, so a test which drops the cache it created itself can run in
-    # parallel. Skip a test if every `SYSTEM DROP` in it drops a cache by name.
-    grep -oiP "system\s+drop(\s+filesystem\s+cache\s+'[^']+')?" "$test_case" |
-        grep -qivP "filesystem\s+cache\s+'" || continue
-    grep -qP '(--|#)\s*[Tt]ags:.*no-parallel' "$test_case" || echo "Test with SYSTEM DROP should have no-parallel tag: $test_case"
+for test_case in "${tests_with_global_cache_drop[@]}"; do
+    grep -qP '(?:[Tt]ags:\s*|,\s*)no-parallel(?::[a-z0-9-]+)?(?=\s*(?:,|$))' "$test_case" || echo "Test with a global SYSTEM cache clear should have a no-parallel tag: $test_case"
 done
+
+# An unnamed `SYSTEM CLEAR FILESYSTEM CACHE` clears every filesystem cache on the server, including
+# the per-test cache disks (`disk = disk(type = cache, ...)`) of any concurrent test. A
+# `no-parallel:<group>` only serializes the members of the group, so a plain `no-parallel` is required.
+tests_with_unnamed_filesystem_cache_drop=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep -liP '^(?!\s*(?:--|#|['\''\"]?EXPLAIN\s+SYNTAX|SELECT\s+(?:format|parse|normalize)Query|\$\{?CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+filesystem\s+cache\s*(?:;|$|"|on\s+cluster\b|settings\b|--)' |
+        grep -v '/04836_system_cache_on_cluster_access_types\.sh$' |
+        sort -u
+) )
+for test_case in "${tests_with_unnamed_filesystem_cache_drop[@]}"; do
+    grep -qP '(?:[Tt]ags:\s*|,\s*)no-parallel(?=\s*(?:,|$))' "$test_case" || echo "Test with an unnamed SYSTEM CLEAR FILESYSTEM CACHE should have a plain no-parallel tag (a concurrency group is not enough): $test_case"
+done
+
+# Keep in sync with NO_PARALLEL_GROUPS in tests/clickhouse-test: a group this check
+# accepts but the runner does not know makes `clickhouse-test` raise while it builds
+# the suite, which is a much worse way to find out about a typo.
+allowed_no_parallel_groups='mark-cache|primary-index-cache|filesystem-cache|query-condition-cache|metadata-caches|misc-caches|xml-entities|stateful|xray'
+tests_with_no_parallel_group=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep -lP '(--|#)\s*[Tt]ags:.*no-parallel:' |
+        sort -u
+) )
+for test_case in "${tests_with_no_parallel_group[@]}"; do
+    invalid_groups=$(grep -oP 'no-parallel:\K[a-z0-9-]+' "$test_case" | grep -vP "^(${allowed_no_parallel_groups})$" || true)
+    [ -z "$invalid_groups" ] || echo "Unknown no-parallel concurrency group in $test_case: $invalid_groups"
+done
+
+# TODO: temporarily disabled, re-enable once all no-parallel tests document their reason.
+# tests_with_no_parallel=( $(
+#     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+#         xargs grep -lP '(?:[Tt]ags:\s*|,\s*)no-parallel(?::[a-z0-9-]+)?(?=\s*(?:,|$))' |
+#         sort -u
+# ) )
+# for test_case in "${tests_with_no_parallel[@]}"; do
+#     grep -qP '(--|#)\s*Tag no-parallel:\s*\S' "$test_case" || echo "Test with no-parallel tag should document its reason: $test_case"
+# done
 
 # Shell tests that send HTTP requests via curl and then check system log tables
 # must use a retry loop around SYSTEM FLUSH LOGS, because the query_log entry is

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-msan
+# Tags: no-fasttest, no-msan
 # Test WASM native exceptions proposal handling.
 # Verifies that:
 #   - Uncaught WASM exceptions propagate as WASM_ERROR.

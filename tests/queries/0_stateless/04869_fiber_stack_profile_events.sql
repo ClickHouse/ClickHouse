@@ -1,4 +1,5 @@
 -- Tags: shard, no-parallel
+-- Tag no-parallel: Compares server-wide fiber metrics before and after a query; concurrent queries change those metrics.
 
 -- Fibers are used for asynchronous communication with remote replicas, and a stack is the only thing they consist of,
 -- so it is worth observing how these stacks are allocated and released.

@@ -1,6 +1,3 @@
--- Tags: no-parallel
--- no-parallel: test loads/unloads PKs of all tables, this affects expected results if the test runs in parallel
-
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS test2;
 
@@ -24,7 +21,8 @@ WHERE
 ORDER BY table;
 
 SELECT '-- Unload primary keys for all tables in the database';
-SYSTEM UNLOAD PRIMARY KEY;
+SYSTEM UNLOAD PRIMARY KEY test;
+SYSTEM UNLOAD PRIMARY KEY test2;
 SELECT 'OK';
 
 SELECT '-- Check the primary key memory after unloading all tables';
@@ -39,7 +37,8 @@ WHERE
 ORDER BY table;
 
 SELECT '-- Load primary key for all tables';
-SYSTEM LOAD PRIMARY KEY;
+SYSTEM LOAD PRIMARY KEY test;
+SYSTEM LOAD PRIMARY KEY test2;
 SELECT 'OK';
 
 SELECT '-- Check the primary key memory after loading all tables';
@@ -54,7 +53,8 @@ WHERE
 ORDER BY table;
 
 SELECT '-- Unload primary keys for all tables in the database';
-SYSTEM UNLOAD PRIMARY KEY;
+SYSTEM UNLOAD PRIMARY KEY test;
+SYSTEM UNLOAD PRIMARY KEY test2;
 SELECT 'OK';
 
 SELECT '-- Check the primary key memory after unloading all tables';

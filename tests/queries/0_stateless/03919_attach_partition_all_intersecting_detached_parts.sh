@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-parallel, no-shared-merge-tree
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 
 # Test that ATTACH PARTITION ALL handles intersecting parts in the detached directory
 # gracefully instead of throwing a LOGICAL_ERROR.

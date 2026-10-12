@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel, long, no-replicated-database, no-parallel-replicas, no-object-storage, no-random-merge-tree-settings
+# Tags: race, long, no-replicated-database, no-parallel-replicas, no-object-storage, no-random-merge-tree-settings
 # no-replicated-database: distributed `DDL` queries (`TRUNCATE TABLE`) inside transactions are not supported.
 # no-random-merge-tree-settings: the test checks `TRUNCATE` tmp part cleanup; random `MergeTree` part settings make the stress unrelated.
 

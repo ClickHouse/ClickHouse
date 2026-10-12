@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest
+# Tags: zookeeper, no-fasttest
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 

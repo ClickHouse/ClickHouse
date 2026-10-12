@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest, no-parallel, no-random-settings, no-flaky-check, no-distributed-cache
+# Tag no-parallel: asserts exact per-file cache entry counts; the segmentation of cached
+#   files and the timing of cache cleanup are sensitive to load from concurrent tests
 # Tag no-flaky-check -- access to system.remote_data_path is too slow with thread fuzzer enabled
 # Tag no-distributed-cache -- This test aims to test filesystem cache
 

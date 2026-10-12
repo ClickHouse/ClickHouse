@@ -1,9 +1,9 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
 
 -- Check that setting 'log_comment' is ignored in query cache lookups
 
-SYSTEM CLEAR QUERY CACHE;
+SET query_cache_tag = '02494_query_cache_log_comment';
+
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_log_comment';
 
 SELECT 1 SETTINGS use_query_cache = 1, log_comment='aaa' FORMAT Null;
 SELECT 1 SETTINGS use_query_cache = 1, log_comment='bbb' FORMAT Null;
@@ -19,4 +19,4 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryF
     AND query LIKE 'SELECT 1 SETTINGS use_query_cache%'
 ORDER BY event_time_microseconds;
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_log_comment';

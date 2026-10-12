@@ -1,4 +1,5 @@
--- Tags: stateful, long, no-parallel, no-asan, no-tsan, no-ubsan, no-msan
+-- Tags: stateful, long, no-asan, no-tsan, no-ubsan, no-msan, no-flaky-check
+-- no-flaky-check: with random settings on a debug build a run can exceed the 180 s per-test budget
 -- no-*san: too long.
 
 DROP TABLE IF EXISTS hits_text;

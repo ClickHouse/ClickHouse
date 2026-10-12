@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# Tag no-parallel: relies on system.errors
+# Tag no-parallel: asserts the process-wide `system.errors` UNEXPECTED_PACKET_FROM_CLIENT counter
+# does not increase; the error can occur outside any single query's execution context (stray
+# client bytes after the server closes the connection), so it cannot be attributed via query_log
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

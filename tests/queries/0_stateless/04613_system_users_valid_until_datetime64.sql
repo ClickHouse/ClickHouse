@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: Creates and drops fixed server-wide user names, which conflict with concurrent repetitions.
 -- Creates a user with a server-global name, so it cannot run in parallel with itself.
 
 -- `system.users.valid_until` is a `DateTime64`, so it reports the same deadline the

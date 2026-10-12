@@ -1,4 +1,6 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+-- Tags: long, no-replicated-database, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+-- Tag long: creates and explains three `MergeTree` tables with large primary keys; under
+--   sanitizer builds this can exceed the ordinary 300-second test budget.
 -- EXPLAIN output may differ
 
 SET explain_query_plan_default = 'legacy';

@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-replicated-database
--- no-parallel: creates and drops a global named collection
+-- Tag no-parallel: creates and drops a global named collection
 -- no-replicated-database: named collections are server-global and their DDL is not replicated
 
 -- The `url = (...)` key-value argument fails identifier resolution and is left unresolved,

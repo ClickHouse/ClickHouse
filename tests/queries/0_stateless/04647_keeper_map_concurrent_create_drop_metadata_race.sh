@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-ordinary-database, zookeeper, no-fasttest, no-parallel, no-replicated-database
-# no-parallel: uses a PAUSEABLE_ONCE failpoint, which is process-global and fires exactly once;
+# Tag no-parallel: uses a `PAUSEABLE_ONCE` failpoint, which is process-global and fires exactly once;
 #   a concurrent copy of this test could steal the pause and hang.
 # no-replicated-database: the failpoint is process-local, but CREATE TABLE is replicated DDL executed
 #   on every replica server process, so the pause would not line up with the create being coordinated.

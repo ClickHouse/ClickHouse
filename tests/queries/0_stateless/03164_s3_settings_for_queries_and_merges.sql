@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-fasttest, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET allow_prefetched_read_pool_for_local_filesystem=0;

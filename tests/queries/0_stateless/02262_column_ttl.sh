@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-ordinary-database
+# Tags: no-ordinary-database
 #       ^^^^^^^^^^^
 # Since the underlying view may disappears while flushing log, and leads to:
 #

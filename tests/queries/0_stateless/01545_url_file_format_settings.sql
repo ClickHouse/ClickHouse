@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 set use_hive_partitioning=0; -- required because of "?query=select"
 

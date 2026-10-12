@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-parallel-replicas
--- no-parallel: clears the server-wide text index tokens cache
+-- Tag no-parallel: clears the server-wide text index tokens cache
 
 SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;

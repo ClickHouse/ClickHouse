@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long
 # shellcheck disable=SC2015
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -59,15 +59,20 @@ done
 
 echo "A session successfully expire after a timeout and the session's temporary table shadows the permanent table:"
 # An infinite loop is required to make the test reliable. We will check that the timeout corresponds to the observed time at least once
+# Every attempt uses a fresh session: under load the previous attempt's session may still be alive, and reusing it
+# would fail `CREATE TEMPORARY TABLE` with `TABLE_ALREADY_EXISTS` and leak that error into the matched output.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t; CREATE TABLE t (s String) ENGINE = Memory; INSERT INTO t VALUES ('World');"
+attempt=0
 while true
 do
+    attempt=$((attempt + 1))
+    session_id="${CLICKHOUSE_DATABASE}_8_${attempt}"
     (
-        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8&session_timeout=1" --data-binary "CREATE TEMPORARY TABLE t (s String)"
-        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "INSERT INTO t VALUES ('Hello')"
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "SELECT * FROM t"
+        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${session_id}&session_timeout=1" --data-binary "CREATE TEMPORARY TABLE t (s String)"
+        ${CLICKHOUSE_CURL} -X POST -sS "${CLICKHOUSE_URL}&session_id=${session_id}" --data-binary "INSERT INTO t VALUES ('Hello')"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${session_id}" --data-binary "SELECT * FROM t"
         sleep 3
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${CLICKHOUSE_DATABASE}_8" --data-binary "SELECT * FROM t"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${session_id}" --data-binary "SELECT * FROM t"
     ) | tr -d '\n' | grep -F 'HelloWorld' && break || sleep 1
 done
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"

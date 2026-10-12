@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 TEST_DIR_NAME=test_04002
-DATA_DIR=${USER_FILES_PATH:?}/$TEST_DIR_NAME
+DATA_DIR=${CLICKHOUSE_USER_FILES_UNIQUE:?}/$TEST_DIR_NAME
 
 mkdir -p $DATA_DIR
 

@@ -1,10 +1,9 @@
 -- Tags: no-fasttest, no-parallel, no-replicated-database
--- Tag justification:
---   no-fasttest: the NATS engine is not available in a build without libraries.
---   no-parallel: creates and drops global named collections; the flaky check runs the same test
---                concurrently, and parallel repetitions collide on them (the first finishing run
---                drops the collection while others still use it).
---   no-replicated-database: named collections are server-global, not database-scoped.
+-- Tag no-fasttest: the NATS engine is not available in a build without libraries.
+-- Tag no-parallel: creates and drops global named collections; the flaky check runs the same test
+--   concurrently, and parallel repetitions collide on them (the first finishing run drops the
+--   collection while others still use it).
+-- Tag no-replicated-database: named collections are server-global, not database-scoped.
 
 -- `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials,
 -- so only one of them may be specified. A source specified in the query replaces a source coming

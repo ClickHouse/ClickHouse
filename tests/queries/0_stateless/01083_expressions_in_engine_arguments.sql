@@ -1,4 +1,6 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest, no-parallel:misc-caches
+-- Tag no-parallel: serializes tests that mutate or assert the shared `misc-caches` resource
+-- (this test issues `SYSTEM CLEAR DNS CACHE`, which is process-wide)
 
 SET prefer_localhost_replica=1;
 

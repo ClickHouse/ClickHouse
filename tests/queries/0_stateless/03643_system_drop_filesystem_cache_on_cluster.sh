@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: no-fasttest, no-object-storage, no-random-settings, no-parallel:filesystem-cache
+# Tag no-parallel: exercises cluster-wide filesystem-cache synchronization and
+# clearing while other tests assert the same process-wide cache registry.
 
 # set -x
 

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check, distributed
+-- Tags: no-flaky-check, distributed
 --
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/58766
 --

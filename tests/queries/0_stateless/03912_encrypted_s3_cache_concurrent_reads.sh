@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 # Test for race conditions in ReadBufferFromEncryptedFile when multiple
 # concurrent readers access the same encrypted data through the filesystem cache.

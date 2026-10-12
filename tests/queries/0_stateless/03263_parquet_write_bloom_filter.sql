@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 
 set engine_file_truncate_on_insert=1;
 set output_format_parquet_row_group_size = 100;

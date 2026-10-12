@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: uses a process-global failpoint
 -- ^^ required because the parser test mentions SYSTEM DROP subcommands. The
 -- EXPLAIN SYNTAX wrapper means no command actually runs.
 --

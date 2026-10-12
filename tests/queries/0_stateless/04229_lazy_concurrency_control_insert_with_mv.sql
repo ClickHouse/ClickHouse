@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-replicated-database, no-async-insert, no-parallel-replicas, no-s3-storage, no-fasttest
+-- Tags: no-replicated-database, no-async-insert, no-parallel-replicas, no-s3-storage, no-fasttest
 -- no-parallel: checks thread count, which can be affected by concurrent queries
 -- no-replicated-database: query_log lookup assumes single-node execution
 -- no-async-insert: test measures synchronous INSERT pipeline threading

@@ -1,5 +1,7 @@
 -- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
+-- Tag no-parallel: asserts the exact value of the process-global `QueryCacheEntries` gauge in
+-- `system.metrics`, which is not scoped by tag or database; concurrent query-cache activity from
+-- other tests would change the count.
 
 SYSTEM CLEAR QUERY CACHE;
 

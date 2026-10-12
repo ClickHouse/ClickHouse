@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-parallel, no-shared-merge-tree, no-replicated-database, no-object-storage, no-flaky-check
+# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-shared-merge-tree, no-replicated-database, no-object-storage, no-flaky-check
 # no-shared-merge-tree -- this test is too slow
 # no-flaky-check -- too slow with thread fuzzer
 

@@ -1,5 +1,4 @@
--- Tags: no-fasttest, no-ordinary-database, no-parallel
--- no-parallel: SQL functions are not per-database, they are global
+-- Tags: no-fasttest, no-ordinary-database
 -- Tests that vector search queries work with reference vectors of different data types.
 SET explain_query_plan_default = 'legacy';
 

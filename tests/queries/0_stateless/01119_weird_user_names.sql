@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 drop user if exists "       ";
 drop user if exists '   spaces';

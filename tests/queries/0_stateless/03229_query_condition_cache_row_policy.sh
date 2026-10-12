@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-parallel-replicas
-# no-parallel: drops the (instance-wide) query condition cache
+# Tags: no-parallel-replicas, no-parallel
+# Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 # no-parallel-replicas: the query condition cache is populated per replica, so the poisoning is
 #                       deterministic only on a single replica
 
@@ -40,7 +40,7 @@ GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_qcc_row_policy TO ${user_hide}, ${user_
 CREATE ROW POLICY rp_hide_${CLICKHOUSE_DATABASE} ON ${CLICKHOUSE_DATABASE}.t_qcc_row_policy FOR SELECT USING v < 50 TO ${user_hide};
 CREATE ROW POLICY rp_show_${CLICKHOUSE_DATABASE} ON ${CLICKHOUSE_DATABASE}.t_qcc_row_policy FOR SELECT USING 1 TO ${user_show};
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 "
 
 # The hide user runs PREWHERE v >= 50 first. Its policy (v < 50) hides every matching row, so the

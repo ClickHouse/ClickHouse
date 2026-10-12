@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
+# Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

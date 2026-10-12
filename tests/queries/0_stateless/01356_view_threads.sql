@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest
 -- no-parallel: it checks the number of threads, which can be lowered in presence of other queries
 
 drop table if exists table_01356_view_threads;

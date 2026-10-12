@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-sanitizers
+# Tag no-parallel: Creates and drops fixed server-wide user and database names.
 # Regression test: GRANT / SHOW GRANTS / REVOKE keep working as expected
 # when a user holds many per-table grants. This is a functional regression
 # test covering the change in getGrantQueriesImpl to avoid deep-copying the

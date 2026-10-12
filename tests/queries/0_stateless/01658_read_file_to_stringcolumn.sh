@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 set -eu
 
@@ -16,18 +15,18 @@ OUTSIDE_FILE="${CLICKHOUSE_TMP}/01658_outside.txt"
 # leave the short filenames `a`, `b`, `c` in `user_files_path` and break
 # other tests that rely on them being absent.
 cleanup() {
-    rm -f "${USER_FILES_PATH}"/{a,b,c}.txt
-    rm -f "${USER_FILES_PATH}"/{a,b,c}
+    rm -f "${CLICKHOUSE_USER_FILES_UNIQUE}"/{a,b,c}.txt
+    rm -f "${CLICKHOUSE_USER_FILES_UNIQUE}"/{a,b,c}
     rm -f "${OUTSIDE_FILE}"
-    rm -rf "${USER_FILES_PATH}"/dir
+    rm -rf "${CLICKHOUSE_USER_FILES_UNIQUE}"/dir
 }
 trap cleanup EXIT
 
-echo -n aaaaaaaaa > ${USER_FILES_PATH}/a.txt
-echo -n bbbbbbbbb > ${USER_FILES_PATH}/b.txt
-echo -n ccccccccc > ${USER_FILES_PATH}/c.txt
+echo -n aaaaaaaaa > ${CLICKHOUSE_USER_FILES_UNIQUE}/a.txt
+echo -n bbbbbbbbb > ${CLICKHOUSE_USER_FILES_UNIQUE}/b.txt
+echo -n ccccccccc > ${CLICKHOUSE_USER_FILES_UNIQUE}/c.txt
 echo -n ccccccccc > "${OUTSIDE_FILE}"
-mkdir -p ${USER_FILES_PATH}/dir
+mkdir -p ${CLICKHOUSE_USER_FILES_UNIQUE}/dir
 
 
 ### 1st TEST in CLIENT mode.
@@ -36,28 +35,28 @@ ${CLICKHOUSE_CLIENT} --query "create table data (A String, B String) engine=Merg
 
 
 # Valid cases:
-${CLICKHOUSE_CLIENT} --query "select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "insert into data select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "insert into data select file('a.txt'), file('b.txt');";echo ":"$?
-${CLICKHOUSE_CLIENT} --query "select file('c.txt'), * from data";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "select file('${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt'), file('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "insert into data select file('${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt'), file('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "insert into data select file('${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt'), file('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt');";echo ":"$?
+${CLICKHOUSE_CLIENT} --query "select file('${CLICKHOUSE_TEST_UNIQUE_NAME}/c.txt'), * from data";echo ":"$?
 ${CLICKHOUSE_CLIENT} --query "
     create table filenames(name String) engine=MergeTree() order by tuple();
-    insert into filenames values ('a.txt'), ('b.txt'), ('c.txt');
+    insert into filenames values ('${CLICKHOUSE_TEST_UNIQUE_NAME}/a.txt'), ('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt'), ('${CLICKHOUSE_TEST_UNIQUE_NAME}/c.txt');
     select file(name) from filenames format TSV;
     drop table if exists filenames;
 "
 
 # Invalid cases: (Here using sub-shell to catch exception avoiding the test quit)
 # Test non-exists file
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'nonexist.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'nonexist.txt'), file('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test isDir
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'dir'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'${CLICKHOUSE_TEST_UNIQUE_NAME}/dir'), file('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test path out of the user_files directory. It's not allowed in client mode
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'${OUTSIDE_FILE}'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'${OUTSIDE_FILE}'), file('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 # Test relative path consists of ".." whose absolute path is out of the user_files directory.
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'../../../../../../../../../../../../../../../../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'../../../../a.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'../../../../../../../../../../../../../../../../../../../tmp/c.txt'), file('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'../../../../a.txt'), file('${CLICKHOUSE_TEST_UNIQUE_NAME}/b.txt')"'";echo :$?' | bash 2>/dev/null
 
 
 ### 2nd TEST in LOCAL mode.
@@ -90,11 +89,11 @@ echo "${CLICKHOUSE_LOCAL} --query "'"select file('"'dir'), file('b.txt')"'";echo
 
 # Test that the function is not injective
 
-echo -n Hello > ${USER_FILES_PATH}/a
-echo -n Hello > ${USER_FILES_PATH}/b
-echo -n World > ${USER_FILES_PATH}/c
+echo -n Hello > ${CLICKHOUSE_USER_FILES_UNIQUE}/a
+echo -n Hello > ${CLICKHOUSE_USER_FILES_UNIQUE}/b
+echo -n World > ${CLICKHOUSE_USER_FILES_UNIQUE}/c
 
-${CLICKHOUSE_CLIENT} --query "SELECT file(arrayJoin(['a', 'b', 'c'])) AS s, count() GROUP BY s ORDER BY s"
-${CLICKHOUSE_CLIENT} --query "SELECT s, count() FROM file('?', TSV, 's String') GROUP BY s ORDER BY s"
+${CLICKHOUSE_CLIENT} --query "SELECT file(arrayJoin(['${CLICKHOUSE_TEST_UNIQUE_NAME}/a', '${CLICKHOUSE_TEST_UNIQUE_NAME}/b', '${CLICKHOUSE_TEST_UNIQUE_NAME}/c'])) AS s, count() GROUP BY s ORDER BY s"
+${CLICKHOUSE_CLIENT} --query "SELECT s, count() FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}/?', TSV, 's String') GROUP BY s ORDER BY s"
 
 # Cleanup is handled by the `trap cleanup EXIT` at the top of this script.

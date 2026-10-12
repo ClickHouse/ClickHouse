@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database, no-parallel
+-- Tags: no-ordinary-database
 
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
