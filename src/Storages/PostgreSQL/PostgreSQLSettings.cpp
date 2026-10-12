@@ -12,15 +12,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 postgresql_connection_pool_size;
-    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
-    extern const SettingsUInt64 postgresql_connection_pool_retries;
-    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
@@ -78,13 +69,38 @@ void PostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
 
 void PostgreSQLSettings::loadFromQueryContext(const Context & context)
 {
+    loadFromQueryContextImpl(context, nullptr, nullptr);
+}
+
+void PostgreSQLSettings::loadFromQueryContext(const Context & context, const Context & attach_context, ASTStorage & storage_def)
+{
+    loadFromQueryContextImpl(context, &attach_context, &storage_def);
+}
+
+void PostgreSQLSettings::loadFromQueryContextImpl(const Context & context, const Context * attach_context, ASTStorage * storage_def)
+{
     const Settings & settings = context.getSettingsRef();
 
-    (*impl)[PostgreSQLSetting::postgresql_connection_pool_size] = settings[Setting::postgresql_connection_pool_size];
-    (*impl)[PostgreSQLSetting::postgresql_connection_pool_wait_timeout] = settings[Setting::postgresql_connection_pool_wait_timeout];
-    (*impl)[PostgreSQLSetting::postgresql_connection_pool_retries] = settings[Setting::postgresql_connection_pool_retries];
-    (*impl)[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection] = settings[Setting::postgresql_connection_pool_auto_close_connection];
-    (*impl)[PostgreSQLSetting::postgresql_connection_attempt_timeout] = settings[Setting::postgresql_connection_attempt_timeout];
+    for (const auto & setting : impl->all())
+    {
+        const auto & name = setting.getName();
+        if (setting.isValueChanged())
+            continue;
+
+        Field value = settings.get(name);
+        impl->set(name, value);
+
+        if (!storage_def || attach_context->getSettingsRef().get(name) == value)
+            continue;
+
+        if (!storage_def->settings)
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage_def->set(storage_def->settings, settings_ast);
+        }
+        storage_def->settings->changes.emplace_back(name, std::move(value));
+    }
 }
 
 void PostgreSQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)
