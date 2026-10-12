@@ -343,7 +343,10 @@ kernel pipe without copying them into user space; a TLS-terminated leg falls bac
 copy because its bytes must be decrypted and re-encrypted (as does a plaintext connection when the
 pipes cannot be created, for example at the file descriptor limit). When one side finishes sending,
 the end of its stream is forwarded as a half-close of a plaintext peer, so the other direction can
-still deliver the rest of the response.
+still deliver the rest of the response. Once the handshake is over, the relayed session has no read
+deadline on either path: an idle gap between commands or a long-running query does not end it, and a
+session ends when a peer closes its connection. On the user-space copy path, writes stay bounded by
+`send_timeout_ms`, so a peer that stops draining its socket does not hold the relay forever.
 
 Two settings trade throughput against memory:
 

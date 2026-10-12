@@ -15,16 +15,16 @@ namespace DB::Proxy
 /// destinations), an error tears down both. Runs the two directions on separate fibers and updates the
 /// backend byte counters. Throws if the second fiber cannot be allocated.
 ///
-/// @p relay_timeout_ms is applied to both sockets: a frontend reads the handshake under the much
-/// shorter handshake timeout, but the relayed session that follows is long-lived, and an idle gap
-/// between commands must not tear it down.
+/// A frontend reads the handshake under the much shorter handshake timeout, but the relayed session
+/// that follows is long-lived: an idle gap between commands or a long-running query must not tear it
+/// down. So reads on both sockets have no deadline, and @p send_timeout_ms bounds only writes.
 void runRelay(
     FiberSocket & client,
     FiberSocket & backend_socket,
     Backend * backend,
     const String & initial_to_backend,
     size_t buffer_size,
-    UInt64 relay_timeout_ms);
+    UInt64 send_timeout_ms);
 
 }
 

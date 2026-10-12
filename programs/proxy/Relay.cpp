@@ -201,14 +201,16 @@ void runRelay(
     Backend * backend,
     const String & initial_to_backend,
     size_t buffer_size,
-    UInt64 relay_timeout_ms)
+    UInt64 send_timeout_ms)
 {
     /// The handshake is over: leave the short handshake timeout behind, so an ordinary idle gap
     /// between commands, a slow upload, or a long-running query does not tear down the session.
+    /// Reads have no deadline, as on the zero-copy splice path: a session ends when a peer closes it.
+    /// Writes stay bounded, so a peer that stops draining its socket cannot hold the relay forever.
     /// This governs the user-space copy path; the zero-copy splice path does not consult it.
     client.disarmHandshakeDeadline();
-    client.setTimeouts(relay_timeout_ms, relay_timeout_ms);
-    backend_socket.setTimeouts(relay_timeout_ms, relay_timeout_ms);
+    client.setTimeouts(/*receive_ms=*/ 0, send_timeout_ms);
+    backend_socket.setTimeouts(/*receive_ms=*/ 0, send_timeout_ms);
 
     /// Handshake bytes the proxy already parsed live in user space; forward them with a normal write.
     if (!initial_to_backend.empty())
