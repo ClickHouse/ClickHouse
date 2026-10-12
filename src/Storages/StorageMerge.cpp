@@ -66,6 +66,7 @@
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -1887,6 +1888,8 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
 
     if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         ok &= func(*read_from_merge_tree);
+    else if (node->children.empty() && !typeid_cast<ReadNothingStep *>(node->step.get()))
+        return false; /// Only a `ReadFromMergeTree` can be asked to read in order; any other read does not promise it.
 
     return ok;
 }
@@ -2566,18 +2569,18 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
-bool ReadFromMerge::canReadInReverseOrder()
+bool ReadFromMerge::canReadInOrder(int direction)
 {
     filterTablesAndCreateChildrenPlans();
 
-    auto can_read_in_reverse_order = [](ReadFromMergeTree & read_from_merge_tree)
+    auto can_read_in_direction = [direction](ReadFromMergeTree & read_from_merge_tree)
     {
-        return read_from_merge_tree.canReadInReverseOrder();
+        return direction == 1 || read_from_merge_tree.canReadInReverseOrder();
     };
 
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized()
-            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read_in_reverse_order))
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read_in_direction))
             return false;
 
     return true;
@@ -2595,10 +2598,8 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
 {
     filterTablesAndCreateChildrenPlans();
 
-    /// Not every reading step accepts a reverse direction (with `FINAL`, only some engines do, see
-    /// `ReadFromMergeTree::canReadInReverseOrder`). Ask all of them before the loop below switches
-    /// the children one by one, so that no child is left reading in order when the request is rejected.
-    if (order_info_->direction != 1 && !canReadInReverseOrder())
+    /// Ask every reading step first: the loop below switches the children one by one.
+    if (!canReadInOrder(order_info_->direction))
         return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
