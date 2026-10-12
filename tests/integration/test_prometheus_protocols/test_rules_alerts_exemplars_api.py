@@ -24,6 +24,9 @@ EXPECTED = {
     "query_exemplars": {"status": "success", "data": []},
 }
 
+# query_exemplars requires a PromQL expression, like in Prometheus.
+PARAMS = {"rules": {}, "alerts": {}, "query_exemplars": {"query": "up"}}
+
 
 def wait_for_prometheus_handlers(timeout=120):
     # cluster.start() waits for the native TCP port, and the Prometheus protocols port
@@ -60,7 +63,8 @@ def check_response(response, endpoint):
 @pytest.mark.parametrize("endpoint", EXPECTED.keys())
 def test_endpoint_without_table(endpoint):
     response = requests.get(
-        f"http://{node.ip_address}:{PROMETHEUS_PORT}/api/v1/{endpoint}"
+        f"http://{node.ip_address}:{PROMETHEUS_PORT}/api/v1/{endpoint}",
+        params=PARAMS[endpoint],
     )
     check_response(response, endpoint)
 
@@ -69,7 +73,8 @@ def test_endpoint_without_table(endpoint):
 def test_endpoint_behind_prefix(endpoint):
     # The prometheus_api_v1 handler names a table which does not exist.
     response = requests.get(
-        f"http://{node.ip_address}:{HTTP_PORT}/prometheus/api/v1/{endpoint}"
+        f"http://{node.ip_address}:{HTTP_PORT}/prometheus/api/v1/{endpoint}",
+        params=PARAMS[endpoint],
     )
     check_response(response, endpoint)
 
@@ -97,3 +102,25 @@ def test_query_exemplars_post():
         data={"query": "up", "start": "1700000000", "end": "1700000600"},
     )
     check_response(response, "query_exemplars")
+
+
+@pytest.mark.parametrize(
+    "endpoint, params",
+    [
+        ("rules", {"type": "foo"}),
+        ("rules", {"group_limit": "0"}),
+        ("rules", {"group_limit": "abc"}),
+        ("rules", {"group_next_token": "abc"}),
+        ("rules", {"group_limit": "10", "group_next_token": "abc"}),
+        ("query_exemplars", {}),
+        ("query_exemplars", {"query": "up{"}),
+        ("query_exemplars", {"query": "up", "start": "abc"}),
+        ("query_exemplars", {"query": "up", "start": "1700000600", "end": "1700000000"}),
+    ],
+)
+def test_malformed_request(endpoint, params):
+    response = requests.get(
+        f"http://{node.ip_address}:{PROMETHEUS_PORT}/api/v1/{endpoint}", params=params
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["errorType"] == "bad_data"

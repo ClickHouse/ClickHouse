@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
@@ -36,6 +37,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
@@ -521,6 +523,7 @@ public:
 
             if (empty_result)
             {
+                validateEmptyResultRequest(uri_path);
                 writeString(*empty_result, getOutputStream(response));
                 return;
             }
@@ -671,6 +674,40 @@ private:
     }
 
     std::optional<std::string_view> empty_result;
+
+    /// Rejects the malformed requests that Prometheus also rejects on the endpoints with an empty result.
+    void validateEmptyResultRequest(std::string_view uri_path) const
+    {
+        if (uri_path.ends_with("/query_exemplars"))
+        {
+            String start = params->get("start", "");
+            String end = params->get("end", "");
+            Int64 start_time = start.empty() ? std::numeric_limits<Int64>::min() : parseTimeSeriesTimestamp(start, 3).value;
+            Int64 end_time = end.empty() ? std::numeric_limits<Int64>::max() : parseTimeSeriesTimestamp(end, 3).value;
+            if (end_time < start_time)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'end' timestamp must not be before the 'start' timestamp");
+
+            PrometheusQueryTree promql_tree;
+            promql_tree.parse(params->get("query", ""));
+        }
+        else if (uri_path.ends_with("/rules"))
+        {
+            String type = Poco::toLower(params->get("type", ""));
+            if (!type.empty() && type != "alert" && type != "record")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'type' parameter: '{}', expected 'alert' or 'record'", type);
+
+            String group_limit = params->get("group_limit", "");
+            String group_next_token = params->get("group_next_token", "");
+            Int64 parsed_group_limit = 0;
+            if (!group_limit.empty() && (!tryParse(parsed_group_limit, group_limit.data(), group_limit.size()) || parsed_group_limit <= 0))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value of the 'group_limit' parameter: '{}', expected a positive integer", group_limit);
+
+            /// There are no rule groups, so no token is valid.
+            if (!group_next_token.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'group_next_token' parameter: '{}'", group_next_token);
+        }
+    }
 
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
