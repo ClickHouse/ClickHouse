@@ -167,7 +167,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     WriteBufferFromOwnString rewritten_query;
 
-    if (query.full)
+    /// `system.dictionaries` has no `engine` column.
+    if (query.full && !query.dictionaries)
     {
         rewritten_query << "SELECT name, engine FROM system.";
     }

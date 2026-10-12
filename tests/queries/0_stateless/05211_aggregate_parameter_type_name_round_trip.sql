@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the replica creates the `CREATE TABLE ... AS SELECT` table from the printed `groupArrayInsertAt` state type name, which does not round-trip, https://github.com/ClickHouse/ClickHouse/issues/123031
 -- A Decimal or wide-integer parameter has no bare SQL literal form, so the printed state type name
 -- needs a ::Type suffix. That name is what lands in the table metadata, and it is reparsed on every
 -- start, so a name that does not parse back into the same parameters leaves the table unreadable.
@@ -48,8 +50,8 @@ SELECT finalizeAggregation(topk_num), finalizeAggregation(control_topk_uint64) F
 
 DROP TABLE t_ap_05211;
 
--- groupArrayInsertAt keeps untyped parameters: its first one is a default value that can itself be
--- composite, and a suffix inside a composite does not parse back. Its name must not gain one.
+-- A composite parameter carries the suffix on its elements, so this arm is a default value that is
+-- itself an array of Decimals: the printed name is a call over literals and still parses back.
 DROP TABLE IF EXISTS t_gaia_05211;
 
 CREATE TABLE t_gaia_05211 ENGINE = MergeTree ORDER BY tuple() AS
