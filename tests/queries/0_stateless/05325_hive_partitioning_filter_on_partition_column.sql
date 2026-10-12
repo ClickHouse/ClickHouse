@@ -43,6 +43,8 @@ SELECT count() FROM file(currentDatabase() || '/05325/key=9/data.parquet', Parqu
 SELECT count(), sum(v) FROM file(currentDatabase() || '/05325/key=9/data.parquet', Parquet) WHERE key = 9;
 SELECT count() FROM file(currentDatabase() || '/05325/nullable/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') WHERE key IS NOT NULL;
 SELECT count() FROM file(currentDatabase() || '/05325/only/a=1/key=9/data.parquet', Parquet, 'key Int64') WHERE indexHint(key = 9);
+SELECT count() FROM file(currentDatabase() || '/05325/key=9/data.parquet', Parquet, 'key Int64, v Int64') WHERE indexHint(key = 9);
+SELECT count() FROM file(currentDatabase() || '/05325/key=9/data.parquet', Parquet, 'key Int64, v Int64') WHERE indexHint(key = 9) AND v < 1000;
 
 CREATE TABLE t_05325_s3 (key Int64, v Int64) ENGINE = S3(s3_conn, filename = currentDatabase() || '/05325/key=9/data.parquet', format = Parquet);
 SELECT count() FROM t_05325_s3 WHERE key = 9 AND v < 10 SETTINGS use_query_condition_cache = 1, log_comment = '05325_qcc_1';
@@ -52,6 +54,7 @@ SELECT count() FROM url('http://localhost:11111/test/' || currentDatabase() || '
 
 SELECT _file, count() FROM file(currentDatabase() || '/05325/virtual/data.parquet', Parquet, 'v Int64') GROUP BY _file;
 SELECT count() FROM file(currentDatabase() || '/05325/virtual/data.parquet', Parquet, 'v Int64') WHERE _file = 'data.parquet';
+SELECT count() FROM file(currentDatabase() || '/05325/virtual/data.parquet', Parquet, 'v Int64') WHERE indexHint(_file = 'data.parquet');
 
 CREATE TABLE t_05325_file AS file(currentDatabase() || '/05325/key=9/data.parquet', Parquet, 'key Int64, v Int64');
 CREATE ROW POLICY p_05325_file ON t_05325_file USING key = 9 TO ALL;
