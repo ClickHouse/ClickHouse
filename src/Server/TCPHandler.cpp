@@ -161,6 +161,8 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event NativeProtocolSend;
+    extern const Event NativeProtocolDataBytes;
+    extern const Event NativeProtocolDataReceiveBytes;
     extern const Event ReadTaskRequestsSent;
     extern const Event MergeTreeReadTaskRequestsSent;
     extern const Event MergeTreeAllRangesAnnouncementsSent;
@@ -206,6 +208,13 @@ namespace DB::ErrorCodes
 
 namespace
 {
+void countNativeProtocolDataBytes(const DB::WriteBuffer & buffer, size_t bytes_before)
+{
+    const size_t bytes_after = buffer.count();
+    if (bytes_after > bytes_before)
+        ProfileEvents::increment(ProfileEvents::NativeProtocolDataBytes, bytes_after - bytes_before);
+}
+
 // This function corrects the wrong client_name from the old client.
 // Old clients 28.7 and some intermediate versions of 28.7 were sending different ClientInfo.client_name
 // "ClickHouse client" was sent with the hello message.
@@ -1319,6 +1328,13 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             std::min(
                 poll_interval * 1000000,
                 static_cast<UInt64>(receive_timeout.totalMicroseconds())));
+    /// ... but wake up often enough to keep the client's live metrics fresh while it is slow to
+    /// send the next data packet. Sessions the flush cannot serve keep the blocking poll.
+    if (!state.skipping_data
+        && client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS_IN_INSERT
+        && query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+        && state.query_context->getSettingsRef()[Setting::send_profile_events])
+        timeout_us = std::min(timeout_us, std::max(min_timeout_us, interactive_delay));
 
     Stopwatch watch;
 
@@ -1333,8 +1349,17 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                                 "Timeout exceeded while receiving data from client. Waited for {} seconds, timeout is {} seconds.",
                                 elapsed, receive_timeout.totalSeconds());
             }
+
+            if (!state.skipping_data && after_send_progress.elapsed() / 1000 >= interactive_delay)
+            {
+                after_send_progress.restart();
+                sendLogs(state);
+                sendInsertProfileEvents(state);
+                out->sync();
+            }
         }
 
+        const size_t packet_start = in->count();
         UInt64 packet_type = 0;
         readVarUInt(packet_type, *in);
 
@@ -1362,6 +1387,11 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                     empty_block = !processData(state, packet_type == Protocol::Client::Scalar);
                 if (empty_block)
                     state.read_all_data = true;
+                /// Only a `Data` block with rows is query data: scalars come with the query itself.
+                /// A chunked packet also has a 4-byte size before it and a 4-byte end marker after it.
+                if (!empty_block && !state.skipping_data && packet_type == Protocol::Client::Data)
+                    ProfileEvents::increment(ProfileEvents::NativeProtocolDataReceiveBytes,
+                        in->count() - packet_start + (proto_send_chunked_cl == "chunked" ? 8 : 0));
                 return !empty_block;
             }
 
@@ -1912,6 +1942,7 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
         return;
 
     initBlockOutput(state, totals);
+    const size_t bytes_before = out->count();
 
     writeVarUInt(Protocol::Server::Totals, *out);
     writeStringBinary("", *out);
@@ -1920,6 +1951,8 @@ void TCPHandler::sendTotals(QueryState & state, const Block & totals)
     if (state.maybe_compressed_out != out)
         state.maybe_compressed_out->next();
     out->finishChunk();
+    if (totals.rows() > 0)
+        countNativeProtocolDataBytes(*out, bytes_before);
 }
 
 
@@ -1929,6 +1962,7 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
         return;
 
     initBlockOutput(state, extremes);
+    const size_t bytes_before = out->count();
 
     writeVarUInt(Protocol::Server::Extremes, *out);
     writeStringBinary("", *out);
@@ -1937,6 +1971,8 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
     if (state.maybe_compressed_out != out)
         state.maybe_compressed_out->next();
     out->finishChunk();
+    if (extremes.rows() > 0)
+        countNativeProtocolDataBytes(*out, bytes_before);
 }
 
 
@@ -3336,6 +3372,9 @@ void TCPHandler::sendData(QueryState & state, const Block & block)
 
         throw;
     }
+
+    if (block.rows() > 0)
+        countNativeProtocolDataBytes(*out, prev_bytes_written_out);
 }
 
 void TCPHandler::sendLogData(
