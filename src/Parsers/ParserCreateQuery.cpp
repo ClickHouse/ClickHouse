@@ -3459,6 +3459,24 @@ Longer chains work as well.
 
 This only works well when refresh coordination is enabled, i.e. the views are in Replicated or Shared database. Without coordination, server restart breaks the cycle, requiring a manual `SYSTEM REFRESH VIEW` after each restart rather than once after creating the views.
 
+### Workload Scheduling {#refresh-workload-scheduling}
+
+Use the normal `workload` setting in the stored `SELECT` to choose the workload for refresh admission and execution:
+
+```sql
+CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 MINUTE
+ENGINE = MergeTree ORDER BY tuple()
+AS SELECT * FROM source SETTINGS workload = 'refreshes';
+```
+
+Admission uses the same `workload` as refresh execution. Separating metadata statement scheduling from refresh execution depends on [metadata workload scheduling](https://github.com/ClickHouse/ClickHouse/pull/118419), which is developed separately. Until that dependency is available, `CREATE` statements also participate in the stored `SELECT` workload, so creating a view can wait for that workload's resources.
+
+When the server setting `use_query_slot_to_refresh_materialized_view` is enabled and a `QUERY` resource is configured for the effective refresh workload, the refresh requests a query slot before starting execution. Admission and execution use the same workload. A queued refresh reports `WaitingForResource` in `system.view_refreshes` without occupying a background execution worker. Stopping, pausing or dropping the view cancels pending admission.
+
+When enabled, the server setting also applies initial memory-reservation admission when a `MEMORY RESERVATION` resource and a nonzero `reserve_memory` are configured, even without a `QUERY` resource. This memory wait can be cancelled by stopping, pausing or dropping the view. `workload_admission_timeout_ms` bounds the combined query-slot and initial memory-reservation wait.
+
+The server setting is disabled by default to preserve existing scheduling behavior. With it disabled, refreshes bypass query-slot and initial memory-reservation admission. Without a `QUERY` resource for the workload, refreshes do not wait for a query slot. Workload classification for CPU and I/O is independent of this setting.
+
 ### Refresh Settings {#refresh-settings}
 
 Available refresh settings:
