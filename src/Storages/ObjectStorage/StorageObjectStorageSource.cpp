@@ -1772,17 +1772,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (stripped_prewhere_info)
         {
-            /// Like the format reader, the fallback keeps the columns that the format header lists.
-            auto prewhere_dag = stripped_prewhere_info->prewhere_actions.clone();
-            auto & prewhere_outputs = prewhere_dag.getOutputs();
-            for (const auto * input : prewhere_dag.getInputs())
-            {
-                if (read_from_format_info.format_header.has(input->result_name)
-                    && std::ranges::find(prewhere_outputs, input) == prewhere_outputs.end())
-                    prewhere_outputs.push_back(input);
-            }
-
-            auto prewhere_actions = std::make_shared<ExpressionActions>(std::move(prewhere_dag));
+            auto prewhere_actions = std::make_shared<ExpressionActions>(stripped_prewhere_info->prewhere_actions.clone());
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
                 return std::make_shared<FilterTransform>(
