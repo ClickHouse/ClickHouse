@@ -23,12 +23,6 @@ enum class ContainerType : uint8_t
     LARGE = 3
 };
 
-static inline ContainerType max(const ContainerType & lhs, const ContainerType & rhs)
-{
-    uint8_t res = std::max(static_cast<uint8_t>(lhs), static_cast<uint8_t>(rhs));
-    return static_cast<ContainerType>(res);
-}
-
 }
 
 /** For a small number of keys - an array of fixed size "on the stack".
@@ -204,27 +198,47 @@ public:
     void merge(const Self & rhs)
     {
         auto container_type = getContainerType();
-        auto max_container_type = details::max(container_type, rhs.getContainerType());
+        auto rhs_container_type = rhs.getContainerType();
 
-        if (container_type != max_container_type)
+        /// When rhs is in a bigger container, copy that container and insert our values into the copy:
+        /// we have fewer values than rhs, and copying a container is much cheaper than rebuilding it value by value
+        /// (or walking all buckets of `HyperLogLogCounter` one at a time). This is common, as merging into an empty state
+        /// happens in `-Merge`, `AggregatingSortedTransform` and squashing of aggregate function columns.
+        /// The set of values is the same, and `HyperLogLogCounter` does not depend on the order of insertion.
+        /// Only the moment when a full medium set is converted to `HyperLogLogCounter` depends on the order,
+        /// as it already does for the order of merges.
+        if (rhs_container_type == details::ContainerType::LARGE && container_type != details::ContainerType::LARGE)
         {
-            if (max_container_type == details::ContainerType::MEDIUM)
-                toMedium();
-            else if (max_container_type == details::ContainerType::LARGE)
-                toLarge();
+            toLarge(std::make_unique<Large>(rhs.getContainer<Large>()));
+            return;
         }
 
-        if (rhs.getContainerType() == details::ContainerType::SMALL)
+        if (rhs_container_type == details::ContainerType::MEDIUM && container_type == details::ContainerType::SMALL)
+        {
+            auto tmp_medium = std::make_unique<Medium>();
+            *tmp_medium = rhs.getContainer<Medium>();
+
+            medium = tmp_medium.release();
+            setContainerType(details::ContainerType::MEDIUM);
+
+            /// The small set is not shared with the medium container, so its values are still there.
+            for (const auto & x : small)
+                insert(x.getValue());
+            return;
+        }
+
+        /// Here our container is not smaller than the one of rhs.
+        if (rhs_container_type == details::ContainerType::SMALL)
         {
             for (const auto & x : rhs.small)
                 insert(x.getValue());
         }
-        else if (rhs.getContainerType() == details::ContainerType::MEDIUM)
+        else if (rhs_container_type == details::ContainerType::MEDIUM)
         {
             for (const auto & x : rhs.getContainer<Medium>())
                 insert(x.getValue());
         }
-        else if (rhs.getContainerType() == details::ContainerType::LARGE)
+        else if (rhs_container_type == details::ContainerType::LARGE)
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
 
@@ -277,14 +291,13 @@ private:
         setContainerType(details::ContainerType::MEDIUM);
     }
 
-    void toLarge()
+    /// Inserts our values into `tmp_large` (an empty counter by default) and switches to it.
+    void toLarge(std::unique_ptr<Large> tmp_large = std::make_unique<Large>())
     {
         auto container_type = getContainerType();
 
         if ((container_type != details::ContainerType::SMALL) && (container_type != details::ContainerType::MEDIUM))
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
-
-        auto tmp_large = std::make_unique<Large>();
 
         if (container_type == details::ContainerType::SMALL)
         {
