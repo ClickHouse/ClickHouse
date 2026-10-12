@@ -23,7 +23,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/ISink.h>
-#include <Processors/Merges/DistinctSortedTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Transforms/ExternalDistinctTransform.h>
@@ -112,7 +111,8 @@ struct ConnectedDistinct
     explicit ConnectedDistinct(TemporaryDataOnDiskScopePtr tmp_data, UInt64 limit_hint = 0, UInt64 threshold = default_spill_threshold)
         : transform(header, SizeLimits{}, limit_hint, Names{}, threshold,
             std::move(tmp_data), /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 2,
-            /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256, /*preserve_input_order_=*/ false)
+            /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256, /*preserve_input_order_=*/ false,
+            /*max_external_merge_fan_in_=*/ 2)
     {
         connect(upstream, transform.getInputs().front());
         connect(transform.getOutputs().front(), downstream);
@@ -131,25 +131,21 @@ struct ConnectedDistinct
         EXPECT_EQ(downstream.pull().getNumRows(), values.size());
     }
 
-    struct RunProcessors
-    {
-        BufferingToFileSink * sink = nullptr;
-        BufferingFromFileSource * source = nullptr;
-    };
-
-    RunProcessors attachRun()
+    BufferingToFileSink * attachRun()
     {
         auto update = transform.updatePipeline();
-        RunProcessors run;
-        for (const auto & processor : update.to_add)
-        {
-            if (auto * sink = typeid_cast<BufferingToFileSink *>(processor.get()))
-                run.sink = sink;
-            else if (auto * source = typeid_cast<BufferingFromFileSource *>(processor.get()))
-                run.source = source;
-        }
+        EXPECT_EQ(update.to_add.size(), 1);
+        auto * sink = typeid_cast<BufferingToFileSink *>(update.to_add.front().get());
         processors.splice(processors.end(), update.to_add);
-        return run;
+        return sink;
+    }
+
+    void completeRun()
+    {
+        auto update = transform.updatePipeline();
+        EXPECT_TRUE(update.to_add.empty());
+        for (const auto & processor : update.to_remove)
+            processors.remove(processor);
     }
 };
 
@@ -178,7 +174,10 @@ void readFirstSpillRun(ExternalDistinctTransform & transform, Blocks & blocks)
         else
             ASSERT_TRUE(status == IProcessor::Status::NeedData || status == IProcessor::Status::PortFull);
     }
-    auto reader = sink.getHolder().getReadStream();
+    /// The transform takes the finished file in its next pipeline update. Taking it here instead leaves
+    /// the run unregistered, so callers inspect the file and do not drive the transform further.
+    auto file = sink.releaseFile();
+    auto reader = file.getReadStream();
     for (auto block = reader->read(); !block.empty(); block = reader->read())
         blocks.push_back(std::move(block));
 }
@@ -229,17 +228,16 @@ TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpr
         connected.upstream.push(makeChunk({5, 7, 8, 9}));
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         downstream.setNotNeeded();
+
         /// Another operator consumes half the threshold. Its remaining budget cannot fit hashing
         /// and spill workspace, although current query memory is still below the threshold.
         std::ignore = CurrentMemoryTracker::alloc(ConnectedDistinct::default_spill_threshold / 2);
         SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(ConnectedDistinct::default_spill_threshold / 2));
         transform.work();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
-        auto suppression = connected.attachRun();
-        ASSERT_TRUE(suppression.sink);
-        ASSERT_TRUE(suppression.source);
-        auto & suppression_sink = *suppression.sink;
-        auto & suppression_source = *suppression.source;
+        auto * suppression = connected.attachRun();
+        ASSERT_TRUE(suppression);
+        auto & suppression_sink = *suppression;
         ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::Ready);
         suppression_sink.work();
         ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::NeedData);
@@ -257,18 +255,19 @@ TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpr
 
         ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
         ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::Ready);
-        EXPECT_EQ(suppression_source.prepare(), IProcessor::Status::NeedData);
         EXPECT_EQ(transform.prepare(), IProcessor::Status::NeedData);
 
         /// Finalizing the file releases the suppression dependency, even with output still blocked.
         suppression_sink.work();
         ASSERT_EQ(suppression_sink.prepare(), IProcessor::Status::Finished);
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+        connected.completeRun();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
-        EXPECT_TRUE(suppression_source.getCompletionPort().isFinished());
         transform.work();
         EXPECT_EQ(transform.prepare(), IProcessor::Status::PortFull);
 
         downstream.setNeeded();
+
         /// The chunk rejected before insertion remains available after suppression extraction.
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         transform.work();
@@ -277,7 +276,7 @@ TEST_F(ExternalDistinctTransformTest, SpillCompletionIsIndependentOfResultBackpr
     });
 }
 
-TEST_F(ExternalDistinctTransformTest, OrdinaryInputResumesBeforeFileCompletion)
+TEST_F(ExternalDistinctTransformTest, OrdinaryRunFinishesBeforeAcceptingMoreInput)
 {
     withQueryThread([&]
     {
@@ -287,15 +286,14 @@ TEST_F(ExternalDistinctTransformTest, OrdinaryInputResumesBeforeFileCompletion)
         connected.upstream.push(makeChunk({5, 7, 8, 9}));
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         transform.work();
+
         /// An empty set needs no suppression run. The rejected chunk starts the first ordinary run.
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         transform.work();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
-        auto input = connected.attachRun();
-        ASSERT_TRUE(input.sink);
-        ASSERT_TRUE(input.source);
-        auto & input_sink = *input.sink;
-        auto & input_source = *input.source;
+        auto * input = connected.attachRun();
+        ASSERT_TRUE(input);
+        auto & input_sink = *input;
         ASSERT_EQ(input_sink.prepare(), IProcessor::Status::Ready);
         input_sink.work();
         ASSERT_EQ(input_sink.prepare(), IProcessor::Status::NeedData);
@@ -308,15 +306,16 @@ TEST_F(ExternalDistinctTransformTest, OrdinaryInputResumesBeforeFileCompletion)
             ASSERT_EQ(input_sink.prepare(), IProcessor::Status::NeedData);
         }
 
-        /// Ordinary input resumes before its file finishes; only the reader waits for that sink.
+        /// Finalization releases writer buffers before the next run can accumulate input.
         EXPECT_EQ(transform.prepare(), IProcessor::Status::NeedData);
-        EXPECT_TRUE(connected.upstream.isNeeded());
-        EXPECT_FALSE(input_source.getCompletionPort().isFinished());
-        EXPECT_EQ(input_source.prepare(), IProcessor::Status::NeedData);
+        EXPECT_FALSE(connected.upstream.isNeeded());
         ASSERT_EQ(input_sink.prepare(), IProcessor::Status::Ready);
         input_sink.work();
         EXPECT_EQ(input_sink.prepare(), IProcessor::Status::Finished);
-        EXPECT_TRUE(input_source.getCompletionPort().isFinished());
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+        connected.completeRun();
+        EXPECT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        EXPECT_TRUE(connected.upstream.isNeeded());
     });
 }
 
@@ -366,15 +365,6 @@ TEST_F(ExternalDistinctTransformTest, DownstreamClosureTerminatesRunDependencies
                 EXPECT_TRUE(output.isFinished());
             for (const auto & input : transform.getInputs())
                 EXPECT_TRUE(input.isFinished());
-            if (connect_run)
-            {
-                auto merger = std::ranges::find_if(connected.processors, [](const auto & processor)
-                {
-                    return typeid_cast<DistinctSortedTransform *>(processor.get());
-                });
-                ASSERT_NE(merger, connected.processors.end());
-                EXPECT_EQ((*merger)->prepare(), IProcessor::Status::Finished);
-            }
         }
     });
 }
@@ -396,20 +386,20 @@ TEST_F(ExternalDistinctTransformTest, CompletionPortRejectsData)
         SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(ConnectedDistinct::default_spill_threshold));
         transform.work();
         ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
-        auto run = connected.attachRun();
-        ASSERT_TRUE(run.sink);
-        ASSERT_EQ(run.sink->prepare(), IProcessor::Status::Ready);
-        run.sink->work();
-        ASSERT_EQ(run.sink->prepare(), IProcessor::Status::NeedData);
+        auto * sink = connected.attachRun();
+        ASSERT_TRUE(sink);
+        ASSERT_EQ(sink->prepare(), IProcessor::Status::Ready);
+        sink->work();
+        ASSERT_EQ(sink->prepare(), IProcessor::Status::NeedData);
         ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
         transform.work();
-        ASSERT_EQ(run.sink->prepare(), IProcessor::Status::Ready);
-        run.sink->work();
-        ASSERT_EQ(run.sink->prepare(), IProcessor::Status::NeedData);
+        ASSERT_EQ(sink->prepare(), IProcessor::Status::Ready);
+        sink->work();
+        ASSERT_EQ(sink->prepare(), IProcessor::Status::NeedData);
         ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
 
         /// Completion is signaled by closing the port, never by sending a chunk with an empty header.
-        run.sink->getCompletionPort().push(Chunk{});
+        sink->getCompletionPort().push(Chunk{});
         try
         {
             transform.prepare();
@@ -445,7 +435,7 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation
         ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
             threshold, tmp_data, /*min_free_disk_space_=*/ 0,
             /*max_block_size_rows_=*/ 3, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
-            /*preserve_input_order_=*/ false);
+            /*preserve_input_order_=*/ false, /*max_external_merge_fan_in_=*/ 2);
         OutputPort upstream{header};
         InputPort downstream{header};
         connect(upstream, transform.getInputs().front());
@@ -501,12 +491,13 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacit
                 if (prepared.getColumns()[1] != payload)
                     materialization_bytes = prepared.getColumns()[1]->allocatedBytes();
             }
+
             /// The table needs no growth, but filtering would copy most of the wide payload.
             const UInt64 threshold = query.get() + materialization_bytes + filtering_bytes / 4 + 65536;
             ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
                 threshold, tmp_data, /*min_free_disk_space_=*/ 0,
                 /*max_block_size_rows_=*/ 2, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
-                /*preserve_input_order_=*/ false);
+                /*preserve_input_order_=*/ false, /*max_external_merge_fan_in_=*/ 2);
             OutputPort upstream{header};
             InputPort downstream{header};
             connect(upstream, transform.getInputs().front());
@@ -541,7 +532,8 @@ TEST_F(ExternalDistinctTransformTest, ReservesSuppressionMemoryAlongsideFiltered
         ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
             threshold, tmp_data, /*min_free_disk_space_=*/ 0,
             /*max_block_size_rows_=*/ 8, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
-            /*preserve_input_order_=*/ false);
+            /*preserve_input_order_=*/ false,
+            /*max_external_merge_fan_in_=*/ 0);
         OutputPort upstream{header};
         InputPort downstream{header};
         connect(upstream, transform.getInputs().front());
@@ -612,7 +604,8 @@ TEST_F(ExternalDistinctTransformTest, CheckedInsertionSpillsUnprocessedSuffix)
             auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
             constexpr UInt64 threshold = 256 << 20;
             auto transform = std::make_shared<ExternalDistinctTransform>(header, SizeLimits{}, /*limit_hint_=*/ 0,
-                Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256, ordered);
+                Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256, ordered,
+                /*max_external_merge_fan_in_=*/ 0);
             connect(source->getPort(), transform->getInputs().front());
             auto * output_port = &transform->getOutputs().front();
             auto processors = std::make_shared<Processors>();
@@ -681,7 +674,8 @@ TEST_F(ExternalDistinctTransformTest, OrderRestorationLimitsRowsAfterHashingPref
         constexpr UInt64 threshold = 256 << 20;
         auto transform = std::make_shared<ExternalDistinctTransform>(header, SizeLimits{}, limit_hint,
             Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256,
-            /*preserve_input_order_=*/ true);
+            /*preserve_input_order_=*/ true,
+            /*max_external_merge_fan_in_=*/ 0);
         connect(source->getPort(), transform->getInputs().front());
         auto * output_port = &transform->getOutputs().front();
         auto processors = std::make_shared<Processors>();
@@ -745,7 +739,8 @@ TEST_F(ExternalDistinctTransformTest, SpillFilesUseByteSizedBlocks)
             constexpr size_t hashing_threshold = 128 << 20;
             ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
                 suppression ? hashing_threshold : 1, tmp_data, /*min_free_disk_space_=*/ 0,
-                /*max_block_size_rows_=*/ rows, preferred_bytes, /*preserve_input_order_=*/ false);
+                /*max_block_size_rows_=*/ rows, preferred_bytes, /*preserve_input_order_=*/ false,
+                /*max_external_merge_fan_in_=*/ 0);
             OutputPort upstream{header};
             InputPort downstream{header};
             connect(upstream, transform.getInputs().front());
@@ -838,7 +833,8 @@ TEST_F(ExternalDistinctTransformTest, CoalescedInputKeepsFirstPayload)
             auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
             auto transform = std::make_shared<ExternalDistinctTransform>(
                 header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, threshold,
-                tmp_data, /*min_free_disk_space_=*/ 0, input_rows, /*preferred_block_bytes_=*/ 65536, ordered);
+                tmp_data, /*min_free_disk_space_=*/ 0, input_rows, /*preferred_block_bytes_=*/ 65536, ordered,
+                /*max_external_merge_fan_in_=*/ 0);
             connect(source->getPort(), transform->getInputs().front());
             auto * output_port = &transform->getOutputs().front();
             auto processors = std::make_shared<Processors>();
@@ -885,7 +881,8 @@ TEST_F(ExternalDistinctTransformTest, SuppressionSortingKeepsSortEquivalentKeys)
         constexpr size_t threshold = 64 << 20;
         ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{}, threshold,
             tmp_data, /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 1,
-            /*preferred_block_bytes_=*/ 65536, /*preserve_input_order_=*/ false);
+            /*preferred_block_bytes_=*/ 65536, /*preserve_input_order_=*/ false,
+            /*max_external_merge_fan_in_=*/ 0);
         OutputPort upstream{header};
         InputPort downstream{header};
         connect(upstream, transform.getInputs().front());
@@ -949,7 +946,8 @@ TEST_F(ExternalDistinctTransformTest, TailBudgetPreservesFirstPayloadAndOrder)
             constexpr Int64 threshold = 128 << 20;
             auto transform = std::make_shared<ExternalDistinctTransform>(
                 header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, threshold,
-                tmp_data, /*min_free_disk_space_=*/ 0, block_rows, /*preferred_block_bytes_=*/ 65536, ordered);
+                tmp_data, /*min_free_disk_space_=*/ 0, block_rows, /*preferred_block_bytes_=*/ 65536, ordered,
+                /*max_external_merge_fan_in_=*/ 0);
             auto sink = std::make_shared<CollectingSink>(header);
             connect(transform->getOutputs().front(), sink->getPort());
             auto processors = std::make_shared<Processors>();

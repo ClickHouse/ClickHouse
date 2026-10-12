@@ -129,6 +129,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
+/// Version 20 also adds `max_external_merge_fan_in` to the sorting, `DISTINCT` and join step settings.
+/// A peer below it would reject the name, so plans sent to such a peer omit the setting, and the peer
+/// merges its temporary files without a fan-in limit.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -212,6 +215,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// rejected: the peer aggregates without the heap and returns partial states for all its groups,
 /// which the initiator's merge, sort and limit handle correctly - the safe direction.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
+/// First global query-plan version that writes `max_external_merge_fan_in` in the step settings.
+/// Zero omits the setting and preserves unlimited merging. Nonzero values require a reader that
+/// knows the setting; older readers reject the unknown name before reading its value.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

@@ -1,0 +1,7 @@
+settings ok
+explicit_sort ok
+explicit_distinct ok
+explicit_distinct_ordered ok
+compatibility_sort ok
+compatibility_distinct ok
+compatibility_distinct_ordered ok

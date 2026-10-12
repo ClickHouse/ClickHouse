@@ -161,6 +161,7 @@ DiskSetBuilderImpl<Key>::DiskSetBuilderImpl(
         max_bytes_before_external_set,
         tmp_data,
         min_free_disk_space,
+        /*max_external_merge_fan_in=*/0,
         /*threshold_tracker=*/nullptr,
         MergeSorter::Mode::MergeUniqueChunks,
         ProfileEvents::ExternalSetMerge);
