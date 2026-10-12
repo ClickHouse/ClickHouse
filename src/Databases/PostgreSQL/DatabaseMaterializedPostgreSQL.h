@@ -36,7 +36,8 @@ public:
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info,
-        std::unique_ptr<MaterializedPostgreSQLSettings> settings_);
+        std::unique_ptr<MaterializedPostgreSQLSettings> settings_,
+        ASTPtr table_overrides_);
 
     String getEngineName() const override { return "MaterializedPostgreSQL"; }
 
@@ -48,6 +49,15 @@ public:
 
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
+    /// Name-only listing (`SHOW TABLES`). In coordinated mode it hides the tables that user-facing lookups do not
+    /// expose yet (see `isCoordinatedTableAvailable`), so a table appears in the listing only once this replica
+    /// has caught up with the initial snapshot.
+    std::vector<LightWeightTableDetails>
+    getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
+    /// Names for the "Maybe you meant ...?" hints. Hides the same tables as `getLightweightTablesIterator`.
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
 
     /// The iterator above exposes the nested ReplacingMergeTree tables; reading them requires the
     /// `StorageMaterializedPostgreSQL` wrapper. See `IDatabase::getTableForRead`.
@@ -70,6 +80,27 @@ public:
 
     void dropTable(ContextPtr local_context, const String & name, bool sync) override;
 
+    void renameTable(
+        ContextPtr local_context, const String & table_name, IDatabase & to_database,
+        const String & to_table_name, bool exchange, bool dictionary) override;
+
+    /// Fail-close for DROP DATABASE in coordinated mode: called before the generic DROP path removes any
+    /// nested table, it aborts the drop if Keeper is unreachable, so a Keeper outage can never delete the last
+    /// local copy of the data while the shared slot/publication/marker survive (a later recreate would then
+    /// resume into empty tables). The last-replica teardown itself still happens in `drop`.
+    void beforeDropDatabase(ContextPtr local_context) override;
+
+    /// Reject TRUNCATE DATABASE / TRUNCATE ALL TABLES FROM db in coordinated mode. The generic database-wide
+    /// truncate walks the nested Replicated/Shared tables through an internal context and drops/truncates each
+    /// one directly, bypassing the per-table `StorageMaterializedPostgreSQL` guards, which would locally wipe the
+    /// shared replicated data while the shared slot/publication/marker (and the live consumer) stay in place.
+    void beforeTruncateDatabase(ContextPtr local_context) override;
+
+    /// Recover a coordinated database when a DROP is refused after `beforeDropDatabase` had already stopped the
+    /// replication handler: if the subsequent nested-table drop throws, re-arm the retrying startup path so the
+    /// database resumes replicating instead of staying mounted but silently dead. Idempotent.
+    void onDropDatabaseFailed(ContextPtr local_context) override;
+
     void drop(ContextPtr local_context) override;
 
     bool hasReplicationThread() const override { return true; }
@@ -82,12 +113,60 @@ public:
 
     String getPostgreSQLDatabaseName() const { return remote_database_name; }
 
+    /// True when the database uses Keeper-coordinated HA (materialized_postgresql_keeper_path is set):
+    /// nested tables are Replicated/Shared and the replication slot is shared between replicas.
+    bool isCoordinated() const;
+
+    /// True once `startSynchronization` has published the wrappers and started (or rejoined) replication,
+    /// so the startup window of `StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently` is
+    /// over. Wrappers that are built outside `startSynchronization` - the per-query one of
+    /// `DatabaseCatalog::getTableImpl` and the on-the-fly ones of `tryGetTable` / `getTableForRead` -
+    /// must carry this state, otherwise the object `InterpreterDropQuery` actually sees would keep
+    /// refusing the supported `DETACH TABLE ... PERMANENTLY` with the transient startup-window error.
+    bool isReplicationReady() const { return synchronization_started.load(); }
+
+    /// Whether a user-facing lookup may expose the table, by the same rules as `tryGetTable`: in coordinated mode a
+    /// replicated table is available only once this replica has caught up with the initial snapshot (see
+    /// `PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable`), and no table is available in the startup
+    /// window. Used by the lookups that resolve the nested table by UUID (`DatabaseCatalog::getTableImpl`) and
+    /// wrap it themselves.
+    bool isCoordinatedTableAvailable(const String & table_name) const;
+
+    /// Whether user-facing lookups must consult `isCoordinatedTableAvailable` before exposing a table: always in
+    /// coordinated mode, and while the database recovers from a partially applied `DROP DATABASE`
+    /// (see `partial_drop_recovery_in_progress`).
+    bool isTableVisibilityGated() const;
+
+    Exception makeCoordinatedTableNotAvailableException(const String & table_name) const;
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
 private:
     void tryStartSynchronization();
     void startSynchronization();
+
+    /// Construct a replication handler from the persisted settings without fetching tables or starting
+    /// replication. Constructing it only resolves the coordination path / replica-name macros, which is enough to
+    /// run the coordinated teardown even before the background startup task has built the live handler.
+    std::shared_ptr<PostgreSQLReplicationHandler> makeReplicationHandler();
+
+    /// Recovery shared by `beforeDropDatabase`'s catch and `onDropDatabaseFailed`: if the refused drop had
+    /// already stopped the handler, discard it and clear `synchronization_started`; then re-arm the startup
+    /// task so replication is rebuilt. Must be called under `handler_mutex`.
+    void recoverAfterRefusedDrop(bool force_resnapshot = false);
+
+    /// A `DROP DATABASE` that was refused after it had already removed some of the nested tables leaves the
+    /// database in a state that only a create-style startup (or, for a user-managed replication slot, an
+    /// operator) can repair. The startup that performs the repair is asynchronous and can be interrupted by
+    /// a server restart, which rebuilds this object from its metadata and forgets `is_attach` /
+    /// `manual_repair_required`, so the decision is also recorded as a marker file in the database metadata
+    /// directory and re-applied on every startup until one of them succeeds.
+    String getPartialDropRecoveryMarkerPath() const;
+    void persistPartialDropRecoveryMarker();
+    void removePartialDropRecoveryMarker();
+    /// Must be called under `handler_mutex`.
+    void applyPartialDropRecoveryMode();
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 
@@ -97,6 +176,9 @@ private:
     String remote_database_name;
     postgres::ConnectionInfo connection_info;
     std::unique_ptr<MaterializedPostgreSQLSettings> settings;
+    /// The `TABLE OVERRIDE` list of the database definition (may be null). It shapes the DDL of the nested tables,
+    /// so in coordinated mode it is part of the naming fingerprint all replicas must agree on.
+    ASTPtr table_overrides;
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
 
@@ -112,6 +194,11 @@ private:
     /// When both mutexes are needed, `handler_mutex` is taken first.
     std::map<std::string, StoragePtr> materialized_tables TSA_GUARDED_BY(tables_mutex);
 
+    /// Set after the generic `DROP DATABASE` path successfully removes a nested table. A refused drop
+    /// needs a fresh snapshot only in this case; otherwise attach-style recovery preserves the still-live
+    /// publication and nested tables.
+    std::atomic_bool nested_table_removed_during_drop{false};
+
     /// Distinguishes the two states in which `materialized_tables` is empty. After `stopReplication`
     /// (server shutdown or `DROP DATABASE`) user-facing access legitimately falls back to the nested
     /// `ReplacingMergeTree` tables. But the map is also empty right after `CREATE` / `ATTACH DATABASE`
@@ -120,10 +207,51 @@ private:
     /// them directly (see `tryGetTable` and `getTableForRead`).
     bool replication_stopped TSA_GUARDED_BY(tables_mutex) = false;
 
+    /// A third state of an empty `materialized_tables`, besides the startup window and the stopped replication:
+    /// a refused `DROP DATABASE` has removed some of the nested tables. The surviving ones are stale - a
+    /// create-style startup clears and reloads them, and with a user-managed replication slot they stay stale
+    /// until the operator repairs the database - so user-facing lookups (`tryGetTable`, `getTableForRead`,
+    /// `SHOW TABLES`, the UUID lookup in `DatabaseCatalog`) fail closed instead of wrapping them on the fly.
+    /// Set by `applyPartialDropRecoveryMode` (and from the persisted marker on construction), cleared once
+    /// `startSynchronization` publishes a consistent set of wrappers.
+    bool partial_drop_recovery_in_progress TSA_GUARDED_BY(tables_mutex) = false;
+
     mutable std::mutex handler_mutex;
+    /// Whether `startSynchronization` completed successfully (guarded by `handler_mutex`). Makes the startup
+    /// task idempotent: it may be rescheduled after synchronization has already started (e.g. by a refused
+    /// fail-close DROP DATABASE restoring the task it had deactivated), and replacing a live handler would
+    /// leak its running consumer.
+    /// Atomic so that `isReplicationReady` can be read without `handler_mutex` (see its comment); every
+    /// write still happens under `handler_mutex`.
+    std::atomic_bool synchronization_started = false;
+
+    /// Set when a refused `DROP DATABASE` removed some of the nested tables of a database with a
+    /// user-managed `materialized_postgresql_replication_slot`, for which they cannot be reloaded
+    /// automatically (no snapshot can be exported from a slot this server does not manage, and the
+    /// original `materialized_postgresql_snapshot` token may already be invalid). `startSynchronization`
+    /// then refuses to resume replication instead of replicating the surviving subset of tables while
+    /// the slot advances past the changes of the removed ones. Guarded by `handler_mutex`.
+    bool manual_repair_required = false;
+
+    /// Set while the partial-drop recovery marker is still on disk after replication has been started
+    /// again. Removing the marker is the last step of the recovery, and it can fail on its own (a
+    /// transient metadata-disk error), so the failure must not be swallowed: it propagates to
+    /// `tryStartSynchronization`, which reschedules the startup task, and the rescheduled run retries
+    /// only the removal (replication is already running). Otherwise a leftover marker would silently
+    /// force a create-style startup - a full resnapshot - after every subsequent server restart.
+    /// Guarded by `handler_mutex`.
+    bool partial_drop_recovery_marker_removal_pending = false;
 
     BackgroundSchedulePoolTaskHolder startup_task;
     std::atomic<bool> shutdown_called = false;
+
+    /// Set by `beforeDropDatabase` and cleared by `onDropDatabaseFailed`. `DatabaseCatalog::detachDatabase`
+    /// calls `shutdown` before `drop`, and if `drop` then throws (e.g. the coordinated teardown in
+    /// `shutdownFinal` cannot reach Keeper), the catalog reattaches this very object. `shutdown_by_drop`
+    /// records that `shutdown_called` was set by such a drop rather than by the server shutdown, so that
+    /// `onDropDatabaseFailed` can undo it and rebuild replication instead of leaving the database empty.
+    std::atomic_bool drop_in_progress{false};
+    std::atomic_bool shutdown_by_drop{false};
 
     LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);
 };

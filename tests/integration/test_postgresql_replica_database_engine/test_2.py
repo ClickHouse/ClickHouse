@@ -593,6 +593,171 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     )
 
 
+def test_failed_attach_rolls_back_setting_and_table(started_cluster):
+    # A failed ATTACH TABLE must not leave the database claiming the table is attached. The persisted
+    # `materialized_postgresql_tables_list` is altered and the wrapper is published before
+    # `addTableToReplication` makes the attach durable, so on failure both are rolled back together
+    # with the already created nested table - otherwise SHOW TABLES and the persisted tables list
+    # would keep the table although it never joined the publication and nothing would replicate
+    # into it.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+        error = instance.query_and_get_error(
+            f"ATTACH TABLE test_database.{attached_table_name}"
+        )
+        assert "Injected failure while adding table" in error, error
+
+        # Nothing of the failed attach is left behind: neither the table itself...
+        assert (
+            attached_table_name
+            not in instance.query("SHOW TABLES FROM test_database").split()
+        )
+        # ...nor a mention in the persisted tables list.
+        assert attached_table_name not in instance.query(
+            "SHOW CREATE DATABASE test_database"
+        )
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+
+    # A retry after the failure starts from a clean state and succeeds.
+    instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+    check_tables_are_synchronized(instance, attached_table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{attached_table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, attached_table_name)
+    assert attached_table_name in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
+def test_failed_attach_with_failed_cleanup_keeps_table_attached(started_cluster):
+    # When the cleanup of a failed ATTACH TABLE cannot drop the nested table it created (a disk error, or
+    # Keeper disappearing while a replicated nested table removes its metadata), the visible state must NOT
+    # be rolled back: a rolled-back attach plus a surviving nested table is unrecoverable, because the table
+    # is invisible while every retry of the ATTACH collides with it. Instead the attach stays visible, so the
+    # wrapper, the persisted tables list and the nested table keep describing the same table, and
+    # DETACH TABLE ... PERMANENTLY can remove it (it tolerates a table that never reached the publication),
+    # after which the ATTACH can be retried.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_drop_on_attach"
+        )
+        error = instance.query_and_get_error(
+            f"ATTACH TABLE test_database.{attached_table_name}"
+        )
+        assert "Injected failure while adding table" in error, error
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_drop_on_attach"
+        )
+
+    # The attach stayed visible: both the table and its entry in the persisted tables list.
+    assert (
+        attached_table_name in instance.query("SHOW TABLES FROM test_database").split()
+    )
+    assert attached_table_name in instance.query("SHOW CREATE DATABASE test_database")
+
+    # The already replicating table is unaffected.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(100, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    # And the state is recoverable: the table can be detached from replication and attached again.
+    instance.query(f"DETACH TABLE test_database.{attached_table_name} PERMANENTLY")
+    assert (
+        attached_table_name
+        not in instance.query("SHOW TABLES FROM test_database").split()
+    )
+    assert attached_table_name not in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+    check_tables_are_synchronized(instance, attached_table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{attached_table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, attached_table_name)
+
+    pg_manager.drop_materialized_db()
+
+
+def test_attached_table_can_be_detached_permanently(started_cluster):
+    # A table added by ATTACH TABLE gets a freshly built wrapper, which never went through
+    # `startSynchronization`. It must still be marked as belonging to a database whose replication has
+    # started, or the startup-window guard of `checkTableCanBeDetachedPermanently` refuses every later
+    # DETACH TABLE ... PERMANENTLY of it, and the supported attach/detach round trip is broken.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+    instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+    check_tables_are_synchronized(instance, attached_table_name)
+
+    # Without a server restart in between: the wrapper published by the attach is the one being checked.
+    instance.query(f"DETACH TABLE test_database.{attached_table_name} PERMANENTLY")
+    assert (
+        attached_table_name
+        not in instance.query("SHOW TABLES FROM test_database").split()
+    )
+    assert attached_table_name not in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    # The rest of the database keeps replicating.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(100, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
