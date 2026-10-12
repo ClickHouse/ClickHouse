@@ -362,7 +362,8 @@ bool isIPv6ExtensionHeader(UInt8 header)
 /// the chain, or the value from the fixed header when there is no chain. `libtins` strips the
 /// `next header` byte of every extension header it parses and exposes only the one from the
 /// fixed header, so the chain is walked over the raw bytes of the frame. When the snapshot length
-/// cuts the chain, the type of the last extension header that is still known is returned.
+/// cuts the chain, the type of the last extension header that is still known is returned: the walk
+/// stops at the first extension header that was not captured completely.
 template <typename OnExtensionHeader>
 UInt8 walkIPv6ExtensionHeaders(
     const Tins::IPv6 & ipv6, const unsigned char * frame, size_t frame_size, size_t ipv6_offset, OnExtensionHeader && on_extension_header)
@@ -388,6 +389,12 @@ UInt8 walkIPv6ExtensionHeaders(
             header_length = (static_cast<size_t>(length_field) + 2) * 4; /// In 4-byte units, minus 2.
         else
             header_length = (static_cast<size_t>(length_field) + 1) * 8; /// In 8-byte units, not including the first 8.
+
+        /// A header cut by the snapshot length is the last one that is known: what it points to
+        /// was not captured, and taking its `next header` byte would report a transport protocol
+        /// whose bytes are not there.
+        if (pos + header_length > frame_size)
+            break;
 
         pos += header_length;
         next = following;

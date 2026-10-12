@@ -136,6 +136,15 @@ SNAPLEN = 34
 truncated = [(packet[:SNAPLEN], len(packet)) for packet in packets[:3]]
 write_pcap(out_dir / "truncated.pcap", truncated, snaplen=SNAPLEN)
 
+# The IPv6 packet with the Hop-by-Hop and Routing chain before TCP, cut by the
+# snapshot length inside the Hop-by-Hop header, inside the Routing header (after
+# its `next header` byte), and inside the TCP header. `ip_protocol` is the last
+# extension header captured completely or, after a complete chain, `TCP`.
+chain = ethernet(ipv6(0, hop_by_hop_then_routing + tcp), ether_type=0x86DD)
+chain_start = 14 + 40
+truncated_chain = [(chain[:chain_start + cut], len(chain)) for cut in (4, 8 + 4, 16 + 4)]
+write_pcap(out_dir / "truncated_ipv6.pcap", truncated_chain, snaplen=chain_start + 16 + 4)
+
 # A short Ethernet frame: UDP with a 4-byte payload is 46 bytes, so the sender
 # pads it to the 60-byte minimum. The padding is past the IP length and is not
 # part of `payload`, so `payload` is not a suffix of `raw` here.

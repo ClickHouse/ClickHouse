@@ -131,8 +131,14 @@ SELECT number, capture_length, original_length, protocols, ip_protocol, length(r
 FROM file('$DATA_DIR/truncated.pcap', PCAP)
 ORDER BY number FORMAT TSV"
 
+echo "--- truncated IPv6 extension-header chain: ip_protocol stops at the cut header ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, capture_length, original_length, protocols, ip_protocol, src_port
+FROM file('$DATA_DIR/truncated_ipv6.pcap', PCAP)
+ORDER BY number FORMAT TSV"
+
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap packets.pcapng truncated.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap sll2.pcap dot3.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap truncated_ipv6.pcap raw_ip.pcap ipv4.pcap ipv6.pcap null.pcap sll.pcap sll2.pcap dot3.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
