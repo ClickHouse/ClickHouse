@@ -577,6 +577,7 @@ struct NameReinterpretAsInt32       { static constexpr auto name = "reinterpretA
 struct NameReinterpretAsInt64       { static constexpr auto name = "reinterpretAsInt64"; };
 struct NameReinterpretAsInt128      { static constexpr auto name = "reinterpretAsInt128"; };
 struct NameReinterpretAsInt256      { static constexpr auto name = "reinterpretAsInt256"; };
+struct NameReinterpretAsBFloat16    { static constexpr auto name = "reinterpretAsBFloat16"; };
 struct NameReinterpretAsFloat32     { static constexpr auto name = "reinterpretAsFloat32"; };
 struct NameReinterpretAsFloat64     { static constexpr auto name = "reinterpretAsFloat64"; };
 struct NameReinterpretAsDate        { static constexpr auto name = "reinterpretAsDate"; };
@@ -597,6 +598,7 @@ using FunctionReinterpretAsInt32 = FunctionReinterpretAs<DataTypeInt32, NameRein
 using FunctionReinterpretAsInt64 = FunctionReinterpretAs<DataTypeInt64, NameReinterpretAsInt64>;
 using FunctionReinterpretAsInt128 = FunctionReinterpretAs<DataTypeInt128, NameReinterpretAsInt128>;
 using FunctionReinterpretAsInt256 = FunctionReinterpretAs<DataTypeInt256, NameReinterpretAsInt256>;
+using FunctionReinterpretAsBFloat16 = FunctionReinterpretAs<DataTypeBFloat16, NameReinterpretAsBFloat16>;
 using FunctionReinterpretAsFloat32 = FunctionReinterpretAs<DataTypeFloat32, NameReinterpretAsFloat32>;
 using FunctionReinterpretAsFloat64 = FunctionReinterpretAs<DataTypeFloat64, NameReinterpretAsFloat64>;
 using FunctionReinterpretAsDate = FunctionReinterpretAs<DataTypeDate, NameReinterpretAsDate>;
@@ -1050,6 +1052,34 @@ SELECT reinterpretAsUInt64(toFloat64(0.2)) AS x, reinterpretAsFloat64(x)
     FunctionDocumentation documentation_reinterpretAsFloat64 = {description_reinterpretAsFloat64, syntax_reinterpretAsFloat64, arguments_reinterpretAsFloat64, {}, returned_value_reinterpretAsFloat64, examples_reinterpretAsFloat64, introduced_in_reinterpretAsFloat64, category_reinterpretAsFloat64};
 
     factory.registerFunction<FunctionReinterpretAsFloat64>(documentation_reinterpretAsFloat64);
+
+    FunctionDocumentation::Description description_reinterpretAsBFloat16 = R"(
+Reinterprets the input value as a value of type BFloat16.
+Unlike [`CAST`](#CAST), the function does not attempt to preserve the original value - if the target type is not able to represent the input type, the output is undefined.
+    )";
+    FunctionDocumentation::Syntax syntax_reinterpretAsBFloat16 = "reinterpretAsBFloat16(x)";
+    FunctionDocumentation::Arguments arguments_reinterpretAsBFloat16 = {
+        {"x", "Value to reinterpret as BFloat16.", {"(U)Int*", "Float*", "Date", "DateTime", "UUID", "String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_reinterpretAsBFloat16 = {"Returns the reinterpreted value `x`.", {"BFloat16"}};
+    FunctionDocumentation::Examples examples_reinterpretAsBFloat16 = {
+    {
+        "Usage example",
+        R"(
+SELECT reinterpretAsBFloat16(reverse(unhex('3F80'))) AS x
+        )",
+        R"(
+┌─x─┐
+│ 1 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_reinterpretAsBFloat16 = {26, 8};
+    FunctionDocumentation::Category category_reinterpretAsBFloat16 = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation_reinterpretAsBFloat16 = {description_reinterpretAsBFloat16, syntax_reinterpretAsBFloat16, arguments_reinterpretAsBFloat16, {}, returned_value_reinterpretAsBFloat16, examples_reinterpretAsBFloat16, introduced_in_reinterpretAsBFloat16, category_reinterpretAsBFloat16};
+
+    factory.registerFunction<FunctionReinterpretAsBFloat16>(documentation_reinterpretAsBFloat16);
 
     FunctionDocumentation::Description description_reinterpretAsDate = R"(
 Reinterprets the input value as a Date value (assuming little endian order) which is the number of days since the beginning of the Unix epoch 1970-01-01

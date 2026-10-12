@@ -1376,3 +1376,48 @@ def test_except_data_from_table_on_cluster():
     assert node1.query("SELECT count() FROM tbl") == "0\n"
     assert node2.query("SELECT count() FROM tbl") == "0\n"
     assert node3.query("SELECT count() FROM tbl") == "0\n"
+
+
+def test_reset_setting_is_not_forwarded_as_a_value():
+    # A `name = DEFAULT` in the SETTINGS clause resets the setting on the initiator, which leaves it unset
+    # there. The other hosts must end the same way: the reset must reach them neither as an explicit value
+    # (which marks the setting as changed, and then e.g. object-storage code overrides the host's own `<s3>`
+    # configuration with it) nor with the override it cancels.
+    node1.query(
+        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
+        "x UInt8, y String"
+        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
+        "ORDER BY x"
+    )
+    node1.query("INSERT INTO tbl VALUES (1, 'a')")
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+
+    backup_name = new_backup_name()
+    reset_clause = "max_threads = 3, max_threads = DEFAULT"
+
+    # `max_threads` is also set for the whole query, so the reset in the clause has something to cancel on
+    # the initiator besides the override in the clause itself.
+    node1.query(
+        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS {reset_clause}",
+        settings={"max_threads": 7},
+    )
+
+    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node1.query(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SETTINGS {reset_clause}",
+        settings={"max_threads": 7},
+    )
+    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
+    assert node2.query("SELECT * FROM tbl") == TSV([[1, "a"]])
+
+    # The per-host queries, the ones received from the initiator, are the non-initial ones.
+    escaped_backup_name = backup_name.replace("'", "\\'")
+    for node in [node1, node2]:
+        node.query("SYSTEM FLUSH LOGS query_log")
+        assert node.query(f"""
+            SELECT query_kind, mapContains(Settings, 'max_threads')
+            FROM system.query_log
+            WHERE type = 'QueryFinish' AND NOT is_initial_query
+                AND query_kind IN ('Backup', 'Restore') AND position(query, '{escaped_backup_name}') > 0
+            ORDER BY query_kind
+            """) == TSV([["Backup", 0], ["Restore", 0]])
