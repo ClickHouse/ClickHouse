@@ -31,6 +31,7 @@ namespace DB
 
 namespace FailPoints
 {
+extern const char version_metadata_store_creation_csn_fail[];
     extern const char transaction_slow_resolve_removal_csn[];
 }
 
@@ -43,6 +44,7 @@ extern const int SERIALIZATION_ERROR;
 extern const int STALE_VERSION;
 extern const int CORRUPTED_DATA;
 extern const int NO_SUCH_DATA_PART;
+extern const int CANNOT_WRITE_TO_FILE;
 }
 
 VersionMetadata::VersionMetadata(String part_name_, const IStorage * storage_)
@@ -155,6 +157,11 @@ void VersionMetadata::setAndStoreRemovalCSN(CSN csn)
 void VersionMetadata::setAndStoreCreationCSN(CSN csn)
 {
     LOG_DEBUG(log, "Object {}, setAndStoreCreationCSN {}", getObjectName(), csn);
+
+    fiu_do_on(FailPoints::version_metadata_store_creation_csn_fail,
+    {
+        throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE, "Injected failure of the creation_csn store of {}", getObjectName());
+    });
 
     auto update_function = [csn](VersionInfo & info)
     {
