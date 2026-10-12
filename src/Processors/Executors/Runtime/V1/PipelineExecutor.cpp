@@ -449,6 +449,20 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 break;
             }
 
+            if (pool && cpu_slots->hasGrantedSlots() && tasks.hasTasksForNewThread() && spawn_mutex.try_lock())
+            {
+                try
+                {
+                    std::lock_guard lock(spawn_mutex, std::adopt_lock);
+                    spawnThreads({});
+                }
+                catch (...)
+                {
+                    cancel(IProcessor::CancelReason::Exception);
+                    throw;
+                }
+            }
+
             /// Preemption and downscaling.
             if (resources.isCPULeaseRenewNeeded()) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
             {

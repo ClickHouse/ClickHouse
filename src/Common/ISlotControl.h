@@ -87,6 +87,8 @@ public:
     /// Take one already granted slot if available.
     [[nodiscard]] virtual AcquiredSlotPtr tryAcquire() = 0;
 
+    virtual bool hasGrantedSlots() const = 0;
+
     /// Take one granted slot or wait until it is available.
     [[nodiscard]] virtual AcquiredSlotPtr acquire() = 0;
 
@@ -151,6 +153,8 @@ public:
         chassert(result);
         return result;
     }
+
+    bool hasGrantedSlots() const override { return false; }
 
 private:
     const SlotCount total; // thread-safe constant total number of slots
