@@ -19,6 +19,16 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Interpreters/PreparedSets.h>
+#include <DataTypes/DataTypeFunction.h>
+#include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -59,6 +69,87 @@ IStorageCluster::IStorageCluster(
 {
 }
 
+namespace
+{
+
+ASTPtr filterNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<String, ASTPtr> & read_columns)
+{
+    switch (node.type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        {
+            auto it = read_columns.find(node.result_name);
+            if (it == read_columns.end())
+                return nullptr;
+            auto expression = it->second->clone();
+            if (auto * with_alias = dynamic_cast<ASTWithAlias *>(expression.get()))
+                with_alias->setAlias("");
+            return expression;
+        }
+        case ActionsDAG::ActionType::COLUMN:
+        {
+            if (!node.column || !node.is_deterministic_constant || node.is_runtime_filter_id || node.is_masked_secret)
+                return nullptr;
+            if (typeid_cast<const DataTypeFunction *>(node.result_type.get()))
+                return nullptr;
+            if (const auto * column_set = checkAndGetColumn<ColumnSet>(&node.column->getDataColumn()))
+            {
+                const auto * tuple_set = dynamic_cast<const FutureSetFromTuple *>(column_set->getData().get());
+                if (!tuple_set || !tuple_set->getSourceAST() || tuple_set->getInputRowCount() > 100000)
+                    return nullptr;
+                return tuple_set->getSourceAST()->clone();
+            }
+            return makeASTFunction("_CAST", make_intrusive<ASTLiteral>(node.column->getField()), make_intrusive<ASTLiteral>(node.result_type->getName()));
+        }
+        case ActionsDAG::ActionType::ALIAS:
+            return filterNodeToAST(*node.children.at(0), read_columns);
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            if (!node.function_base || !node.function_base->isDeterministic() || node.function_base->getName().starts_with("__")
+                || !FunctionFactory::instance().hasNameOrAlias(node.function_base->getName()))
+                return nullptr;
+            auto function = makeASTFunction(node.function_base->getName());
+            for (const auto * child : node.children)
+            {
+                auto argument = filterNodeToAST(*child, read_columns);
+                if (!argument)
+                    return nullptr;
+                function->arguments->children.push_back(std::move(argument));
+            }
+            return function;
+        }
+        default:
+            return nullptr;
+    }
+}
+
+ASTPtr filterToAST(const ActionsDAG::Node & predicate, const std::unordered_map<String, ASTPtr> & read_columns)
+{
+    std::vector<const ActionsDAG::Node *> conjuncts;
+    const auto * root = &predicate;
+    while (root->type == ActionsDAG::ActionType::ALIAS)
+        root = root->children.at(0);
+    if (root->type == ActionsDAG::ActionType::FUNCTION && root->function_base && root->function_base->getName() == "and")
+        conjuncts.assign(root->children.begin(), root->children.end());
+    else
+        conjuncts.push_back(root);
+
+    ASTs translated;
+    for (const auto * conjunct : conjuncts)
+        if (auto ast = filterNodeToAST(*conjunct, read_columns))
+            translated.push_back(std::move(ast));
+
+    if (translated.empty())
+        return nullptr;
+    if (translated.size() == 1)
+        return translated.front();
+    auto result = makeASTFunction("and");
+    result->arguments->children = std::move(translated);
+    return result;
+}
+
+}
+
 void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
@@ -67,6 +158,32 @@ void ReadFromCluster::applyFilters(ActionDAGNodes added_filter_nodes)
     const ActionsDAG * filter = filter_actions_dag ? filter_actions_dag.get() : query_info.filter_actions_dag.get();
     if (filter)
         predicate = filter->getOutputs().at(0);
+
+    if (filter_actions_dag && !filter_actions_dag->getOutputs().empty())
+    {
+        if (!query_to_send_without_filter)
+            query_to_send_without_filter = query_to_send->clone();
+
+        auto query = query_to_send_without_filter->clone();
+        auto * select = query->as<ASTSelectQuery>();
+        const auto & header_columns = getOutputHeader()->getColumnsWithTypeAndName();
+        std::unordered_map<String, ASTPtr> read_columns;
+        if (select && select->select() && select->select()->children.size() == header_columns.size())
+            for (size_t i = 0; i < header_columns.size(); ++i)
+            {
+                const auto & expression = select->select()->children[i];
+                read_columns.emplace(header_columns[i].name, expression);
+                read_columns.emplace(expression->getAliasOrColumnName(), expression);
+            }
+
+        if (auto where = read_columns.empty() ? nullptr : filterToAST(*filter_actions_dag->getOutputs().at(0), read_columns))
+        {
+            if (auto existing = select->where())
+                where = makeASTFunction("and", existing->clone(), where);
+            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
+            query_to_send = std::move(query);
+        }
+    }
 
     createExtension(predicate);
 }
