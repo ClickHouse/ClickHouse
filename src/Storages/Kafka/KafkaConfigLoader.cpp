@@ -10,7 +10,6 @@
 #include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <Common/HiddenSecret.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -467,8 +466,7 @@ void updateConfigurationFromConfig(
     }
 
 #if USE_KRB5
-    static const String default_kinit_cmd = cppkafka::Configuration{}.get("sasl.kerberos.kinit.cmd");
-    if (kafka_config.get("sasl.kerberos.kinit.cmd") != default_kinit_cmd)
+    if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
         LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
 
     kafka_config.set("sasl.kerberos.kinit.cmd", "");
@@ -580,7 +578,7 @@ void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr &
 {
     for (const auto & property : conf.get_all())
         LOG_TRACE(log, "{} set property {}:{}", client_type, property.first,
-            isSensitiveProperty(property.first) ? HIDDEN_SECRET : std::string_view(property.second));
+            isSensitiveProperty(property.first) ? "[HIDDEN]" : property.second);
 }
 
 }

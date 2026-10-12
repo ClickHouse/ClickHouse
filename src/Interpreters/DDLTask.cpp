@@ -29,10 +29,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
-
 
 namespace DB
 {
@@ -108,7 +104,7 @@ void DDLLogEntry::assertVersion() const
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not change the entry format, it uses versioin 2, so there shouldn't be such version
     || version == NORMALIZE_CREATE_ON_INITIATOR_VERSION
     || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}. "
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}."
                                                             "Maximum supported version is {}", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 }
 
@@ -116,7 +112,7 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
     version = context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
     if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}. "
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
                                                             "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
 
     parent_table_uuid = context->getParentTable();
@@ -128,30 +124,7 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         version = SETTINGS_IN_ZK_VERSION;
 
     if (version >= SETTINGS_IN_ZK_VERSION)
-    {
         settings.emplace(context->getSettingsRef().changes());
-
-        /// These settings are interpreted only at the initiator: they shape the final query
-        /// (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`, `additional_result_filter`),
-        /// shape how data is parsed from / serialised to the client (`format`, `input_format`,
-        /// `output_format`, `default_format`, `compression`), select the initiator's default database
-        /// (`database`, the equivalent of `USE`), or drive the HTTP query-construction / path routing on
-        /// the initiator only (`http_allow_database_as_path`, `http_allow_table_as_file`,
-        /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`,
-        /// `implicit_table_at_top_level`). Forwarding them to the hosts that pick up this DDL entry is at
-        /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
-        /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
-        /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
-        /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. Strip them here,
-        /// mirroring `ClusterProxy::stripInitiatorOnlySettings`.
-        static constexpr std::array initiator_only_settings = {
-            "database", "select", "order", "sort", "filter", "additional_result_filter",
-            "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
-            "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
-        for (const auto * name : initiator_only_settings)
-            settings->removeSetting(name);
-    }
 }
 
 String DDLLogEntry::toString() const
@@ -334,18 +307,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
-    if (submitting_user_context)
-    {
-        /// Give the query the access rights of the submitting session, as `AsynchronousInsertQueue` does. The current roles
-        /// include the external roles, which are not granted locally, so set the current roles without the grant check.
-        query_context->setUser(
-            *submitting_user_context->getUserID(),
-            submitting_user_context->getExternalRoles(),
-            submitting_user_context->getAuthenticationGrants(),
-            submitting_user_context->getAuthenticationValidUntil());
-        query_context->setCurrentRoles(submitting_user_context->getCurrentRoles(), /* check_grants = */ false);
-    }
-    else if (preserve_user && !entry.initiator_user.empty())
+    if (preserve_user && !entry.initiator_user.empty())
     {
         const auto & access_control = from_context->getAccessControl();
 
@@ -817,18 +779,6 @@ void ZooKeeperMetadataTransaction::commit()
     }
 }
 
-bool isSecondaryDDLReplay(const ContextPtr & context)
-{
-    const auto txn = context->getZooKeeperMetadataTransaction();
-    if (txn && !txn->isInitialQuery())
-        return true;
-#if CLICKHOUSE_CLOUD
-    return context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context);
-#else
-    return false;
-#endif
-}
-
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
     String name = cluster_name;
@@ -838,9 +788,6 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
         name = name.substr(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
         all_groups = true;
     }
-
-    if (name.empty())
-        return {};
 
     if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
     {

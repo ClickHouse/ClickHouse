@@ -3,7 +3,6 @@
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ZstdContext.h>
 
 #include <zstd.h>
 
@@ -24,10 +23,12 @@ public:
         size_t alignment = 0,
         int zstd_window_log_max = 0);
 
+    ~ZstdInflatingReadBuffer() override;
+
 private:
     bool nextImpl() override;
 
-    ZstdDCtxPtr dctx;
+    ZSTD_DCtx * dctx;
     ZSTD_inBuffer input{};
     ZSTD_outBuffer output{};
     bool eof_flag = false;

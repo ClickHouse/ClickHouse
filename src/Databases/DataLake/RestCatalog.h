@@ -7,7 +7,6 @@
 #include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
-#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
 #include <unordered_set>
@@ -21,8 +20,18 @@ class ReadBuffer;
 namespace DataLake
 {
 
-/// Parses "Name: value" into a header entry.
-DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
+struct AccessToken
+{
+    std::string token;
+    std::optional<std::chrono::system_clock::time_point> expires_at;
+
+    bool isExpired() const
+    {
+        if (!expires_at.has_value())
+            return false;
+        return std::chrono::system_clock::now() >= expires_at.value();
+    }
+};
 
 class RestCatalog : public ICatalog, public DB::WithContext
 {
@@ -65,15 +74,6 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
 
-    /// Inherited by every catalog based on the Iceberg REST protocol.
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
-
-    std::optional<std::string> getDefaultTableLocation(
-        const std::string & namespace_name,
-        const std::string & table_name) const override;
-
-    bool assignsLocationToNewNamespaces() const override { return true; }
-
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
@@ -85,22 +85,11 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
-    Poco::JSON::Object::Ptr removeSnapshots(
-        const String & namespace_name,
-        const String & table_name,
-        Poco::JSON::Object::Ptr base_metadata,
-        const std::vector<Int64> & snapshot_ids,
-        const std::vector<String> & ref_names) const override;
-
     bool isTransactional() const override { return true; }
 
-    /// The Iceberg REST spec makes the server write the metadata file on create.
-    bool writesInitialMetadata() const override { return true; }
+    void dropTable(const String & namespace_name, const String & table_name) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
-
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
-        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
     struct Config
     {
@@ -124,7 +113,6 @@ public:
         std::string client_secret;
         std::string tenant_id;
         std::string bearer_token;
-        std::string refresh_token;
         Config config;
     };
     using CatalogStateVersion = MultiVersion<CatalogState>::Version;
@@ -155,9 +143,7 @@ protected:
         bool flat_namespaces_,
         DB::ContextPtr context_);
 
-    void createNamespaceIfNotExists(const String & namespace_name) const override;
-
-    std::optional<std::string> getNamespaceLocation(const std::string & namespace_name) const;
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
 
     const std::filesystem::path base_url;
     const LoggerPtr log;
@@ -176,14 +162,12 @@ protected:
 
     /// `catalog_state` is the snapshot the caller derived the endpoint from, so that one
     /// request never mixes the endpoint of one state version with the auth of another.
-    /// Virtual so `S3TablesCatalog` can override the network primitive for SigV4 signing;
-    /// default arguments are therefore omitted (clang-tidy `google-default-arguments`).
-    virtual DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
+    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const CatalogState & catalog_state,
         const std::string & endpoint,
-        const Poco::URI::QueryParameters & params,
-        const DB::HTTPHeaderEntries & headers,
-        const std::optional<DB::HTTPHeaderEntries> & auth_headers) const;
+        const Poco::URI::QueryParameters & params = {},
+        const DB::HTTPHeaderEntries & headers = {},
+        const std::optional<DB::HTTPHeaderEntries> & auth_headers = std::nullopt) const;
 
     Poco::URI::QueryParameters createParentNamespaceParams(const std::string & base_namespace) const;
 
@@ -197,9 +181,9 @@ protected:
         ExecuteFunc func) const;
 
     /// Whether this catalog has flat (single-level) namespaces, either because its type is always flat
-    /// (BigLake, Databricks Delta Sharing, S3 Tables) or because of the `flat_namespaces` database
-    /// setting. Such catalogs are never asked for sub-namespaces (see `getNamespacesRecursive`): they
-    /// either echo the parent back for any `parent` (which would recurse without bound) or reject it.
+    /// (BigLake, Databricks Delta Sharing) or because of the `flat_namespaces` database setting. Such
+    /// catalogs are never asked for sub-namespaces (see `getNamespacesRecursive`): they either echo the
+    /// parent back for any `parent` (which would recurse without bound) or reject it.
     bool hasFlatNamespaces() const;
 
     /// List the immediate child namespaces directly under `base_namespace`
@@ -228,13 +212,12 @@ protected:
     void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
-    /// Returns the body of the response, empty with `ignore_result`.
-    virtual String sendRequest(
+    void sendRequest(
         const CatalogState & catalog_state,
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
-        const String & method,
-        bool ignore_result) const;
+        const String & method = Poco::Net::HTTPRequest::HTTP_POST,
+        bool ignore_result = false) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 
@@ -258,25 +241,6 @@ protected:
 class OneLakeCatalog : public RestCatalog
 {
 public:
-    /// The authentication mode, fixed when the database is created:
-    /// exactly one of `onelake_bearer_token`, `onelake_refresh_token` (+ client id)
-    /// or the `onelake_client_id` + `onelake_client_secret` pair is provided.
-    enum class AuthMode
-    {
-        BearerToken,
-        RefreshToken,
-        ClientCredentials,
-    };
-
-    static AuthMode getAuthMode(const std::string & bearer_token, const std::string & refresh_token)
-    {
-        if (!bearer_token.empty())
-            return AuthMode::BearerToken;
-        if (!refresh_token.empty())
-            return AuthMode::RefreshToken;
-        return AuthMode::ClientCredentials;
-    }
-
     explicit OneLakeCatalog(
         const std::string & warehouse_,
         const std::string & base_url_,
@@ -284,7 +248,6 @@ public:
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
         const std::string & bearer_token_,
-        const std::string & refresh_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
@@ -296,17 +259,12 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE;
     }
 
-    std::optional<std::string> getDefaultTableLocation(
-        const std::string & namespace_name,
-        const std::string & table_name) const override;
-
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 
-    static void validateSettingsChanges(const DB::SettingsChanges & changes, AuthMode auth_mode);
-
-    /// A currently valid access token together with its expiration time, for object storage
-    /// access in refresh-token mode. Renews the token transparently when it is expired.
-    std::pair<std::string, std::chrono::system_clock::time_point> getCurrentAccessToken() const;
+    /// `bearer_mode` means the catalog authenticates with `onelake_bearer_token`,
+    /// otherwise with the `onelake_client_id` + `onelake_client_secret` pair.
+    /// The mode is fixed when the database is created.
+    static void validateSettingsChanges(const DB::SettingsChanges & changes, bool bearer_mode);
 
 protected:
     void applySettingsChangesToState(
@@ -315,15 +273,6 @@ protected:
         CatalogState & new_state,
         std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
         std::unique_ptr<AccessToken> & new_access_token) override;
-
-private:
-    /// Cached access token for refresh-token mode; renews it via the refresh token grant
-    /// when it is missing, expired, or `force_update` is set.
-    AccessToken getValidAccessToken(const CatalogState & catalog_state, bool force_update) const;
-
-    /// Redeems the refresh token from `catalog_state` for an access token
-    /// (`grant_type=refresh_token` against the Entra ID token endpoint).
-    AccessToken retrieveAccessTokenViaRefreshToken(const CatalogState & catalog_state) const;
 };
 
 class BigLakeCatalog : public RestCatalog
@@ -383,50 +332,6 @@ public:
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
     }
-};
-
-/// Snowflake Horizon Catalog embeds Apache Polaris and exposes the Iceberg REST API at
-/// `https://<account>.snowflakecomputing.com/polaris/api/catalog`.
-///
-/// Horizon auth differs from Open Catalog / self-hosted Polaris in two ways:
-/// 1. Programmatic Access Tokens (PAT) and key-pair JWTs are passed as OAuth `client_secret` only
-///    (no `client_id`), with scope `session:role:<ROLE>`.
-/// 2. External OAuth / pre-exchanged access tokens can be supplied as a bearer `auth_header`.
-///
-/// `catalog_credential` is always the OAuth `client_secret` (PAT or key-pair JWT). Unlike
-/// `catalog_type = 'rest'`, it is not split on `:`, because Snowflake PATs may contain colons.
-/// For a pre-exchanged access token, use `auth_header` instead.
-class HorizonCatalog : public RestCatalog
-{
-public:
-    explicit HorizonCatalog(
-        const std::string & warehouse_,
-        const std::string & base_url_,
-        const std::string & catalog_credential_,
-        const std::string & auth_scope_,
-        const std::string & auth_header_,
-        const std::string & oauth_server_uri_,
-        bool oauth_server_use_request_body_,
-        bool flat_namespaces_,
-        DB::ContextPtr context_);
-
-    DB::DatabaseDataLakeCatalogType getCatalogType() const override
-    {
-        return DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON;
-    }
-
-    static void validateSettingsChanges(const DB::SettingsChanges & changes, bool credential_mode, bool header_mode);
-
-    /// Horizon credentials are secret-only: the whole string is the OAuth client_secret.
-    static std::pair<std::string, std::string> parseHorizonCredential(const std::string & catalog_credential);
-
-protected:
-    void applySettingsChangesToState(
-        const DB::SettingsChanges & changes,
-        const CatalogState & old_state,
-        CatalogState & new_state,
-        std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
-        std::unique_ptr<AccessToken> & new_access_token) override;
 };
 
 }

@@ -16,7 +16,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
 #include <Common/assert_cast.h>
-#include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
@@ -55,7 +54,6 @@ try
     }
 
     metadata = manifest_file_reader->metadata();
-    bytes_read = buffer->count();
     parsed_column = std::move(columns[0]);
     parsed_column_data_type = std::dynamic_pointer_cast<const DataTypeTuple>(data_type);
     parsed_manifest_file_entries.resize(parsed_column->size());
@@ -197,17 +195,6 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             file_sequence_number = file_sequence_number_value.safeGet<Int64>();
     }
 
-    std::optional<UInt64> first_row_id;
-
-    if (format_version > 2 && hasPath(c_data_file_first_row_id))
-    {
-        const auto first_row_id_value = getValueFromRowByName(row_index, c_data_file_first_row_id);
-        if (!first_row_id_value.isNull())
-        {
-            first_row_id = first_row_id_value.safeGet<Int64>();
-        }
-    }
-
     const auto file_path_key = IcebergPathFromMetadata::deserialize(
         getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>());
     /// NOTE: This is weird, because in manifest file partition looks like this:
@@ -292,30 +279,6 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     const auto record_count = getValueFromRowByName(row_index, c_data_file_record_count, TypeIndex::Int64).safeGet<Int64>();
     const auto file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
 
-    std::optional<Iceberg::IcebergPathFromMetadata> referenced_data_file_path;
-    if (hasPath(c_data_file_referenced_data_file))
-    {
-        Field referenced_data_file_field = getValueFromRowByName(row_index, c_data_file_referenced_data_file);
-        if (!referenced_data_file_field.isNull())
-            referenced_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(referenced_data_file_field.safeGet<String>()));
-    }
-
-    std::optional<Int64> content_offset;
-    if (hasPath(c_data_file_content_offset))
-    {
-        Field content_offset_field = getValueFromRowByName(row_index, c_data_file_content_offset);
-        if (!content_offset_field.isNull())
-            content_offset = content_offset_field.safeGet<Int64>();
-    }
-
-    std::optional<Int64> content_size_in_bytes;
-    if (hasPath(c_data_file_content_size_in_bytes))
-    {
-        Field content_size_field = getValueFromRowByName(row_index, c_data_file_content_size_in_bytes);
-        if (!content_size_field.isNull())
-            content_size_in_bytes = content_size_field.safeGet<Int64>();
-    }
-
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -327,16 +290,12 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
-                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
                 file_format,
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
-                /*referenced_data_file_path_ = */ std::nullopt,
-                /*content_offset_ = */ std::nullopt,
-                /*content_size_in_bytes_ = */ std::nullopt,
                 /*equality_ids*/ std::nullopt,
                 sort_order_id,
                 record_count,
@@ -347,11 +306,17 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             std::optional<Iceberg::IcebergPathFromMetadata> lower_reference_data_file_path;
             std::optional<Iceberg::IcebergPathFromMetadata> upper_reference_data_file_path;
             bool bounds_set_by_referenced_data_file = false;
-            if (referenced_data_file_path.has_value())
+            if (hasPath(c_data_file_referenced_data_file))
             {
-                lower_reference_data_file_path = referenced_data_file_path;
-                upper_reference_data_file_path = referenced_data_file_path;
-                bounds_set_by_referenced_data_file = true;
+                Field reference_file_path_field = getValueFromRowByName(row_index, c_data_file_referenced_data_file);
+                if (!reference_file_path_field.isNull())
+                {
+                    lower_reference_data_file_path.emplace(
+                        Iceberg::IcebergPathFromMetadata::deserialize(reference_file_path_field.safeGet<String>()));
+                    upper_reference_data_file_path.emplace(
+                        Iceberg::IcebergPathFromMetadata::deserialize(reference_file_path_field.safeGet<String>()));
+                    bounds_set_by_referenced_data_file = true;
+                }
             }
             if (!bounds_set_by_referenced_data_file)
             {
@@ -363,24 +328,6 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                         lower_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(lower.safeGet<String>()));
                     if (!upper.isNull())
                         upper_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(upper.safeGet<String>()));
-
-                    /// A lower bound sorting above the upper bound describes no range of paths, so it cannot say
-                    /// which data files this delete file references. Dropping both leaves them as a manifest that
-                    /// declares no bounds does.
-                    if (lower_reference_data_file_path.has_value() && upper_reference_data_file_path.has_value()
-                        && *upper_reference_data_file_path < *lower_reference_data_file_path)
-                    {
-                        LOG_WARNING(
-                            getLogger("AvroForIcebergDeserializer"),
-                            "Manifest file '{}' declares a reference data file lower bound above its upper bound for "
-                            "position delete file '{}' ('{}' > '{}'); ignoring both bounds",
-                            manifest_file_path.serialize(),
-                            file_path_key.serialize(),
-                            lower_reference_data_file_path->serialize(),
-                            upper_reference_data_file_path->serialize());
-                        lower_reference_data_file_path.reset();
-                        upper_reference_data_file_path.reset();
-                    }
                 }
             }
             return std::make_shared<const ParsedManifestFileEntry>(
@@ -391,16 +338,12 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
-                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
                 file_format,
                 lower_reference_data_file_path,
                 upper_reference_data_file_path,
-                referenced_data_file_path,
-                content_offset,
-                content_size_in_bytes,
                 /*equality_ids*/ std::nullopt,
                 /*sort_order_id = */ std::nullopt,
                 record_count,
@@ -419,11 +362,6 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                     "Couldn't find field {} in equality delete file entry",
                     c_data_file_equality_ids);
-            if (equality_ids.empty())
-                throw Exception(
-                    DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Field {} is empty in equality delete file entry, but at least one equality field id is required",
-                    c_data_file_equality_ids);
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::EQUALITY_DELETE,
                 file_path_key,
@@ -432,16 +370,12 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 sequence_number,
                 file_sequence_number,
                 snapshot_id,
-                first_row_id,
                 partition_key_value,
                 columns_infos,
                 value_for_bounds,
                 file_format,
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
-                /*referenced_data_file_path_ = */ std::nullopt,
-                /*content_offset_ = */ std::nullopt,
-                /*content_size_in_bytes_ = */ std::nullopt,
                 equality_ids,
                 /*sort_order_id = */ std::nullopt,
                 record_count,

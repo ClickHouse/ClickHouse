@@ -4,8 +4,10 @@
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;
--- Pin query_plan_remove_unused_columns (the runner disables it with 5% probability): it must stay on
--- or the pruning path this fix touches is skipped and the test stops guarding the fix.
+-- Pin both prewhere-related optimizations (the runner disables each with 5% probability):
+-- query_plan_optimize_prewhere keeps the EXPLAIN assertion stable, and query_plan_remove_unused_columns
+-- must stay on or the pruning path this fix touches is skipped and the test stops guarding the fix.
+SET query_plan_optimize_prewhere = 1;
 SET query_plan_remove_unused_columns = 1;
 
 DROP TABLE IF EXISTS t_04627_summing;
@@ -23,6 +25,7 @@ SELECT (SELECT sum(s) FROM t_04627_summing FINAL WHERE k GROUP BY s)
 -- Explicit PREWHERE on the unprojected key hits the same merge-key pruning path.
 SELECT sum(s) FROM t_04627_summing FINAL PREWHERE k GROUP BY s;
 -- The old planner (enable_analyzer = 0) shares the pruning path too.
+SELECT sum(s) FROM t_04627_summing FINAL WHERE k GROUP BY s SETTINGS enable_analyzer = 0;
 -- The optimization must still fire: the filter on k is moved to PREWHERE (returns 1).
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT s FROM t_04627_summing FINAL WHERE k GROUP BY s)
 WHERE explain ILIKE '%Prewhere filter column:%k%';

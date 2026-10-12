@@ -1,17 +1,8 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
 
-#include <algorithm>
-#include <Common/FailPoint.h>
-
 namespace DB
 {
-
-namespace FailPoints
-{
-extern const char intersect_or_except_transform_pause[];
-extern const char intersect_or_except_transform_counts_pause[];
-}
 
 /// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
 IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_)
@@ -159,17 +150,7 @@ void IntersectOrExceptTransform::addToCounts(
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
-    {
-        if ((i & 0xFFF) == 0)
-        {
-            if (i > 0) [[unlikely]]
-                FailPointInjection::pauseFailPoint(FailPoints::intersect_or_except_transform_counts_pause);
-            if (isCancelled())
-                return;
-        }
-
         ++state.emplaceKey(method.data, i, variants.string_pool).getMapped();
-    }
 }
 
 
@@ -183,12 +164,6 @@ size_t IntersectOrExceptTransform::filterWithCounts(
 
     for (size_t i = 0; i < rows; ++i)
     {
-        if ((i & 0xFFF) == 0 && isCancelled())
-        {
-            std::fill(filter.begin() + i, filter.end(), 0);
-            return new_rows_num;
-        }
-
         auto find_result = state.findKey(method.data, i, variants.string_pool);
 
         /// A remaining right-side occurrence of this row.
@@ -214,17 +189,7 @@ void IntersectOrExceptTransform::addToSet(Method & method, const ColumnRawPtrs &
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
-    {
-        if ((i & 0xFFF) == 0)
-        {
-            if (i > 0) [[unlikely]]
-                FailPointInjection::pauseFailPoint(FailPoints::intersect_or_except_transform_pause);
-            if (isCancelled())
-                return;
-        }
-
         state.emplaceKey(method.data, i, variants.string_pool);
-    }
 }
 
 
@@ -241,12 +206,6 @@ size_t IntersectOrExceptTransform::buildFilter(
 
     for (size_t i = 0; i < rows; ++i)
     {
-        if ((i & 0xFFF) == 0 && isCancelled())
-        {
-            std::fill(filter.begin() + i, filter.end(), 0);
-            return new_rows_num;
-        }
-
         auto find_result = state.findKey(method.data, i, variants.string_pool);
         filter[i] = (current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
             ? !find_result.isFound()
@@ -284,7 +243,17 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
             counts_data->init(CountingSetVariants::chooseMethod(column_ptrs, key_sizes));
 
         auto & variants = *counts_data;
-        variants.callOnMethod([&](auto & method) { addToCounts(method, column_ptrs, num_rows, variants); });
+        switch (variants.type)
+        {
+            case CountingSetVariants::Type::EMPTY:
+                break;
+#define M(NAME) \
+    case CountingSetVariants::Type::NAME: \
+        addToCounts(*variants.NAME, column_ptrs, num_rows, variants); \
+        break;
+            APPLY_FOR_SET_VARIANTS(M)
+#undef M
+        }
 
         return;
     }
@@ -296,7 +265,17 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
         data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
     auto & data_set = *data;
-    data_set.callOnMethod([&](auto & method) { addToSet(method, column_ptrs, num_rows, data_set); });
+    switch (data->type)
+    {
+        case SetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+    case SetVariants::Type::NAME: \
+        addToSet(*data_set.NAME, column_ptrs, num_rows, data_set); \
+        break;
+            APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
 }
 
 
@@ -328,8 +307,17 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             counts_data->init(CountingSetVariants::chooseMethod(column_ptrs, key_sizes));
 
         auto & variants = *counts_data;
-        new_rows_num = variants.callOnMethod(
-            [&](auto & method) { return filterWithCounts(method, column_ptrs, row_filter, num_rows, variants); });
+        switch (variants.type)
+        {
+            case CountingSetVariants::Type::EMPTY:
+                break;
+#define M(NAME) \
+    case CountingSetVariants::Type::NAME: \
+        new_rows_num = filterWithCounts(*variants.NAME, column_ptrs, row_filter, num_rows, variants); \
+        break;
+            APPLY_FOR_SET_VARIANTS(M)
+#undef M
+        }
     }
     else
     {
@@ -340,8 +328,18 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             data->init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
         auto & data_set = *data;
-        new_rows_num = data_set.callOnMethod(
-            [&](auto & method) { return buildFilter(method, column_ptrs, row_filter, num_rows, data_set); });
+
+        switch (data->type)
+        {
+            case SetVariants::Type::EMPTY:
+                break;
+#define M(NAME) \
+    case SetVariants::Type::NAME: \
+        new_rows_num = buildFilter(*data_set.NAME, column_ptrs, row_filter, num_rows, data_set); \
+        break;
+                APPLY_FOR_SET_VARIANTS(M)
+#undef M
+        }
     }
 
     if (!new_rows_num)

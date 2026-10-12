@@ -1,0 +1,472 @@
+---
+noindex: true
+title: "メトリクスとアラートのリファレンス"
+sidebarTitle: "メトリクスとアラート"
+description: "ClickHouse Private コンポーネントの主要なメトリクスと推奨されるアラートルール。"
+---
+
+ClickHouse Private コンポーネントの主要なメトリクスと推奨されるアラートルールです。ここに挙げたものがすべてではなく、設定によっては環境で追加のメトリクスが公開される場合があります。
+
+***
+
+<div id="operator-metrics">
+  ## オペレーターのメトリクス
+</div>
+
+| メトリクス                                       | 型     | 説明                                                                                                |
+| ------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------- |
+| `last_cluster_reconcile`                    | Gauge | 特定の CR (`app` でラベル付け。例: `c-default-xx-01`) に対する直近のリコンシリエーションのタイムスタンプ。リコンシリエーションが定期的に行われているかを確認するために使用します。 |
+| `controller_runtime_reconcile_errors_total` | カウンター | コントローラーごとのリコンシリエーションエラーの総数。`controller_runtime_reconcile_total` と併用して、リコンシリエーションのエラー率を計算します。              |
+| `controller_runtime_reconcile_total`        | カウンター | コントローラーごとのリコンシリエーション試行回数の総数。                                                                          |
+
+***
+
+<div id="clickhouse-server-metrics">
+  ## ClickHouse Server メトリクス
+</div>
+
+サーバーメトリクスは、各サーバーポッドの `:8123/metrics` Prometheus エンドポイントで公開されます。このエンドポイントは**認証が必要**であり、読み取り専用権限を持つ専用ユーザーを使用してください。
+
+**注:** サーバーポッド上の `prometheus.io/*` annotations では一部のメトリクスが公開されますが、以下に示す `ClickHouse_CustomMetrics_*` メトリクスは**含まれません**。`PodMonitor` または同等のスクレイプ対象を `:8123/metrics` に対して設定してください。
+
+| メトリクス                                                   | 型     | 説明                                                                                   |
+| ------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------ |
+| `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`   | Gauge | 壊れたデタッチされたパーツの数。                                                                     |
+| `ClickHouse_CustomMetric_LostPartCount`                 | Gauge | 失われたパーツの数。データ損失を示します。**誤検知の可能性があります。**                                               |
+| `ClickHouseErrorMetric_CANNOT_WRITE_TO_FILE_DESCRIPTOR` | カウンター | CANNOT&#95;WRITE&#95;TO&#95;FILE&#95;DESCRIPTOR エラーの件数。多くの場合、cache ディスクの空き容量不足を示します。 |
+| `ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH`           | カウンター | checksum 不一致エラーの件数。アップグレード後のバグを示している可能性があります。                                        |
+| `ClickHouseErrorMetric_CORRUPTED_DATA`                  | カウンター | 破損データエラーの件数。アップグレード後のバグを示している可能性があります。                                               |
+| `ClickHouseErrorMetric_LOGICAL_ERROR`                   | カウンター | 論理エラーの件数。多くの場合、コードベース上のバグです。                                                         |
+| `ClickHouseErrorMetric_NOT_ENOUGH_SPACE`                | カウンター | NOT&#95;ENOUGH&#95;SPACE エラーの件数。PVC の容量不足、設定ミス、または一時データの大きな予約を示している可能性があります。         |
+| `ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART`    | カウンター | 壊れている可能性があるデータパーツエラーの件数。SELECT 時のデータ損失を示します。                                    |
+| `ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS`          | カウンター | レプリカがすでに存在するエラーの件数。通常は Replicated データベースエンジンのバグです。                                   |
+| `ClickHouseMetrics_IsServerShuttingDown`                | Gauge | ClickHouse server がシャットダウン処理中の場合は `1`。                                               |
+| `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds`  | Gauge | テーブルが READONLY モードになっている時間 (秒) 。                                                     |
+
+***
+
+<div id="clickhouse-keeper-metrics">
+  ## ClickHouse Keeper メトリクス
+</div>
+
+Keeper メトリクスは `:8001/metrics` で公開されています。これらのメトリクスを収集するには、keeper ポッド用の PodMonitor を作成する必要があります。
+
+> **注:** keeper の具体的なメトリクス定義は、現在ドキュメント化待ちです (ソース内の TODO) 。メトリクスエンドポイントは利用可能ですが、個々のメトリクスの説明はまだカタログ化されていません。
+
+***
+
+<div id="alert-rule-definitions">
+  ## アラートルールの定義
+</div>
+
+<div id="operator-alerts">
+  ### オペレーター のアラート
+</div>
+
+<div id="clickhouseoperatornotreconciling">
+  #### ClickhouseOperatorNotReconciling
+</div>
+
+```yaml
+alert: ClickhouseOperatorNotReconciling
+expr: avg(increase(last_cluster_reconcile[90m])) by (app) == 0
+for: 120m
+```
+
+**目的:** オペレーターが 2 時間以内にリコンサイルされなかった場合に通知します。
+
+**推奨される対応:** 1. オペレーターのポッドが実行中で正常な状態であることを確認します。 2. オペレーターのログを確認し、何がリコンサイルを妨げているかを調べます。 3. CR に `clickhouse.com/skip-reconcile` アノテーションが付いていないことを確認します。
+
+***
+
+<div id="clickhouseoperatorreconcileerrors">
+  #### ClickhouseOperatorReconcileErrors
+</div>
+
+```yaml
+alert: ClickhouseOperatorReconcileErrors
+expr: |
+  (
+    sum(rate(controller_runtime_reconcile_errors_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+    /
+    sum(rate(controller_runtime_reconcile_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+  ) > 0.05
+for: 15m
+```
+
+**目的:** リコンシリエーション エラーが、リコンシリエーションの総試行回数の 5% を超えた場合にアラートを出します。
+
+**推奨される対応:** 根本原因を特定するため、エラーメッセージがないかオペレーター のログを確認してください。
+
+***
+
+<div id="clickhouse-server-alerts">
+  ### ClickHouseサーバーのアラート
+</div>
+
+<div id="clickhousebrokendetachedparts">
+  #### ClickHouseBrokenDetachedParts
+</div>
+
+```yaml
+alert: ClickHouseBrokenDetachedParts
+expr: ClickHouse_CustomMetric_NumberOfBrokenDetachedParts > 100
+for: 60m
+```
+
+**目的:** 破損したデタッチされたパーツが100を超える状態が少なくとも60分間続くと、発報します。
+
+**推奨される対応:** - `ClickHouseDataLoss` も発報するかどうか、しばらく様子を見てください。 - SMT/RMT テーブルの場合: データ損失のアラートも発報した場合は、まずデータ損失を調査し、軽減対応を行ってください。 - ローカルメタデータテーブル (`s3disk` または `s3diskWithCache`) の場合: 少数の破損したデタッチされたパーツは、**必ずしもインシデントを示すわけではありません** (ハード再起動時には、ファイルが作成されても書き込まれないことがあります) 。 - 問題が解消しない場合は、ClickHouse Support に連絡してください。
+
+***
+
+<div id="clickhousedataloss">
+  #### ClickHouseDataLoss
+</div>
+
+```yaml
+alert: ClickHouseDataLoss
+expr: ClickHouse_CustomMetric_LostPartCount > 0
+```
+
+**目的:** データ損失の可能性を示します。失われたパーツが検出されると、ただちに発報されます。
+
+**推奨対応:** ClickHouse Support に連絡してください。初期調査の手順:
+
+1. 失われたパーツを確認するクエリを実行します:
+
+   ```sql
+   SELECT database, table, lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+2. 失われたパーツに関するログを検索します:
+
+   ```sql
+   SELECT hostName(), event_time, logger_name, message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+3. 特定の失われたパーツの履歴を調査します:
+
+   ```sql
+   SELECT event_time, message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%'
+     AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+4. 誤検知がないか確認します:
+
+5. テーブルに有効期限 (TTL) が設定されており、失われたパーツが TTL によって削除されるはずのものだったかを確認します。
+
+6. `system.query_log` で TRUNCATE または DROP PARTITION のクエリがないか確認します。
+
+***
+
+<div id="clickhousecannotwritetofiledescriptor">
+  #### ClickHouseCannotWriteToFileDescriptor
+</div>
+
+```yaml
+alert: ClickHouseCannotWriteToFileDescriptor
+expr: |
+    increase(ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**注記:** アラート式は `CANNOT_WRITE` ではなく `CANNOT_READ_FROM_FILE_DESCRIPTOR` をチェックします。これは元のアラート定義で意図されたものです。読み取りメトリクスは、同じ障害シナリオ (キャッシュディスクの容量不足) でも発報します。
+
+**目的:** 主にキャッシュディスクの容量不足 (&quot;デバイスに空き領域がありません&quot;) を示します。
+
+**推奨される対応:** - 最近ノードのサイズまたはタイプを変更した場合は、設定ミスに関連している可能性があります。 - 既知の問題: `join_algorithm = 'partial_merge'` を使用している場合、キャッシュディスク使用量の追跡が不正確になることがあります。 - 診断手順: 1. `kubectl exec` でポッドに入り、`df -h` を実行してキャッシュディスクのサイズを確認します。 2. `SELECT path, max_size FROM system.filesystem_cache_settings` を実行して、必要なキャッシュサイズを確認します。 3. 実際のディスクが設定値より小さい場合、原因は設定ミスです。 - ClickHouse Support に連絡してください。
+
+***
+
+<div id="clickhousechecksumsmismatch">
+  #### ClickHouseChecksumsMismatch
+</div>
+
+```yaml
+alert: ClickHouseChecksumsMismatch
+expr: |
+    increase(ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**目的:** データパーツのチェックサムが一致しません。アップグレード後の不具合が原因である可能性があります。
+
+**推奨される対応:** ClickHouse Supportにお問い合わせください。
+
+***
+
+<div id="clickhousecorrupteddata">
+  #### ClickHouseCorruptedData
+</div>
+
+```yaml
+alert: ClickHouseCorruptedData
+expr: |
+    increase(ClickHouseErrorMetric_CORRUPTED_DATA[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CORRUPTED_DATA > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**目的:** データパーツが破損しています。アップグレード後の不具合を示している可能性があります。
+
+**推奨される対応:** ClickHouse Support に連絡してください。
+
+***
+
+<div id="clickhouselogicalerrors">
+  #### ClickHouseLogicalErrors
+</div>
+
+```yaml
+alert: ClickHouseLogicalErrors
+expr: |
+    increase(ClickHouseErrorMetric_LOGICAL_ERROR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_LOGICAL_ERROR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**目的:** 論理エラーが発生しました。多くの場合、コードベースの不具合が原因です。
+
+**推奨される対応:** ClickHouse Support に連絡してください。
+
+***
+
+<div id="clickhousenotenoughspaceerrors">
+  #### ClickHouseNotEnoughSpaceErrors
+</div>
+
+```yaml
+alert: ClickHouseNotEnoughSpaceErrors
+expr: |
+    increase(ClickHouseErrorMetric_NOT_ENOUGH_SPACE[30s]) > 0
+    or (
+        ClickHouseErrorMetric_NOT_ENOUGH_SPACE > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**目的:** NOT&#95;ENOUGH&#95;SPACE エラーが発生しています。PVC の容量不足、設定ミス、または一時データ用に大きな領域が予約されている可能性があります。
+
+**推奨される対応:** ClickHouse Support に連絡してください。
+
+***
+
+<div id="clickhousebrokenpartdetectedonselect">
+  #### ClickHouseBrokenPartDetectedOnSelect
+</div>
+
+```yaml
+alert: ClickHouseBrokenPartDetectedOnSelect
+expr: |
+    increase(ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART[30s]) > 0
+    or (
+        ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**目的:** SELECT が `POTENTIALLY_BROKEN_DATA_PART` エラーで失敗しており、データ損失が発生していることを示しています。
+
+**推奨される対応:** ClickHouseDataLoss の対応を参照してください。`POTENTIALLY_BROKEN_DATA_PART` 例外について logs を確認してください。logs に見つからない場合は `system.errors` を確認してください。ClickHouse Support に連絡してください。
+
+***
+
+<div id="clickhousereplicaalreadyexists">
+  #### ClickHouseReplicaAlreadyExists
+</div>
+
+```yaml
+alert: ClickHouseReplicaAlreadyExists
+expr: |
+    increase(ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS[30s]) > 0
+    or (
+        ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**目的:** パス上にすでにレプリカが存在するため、レプリカの作成に失敗しました。通常は、Replicated データベースエンジンまたは Shared Catalog の不具合です。
+
+**推奨される対応:** ユーザー側のミスである可能性は低いため、ClickHouse Support にお問い合わせください。
+
+***
+
+<div id="clickhouseservershutdownstuck">
+  #### ClickHouseServerShutdownStuck
+</div>
+
+```yaml
+alert: ClickHouseServerShutdownStuck
+expr: ClickHouseMetrics_IsServerShuttingDown == 1
+for: 70m
+```
+
+**目的:** ClickHouse server が1時間以上シャットダウン処理を完了できていません。
+
+**推奨される対応:** `system.stack_trace` または GDB でスレッドを確認してください。
+
+***
+
+<div id="clickhousetablereplicasreadonly">
+  #### ClickHouseTableReplicasReadOnly
+</div>
+
+```yaml
+alert: ClickHouseTableReplicasReadOnly
+expr: ClickHouse_CustomMetric_TableReadOnlyDurationSeconds > 3600
+```
+
+**目的:** テーブルが1時間を超えて READONLY モードのままです。
+
+**推奨される対応:** 1. 影響を受けているテーブル名でフィルタしたサーバーログを確認します。2. 問題の可能性がないか Keeper のログを確認します。3. 現在 read-only のテーブルをクエリします:
+
+```sql
+SELECT dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds, database, table, hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+`SYSTEM RESTART REPLICA`
+
+***
+
+<div id="diagnostic-sql-queries">
+  ## 診断用 SQL クエリ
+</div>
+
+<div id="replication-queue-size-per-table">
+  ### テーブルごとのレプリケーションキューサイズ
+</div>
+
+**トリガー:** いずれかのテーブルで件数が 100 を超えた場合にアラートを出します。
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+代替案:
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table">
+  ### テーブルごとのレプリケーションキュー内の最古のエントリ
+</div>
+
+**トリガー:** 最も古いエントリが1日を超えている場合にアラート。
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+<div id="read-only-tables">
+  ### 読み取り専用のテーブル
+</div>
+
+```sql
+SELECT
+    dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+    database,
+    table,
+    hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+<div id="lost-parts-by-table">
+  ### テーブル別の失われたパーツ
+</div>
+
+```sql
+SELECT database, table, lost_part_count AS value
+FROM system.replicas
+WHERE value > 0
+```
+
+<div id="lost-parts-log-search">
+  ### 失われたパーツに関するログ検索
+</div>
+
+```sql
+SELECT hostName(), event_time, logger_name, message
+FROM clusterAllReplicas(default, system.text_log)
+WHERE message_format_string = 'Part {} is lost forever.'
+ORDER BY hostName(), event_time
+```
+
+<div id="part-history-investigation">
+  ### パーツ の履歴調査
+</div>
+
+```sql
+SELECT event_time, message
+FROM system.text_log
+WHERE message LIKE '%<part name>%'
+  AND hostName() = '<host>'
+ORDER BY event_time ASC
+```
+
+<div id="cache-disk-configuration-check">
+  ### キャッシュディスク設定の確認
+</div>
+
+```sql
+SELECT path, max_size
+FROM system.filesystem_cache_settings
+```
+
+***
+
+<div id="general-alerting-recommendations">
+  ## 一般的なアラートに関する推奨事項
+</div>
+
+標準的なインフラストラクチャ アラートは、次の項目に対して設定する必要があります。
+
+* クラッシュループしているポッド
+* スケジュール不能なポッド
+* OOM によるポッドの強制終了
+* PVC 容量
+* ノードの健全性
+
+これらは環境固有のものであり、上記の ClickHouse 固有のアラートには含まれません。
+
+[Grafana ClickHouse mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) には、多くの ClickHouse メトリクス向けのビルド済みダッシュボードが用意されています。

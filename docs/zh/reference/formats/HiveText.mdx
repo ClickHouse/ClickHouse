@@ -3,31 +3,29 @@ alias: []
 description: 'HiveText 格式文档'
 input_format: true
 keywords: ['HiveText']
-output_format: true
+output_format: false
 slug: /interfaces/formats/HiveText
 title: 'HiveText'
 doc_type: 'reference'
 ---
 
-{/*自动生成开始*/}
-
 | 输入 | 输出 | 别名 |
 | -- | -- | -- |
-| ✔  | ✔  |    |
+| ✔  | ✗  |    |
 
 <div id="description">
   ## 说明
 </div>
 
-`HiveText` 用于读取和写入 [Apache Hive](https://hive.apache.org/)
+`HiveText` 用于读取 [Apache Hive](https://hive.apache.org/)
 表使用的文本序列化格式 (即 Hive 的 `LazySimpleSerDe` 生成的格式) 。它是一种带分隔符的文本
 格式，类似于 [`CSV`](/zh/reference/formats/CSV/CSV)，其中字段使用
 Hive 默认的 `\x01` (Ctrl-A) 作为分隔符。字段分隔符
 可通过 [`input_format_hive_text_fields_delimiter`](#format-settings) 配置。
 
-作为输入格式使用时，数据没有表头：值会按位置映射到目标表的各列，因此列名和类型取自该表 (或显式提供的
+`HiveText` 是一种仅用于输入的格式。数据没有表头：值会按位置映射到目标表的各列，因此列名和类型取自该表 (或显式提供的
 结构) ，而不是从数据中自动推断。读取时，ClickHouse 会以尽力而为模式解析
-日期和时间 (参见 [`date_time_input_format`](/zh/reference/settings/formats/date-time#date_time_input_format)) ，
+日期和时间 (参见 [`date_time_input_format`](/zh/reference/settings/formats#date_time_input_format)) ，
 用列默认值填充末尾省略的字段，并跳过无法
 识别的字段。
 
@@ -38,12 +36,11 @@ Hive 的嵌套分隔符。特别是，类型为
 Hive 集合分隔符 `\x02` 分隔的值中读取。
 
 <Info>
-  **嵌套分隔符设置对输入不起作用**
+  **嵌套分隔符设置不起作用**
 
   [`input_format_hive_text_collection_items_delimiter`](#format-settings) 和
   [`input_format_hive_text_map_keys_delimiter`](#format-settings) 设置
-  会出于兼容性而被接受，但当前解析时并不会使用。不过，
-  在输出端写入嵌套值时会使用这些设置。
+  会出于兼容性而被接受，但当前解析时并不会使用。
 </Info>
 
 默认情况下，允许行包含数量不固定的字段 (参见
@@ -123,118 +120,13 @@ SELECT * FROM test_extras ORDER BY a;
 会强制要求字段数严格一致，而当某一行的字段数少于表中的字段数时，会引发
 解析异常。
 
-<div id="output">
-  ## 输出
-</div>
-
-作为输出格式使用时，`HiveText` 会写入每一行，不添加任何引号：
-顶层字段以字段分隔符分隔 (默认为 `\x01`) ，
-行则以行分隔符分隔 (默认为 `\n`，可通过
-[`format_hive_text_rows_delimiter`](#format-settings) 配置) 。嵌套类型的值
-([`Array`](/zh/reference/data-types/array)、[`Map`](/zh/reference/data-types/map)
-和 [`Tuple`](/zh/reference/data-types/tuple)) 写入时不带括号，并以对应嵌套层级的
-Hive 分隔符分隔，其方式与 Hive 的
-`LazySimpleSerDe` 相同。前三个分隔符依次为可配置的字段
-分隔符、[`input_format_hive_text_collection_items_delimiter`](#format-settings)
-(默认为 `\x02`，用于数组元素、映射条目和元组元素) 以及
-[`input_format_hive_text_map_keys_delimiter`](#format-settings) (默认为 `\x03`，
-用于分隔映射键及其值) ；更深层级默认使用连续的控制
-字符 (`\x04`、`\x05`，依此类推，最多八个层级) 。如果嵌套类型树足够深，
-需要使用超过这八个层级的分隔符，则会因
-`NOT_IMPLEMENTED` 异常被拒绝，因为 Hive 的 `LazySimpleSerDe` 同样没有对应的
-分隔符。没有自然的
-Hive 文本表示形式的数据类型不支持输出，并会引发
-`NOT_IMPLEMENTED` 异常。这包括 `AggregateFunction`、`Dynamic`、
-`Variant`、`LowCardinality` 和 `Object`，以及以数值类型为底层类型的
-`Enum`、`Time`、`Time64` 和 `Interval` —— Hive 没有与后者对应的类型，
-因此会拒绝它们，而不会将其写为原始的底层
-数值。宽整数类型 `Int128`、`UInt128`、`Int256` 和 `UInt256`
-也会因相同原因被拒绝：Hive 支持的最大整数类型是 `BIGINT` (64 位) ，
-即使是最大精度为 38 的 Hive `DECIMAL` 也无法容纳其
-值域。同样，精度超过 38 的 `Decimal` 值 (即
-`Decimal256`) 超出 Hive `DECIMAL` 的最大精度，因此会被拒绝。
-同样，`Map` 的键必须是基本类型：Hive 将映射声明为
-`MAP<primitive_type, data_type>`，因此键类型为 `Array`、
-`Map` 或 `Tuple` 的 `Map` (ClickHouse 允许此类映射) 会因
-`NOT_IMPLEMENTED` 异常被拒绝，因为没有任何 Hive schema 能够将此类值
-读回。空映射字面量 `map()` 也会因相同原因被拒绝：其类型
-为 `Map(Nothing, Nothing)`，而 `Nothing` 不是 Hive
-`MAP<key_type, data_type>` 声明中可使用的类型。所有这些检查都会在
-写入任何行之前，预先针对声明的列类型执行：如果查询的结果头在其类型树的任何位置包含不受支持的类型，
-即使实际值永远不会触及不受支持的
-序列化，查询也会被拒绝 (例如，仅包含 `NULL` 值的不受支持类型 `Nullable`，
-或元素类型不受支持的空 `Array`/`Map`) ，
-因为文件声明的 schema 仍无法对应任何 Hive
-表。
-
-`Date`、`Date32`、`DateTime` 和 `DateTime64` 始终以纯文本
-Hive 日期和时间戳格式 (`yyyy-MM-dd` 和 `yyyy-MM-dd HH:mm:ss[.fffffffff]`) 写入，
-不受 [`date_time_output_format`](/zh/reference/settings/formats/date-time#date_time_output_format)
-设置影响，因此即使该设置为
-`unix_timestamp` 或 `iso`，输出仍可由 Hive 解析。
-
-出于相同原因，`Bool` 值始终写为 `true`/`false`，
-不受 [`bool_true_representation`](/zh/reference/settings/formats/bool#bool_true_representation)
-和 [`bool_false_representation`](/zh/reference/settings/formats/bool#bool_false_representation)
-设置影响，且 `NULL` 值始终写为 Hive 的默认空值序列
-`\N`，不受 [`format_csv_null_representation`](/zh/reference/settings/formats/format-csv#format_csv_null_representation)
-设置影响。这确保无论这些通用文本设置如何，输出都可由 Hive 的 `LazySimpleSerDe` 读取。
-相应地，`HiveText` 输入格式始终将 `\N` 读取为 `NULL`，同样不受
-[`format_csv_null_representation`](/zh/reference/settings/formats/format-csv#format_csv_null_representation)
-设置影响，因此顶层标量的往返转换不依赖于该设置。
-
-非有限 `Float32` 和 `Float64` 值会采用 Hive 的 Java 拼写形式写入：
-`NaN`、`Infinity` 和 `-Infinity`，而不是 ClickHouse 通常使用的 `nan`/`inf`/`-inf`
-标记，以便 Hive 的 `FLOAT`/`DOUBLE` 解析器将其读回为相同的值，
-而非 `NULL`。
-
-<Info>
-  **与 Hive 兼容的输出，而非通过输入格式实现完整往返**
-
-  输出端面向 Hive 默认的 `LazySimpleSerDe`，与
-  ClickHouse 自身的 `HiveText` 输入并不对称：
-
-  * 嵌套的 [`Array`](/zh/reference/data-types/array)、[`Map`](/zh/reference/data-types/map)
-    和 [`Tuple`](/zh/reference/data-types/tuple) 值会使用 Hive 的嵌套
-    分隔符写入 (不含方括号) ，但输入格式会按
-    `CSV`/方括号规则解析每个字段，并忽略
-    [`input_format_hive_text_collection_items_delimiter`](#format-settings) /
-    [`input_format_hive_text_map_keys_delimiter`](#format-settings)。因此，嵌套输出，
-    例如 `SELECT [1, 2] FORMAT HiveText`，**无法**通过
-    `INSERT ... FORMAT HiveText` 读回——只有顶层标量字段可以往返，且仅限使用
-    默认的 `\n` 行分隔符 (参见下一点) 。
-  * 往返还要求使用默认的 `\n` 行分隔符。修改
-    [`format_hive_text_rows_delimiter`](#format-settings) 后，输出会使用配置的
-    字节分隔各行，但输入端仍使用基于换行符的
-    `CSVRowInputFormat`，且没有对应的 `input_format_hive_text_rows_delimiter`。因此，
-    多行标量输出，例如
-    `SELECT number FROM numbers(3) FORMAT HiveText SETTINGS format_hive_text_rows_delimiter=';'`
-    (生成 `0;1;2;`) ，**无法**通过 `INSERT ... FORMAT HiveText` 读回为三行。
-  * 仅实现了默认的、未转义的 `LazySimpleSerDe` 子集。字段写入时
-    不会进行转义 (没有等同于 Hive 可选 `ROW FORMAT DELIMITED ...
-    ESCAPED BY` 的功能) ，并且 `NULL` 始终写为 `\N` (没有等同于
-    `NULL DEFINED AS` 的功能) 。因此，包含有效字段、行或嵌套
-    分隔符的 `String` 会按原样写入，并在解析回读时被错误解析——这
-    与 Hive 自身使用不转义 serde 时的行为一致。出于相同原因，值恰好为
-    `\N` 的 `String` (例如
-    `SELECT '\\N'::String FORMAT HiveText`) 会被写成与真实 `NULL`
-    相同的两个字节，因此在 Hive 端二者无法区分。
-</Info>
-
-```sql title="Query"
-SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
-```
-
 <div id="format-settings">
   ## 格式设置
 </div>
 
-| 设置                                                        | 说明                                                                | 默认值    |
-| --------------------------------------------------------- | ----------------------------------------------------------------- | ------ |
-| `input_format_hive_text_fields_delimiter`                 | Hive Text File 中字段之间的分隔符                                          | `\x01` |
-| `input_format_hive_text_collection_items_delimiter`       | Hive Text File 中集合 (Array 或 map) 元素之间的分隔符。由输出格式使用；可接受，但当前在解析时未使用。 | `\x02` |
-| `input_format_hive_text_map_keys_delimiter`               | Hive Text File 中一对 map 键/值之间的分隔符。由输出格式使用；可接受，但当前在解析时未使用。          | `\x03` |
-| `input_format_hive_text_allow_variable_number_of_columns` | 忽略 Hive Text 输入中的多余列 (如果文件中的列数超过预期) ，并将缺失字段视为默认值                  | `1`    |
-| `format_hive_text_rows_delimiter`                         | Hive Text 输出中每行末尾的分隔符                                             | `\n`   |
-
-{/*AUTOGENERATED_END*/}
+| 设置                                                        | 说明                                                        | 默认值    |
+| --------------------------------------------------------- | --------------------------------------------------------- | ------ |
+| `input_format_hive_text_fields_delimiter`                 | Hive Text File 中字段之间的分隔符                                  | `\x01` |
+| `input_format_hive_text_collection_items_delimiter`       | Hive Text File 中集合 (Array 或 map) 元素之间的分隔符。可接受，但当前在解析时未使用。 | `\x02` |
+| `input_format_hive_text_map_keys_delimiter`               | Hive Text File 中一对 map 键/值之间的分隔符。可接受，但当前在解析时未使用。          | `\x03` |
+| `input_format_hive_text_allow_variable_number_of_columns` | 忽略 Hive Text 输入中的多余列 (如果文件中的列数超过预期) ，并将缺失字段视为默认值          | `1`    |

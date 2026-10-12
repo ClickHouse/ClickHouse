@@ -6,6 +6,10 @@ tags: ['Безопасность и аутентификация', 'Управл
 keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="aws-privatelink-setup-to-expose-private-rds-for-clickpipes">
   ## Настройка AWS PrivateLink для открытия доступа ClickPipes к приватной RDS
 </div>
@@ -14,7 +18,7 @@ keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
 
 <Info>
   В этом варианте используется AWS Endpoint Service, и он в основном подходит для межрегионального доступа. Если вам нужен доступ в пределах того же региона,
-  вместо этого рекомендуется [создать ресурс VPC](/ru/integrations/clickpipes/networking/aws-privatelink#vpc-resource).
+  вместо этого рекомендуется [создать ресурс VPC](/ru/integrations/clickpipes/aws-privatelink#vpc-resource).
 </Info>
 
 <div id="private-link-creation">
@@ -27,11 +31,11 @@ keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
 1. Найдите свой VPC и [создайте NLB](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/create-network-load-balancer.html)
    * Перейдите к целевому VPC и создайте Network Load Balancer (NLB). Обратите внимание, что NLB должен быть внутренним (private), а не общедоступным (public).
 
-2. Настройте целевую группу
-   * целевая группа должна указывать на IP-адрес конечной точки и порт экземпляра RDS (обычно 5432 для PostgreSQL или 3306 для MySQL).
+2. Настройте Target Group
+   * Target Group должна указывать на IP-адрес конечной точки и порт экземпляра RDS (обычно 5432 для PostgreSQL или 3306 для MySQL).
 
 <Note>
-  Если вы хотите автоматизировать процесс обновления целевой группы при смене IP-адреса конечной точки RDS, можно использовать AWS Lambda или другие инструменты автоматизации.
+  Если вы хотите автоматизировать процесс обновления Target Group при смене IP-адреса конечной точки RDS, можно использовать AWS Lambda или другие инструменты автоматизации.
   Один из модулей Terraform, который можно использовать для этой цели, — [этот](https://github.com/MaterializeInc/terraform-aws-rds-privatelink).
 </Note>
 
@@ -39,7 +43,7 @@ keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
   * Убедитесь, что используется протокол TCP, чтобы избежать завершения TLS на NLB.
 
 3. Задайте порт listener
-   * Порт listener балансировщика нагрузки должен совпадать с портом, используемым в целевой группе (обычно 5432 для PostgreSQL или 3306 для MySQL).
+   * Порт listener балансировщика нагрузки должен совпадать с портом, используемым в Target Group (обычно 5432 для PostgreSQL или 3306 для MySQL).
 
 4. Создайте VPC сервис конечной точки
    * В VPC создайте сервис конечной точки, указывающий на NLB.
@@ -60,7 +64,7 @@ keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
 7. **Необязательно**: включите поддержку межрегиональную, если регион вашей database отличается от региона ClickPipes
    * В разделе `Endpoint Services` в консоли VPC выберите ваш сервис конечной точки.
    * Нажмите кнопку `Actions` и выберите `Modify supported Regions`.
-   * Добавьте регионы, из которых вы хотите разрешить доступ к сервису конечной точки; список регионов ClickPipes см. [здесь](/ru/integrations/clickpipes/networking/static-ips).
+   * Добавьте регионы, из которых вы хотите разрешить доступ к сервису конечной точки; список регионов ClickPipes см. [здесь](/ru/integrations/clickpipes/home#list-of-static-ips).
 
 8. **Рекомендуется для MySQL**
    * Если вы используете MySQL, рекомендуется установить `skip_name_resolve=1` как параметр в исходной базе данных.
@@ -72,7 +76,7 @@ keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
   ## Инициация соединения
 </div>
 
-Когда всё будет готово, вы можете воспользоваться руководством, чтобы [установить соединение](/ru/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
+Когда всё будет готово, вы можете воспользоваться руководством, чтобы [установить соединение](/ru/integrations/clickpipes/aws-privatelink#creating-clickpipe)
 
 Когда в консоли статус изменится на `Ready`, вы можете перейти к следующему разделу, чтобы создать свой ClickPipe.
 
