@@ -1,4 +1,5 @@
 import gzip
+import json
 import urllib
 import uuid
 import zlib
@@ -325,8 +326,10 @@ def test_response_compression(encoding, decompress):
     plain = requests.get(url, headers={"Accept-Encoding": "identity"})
     assert plain.status_code == 200, plain.text
     assert "Content-Encoding" not in plain.headers
+    assert plain.headers["Vary"] == "Accept-Encoding"
     assert plain.json()["status"] == "success"
 
+    # The body is decompressed by the test, because `requests` may not decode every encoding.
     with requests.get(url, headers={"Accept-Encoding": encoding}, stream=True) as response:
         assert response.status_code == 200
         assert response.headers["Content-Encoding"] == encoding
@@ -335,10 +338,12 @@ def test_response_compression(encoding, decompress):
 
     # An error response is compressed too, and it is still a well-formed error envelope.
     error_url = f"http://{node.ip_address}:9093/api/v1/query?query=%28%28&time=150"
-    response = requests.get(error_url, headers={"Accept-Encoding": encoding})
-    assert response.status_code == 400, response.text
-    assert response.headers["Content-Encoding"] == encoding
-    assert "while parsing PromQL query" in extract_error_from_http_api_response(response)
+    with requests.get(error_url, headers={"Accept-Encoding": encoding}, stream=True) as response:
+        assert response.status_code == 400
+        assert response.headers["Content-Encoding"] == encoding
+        error = json.loads(decompress(response.raw.read(decode_content=False)))
+    assert error["status"] == "error", error
+    assert "while parsing PromQL query" in error["error"], error
 
     # `enable_http_compression=0` turns the compression off.
     response = requests.get(
@@ -381,6 +386,24 @@ def test_error_after_first_block_compressed():
     )
     response = requests.get(url, headers={"Accept-Encoding": "gzip"})
     assert response.headers["Content-Encoding"] == "gzip"
+    assert "Limit for result exceeded" in extract_error_from_http_api_response(response)
+
+
+def test_error_after_compressor_flush():
+    # Each block is larger than the 1 MiB compressor buffer, so the compressor has passed data on
+    # when the query throws, while the large HTTP buffer has sent nothing. The error goes out uncompressed.
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query_range"
+        f"?query={urllib.parse.quote_plus('stream_error')}"
+        f"&start=110&end=210&step=0.001"
+        f"&http_response_buffer_size={64 * 1024 * 1024}"
+        f"&max_block_size=1"
+        f"&max_result_rows={STREAM_ERROR_ROW_LIMIT}"
+        f"&result_overflow_mode=throw"
+    )
+    response = requests.get(url, headers={"Accept-Encoding": "gzip"})
+    assert response.status_code == 400, response.status_code
+    assert "Content-Encoding" not in response.headers
     assert "Limit for result exceeded" in extract_error_from_http_api_response(response)
 
 

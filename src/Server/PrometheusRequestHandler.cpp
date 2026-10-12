@@ -635,13 +635,21 @@ public:
             /// Once the response header has been sent we can no longer produce
             /// a well-formed Prometheus error response. So we let the outer handler
             /// abort the chunked stream via cancelWithException() instead.
-            /// The same is true once the compressor has taken part of the body.
-            auto & out = getOutputStream(response);
-            if (response.sent() || out.count() != out.offset())
+            auto & http_out = parent().getOutputStream(response);
+            if (response.sent() || http_out.count() != http_out.offset())
                 throw;
+
+            /// If the compressor already passed part of the body on, drop it and send the error uncompressed.
+            auto & compressed = parent().compressed_write_buffer;
+            if (compressed && compressed->count() != compressed->offset())
+            {
+                parent().dropped_compressed_write_buffer = std::move(compressed);
+                http_out.setCompressionMethodHeader(CompressionMethod::None);
+            }
 
             /// Drop any partial success body still sitting in the output buffer
             /// before writing the error response.
+            auto & out = getOutputStream(response);
             out.rejectBufferedDataSave();
 
             /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
@@ -667,6 +675,9 @@ private:
     /// Compresses the response with a method from the Accept-Encoding header, like the HTTP interface does.
     void setResponseCompression(const HTTPServerRequest & request, HTTPServerResponse & response)
     {
+        /// Every variant depends on Accept-Encoding, so shared caches must key on it even for an uncompressed one.
+        addVaryField(response, "Accept-Encoding");
+
         const auto & settings = context->getSettingsRef();
         CompressionMethod method = chooseHTTPCompressionMethod(request.get("Accept-Encoding", ""));
         if (method == CompressionMethod::None || !settings[Setting::enable_http_compression])
@@ -684,7 +695,6 @@ private:
             /* alignment = */ 0,
             /* compress_empty = */ false);
         out.setCompressionMethodHeader(method);
-        addVaryField(response, "Accept-Encoding");
     }
 
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
@@ -889,6 +899,10 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         tryCallOnException();
     }
+
+    /// Only now, because cancelling it before the response is finished would flush it into the response.
+    if (dropped_compressed_write_buffer)
+        dropped_compressed_write_buffer->cancel();
 }
 
 WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HTTPServerResponse & response)

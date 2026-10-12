@@ -56,6 +56,8 @@ private:
     std::unique_ptr<WriteBufferFromHTTPServerResponse> write_buffer_from_response;
     /// Compresses the response body into `write_buffer_from_response` when the client accepts it.
     std::unique_ptr<WriteBuffer> compressed_write_buffer;
+    /// The compressor dropped by an error response; it is cancelled after the response is finished.
+    std::unique_ptr<WriteBuffer> dropped_compressed_write_buffer;
     size_t http_response_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     ProfileEvents::Event write_event;
     bool send_stacktrace = false;
