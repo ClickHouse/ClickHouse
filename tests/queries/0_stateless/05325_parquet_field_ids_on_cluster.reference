@@ -1,0 +1,11 @@
+File with an unknown column in the field_id map
+BAD_ARGUMENTS
+File with a map that does not cover every column
+BAD_ARGUMENTS
+Iceberg with auto-assigned field_ids
+BAD_ARGUMENTS
+No table was created
+0
+A valid definition is accepted and writable
+OK
+1	2
