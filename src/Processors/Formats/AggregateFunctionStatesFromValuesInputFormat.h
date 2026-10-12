@@ -47,6 +47,7 @@ public:
     UInt64 getFileMetadataDigest() const override { return underlying->getFileMetadataDigest(); }
     std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override { return underlying->getTopKBestValuesOfBuckets(); }
     bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
+    bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
 
 protected:
     /// The underlying format already annotates the exceptions with the file name, no need to do it twice.
