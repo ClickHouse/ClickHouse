@@ -1,0 +1,12 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_block_size>100</max_block_size>
+    </settings>
+
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(UInt8))), 1, range(100000)::Array(UInt8)))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(UInt8))), 1, materialize(range(100000)::Array(UInt8))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(String))), 1, arrayMap(x -> toString(x), range(10000))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(String))), 1, materialize(arrayMap(x -> toString(x), range(10000)))))) FROM numbers(20000)</query>
+    <query>SELECT sum(length(arrayResize(CAST(materialize([]) AS Array(Array(Array(UInt8)))), 1, materialize(arrayMap(x -> range(x % 100)::Array(UInt8), range(2000)))))) FROM numbers(20000)</query>
+</test>

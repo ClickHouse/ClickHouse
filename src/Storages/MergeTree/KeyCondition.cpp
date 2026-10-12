@@ -22,6 +22,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/indexHint.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -2790,9 +2791,10 @@ static bool executeDeterministicDag(
     {
         dag.actions->execute(block, false, true);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         /// If any error occurs during the execution of the DAG, we cannot transform the constant
+        rethrowIfQueryCancelled(e);
         return false;
     }
 
