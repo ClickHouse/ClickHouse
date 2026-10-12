@@ -302,6 +302,12 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
     auto & first_reader = range_readers.front();
 
+    size_t num_attributed_readers = 0;
+    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
+        for (size_t i = 0; i < range_readers.size(); ++i)
+            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
+                num_attributed_readers = i + 1;
+
     try
     {
         read_result = first_reader.startReadingChain(max_rows, ranges);
@@ -331,6 +337,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
         executePrewhereActions(first_reader, read_result, {}, range_readers.size() == 1);
         addPatchVirtuals(read_result, first_reader.getSampleBlock());
+
+        if (num_attributed_readers != 0)
+            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     for (size_t i = 1; i < range_readers.size(); ++i)
@@ -371,6 +380,9 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         }
 
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size());
+
+        if (i < num_attributed_readers)
+            read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }
 
     applyPatchesAfterReader(read_result, range_readers.size() - 1);
