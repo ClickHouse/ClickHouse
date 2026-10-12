@@ -176,6 +176,7 @@ SYSTEM DROP ICEBERG METADATA CACHE;
 INSERT INTO ${TABLE} SELECT 2, 'b';
 " 2>&1 \
     | grep -qF "Exception" && echo "UNEXPECTED_ERROR" || echo "INSERT_OK"
+${CLICKHOUSE_CLIENT} --query "SELECT c0, c1 FROM icebergLocal('${TABLE_PATH}') ORDER BY c0"
 
 # ============================================================================================
 # UPDATE across partition-spec evolution: rejected
@@ -215,7 +216,7 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
 CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c0);
 INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c');
 ALTER TABLE ${TABLE} UPDATE c1 = 'z' WHERE c0 IN (1, 2);
-SELECT count() FROM ${TABLE};
+SELECT c0, c1 FROM ${TABLE} ORDER BY c0;
 "
 
 # The server must still be alive after all scenarios (no abort).

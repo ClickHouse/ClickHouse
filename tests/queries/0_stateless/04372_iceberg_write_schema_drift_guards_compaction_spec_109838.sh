@@ -114,8 +114,11 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --allow_expe
 CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2, allow_experimental_iceberg_compaction=1;
 INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3);
 ALTER TABLE ${TABLE} DELETE WHERE c0 = 0;
+"
+paths_before=$(${CLICKHOUSE_CLIENT} --query "SELECT arrayStringConcat(groupUniqArray(_path), ',') FROM ${TABLE}")
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "
 OPTIMIZE TABLE ${TABLE};
-SELECT count() FROM ${TABLE};
+SELECT c0, c1, has(splitByChar(',', '${paths_before}'), _path) FROM ${TABLE} ORDER BY c0;
 "
 
 # The server must still be alive after all scenarios (no abort).
