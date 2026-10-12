@@ -556,7 +556,9 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
         && !(query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions());
 
     auto result = std::make_shared<MemorySourceFilter>();
-    ExpressionActionsSettings actions_settings(context);
+    /// The filters are evaluated per row like any expression of the query, so they are compiled by the JIT
+    /// under the same `compile_expressions` settings.
+    ExpressionActionsSettings actions_settings(context, CompileExpressions::yes);
 
     /// Drop the rows that cannot enter the top-K heap of the query. The comparison is cheap and, once
     /// the threshold is set, usually the most selective of the filters, so it goes first: the columns

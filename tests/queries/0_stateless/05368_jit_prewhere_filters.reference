@@ -1,0 +1,30 @@
+MergeTree, arithmetic on one column
+47300	2365855400
+47300	2365855400
+MergeTree, conditions on different columns
+2654	132071239
+2654	132071239
+MergeTree, guarded division does not throw
+25000	1240637500
+25000	1240637500
+MergeTree, Nullable
+26029	1301934779
+26029	1301934779
+MergeTree, WHERE moved to PREWHERE
+47300	2365855400
+47300	2365855400
+Memory, arithmetic on one column
+47300	2365855400
+47300	2365855400
+Memory, guarded division does not throw
+25000	1240637500
+25000	1240637500
+MergeTree, row-level filter
+67400	3370584900
+67400	3370584900
+Memory, row-level filter
+67400	3370584900
+67400	3370584900
+jit_prewhere_memory_compiled	1
+jit_prewhere_mt_compiled	1
+jit_prewhere_mt_row_policy_compiled	1

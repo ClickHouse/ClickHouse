@@ -535,7 +535,9 @@ ReadFromMergeTree::ReadFromMergeTree(
     , mutations_snapshot(std::move(mutations_))
     , all_column_names(std::move(all_column_names_))
     , data(data_)
-    , actions_settings(ExpressionActionsSettings(context_))
+    /// PREWHERE steps and the row-level filter are evaluated per row like any expression of the query, so they
+    /// are compiled by the JIT under the same `compile_expressions` settings.
+    , actions_settings(ExpressionActionsSettings(context_, CompileExpressions::yes))
     , block_size{
         .max_block_size_rows = max_block_size_,
         .preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes],
