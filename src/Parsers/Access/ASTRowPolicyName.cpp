@@ -28,7 +28,7 @@ void ASTRowPolicyName::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 void ASTRowPolicyName::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
 {
     if (full_name.database.empty())
-        std::tie(full_name.table_name, full_name.table_name) = current_database.rebase(full_name.table_name);
+        std::tie(full_name.database, full_name.table_name) = current_database.rebase(full_name.table_name);
 }
 
 String ASTRowPolicyNames::tableOrAsterisk(const String & table_name) const
@@ -137,7 +137,7 @@ void ASTRowPolicyNames::replaceEmptyDatabase(const CurrentDatabaseInfo & current
     for (auto & full_name : full_names)
         if (full_name.database.empty())
         {
-            std::tie(full_name.table_name, full_name.table_name) = current_database.rebase(full_name.table_name);
+            std::tie(full_name.database, full_name.table_name) = current_database.rebase(full_name.table_name);
         }
 }
 
