@@ -160,9 +160,12 @@ def test_query_cache_stores_and_hits_range_query():
     assert get_query_cache_hits() == hits_before + 1
 
 
-def test_query_cache_does_not_cache_subqueries():
+@pytest.mark.parametrize("handling", [None, "save"])
+def test_query_cache_does_not_cache_subqueries(handling):
     # A cached generated subquery loses its per-query state and drops the `up` series.
     params = {"use_query_cache": 1, "query_cache_for_subqueries": 1}
+    if handling is not None:
+        params["query_cache_nondeterministic_function_handling"] = handling
     run_instant_query(params)
     assert len(run_instant_query(params, query="foo or up")["result"]) == 4
     assert int(node.query("SELECT count() FROM system.query_cache WHERE is_subquery")) == 0
