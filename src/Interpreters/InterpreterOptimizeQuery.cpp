@@ -1,7 +1,4 @@
-#include "config.h"
-
 #include <Storages/IStorage.h>
-#include <Storages/StorageProxy.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
@@ -13,11 +10,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-
-#if USE_AVRO
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#endif
 
 #include <Interpreters/processColumnTransformers.h>
 
@@ -30,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -48,34 +39,10 @@ BlockIO InterpreterOptimizeQuery::execute()
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast);
-    /// Resolve before reading the metadata, so the checks below and `optimizeDryRun` see the real
-    /// structure rather than the columns-only one a lazily loaded table reports.
-    StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
-    auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, getContext());
-
-    /// Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
-    if (ast.manifest)
-    {
-        if (ast.final || ast.partition || ast.deduplicate || ast.cleanup || ast.dry_run)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, CLEANUP, and DRY RUN options");
-
-#if USE_AVRO
-        auto object_storage_table = castStorage<StorageObjectStorage>(table, DeferredTable::Skip);
-        if (!object_storage_table)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
-
-        auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table->getExternalMetadata(getContext()));
-        if (!iceberg_metadata)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
-
-        iceberg_metadata->optimizeManifestFiles(metadata_snapshot, getContext(), object_storage_table->getCatalog(), table_id);
-        return {};
-#else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
-#endif
-    }
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;
@@ -115,7 +82,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     if (ast.dry_run)
     {
-        auto * merge_tree_data = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
+        auto * merge_tree_data = dynamic_cast<MergeTreeData *>(table.get());
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN is only supported for MergeTree family tables");
 
@@ -139,6 +106,9 @@ BlockIO InterpreterOptimizeQuery::execute()
         return {};
     }
 
+    if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        snapshot_data->parts = {};
+
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
     return {};
 }
@@ -152,7 +122,6 @@ AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
     return required_access;
 }
 
-void registerInterpreterOptimizeQuery(InterpreterFactory & factory);
 void registerInterpreterOptimizeQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

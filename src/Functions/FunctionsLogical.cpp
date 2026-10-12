@@ -19,8 +19,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <base/TypeLists.h>
 
 #include <cstring>
 #include <algorithm>
@@ -35,7 +33,7 @@ REGISTER_FUNCTION(Logical)
         FunctionDocumentation::Description description = R"(
 Calculates the logical conjunction of two or more values.
 
-Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
@@ -53,7 +51,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT and(0, 1, -2);", "0"},
-            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "\\N"}
+            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "ᴺᵁᴸᴸ"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -66,7 +64,7 @@ Returns:
         FunctionDocumentation::Description description = R"(
 Calculates the logical disjunction of two or more values.
 
-Setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+Setting [`short_circuit_function_evaluation`](https://clickhouse.com/docs/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
 
 For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
@@ -84,7 +82,7 @@ Returns:
         )", {"Nullable(UInt8)"}};
         FunctionDocumentation::Examples examples = {
             {"Basic usage", "SELECT or(1, 0, 0, 2, NULL);", "1"},
-            {"With NULL", "SELECT or(0, NULL);", "\\N"}
+            {"With NULL", "SELECT or(0, NULL);", "ᴺᵁᴸᴸ"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
@@ -159,7 +157,7 @@ namespace
 using namespace FunctionsLogicalDetail;
 
 using UInt8Container = ColumnUInt8::Container;
-using UInt8ColumnPtrs = VectorWithMemoryTracking<const ColumnUInt8 *>;
+using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
 MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
@@ -188,7 +186,7 @@ bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
     for (Int64 i = static_cast<Int64>(in.size()) - 1; i >= 0; --i)
     {
-        UInt8 x = 0;
+        UInt8 x;
 
         if (in[i]->onlyNull())
             x = func(Null());
@@ -425,6 +423,15 @@ struct OperationApplier
                 doBatchedApplyAVX512BW<true>(in, result_data.data(), result_data.size());
             return;
         }
+
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            if (!use_result_data_as_input)
+                doBatchedApplyAVX2<false>(in, result_data.data(), result_data.size());
+            while (!in.empty())
+                doBatchedApplyAVX2<true>(in, result_data.data(), result_data.size());
+            return;
+        }
 #endif
         {
             if (!use_result_data_as_input)
@@ -472,6 +479,12 @@ struct OperationApplier
     {
         BATCH_BODY(doBatchedApplyAVX512BW)
     }
+
+    template <bool CarryResult, typename Columns, typename Result>
+    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE
+    {
+        BATCH_BODY(doBatchedApplyAVX2)
+    }
 #endif
 
 #undef BATCH_BODY
@@ -490,6 +503,12 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
 #if USE_MULTITARGET_CODE
     template <bool, typename Columns, typename Result>
     static void doBatchedApplyAVX512BW(Columns &, Result &, size_t)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
+    }
+
+    template <bool, typename Columns, typename Result>
+    static void doBatchedApplyAVX2(Columns &, Result &, size_t)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
     }
@@ -532,7 +551,7 @@ using FastApplierImpl =
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
-    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(
     template <typename T, typename Result>
     static void
@@ -554,6 +573,11 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
             if (isArchSupported(TargetArch::x86_64_v4))
             {
                 applyImpl_x86_64_v4<T, Result>(x, *column, result);
+                return;
+            }
+            if (isArchSupported(TargetArch::x86_64_v3))
+            {
+                applyImpl_x86_64_v3<T, Result>(x, *column, result);
                 return;
             }
 #endif
@@ -710,7 +734,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             has_nullable_arguments = arg_type->isNullable();
             if (has_nullable_arguments && !Impl::specialImplementationForNulls())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
-                    "argument {} is of type {}", getName(), i + 1, arg_type->getName());
+                    " argument {} is of type {}", getName(), i + 1, arg_type->getName());
         }
 
         if (!(isNativeNumber(arg_type)
@@ -756,11 +780,26 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     executeColumnIfNeeded(arguments[0]);
 
-    /// A set mask bit means that the row still needs evaluation: it has not encountered
-    /// false for `and`, or true for `or`. `NULL` does not decide either operation, so it leaves
-    /// the row active and is remembered separately. A later decisive value clears the
-    /// `NULL` state in `applyTernaryLogic`; otherwise the final result remains `NULL`.
-    /// The `or` mask contains inverted values and is inverted once at the end.
+    /// Let's denote x_i' = maskedExecute(x_i, mask).
+    /// 1) AND(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = x_0 & x_1 & ... & x_i.
+    /// Base:
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// Iteration:
+    /// mask_i = extractMask(mask_{i - 1}, x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 1 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is mask_n.
+    ///
+    /// 1) OR(x_0, x_1, x_2, ..., x_n)
+    /// We will support mask_i = !x_0 & !x_1 & ... & !x_i.
+    /// mask_0 is 1 everywhere, x_0' = x_0.
+    /// mask = extractMask(mask, !x_{i - 1}')
+    /// x_i' = maskedExecute(x_i, mask)
+    /// Also we will treat NULL as 0 if x_i' is Nullable
+    /// to support ternary logic.
+    /// The result is !mask_n.
 
     bool inverted = Name::name != NameAnd::name;
     UInt8 null_value = static_cast<UInt8>(Name::name == NameAnd::name);
@@ -772,14 +811,20 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info{.has_ones = true, .has_zeros = false};
-    for (const auto & argument : arguments)
+    MaskInfo mask_info;
+    for (size_t i = 1; i <= arguments.size(); ++i)
     {
-        mask_info = maskedExecuteAndUpdateMask(argument, mask, mask_info, inverted, nulls.get(), null_value);
+        if (inverted)
+            mask_info = extractInvertedMask(mask, arguments[i - 1].column, nulls.get(), null_value);
+        else
+            mask_info = extractMask(mask, arguments[i - 1].column, nulls.get(), null_value);
 
-        /// Stop when every row has a decisive result.
-        if (!mask_info.has_ones)
+        /// If mask doesn't have ones, we don't need to execute the rest arguments,
+        /// because the result won't change.
+        if (!mask_info.has_ones || i == arguments.size())
             break;
+
+        maskedExecute(arguments[i], mask, mask_info);
     }
     /// For OR function we need to inverse mask to get the resulting column.
     if (inverted)
@@ -814,7 +859,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
-        VectorWithMemoryTracking<size_t> short_circuit_args_index;
+        std::vector<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)
@@ -949,14 +994,17 @@ template <template <typename> class Impl, typename Name>
 ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     ColumnPtr res;
-    TypeListUtils::forEach(TypeListNativeNumber{}, [&]<typename T>(TypeList<T>)
-    {
-        if (!res)
-            res = functionUnaryExecuteType<Impl, T>(arguments);
-    });
-
-    if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+    if (!((res = functionUnaryExecuteType<Impl, UInt8>(arguments))
+        || (res = functionUnaryExecuteType<Impl, UInt16>(arguments))
+        || (res = functionUnaryExecuteType<Impl, UInt32>(arguments))
+        || (res = functionUnaryExecuteType<Impl, UInt64>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Int8>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Int16>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Int32>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Int64>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Float32>(arguments))
+        || (res = functionUnaryExecuteType<Impl, Float64>(arguments))))
+       throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Illegal column {} of argument of function {}",
             arguments[0].column->getName(),
             getName());

@@ -8,7 +8,7 @@ void HTTPPathHints::add(const String & http_path)
     http_paths.push_back(http_path);
 }
 
-VectorWithMemoryTracking<String> HTTPPathHints::getAllRegisteredNames() const
+std::vector<String> HTTPPathHints::getAllRegisteredNames() const
 {
     return http_paths;
 }

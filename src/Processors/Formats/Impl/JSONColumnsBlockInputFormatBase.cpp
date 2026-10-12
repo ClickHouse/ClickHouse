@@ -49,7 +49,7 @@ void JSONColumnsReaderBase::skipColumn()
     /// We assume that we already read '[', so we should skip until matched ']'.
     size_t balance = 1;
     bool inside_quotes = false;
-    char * pos = nullptr;
+    char * pos;
     while (!in->eof() && balance)
     {
         if (inside_quotes)
@@ -84,12 +84,11 @@ JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     : IInputFormat(header_, &in_)
     , format_settings(format_settings_)
     , fields(header_->getNamesAndTypes())
-    , name_to_index(format_settings_.input_format_column_matching_case_sensitivity)
     , serializations(header_->getSerializations())
     , reader(std::move(reader_))
     , block_missing_values(getPort().getHeader().columns())
 {
-    name_to_index.initFromBlock(getPort().getHeader());
+    name_to_index = getNamesToIndexesMap(getPort().getHeader());
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(
@@ -165,8 +164,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             /// Check if this name appears in header. If no, skip this column or throw
             /// an exception according to setting input_format_skip_unknown_fields
-            auto idx = name_to_index.get(*column_name);
-            if (idx == CaseAwareBlockNameMap::NOT_FOUND)
+            if (name_to_index.find(*column_name) == name_to_index.end())
             {
                 if (!format_settings.skip_unknown_fields)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column found in input data: {}", *column_name);
@@ -174,14 +172,11 @@ Chunk JSONColumnsBlockInputFormatBase::read()
                 reader->skipColumn();
                 continue;
             }
-            column_index = idx;
+            column_index = name_to_index[*column_name];
         }
 
         if (column_index >= columns.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Input data has too many columns, expected {} columns", columns.size());
-
-        if (seen_columns[column_index])
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Repeated field (`{}`) when processing data.", column_name.value());
 
         seen_columns[column_index] = 1;
         size_t columns_size = readColumn(*columns[column_index], fields[column_index].type, serializations[column_index], fields[column_index].name);

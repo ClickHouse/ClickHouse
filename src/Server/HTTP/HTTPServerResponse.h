@@ -204,7 +204,7 @@ protected:
             return;
 
         auto data_size = offset();
-        chassert(data_size <= buf_size);
+        assert(data_size <= buf_size);
 
         memory.resize(buf_size);
         set(memory.data(), memory.size(), data_size);
