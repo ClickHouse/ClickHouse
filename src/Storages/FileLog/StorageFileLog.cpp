@@ -232,8 +232,11 @@ StorageFileLog::StorageFileLog(
             created_metadata_directory = true;
         }
 
-        if (disk->existsDirectory(tmp_metadata_path))
+        if (disk->existsDirectory(tmp_metadata_path) && !disk->isDirectoryEmpty(tmp_metadata_path))
+        {
+            LOG_INFO(log, "Removing leftover temporary meta files in {}", tmp_metadata_path);
             disk->removeRecursive(tmp_metadata_path);
+        }
         disk->createDirectories(tmp_metadata_path);
 
         loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
@@ -504,6 +507,8 @@ void StorageFileLog::deserialize()
         {
             if (it->second.last_writen_position < metadata.last_writen_position)
                 std::swap(it->second, metadata);
+            LOG_INFO(log, "Removing meta file {} (offset {}): meta file {} of the same inode has offset {}",
+                metadata.file_name, metadata.last_writen_position, it->second.file_name, it->second.last_writen_position);
             files_to_remove.push_back(getFullMetaPath(metadata.file_name));
         }
     }
