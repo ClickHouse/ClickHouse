@@ -1,0 +1,51 @@
+0	unseeded	String	\N
+1	\N	None	\N
+2	unseeded	String	\N
+3	\N	None	\N
+10	0	UInt8	0
+11	1	UInt8	1
+12	2	UInt8	2
+13	3	UInt8	3
+--- the same value, everywhere else in the query ---
+0	\N
+1	\N
+2	\N
+3	\N
+10	0
+11	1
+12	2
+13	3
+2
+2
+2
+--- without the rewrite to a subcolumn ---
+2
+--- the subcolumn spelled out ---
+0	\N	unseeded
+1	\N	\N
+2	\N	unseeded
+3	\N	\N
+10	0	\N
+11	1	\N
+12	2	\N
+13	3	\N
+0	unseeded	\N
+1	\N	\N
+2	unseeded	\N
+3	\N	\N
+10	0	0
+11	1	1
+12	2	2
+13	3	3
+--- a child with an ALIAS column takes another code path ---
+0	1	\N
+1	2	\N
+2	3	\N
+3	4	\N
+10	11	0
+11	12	1
+12	13	2
+13	14	3
+--- a column no child declares is still filled with the default ---
+1	42	\N
+2	0	7

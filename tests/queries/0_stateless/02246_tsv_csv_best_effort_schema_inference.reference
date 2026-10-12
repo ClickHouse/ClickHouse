@@ -2,7 +2,7 @@ TSV
 c1	Nullable(Int64)					
 c2	Nullable(String)					
 c3	Array(Nullable(Int64))					
-c4	Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64))					
+c4	Nullable(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					
 42	Some string	[1,2,3,4]	(1,2,3)
 42	abcd	[]	(4,5,6)
 c1	Nullable(String)					
@@ -12,7 +12,7 @@ c1	Nullable(String)
 [({}, [NULL], NULL)]
 [({}, [\'String3\'], NULL)]
 [({\'key3\': NULL}, []), NULL]
-c1	Array(Tuple(Map(String, Nullable(Float64)), Array(Nullable(String)), Nullable(Float64)))					
+c1	Array(Nullable(Tuple(Map(String, Nullable(Float64)), Array(Nullable(String)), Nullable(Float64))))					
 [({'key':42.42},['String','String2'],42.42),({},[],-42),({'key2':NULL},[NULL],NULL)]
 []
 [({},[],0)]
@@ -71,7 +71,7 @@ CSV
 c1	Nullable(String)					
 c2	Nullable(String)					
 c3	Array(Nullable(Int64))					
-c4	Array(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					
+c4	Array(Nullable(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64))))					
 42	Some string	[1,2,3,4]	[(1,2,3)]
 42\\	abcd	[]	[(4,5,6)]
 c1	Nullable(String)					
@@ -81,7 +81,7 @@ c1	Nullable(String)
 [({}, [NULL], NULL)]
 [({}, [\'String3\'], NULL)]
 [({\'key3\': NULL}, []), NULL]
-c1	Array(Tuple(Map(String, Nullable(Float64)), Array(Nullable(String)), Nullable(Float64)))					
+c1	Array(Nullable(Tuple(Map(String, Nullable(Float64)), Array(Nullable(String)), Nullable(Float64))))					
 [({'key':42.42},['String','String2'],42.42),({},[],-42),({'key2':NULL},[NULL],NULL)]
 []
 [({},[],0)]
@@ -101,7 +101,7 @@ c1	Nullable(String)
 (1, 2, 3)
 c1	Nullable(String)					
 123.123
-c1	Array(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					
+c1	Array(Nullable(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64))))					
 [(1,2,3)]
-c1	Array(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					
+c1	Array(Nullable(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64))))					
 [(1,2,3)]

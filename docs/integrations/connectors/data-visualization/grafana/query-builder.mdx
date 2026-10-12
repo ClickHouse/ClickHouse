@@ -189,7 +189,9 @@ You can make a data link by selecting a column named `traceID` in your query. Th
 
 If OpenTelemetry is enabled in a [log](#logs) or [trace](#traces) query, a trace ID column will be included automatically.
 
-By including a trace ID column, the "**View Trace**" and "**View Logs**" links will be attached to the data.
+When a trace ID column is present, the plugin can attach "**View Trace**" and "**View Logs**" links to the data.
+
+The toggles are enabled by default. A link for the current query type doesn't require configured defaults, while a cross-signal link appears only when the data source has defaults configured for the target signal. You can hide them with the **Show "View trace" links** and **Show "View logs" links** toggles in the data source's [trace](/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) and [log](/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) configuration sections.
 
 ### Linking abilities {#linking-abilities}
 

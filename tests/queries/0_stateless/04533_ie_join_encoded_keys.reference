@@ -1,0 +1,35 @@
+plan encoded	1
+plan nullable	1
+plan mixed	1
+plan generic	1
+plan decimal	1
+plan datetime64	1
+plan enum	1
+plan bool	1
+plan date32	1
+UInt8	1	36697
+UInt16	1	40135
+UInt32	1	36227
+UInt64	1	39327
+Int8	1	38945
+Int16	1	40949
+Int32	1	38765
+Int64	1	38604
+Float32	1	38250
+Float64	1	38057
+Date	1	41212
+Date32	1	40412
+DateTime	1	37542
+DateTime64	1	40961
+Decimal32	1	40262
+Decimal64	1	40105
+Enum8	1	30000
+Enum16	1	40000
+Bool	1	93533
+Nullable	1	17782
+Nullable left	1	17939
+shared same dir	1	32934
+shared flip dir	1	54860
+generic first	1	35230
+generic second	1	33878
+generic both	1	35111

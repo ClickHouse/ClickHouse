@@ -258,7 +258,7 @@ Nota: se admiten slices tipados y mapas, siempre que las subcolumnas de la tupla
   ### Nested
 </div>
 
-Un campo Nested equivale a un Array de Tuplas con nombre. Su uso depende de si el usuario ha configurado [flatten&#95;nested](/es/reference/settings/session-settings#flatten_nested) en 1 o en 0.
+Un campo Nested equivale a un Array de Tuplas con nombre. Su uso depende de si el usuario ha configurado [flatten&#95;nested](/es/reference/settings/session-settings/other#flatten_nested) en 1 o en 0.
 
 Al configurar flatten&#95;nested en 0, las columnas Nested se mantienen como un único array de tuplas. Esto le permite usar slices de mapas para la inserción y la recuperación, así como niveles arbitrarios de anidación. La clave del mapa debe ser igual al nombre de la columna, como se muestra en el ejemplo siguiente.
 
@@ -357,7 +357,7 @@ for rows.Next() {
     }
     fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
 }
-// NOTA: No omitir la comprobación de rows.Err()
+// NOTE: Do not skip rows.Err() check
 if err := rows.Err(); err != nil {
     return err
 }

@@ -9,7 +9,6 @@ set enable_parallel_replicas = 0;
 set optimize_on_insert = 1;
 set prefer_localhost_replica=1;
 set optimize_aggregation_in_order=0, optimize_read_in_order=0;
-set query_plan_optimize_prewhere=1;
 set optimize_move_to_prewhere=1;
 set optimize_skip_unused_shards=0;
 set enable_parallel_blocks_marshalling = 1; -- EXPLAIN output includes BlocksMarshalling node when enabled
@@ -39,6 +38,8 @@ select * from (explain indexes=1, actions=1, distributed=1
 
 select * from (explain indexes=1, actions=1, distributed=1
     select * from (select x, sum(y) from remote('127.0.0.{1,2}', currentDatabase(), tab0) group by x) where x = 42
+    -- pin (randomized in CI): `MergingAggregated` prints its mode only when it is set
+    settings distributed_aggregation_memory_efficient=1
 );
 
 select '============ in / global in';

@@ -131,7 +131,7 @@ The zone is selected automatically from the longitude, applying the standard exc
         {"Tuple(Float64, Float64, UInt8, FixedString(1))"}};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", "SELECT geoToUTM(2.294497, 48.858222)", "(448251.5978370684,5411935.125629659,31,'U')"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

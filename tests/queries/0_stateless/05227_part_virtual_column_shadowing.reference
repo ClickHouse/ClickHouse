@@ -1,0 +1,28 @@
+0
+0
+3
+2
+0
+500
+1	100
+2	200
+3	300
+3
+0
+0
+the virtual column still works without a shadowing column
+1
+1
+2
+2
+a partitioned table with a shadowing column
+1
+0
+2
+0
+2
+500
+1	1	100
+2	2	200
+3	2	300
+3

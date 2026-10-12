@@ -1,13 +1,13 @@
 ---
 description: 'توثيق بحيرات البيانات'
-sidebarTitle: 'بحيرات البيانات'
+sidebarTitle: 'نظرة عامة'
 slug: /sql-reference/datalakes
 title: 'بحيرات البيانات'
 doc_type: 'reference'
 ---
 
 في هذا القسم، نستعرض دعم ClickHouse لبحيرات البيانات.
-يدعم ClickHouse العديد من أشهر تنسيقات الجداول وكتالوجات البيانات، بما في ذلك Iceberg وDelta Lake وHudi وAWS Glue وREST Catalog وUnity Catalog وMicrosoft OneLake.
+يدعم ClickHouse العديد من أشهر تنسيقات الجداول وكتالوجات البيانات، بما في ذلك Iceberg وDelta Lake وHudi وAWS Glue وكتالوج REST وUnity Catalog وMicrosoft OneLake.
 
 <div id="open-table-formats">
   # تنسيقات الجداول المفتوحة
@@ -46,6 +46,13 @@ doc_type: 'reference'
 </div>
 
 يمكن استخدام كتالوج REST لـ Iceberg مع جداول Iceberg. كما يمكن استخدامه مع محرك الجدول `iceberg`، أو مع محرك قاعدة البيانات [DataLakeCatalog](/ar/reference/engines/database-engines/datalake).
+
+<div id="snowflake-horizon-catalog">
+  ## Snowflake Horizon Catalog
+</div>
+
+يوفّر Snowflake Horizon Catalog واجهة Iceberg REST API لجداول Iceberg التي تديرها Snowflake.
+استخدم `DataLakeCatalog` مع `catalog_type = 'horizon'`. راجع [دليل كتالوج Horizon](/ar/guides/use-cases/data-warehousing/horizon-catalog).
 
 <div id="unity-catalog">
   ## Unity Catalog

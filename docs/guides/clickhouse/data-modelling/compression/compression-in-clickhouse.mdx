@@ -231,7 +231,7 @@ Recommendation                                     | Reasoning
 **`Gorilla` and `T64` for unknown patterns?**      | If the data has an unknown pattern, it may be worth trying `Gorilla` and `T64`.
 **`Gorilla` for gauge data**                       | `Gorilla` can be effective on floating point data, specifically that which represents gauge readings, i.e. random spikes.
 
-See [here](/reference/statements/create/table#column_compression_codec) for further options.
+See [here](/reference/statements/create/table/codec) for further options.
 
 Below we specify the `Delta` codec for the `Id`, `ViewCount` and `AnswerCount`, hypothesizing these will be linearly correlated with the ordering key and thus should benefit from Delta encoding.
 

@@ -42,6 +42,13 @@ FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_
 readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.path' || true)
 readarray -t DISKS_METADATA_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.metadata_path' || true)
 
+# A `filesystem_caches` entry is not a `storage_configuration` disk, so the paths above do not cover
+# it, and `FileCache::initialize` cannot create one under a directory the server does not own.
+# Absolute entries only: those are used verbatim, while a relative one is resolved by the server
+# against a prefix (`filesystem_caches_path`, or `<path>/caches` when unset) that this script cannot
+# reconstruct, so preparing it as written would create a directory nothing opens.
+readarray -t FILESYSTEM_CACHES_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='filesystem_caches.*.path' | grep '^/' || true)
+
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD_FILE="${CLICKHOUSE_PASSWORD_FILE:-}"
 if [[ -n "${CLICKHOUSE_PASSWORD_FILE}" && -f "${CLICKHOUSE_PASSWORD_FILE}" ]]; then
@@ -86,7 +93,8 @@ function manage_clickhouse_directories() {
       "$USER_PATH" \
       "$FORMAT_SCHEMA_PATH" \
       "${DISKS_PATHS[@]}" \
-      "${DISKS_METADATA_PATHS[@]}"
+      "${DISKS_METADATA_PATHS[@]}" \
+      "${FILESYSTEM_CACHES_PATHS[@]}"
     do
         create_directory_and_do_chown "$dir"
     done
@@ -100,11 +108,11 @@ function manage_clickhouse_user() {
     case $USERS_XML in
         /* ) # absolute path
             cp "$USERS_XML" /tmp
-            USERS_CONFIG="/tmp/$(basename $USERS_XML)"
+            USERS_CONFIG="/tmp/$(basename "$USERS_XML")"
             ;;
         * ) # relative path to the $CLICKHOUSE_CONFIG
             cp "$(dirname "$CLICKHOUSE_CONFIG")/${USERS_XML}" /tmp
-            USERS_CONFIG="/tmp/$(basename $USERS_XML)"
+            USERS_CONFIG="/tmp/$(basename "$USERS_XML")"
             ;;
     esac
 

@@ -111,7 +111,7 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 
 يمكن لـ ClickHouse الآن الوصول إلى بيانات MySQL إما باستخدام [jdbc table function](/ar/reference/functions/table-functions/jdbc) أو [JDBC table engine](/ar/reference/engines/table-engines/integrations/jdbc).
 
-أسهل طريقة لتنفيذ الأمثلة التالية هي نسخها ولصقها في [`clickhouse-client`](/ar/concepts/features/interfaces/cli) أو في [واجهة المستخدم Play](/ar/concepts/features/interfaces/http).
+أسهل طريقة لتنفيذ الأمثلة التالية هي نسخها ولصقها في [`clickhouse-client`](/ar/concepts/features/interfaces/client) أو في [واجهة المستخدم Play](/ar/concepts/features/interfaces/http).
 
 * jdbc table function:
 
@@ -120,7 +120,7 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 ```
 
 <Note>
-  نستخدم اسم مصدر البيانات المُسمّى الذي قمنا بتهيئته أعلاه كأول مَعلَمة في `jdbc table function`.
+  نستخدم اسم مصدر البيانات المُسمّى الذي قمنا بتهيئته أعلاه كأول معامل في `jdbc table function`.
 </Note>
 
 * JDBC table engine:
@@ -136,9 +136,9 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 ```
 
 <Note>
-  نستخدم اسم مصدر البيانات المسمّى الذي أعددناه أعلاه كمعلمة أولى في بند محرك jdbc
+  نستخدم اسم مصدر البيانات المسمّى الذي أعددناه أعلاه كمعامل أول في بند محرك jdbc
 
-  يجب أن يكون مخطط جدول محرك ClickHouse JDBC ومخطط جدول MySQL المتصل متطابقين؛ فعلى سبيل المثال، يجب أن تتطابق أسماء الأعمدة وترتيبها، وأن تكون أنواع بيانات الأعمدة متوافقة
+  يجب أن يكون schema جدول محرك ClickHouse JDBC وschema جدول MySQL المتصل متطابقين؛ فعلى سبيل المثال، يجب أن تتطابق أسماء الأعمدة وترتيبها، وأن تكون أنواع بيانات الأعمدة متوافقة
 </Note>
 
 <div id="install-the-clickhouse-jdbc-bridge-externally">

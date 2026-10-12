@@ -14,11 +14,42 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (!type)
+        return;
+
+    if (definer || is_definer_current_user)
+    {
+        ostr << "DEFINER";
+        ostr << " = ";
+        if (definer)
+            definer->format(ostr, settings, state, frame);
+        else
+            ostr << "CURRENT_USER";
+        ostr << " ";
+    }
+
+    ostr << "SQL SECURITY";
+    switch (*type)
+    {
+        case SQLSecurityType::INVOKER:
+            ostr << " INVOKER";
+            break;
+        case SQLSecurityType::DEFINER:
+            ostr << " DEFINER";
+            break;
+        case SQLSecurityType::NONE:
+            ostr << " NONE";
+            break;
+    }
+}
+
 void ASTSQLSecurity::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "SQLSecurity");
     if (type.has_value())
-        w.writeString("security_type", std::string(magic_enum::enum_name(*type)));
+        w.writeString("security_type", magic_enum::enum_name(*type));
     if (is_definer_current_user)
         w.writeBool("is_definer_current_user", true);
     if (definer)
