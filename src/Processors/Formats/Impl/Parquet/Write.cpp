@@ -329,19 +329,21 @@ struct StatisticsStringCopy
 /// for `GeospatialStatistics` of the column chunk.
 struct StatisticsGeometry
 {
+    /// Held by pointer, because `GeoStatistics` is not movable. The methods below modify the
+    /// pointee, so they are not const, although clang-tidy suggests it.
     std::unique_ptr<parquet::geospatial::GeoStatistics> geo = std::make_unique<parquet::geospatial::GeoStatistics>();
 
-    void add(parquet::ByteArray x)
+    void add(parquet::ByteArray x) // NOLINT(readability-make-member-function-const)
     {
         geo->Update(&x, 1);
     }
 
-    void merge(const StatisticsGeometry & s)
+    void merge(const StatisticsGeometry & s) // NOLINT(readability-make-member-function-const)
     {
         geo->Merge(*s.geo);
     }
 
-    void clear() { geo->Reset(); }
+    void clear() { geo->Reset(); } // NOLINT(readability-make-member-function-const)
 
     parq::Statistics get(const WriteOptions &) const
     {
