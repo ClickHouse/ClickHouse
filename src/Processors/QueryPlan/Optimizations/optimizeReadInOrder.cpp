@@ -120,6 +120,11 @@ struct FindReadingStepContext
     bool inside_collapsing_exchange_pair = false;
 
     std::list<JoinStep *> joins_to_keep_in_order = {};
+    /// True if `findReadingStep` traversed any join (`JoinStep` or `FilledJoinStep`)
+    /// between the sorting step and the reading step. `joins_to_keep_in_order`
+    /// only records `JoinStep` because only those need `keepLeftPipelineInOrder`,
+    /// so a separate flag is needed for correctness gates such as FINAL LIMIT pushdown.
+    bool has_join_on_path = false;
 };
 
 /// Find the gather that tryMakeDistributedRead put directly over a reading step, looking through only
@@ -207,8 +212,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
                 && !join_ptr->hasDelayedBlocks() && join_ptr->preservesLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
-                if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
-                    data.joins_to_keep_in_order.push_back(join_step);
+                if (reading_step)
+                {
+                    if (auto * join_step = typeid_cast<JoinStep *>(step))
+                        data.joins_to_keep_in_order.push_back(join_step);
+                    /// Track that a join (either JoinStep or FilledJoinStep) lies between
+                    /// the sorting and reading steps, so callers can disable optimizations
+                    /// that are unsafe across joins (e.g. FINAL LIMIT pushdown).
+                    data.has_join_on_path = true;
+                }
                 return reading_step;
             }
         }
@@ -319,7 +331,13 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+/// `has_row_reducing_step` is set when a step that can remove rows *after* the FINAL merge is
+/// encountered (preliminary `DISTINCT` or non-left `ARRAY JOIN`). Unlike PREWHERE/row-level
+/// filtering (which runs within each part before the merge and only clears `limit`), such steps
+/// make FINAL LIMIT pushdown unsafe: stopping the merge after `N` rows can drop keys that would
+/// have survived into the top-`N` once the row-reducing step is applied. `FilterStep` and joins
+/// are tracked separately (`has_filter_step` and `FindReadingStepContext::has_join_on_path`).
+void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit, bool & has_filter_step, bool & has_row_reducing_step)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -355,11 +373,12 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     if (node.children.empty())
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, has_filter_step, has_row_reducing_step);
 
     if (typeid_cast<const DistinctStep *>(step))
     {
         limit = 0;
+        has_row_reducing_step = true;
     }
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
@@ -368,7 +387,10 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
         /// Should ignore limit because arrayJoin() can reduce the number of rows in case of empty array.
         if (actions.hasArrayJoin())
+        {
             limit = 0;
+            has_row_reducing_step = true;
+        }
 
         appendExpression(dag, actions);
     }
@@ -377,6 +399,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     {
         /// Should ignore limit if there is filtering.
         limit = 0;
+        has_filter_step = true;
 
         appendExpression(dag, filter->getExpression());
         if (const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName()))
@@ -388,7 +411,10 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
         if (!array_join->isLeft())
+        {
             limit = 0;
+            has_row_reducing_step = true;
+        }
 
         if (dag)
         {
@@ -567,6 +593,11 @@ SortingInputOrder buildInputOrderFromSortDescription(
     size_t next_description_column = 0;
     size_t next_sort_key = 0;
 
+    /// Count of consecutive fixed (constant) sorting key columns from the start.
+    /// Incremented only while all previous columns were also fixed.
+    size_t num_leading_fixed = 0;
+    bool leading_fixed_streak = true;
+
     bool can_optimize_virtual_row = true;
 
     struct MatchInfo
@@ -625,6 +656,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
             match_infos.push_back({.source = sort_column_node});
             ++next_description_column;
             ++next_sort_key;
+            leading_fixed_streak = false;
         }
         else
         {
@@ -656,6 +688,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
                     order_key_prefix_descr.push_back(sort_column_description);
                     ++next_description_column;
                     ++next_sort_key;
+                    if (leading_fixed_streak)
+                        ++num_leading_fixed;
                     continue;
                 }
 
@@ -676,6 +710,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
                 ++next_description_column;
                 ++next_sort_key;
+                leading_fixed_streak = false;
             }
             else if (fixed_key_columns.contains(sort_column_node))
             {
@@ -691,6 +726,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
 
                 //std::cerr << "+++++++++ Found fixed key by match" << std::endl;
                 ++next_sort_key;
+                if (leading_fixed_streak)
+                    ++num_leading_fixed;
             }
             else
             {
@@ -746,7 +783,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     if (pk_column_names.size() < next_sort_key)
         can_optimize_virtual_row = false;
 
-    auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit);
+    auto order_info = std::make_shared<InputOrderInfo>(order_key_prefix_descr, next_sort_key, read_direction, limit, num_leading_fixed);
 
     std::optional<ActionsDAG> virtual_row_conversion;
     if (can_optimize_virtual_row)
@@ -1068,7 +1105,13 @@ void buildCombinedDAGForMergeChildPlan(
     size_t & limit)
 {
     if (child_plan && child_plan->isInitialized())
-        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit);
+    {
+        /// The FINAL limit pushdown gate is checked only on the `ReadFromMergeTree` path, not on
+        /// the `ReadFromMerge` child-plan path handled here, so the filter-step flag is unused.
+        bool has_filter_step_unused = false;
+        bool has_row_reducing_step_unused = false;
+        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
+    }
 
     if (outer_dag)
     {
@@ -1259,7 +1302,9 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    bool has_filter_step = false;
+    bool has_row_reducing_step = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step, has_row_reducing_step);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1272,7 +1317,7 @@ InputOrderInfoPtr buildInputOrderInfo(
         /// ("Replica decided to read in Default mode, not in WithOrder").
         /// Skip this optimization for parallel replicas when it goes through a JOIN,
         /// similar to the existing check for parallel replicas in the Union case.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.has_join_on_path)
             return nullptr;
 
         auto order_info = buildInputOrderFromSortDescription(
@@ -1314,10 +1359,68 @@ InputOrderInfoPtr buildInputOrderInfo(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit,
+                order_info.input_order->num_leading_fixed_sort_key_columns,
                 query_limit);
 
             if (!can_read)
                 return nullptr;
+
+            /// For FINAL queries, set the limit for merge algorithms separately.
+            /// buildSortingDAG clears input_order_info->limit when there are
+            /// filters/prewhere (to prevent storage-level TopN from reading too
+            /// few rows), but the FINAL merge can still use the limit safely
+            /// when filtering is done only via PREWHERE (which runs within each
+            /// part before the merge). When a FilterStep exists in the plan,
+            /// the filter runs AFTER the merge, so limit pushdown is not safe.
+            ///
+            /// Likewise, `deferFiltersAfterFinalIfNeeded` may move a row-level
+            /// policy or PREWHERE to run AFTER the merge (when
+            /// `apply_row_policy_after_final` or `apply_prewhere_after_final`
+            /// is enabled). In that case the merge sees unfiltered rows, so
+            /// stopping after LIMIT would truncate candidates that would
+            /// otherwise survive deferred filtering. The check on the deferred
+            /// filter pointers is reliable here because
+            /// `optimizePrimaryKeyConditionAndLimit` (which calls
+            /// `applyFilters` -> `deferFiltersAfterFinalIfNeeded`) runs before
+            /// `optimizeReadInOrder` in the optimization pipeline.
+            ///
+            /// Additionally, the limit may only be pushed down when the sorting
+            /// key fully covers the ORDER BY columns. If the ORDER BY extends
+            /// beyond or diverges from the sorting key (e.g. ORDER BY a, c with
+            /// key (a, b)), the SortingStep above will re-sort by the extra
+            /// columns. Pushing limit into the merge would discard rows that
+            /// might appear in the correct top-N after the full re-sort.
+            ///
+            /// sort_description_for_merging is a subsequence of description
+            /// (ORDER BY) built by the matching loop, so equality of sizes
+            /// means every ORDER BY column was successfully matched.
+            ///
+            /// Likewise, the limit must not be pushed below a join: `buildSortingDAG`
+            /// already clears the local `limit` when it encounters a `JoinStep`/`FilledJoinStep`
+            /// for exactly this reason, but here we use `sorting.getLimit` (to bypass the
+            /// filter-related clearing). When read-in-order traverses a join, the context
+            /// flag `has_join_on_path` is set for both `JoinStep` and `FilledJoinStep`; use
+            /// that as the authoritative signal — `joins_to_keep_in_order` alone is not
+            /// enough because it intentionally records only `JoinStep` for downstream
+            /// `keepLeftPipelineInOrder` calls.
+            ///
+            /// Similarly, a row-reducing step that runs *after* the FINAL merge (preliminary
+            /// `DISTINCT` or non-left `ARRAY JOIN`) makes pushdown unsafe: stopping the merge
+            /// after `N` rows can drop keys that would have survived into the top-`N` once the
+            /// step is applied. `buildSortingDAG` clears the local `limit` for these too, but
+            /// since we bypass that cleared `limit`, we gate on the dedicated
+            /// `has_row_reducing_step` flag instead.
+            ///
+            /// `SAMPLE` is also a row-reducing predicate invisible to `buildSortingDAG`: the
+            /// sampling `FilterTransform` is appended to the pipe after the `FINAL` merge
+            /// (see `ReadFromMergeTree::initializePipeline`), so stopping the merge after `N`
+            /// pre-sample groups can drop later sampled keys that should fill the top-`N`.
+            bool sorting_key_covers_order_by = order_info.input_order->sort_description_for_merging.size() == description.size();
+            bool has_deferred_filters = reading->getDeferredRowLevelFilter() || reading->getDeferredPrewhereInfo();
+            if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && !has_row_reducing_step
+                && !has_deferred_filters && !find_reading_ctx.has_join_on_path && sorting_key_covers_order_by
+                && !reading->isQueryWithSampling())
+                reading->setFinalLimit(sorting.getLimit());
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1327,6 +1430,15 @@ InputOrderInfoPtr buildInputOrderInfo(
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
     {
+        /// Note: `optimize_final_limit_pushdown` is deliberately NOT propagated through
+        /// `ReadFromMerge` (a `Merge` table or the `merge` table function over
+        /// `AggregatingMergeTree` / `SummingMergeTree` / `CoalescingMergeTree` children).
+        /// The child reading steps are built inside `StorageMerge` per child table, and
+        /// forwarding `final_limit` there safely would require re-checking the whole gate
+        /// (filters, joins, row-reducing steps, `SAMPLE`, deferred filters) against each
+        /// child plan. Such queries stay correct but perform full FINAL merges in the
+        /// children without early termination. This is a documented limitation of the
+        /// setting, see its description in `Settings.cpp`.
         auto order_info = buildInputOrderFromSortDescription(
             merge,
             fixed_columns,
@@ -1358,6 +1470,7 @@ InputOrderInfoPtr buildInputOrderInfo(
             bool can_read = object_storage_step->requestReadingInOrder();
             if (!can_read)
                 return nullptr;
+
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
@@ -1384,7 +1497,9 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1393,7 +1508,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     {
         /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.has_join_on_path)
             return {};
 
         /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
@@ -1410,7 +1525,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                order_info.input_order->num_leading_fixed_sort_key_columns);
             if (!can_read)
                 return {};
         }
@@ -1528,7 +1644,9 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1537,7 +1655,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     {
         /// Same as above: skip distinct-in-order through JOIN for parallel replicas
         /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+        if (reading->isParallelReadingFromReplicas() && find_reading_ctx.has_join_on_path)
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(
@@ -1555,7 +1673,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
-            order_info.input_order->limit))
+            order_info.input_order->limit,
+            order_info.input_order->num_leading_fixed_sort_key_columns))
             return {};
 
         for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1632,7 +1751,9 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1722,7 +1843,9 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1749,7 +1872,9 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+    bool has_filter_step_unused = false;
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
