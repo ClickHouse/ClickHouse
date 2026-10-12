@@ -1,0 +1,41 @@
+-- delta, writes off, asynchronous insert that does not wait: refused, not acknowledged
+SUPPORT_IS_DISABLED
+-- rows queued by it: 0
+-- rows in the table: 0
+-- delta control, writes on: an asynchronous insert still goes through
+1
+-- delta control, writes off, synchronous insert: unchanged
+SUPPORT_IS_DISABLED
+-- delta through a table function, writes off, asynchronous insert that does not wait
+SUPPORT_IS_DISABLED
+-- entries it left in the queue: 0
+-- delta through a materialized view, writes off, asynchronous insert that does not wait
+SUPPORT_IS_DISABLED
+-- rows queued by it: 0
+-- delta through a materialized view, writes on: an asynchronous insert still goes through
+2
+-- iceberg, inserts off, asynchronous insert that does not wait: refused, not acknowledged
+SUPPORT_IS_DISABLED
+-- rows queued by it: 0
+-- iceberg control, inserts on: an asynchronous insert still goes through
+1
+-- iceberg through a definer view: the definer may write, the invoker session may not: accepted
+2
+-- paimon, asynchronous insert that does not wait: refused, not acknowledged
+Writes are not supported for engine
+-- rows queued by it: 0
+-- paimon, synchronous insert: unchanged
+Writes are not supported for engine
+-- plain object storage, globbed path, asynchronous insert that does not wait
+the table is in readonly mode
+-- rows queued by it: 0
+-- plain object storage, archive path, asynchronous insert that does not wait
+Write into archive is not supported
+-- plain object storage through a table function, globbed path, asynchronous insert that does not wait
+the table is in readonly mode
+-- entries it left in the queue: 0
+-- plain object storage through a cluster table function, globbed path, asynchronous insert that does not wait
+the table is in readonly mode
+-- entries it left in the queue: 0
+-- plain object storage, ordinary path: still accepted on the initiator
+-- accepted on the initiator: rc=0 output_lines=0
