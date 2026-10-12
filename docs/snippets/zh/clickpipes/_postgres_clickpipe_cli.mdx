@@ -1,0 +1,290 @@
+---
+title: Postgres ClickPipe 命令行客户端
+---
+
+本页介绍如何创建 Postgres CDC ClickPipe、持续监控其状态直至进入复制阶段，并验证 ClickHouse 中的数据，整个过程均通过 [ClickHouse 命令行客户端](/zh/products/cloud/features/cli) (`clickhousectl`) 在命令行中完成。这些命令均为非交互式；加上 `--json` 后，`clickhousectl` 会以 JSON 格式输出。
+
+## 前置条件 {#cli-prerequisites}
+
+安装 ClickHouse 命令行客户端：
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+验证步骤还需要 `jq` 和 `psql`。
+
+写操作 (创建、删除) 需要使用 [API key 身份验证](/zh/products/cloud/features/admin-features/api/openapi)；OAuth 登录仅为只读：
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+你也可以设置 `CLICKHOUSE_CLOUD_API_KEY` 和 `CLICKHOUSE_CLOUD_API_SECRET` 环境变量。使用 `clickhousectl cloud auth status` 进行验证；应当看到一条 scope 为 `read/write` 的条目。
+
+源 Postgres 数据库必须先完成 CDC (变更数据捕获) 准备工作：启用逻辑复制、创建复制用户，并在防火墙中放行 ClickPipes IP 地址。请按照对应提供商的设置指南操作 —— 例如 [亚马逊 RDS](/zh/integrations/clickpipes/postgres/source/rds)、[Supabase](/zh/integrations/clickpipes/postgres/source/supabase)、[Neon](/zh/integrations/clickpipes/postgres/source/neon-postgres)，自托管及其他提供商则可参考[通用 Postgres 源指南](/zh/integrations/clickpipes/postgres/source/generic)。请连接到实际的 Postgres 主机：CDC (变更数据捕获) 不支持 PgBouncer、RDS Proxy、Supabase Pooler 等代理和连接池器。
+
+你还需要一个正在运行的目标端 ClickHouse Cloud 服务。可通过 `clickhousectl cloud service list --json` 获取其 ID，或先按照 [Cloud 快速入门](/zh/getting-started/quick-start/cloud)创建一个：
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="my-service") | .id')
+```
+
+将前置条件步骤中获取的源连接信息保存到变量中。本演练以复制单个表 `public.orders` 为例——请将该表名以及后文中对它的所有引用 (包括验证步骤中的列名) 替换为你自己的表：
+
+```bash
+PG_HOST=postgres.example.com
+PG_PORT=5432
+PG_DATABASE=postgres
+PG_USERNAME=clickpipes_user
+PG_PASSWORD='<your-password>'
+```
+
+## 创建 ClickPipe {#create-the-clickpipe}
+
+在目标服务上创建管道，并保存返回的响应：
+
+```bash
+clickhousectl cloud clickpipe create postgres "$CH_ID" \
+  --name orders-sync \
+  --host "$PG_HOST" \
+  --port "$PG_PORT" \
+  --pg-database "$PG_DATABASE" \
+  --username "$PG_USERNAME" \
+  --password "$PG_PASSWORD" \
+  --table-mapping public.orders:orders \
+  --json > pipe.json
+
+PIPE_ID=$(jq -r .id pipe.json)
+```
+
+该命令会在创建管道之前验证与源的连接，因此连通性、凭据和 TLS 问题会立即以 `BAD_REQUEST` 错误的形式暴露出来。响应会回显管道配置 (此处已作精简；完整响应包含所有复制设置) ：
+
+```json
+{
+  "id": "e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19",
+  "name": "orders-sync",
+  "serviceId": "7a1c04e2-9b3f-4a86-b21d-6f3e9d5c8a41",
+  "state": "Provisioning",
+  "destination": {
+    "database": "default"
+  },
+  "source": {
+    "postgres": {
+      "host": "postgres.example.com",
+      "port": 5432,
+      "database": "postgres",
+      "type": "postgres",
+      "settings": {
+        "replicationMode": "cdc",
+        "syncIntervalSeconds": 60,
+        "pullBatchSize": 100000,
+        "initialLoadParallelism": 4
+      },
+      "tableMappings": [
+        {
+          "sourceSchemaName": "public",
+          "sourceTable": "orders",
+          "targetTable": "orders",
+          "tableEngine": "MergeTree"
+        }
+      ]
+    }
+  }
+}
+```
+
+说明：
+
+* `--table-mapping` 与 `--table-mapping-json` 必须提供其一。`--table-mapping` 可重复指定，每个源表对应一个 `schema.table:target_table`，其余按表设置的选项均保持默认值。复制表会创建在 ClickHouse 服务的 `default` 数据库中，并以映射的目标名称命名——映射到不同的目标名称，即可在复制过程中重命名表
+* 一条命令即可覆盖整个 Postgres 家族：针对托管提供商传入 `--postgres-type` (`supabase`、`neon`、`alloydb`、`planetscale`、`rdspostgres`、`aurorapostgres`、`cloudsqlpostgres`、`azurepostgres`、`crunchybridge`、`tigerdata`) ；默认值为 `postgres`
+* publication 与 replication slot 会自动创建，且 publication 的范围限定为已映射的表。若要使用你在前置条件步骤中自行创建的 publication，请传入 `--publication-name`
+* `--replication-slot-name` 用于复用你自行创建的 slot，仅在与 `--replication-mode cdc_only` 搭配使用时才有效
+* `--replication-mode` 可选 `cdc` (初始快照加持续复制，默认值) 、`snapshot` (一次性拷贝) 或 `cdc_only` (跳过初始快照)
+
+### 调整目标端表结构 {#shaping-the-destination-tables}
+
+`--table-mapping` 仅用于重命名。若要使用可调整目标端表结构的逐表选项，请改用 `--table-mapping-json` 以 JSON 对象形式传入映射，该参数会原样接受 API 的表映射对象。其中 `sourceSchemaName`、`sourceTable` 和 `targetTable` 为必填项；`excludedColumns`、`sortingKeys`、`useCustomSortingKey`、`partitionByExpr`、`partitionKey` 和 `tableEngine` 为可选项。这两个参数均可重复使用，也可在同一条命令中组合使用：
+
+```bash
+clickhousectl cloud clickpipe create postgres "$CH_ID" \
+  --name orders-sync \
+  --host "$PG_HOST" \
+  --port "$PG_PORT" \
+  --pg-database "$PG_DATABASE" \
+  --username "$PG_USERNAME" \
+  --password "$PG_PASSWORD" \
+  --table-mapping public.orders:orders \
+  --table-mapping-json '{"sourceSchemaName":"public","sourceTable":"customers","targetTable":"customers","excludedColumns":["ssn"],"sortingKeys":["created_at","customer_id"]}' \
+  --sync-interval-seconds 30 \
+  --json
+```
+
+该映射会将 `ssn` 完全排除在目标端之外，并按 `(created_at, customer_id)` 而非源端主键对 `customers` 进行排序：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SHOW CREATE TABLE customers" --format TSVRaw
+```
+
+```text
+CREATE TABLE default.customers
+(
+    `customer_id` Int32,
+    `name` String,
+    `created_at` DateTime64(6),
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` UInt8,
+    `_peerdb_version` UInt64
+)
+ENGINE = SharedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+PRIMARY KEY (created_at, customer_id)
+ORDER BY (created_at, customer_id)
+SETTINGS index_granularity = 8192
+```
+
+注意事项：
+
+* 当提供了 `sortingKeys` 时，`useCustomSortingKey` 会自动为你设置，因为不设置该项时 API 会忽略这些键。未知字段会在客户端被拒绝并以退出码 2 结束，而不是被静默丢弃，因此像 `excludeColumns` 这样的拼写错误会直接报错，而不会被忽略
+* `partitionKey` 用于对初始快照进行分区以实现并行处理，与目标表的 `PARTITION BY` (即 `partitionByExpr`) 无关
+* `tableEngine` 可以是 `MergeTree` (默认值，也是简单形式所发送的值) 、`ReplacingMergeTree` 或 `Null`
+
+### CDC 设置 {#cdc-settings}
+
+复制相关的设置均为创建时标志：`--sync-interval-seconds`、`--pull-batch-size`、`--initial-load-parallelism`、`--snapshot-rows-per-partition`、`--snapshot-parallel-tables`、`--allow-nullable-columns`、`--enable-failover-slots` 以及 `--delete-on-merge`。管道创建后，只有 `syncIntervalSeconds` 和 `pullBatchSize` 可以修改；快照与初始加载相关的设置在创建时即已固定，因此请提前确定好这些值。
+
+Postgres CDC 管道的设置保存在管道本身，因此可使用 `clickpipe get` 读取：
+
+```bash
+clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json \
+  | jq .source.postgres.settings
+```
+
+```json
+{
+  "allowNullableColumns": false,
+  "deleteOnMerge": false,
+  "enableFailoverSlots": false,
+  "initialLoadParallelism": 4,
+  "publicationName": "",
+  "pullBatchSize": 100000,
+  "replicationMode": "cdc",
+  "replicationSlotName": "",
+  "snapshotNumRowsPerPartition": 100000,
+  "snapshotNumberOfParallelTables": 1,
+  "syncIntervalSeconds": 30
+}
+```
+
+`clickhousectl cloud clickpipe settings get` 对应的是另一个端点，仅涵盖流式管道和对象存储管道的摄取设置。对 Postgres 管道执行该命令时，会以退出码 1 退出，并提示你改用 `clickpipe get`。
+
+### 目标端权限 {#destination-permissions}
+
+ClickPipes 以自身用户的身份写入 service。默认情况下,该用户会获得拥有完全访问权限的 `default_role`;使用 `--role <role-name>`(可重复指定)则可改用其他已有的 ClickHouse roles,相当于 Console 中权限角色步骤的命令行客户端写法。你指定的 roles 会取代 `default_role`,因此它们合起来必须涵盖该管道所需的全部权限——创建并写入目标表。只读角色会直接导致创建失败:
+
+```text
+Error: BAD_REQUEST: ClickHouse validation failed: failed to create validation table peerdb_validation_tOgS: code: 497, message: clickpipe:...: Not enough privileges. To execute this query, it's necessary to have the grant CREATE TABLE ON default.peerdb_validation_tOgS
+```
+
+名称 `clickpipes` 和 `clickpipes_system` 为保留名称，会在客户端被拒绝。
+
+### 源端 TLS 与证书颁发机构 {#source-tls}
+
+TLS 和证书验证默认启用；若源端的证书链受公共信任，则无需额外的标志。如果源端提供的证书由不受公共信任的 CA 签发——包括 [ClickHouse Managed Postgres](/zh/cloud/managed-postgres)——则连接检查会在管道创建前失败，并在错误信息中指出可解决该问题的标志：
+
+```text
+Error: BAD_REQUEST: failed to establish connection: failed to connect to `user=postgres database=postgres`: 203.0.113.10:5432 (postgres.example.com): failed to write startup message: write failed: tls: failed to verify certificate: x509: certificate signed by unknown authority
+
+Hint: The source certificate chain is not publicly trusted. For a private or self-signed source CA, pass its PEM CA bundle with `--ca-certificate <PATH>`.
+```
+
+使用 `--ca-certificate` 以 PEM 格式传入源端 CA bundle。对于 ClickHouse Managed Postgres，`clickhousectl` 会自动为你拉取该 bundle：
+
+```bash
+clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+```
+
+然后在创建命令中加上 `--ca-certificate pg-ca.pem` 后重新执行。
+
+如果证书本身有效，只是签发的名称与你所连接的名称不一致，错误信息会给出另一种提示，指向 `--tls-host <hostname>`，用于指定证书验证时应使用的主机名。
+
+## 等待管道进入 Running 状态 {#wait-for-running}
+
+管道会依次经历 `Provisioning`、`Setup`,以及(对于较大的表)`Snapshot` 阶段,最终进入 `Running`;在某个 service 上首次创建管道时,预计需要数分钟。`Failed` 和 `InternalError` 为终态:
+
+```bash
+while :; do
+  STATE=$(clickhousectl cloud clickpipe get "$CH_ID" "$PIPE_ID" --json | jq -r .state)
+  case "$STATE" in
+    Running) break ;;
+    Failed|InternalError) echo "ClickPipe entered terminal state: $STATE" >&2; exit 1 ;;
+  esac
+  sleep 15
+done
+```
+
+## 检查管道状态 {#check-pipe-status}
+
+`clickpipe list` 会列出该服务上的所有管道；`clickpipe get` 则返回单个管道及其完整配置：
+
+```bash
+clickhousectl cloud clickpipe list "$CH_ID" --json \
+  | jq -r '.[] | [.id, .name, .state] | @tsv'
+```
+
+```text
+e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19	orders-sync	Running
+```
+
+## 在 ClickHouse 中验证数据 {#verify-the-data-in-clickhouse}
+
+直接通过命令行客户端查询目标端 service。首次调用会自动创建一个 Query API 端点和一个仅限该 service 使用的 API key：
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT order_id, customer, amount FROM orders ORDER BY order_id" --json
+```
+
+```text
+Provisioning Query API endpoint + key for service 'my-service'...
+{"order_id":1,"customer":"Alice","amount":42.5}
+{"order_id":2,"customer":"Bob","amount":17.99}
+{"order_id":3,"customer":"Charlie","amount":99}
+{"order_id":4,"customer":"Diana","amount":5.25}
+{"order_id":5,"customer":"Eve","amount":250}
+```
+
+源端的变更会按同步间隔持续复制过来——默认为 60 秒，或创建时 `--sync-interval-seconds` 设置的值。在源端插入一行数据，然后轮询直到该行到达：
+
+请通过 `PGPASSWORD` 传递密码，而不是使用连接 URI，这样密码中的特殊字符无需转义：
+
+```bash
+PGPASSWORD="$PG_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USERNAME" -d "$PG_DATABASE" \
+  -c "INSERT INTO orders (customer, amount) VALUES ('Frank', 12.34);"
+
+while [ "$(clickhousectl cloud service query --id "$CH_ID" \
+  --query "SELECT count() FROM orders" --format TSV)" != "6" ]; do
+  sleep 10
+done
+```
+
+## 管理管道 {#manage-the-pipe}
+
+管道的生命周期通过 `clickhousectl cloud clickpipe stop`、`clickhousectl cloud clickpipe start` 和 `clickhousectl cloud clickpipe resync` (删除目标端表并重新执行快照) 进行管理，三者均接受相同的 `"$CH_ID" "$PIPE_ID"` 参数。如果 source 仅可通过私网访问，则可使用 `clickhousectl cloud clickpipe reverse-private-endpoint` 管理 AWS PrivateLink 或 Google Private Service Connect 端点；创建管道时，将该命令返回的某个 DNS name 作为 `--host` 传入。目前通过 SSH 隧道连接的 Postgres source 仅支持在 UI 中配置：命令行客户端支持 direct 连接和反向私有端点，但无法配置 SSH tunneling。完整的子命令列表请参见 `clickhousectl cloud clickpipe --help`。
+
+## 清理 {#cleanup}
+
+删除该管道即会停止复制：
+
+```bash
+clickhousectl cloud clickpipe delete "$CH_ID" "$PIPE_ID"
+```
+
+```text
+{"deleted":"e3d9a1f4-7b2c-4c58-9f6a-0d8b4e2c7a19"}
+```
+
+## 后续步骤 {#cli-whats-next}
+
+请参阅[迁移指南](/zh/get-started/migrate/postgres/overview)，评估哪种策略最符合您的需求；同时可查看[去重策略 (使用 CDC) ](/zh/integrations/clickpipes/postgres/deduplication)和[排序键](/zh/integrations/clickpipes/postgres/ordering-keys)页面，了解 CDC (变更数据捕获) 工作负载的最佳实践。有关 PostgreSQL CDC (变更数据捕获) 的常见问题及故障排查，请参阅 [Postgres FAQ 页面](/zh/integrations/clickpipes/postgres/faq)。

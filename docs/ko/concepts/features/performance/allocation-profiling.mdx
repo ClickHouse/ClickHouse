@@ -11,8 +11,9 @@ ClickHouse는 전역 메모리 할당자로 [jemalloc](https://github.com/jemall
 ClickHouse와 Keeper에서는 구성 파일, 쿼리 설정, `SYSTEM` 명령, 그리고 Keeper의 4문자 명령(4LW)을 사용해 샘플링을 제어할 수 있습니다. 결과를 확인하는 방법은 여러 가지가 있습니다.
 
 * 쿼리별 분석을 위해 `JemallocSample` 유형으로 샘플을 `system.trace_log`에 수집합니다.
-* 내장된 [jemalloc web UI](#jemalloc-web-ui)에서 실시간 메모리 통계를 확인하고 힙 프로파일을 가져옵니다(26.2+).
+* 내장된 [jemalloc 웹 UI](#jemalloc-web-ui)에서 실시간 메모리 통계를 확인하고 힙 프로파일을 가져옵니다(26.2+).
 * [`system.jemalloc_profile_text`](#fetching-heap-profiles-from-sql)를 사용해 현재 힙 프로파일을 SQL에서 직접 쿼리합니다(26.2+).
+* [`system.jemalloc_sampled_allocations`](#analyzing-fragmentation-from-sql)를 사용해 SQL에서 메모리 단편화를 분석합니다(26.9+).
 * 힙 프로파일을 디스크에 플러시한 뒤 [`jeprof`](#analyzing-heap-profile-files-with-jeprof)로 분석합니다.
 
 <Note>
@@ -20,9 +21,7 @@ ClickHouse와 Keeper에서는 구성 파일, 쿼리 설정, `SYSTEM` 명령, 그
   이전 버전은 [25.9 이전 버전용 할당 프로파일링](/ko/concepts/features/performance/allocation-profiling-old)을 확인하십시오.
 </Note>
 
-<div id="sampling-allocations">
-  ## 메모리 할당 샘플링
-</div>
+## 메모리 할당 샘플링 {#sampling-allocations}
 
 메모리 할당을 샘플링하고 프로파일링하려면 `jemalloc_enable_global_profiler` 설정을 활성화한 상태로 ClickHouse/Keeper를 시작합니다:
 
@@ -42,9 +41,7 @@ ClickHouse와 Keeper에서는 구성 파일, 쿼리 설정, `SYSTEM` 명령, 그
   ClickHouse는 메모리 할당이 많은 애플리케이션이므로 jemalloc 샘플링 시 성능 오버헤드가 발생할 수 있습니다.
 </Warning>
 
-<div id="storing-jemalloc-samples-in-system-trace-log">
-  ## `system.trace_log`에 jemalloc 샘플 저장
-</div>
+## `system.trace_log`에 jemalloc 샘플 저장 {#storing-jemalloc-samples-in-system-trace-log}
 
 `JemallocSample` 유형으로 jemalloc 샘플을 `system.trace_log`에 저장할 수 있습니다.
 전체적으로 활성화하려면 `jemalloc_collect_global_profile_samples_in_trace_log` 설정을 사용하세요:
@@ -63,9 +60,7 @@ ClickHouse와 Keeper에서는 구성 파일, 쿼리 설정, `SYSTEM` 명령, 그
 
 `jemalloc_collect_profile_samples_in_trace_log` 설정을 사용하면 쿼리별로도 이를 활성화할 수 있습니다.
 
-<div id="example-analyzing-memory-usage-trace-log">
-  ### 예시: 쿼리의 메모리 사용량 분석
-</div>
+### 예시: 쿼리의 메모리 사용량 분석 {#example-analyzing-memory-usage-trace-log}
 
 먼저 jemalloc 프로파일러를 활성화한 상태에서 쿼리를 실행하고, 샘플을 `system.trace_log`에 수집합니다:
 
@@ -183,9 +178,7 @@ GROUP BY ALL
 ORDER BY per_trace_sum ASC
 ```
 
-<div id="jemalloc-web-ui">
-  ## Jemalloc 웹 UI
-</div>
+## Jemalloc 웹 UI {#jemalloc-web-ui}
 
 <Note>
   이 섹션은 버전 26.2 이상에 적용됩니다.
@@ -201,7 +194,7 @@ ClickHouse는 `/jemalloc` HTTP 엔드포인트에서 jemalloc 메모리 통계�
     http://localhost:8123/jemalloc
     ```
 
-    서버 UI에는 Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, Raw Output 등 모든 탭이 포함되어 있습니다.
+    서버 UI에는 Summary, Allocations, Arenas, Operations, Global Profiler, Query Profiler, 단편화, Raw Output 등 모든 탭이 포함되어 있습니다.
   </Tab>
 
   <Tab title="Keeper">
@@ -221,7 +214,7 @@ ClickHouse는 `/jemalloc` HTTP 엔드포인트에서 jemalloc 메모리 통계�
     </clickhouse>
     ```
 
-    활성화되면 UI는 SQL과 `system.trace_log`가 필요한 Query Profiler 탭을 제외하고, Summary, Allocations, Arenas, Operations, Global Profiler, Raw Output 등 서버와 동일한 시각화를 제공합니다.
+    활성화되면 UI는 system tables에 대한 SQL 액세스가 필요한 Query Profiler 및 단편화 탭을 제외하고, Summary, Allocations, Arenas, Operations, Global Profiler, Raw Output 등 서버와 동일한 시각화를 제공합니다.
 
     <Warning>
       **보안**
@@ -235,13 +228,11 @@ ClickHouse는 `/jemalloc` HTTP 엔드포인트에서 jemalloc 메모리 통계�
 
     * `GET /jemalloc/stats` — 원시 `malloc_stats_print` 출력
     * `GET /jemalloc/status` — JSON 형식의 profiling 상태 (`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
-    * `GET /jemalloc/profile?format={collapsed|raw}` — 힙 프로파일을 플러시하고 서버 측 심볼화를 수행하며, flame graph 렌더링에 적합한 collapsed stacks(기본값) 또는 원시 jemalloc dump를 반환합니다
+    * `GET /jemalloc/profile?format={collapsed|raw}` — 힙 프로파일을 플러시하고 서버 측 심볼화를 수행하며, 플레임 그래프 렌더링에 적합한 collapsed stacks(기본값) 또는 원시 jemalloc dump를 반환합니다
   </Tab>
 </Tabs>
 
-<div id="fetching-heap-profiles-from-sql">
-  ## SQL에서 힙 프로파일 가져오기
-</div>
+## SQL에서 힙 프로파일 가져오기 {#fetching-heap-profiles-from-sql}
 
 <Note>
   이 섹션은 버전 26.2 이상에 적용됩니다.
@@ -261,9 +252,7 @@ ClickHouse는 `/jemalloc` HTTP 엔드포인트에서 jemalloc 메모리 통계�
 SELECT * FROM system.jemalloc_profile_text
 ```
 
-<div id="output-format">
-  ### 출력 형식
-</div>
+### 출력 형식 {#output-format}
 
 출력 형식은 `jemalloc_profile_text_output_format` 설정으로 제어되며, 이 설정은 다음 3가지 값을 지원합니다.
 
@@ -285,16 +274,12 @@ SELECT * FROM system.jemalloc_profile_text
 SETTINGS jemalloc_profile_text_output_format = 'symbolized'
 ```
 
-<div id="fetching-heap-profiles-settings">
-  ### 추가 설정
-</div>
+### 추가 설정 {#fetching-heap-profiles-settings}
 
 * `jemalloc_profile_text_symbolize_with_inline` (Bool, 기본값: `true`) — 심볼화 시 인라인 프레임을 포함할지 여부를 지정합니다. 이 옵션을 비활성화하면 심볼화 속도가 크게 빨라지지만, 인라인된 함수 호출이 스택에 표시되지 않아 정밀도가 떨어집니다. `symbolized` 및 `collapsed` 포맷에만 영향을 줍니다.
 * `jemalloc_profile_text_collapsed_use_count` (Bool, 기본값: `false`) — `collapsed` 포맷을 사용할 때 바이트 대신 할당 횟수 기준으로 집계합니다.
 
-<div id="example-flamegraph-from-sql">
-  ### 예시: SQL로 플레임 그래프 생성
-</div>
+### 예시: SQL로 플레임 그래프 생성 {#example-flamegraph-from-sql}
 
 기본 출력 형식이 `collapsed`이므로 출력을 FlameGraph로 직접 파이프할 수 있습니다:
 
@@ -308,9 +293,85 @@ clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text" | flamegraph.p
 clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemalloc_profile_text_collapsed_use_count = 1" | flamegraph.pl --color=mem --title="Allocation Count Flame Graph" --width 2400 > result.svg
 ```
 
-<div id="flushing-heap-profiles">
-  ## 힙 프로파일을 디스크에 플러시하기
-</div>
+## SQL로 단편화 분석하기 {#analyzing-fragmentation-from-sql}
+
+<Note>
+  이 섹션은 버전 26.9 이상에 적용됩니다.
+</Note>
+
+jemalloc은 작은 할당을 슬랩(slab)에서 처리합니다. 슬랩은 하나의 크기 클래스에 해당하는 영역들로 분할된 고정 크기 메모리 블록입니다. 슬랩은 그 안의 모든 영역이 비어 있을 때에만 해제됩니다. 특정 크기 클래스의 할당 대부분이 빠르게 해제되더라도 그중 일부가 오래 살아남으면, 슬랩은 대부분의 영역이 비어 있는 채로 계속 고정되어 남습니다. 메모리는 상주 상태로 남아 있지만 실제로 할당되어 쓰이지는 않습니다. 여기서 말하는 단편화란 바로 이런 상황입니다.
+
+그 원인을 찾는 데는 다음 두 시스템 테이블이 유용합니다:
+
+* [`system.jemalloc_arena_bins`](/ko/reference/system-tables/jemalloc_bins)는 각 아레나에서 크기 클래스별로 얼마나 많은 메모리가 낭비되는지 보여줍니다. `waste`는 슬랩이 점유하고 있지만 활성 할당에는 사용되지 않는 바이트 수입니다. `purpose`는 전용 아레나(`mergetree`, `jit`, `cache`)를 나타내며, 이들은 설계상 수명이 긴 데이터를 보유하므로 예기치 않은 단편화를 찾을 때는 `purpose = ''`로 걸러내십시오. `system.jemalloc_bins`는 동일한 데이터를 아레나 전체에 대해 합산한 값을 제공합니다.
+* `system.jemalloc_sampled_allocations`는 현재 살아 있는 샘플링된 할당을 샘플당 한 행씩 나열합니다. 백트레이스(`trace`), 살아 있는 시간(`age_ns`), 크기와 크기 클래스, 그리고 아레나를 확인할 수 있습니다. 이 테이블을 읽으면 새로운 힙 프로파일이 플러시됩니다.
+
+두 테이블을 아레나와 크기 클래스로 조인하면, 낭비가 심한 크기 클래스에서 오래된 객체를 할당한 코드가 무엇인지 알 수 있습니다.
+
+결과를 해석할 때는 다음 사항에 유의하십시오:
+
+* 프로파일러가 활성화된 스레드만 샘플을 생성합니다(구성의 `jemalloc_enable_global_profiler` 또는 `jemalloc_enable_profiler` 설정).
+* 각 행은 약 `weight`개의 실제 할당을 대표하며, 작은 할당일수록 샘플링 빈도가 낮습니다. 관심 있는 크기 클래스에 샘플이 없다면 `jemalloc_profiler_sampling_rate`를 조정하십시오.
+* 샘플링된 할당은 슬랩에 저장되지 않으므로 그 자체가 `waste`를 늘리지는 않습니다. 해당 크기 클래스에서 어떤 코드가 할당을 수행하는지 알려줄 뿐입니다.
+* 살아 있는 샘플 하나마다 할당이 해제될 때까지 페이지 2개(64 KiB 페이지 빌드에서는 128 KiB)가 추가로 소모됩니다. 프로파일러를 비활성화하면 새 샘플 생성은 멈추지만 기존 샘플이 해제되지는 않습니다.
+
+다음 쿼리는 낭비가 1 MiB를 초과하는 크기 클래스에서 생성된 지 1분이 넘은 할당의 백트레이스를 나열합니다:
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT
+    b.arena,
+    b.size AS reg_size,
+    b.waste AS class_waste,
+    s.est_old_objects,
+    s.stack
+FROM system.jemalloc_arena_bins AS b
+INNER JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 1048576
+ORDER BY b.waste DESC, s.est_old_objects DESC
+SETTINGS allow_introspection_functions=1
+```
+
+### 예시: 단편화 플레임 그래프 생성 {#example-fragmentation-flamegraph}
+
+동일한 쿼리로 각 크기 클래스의 낭비량을 오래된 할당 수에 비례하여 백트레이스별로 나누고, 그 결과를 `flamegraph.pl`용 `collapsed` 포맷으로 출력할 수 있습니다. 낭비는 있지만 충분히 오래된 샘플이 없는 크기 클래스는 `[unattributed]` 프레임에 포함되므로, 플레임 그래프의 총합은 전체 낭비량과 같습니다. `system.jemalloc_sampled_allocations`는 쿼리당 한 번만 읽으십시오. 읽을 때마다 새로운 profile이 플러시되므로 서브쿼리를 두 개 사용하면 서로 다른 데이터를 보게 됩니다.
+
+```sql
+WITH 60e9 AS min_age_ns
+SELECT format('{} {}',
+    if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+FROM system.jemalloc_arena_bins AS b
+LEFT JOIN
+(
+    SELECT
+        arena,
+        size_class,
+        sum(weight) AS est_old_objects,
+        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+    FROM system.jemalloc_sampled_allocations
+    WHERE age_ns > min_age_ns
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.purpose = '' AND b.waste > 0
+SETTINGS allow_introspection_functions=1
+```
+
+```sh
+clickhouse-client -q "..." | flamegraph.pl --color=mem --title="Fragmentation Flame Graph" --width 2400 > result.svg
+```
+
+## 힙 프로파일을 디스크에 플러시하기 {#flushing-heap-profiles}
 
 `jeprof`로 오프라인 분석을 하기 위해 힙 프로파일을 파일로 저장해야 하는 경우, 이를 디스크에 플러시할 수 있습니다.
 
@@ -344,9 +405,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 생성된 파일 이름에는 prefix, PID, 시퀀스 번호가 덧붙습니다.
 
-<div id="analyzing-heap-profile-files-with-jeprof">
-  ## `jeprof`를 사용한 힙 프로파일 파일 분석
-</div>
+## `jeprof`를 사용한 힙 프로파일 파일 분석 {#analyzing-heap-profile-files-with-jeprof}
 
 힙 프로파일을 디스크에 플러시한 후에는 [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in)라는 `jemalloc` 도구를 사용해 분석할 수 있습니다. `jeprof`는 여러 가지 방법으로 설치할 수 있습니다:
 
@@ -355,9 +414,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 사용할 수 있는 출력 형식은 다양합니다. 전체 옵션 목록은 `jeprof --help`를 실행해 확인하십시오.
 
-<div id="symbolized-heap-profiles">
-  ### 심볼화된 힙 프로파일
-</div>
+### 심볼화된 힙 프로파일 {#symbolized-heap-profiles}
 
 버전 26.1+부터 ClickHouse는 `SYSTEM JEMALLOC FLUSH PROFILE`로 플러시할 때 심볼화된 힙 프로파일을 자동으로 생성합니다.
 심볼화된 프로파일(`.symbolized` 확장자)에는 함수 심볼이 내장되어 있으므로 ClickHouse 바이너리 없이도 `jeprof`로 분석할 수 있습니다.
@@ -408,9 +465,7 @@ jeprof path/to/clickhouse path/to/heap/profile --output_format [ > output_file]
 jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
 ```
 
-<div id="examples">
-  ### 예시
-</div>
+### 예시 {#examples}
 
 심볼이 포함된 프로파일 사용(권장):
 
@@ -440,9 +495,7 @@ jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result
 jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
 ```
 
-<div id="generating-flame-graph">
-  ### 플레임 그래프 생성하기
-</div>
+### 플레임 그래프 생성하기 {#generating-flame-graph}
 
 `jeprof`를 사용하면 플레임 그래프를 생성하는 데 필요한 collapsed stacks를 만들 수 있습니다.
 
@@ -468,9 +521,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 또 다른 흥미로운 도구로 [speedscope](https://www.speedscope.app/)가 있으며, 이를 사용하면 수집된 스택을 더 인터랙티브하게 분석할 수 있습니다.
 
-<div id="additional-options-for-profiler">
-  ## 프로파일러 추가 옵션
-</div>
+## 프로파일러 추가 옵션 {#additional-options-for-profiler}
 
 `jemalloc`에는 프로파일러와 관련된 다양한 옵션이 있으며, `MALLOC_CONF` 환경 변수를 수정해 제어할 수 있습니다.
 예를 들어, 할당 샘플 간 인터벌은 `lg_prof_sample`로 제어할 수 있습니다.
@@ -478,9 +529,7 @@ N바이트마다 힙 프로파일을 dump하려면 `lg_prof_interval`을 활성�
 
 전체 옵션 목록은 `jemalloc`의 [참고 페이지](https://jemalloc.net/jemalloc.3.html)에서 확인하는 것이 좋습니다.
 
-<div id="other-resources">
-  ## 기타 리소스
-</div>
+## 기타 리소스 {#other-resources}
 
 ClickHouse/Keeper는 `jemalloc` 관련 메트릭을 여러 방식으로 노출합니다.
 
@@ -490,9 +539,7 @@ ClickHouse/Keeper는 `jemalloc` 관련 메트릭을 여러 방식으로 노출�
   이 메트릭들은 서로 동기화되지 않으므로 값이 서로 어긋날 수 있다는 점에 유의해야 합니다.
 </Warning>
 
-<div id="system-table-asynchronous_metrics">
-  ### 시스템 테이블 `asynchronous_metrics`
-</div>
+### 시스템 테이블 `asynchronous_metrics` {#system-table-asynchronous_metrics}
 
 ```sql
 SELECT *
@@ -503,17 +550,13 @@ FORMAT Vertical
 
 [참고](/ko/reference/system-tables/asynchronous_metrics)
 
-<div id="system-table-jemalloc_bins">
-  ### 시스템 테이블 `jemalloc_bins`
-</div>
+### 시스템 테이블 `jemalloc_bins` {#system-table-jemalloc_bins}
 
 모든 arena에서 집계한 jemalloc 메모리 할당자의 각 크기 클래스(bin)별 메모리 할당 정보를 포함합니다.
 
 [참고](/ko/reference/system-tables/jemalloc_bins)
 
-<div id="system-table-jemalloc_stats">
-  ### 시스템 테이블 `jemalloc_stats` (26.2+)
-</div>
+### 시스템 테이블 `jemalloc_stats` (26.2+) {#system-table-jemalloc_stats}
 
 `malloc_stats_print()`의 전체 출력 결과를 하나의 문자열로 반환합니다. `SYSTEM JEMALLOC STATS` 명령과 동일합니다.
 
@@ -521,17 +564,13 @@ FORMAT Vertical
 SELECT * FROM system.jemalloc_stats
 ```
 
-<div id="prometheus">
-  ### Prometheus
-</div>
+### Prometheus {#prometheus}
 
 `asynchronous_metrics`의 모든 `jemalloc` 관련 메트릭은 ClickHouse와 Keeper 모두에서 Prometheus 엔드포인트를 통해서도 제공됩니다.
 
 [참고](/ko/reference/settings/server-settings/settings/other#prometheus)
 
-<div id="jmst-4lw-command-in-keeper">
-  ### Keeper의 `jmst` 4LW 명령
-</div>
+### Keeper의 `jmst` 4LW 명령 {#jmst-4lw-command-in-keeper}
 
 Keeper는 [기본 메모리 할당자 통계](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics)를 반환하는 `jmst` 4LW 명령을 지원합니다:
 

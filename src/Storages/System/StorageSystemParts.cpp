@@ -35,6 +35,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Waiting mutation parent to be removed";
     case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
         return "Waiting for covered parts to be removed first";
+    case DB::DataPartRemovalState::PINNED_BY_DELETE_BITMAP:
+        return "Holds the only copy of another part's delete bitmap";
     case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
     case DB::DataPartRemovalState::REMOVE_ROLLED_BACK:
@@ -160,6 +162,7 @@ void StorageSystemParts::processNextStorage(
 
     all_parts = info.getParts(all_parts_state, has_state_column, query_status);
 
+    PartitionKeySamples partition_key_samples;
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
         if (query_status && !query_status->checkTimeLimit())
@@ -188,7 +191,7 @@ void StorageSystemParts::processNextStorage(
         size_t src_index = 0;
         size_t res_index = 0;
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
+            columns[res_index++]->insert(part->partition.serializeToString(partition_key_samples.get(*part)));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->name);
         if (columns_mask[src_index++])

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-ordinary-database
+-- Tags: no-parallel, no-ordinary-database, no-fasttest
 -- no-parallel: SYSTEM ENABLE FAILPOINT is server-global and the failpoint is one-shot, so a concurrent query would consume it
 -- no-ordinary-database: the test uses transactions
 
@@ -26,7 +26,9 @@ SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI runs with the
 -- Guard against the test silently becoming vacuous: a read that cannot be served from metadata must be
 -- planned across the replicas.
 SELECT 'a plain read must be planned across the replicas';
-SELECT countIf(explain LIKE '%ReadFromRemoteParallelReplicas%') > 0
+-- Matching on the common part of the step name covers both implementations: the query-based one
+-- plans `ReadFromRemoteParallelReplicas`, the plan-based one `ReadFromParallelReplicas`.
+SELECT countIf(explain LIKE '%ParallelReplicas%') > 0
     FROM (EXPLAIN SELECT count() FROM transactional_count_duplicate WHERE NOT ignore(*));
 
 SELECT 'baseline outside a transaction, 4 rows in 4 parts';
