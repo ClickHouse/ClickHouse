@@ -213,9 +213,21 @@ public:
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
-        /// The keys are not compared here: the key of `place` can still change before the deferred merge,
-        /// and `parallelizeMergeMulti` skips the sources whose key is not extremal.
-        return nested_function->isLargeMergePair(place, rhs);
+        if (!nested_function->isLargeMergePair(place, rhs))
+            return false;
+
+        /// A source whose key is already worse than the key of `place` can never become relevant, because later merges
+        /// only move the key of `place` further toward the extremum. Let it be merged (that is, discarded) serially,
+        /// so that its large nested state is destroyed right away instead of being kept until the deferred merge.
+        /// Otherwise the key of `place` can still change before the deferred merge, and `parallelizeMergeMulti`
+        /// skips the sources whose key is not extremal.
+        const auto & place_key = data(place).data();
+        const auto & rhs_key = data(rhs).data();
+        if (place_key.has() && rhs_key.has() && !place_key.isEqualTo(rhs_key)
+            && !(isMin ? place_key.wouldSetIfSmaller(rhs_key) : place_key.wouldSetIfGreater(rhs_key)))
+            return false;
+
+        return true;
     }
 
     void mergeImpl(

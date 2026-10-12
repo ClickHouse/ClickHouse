@@ -193,3 +193,9 @@ SELECT k, uniqExactArgMax(n, n % 2) AS mx, uniqExactArgMin(n, intDiv(n, 50000)) 
 FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 1;
+
+-- The sources whose key is already worse than the key of the destination are discarded without being deferred.
+SELECT k, uniqExactArgMax(n, toFloat64(intDiv(n, 50000))) AS mx, uniqExactArgMin(n, toString(intDiv(n, 50000))) AS mn
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 8;
