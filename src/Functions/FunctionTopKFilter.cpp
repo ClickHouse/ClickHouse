@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -127,8 +128,14 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type)
-                || hasFloatingPoint(data_type) || hasNestedNullable(data_type))
+            /// executeVectorized is only valid when the comparison orders values the way ORDER BY
+            /// does, and lessOrEquals/greaterOrEquals do not: depending on the type they either
+            /// reject a NaN row in both directions or put NULLs and NaNs at a fixed end whatever
+            /// nulls_direction says.
+            if (collator || data_type->isNullable() || hasEmptyTuple(data_type)
+                || hasFloatingPoint(data_type) || hasNestedNullable(data_type)
+                || (nulls_direction == -1 && hasTypeThatCanContainNulls(data_type))
+                || hasRuntimeTypedType(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);
