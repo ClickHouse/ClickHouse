@@ -1006,6 +1006,9 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             ActionsDAG rename_dag;
 
+            /// A later item resolves names against every node of the DAG, so the conversions and outputs are added after all items are visited.
+            std::vector<std::tuple<const ActionsDAG::Node *, DataTypePtr, String>> interpolated_columns;
+
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
@@ -1026,16 +1029,16 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
-                if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
-                {
-                    interpolate_expression = &interpolate_actions_dag.addCast(*interpolate_expression,
-                        expression_to_interpolate->result_type,
-                        interpolate_expression->result_name,
-                        planner_context->getQueryContext());
-                }
+                interpolated_columns.emplace_back(interpolate_expression, expression_to_interpolate->result_type, interpolate_node_typed.getExpressionName());
+            }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
-                interpolate_actions_dag.getOutputs().push_back(alias_node);
+            for (const auto & [interpolate_expression, target_type, target_name] : interpolated_columns)
+            {
+                const auto * interpolated_column = interpolate_expression;
+                if (!interpolated_column->result_type->equals(*target_type))
+                    interpolated_column = &interpolate_actions_dag.addCast(*interpolated_column, target_type, {}, planner_context->getQueryContext());
+
+                interpolate_actions_dag.getOutputs().push_back(&interpolate_actions_dag.addAlias(*interpolated_column, target_name));
             }
 
             if (!rename_dag.getOutputs().empty())
