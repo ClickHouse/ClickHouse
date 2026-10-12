@@ -331,8 +331,9 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
                 "Not enough privileges to access the table that {} points to",
                 storage_id.getNameForLogs());
 
-        /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query.
-        resolveStorageProxy(t)->updateExternalDynamicMetadataIfExists(query_context);
+        /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query,
+        /// and a lazy stand-in that is not loaded yet reports the columns of its `CREATE` query.
+        resolveStorageProxyLoading(t)->updateExternalDynamicMetadataIfExists(query_context);
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
         const auto & structure = table_metadata->getColumns();
         String prev_column_name;

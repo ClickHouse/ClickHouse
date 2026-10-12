@@ -59,6 +59,7 @@ INSERT INTO ${DB_LAZY}.t_lake SELECT number FROM numbers(100);
 CREATE TABLE ${DB_LAZY}.t_merge ENGINE = Merge('${DB_LAZY}', '^t_lake\$');
 CREATE TABLE ${DB_LAZY}.t_buffer (k Int64) ENGINE = Buffer('${DB_LAZY}', t_lake, 1, 100000, 100000, 1000000000, 1000000000, 1000000000000, 1000000000000);
 CREATE TABLE ${DB_LAZY}.t_alias ENGINE = Alias('${DB_LAZY}', 't_lake');
+CREATE TABLE ${DB_LAZY}.t_writer ENGINE = IcebergLocal('${DIR_LAZY}', 'Parquet');
 DETACH DATABASE ${DB_LAZY};
 ATTACH DATABASE ${DB_LAZY};
 SELECT 'lazy', engine FROM system.tables WHERE database = '${DB_LAZY}' AND name = 't_lake';
@@ -71,6 +72,17 @@ INSERT INTO ${DB_LAZY}.t_lake SELECT number + 300 FROM numbers(10);
 SELECT 'lazy Buffer', count(), sum(k) FROM ${DB_LAZY}.t_buffer;
 INSERT INTO ${DB_LAZY}.t_lake SELECT number + 400 FROM numbers(10);
 SELECT 'lazy merge() over Alias', count(), sum(k) FROM merge('${DB_LAZY}', '^t_alias\$');
+
+-- A stand-in that is not loaded yet reports the columns of its \`CREATE\` query.
+ALTER TABLE ${DB_LAZY}.t_writer RENAME COLUMN k TO v;
+INSERT INTO ${DB_LAZY}.t_writer SELECT number + 500 FROM numbers(10);
+DETACH DATABASE ${DB_LAZY};
+ATTACH DATABASE ${DB_LAZY};
+DESCRIBE TABLE merge('${DB_LAZY}', '^t_lake\$') SETTINGS describe_compact_output = 1;
+SELECT 'lazy merge() after rename', count(), sum(v) FROM merge('${DB_LAZY}', '^t_lake\$');
+DETACH DATABASE ${DB_LAZY};
+ATTACH DATABASE ${DB_LAZY};
+SELECT 'lazy merge() over Alias after rename', count(), sum(v) FROM merge('${DB_LAZY}', '^t_alias\$');
 
 DROP DATABASE ${DB_LAZY};
 "
