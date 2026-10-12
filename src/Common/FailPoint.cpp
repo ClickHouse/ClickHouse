@@ -439,6 +439,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(context_zookeeper_lock_acquired_pause) \
     PAUSEABLE_ONCE(context_auxiliary_zookeeper_lock_acquired_pause) \
     REGULAR(replicated_database_status_finished_node_missing) \
+    REGULAR(iceberg_drop_catalog_remove_fail) \
+    REGULAR(iceberg_drop_metadata_anchor_fail) \
+    REGULAR(iceberg_drop_first_data_delete_fail) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
     PAUSEABLE_ONCE(limit_by_transform_pause) \

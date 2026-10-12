@@ -1001,16 +1001,47 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
+void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    /// All settings, the Iceberg metadata init in drop() reads more than `iceberg_delete_data_on_drop`.
+    drop_query_settings = std::make_shared<const Settings>(query_context->getSettingsCopy());
+}
+
 void StorageObjectStorage::drop()
 {
-    /// We cannot use query context here, because drop is executed in the background.
-    auto drop_context = Context::getGlobalContextInstance();
-    if (catalog)
+    dropImpl(configuration, object_storage, catalog, getStorageID(), drop_query_settings);
+}
+
+void StorageObjectStorage::dropImpl(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageID & storage_id,
+    const std::shared_ptr<const Settings> & query_settings)
+{
+    auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
+    if (query_settings)
+        drop_context->setSettings(*query_settings);
+    const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
+
+    /// A catalog that manages the table location purges the files itself.
+    if (catalog && catalog->managesTableLocation())
     {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+        IDataLakeMetadata::dropFromCatalog(drop_context, catalog, storage_id);
+        return;
     }
-    configuration->drop(drop_context);
+
+    /// A table from a DataLakeCatalog database is a fresh instance with no metadata loaded yet.
+    if (delete_data_on_drop && configuration->isIcebergConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
+
+    /// Only Atomic/Replicated databases give a non-temporary table a UUID.
+    DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;
+    if (catalog == nullptr)
+        policy = (storage_id.hasUUID() && storage_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+            ? DropCleanupPolicy::AsyncRetry
+            : DropCleanupPolicy::Reattaching;
+    configuration->drop(drop_context, catalog, storage_id, policy);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
