@@ -9,6 +9,7 @@ from pyiceberg.catalog.rest import RestCatalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     DoubleType,
+    IntegerType,
     NestedField,
     StringType,
 )
@@ -473,4 +474,126 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def get_credentials_profile_events(node, query_id):
+    node.query("SYSTEM FLUSH LOGS")
+    result = node.query(
+        "SELECT ProfileEvents['DataLakeRestCatalogCredentialsVended'], "
+        "ProfileEvents['DataLakeRestCatalogCredentialsCacheHits'] "
+        f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+    )
+    return tuple(int(value) for value in result.split())
+
+
+def create_int_table(catalog, namespace, table_name, rows=1):
+    if namespace not in catalog.list_namespaces():
+        catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        namespace + (table_name,),
+        schema=Schema(NestedField(field_id=1, name="id", field_type=IntegerType(), required=False)),
+        properties={"write.metadata.compression-codec": "none"},
+    )
+    table.append(pa.table({"id": pa.array(range(rows), type=pa.int32())}))
+
+
+def test_vended_credentials_cache_disabled(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_disabled_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(
+        started_cluster, node, db_name,
+        additional_settings={"vended_credentials_cache_ttl": 0},
+    )
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    for attempt in range(2):
+        qid = f"{test_ref}-{attempt}"
+        node.query(query, query_id=qid)
+        vended, hits = get_credentials_profile_events(node, qid)
+        assert vended >= 1 and hits == 0
+
+
+def test_vended_credentials_cache_invalidated_on_table_replace(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_replace_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+    create_clickhouse_iceberg_database(started_cluster, node, db_name)
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    node.query(query)
+    qid = f"{test_ref}-2"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    catalog.drop_table(namespace + (table_name,))
+    create_int_table(catalog, namespace, table_name, rows=2)
+
+    qid = f"{test_ref}-3"
+    assert node.query(query, query_id=qid).strip() == "2"
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    qid = f"{test_ref}-4"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+
+def test_vended_credentials_cache_cleared_on_auth_change(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_vended_credentials_cache_auth_{uuid.uuid4().hex[:8]}"
+    namespace = (f"{test_ref}_namespace",)
+    table_name = f"{test_ref}_table"
+    db_name = f"{test_ref}_database"
+
+    create_int_table(catalog, namespace, table_name)
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""
+        CREATE DATABASE {db_name}
+        ENGINE = DataLakeCatalog('{BASE_URL}')
+        SETTINGS
+            catalog_type = 'rest',
+            warehouse = 'demo',
+            storage_endpoint = 'http://minio1:9001/warehouse-rest',
+            auth_header = 'Authorization: Bearer initial_dummy'
+        """,
+        settings={"allow_experimental_database_iceberg": 1},
+    )
+
+    query = f"SELECT count() FROM {db_name}.`{namespace[0]}.{table_name}`"
+
+    node.query(query)
+    qid = f"{test_ref}-2"
+    node.query(query, query_id=qid)
+    vended, hits = get_credentials_profile_events(node, qid)
+    assert vended == 0 and hits >= 1
+
+    node.query(
+        f"ALTER DATABASE {db_name} MODIFY SETTING auth_header = 'Authorization: Bearer altered_dummy'"
+    )
+
+    qid = f"{test_ref}-3"
+    node.query(query, query_id=qid)
+    vended, _ = get_credentials_profile_events(node, qid)
+    assert vended >= 1
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
 

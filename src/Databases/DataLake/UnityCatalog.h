@@ -101,7 +101,8 @@ private:
 
     ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation);
+    ICatalog::CredentialsRefreshCallback getCredentialsCallbackForOperation(
+        const String & unity_table_id, StorageType storage_type, const String & operation);
 };
 
 }

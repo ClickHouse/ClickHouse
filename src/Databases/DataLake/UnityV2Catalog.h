@@ -172,7 +172,8 @@ private:
     std::shared_ptr<IStorageCredentials> getDeltaCredentials(
         const std::string & table_id, StorageType storage_type, const std::string & operation) const;
 
-    ICatalog::CredentialsRefreshCallback getDeltaCredentialsCallback(const std::string & unity_table_id, const std::string & operation);
+    ICatalog::CredentialsRefreshCallback getDeltaCredentialsCallback(
+        const std::string & unity_table_id, StorageType storage_type, const std::string & operation);
 
     /// Return `nullptr` when the response carries no credentials of that kind.
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
