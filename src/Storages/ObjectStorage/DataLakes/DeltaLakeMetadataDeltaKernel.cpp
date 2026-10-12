@@ -30,6 +30,8 @@
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/DeltaMetadataLog.h>
+#include <Formats/FormatFilterInfo.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace CurrentMetrics
 {
@@ -47,6 +49,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int DELTA_KERNEL_ERROR;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace FailPoints
@@ -751,12 +754,12 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
-    const StorageID & /* table_id */,
+    const StorageID & table_id,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
     {
@@ -779,17 +782,58 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
-    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, snapshot->getTableSchema());
+    auto write_object_storage = object_storage_;
+    auto write_kernel_helper = kernel_helper;
+    if (catalog && object_storage_->hasCredentialsRefreshCallback())
+    {
+        if (auto write_credentials_callback = catalog->getWriteCredentialsConfigurationCallback(table_id))
+        {
+            write_object_storage = configuration->createObjectStorage(context, /* is_readonly */ false, write_credentials_callback);
+            if (!write_object_storage->tryRefreshCredentialsViaCallback())
+                throw Exception(
+                    ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    "The catalog did not vend storage credentials for writing into table {}",
+                    table_id.getNameForLogs());
+            write_kernel_helper = DB::getKernelHelper(configuration, write_object_storage);
+        }
+    }
+
+    /// The kernel opens the table at its latest version for the transaction, so an older pinned
+    /// snapshot's schema is not the one a reader resolves this data file against.
+    std::unordered_set<String> table_timestamp_ntz_paths;
+    if (snapshot_version.has_value())
+    {
+        auto latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
+            /* version */ std::nullopt, kernel_helper, object_storage, log);
+        if (latest_snapshot->getVersion() == *snapshot_version)
+            table_timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
+    }
+    else
+        table_timestamp_ntz_paths = snapshot->getTimestampNtzPaths();
+
+    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(
+        write_kernel_helper, snapshot->getTableSchema(), std::move(table_timestamp_ntz_paths));
     delta_transaction->create(partition_columns);
+
+    /// ORC and Avro read any mapper as Iceberg metadata, so only Parquet may be handed one.
+    const auto & timestamp_ntz_paths = delta_transaction->getTimestampNtzPaths();
+    FormatFilterInfoPtr format_filter_info;
+    if (!timestamp_ntz_paths.empty() && boost::iequals(configuration->format, "Parquet"))
+    {
+        auto column_mapper = std::make_shared<ColumnMapper>();
+        column_mapper->setLocalTimestampPaths(std::unordered_set<String>(timestamp_ntz_paths));
+        format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+    }
 
     if (partition_columns.empty())
     {
         return std::make_shared<DeltaLakeSink>(
             delta_transaction,
-            object_storage_,
+            write_object_storage,
             context,
             sample_block,
             format_settings,
+            format_filter_info,
             configuration->format,
             configuration->compression_method);
     }
@@ -797,10 +841,11 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     return std::make_shared<DeltaLakePartitionedSink>(
         delta_transaction,
         partition_columns,
-        object_storage_,
+        write_object_storage,
         context,
         sample_block,
         format_settings,
+        format_filter_info,
         configuration->format,
         configuration->compression_method);
 }
@@ -866,7 +911,7 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     /// Use `getAllPhysical()` so the Delta schema matches the physical columns the writer emits to Parquet.
     auto schema_list = columns.getAllPhysical();
 
-    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list);
+    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list, std::unordered_set<String>{});
 
     /// Test hook: pause after the existence check so a concurrent CREATE can write the `_delta_log`
     /// first, exercising the lost-race attach path in the catch below.
