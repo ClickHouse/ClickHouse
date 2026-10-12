@@ -824,6 +824,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             miniblock_values_remaining -= n;
 
             int bits_per_delta = int(miniblock_bit_widths[miniblock_idx]);
+            if (bits_per_delta > int(8 * sizeof(T)))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED miniblock bit width: {}", bits_per_delta);
             int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
             chassert(read_count == int(n));
 

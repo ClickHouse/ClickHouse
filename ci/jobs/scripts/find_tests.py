@@ -122,6 +122,28 @@ class Targeting:
     # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
     _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
 
+    # Submodules holding test data, and the stateless tests reading them. A change of the
+    # submodule reruns these tests, and the functional test job checks out the submodule
+    # only when one of them is going to run.
+    TEST_DATA_SUBMODULES = {
+        "contrib/arrow-testing": ["05361_arrow_testing_corpus"],
+    }
+
+    @classmethod
+    def test_data_submodules_for(cls, tests):
+        """The test data submodules needed by `clickhouse-test` selectors `tests`, all of them for a full run."""
+        return [
+            submodule
+            for submodule, owners in cls.TEST_DATA_SUBMODULES.items()
+            if not tests
+            or any(
+                re.search(test, f"{owner}{ext}")
+                for test in tests
+                for owner in owners
+                for ext in cls._TEST_FILE_EXTENSIONS
+            )
+        ]
+
     @classmethod
     def _derive_test_name(cls, fpath: str):
         """Map a changed file under `tests/queries/0_stateless/` to a test name.
@@ -410,6 +432,11 @@ class Targeting:
                     removed_tests.add(name)
 
         for fpath in changed_files:
+            if fpath in self.TEST_DATA_SUBMODULES:
+                for base_name in self.TEST_DATA_SUBMODULES[fpath]:
+                    print(f"Detected changed submodule '{fpath}' read by test '{base_name}'")
+                    result.add(f"{base_name}.")
+                continue
             if not fpath.startswith("tests/queries/0_stateless/"):
                 if fpath.startswith("tests/queries/"):
                     # Log any other changed file under tests/queries for future debugging

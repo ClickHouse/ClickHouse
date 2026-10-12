@@ -230,6 +230,13 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     node.element = &file_metadata.schema.at(schema_idx);
     schema_idx += 1;
 
+    /// Thrift deserialization stores any integer in the enum field. Check it before the first comparison:
+    /// loading an out-of-range enum value is undefined behavior, hence the copy to the underlying type.
+    std::underlying_type_t<parq::FieldRepetitionType::type> repetition_type;
+    memcpy(&repetition_type, &node.element->repetition_type, sizeof(repetition_type));
+    if (repetition_type < parq::FieldRepetitionType::REQUIRED || repetition_type > parq::FieldRepetitionType::REPEATED)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition type {} of parquet column {}", repetition_type, node.element->name);
+
     std::optional<size_t> idx_in_output_block;
     size_t wrap_in_arrays = 0;
     DataTypePtr outer_type_hint = node.type_hint;

@@ -1191,6 +1191,15 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             size_t parquet_column_idx = primitive_columns[column_idx].column_idx;
             column.meta = &meta->columns.at(parquet_column_idx);
 
+            /// Memory estimates are computed from these sizes and converted to unsigned integers.
+            const auto & column_meta = column.meta->meta_data;
+            if (column_meta.num_values < 0 || column_meta.total_compressed_size < 0 || column_meta.total_uncompressed_size < 0
+                || (column_meta.__isset.size_statistics && column_meta.size_statistics.__isset.unencoded_byte_array_data_bytes
+                    && column_meta.size_statistics.unencoded_byte_array_data_bytes < 0))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Column chunk {} in row group {} has negative size or number of values in metadata",
+                    parquet_column_idx, candidate.row_group_idx);
+
             /// Whether the innermost array element type is nullable.
             /// E.g. Nullable(String) or Array(Nullable(String)).
             /// Does not apply to nullable arrays, e.g. Nullable(Array(String)), because clickhouse

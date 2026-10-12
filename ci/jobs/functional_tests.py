@@ -995,7 +995,21 @@ def main():
             else:
                 print("skip log export config for local run")
 
+        def checkout_test_data_submodules():
+            # Some tests read test data from submodules, which are not checked out in CI.
+            # Check out only those needed by the selected tests, all of them for a full run.
+            # The job runs as `root` in docker on a checkout owned by another user, hence `safe.directory`.
+            submodules = Targeting.test_data_submodules_for(tests)
+            if not submodules:
+                return True
+            return Shell.check(
+                f"git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- {' '.join(submodules)}",
+                retries=3,
+                verbose=True,
+            )
+
         commands = [
+            checkout_test_data_submodules,
             "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
             "mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
