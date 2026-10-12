@@ -343,4 +343,168 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     return Status::PortFull;
 }
 
+AffinityResizeProcessor::AffinityResizeProcessor(SharedHeader header, size_t num_streams)
+    : IProcessor(InputPorts(num_streams, header), OutputPorts(num_streams, header))
+    , input_status(num_streams, InputStatus::NotActive)
+    , output_status(num_streams, OutputStatus::NotActive)
+    , input_needed(num_streams, 0)
+{
+    input_ports.reserve(num_streams);
+    for (auto & input : inputs)
+    {
+        input_index.emplace(&input, input_ports.size());
+        input_ports.push_back(&input);
+    }
+
+    output_ports.reserve(num_streams);
+    for (auto & output : outputs)
+    {
+        output_index.emplace(&output, output_ports.size());
+        output_ports.push_back(&output);
+    }
+}
+
+void AffinityResizeProcessor::transfer(size_t input, size_t output)
+{
+    auto * input_port = input_ports[input];
+    /// The input may be not needed: its source can push a chunk before the input stops being needed.
+    output_ports[output]->pushData(input_port->pullData(/* set_not_needed = */ true));
+    input_needed[input] = 0;
+    output_status[output] = OutputStatus::NotActive;
+    input_status[input] = InputStatus::NotActive;
+
+    if (input_port->isFinished())
+    {
+        input_status[input] = InputStatus::Finished;
+        ++num_finished_inputs;
+    }
+}
+
+IProcessor::Status AffinityResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
+{
+    for (auto * output_port : updated_outputs)
+    {
+        size_t output = output_index.at(output_port);
+        if (output_status[output] == OutputStatus::Finished)
+            continue;
+
+        if (output_port->isFinished())
+        {
+            output_status[output] = OutputStatus::Finished;
+            ++num_finished_outputs;
+        }
+        else if (output_port->canPush())
+            output_status[output] = OutputStatus::NeedData;
+    }
+
+    if (num_finished_outputs == outputs.size())
+    {
+        for (auto & input : inputs)
+            input.close();
+
+        return Status::Finished;
+    }
+
+    for (auto * input_port : updated_inputs)
+    {
+        size_t input = input_index.at(input_port);
+        if (input_status[input] == InputStatus::Finished)
+            continue;
+
+        if (input_port->isFinished())
+        {
+            input_status[input] = InputStatus::Finished;
+            ++num_finished_inputs;
+        }
+        else if (input_port->hasData())
+            input_status[input] = InputStatus::HasData;
+    }
+
+    for (auto * input_port : updated_inputs)
+    {
+        size_t stream = input_index.at(input_port);
+        if (input_status[stream] == InputStatus::HasData && output_status[stream] == OutputStatus::NeedData)
+            transfer(stream, stream);
+    }
+    for (auto * output_port : updated_outputs)
+    {
+        size_t stream = output_index.at(output_port);
+        if (input_status[stream] == InputStatus::HasData && output_status[stream] == OutputStatus::NeedData)
+            transfer(stream, stream);
+    }
+
+    /// Ports whose pair has finished take or give chunks from or to any other port.
+    if (num_finished_inputs || num_finished_outputs)
+    {
+        size_t next_input = 0;
+        for (size_t output = 0; output < output_ports.size(); ++output)
+        {
+            if (output_status[output] != OutputStatus::NeedData || input_status[output] != InputStatus::Finished)
+                continue;
+
+            while (next_input < input_ports.size() && input_status[next_input] != InputStatus::HasData)
+                ++next_input;
+
+            if (next_input == input_ports.size())
+                break;
+
+            transfer(next_input, output);
+        }
+
+        size_t next_output = 0;
+        for (size_t input = 0; input < input_ports.size(); ++input)
+        {
+            if (input_status[input] != InputStatus::HasData || output_status[input] != OutputStatus::Finished)
+                continue;
+
+            while (next_output < output_ports.size() && output_status[next_output] != OutputStatus::NeedData)
+                ++next_output;
+
+            if (next_output == output_ports.size())
+                break;
+
+            transfer(input, next_output);
+        }
+    }
+
+    if (num_finished_inputs == inputs.size())
+    {
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
+
+    /// Ask an input for data only when an output it may feed needs it: a stream must not read ahead of its own consumer.
+    bool has_waiting_output = false;
+    bool has_waiting_unpaired_output = false;
+    for (size_t output = 0; output < output_ports.size(); ++output)
+    {
+        if (output_status[output] != OutputStatus::NeedData)
+            continue;
+        has_waiting_output = true;
+        if (input_status[output] == InputStatus::Finished)
+            has_waiting_unpaired_output = true;
+    }
+
+    for (size_t input = 0; input < input_ports.size(); ++input)
+    {
+        if (input_status[input] != InputStatus::NotActive)
+            continue;
+
+        UInt8 needed = output_status[input] == OutputStatus::NeedData || has_waiting_unpaired_output
+            || (output_status[input] == OutputStatus::Finished && has_waiting_output);
+        if (needed == input_needed[input])
+            continue;
+
+        input_needed[input] = needed;
+        if (needed)
+            input_ports[input]->setNeeded();
+        else
+            input_ports[input]->setNotNeeded();
+    }
+
+    return has_waiting_output ? Status::NeedData : Status::PortFull;
+}
+
 }

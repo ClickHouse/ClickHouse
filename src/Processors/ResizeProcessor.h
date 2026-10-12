@@ -2,6 +2,7 @@
 
 #include <queue>
 #include <unordered_map>
+#include <vector>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
@@ -127,6 +128,47 @@ private:
     /// This field contained chunks which were read for output which had became finished while reading was happening.
     /// They will be pushed to any next waiting output.
     std::vector<Port::Data> abandoned_chunks;
+};
+
+/// N inputs to N outputs, input i paired with output i. While input i is not finished, output i takes chunks only from it,
+/// and input i is asked for data only when an output it may feed needs data. An output whose input has finished takes
+/// chunks of the other inputs, and a chunk of an input whose output has finished goes to any output that needs data.
+class AffinityResizeProcessor final : public IProcessor
+{
+public:
+    AffinityResizeProcessor(SharedHeader header, size_t num_streams);
+
+    String getName() const override { return "AffinityResize"; }
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
+
+private:
+    enum class InputStatus : uint8_t
+    {
+        NotActive,
+        HasData,
+        Finished,
+    };
+
+    enum class OutputStatus : uint8_t
+    {
+        NotActive,
+        NeedData,
+        Finished,
+    };
+
+    std::vector<InputPort *> input_ports;
+    std::vector<OutputPort *> output_ports;
+    std::vector<InputStatus> input_status;
+    std::vector<OutputStatus> output_status;
+    /// The needed flag last set on each input port, so that a port is written only when it changes.
+    std::vector<UInt8> input_needed;
+    std::unordered_map<const InputPort *, size_t> input_index;
+    std::unordered_map<const OutputPort *, size_t> output_index;
+
+    size_t num_finished_inputs = 0;
+    size_t num_finished_outputs = 0;
+
+    void transfer(size_t input, size_t output);
 };
 
 }
