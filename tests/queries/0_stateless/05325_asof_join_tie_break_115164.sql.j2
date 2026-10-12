@@ -1,0 +1,113 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/115164
+-- When several right rows share the closest value of the ASOF column, the hash join used to return
+-- a different one of them depending on the number of rows on the right side (the entries were sorted
+-- with an unstable sort below 256 rows and with a stable radix sort above) and on the type of the
+-- column (DateTime64 and Decimal never took the radix path). Now the lookup is stable: among tied
+-- rows, `>` and `>=` return the last one in the order the right side arrived and `<` and `<=` the
+-- first one, for any number of rows and any type.
+--
+-- The right side is a subquery with ORDER BY, so its rows arrive in a known order. Only the hash
+-- join is checked for the tied row: full_sorting_merge re-sorts the right side with an unstable
+-- sort (randomized in debug builds), so its choice among tied rows is unspecified.
+
+SET join_algorithm = 'hash';
+SET max_threads = 1;
+SET query_plan_join_swap_table = 'false';
+-- The ORDER BY of the right subquery is what defines the arrival order of the tied rows, keep it.
+SET query_plan_remove_redundant_sorting = 0;
+
+DROP TABLE IF EXISTS asof_tie_l;
+DROP TABLE IF EXISTS asof_tie_r;
+
+{% for typename, label in [('UInt32', 'UInt32'), ('Int64', 'Int64'), ('Int128', 'Int128'), ('Float64', 'Float64'), ('Decimal64(3)', 'Decimal64'), ("DateTime64(3, 'UTC')", 'DateTime64')] -%}
+{% for filler_rows in [0, 100, 250, 257, 1000] -%}
+
+CREATE TABLE asof_tie_r (id UInt32, t {{ typename }}, v String) ENGINE = MergeTree ORDER BY (id, t, v);
+-- `filler_rows` rows far below the ties, so the array crosses the 256-row threshold where the sort used to change.
+INSERT INTO asof_tie_r SELECT 1, 1, 'filler' FROM numbers({{ filler_rows }});
+-- Two groups of tied rows, below and above the left value 20.
+INSERT INTO asof_tie_r VALUES (1, 10, 'A'), (1, 10, 'B'), (1, 10, 'C');
+INSERT INTO asof_tie_r VALUES (1, 30, 'X'), (1, 30, 'Y'), (1, 30, 'Z');
+-- A key with a single row, so the result for it does not depend on the tie-break at all.
+INSERT INTO asof_tie_r VALUES (2, 10, 'single');
+OPTIMIZE TABLE asof_tie_r FINAL;
+
+CREATE TABLE asof_tie_l (id UInt32, t {{ typename }}) ENGINE = MergeTree ORDER BY (id, t);
+INSERT INTO asof_tie_l VALUES (1, 20), (1, 10), (1, 30), (2, 20);
+
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '>=', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, t, v) AS r ON l.id = r.id AND l.t >= r.t
+ORDER BY l.id, l.t;
+
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '>', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, t, v) AS r ON l.id = r.id AND l.t > r.t
+ORDER BY l.id, l.t;
+
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '<=', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, t, v) AS r ON l.id = r.id AND l.t <= r.t
+ORDER BY l.id, l.t;
+
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '<', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, t, v) AS r ON l.id = r.id AND l.t < r.t
+ORDER BY l.id, l.t;
+
+-- The arrival order decides, not the values of the other columns: reversed order, reversed answer.
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '>= reversed', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, t, v DESC) AS r ON l.id = r.id AND l.t >= r.t
+WHERE l.id = 1 AND l.t = 20;
+
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '<= reversed', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, t, v DESC) AS r ON l.id = r.id AND l.t <= r.t
+WHERE l.id = 1 AND l.t = 20;
+
+-- Rows arriving out of order by `t` go through the actual sort (radix above 256 rows, comparison sort
+-- below); it must be stable, so the answers are the same as with the sorted arrival above.
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '>= unsorted', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, v, t) AS r ON l.id = r.id AND l.t >= r.t
+WHERE l.id = 1 AND l.t = 20;
+
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '<= unsorted', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, v, t) AS r ON l.id = r.id AND l.t <= r.t
+WHERE l.id = 1 AND l.t = 20;
+
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '>= unsorted reversed', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, v DESC, t) AS r ON l.id = r.id AND l.t >= r.t
+WHERE l.id = 1 AND l.t = 20;
+
+SELECT '{{ label }}', {{ filler_rows }}, l.id, toInt32(l.t), '<= unsorted reversed', r.v
+FROM asof_tie_l AS l
+ASOF JOIN (SELECT * FROM asof_tie_r ORDER BY id, v DESC, t) AS r ON l.id = r.id AND l.t <= r.t
+WHERE l.id = 1 AND l.t = 20;
+
+DROP TABLE asof_tie_l;
+DROP TABLE asof_tie_r;
+
+{% endfor -%}
+{% endfor -%}
+
+-- Without duplicates in the ASOF column the two algorithms must give the same rows, on both sides
+-- of the 256-row threshold: the sort of the hash join entries changed, the matched row must not.
+CREATE TABLE asof_tie_r (id UInt32, t UInt32, v UInt32) ENGINE = MergeTree ORDER BY (id, t);
+INSERT INTO asof_tie_r SELECT number % 7, number, number FROM numbers(3000);
+CREATE TABLE asof_tie_l (id UInt32, t UInt32) ENGINE = MergeTree ORDER BY (id, t);
+INSERT INTO asof_tie_l SELECT number % 7, number * 3 + 1 FROM numbers(1000);
+
+{% for algorithm in ['hash', 'full_sorting_merge'] -%}
+{% for op in ['>=', '>', '<=', '<'] -%}
+SELECT 'no duplicates', '{{ op }}', count(), sum(cityHash64(l.id, l.t, r.v))
+FROM asof_tie_l AS l ASOF JOIN asof_tie_r AS r ON l.id = r.id AND l.t {{ op }} r.t
+SETTINGS join_algorithm = '{{ algorithm }}';
+{% endfor -%}
+{% endfor -%}
+
+DROP TABLE asof_tie_l;
+DROP TABLE asof_tie_r;
