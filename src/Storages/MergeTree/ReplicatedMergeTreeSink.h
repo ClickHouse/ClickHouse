@@ -94,14 +94,12 @@ protected:
 
     struct CommitPartResult
     {
-        /// Conflicting blocks and their actual part names if the block has to be deduplicated.
         std::vector<DeduplicationHash> conflicts;
-        /// Version of the deduplication cache snapshot that missed the conflict found in Keeper, otherwise 0.
+        /// Version of the cache snapshot that missed a conflict found in Keeper, otherwise 0.
         UInt64 stale_cache_version = 0;
     };
 
     /// Rename temporary part and commit to ZooKeeper.
-    /// An async insert checks the deduplication cache first, with a snapshot newer than `deduplication_cache_wait_newer_than`.
     CommitPartResult commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,

@@ -646,7 +646,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
 
     try
     {
-        auto conflicts = commitPart(zookeeper, part, deduplication_hashes, deduplication_ids).conflicts;
+        auto [conflicts, _] = commitPart(zookeeper, part, deduplication_hashes, deduplication_ids);
         bool deduplicated = !conflicts.empty();
 
         int error = 0;
