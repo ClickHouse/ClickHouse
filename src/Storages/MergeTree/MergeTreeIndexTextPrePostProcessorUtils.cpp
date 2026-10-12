@@ -44,6 +44,24 @@ ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList
     return actions_dag;
 }
 
+ActionsDAG buildActionsDAGFromASTList(ASTPtr expression_list_ast, const NamesAndTypesList & source_columns)
+{
+    auto context = Context::getGlobalContextInstance();
+    auto syntax_result = TreeRewriter(context).analyze(expression_list_ast, source_columns);
+    auto actions_dag = ExpressionAnalyzer(expression_list_ast, syntax_result, context).getActionsDAG(false, true);
+
+    NamesWithAliases projection;
+    for (const auto & child : expression_list_ast->children)
+    {
+        auto name = child->getColumnName();
+        projection.emplace_back(name, name);
+    }
+    actions_dag.project(projection);
+    actions_dag.removeUnusedActions();
+
+    return actions_dag;
+}
+
 void validateTransformActionsDAG(const ActionsDAG & actions_dag, const String & transform_name, const String & source_name)
 {
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();

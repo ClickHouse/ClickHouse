@@ -16,6 +16,9 @@ void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name,
 /// and removes unused actions.
 ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList & source_columns);
 
+/// Same for an `ASTExpressionList`: one output per child, in order.
+ActionsDAG buildActionsDAGFromASTList(ASTPtr expression_list_ast, const NamesAndTypesList & source_columns);
+
 /// Validates common text-index transform requirements shared by preprocessor and postprocessor
 /// expressions: a single functional output, at least one expression on top of the source column,
 /// and absence of non-deterministic functions or `arrayJoin`.
