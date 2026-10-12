@@ -13,13 +13,7 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.workflows.pull_request import REGULAR_BUILD_NAMES
 
-# On master the plain (non-sanitizer) stateless suite runs against the optimized
-# release binary instead of the plain `binary` build that PRs use. Drop the
-# `arm_binary` jobs from `functional_tests_jobs` and add the `arm_release` and
-# `amd_release` full-suite jobs. Master does not run the LLVM coverage jobs (the scheduled
-# coverage workflow does), so the `amd_llvm_coverage` jobs of `functional_tests_jobs` are
-# dropped too and the `DBReplicated`, `ParallelReplicas` and `AsyncInsert` configurations run
-# on the `arm_binary` build, exactly as in pull requests (see `ci/workflows/pull_request.py`).
+# Master runs the plain stateless suite on the release binaries; the coverage workflow runs the `llvm_coverage` jobs.
 MASTER_FUNCTIONAL_TESTS_JOBS = (
     [
         job

@@ -1002,8 +1002,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 3/3)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   unit_tests_asan_ubsan:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
+    runs-on: [self-hosted, arm-large]
+    needs: [build_arm_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAoYXNhbl91YnNhbik=') }}
     name: "Unit tests (asan_ubsan)"
     outputs:
@@ -1036,8 +1036,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (asan_ubsan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   unit_tests_tsan:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
+    runs-on: [self-hosted, arm-large]
+    needs: [build_arm_tsan, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAodHNhbik=') }}
     name: "Unit tests (tsan)"
     outputs:
@@ -1070,8 +1070,8 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Unit tests (tsan)' --workflow "ReleaseBranchCI" --ci --timestamp
 
   unit_tests_msan:
-    runs-on: [self-hosted, amd-large]
-    needs: [build_amd_msan, config_workflow, dockers_build_amd, dockers_build_arm]
+    runs-on: [self-hosted, arm-large]
+    needs: [build_arm_msan, config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'VW5pdCB0ZXN0cyAobXNhbik=') }}
     name: "Unit tests (msan)"
     outputs:

@@ -13,7 +13,7 @@ workflow = Workflow.Config(
         *[
             job
             for job in JobConfigs.build_jobs
-            if any(t in job.name for t in ("amd_asan_ubsan", "amd_tsan", "amd_debug"))
+            if any(t in job.name for t in ("amd_asan_ubsan", "arm_asan_ubsan", "amd_tsan", "arm_tsan", "amd_debug"))
         ],
         *JobConfigs.release_build_jobs,
         *[

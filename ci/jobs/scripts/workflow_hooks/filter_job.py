@@ -62,14 +62,14 @@ INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
 ]
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
-    "Build (amd_asan_ubsan)",
-    "Build (amd_tsan)",
-    "Build (amd_msan)",
+    "Build (arm_asan_ubsan)",
+    "Build (arm_tsan)",
+    "Build (arm_msan)",
     "Build (amd_debug)",
     "Build (amd_binary)",
-    "Stateless tests (amd_asan_ubsan, flaky check)",
-    "Stateless tests (amd_tsan, flaky check)",
-    "Stateless tests (amd_msan, flaky check)",
+    "Stateless tests (arm_asan_ubsan, flaky check)",
+    "Stateless tests (arm_tsan, flaky check)",
+    "Stateless tests (arm_msan, flaky check)",
     "Stateless tests (amd_debug, flaky check)",
     "Stateless tests (amd_binary, flaky check)",
 ]
@@ -121,8 +121,7 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/functional_tests.py",
     "ci/jobs/integration_test_job.py",
     "ci/jobs/unit_tests_job.py",
-    # LLVM_COVERAGE_SKIP_PREFIXES here decides which integration suites land in
-    # amd_llvm_coverage vs excluded_from_llvm (integration_test_job.py:433-462).
+    # LLVM_COVERAGE_SKIP_PREFIXES here splits integration suites between llvm_coverage and excluded_from_llvm.
     "ci/jobs/scripts/integration_tests_configs.py",
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
@@ -403,11 +402,7 @@ PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS = (
 # The builds whose binaries only the skipped stress tests use, skipped with them.
 # `ci/workflows/pull_request.py` asserts that no other job of the PR workflow requires their
 # artifacts.
-PR_SINGLE_ARCH_SKIPPED_BUILDS = (
-    f"{JobNames.BUILD} (arm_debug)",
-    f"{JobNames.BUILD} (arm_tsan)",
-    f"{JobNames.BUILD} (arm_msan)",
-)
+PR_SINGLE_ARCH_SKIPPED_BUILDS = (f"{JobNames.BUILD} (arm_debug)",)
 
 PR_SINGLE_ARCH_SKIPPED_JOBS = PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS + PR_SINGLE_ARCH_SKIPPED_BUILDS
 
@@ -843,13 +838,7 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
-    # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
-    # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
-    #
-    # Pull requests run the family only with the `ci-coverage` label; by default they run the same
-    # test configurations on the `arm_binary` build instead (`COVERAGE_REPLACEMENT_JOBS`), which
-    # finds the same failures several times cheaper. Outside pull requests (pr_number gate) the family is
-    # never skipped here: master does not run it, it runs in the scheduled coverage workflow.
+    # PRs run the coverage family (build, shards, excluded_from_llvm, merge) only with `ci-coverage`; elsewhere it is never skipped here.
     if (
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name

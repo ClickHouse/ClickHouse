@@ -24,7 +24,7 @@ from ci.defs.job_configs import JobConfigs
 # The S3 + DBReplicated, ParallelReplicas and AsyncInsert coverage shards are
 # parametrized into `functional_tests_jobs` next to the sanitizer jobs.
 FUNCTIONAL_TESTS_LLVM_COVERAGE_S3_JOBS = [
-    job for job in JobConfigs.functional_tests_jobs if "amd_llvm_coverage" in job.name
+    job for job in JobConfigs.functional_tests_jobs if "arm_llvm_coverage" in job.name
 ]
 
 workflow = Workflow.Config(

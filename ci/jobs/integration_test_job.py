@@ -1369,7 +1369,7 @@ def get_parallel_sequential_tests_to_run(
         for p in Path("./tests/integration/").glob("test_*/test*.py")
     ]
 
-    if "amd_llvm_coverage" in (job_options or ""):
+    if "llvm_coverage" in (job_options or ""):
         before = len(test_files)
         test_files = [
             f
@@ -1667,7 +1667,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
         elif any(build in to for build in ("amd_", "arm_")):
-            if "amd_llvm_coverage" in to:
+            if "llvm_coverage" in to:
                 is_llvm_coverage = True
         elif to == "distributed plan":
             use_distributed_plan = True
@@ -1689,7 +1689,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             assert False, f"Unknown job option [{to}]"
     assert (
         not is_per_test_coverage or is_llvm_coverage
-    ), "per_test_coverage requires an amd_llvm_coverage* build"
+    ), "per_test_coverage requires an llvm_coverage build"
     if is_targeted_check and info.is_local_run:
         # Apart from the full `amd_tsan` shards for submodule bumps, the PR workflow has only
         # targeted integration jobs, so a local run of one (e.g. the `integration` job alias)

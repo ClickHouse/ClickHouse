@@ -1526,7 +1526,7 @@ def get_optimal_test_batch(
     # already removed the tests matching LLVM_COVERAGE_SKIP_PREFIXES, so a
     # TEST_CONFIGS entry that falls entirely under a skip prefix is legitimately
     # absent there and must not trip the staleness check.
-    _is_llvm_coverage = "amd_llvm_coverage" in (job_options or "")
+    _is_llvm_coverage = "llvm_coverage" in (job_options or "")
     for test_config in TEST_CONFIGS:
         if _is_llvm_coverage and any(
             test_config.prefix.startswith(skip_prefix)

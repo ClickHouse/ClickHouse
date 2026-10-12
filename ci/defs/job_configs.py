@@ -388,26 +388,17 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN_UBSAN,
-            provides=[
-                ArtifactNames.CH_AMD_ASAN_UBSAN,
-                ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
-            ],
+            provides=[ArtifactNames.CH_AMD_ASAN_UBSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_TSAN,
-            provides=[
-                ArtifactNames.CH_AMD_TSAN,
-                ArtifactNames.UNITTEST_AMD_TSAN,
-            ],
+            provides=[ArtifactNames.CH_AMD_TSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MSAN,
-            provides=[
-                ArtifactNames.CH_AMD_MSAN,
-                ArtifactNames.UNITTEST_AMD_MSAN,
-            ],
+            provides=[ArtifactNames.CH_AMD_MSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -422,17 +413,26 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
-            provides=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+            provides=[
+                ArtifactNames.CH_ARM_ASAN_UBSAN,
+                ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_TSAN,
-            provides=[ArtifactNames.CH_ARM_TSAN],
+            provides=[
+                ArtifactNames.CH_ARM_TSAN,
+                ArtifactNames.UNITTEST_ARM_TSAN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
-            provides=[ArtifactNames.CH_ARM_MSAN],
+            provides=[
+                ArtifactNames.CH_ARM_MSAN,
+                ArtifactNames.UNITTEST_ARM_MSAN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -445,9 +445,9 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.LLVM_COVERAGE_BUILD,
             provides=[
-                ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+                ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PER_TEST_COVERAGE,
@@ -849,19 +849,19 @@ class JobConfigs:
     )
     stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
-            parameter="amd_asan_ubsan, flaky check",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            parameter="arm_asan_ubsan, flaky check",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
-            parameter="amd_tsan, flaky check",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_TSAN],
+            parameter="arm_tsan, flaky check",
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.CH_ARM_TSAN],
         ),
         Job.ParamSet(
-            parameter="amd_msan, flaky check",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.CH_AMD_MSAN],
+            parameter="arm_msan, flaky check",
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.CH_ARM_MSAN],
         ),
         Job.ParamSet(
             parameter="amd_debug, flaky check",
@@ -977,9 +977,9 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                parameter=f"arm_llvm_coverage, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
                     + f"_ft_s3_db_repl_parallel_{batch}"
@@ -990,9 +990,9 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_SMALL,
-                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                parameter=f"arm_llvm_coverage, s3 storage, DBReplicated, sequential, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_SMALL,
+                requires=[ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE
                     + f"_ft_s3_db_repl_sequential_{batch}"
@@ -1003,9 +1003,9 @@ class JobConfigs:
         ],
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, ParallelReplicas, s3 storage, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                parameter=f"arm_llvm_coverage, ParallelReplicas, s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel_{batch}"
                 ],
@@ -1014,16 +1014,16 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
-            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
-            runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            parameter="arm_llvm_coverage, ParallelReplicas, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD],
             provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential"],
         ),
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, AsyncInsert, s3 storage, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                parameter=f"arm_llvm_coverage, AsyncInsert, s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD],
                 provides=[
                     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel_{batch}"
                 ],
@@ -1032,9 +1032,9 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
-            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
-            runs_on=RunnerLabels.AMD_SMALL,
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            parameter="arm_llvm_coverage, AsyncInsert, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD],
             provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential"],
         ),
         Job.ParamSet(
@@ -1214,16 +1214,10 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_SMALL_MEM,
         ),
     )
-    # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
-    # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
-    # require the PR's UNITTEST_AMD_ASAN_UBSAN artifact: the "touched tests pass on the
-    # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
-    # module docstring), so this job is not gated behind `build_amd_asan_ubsan` and
-    # builds the "before" binary in parallel with the build matrix — matching the early
-    # start of the functional/integration bugfix validators.
+    # Builds the "before" `unit_tests_dbms` in-job, in parallel with the build matrix; the PR side is `Unit tests (asan_ubsan)`.
     bugfix_validation_ut_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_UT,
-        runs_on=RunnerLabels.AMD_LARGE,
+        runs_on=RunnerLabels.ARM_LARGE,
         command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
         # The job both builds and RUNS the before-binary in this container. Running
         # `unit_tests_dbms` needs `io_uring` (the `silk` fiber runtime calls
@@ -1264,35 +1258,35 @@ class JobConfigs:
     unittest_jobs = common_unit_test_job_config.parametrize(
         Job.ParamSet(
             parameter="asan_ubsan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="tsan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_TSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_TSAN],
         ),
         Job.ParamSet(
             parameter="msan",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_MSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_MSAN],
         ),
         Job.ParamSet(
             parameter="asan_ubsan, function_prop_fuzzer",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_ASAN_UBSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_ASAN_UBSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(
             parameter="tsan, function_prop_fuzzer",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_TSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_TSAN],
             command=_fuzzer_command,
         ),
         Job.ParamSet(
             parameter="msan, function_prop_fuzzer",
-            runs_on=RunnerLabels.AMD_LARGE,
-            requires=[ArtifactNames.UNITTEST_AMD_MSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+            requires=[ArtifactNames.UNITTEST_ARM_MSAN],
             command=_fuzzer_command,
         ),
     )
@@ -1455,17 +1449,17 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.LLVM_COVERAGE_BUILD,
             provides=[
-                ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+                ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD,
                 ArtifactNames.UNITTEST_LLVM_COVERAGE,
             ],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
 
     unittest_llvm_coverage_job = common_unit_test_job_config.parametrize(
         Job.ParamSet(
-            parameter="amd_llvm_coverage",
-            runs_on=RunnerLabels.AMD_LARGE,
+            parameter="arm_llvm_coverage",
+            runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.UNITTEST_LLVM_COVERAGE],
             provides=[ArtifactNames.LLVM_COVERAGE_FILE],
         ),
@@ -1474,9 +1468,9 @@ class JobConfigs:
     functional_test_llvm_coverage_jobs = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_llvm_coverage, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_MEDIUM,
-                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                parameter=f"arm_llvm_coverage, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_MEDIUM,
+                requires=[ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD],
                 provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"],
             )
             for total_batches in (LLVM_FT_NUM_BATCHES,)
@@ -1488,9 +1482,9 @@ class JobConfigs:
         common_integration_test_job_config.parametrize(
             *[
                 Job.ParamSet(
-                    parameter=f"amd_llvm_coverage, {batch}/{total_batches}",
-                    runs_on=RunnerLabels.AMD_MEDIUM,
-                    requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                    parameter=f"arm_llvm_coverage, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.ARM_MEDIUM,
+                    requires=[ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD],
                     provides=[ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"],
                 )
                 for total_batches in (LLVM_IT_NUM_BATCHES,)
@@ -2288,10 +2282,10 @@ class JobConfigs:
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
-        runs_on=RunnerLabels.AMD_SMALL,
+        runs_on=RunnerLabels.ARM_SMALL,
         run_in_docker="clickhouse/test-base",
         requires=[
-            ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
             *LLVM_ARTIFACTS_LIST,
         ],

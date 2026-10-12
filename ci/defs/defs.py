@@ -459,11 +459,7 @@ class JobNames:
     BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
-    # Unit-test (gtest) bugfix validation. Unlike the functional/integration
-    # validators above, this is a single AMD-only job: it builds a merge-base
-    # "before" `unit_tests_dbms` (AMD ASan+UBSan) in-job and reports
-    # `OK`/`XFAIL`/`FAIL` directly, so it is not part of the per-arch
-    # aggregation in `new_tests_check.py`.
+    # A single ARM job that reports `OK`/`XFAIL`/`FAIL` itself, outside the per-arch aggregation in `new_tests_check.py`.
     BUGFIX_VALIDATE_UT = "Bugfix validation (unit tests)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
@@ -486,8 +482,8 @@ class ToolSet:
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
-    CH_AMD_LLVM_COVERAGE_BUILD = (
-        "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
+    CH_ARM_LLVM_COVERAGE_BUILD = (
+        "CH_ARM_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
     )
     CH_AMD_PER_TEST_COVERAGE_BUILD = (
         "CH_AMD_PER_TEST_COVERAGE_BUILD"  # build with LLVM coverage + per-test depth instrumentation
@@ -527,9 +523,9 @@ class ArtifactNames:
 
     FAST_TEST = "FAST_TEST"
 
-    UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
-    UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
-    UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
+    UNITTEST_ARM_ASAN_UBSAN = "UNITTEST_ARM_ASAN_UBSAN"
+    UNITTEST_ARM_TSAN = "UNITTEST_ARM_TSAN"
+    UNITTEST_ARM_MSAN = "UNITTEST_ARM_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
     # Packages are built for the release builds only - they are what gets published, and
@@ -673,7 +669,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
-            ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.CH_ARM_LLVM_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
             ArtifactNames.CH_AMD_ASAN_UBSAN,
@@ -787,9 +783,9 @@ class ArtifactConfigs:
         compress_zst=True,
     ).parametrize(
         names=[
-            ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
-            ArtifactNames.UNITTEST_AMD_TSAN,
-            ArtifactNames.UNITTEST_AMD_MSAN,
+            ArtifactNames.UNITTEST_ARM_ASAN_UBSAN,
+            ArtifactNames.UNITTEST_ARM_TSAN,
+            ArtifactNames.UNITTEST_ARM_MSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
     )

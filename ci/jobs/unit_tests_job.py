@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
     job_name = Info().job_name
 
-    # Note, LSan does not compatible with debugger
+    # LSan is not compatible with a debugger.
     if "asan" not in job_name:
         # With gdb we will capture stacktrace in case of abnormal termination and timeout.
         # The tests run sequentially in a single binary, so the timeout must cover the sum of
