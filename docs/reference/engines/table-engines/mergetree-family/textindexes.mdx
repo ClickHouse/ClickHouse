@@ -1242,7 +1242,7 @@ ORDER BY id;
 
 Once the index is created, it can speed up queries on JSON subcolumns using the same functions as for `String` columns.
 A path without a type hint has type `Dynamic`, and a path with a `Variant` type hint also holds values of several types: their values keep their own types, so `equals`, `has`, `IN` and a cast of the path compare them after a conversion (a stored `true` equals `1`) while the index holds their text.
-On such paths only `LIKE`, `ILIKE`, `match`, `startsWith`, `endsWith`, `hasToken`, `hasTokenOrNull` and `hasPhrase` with a string constant use the index; other queries use it on a typed subcolumn such as `data.user_name.:String`, or on a path whose type hint contains neither `Dynamic` nor `Variant`.
+On such paths only `LIKE`, `ILIKE`, `match`, `startsWith`, `endsWith`, `hasToken` and `hasTokenOrNull` with a string constant use the index; other queries use it on a typed subcolumn such as `data.user_name.:String`, or on a path whose type hint contains neither `Dynamic` nor `Variant`.
 
 Subcolumn access:
 

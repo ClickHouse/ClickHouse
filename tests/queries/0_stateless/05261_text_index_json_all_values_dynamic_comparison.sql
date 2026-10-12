@@ -59,17 +59,19 @@ SELECT count() FROM t_typed WHERE j.t = tuple(1) SETTINGS use_skip_indexes = 0;
 -- A path of one type still uses the index.
 SELECT count() FROM t_typed WHERE j.f = 3.5 SETTINGS force_data_skipping_indices = 'idx';
 
--- A string search on a `Variant` path still uses the index (on a bare `Dynamic` path `hasPhrase` is not a valid filter).
-SELECT count() FROM t_typed WHERE hasPhrase(j.w, 'two three') SETTINGS variant_throw_on_type_mismatch = 0, force_data_skipping_indices = 'idx';
+-- A string search on a `Variant` path still uses the index.
+SELECT count() FROM t_typed WHERE hasToken(j.w, 'two') SETTINGS variant_throw_on_type_mismatch = 0, force_data_skipping_indices = 'idx';
 
 CREATE TABLE t_tokens (id UInt64, j JSON(v Variant(Array(String), String)), INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'array'))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 
 INSERT INTO t_tokens VALUES (1, '{"v": ["abc"]}'), (2, '{"v": "xyz"}');
 
--- `hasAllTokens` also takes an array, whose elements are its tokens, while the index holds the text `['abc']`.
+-- `hasAllTokens` and `hasPhrase` also take an array, whose elements are its tokens, while the index holds the text `['abc']`.
 SELECT count() FROM t_tokens WHERE hasAllTokens(j.v, 'abc', 'array');
 SELECT count() FROM t_tokens WHERE hasAllTokens(j.v, 'abc', 'array') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_tokens WHERE hasPhrase(j.v, 'abc', 'array');
+SELECT count() FROM t_tokens WHERE hasPhrase(j.v, 'abc', 'array') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_dynamic;
 DROP TABLE t_typed;

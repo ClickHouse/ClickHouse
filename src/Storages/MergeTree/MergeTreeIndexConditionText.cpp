@@ -1096,7 +1096,7 @@ static bool readsDynamicOrVariantValues(const RPNBuilderTreeNode & node)
 /// With a string needle, these functions accept only a string haystack.
 static bool searchesOnlyStrings(const String & function_name)
 {
-    return function_name == "hasToken" || function_name == "hasTokenOrNull" || function_name == "hasPhrase"
+    return function_name == "hasToken" || function_name == "hasTokenOrNull"
         || function_name == "like" || function_name == "ilike" || function_name == "match"
         || function_name == "startsWith" || function_name == "endsWith";
 }
