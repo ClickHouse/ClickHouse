@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -114,6 +115,11 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
     }
 }
 
+bool MySQLSettings::isLoadedFromQueryContext(std::string_view name)
+{
+    return name == "mysql_datatypes_support_level";
+}
+
 VectorWithMemoryTracking<std::string_view> MySQLSettings::getAllRegisteredNames() const
 {
     VectorWithMemoryTracking<std::string_view> all_settings;
@@ -136,4 +142,6 @@ bool MySQLSettings::hasBuiltin(std::string_view name)
 {
     return MySQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MySQLSettings)
 }

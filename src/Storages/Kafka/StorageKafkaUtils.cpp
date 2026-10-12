@@ -47,6 +47,8 @@
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
 
+#include <algorithm>
+
 #if USE_KRB5
 #    include <Access/KerberosInit.h>
 #endif // USE_KRB5
@@ -106,6 +108,19 @@ namespace ErrorCodes
 /// An absolute upper bound on `kafka_num_consumers`, enforced regardless of `kafka_disable_num_consumers_limit`.
 /// A single consumer can read any number of partitions, so no realistic setup ever needs this many.
 static constexpr UInt64 MAX_KAFKA_NUM_CONSUMERS = 10000;
+
+/// The settings a `Kafka` table takes from elsewhere unless its definition states them: the block size, poll and flush
+/// settings from the server's `max_insert_block_size`, `max_block_size`, `stream_poll_timeout_ms` and
+/// `stream_flush_interval_ms`; the client's security and compression settings from the `kafka` section of the server
+/// configuration (`KafkaConfigLoader`).
+static bool isKafkaSettingTakenFromElsewhere(std::string_view name)
+{
+    static constexpr std::string_view names[] = {
+        "kafka_max_block_size", "kafka_poll_max_batch_size", "kafka_poll_timeout_ms", "kafka_flush_interval_ms",
+        "kafka_security_protocol", "kafka_sasl_mechanism", "kafka_sasl_username", "kafka_sasl_password",
+        "kafka_compression_codec", "kafka_compression_level"};
+    return std::ranges::find(names, name) != std::end(names);
+}
 
 void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
@@ -379,6 +394,8 @@ void registerStorageKafka(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<KafkaSettings>,
+            .is_inherited_setting_fn = isKafkaSettingTakenFromElsewhere,
         },
         Documentation{
             .description = R"DOCS_MD(
