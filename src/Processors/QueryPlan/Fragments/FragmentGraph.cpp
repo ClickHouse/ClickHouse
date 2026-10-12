@@ -227,6 +227,8 @@ String formatExchangeKind(const FragmentExchange & exchange)
             return "gather";
         case FragmentExchange::Kind::Any:
             return "any";
+        case FragmentExchange::Kind::SetValues:
+            return "set values";
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of exchange {}", exchange.id);
 }
@@ -249,9 +251,16 @@ const FragmentExchange & FragmentGraph::getExchange(UInt32 id) const
     return *it;
 }
 
-FragmentDependency::Type classifyDependency(const ConsumerStepInfo & consumer, FragmentExchange::Mode mode, String & reason)
+FragmentDependency::Type classifyDependency(
+    const ConsumerStepInfo & consumer, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason)
 {
     reason.clear();
+
+    if (kind == FragmentExchange::Kind::SetValues)
+    {
+        reason = "set must be complete";
+        return FragmentDependency::Type::Blocking;
+    }
 
     if (mode == FragmentExchange::Mode::Materialised)
     {
@@ -284,9 +293,11 @@ FragmentDependency::Type classifyDependency(const ConsumerStepInfo & consumer, F
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected kind of consumer step {}", consumer.step_name);
 }
 
-/// Scans with no dependencies come out at level 0 and the initiator at the top. The ids assigned by the
+/// Scans with no dependencies come out at level 0 and the root at the top. The ids assigned by the
 /// cutter already ascend from producers to consumers; the topological sort here does not rely on that:
-/// it computes the depth and rejects a cycle, a missing producer or a graph without exactly one initiator.
+/// it computes the depth and rejects a cycle, a missing producer, or a graph without exactly one root
+/// (a fragment no other fragment depends on) with the `Initiator` role. Several fragments may have the
+/// `Initiator` role, because the fragments that fill `IN`-subquery sets also run on the initiator.
 void computeLevels(FragmentGraph & graph)
 {
     const size_t num_fragments = graph.fragments.size();
@@ -297,12 +308,6 @@ void computeLevels(FragmentGraph & graph)
         if (!index_by_id.emplace(graph.fragments[i].id, i).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate fragment {} in the fragment graph", graph.fragments[i].id);
     }
-
-    size_t num_initiators = 0;
-    for (const auto & fragment : graph.fragments)
-        num_initiators += fragment.role == QueryFragment::Role::Initiator;
-    if (num_initiators != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has {} initiator fragments, expected one", num_initiators);
 
     /// Kahn's algorithm over the edges producer -> consumer. Ready fragments are taken in the order of ids for determinism.
     std::vector<size_t> in_degree(num_fragments, 0);
@@ -339,6 +344,22 @@ void computeLevels(FragmentGraph & graph)
 
     if (topological_order.size() != num_fragments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has a cycle");
+
+    /// The root is the fragment whose output nobody consumes: the result of the query.
+    size_t num_roots = 0;
+    size_t root = 0;
+    for (size_t i = 0; i < num_fragments; ++i)
+    {
+        if (consumers[i].empty())
+        {
+            ++num_roots;
+            root = i;
+        }
+    }
+    if (num_roots != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The fragment graph has {} root fragments, expected one", num_roots);
+    if (graph.fragments[root].role != QueryFragment::Role::Initiator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The root fragment F{} must have the initiator role", graph.fragments[root].id);
 
     /// A fragment is one level above its deepest producer.
     UInt32 max_level = 0;
@@ -417,7 +438,7 @@ FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan)
             FragmentDependency dependency;
             dependency.producer = producer_id;
             dependency.exchange = exchange.id;
-            dependency.type = classifyDependency(consumer_step, exchange.mode, dependency.reason);
+            dependency.type = classifyDependency(consumer_step, exchange.kind, exchange.mode, dependency.reason);
             consumer.depends_on.push_back(std::move(dependency));
 
             graph.exchanges.push_back(std::move(exchange));
@@ -446,13 +467,14 @@ FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<Str
     fragment.id = 0;
     fragment.stage_name = String(main_stage_name);
     fragment.role = QueryFragment::Role::Initiator;
+    fragment.location = QueryFragment::ExecutionLocation::SingleNode;
+    fragment.fallback_reason = std::move(fallback_reason);
     fragment.tasks = 1;
     fragment.plan = &plan;
     fragment.summary = buildSummary(plan);
     graph.fragments.push_back(std::move(fragment));
 
     graph.levels = {{0}};
-    graph.fallback_reason = std::move(fallback_reason);
     return graph;
 }
 
@@ -461,9 +483,6 @@ String dumpFragmentGraph(const FragmentGraph & graph)
     String result;
     auto out = std::back_inserter(result);
 
-    if (graph.fallback_reason)
-        fmt::format_to(out, "fallback: {}\n", *graph.fallback_reason);
-
     size_t stage_name_width = 0;
     for (const auto & fragment : graph.fragments)
         stage_name_width = std::max(stage_name_width, fragment.stage_name.size());
@@ -471,9 +490,10 @@ String dumpFragmentGraph(const FragmentGraph & graph)
     fmt::format_to(out, "query fragments: {}\n", graph.fragments.size());
     for (const auto & fragment : graph.fragments)
     {
-        fmt::format_to(out, "  F{} {:<{}}  {:<9}  tasks={}  level {}",
+        fmt::format_to(out, "  F{} {:<{}}  {:<9}  {:<11}  tasks={}  level {}",
             fragment.id, fragment.stage_name, stage_name_width,
             fragment.role == QueryFragment::Role::Initiator ? "initiator" : "worker",
+            fragment.location == QueryFragment::ExecutionLocation::Distributed ? "distributed" : "single node",
             fragment.tasks, fragment.level);
 
         for (size_t i = 0; i < fragment.depends_on.size(); ++i)
@@ -483,6 +503,12 @@ String dumpFragmentGraph(const FragmentGraph & graph)
                 dependency.producer, graph.getExchange(dependency.exchange).name,
                 dependency.type == FragmentDependency::Type::Blocking ? "blocking: " + dependency.reason : "streaming");
         }
+        if (fragment.fallback_reason)
+            fmt::format_to(out, "  not distributed: {}", *fragment.fallback_reason);
+        if (fragment.set)
+            fmt::format_to(out, "  set: {}", *fragment.set);
+        if (fragment.set_fragment)
+            fmt::format_to(out, "  set source of F{}", *fragment.set_fragment);
         result += '\n';
     }
 

@@ -14,6 +14,8 @@ namespace DB
 
 /// A model of the stages ("query fragments") of a distributed query plan and of the exchanges between them,
 /// built from the output of `makeDistributedPlan`. It is used to explain the shape of a distributed query.
+/// The `IN`-subquery sets of the query are fragments of the same graph: the fragment that fills a set and its
+/// worker stages hand the set to its readers through `SetValues` exchanges.
 
 /// An edge from a producer fragment to the fragment that consumes its output.
 struct FragmentDependency
@@ -44,15 +46,31 @@ struct QueryFragment
         Worker,
     };
 
+    enum class ExecutionLocation : uint8_t
+    {
+        /// A stage of a cut plan, run as tasks by the scheduler.
+        Distributed,
+        /// A plan that was not cut; runs as one pipeline in the initiator process:
+        /// the query after a fallback to local execution, or the fragment that fills an `IN`-subquery set.
+        SingleNode,
+    };
+
     /// The stage id assigned by the cutter: N for `stage_N`, the next number for `main`.
     /// Ids ascend from the leaves to the initiator.
     UInt32 id = 0;
     /// The name of the stage in the executor, to join with logs and traces.
     String stage_name;
     Role role = Role::Worker;
+    ExecutionLocation location = ExecutionLocation::Distributed;
+    /// `SingleNode` only: why the plan was not cut.
+    std::optional<String> fallback_reason;
+    /// The set this fragment fills, e.g. "k IN (SELECT k FROM small)".
+    std::optional<String> set;
+    /// Worker stages of a distributed set source: the id of the fragment that fills the set.
+    std::optional<UInt32> set_fragment;
     /// The number of tasks of the stage.
     size_t tasks = 0;
-    /// 0 for leaves (fragments without dependencies), the maximum for the initiator.
+    /// 0 for leaves (fragments without dependencies), the maximum for the root.
     UInt32 level = 0;
     /// Sorted by producer id.
     std::vector<FragmentDependency> depends_on;
@@ -75,6 +93,8 @@ struct FragmentExchange
         Gather,
         /// Rows are distributed without regard to their values.
         Any,
+        /// A built `IN`-subquery set, shipped by value inside the tasks of every fragment that reads it.
+        SetValues,
     };
 
     enum class Mode : uint8_t
@@ -107,14 +127,12 @@ struct FragmentExchange
 
 struct FragmentGraph
 {
-    /// Sorted by id; the initiator is the last one.
+    /// Sorted by id; the fragments of the query precede those of its sets, which get ids after the main fragment of the query.
     std::vector<QueryFragment> fragments;
     /// Sorted by id.
     std::vector<FragmentExchange> exchanges;
     /// Fragment ids by level, ascending within a level; `levels[0]` are the leaves.
     std::vector<std::vector<UInt32>> levels;
-    /// Set for the degenerate single-fragment graph of a plan that was not distributed.
-    std::optional<String> fallback_reason;
 
     /// Throws `LOGICAL_ERROR` when absent.
     const QueryFragment & getFragment(UInt32 id) const;
@@ -126,11 +144,13 @@ struct FragmentGraph
 /// `distributed_plan` must outlive the graph, because the fragments point to its plans.
 FragmentGraph buildFragmentGraph(const DistributedQueryPlan & distributed_plan);
 
-/// The one-initiator graph of a plan that was not cut (no exchanges, or the planner fell back to a single node).
+/// The one-fragment graph of a plan that was not cut (no exchanges, or the planner fell back to a single node).
+/// The fragment is an initiator with the `SingleNode` location and carries `fallback_reason`.
 FragmentGraph buildSingleFragmentGraph(const QueryPlan & plan, std::optional<String> fallback_reason);
 
-/// Fills `level` of every fragment and `levels`; `fragments` and their `depends_on` must be set,
-/// and exactly one fragment must have the `Initiator` role. Exposed for tests.
+/// Fills `level` of every fragment and `levels`; `fragments` and their `depends_on` must be set.
+/// The graph must be acyclic and have exactly one root (a fragment no other fragment depends on),
+/// which must have the `Initiator` role. Exposed for tests.
 void computeLevels(FragmentGraph & graph);
 
 /// The step of the consumer fragment which reads the output of a receive step,
@@ -155,8 +175,10 @@ struct ConsumerStepInfo
 };
 
 /// Pure classification of one dependency; `reason` is set for a blocking dependency and cleared otherwise.
-/// Exposed for tests.
-FragmentDependency::Type classifyDependency(const ConsumerStepInfo & consumer, FragmentExchange::Mode mode, String & reason);
+/// A `SetValues` exchange is always blocking (the set must be complete), then a `Materialised` exchange,
+/// otherwise the consumer step decides. Exposed for tests.
+FragmentDependency::Type classifyDependency(
+    const ConsumerStepInfo & consumer, FragmentExchange::Kind kind, FragmentExchange::Mode mode, String & reason);
 
 /// Multi-line debug text of the model (for `LOG_TEST` and tests).
 String dumpFragmentGraph(const FragmentGraph & graph);
