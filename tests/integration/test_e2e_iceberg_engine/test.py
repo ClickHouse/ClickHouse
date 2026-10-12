@@ -915,7 +915,6 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
     # Listing once per file would exceed it.
     assert int(lists) <= 10
 
-
     expired = _nonzero_metrics(
         node.query(
             f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
