@@ -123,12 +123,24 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT '-- the pruned parts are not read', read_rows < 2000
+-- Each fragment logs a query_log row of its own and the initiator's row reports only the exchange
+-- input, so the volume is summed over the probe's task rows, correlated by `initial_query_id`. The
+-- volume is bounded on both sides: a family that reports no read volume at all sums to 0 and would
+-- pass an upper bound alone, whether it is empty or only its aggregation fragments are there.
+-- Measured 1020 rows here, against the 3020 the three-part read would take.
+WITH (
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 10 MINUTE
+        AND current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
+        AND query LIKE '%read_volume_probe%' AND query NOT LIKE '%query_log%'
+    ORDER BY event_time_microseconds DESC LIMIT 1
+) AS probe
+SELECT '-- the pruned parts are not read',
+    probe != '' AND count() > 0 AND sum(read_rows) BETWEEN 500 AND 2000
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 10 MINUTE
-    AND current_database = currentDatabase() AND type = 'QueryFinish' AND is_initial_query
-    AND query LIKE '%read_volume_probe%' AND query NOT LIKE '%query_log%'
-ORDER BY event_time_microseconds DESC LIMIT 1;
+    AND type = 'QueryFinish' AND is_initial_query = 0 AND initial_query_id = probe;
 
 -- FINAL resolves the coordinator's marks per lane, in a separate site from the plain read. Several parts
 -- with disjoint primary-key ranges, spread over more lanes than there are buckets, make the local analysis

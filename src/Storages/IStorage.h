@@ -122,6 +122,11 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
+    /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
+    /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
+    virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
+
     /// Returns true for storages that do not store data themselves but read it from other tables,
     /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
     /// of the rows read from such a storage carry the name of the table that actually produced
@@ -265,6 +270,9 @@ public:
     {
         return metadata.get();
     }
+
+    /// Whether this table has a unique-key constraint.
+    virtual bool hasUniqueKey() const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -560,6 +568,10 @@ public:
         TableExclusiveLockHolder &);
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
+
+    /// Checked before `RENAME DATABASE` moves this table into `new_database_name`. Unlike a table rename,
+    /// only the database name changes there: the table name and the table UUID are preserved.
+    virtual void checkTableCanBeRenamedByDatabaseRename(const String & /*new_database_name*/) const {}
 
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
