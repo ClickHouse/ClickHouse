@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
+    extern const SettingsBool query_plan_limit_by_use_outer_limit;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool optimize_min_max_from_files;
     extern const SettingsBool query_plan_read_in_order_through_join;
@@ -195,6 +196,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_expressions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expressions];
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
+    limit_by_use_outer_limit = from[Setting::query_plan_limit_by_use_outer_limit];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
     /// The filter push-down pass also runs with `filter_push_down` off, once a JOIN runtime filter has been added.
     filter_push_down_below_limit_by = from[Setting::query_plan_filter_push_down_below_limit_by];
