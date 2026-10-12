@@ -1,18 +1,19 @@
 -- A requested column missing from a file is computed from its `DEFAULT`, which may read another
 -- defaulted column that is missing from the file as well. The physical inputs of the whole chain
 -- must be read, otherwise the chain is evaluated over type defaults.
-INSERT INTO FUNCTION file('05332_chain.jsonl', 'JSONEachRow', 'a UInt8, z UInt8') SELECT 10, 1 SETTINGS engine_file_truncate_on_insert = 1;
+-- The file is named after the test database, so that concurrent runs of the test do not share it.
+INSERT INTO FUNCTION file({CLICKHOUSE_DATABASE:String}, 'JSONEachRow', 'a UInt8, z UInt8') SELECT 10, 1 SETTINGS engine_file_truncate_on_insert = 1;
 
 DROP TABLE IF EXISTS t_05332_chain;
 CREATE TABLE t_05332_chain (a UInt8, z UInt8, c UInt8 DEFAULT a + 1, b UInt8 DEFAULT c + 1)
-ENGINE = File(JSONEachRow, '05332_chain.jsonl');
+ENGINE = File(JSONEachRow, {CLICKHOUSE_DATABASE:String});
 SELECT b FROM t_05332_chain;
 SELECT z, b FROM t_05332_chain;
 DROP TABLE t_05332_chain;
 
 DROP TABLE IF EXISTS t_05332_chain_matcher;
 CREATE TABLE t_05332_chain_matcher (a UInt8, z UInt8, c UInt8 DEFAULT a + 1, b UInt8 DEFAULT plus(COLUMNS('^c$'), 1))
-ENGINE = File(JSONEachRow, '05332_chain.jsonl');
+ENGINE = File(JSONEachRow, {CLICKHOUSE_DATABASE:String});
 SELECT b FROM t_05332_chain_matcher;
 DROP TABLE t_05332_chain_matcher;
 
