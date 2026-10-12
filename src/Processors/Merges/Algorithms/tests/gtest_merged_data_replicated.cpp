@@ -142,7 +142,7 @@ TEST(MergedDataReplicated, InsertRowsWrapsDestinationPreservingOptimization)
     auto val_indexes = ColumnUInt8::create();
     val_indexes->insertValue(0);
     val_indexes->insertValue(0);
-    ColumnPtr val_replicated = ColumnReplicated::create(std::move(val_nested), std::move(val_indexes));
+    ColumnPtr val_replicated = ColumnReplicated::create(MutableColumnPtr(std::move(val_nested)), MutableColumnPtr(std::move(val_indexes)));
 
     ColumnRawPtrs raw_columns = {key_src.get(), val_replicated.get()};
     merged_data.insertRows(raw_columns, 0, 2, 1);
@@ -187,7 +187,7 @@ TEST(MergedDataReplicated, InsertChunkReplicatedSourceRegularDestination)
     auto val_indexes = ColumnUInt8::create();
     val_indexes->insertValue(0);
     val_indexes->insertValue(0);
-    ColumnPtr val_replicated = ColumnReplicated::create(std::move(val_nested), std::move(val_indexes));
+    ColumnPtr val_replicated = ColumnReplicated::create(MutableColumnPtr(std::move(val_nested)), MutableColumnPtr(std::move(val_indexes)));
 
     Chunk chunk(Columns{std::move(key_col), std::move(val_replicated)}, 2);
     ASSERT_NO_THROW(merged_data.insertChunk(std::move(chunk), 2));
@@ -245,7 +245,7 @@ TEST(MergedDataReplicated, InsertChunkReplicatedDynamicSourceRegularDestination)
     auto val_indexes = ColumnUInt8::create();
     val_indexes->insertValue(0);
     val_indexes->insertValue(0);
-    ColumnPtr val_replicated = ColumnReplicated::create(std::move(val_dynamic), std::move(val_indexes));
+    ColumnPtr val_replicated = ColumnReplicated::create(MutableColumnPtr(std::move(val_dynamic)), MutableColumnPtr(std::move(val_indexes)));
 
     Chunk chunk(Columns{std::move(key_col), std::move(val_replicated)}, 2);
 
