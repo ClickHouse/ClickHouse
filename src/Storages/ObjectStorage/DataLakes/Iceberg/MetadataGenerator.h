@@ -14,6 +14,17 @@ namespace DB
 
 #if USE_AVRO
 
+/// Files the snapshot takes out of the table. A `replace` snapshot both adds and removes, and
+/// the table-wide `total-*` counters only stay right if the removals are subtracted from them.
+struct SnapshotRemovals
+{
+    Int64 data_files = 0;
+    Int64 records = 0;
+    Int64 files_size = 0;
+    Int64 position_delete_files = 0;
+    Int64 position_deletes = 0;
+};
+
 class MetadataGenerator
 {
 public:
@@ -44,13 +55,19 @@ public:
         Int64 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
         std::optional<Int64> user_defined_timestamp = std::nullopt,
-        SnapshotOperation operation = SnapshotOperation::Append);
+        SnapshotOperation operation = SnapshotOperation::Append,
+        /// Incremental refreshable-MV cursor to embed in the summary of an `append` snapshot (see `f_refresh_cursor`).
+        const std::optional<String> & refresh_cursor = std::nullopt,
+        const SnapshotRemovals & removals = {});
 
     /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
     NextMetadataResult generateManifestOnlySnapshot(
         FileNamesGenerator & generator,
         const Iceberg::IcebergPathFromMetadata & metadata_file_path,
         Int64 parent_snapshot_id);
+
+    /// Callers that retry a commit generate the id once so their manifests stay valid across attempts.
+    Int64 generateSnapshotId();
 
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);

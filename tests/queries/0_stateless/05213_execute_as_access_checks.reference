@@ -1,0 +1,11 @@
+-- target has no CREATE TABLE privilege
+ACCESS_DENIED
+-- target has no CREATE DATABASE privilege
+ACCESS_DENIED
+-- two layers of nesting: PARALLEL WITH inside EXECUTE AS is checked too
+ACCESS_DENIED
+-- nothing was created
+0
+0
+-- once the target has the privilege, EXECUTE AS still works
+t_execute_as

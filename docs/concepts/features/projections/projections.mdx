@@ -415,21 +415,28 @@ INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 
 #### Build a Projection {#build-projection}
 
-Let's create an aggregate projection by the dimensions `toYear(date)`, `district`, and `town`:
+Let's create an aggregate projection by the dimensions `year`, `district`, and `town`.
+The projection groups sales by the year of each sale, so we materialize that
+expression as a column to make it referable by filters:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
+```
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            toYear(date),
+            year,
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            toYear(date),
+            year,
             district,
             town
     )
@@ -450,7 +457,7 @@ The following queries contrast performance with and without projections. To disa
 <RunnableCode>
 ```sql
 SELECT
-    toYear(date) AS year,
+    year,
     round(avg(price)) AS price,
     bar(price, 0, 1000000, 80)
 FROM uk.uk_price_paid_with_projections_v2
@@ -462,7 +469,7 @@ SETTINGS optimize_use_projections=0
 <RunnableCode>
 ```sql
 SELECT
-    toYear(date) AS year,
+    year,
     round(avg(price)) AS price,
     bar(price, 0, 1000000, 80)
 FROM uk.uk_price_paid_with_projections_v2
@@ -478,7 +485,7 @@ The results should be the same, but the performance better on the latter example
 <RunnableCode>
 ```sql
 SELECT
-    toYear(date) AS year,
+    year,
     round(avg(price)) AS price,
     bar(price, 0, 2000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
@@ -491,7 +498,7 @@ SETTINGS optimize_use_projections=0
 <RunnableCode>
 ```sql
 SELECT
-    toYear(date) AS year,
+    year,
     round(avg(price)) AS price,
     bar(price, 0, 2000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
@@ -502,7 +509,7 @@ ORDER BY year ASC
 </RunnableCode>
 #### Query 3. The most expensive neighborhoods {#most-expensive-neighborhoods-projections}
 
-The condition (date >= '2020-01-01') needs to be modified so that it matches the projection dimension (`toYear(date) >= 2020)`:
+The filter for rows from 2020 onwards references the stored projection dimension `year` directly:
 
 <RunnableCode>
 ```sql
@@ -513,7 +520,7 @@ SELECT
     round(avg(price)) AS price,
     bar(price, 0, 5000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
-WHERE toYear(date) >= 2020
+WHERE year >= 2020
 GROUP BY
     town,
     district
@@ -532,7 +539,7 @@ SELECT
     round(avg(price)) AS price,
     bar(price, 0, 5000000, 100)
 FROM uk.uk_price_paid_with_projections_v2
-WHERE toYear(date) >= 2020
+WHERE year >= 2020
 GROUP BY
     town,
     district
@@ -542,6 +549,13 @@ LIMIT 100
 ```
 </RunnableCode>
 Again, the result is the same but notice the improvement in query performance for the 2nd query.
+
+<Note>
+The filter must reference the stored dimension `year` directly. Writing
+`WHERE toYear(date) >= 2020` doesn't use the projection: the optimizer rewrites
+the condition into a range on `date`, and the projection doesn't store a `date`
+column, so ClickHouse falls back to scanning the base table.
+</Note>
 
 ### Combining projections in one query {#combining-projections}
 

@@ -200,7 +200,7 @@ private:
     {
     public:
         DelayedStream() = default;
-        DelayedStream(size_t from_mark, IMergeTreeReader * merge_tree_reader);
+        DelayedStream(size_t from_mark, size_t current_range_last_mark_, IMergeTreeReader * merge_tree_reader);
 
         /// Read @num_rows rows from @from_mark starting from @offset row
         /// Returns the number of rows added to block.
@@ -221,6 +221,9 @@ private:
         size_t current_offset = 0;
         /// Num of rows we have to read
         size_t num_delayed_rows = 0;
+        /// End mark of the contiguous mark range being read. Bounds caching of
+        /// deserialized columns in the reader (see IMergeTreeReader::readRows).
+        size_t current_range_last_mark = 0;
 
         /// Actual reader of data from disk
         IMergeTreeReader * merge_tree_reader = nullptr;
@@ -405,7 +408,8 @@ public:
         GranuleOffsets granule_offsets;
         /// Sum(rows_per_granule)
         size_t total_rows_per_granule = 0;
-        /// The number of rows was read at first step. May be zero if no read columns present in part.
+        /// The number of rows read at the first step. A step that materializes no on-disk column
+        /// contributes its granule-derived row count, so this is zero only when no granule was read.
         size_t num_read_rows = 0;
 
         /// Diagnostic counters for debugging adjustLastGranule assertions.

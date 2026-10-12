@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- The common instance config removes the span log; this is the shipped default definition. -->
+    <opentelemetry_span_log>
+        <engine>
+            engine MergeTree
+            partition by toYYYYMM(finish_date)
+            order by (finish_date, finish_time_us)
+        </engine>
+        <database>system</database>
+        <table>opentelemetry_span_log</table>
+    </opentelemetry_span_log>
+</clickhouse>

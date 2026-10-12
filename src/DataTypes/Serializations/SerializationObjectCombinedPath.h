@@ -34,6 +34,10 @@ public:
         const DataTypePtr & dynamic_type_,
         const DataTypePtr & sub_object_type_);
 
+    /// True when the substreams path identifies a combined `@` subcolumn of a JSON column,
+    /// i.e. the subcolumn that `json['key']` is rewritten to.
+    static bool isCombinedPathSubcolumn(const SubstreamPath & path);
+
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
 

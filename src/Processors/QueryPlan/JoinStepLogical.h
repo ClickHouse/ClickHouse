@@ -6,6 +6,8 @@
 #include <utility>
 #include <Interpreters/JoinOperator.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+
+#include <span>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -93,6 +95,7 @@ public:
     JoinOperator & getJoinOperator() { return join_operator; }
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
+    const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
 
     std::vector<JoinActionRef> getInputActions() const;
     std::vector<JoinActionRef> getOutputActions() const;
@@ -141,6 +144,12 @@ public:
     std::unordered_set<JoinTableSide> typeChangingSides() const;
 
     bool isOptimized() const { return optimized; }
+
+    /// The runtime filter pass records its small-probe decision here instead of re-deciding per plan
+    /// build, because the estimate it compares against is absent from a deserialized step. See
+    /// `tryAddJoinRuntimeFilter`.
+    bool isRuntimeFilterDeclinedForSmallProbe() const { return runtime_filter_declined_small_probe; }
+    void setRuntimeFilterDeclinedForSmallProbe() { runtime_filter_declined_small_probe = true; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     std::optional<double> getEstimatedCost() const { return estimated_cost; }
     std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
@@ -192,8 +201,9 @@ public:
     void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
-    bool canRemoveColumnsFromOutput() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
+
+    UnneededInputPositions getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
@@ -213,6 +223,30 @@ protected:
 
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
 
+    /// Everything removeUnusedColumns needs to know, computed without touching the step.
+    /// Shared by removeUnusedColumns and getUnneededColumns so their answers cannot differ.
+    struct UnneededColumnsPlan
+    {
+        /// What the join does not need of each side.
+        UnneededInputPositions unneeded_input_positions;
+        /// The DAG outputs that go away, as positions in `getOutputs()`, sorted:
+        /// the unneeded ones, except an existing dummy column.
+        /// A dropped output is also erased from `actions_after_join`, the nodes computed on the joined block,
+        /// so that the list does not point to a node removed from the DAG.
+        /// The dummy column, when one is added, is appended after the outputs that remain.
+        std::vector<size_t> dropped_output_positions;
+        /// Nodes that have to survive pruning besides the kept outputs: the join conditions, and one
+        /// input per side that would otherwise lose every column.
+        ActionsDAG::NodeRawConstPtrs extra_pruning_roots;
+
+        /// Whether removeUnusedActions would erase any node.
+        bool removes_any_action = false;
+        /// Set when no output is left and the step has to put its dummy column back.
+        bool adds_dummy_output = false;
+    };
+
+    UnneededColumnsPlan analyzeUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const;
+
     std::vector<std::pair<String, String>> describeJoinProperties() const;
     JoinEstimation getEstimation() const;
 
@@ -227,9 +261,17 @@ protected:
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
 
+    /// Whether the join order was already chosen. A copy of this step, whether made by `clone` or taken
+    /// over the wire, carries it, so that whoever receives the copy does not choose an order again.
+    bool optimized = false;
+
+    /// Whether the runtime filter pass already declined this join because its probe side is small
+    /// (`join_runtime_filter_min_probe_rows`). Travels with the step for the same reason `optimized`
+    /// does: the comparison behind it reads a row estimate, which no copy taken over the wire has.
+    bool runtime_filter_declined_small_probe = false;
+
     /// Runtime info, do not serialize
 
-    bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
     std::optional<double> estimated_cost = {};
     std::optional<double> estimated_selectivity = {};
@@ -247,7 +289,6 @@ protected:
 
     /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
     String table_stats_hint;
-
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
@@ -267,7 +308,7 @@ public:
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override;
     String getName() const override { return "JoinStepLogicalLookup"; }
 
-    QueryPlanRawPtrs getChildPlans() override;
+    QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) override;
 
     PreparedJoinStorage & getPreparedJoinStorage() { return prepared_join_storage; }
 

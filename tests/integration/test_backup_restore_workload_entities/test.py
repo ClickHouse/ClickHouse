@@ -52,7 +52,9 @@ def start_cluster():
 def drop_sql_entities():
     # Keep only the config-defined entities between tests; SQL entities are created per test.
     yield
+    instance.query("DROP WORKLOAD IF EXISTS sql_wl2")
     instance.query("DROP WORKLOAD IF EXISTS sql_wl")
+    instance.query("DROP RESOURCE IF EXISTS sql_res2")
     instance.query("DROP RESOURCE IF EXISTS sql_res")
 
 
@@ -127,6 +129,93 @@ def test_backup_excludes_config_defined_entities():
     assert workloads.count("all") == 1
     assert workloads.count("cfg_wl") == 1
     assert resources.count("cfg_res") == 1
+
+
+def test_incremental_backup_of_workload_entities():
+    # A RESTORE from an incremental backup recreates exactly the SQL-defined entity set as of that
+    # incremental, including entities whose bytes live only in the base backup. One evolving set covers
+    # four carriers: an entity created after the base, one dropped after it, one whose definition grew,
+    # and one left untouched.
+    instance.query("CREATE RESOURCE sql_res (WRITE DISK sql_disk, READ DISK sql_disk)")
+    instance.query("CREATE WORKLOAD sql_wl IN all SETTINGS priority = 3")
+    instance.query("CREATE WORKLOAD sql_wl2 IN all SETTINGS priority = 5")
+
+    base_backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE system.workloads, TABLE system.resources TO {base_backup_name}"
+    )
+    # The base holds all three, so "stored wholly in the base" below is a statement about real bytes.
+    assert backed_up_entity_files(base_backup_name, "workloads") == [
+        "sql_wl.sql",
+        "sql_wl2.sql",
+    ]
+    assert backed_up_entity_files(base_backup_name, "resources") == ["sql_res.sql"]
+
+    instance.query(
+        "CREATE RESOURCE sql_res2 (WRITE DISK sql_disk2, READ DISK sql_disk2)"
+    )
+    instance.query("DROP WORKLOAD sql_wl2")
+    # Appending a setting appends to the formatted definition, so what the incremental has to store for
+    # sql_wl is a strict byte-prefix extension of what the base holds.
+    instance.query(
+        "CREATE OR REPLACE WORKLOAD sql_wl IN all SETTINGS priority = 3, max_concurrent_threads = 4"
+    )
+    expected_workloads = instance.query(
+        "SELECT name, create_query FROM system.workloads ORDER BY name"
+    )
+    expected_resources = instance.query(
+        "SELECT name, create_query FROM system.resources ORDER BY name"
+    )
+
+    incremental_backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP TABLE system.workloads, TABLE system.resources TO {incremental_backup_name} "
+        f"SETTINGS base_backup = {base_backup_name}"
+    )
+
+    # Only the changed workload and the new resource carry bytes: the untouched sql_res is stored wholly
+    # in the base, and the dropped sql_wl2 is in neither list.
+    assert backed_up_entity_files(incremental_backup_name, "workloads") == [
+        "sql_wl.sql"
+    ]
+    assert backed_up_entity_files(incremental_backup_name, "resources") == [
+        "sql_res2.sql"
+    ]
+
+    # The restored create_query asserted below is the same whether the prefix path engaged or the whole
+    # definition was rewritten, so assert on the incremental's bytes: the appended tail alone.
+    with open(
+        os.path.join(
+            get_path_to_backup(incremental_backup_name),
+            "data/system/workloads/sql_wl.sql",
+        )
+    ) as entity_file:
+        assert entity_file.read() == ", max_concurrent_threads = 4"
+
+    instance.query("DROP WORKLOAD sql_wl")
+    instance.query("DROP RESOURCE sql_res")
+    instance.query("DROP RESOURCE sql_res2")
+    assert names(instance.query("SELECT name FROM system.workloads")) == [
+        "all",
+        "cfg_wl",
+    ]
+    assert names(instance.query("SELECT name FROM system.resources")) == ["cfg_res"]
+
+    instance.query(
+        f"RESTORE TABLE system.workloads, TABLE system.resources FROM {incremental_backup_name}"
+    )
+
+    # Restoring the incremental alone brings back the whole set: sql_wl with its grown definition,
+    # sql_res through the base backup, sql_res2, no resurrected sql_wl2, and the config-defined
+    # entities still exactly once each.
+    assert (
+        instance.query("SELECT name, create_query FROM system.workloads ORDER BY name")
+        == expected_workloads
+    )
+    assert (
+        instance.query("SELECT name, create_query FROM system.resources ORDER BY name")
+        == expected_resources
+    )
 
 
 def test_restore_rejects_entity_kind_mismatch():
