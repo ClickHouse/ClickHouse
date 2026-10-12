@@ -1572,15 +1572,8 @@ void compactIcebergTable(
             sample_block_->getNamesAndTypesList(),
             /*allow_missing_fields=*/false);
 
-        /// Reject files written under a schema id or partition spec that differs from the current default,
-        /// per DATA entry (path_to_data_file/partitions collapse same-file entries). writeMetadataFiles
-        /// serializes every rewritten file under the current schema and current default partition spec only,
-        /// so a mismatched file would be re-tagged under the wrong field ids or wrong partition columns
-        /// (silent corruption / out-of-bounds partition values). Validate before writeDataFiles: it writes
-        /// patched files with no cleanup, so rejecting later would leak orphaned files.
-
-        /// Current default partition spec, parsed like the manifest reader (source id, transform, name) so
-        /// the comparison against each file's own spec is apples-to-apples.
+        /// writeMetadataFiles re-tags every rewritten file with the current schema and default spec, so reject
+        /// files written under others. Check before writeDataFiles, which leaves no cleanup behind.
         auto default_spec_id = plan.initial_metadata_object->getValue<Int32>(f_default_spec_id);
         auto partitions_specs = plan.initial_metadata_object->getArray(f_partition_specs);
         Poco::JSON::Object::Ptr default_spec_object;

@@ -102,11 +102,8 @@ static bool partitionSpecLayoutsEqual(const Iceberg::PartitionSpecification & lh
     return true;
 }
 
-/// True if any manifest of the current snapshot was written under a partition spec whose *layout*
-/// differs from the current default. A different spec-id alone is not unsafe: another engine may
-/// republish the identical layout under a new id. Position deletes are partitioned by the current
-/// default spec, so only a genuine layout change misplaces deletes (silent row duplication). This
-/// mirrors Compaction.cpp, which also compares the layout field-by-field rather than the id.
+/// True if a manifest of the current snapshot uses a partition layout other than the default spec's.
+/// Position deletes follow the default layout, so an identical layout under another spec id is safe.
 static bool existingDataUsesDifferentPartitionSpec(
     Poco::JSON::Object::Ptr metadata,
     Int64 default_spec_id,
