@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Clock.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 #include <Common/Exception.h>
 #include <Common/MemorySpillScheduler.h>
@@ -79,10 +80,10 @@ void ProcessorRunner::runWork(ExecutingProcessor & picked)
             clock->onEnter();
     }
 
-    Stopwatch execution_time_watch;
+    const UInt64 work_started_ns = Wyrd::monotonicNanoseconds();
 
     SCOPE_EXIT({
-        const UInt64 elapsed_ns = execution_time_watch.elapsedNanoseconds();
+        const UInt64 elapsed_ns = Wyrd::monotonicNanoseconds() - work_started_ns;
         picked.work_ns = picked.work_ns == 0 ? elapsed_ns : (picked.work_ns * 3 + elapsed_ns) / 4;
 
         if (options.profile_processors || options.trace_processors || options.step_profiler)
@@ -91,7 +92,7 @@ void ProcessorRunner::runWork(ExecutingProcessor & picked)
             if (span)
                 span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
             if (collect_work_intervals)
-                work_intervals.emplace_back(execution_time_watch.getStart(), elapsed_ns, step);
+                work_intervals.emplace_back(work_started_ns, elapsed_ns, step);
         }
 
         if (clock)
