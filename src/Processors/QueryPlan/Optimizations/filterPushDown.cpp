@@ -1189,10 +1189,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 /// non-constant child, and reads nothing out of an `isNotDistinctFrom` or anything below an `or`. Each
 /// miss costs it one optimization. A miss here would let the fragment read in order off a condition the
 /// replicas do not have, so this stays a superset of whatever that analysis can find.
-/// With `only_those_the_splice_drops`, count only an equality the splice into the query the replicas run
-/// cannot carry - per equality rather than per condition, because the splice drops one conjunct and keeps
-/// the others.
-static bool mayFixColumn(const ActionsDAG::Node * condition, bool only_those_the_splice_drops = false)
+/// With `only_those_the_splice_keeps`, count only an equality the splice into the query the replicas run
+/// can carry - per equality rather than per condition, because the splice drops one conjunct and keeps
+/// the others. Being a superset errs towards "the replicas have one" in that mode, and so towards leaving
+/// the read as it is; `tryPushDownFilter` says why that is the error to prefer.
+static bool mayFixColumn(const ActionsDAG::Node * condition, bool only_those_the_splice_keeps = false)
 {
     std::vector<const ActionsDAG::Node *> stack{condition};
     std::unordered_set<const ActionsDAG::Node *> visited;
@@ -1207,7 +1208,7 @@ static bool mayFixColumn(const ActionsDAG::Node * condition, bool only_those_the
         {
             const auto & name = node->function_base->getName();
             if ((name == "equals" || name == "isNotDistinctFrom")
-                && (!only_those_the_splice_drops || remoteRewriteDropsCondition(*node)))
+                && (!only_those_the_splice_keeps || !remoteRewriteDropsCondition(*node)))
                 return true;
         }
 
@@ -1527,13 +1528,25 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// (`appendFixedColumnsFromFilterExpression`), and the splice drops the non-deterministic, the
         /// stateful and what it cannot name (`tryBuildAdditionalFilterAST`) - a constant is none of
         /// those. A lambda can meet one, because a sorting key may be a higher-order expression, so that
-        /// case is asked for. Teach either side something new - an `in` against a one-element set, say -
-        /// and this has to be revisited; tests 05255 and 05259 pin the two shapes.
+        /// case is asked for.
+        ///
+        /// What is asked of the conjuncts is whether an equality reaches the replicas, not whether one
+        /// is left behind, because the answer covers the whole read: a condition that is partly dropped
+        /// would otherwise take the ordering away from the equality that did travel, and the replicas,
+        /// which have that one, would be the side reading in order - the same disagreement mirrored. So
+        /// only a condition leaving them nothing to fix a column by takes the ordering away, and one
+        /// that leaves them an equality gives it back, for itself and for whatever was pushed before
+        /// it. Teach either side something new - an `in` against a one-element set, say - and this has
+        /// to be revisited; tests 05255 and 05259 pin the shapes.
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
-        const bool an_equality_stays_behind = condition && mayFixColumn(condition, /*only_those_the_splice_drops=*/ true);
-        if (condition && mayFixColumn(condition)
-            && (!parallel_replicas_local_plan->replicasGetPushedConditions() || an_equality_stays_behind))
-            parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
+        if (condition && mayFixColumn(condition))
+        {
+            if (parallel_replicas_local_plan->replicasGetPushedConditions()
+                && mayFixColumn(condition, /*only_those_the_splice_keeps=*/ true))
+                parallel_replicas_local_plan->allowFixedColumnsFromPushedConditions();
+            else
+                parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
+        }
 
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};

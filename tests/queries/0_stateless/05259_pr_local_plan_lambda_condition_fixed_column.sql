@@ -10,6 +10,9 @@
 -- Today read-in-order does not match a higher-order key expression in the first place, so the first
 -- check guards the invariant rather than reproducing a failure: no ordering off a condition the
 -- replicas do not have, whichever of the two implementations changes.
+--
+-- The conditions are pushed in one at a time and the first of them may not answer for the rest, so the
+-- same holds across them: a plain equality pushed after a lambda-bearing one gives the ordering back.
 
 DROP TABLE IF EXISTS t_pr_lambda_key;
 DROP VIEW IF EXISTS v_pr_lambda_key;
@@ -58,16 +61,32 @@ WHERE explain LIKE '%Read type%';
 SELECT 'and answers correctly';
 SELECT arrayCount(x -> x = 1, arr), ts FROM v_pr_lambda_key WHERE arrayCount(x -> x = 1, arr) = 2 ORDER BY ts LIMIT 3;
 
-SELECT 'a plain equality next to a lambda still orders it';
+SELECT 'a plain equality next to a lambda-bearing one still orders it';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (
     EXPLAIN description = 0, actions = 1
-    SELECT tenant, ts FROM v_pr_lambda_beside WHERE tenant = 5 AND arrayExists(x -> x = 1, arr) LIMIT 5
+    SELECT tenant, ts FROM v_pr_lambda_beside WHERE tenant = 5 AND arrayCount(x -> x = 1, arr) = 1 LIMIT 5
 )
 WHERE explain LIKE '%Read type%';
 
 SELECT 'and answers correctly';
-SELECT tenant, ts FROM v_pr_lambda_beside WHERE tenant = 5 AND arrayExists(x -> x = 1, arr) ORDER BY ts LIMIT 3;
+SELECT tenant, ts FROM v_pr_lambda_beside WHERE tenant = 5 AND arrayCount(x -> x = 1, arr) = 1 ORDER BY ts LIMIT 3;
+
+-- The two are pushed into the fragment as two conditions here, the lambda-bearing one first.
+SELECT 'and so does one pushed in after it';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts
+    FROM (SELECT tenant, arr, ts FROM v_pr_lambda_beside WHERE arrayCount(x -> x = 1, arr) = 1)
+    WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+
+SELECT 'and answers correctly';
+SELECT tenant, ts
+FROM (SELECT tenant, arr, ts FROM v_pr_lambda_beside WHERE arrayCount(x -> x = 1, arr) = 1)
+WHERE tenant = 5 ORDER BY ts LIMIT 3;
 
 -- Both queries again for the queries the replicas are sent, with the local plan off. With one, the
 -- initiator's own share covers the table and the replicas are cancelled before they start - their log
@@ -76,7 +95,7 @@ SELECT tenant, ts FROM v_pr_lambda_beside WHERE tenant = 5 AND arrayExists(x -> 
 SELECT arr, ts FROM v_pr_lambda_key WHERE arrayCount(x -> x = 1, arr) = 2 ORDER BY ts
 SETTINGS log_comment = '05259_lambda_key', parallel_replicas_local_plan = 0 FORMAT Null;
 
-SELECT tenant, ts FROM v_pr_lambda_beside WHERE tenant = 5 AND arrayExists(x -> x = 1, arr) ORDER BY ts
+SELECT tenant, ts FROM v_pr_lambda_beside WHERE tenant = 5 AND arrayCount(x -> x = 1, arr) = 1 ORDER BY ts
 SETTINGS log_comment = '05259_lambda_beside', parallel_replicas_local_plan = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
@@ -92,8 +111,10 @@ FROM system.query_log
 WHERE has(databases, currentDatabase()) AND log_comment = '05259_lambda_key' AND NOT is_initial_query
 SETTINGS enable_parallel_replicas = 0;
 
-SELECT 'the plain equality standing next to one reaches all of them';
-SELECT count() > 0 AS replicas_were_sent_a_query, countIf(query LIKE '%HAVING%equals(%tenant%') = count() AS carrying_it
+SELECT 'the plain equality standing next to one reaches all of them, that one none';
+SELECT count() > 0 AS replicas_were_sent_a_query,
+       countIf(query LIKE '%HAVING%equals(%tenant%') = count() AS carrying_the_equality,
+       countIf(query LIKE '%arrayCount%') AS carrying_the_lambda
 FROM system.query_log
 WHERE has(databases, currentDatabase()) AND log_comment = '05259_lambda_beside' AND NOT is_initial_query
 SETTINGS enable_parallel_replicas = 0;

@@ -37,6 +37,9 @@ QueryPlanPtr ReadFromLocalParallelReplicaStep::extractQueryPlan()
 
 void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
 {
+    if (fixed_columns_from_pushed_conditions_allowed)
+        return;
+
     if (!query_plan || !query_plan->isInitialized())
         return;
 
@@ -75,6 +78,27 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
 
         for (size_t i = 0; i < node->children.size(); ++i)
             stack.push_back({node->children[i], i == 0 ? chain_root : node->children[i]});
+    }
+}
+
+void ReadFromLocalParallelReplicaStep::allowFixedColumnsFromPushedConditions()
+{
+    fixed_columns_from_pushed_conditions_allowed = true;
+
+    if (!query_plan || !query_plan->isInitialized())
+        return;
+
+    std::vector<QueryPlan::Node *> stack{query_plan->getRootNode()};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+            reading->unrestrictFixedColumns();
+
+        for (auto * child : node->children)
+            stack.push_back(child);
     }
 }
 

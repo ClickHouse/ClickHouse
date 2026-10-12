@@ -685,6 +685,7 @@ public:
     /// against the replicas' `Default` and the read fails. Kept in `query_info` so that a rewrite
     /// rebuilding this read carries it along with everything else it takes from there.
     void restrictFixedColumns(NameSet columns) { query_info.fixed_columns_the_replicas_also_have = std::move(columns); }
+    void unrestrictFixedColumns() { query_info.fixed_columns_the_replicas_also_have.reset(); }
     const std::optional<NameSet> & getFixedColumnRestriction() const { return query_info.fixed_columns_the_replicas_also_have; }
 
 private:

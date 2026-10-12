@@ -41,10 +41,16 @@ public:
     /// per read: a fragment can hold several coordinated reads, and they do not fix the same columns.
     void restrictFixedColumnsToOwnFilters();
 
+    /// The opposite answer, for a condition the replicas receive as well: this read may order itself by
+    /// everything pushed into it. Final, and it lifts a restriction taken for an earlier condition -
+    /// conditions arrive one at a time, and the first of them may not answer for the rest.
+    void allowFixedColumnsFromPushedConditions();
+
 private:
     QueryPlanPtr query_plan;
     ContextPtr context;
     bool replicas_get_pushed_conditions;
+    bool fixed_columns_from_pushed_conditions_allowed = false;
 };
 
 }
