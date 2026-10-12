@@ -159,7 +159,7 @@ public:
 
     ~AliasSink() override
     {
-        /// On cancellation without an exception (e.g. timeout_overflow_mode='break') neither
+        /// On cancellation without an exception (e.g. `KILL QUERY`) neither
         /// onFinish() nor onException() runs, leaving the nested executor started but unfinished.
         /// Cancel it so ~PushingPipelineExecutor's finished-or-unwinding invariant holds.
         if (executor)
@@ -253,7 +253,7 @@ public:
     void onPipelineFinished() override
     {
         /// Stop the nested insert the same way, so that its sinks finalize their output.
-        if (isCancelled() && stage != Stage::Exception && executor)
+        if (isStoppedByBreak() && executor)
         {
             executor->stopOnTimeout();
             executor.reset();

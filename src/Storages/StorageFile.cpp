@@ -3229,7 +3229,7 @@ public:
     void onPipelineFinished() override
     {
         /// A `timeout_overflow_mode = 'break'` stop cancels the sink before `onFinish` but is a successful exit.
-        if (isCancelled() && stage != Stage::Exception)
+        if (isStoppedByBreak())
         {
             finalizeBuffers();
             releaseBuffers();
@@ -3343,7 +3343,7 @@ public:
 
     void onPipelineFinished() override
     {
-        if (isCancelled() && stage != Stage::Exception)
+        if (isStoppedByBreak())
             PartitionedSink::onFinish();
     }
 
