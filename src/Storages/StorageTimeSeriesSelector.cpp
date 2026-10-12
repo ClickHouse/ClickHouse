@@ -73,6 +73,19 @@ String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, st
     return String(value.getDataAt());
 }
 
+/// A single argument becomes a compound identifier, the node the parser produces for `database.table`:
+/// an `ASTTableIdentifier` there would be resolved as an expression and rejected.
+void setResolvedTableArgument(ASTs & args, size_t num_table_args, const StorageID & storage_id)
+{
+    if (num_table_args == 1)
+        args[0] = make_intrusive<ASTIdentifier>(std::vector<String>{storage_id.database_name, storage_id.table_name});
+    else
+    {
+        args[0] = make_intrusive<ASTLiteral>(storage_id.database_name);
+        args[1] = make_intrusive<ASTLiteral>(storage_id.table_name);
+    }
+}
+
 /// The time range has at least millisecond precision, so fractional arguments `min_time` and `max_time` are not truncated
 /// to whole seconds when the timestamps in the table have a coarser scale.
 constexpr UInt32 MIN_TIME_SCALE = 3;
@@ -186,7 +199,7 @@ namespace Setting
     extern const SettingsBool time_series_prefer_recent_samples_table;
 }
 
-StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
+StorageTimeSeriesSelector::Arguments StorageTimeSeriesSelector::parseArgumentsOnly(ASTs & args, const ContextPtr & context)
 {
     std::string_view function_name = "timeSeriesSelector";
 
@@ -233,8 +246,38 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
         }
     }
 
-    time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    size_t num_table_args = argument_index;
 
+    /// A stored definition is replayed against the loader's current database, so the name is qualified and
+    /// written back now. Resolving the table here would wait for its startup job, which a load job cannot do.
+    if (auto temporary_table_id = context->tryResolveStorageID(time_series_storage_id, Context::ResolveExternal))
+    {
+        /// The resolved id of a temporary table names an internal database, so the argument keeps the name as written.
+        time_series_storage_id = std::move(temporary_table_id);
+    }
+    /// An empty name stays as written: `StorageID` rejects a database without a table, and identifier parts cannot be empty.
+    else if (!time_series_storage_id.empty())
+    {
+        if (time_series_storage_id.database_name.empty())
+            time_series_storage_id.database_name = context->getCurrentDatabase();
+        if (!time_series_storage_id.database_name.empty())
+            setResolvedTableArgument(args, num_table_args, time_series_storage_id);
+    }
+
+    Arguments parsed_args;
+    parsed_args.time_series_storage_id = std::move(time_series_storage_id);
+    parsed_args.selector = PrometheusQueryTree{getStringConstArgument(args[argument_index++], context, "selector")};
+    std::tie(parsed_args.min_time, parsed_args.min_time_type) = evaluateConstantExpression(args[argument_index++], context);
+    std::tie(parsed_args.max_time, parsed_args.max_time_type) = evaluateConstantExpression(args[argument_index++], context);
+
+    chassert(argument_index == args.size());
+    return parsed_args;
+}
+
+StorageTimeSeriesSelector::Configuration
+StorageTimeSeriesSelector::resolveConfiguration(const Arguments & parsed_args, const ContextPtr & context)
+{
+    auto time_series_storage_id = context->tryResolveStorageID(parsed_args.time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
@@ -244,27 +287,18 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr table_id_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
-    PrometheusQueryTree selector{getStringConstArgument(args[argument_index++], context, "selector")};
-
-    auto [min_time_field, min_time_type] = evaluateConstantExpression(args[argument_index++], context);
-    auto [max_time_field, max_time_type] = evaluateConstantExpression(args[argument_index++], context);
-
     UInt32 table_timestamp_scale = tryGetDecimalScale(*table_timestamp_type).value_or(0);
-    UInt32 parameters_scale = getTimeScale(table_timestamp_scale, min_time_type, max_time_type);
-    auto min_time = parseTimeSeriesTimestamp(min_time_field, min_time_type, parameters_scale);
-    auto max_time = parseTimeSeriesTimestamp(max_time_field, max_time_type, parameters_scale);
-
-    chassert(argument_index == args.size());
+    UInt32 parameters_scale = getTimeScale(table_timestamp_scale, parsed_args.min_time_type, parsed_args.max_time_type);
 
     Configuration config;
     config.time_series_storage_id = std::move(time_series_storage_id);
     config.table_id_type = std::move(table_id_type);
     config.table_timestamp_type = std::move(table_timestamp_type);
     config.table_value_type = std::move(table_value_type);
-    config.selector = std::move(selector);
+    config.selector = parsed_args.selector;
     config.time_scale = parameters_scale;
-    config.min_time = min_time;
-    config.max_time = max_time;
+    config.min_time = parseTimeSeriesTimestamp(parsed_args.min_time, parsed_args.min_time_type, parameters_scale);
+    config.max_time = parseTimeSeriesTimestamp(parsed_args.max_time, parsed_args.max_time_type, parameters_scale);
     return config;
 }
 
