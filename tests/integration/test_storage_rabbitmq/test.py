@@ -3966,3 +3966,137 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>0</{setting_name}>",
         )
         instance.restart_clickhouse()
+
+
+def test_rabbitmq_backlog_larger_than_received_queue(rabbitmq_cluster, db, unique):
+    # https://github.com/ClickHouse/ClickHouse/issues/54775: without basic.qos the broker pushed the whole backlog.
+    # Once more than the internal queue of received messages (100000) was in flight, the event loop thread blocked in
+    # the delivery callback while the streaming thread waited for that loop to stop: consumption and DROP hung forever.
+    num_messages = 150000
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+
+    # The whole backlog is queued before the table starts, so the result does not depend on the publish rate.
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.queue_declare(queue=unique, durable=True)
+    for i in range(num_messages):
+        channel.basic_publish(exchange="", routing_key=unique, body=json.dumps({"key": i}))
+    assert num_messages == channel.queue_declare(queue=unique, passive=True).method.message_count
+    connection.close()
+
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_max_block_size = 1000,
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS
+            SELECT key FROM {db}.rabbitmq WHERE sleepEachRow(0.0002) = 0;
+        """
+    )
+
+    try:
+        check_expected_result_polling(num_messages, f"SELECT count() FROM {db}.view")
+        assert num_messages == int(instance.query(f"SELECT uniqExact(key) FROM {db}.view"))
+        instance.query(f"DROP TABLE {db}.rabbitmq SYNC", timeout=60)
+    except BaseException:
+        # With the bug the threads stay deadlocked and every DROP hangs, including the fixture's DROP DATABASE.
+        # Kill the server and delete the backlog, so the reattached table can be dropped and the test FAILs cleanly.
+        instance.stop_clickhouse(kill=True)
+        connection = pika.BlockingConnection(parameters)
+        connection.channel().queue_delete(queue=unique)
+        connection.close()
+        instance.start_clickhouse()
+        raise
+
+
+def test_rabbitmq_empty_messages_are_acked(rabbitmq_cluster, db, unique):
+    # Messages without rows were never acked. With basic.qos each of them would hold a prefetch slot forever.
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.queue_declare(queue=unique, durable=True)
+    # Empty messages last: an ack of a later row (`multiple`) would cover them and hide the bug.
+    for i in range(10):
+        channel.basic_publish(exchange="", routing_key=unique, body=json.dumps({"key": i}))
+    for _ in range(1000):
+        channel.basic_publish(exchange="", routing_key=unique, body="")
+
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_queue_consume = 1,
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS SELECT key FROM {db}.rabbitmq;
+        """
+    )
+    check_expected_result_polling(10, f"SELECT count() FROM {db}.view")
+    # The empty messages may arrive one flush interval after the rows; give them a few cycles to be acked.
+    time.sleep(10)
+    instance.query(f"DROP TABLE {db}.rabbitmq SYNC", timeout=60)
+
+    # The broker requeues unacked messages when it closes the consumer channel; only then is the ready count final.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while channel.queue_declare(queue=unique, passive=True).method.consumer_count and time.monotonic() < deadline:
+        time.sleep(0.5)
+    state = channel.queue_declare(queue=unique, passive=True).method
+    assert (state.consumer_count, state.message_count) == (0, 0)
+    channel.queue_delete(queue=unique)
+    connection.close()
+
+
+def test_rabbitmq_block_ends_when_prefetch_is_used_up(rabbitmq_cluster, db, unique):
+    # The broker sends at most 65535 unacked messages to a consumer, so a block larger than that can never fill up:
+    # it has to end once the prefetch window is read, not when the long flush interval expires.
+    num_messages = 70000
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.queue_declare(queue=unique, durable=True)
+    for i in range(num_messages):
+        channel.basic_publish(exchange="", routing_key=unique, body=json.dumps({"key": i}))
+    connection.close()
+
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_queue_consume = 1,
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_max_block_size = 200000,
+                     rabbitmq_flush_interval_ms = 120000;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS SELECT key FROM {db}.rabbitmq;
+        """
+    )
+    # Waiting for the flush interval would take 120 s per block.
+    deadline = time.monotonic() + 60
+    while int(instance.query(f"SELECT count() FROM {db}.view")) < 65535 and time.monotonic() < deadline:
+        time.sleep(1)
+    assert int(instance.query(f"SELECT count() FROM {db}.view")) >= 65535
+    instance.query(f"DROP TABLE {db}.rabbitmq SYNC", timeout=60)
+
+    connection = pika.BlockingConnection(parameters)
+    connection.channel().queue_delete(queue=unique)
+    connection.close()

@@ -241,6 +241,7 @@ Chunk RabbitMQSource::generateImpl()
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
+    size_t total_messages = 0;
     bool is_dead_letter = false;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -292,6 +293,7 @@ Chunk RabbitMQSource::generateImpl()
 
         exception_message.reset();
         size_t new_rows = 0;
+        bool consumed = false;
         is_dead_letter = false;
 
         if (consumer->hasPendingMessages())
@@ -299,9 +301,12 @@ Chunk RabbitMQSource::generateImpl()
             /// A buffer containing a single RabbitMQ message.
             if (auto buf = consumer->consume())
             {
+                consumed = true;
+                ++total_messages;
                 try
                 {
-                    new_rows = executor.execute(*buf);
+                    if (!consumer->currentMessage().message.empty())
+                        new_rows = executor.execute(*buf);
                 }
                 catch (...)
                 {
@@ -314,6 +319,14 @@ Chunk RabbitMQSource::generateImpl()
                     commit_info.channel_id = message.channel_id;
                     commit_info.delivery_tag = std::max(commit_info.delivery_tag, message.delivery_tag);
                     throw;
+                }
+
+                /// A message without rows is acked with the block, otherwise it holds a prefetch slot forever.
+                if (!new_rows && !is_dead_letter)
+                {
+                    const auto & message = consumer->currentMessage();
+                    commit_info.channel_id = message.channel_id;
+                    commit_info.delivery_tag = std::max(commit_info.delivery_tag, message.delivery_tag);
                 }
             }
         }
@@ -402,7 +415,7 @@ Chunk RabbitMQSource::generateImpl()
 
             total_rows += new_rows;
         }
-        else if (total_rows == 0)
+        else if (!consumed && total_rows == 0)
         {
             /// Empty first poll: self-drive the loop instead of returning empty. See driveLoopUntilMessage.
             if (drive_loop_on_worker && !consumer->isConsumerStopped() && driveLoopUntilMessage())
@@ -424,11 +437,13 @@ Chunk RabbitMQSource::generateImpl()
                 remaining_execution_time = budget_ms - elapsed_time_ms;
         }
 
-        if (total_rows >= max_block_size || consumer->isConsumerStopped() || is_time_limit_exceeded)
+        /// The prefetch window is used up and drained: the broker waits for our ack, so waiting here would only stall.
+        const bool prefetch_exhausted = total_messages >= consumer->getPrefetchCount() && !consumer->hasPendingMessages();
+        if (total_rows >= max_block_size || prefetch_exhausted || consumer->isConsumerStopped() || is_time_limit_exceeded)
         {
             break;
         }
-        if (new_rows == 0)
+        if (!consumed)
         {
             /// A false return (idle budget reached / stopped / cancelled) ends the cycle.
             if (drive_loop_on_worker)
