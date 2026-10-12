@@ -398,7 +398,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     # browser. A CMake project of its own rather than a target of this tree, with its own
     # toolchain and its own job script - see `build_wasm_parser.py`.
     WASM_PARSER = "wasm_parser"
-    ARM_FUZZERS = "arm_fuzzers"
+    AMD_FUZZERS = "amd_fuzzers"
     AMD_CFI = "amd_cfi"
 
 
@@ -543,7 +543,7 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
-    ARM_FUZZERS = "ARM_FUZZERS"
+    AMD_FUZZERS = "AMD_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
     CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
@@ -585,10 +585,6 @@ LLVM_FT_S3_DB_REPL_NUM_BATCHES = 3
 # The sequential counterpart is lighter than the parallel variant but still slow
 # enough to benefit from being split, so it gets its own (smaller) batch count.
 LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES = 2
-# The ParallelReplicas and AsyncInsert s3 variants run the whole stateless
-# suite, but only their parallel flavors come close to the job timeout, so only
-# those two are batched; the sequential ones stay un-batched.
-LLVM_FT_S3_PARALLEL_NUM_BATCHES = 2
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -611,16 +607,10 @@ LLVM_FT_ARTIFACTS_LIST += [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for batches from Functional tests with ParallelReplicas/AsyncInsert + S3, parallel execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3{flavor}_parallel_{batch}"
-    for flavor in ("", "_async")
-    for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
-    for batch in range(1, total_batches + 1)
-]
-
-LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for jobs from Functional tests with ParallelReplicas/AsyncInsert + S3, sequential execution
+    # default.profdata files for jobs from Functional tests with S3 + AsyncInsert + parallel/sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
 ]
 
@@ -648,21 +638,6 @@ BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_ARM_TSAN,
     ArtifactNames.CH_ARM_MSAN,
 ]
-
-
-def with_long_retention_tags(artifacts):
-    """Tag the long-retention binaries among `artifacts`, leaving the rest as is.
-
-    The tags feed the job digest, so workflows sharing a build cache entry have to
-    apply the same ones. They cannot overwrite each other's uploads: the S3 prefix
-    carries the workflow and the job name as well as the branch and the commit.
-    """
-    return [
-        artifact.add_tags({"retention": "long"})
-        if artifact.name in BINARIES_WITH_LONG_RETENTION
-        else artifact
-        for artifact in artifacts
-    ]
 
 
 class ArtifactConfigs:
@@ -816,7 +791,7 @@ class ArtifactConfigs:
         ],
     )
     fuzzers = Artifact.Config(
-        name=ArtifactNames.ARM_FUZZERS,
+        name=ArtifactNames.AMD_FUZZERS,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",

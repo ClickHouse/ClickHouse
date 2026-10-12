@@ -16,7 +16,7 @@ public:
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, std::optional<size_t> expected_file_size) override;
 
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
@@ -34,11 +34,6 @@ public:
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
-    std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name) override;
-    /// `writeFileIfNotExists` opens the file with `O_EXCL`, so it cannot replace an existing file.
-    bool supportsAtomicCreateIfNotExists() const override { return true; }
-    /// The `O_EXCL` open creates the file before anything is written to it.
-    bool createsFileOnOpenIfNotExists() const override { return true; }
 
     void copyFileFromDisk(
         const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)

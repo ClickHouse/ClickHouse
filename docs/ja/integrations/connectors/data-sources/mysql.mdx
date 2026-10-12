@@ -18,10 +18,12 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 このページでは、MySQL テーブルからデータを読み取るための `MySQL` テーブルエンジンの使用方法について説明します。
 
 <Note>
-  ClickHouse Cloud では、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) を使用して、MySQL テーブルから ClickHouse に簡単にデータを移行することもできます。
+  ClickHouse Cloud では、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) (現在パブリックベータ) を使用して、MySQL テーブルから ClickHouse に簡単にデータを移行することもできます。
 </Note>
 
-## MySQL テーブルエンジン を使用して ClickHouse を MySQL に接続する {#connecting-clickhouse-to-mysql-using-the-mysql-table-engine}
+<div id="connecting-clickhouse-to-mysql-using-the-mysql-table-engine">
+  ## MySQL テーブルエンジン を使用して ClickHouse を MySQL に接続する
+</div>
 
 `MySQL` テーブルエンジンを使用すると、ClickHouse を MySQL に接続できます。**SELECT** ステートメントと **INSERT** ステートメントは、ClickHouse と MySQL テーブルのどちらに対しても実行できます。この記事では、`MySQL` テーブルエンジンの基本的な使い方を説明します。
 
@@ -163,6 +165,8 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
   </Step>
 </Steps>
 
-### 概要 {#summary}
+<div id="summary">
+  ### 概要
+</div>
 
 `MySQL` テーブルエンジンを使用すると、ClickHouse を MySQL に接続し、データを双方向にやり取りできます。詳細については、[MySQL テーブルエンジン](/ja/reference/functions/table-functions/mysql) のドキュメントページを参照してください。

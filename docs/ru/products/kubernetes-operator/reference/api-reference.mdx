@@ -10,7 +10,9 @@ sidebarTitle: 'Справочник по API'
 
 В этом документе содержится подробный справочник по API пользовательских ресурсов ClickHouse Operator.
 
-## AdditionalPort {#additionalport}
+<div id="additionalport">
+  ## AdditionalPort
+</div>
 
 AdditionalPort задаёт один дополнительный TCP-порт, который будет открыт на поде ClickHouse и в публичном headless Service.
 
@@ -23,7 +25,9 @@ AdditionalPort задаёт один дополнительный TCP-порт, 
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## CABundleSelector {#cabundleselector}
+<div id="cabundleselector">
+  ## CABundleSelector
+</div>
 
 CABundleSelector выбирает ключ, содержащий набор CA, из объекта Secret в пространстве имен кластера.
 
@@ -36,11 +40,15 @@ CABundleSelector выбирает ключ, содержащий набор CA, 
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-## ClickHouseCluster {#clickhousecluster}
+<div id="clickhousecluster">
+  ## ClickHouseCluster
+</div>
 
 ClickHouseCluster — это схема для API `clickhouseclusters`.
 
-### Версия API и Kind {#clickhousecluster-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Версия API и Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -56,11 +64,15 @@ kind: ClickHouseCluster
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-## ClickHouseClusterList {#clickhouseclusterlist}
+<div id="clickhouseclusterlist">
+  ## ClickHouseClusterList
+</div>
 
 ClickHouseClusterList содержит список объектов ClickHouseCluster.
 
-### Версия API и Kind {#clickhouseclusterlist-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Версия API и Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -71,7 +83,9 @@ kind: ClickHouseClusterList
 | ------- | ---------------------------------------------- | -------- | ----------- | ------------ |
 | `items` | массив [ClickHouseCluster](#clickhousecluster) |          | true        |              |
 
-## ClickHouseClusterSpec {#clickhouseclusterspec}
+<div id="clickhouseclusterspec">
+  ## ClickHouseClusterSpec
+</div>
 
 ClickHouseClusterSpec определяет желаемое состояние ClickHouseCluster.
 
@@ -99,7 +113,9 @@ ClickHouseClusterSpec определяет желаемое состояние C
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseClusterStatus {#clickhouseclusterstatus}
+<div id="clickhouseclusterstatus">
+  ## ClickHouseClusterStatus
+</div>
 
 ClickHouseClusterStatus определяет наблюдаемое состояние ClickHouseCluster.
 
@@ -119,7 +135,9 @@ ClickHouseClusterStatus определяет наблюдаемое состоя
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
 
 ClickHouseNetworkPolicySpec настраивает NetworkPolicy, которой управляет оператор для кластера ClickHouse.
 Управляемая политика распространяется на внутренний трафик кластера:
@@ -136,7 +154,9 @@ ClickHouseNetworkPolicySpec настраивает NetworkPolicy, которой
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClickHouseSettings {#clickhousesettings}
+<div id="clickhousesettings">
+  ## ClickHouseSettings
+</div>
 
 ClickHouseSettings определяет параметры настройки сервера ClickHouse.
 
@@ -154,7 +174,9 @@ ClickHouseSettings определяет параметры настройки с
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClusterTLSSpec {#clustertlsspec}
+<div id="clustertlsspec">
+  ## ClusterTLSSpec
+</div>
 
 ClusterTLSSpec определяет настройки TLS для кластера.
 
@@ -170,7 +192,9 @@ ClusterTLSSpec определяет настройки TLS для кластер
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## ConfigMapKeySelector {#configmapkeyselector}
+<div id="configmapkeyselector">
+  ## ConfigMapKeySelector
+</div>
 
 ConfigMapKeySelector выбирает ключ в ConfigMap.
 
@@ -183,7 +207,9 @@ ConfigMapKeySelector выбирает ключ в ConfigMap.
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## ContainerImage {#containerimage}
+<div id="containerimage">
+  ## ContainerImage
+</div>
 
 ContainerImage задаёт образ контейнера с указанием repository, tag или hash.
 
@@ -197,7 +223,9 @@ ContainerImage задаёт образ контейнера с указание�
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-## ContainerTemplateSpec {#containertemplatespec}
+<div id="containertemplatespec">
+  ## ContainerTemplateSpec
+</div>
 
 ContainerTemplateSpec описывает переопределения конфигурации контейнеров кластера.
 
@@ -217,7 +245,9 @@ ContainerTemplateSpec описывает переопределения конф
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## DefaultPasswordSelector {#defaultpasswordselector}
+<div id="defaultpasswordselector">
+  ## DefaultPasswordSelector
+</div>
 
 DefaultPasswordSelector задает источник пароля пользователя по умолчанию.
 
@@ -231,7 +261,9 @@ DefaultPasswordSelector задает источник пароля пользо�
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## EncryptionSettings {#encryptionsettings}
+<div id="encryptionsettings">
+  ## EncryptionSettings
+</div>
 
 EncryptionSettings включает шифрование данных таблиц при хранении. Если этот параметр задан, оператор создает
 зашифрованную политику хранения ClickHouse для каждого диска с данными; таблицы включают ее с помощью `SETTINGS storage_policy`.
@@ -245,7 +277,9 @@ EncryptionSettings включает шифрование данных табли
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## ExternalSecret {#externalsecret}
+<div id="externalsecret">
+  ## ExternalSecret
+</div>
 
 ExternalSecret — это ссылка на Secret в том же пространстве имен.
 
@@ -258,7 +292,9 @@ ExternalSecret — это ссылка на Secret в том же простра
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ExternalSecretPolicy {#externalsecretpolicy}
+<div id="externalsecretpolicy">
+  ## ExternalSecretPolicy
+</div>
 
 ExternalSecretPolicy определяет, как оператор обрабатывает содержимое внешнего Secret.
 
@@ -271,11 +307,15 @@ ExternalSecretPolicy определяет, как оператор обраба�
 
 * [ExternalSecret](#externalsecret)
 
-## KeeperCluster {#keepercluster}
+<div id="keepercluster">
+  ## KeeperCluster
+</div>
 
 KeeperCluster — это схема для API `keeperclusters`.
 
-### Версия API и kind {#keepercluster-api-version-and-kind}
+<div id="keepercluster-api-version-and-kind">
+  ### Версия API и kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -291,11 +331,15 @@ kind: KeeperCluster
 
 * [KeeperClusterList](#keeperclusterlist)
 
-## KeeperClusterList {#keeperclusterlist}
+<div id="keeperclusterlist">
+  ## KeeperClusterList
+</div>
 
 KeeperClusterList содержит список KeeperCluster.
 
-### Версия API и Kind {#keeperclusterlist-api-version-and-kind}
+<div id="clickhousecluster-api-version-and-kind">
+  ### Версия API и Kind
+</div>
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -306,7 +350,9 @@ kind: KeeperClusterList
 | ------- | -------------------------------------- | -------- | ----------- | ------------ |
 | `items` | массив [KeeperCluster](#keepercluster) |          | true        |              |
 
-## KeeperClusterReference {#keeperclusterreference}
+<div id="keeperclusterreference">
+  ## KeeperClusterReference
+</div>
 
 KeeperClusterReference указывает на KeeperCluster, используемый в ClickHouseCluster.
 
@@ -319,7 +365,9 @@ KeeperClusterReference указывает на KeeperCluster, используе
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## KeeperClusterSpec {#keeperclusterspec}
+<div id="keeperclusterspec">
+  ## KeeperClusterSpec
+</div>
 
 KeeperClusterSpec определяет желаемое состояние KeeperCluster.
 
@@ -342,7 +390,9 @@ KeeperClusterSpec определяет желаемое состояние Keepe
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperClusterStatus {#keeperclusterstatus}
+<div id="keeperclusterstatus">
+  ## KeeperClusterStatus
+</div>
 
 KeeperClusterStatus определяет наблюдаемое состояние KeeperCluster.
 
@@ -362,7 +412,9 @@ KeeperClusterStatus определяет наблюдаемое состояни
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
 
 KeeperNetworkPolicySpec настраивает NetworkPolicy, управляемую для кластера Keeper.
 Управляемая политика распространяется на внутрикластерный трафик:
@@ -380,7 +432,9 @@ KeeperNetworkPolicySpec настраивает NetworkPolicy, управляем
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## KeeperSettings {#keepersettings}
+<div id="keepersettings">
+  ## KeeperSettings
+</div>
 
 KeeperSettings определяет конфигурацию сервера ClickHouse Keeper.
 
@@ -394,7 +448,9 @@ KeeperSettings определяет конфигурацию сервера Clic
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## LoggerConfig {#loggerconfig}
+<div id="loggerconfig">
+  ## LoggerConfig
+</div>
 
 LoggerConfig задаёт конфигурацию логирования сервера.
 
@@ -411,7 +467,9 @@ LoggerConfig задаёт конфигурацию логирования сер
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## NamedTemplateMeta {#namedtemplatemeta}
+<div id="namedtemplatemeta">
+  ## NamedTemplateMeta
+</div>
 
 NamedTemplateMeta определяет поддерживаемые параметры метаданных для объектов шаблона, которым требуется имя.
 
@@ -425,7 +483,9 @@ NamedTemplateMeta определяет поддерживаемые параме
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-## NetworkPolicyPolicy {#networkpolicypolicy}
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
 
 NetworkPolicyPolicy определяет, управляет ли оператор ресурсом NetworkPolicy для кластера.
 
@@ -439,7 +499,9 @@ NetworkPolicyPolicy определяет, управляет ли операто
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-## PDBPolicy {#pdbpolicy}
+<div id="pdbpolicy">
+  ## PDBPolicy
+</div>
 
 PDBPolicy определяет, будут ли создаваться объекты PodDisruptionBudget.
 
@@ -453,7 +515,9 @@ PDBPolicy определяет, будут ли создаваться объе�
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
+<div id="persistentvolumeclaimtemplate">
+  ## PersistentVolumeClaimTemplate
+</div>
 
 PersistentVolumeClaimTemplate — это именованный шаблон для PersistentVolumeClaim для каждой реплики.
 
@@ -466,7 +530,9 @@ PersistentVolumeClaimTemplate — это именованный шаблон д�
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
+<div id="poddisruptionbudgetspec">
+  ## PodDisruptionBudgetSpec
+</div>
 
 PodDisruptionBudgetSpec настраивает PDB, создаваемый для кластера.
 Можно задать только один из параметров: MinAvailable или MaxUnavailable.
@@ -484,35 +550,38 @@ PodDisruptionBudgetSpec настраивает PDB, создаваемый дл�
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## PodTemplateSpec {#podtemplatespec}
+<div id="podtemplatespec">
+  ## PodTemplateSpec
+</div>
 
 PodTemplateSpec описывает переопределения конфигурации подов кластера.
 
-| Поле                            | Тип                                                                                                                                      | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Обязательно | По умолчанию |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------ |
-| `terminationGracePeriodSeconds` | целое число                                                                                                                              | Необязательная длительность в секундах, необходимая поду для корректного завершения работы. Может быть уменьшена в запросе на удаление.<br />Значение должно быть неотрицательным целым числом. Значение 0 означает немедленную остановку с помощью<br />сигнала kill (без возможности штатного завершения работы).<br />Если это значение равно nil, вместо него будет использоваться период ожидания по умолчанию.<br />Период ожидания — это длительность в секундах между отправкой процессам, выполняющимся в поде,<br />сигнала завершения и моментом, когда процессы будут принудительно остановлены сигналом kill.<br />Установите это значение больше ожидаемого времени очистки для процесса.<br />По умолчанию — 30 секунд.                                                                                                                                                                                                                                                                                                                                                                                    | false       |              |
-| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) массив | TopologySpreadConstraints описывает, как группа подов должна быть распределена между доменами<br />топологии. Планировщик будет размещать поды в соответствии с этими ограничениями.<br />Все topologySpreadConstraints объединяются логическим И.<br />Объединяется со значениями по умолчанию оператора по `topologyKey`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false       |              |
-| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) массив         | ImagePullSecrets — это необязательный список ссылок на секреты в том же пространстве имен, используемый для загрузки любых образов, применяемых в этом PodSpec.<br />Если указано, эти секреты будут переданы отдельным реализациям загрузки для использования.<br />Подробнее: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />Объединяется со значениями оператора по умолчанию по имени.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false       |              |
-| `nodeSelector`                  | объект (ключи:string, значения:string)                                                                                                   | NodeSelector — это селектор, условия которого должны выполняться, чтобы под можно было разместить на узле.<br />Селектор, который должен соответствовать меткам узла, чтобы под был назначен на этот узел.<br />Подробнее: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false       |              |
-| `affinity`                      | [Аффинность](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                      | Если указано, задаёт ограничения на планирование пода.<br />Добавляется к значениям по умолчанию оператора: списки условий планирования объединяются.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | false       |              |
-| `tolerations`                   | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) массив                             | Если указано, задает допуски пода.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | false       |              |
-| `schedulerName`                 | string                                                                                                                                   | Если указано, для пода будет использоваться указанный планировщик.<br />Если не указано, для пода будет использоваться планировщик по умолчанию.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | false       |              |
-| `serviceAccountName`            | string                                                                                                                                   | ServiceAccountName — это имя ServiceAccount, используемое для запуска этого пода.<br />Подробнее: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | false       |              |
-| `priorityClassName`             | string                                                                                                                                   | PriorityClassName — имя PriorityClass, используемого для пода.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false       |              |
-| `runtimeClassName`              | string                                                                                                                                   | RuntimeClassName — имя RuntimeClass, используемого для пода.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | false       |              |
-| `volumes`                       | массив [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core)                                     | Volumes определяет список томов, которые могут быть смонтированы в контейнерах, входящих в под.<br />Подробнее: https://kubernetes.io/docs/concepts/storage/volumes<br />Объединяется с томами оператора по имени; пользовательский том заменяет любой том оператора с тем же именем.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | false       |              |
-| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                    | SecurityContext содержит атрибуты безопасности на уровне пода и общие настройки контейнеров.<br />Если SecurityContext не равен nil, он полностью заменяет значения по умолчанию, заданные оператором; пользователь отвечает за всю<br />структуру целиком. Если значение равно nil, сохраняются значения по умолчанию оператора.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | false       |              |
-| `topologyZoneKey`               | string                                                                                                                                   | TopologyZoneKey — это ключ меток узлов.<br />Узлы с меткой с этим ключом и одинаковыми значениями считаются находящимися в одном и том же топологическом домене,<br />например, в одной и той же зоне доступности для &quot;topology.kubernetes.io/zone&quot; или на одном и том же узле для &quot;kubernetes.io/hostname&quot;.<br />Укажите его, чтобы равномерно распределить поды, содержащие одни и те же данные (реплики одного сегмента для ClickHouse, все реплики для Keeper),<br />по доменам: обязательное ограничение TopologySpreadConstraint (maxSkew 1, DoNotSchedule) и предпочтительное правило PodAntiAffinity.<br />Поды разных сегментов могут находиться в одном домене, поэтому допускается несколько подов в одном домене.<br />Если доменов меньше, чем реплик, несколько реплик будут находиться в одном домене, но распределение всё равно останется равномерным.<br />Поды ClickHouse также предпочитают домены, в которых размещены используемые ими поды Keeper.<br />Рекомендуется установить значение &quot;topology.kubernetes.io/zone&quot;.                                             | false       |              |
-| `topologyMinDomains`            | целое число                                                                                                                              | TopologyMinDomains задаёт поле minDomains в ограничении TopologySpreadConstraint, генерируемом на основе TopologyZoneKey.<br />Планировщик Kubernetes учитывает в качестве топологических доменов только те зоны, в которых уже есть подходящие узлы.<br />При использовании автомасштабировщиков, работающих по запросу (например, Karpenter, Cluster Autoscaler), это означает, что если на момент планирования<br />узлы существуют только в двух зонах доступности, ограничение maxSkew:1/DoNotSchedule считается выполненным при<br />распределении 2/1, и автомасштабировщик так и не создаст узел в третьей зоне доступности.<br />Если задать TopologyMinDomains равным ожидаемому количеству зон (обычно 3), планировщик будет<br />рассматривать такое количество зон как домены независимо от того, есть ли узлы во всех из них, что вынудит<br />автомасштабировщик создать узел в отсутствующей зоне.<br />Требует, чтобы был задан TopologyZoneKey. Не указывайте (nil), чтобы сохранить поведение по умолчанию,<br />при котором планировщик учитывает только зоны с уже существующими подходящими узлами. | false       |              |
-| `nodeHostnameKey`               | string                                                                                                                                   | NodeHostnameKey — это ключ меток узла.<br />Узлы с меткой с этим ключом и одинаковыми значениями считаются находящимися на одном и том же узле.<br />Задайте его, чтобы обеспечить эксклюзивное размещение на узлах: обязательное правило PodAntiAffinity для всех подов кластера,<br />не более одного пода на узел независимо от сегмента. Для этого требуется как минимум столько же узлов, сколько подов;<br />если узлов меньше, лишние поды останутся в состоянии Pending.<br />Чтобы распределять реплики одного и того же сегмента по узлам, при этом размещая несколько подов на одном узле,<br />вместо этого задайте TopologyZoneKey значение &quot;kubernetes.io/hostname&quot;.<br />Рекомендуется установить значение &quot;kubernetes.io/hostname&quot;.                                                                                                                                                                                                                                                                                                                                                   | false       |              |
-| `initContainers`                | массив [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core)                               | InitContainers — это список init-контейнеров, запускаемых до запуска основного контейнера сервера.<br />Объединяется со значениями по умолчанию оператора по имени.<br />для контейнеров с тем же именем.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false       |              |
+| Поле                            | Тип                                                                                                                                      | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Обязательно | По умолчанию |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------ |
+| `terminationGracePeriodSeconds` | целое число                                                                                                                              | Необязательная длительность в секундах, необходимая поду для корректного завершения работы. Может быть уменьшена в запросе на удаление.<br />Значение должно быть неотрицательным целым числом. Значение 0 означает немедленную остановку с помощью<br />сигнала kill (без возможности штатного завершения работы).<br />Если это значение равно nil, вместо него будет использоваться период ожидания по умолчанию.<br />Период ожидания — это длительность в секундах между отправкой процессам, выполняющимся в поде,<br />сигнала завершения и моментом, когда процессы будут принудительно остановлены сигналом kill.<br />Установите это значение больше ожидаемого времени очистки для процесса.<br />По умолчанию — 30 секунд.                                                                                                                                                                                                                                                                                                                                        | false       |              |
+| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) массив | TopologySpreadConstraints описывает, как группа подов должна быть распределена между доменами<br />топологии. Планировщик будет размещать поды в соответствии с этими ограничениями.<br />Все topologySpreadConstraints объединяются логическим И.<br />Объединяется со значениями по умолчанию оператора по `topologyKey`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | false       |              |
+| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) массив         | ImagePullSecrets — это необязательный список ссылок на секреты в том же пространстве имен, используемый для загрузки любых образов, применяемых в этом PodSpec.<br />Если указано, эти секреты будут переданы отдельным реализациям загрузки для использования.<br />Подробнее: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />Объединяется со значениями оператора по умолчанию по имени.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | false       |              |
+| `nodeSelector`                  | объект (ключи:string, значения:string)                                                                                                   | NodeSelector — это селектор, условия которого должны выполняться, чтобы под можно было разместить на узле.<br />Селектор, который должен соответствовать меткам узла, чтобы под был назначен на этот узел.<br />Подробнее: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | false       |              |
+| `affinity`                      | [Аффинность](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                      | Если указано, задаёт ограничения на планирование пода.<br />Добавляется к значениям по умолчанию оператора: списки условий планирования объединяются.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | false       |              |
+| `tolerations`                   | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) массив                             | Если указано, задает допуски пода.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false       |              |
+| `schedulerName`                 | string                                                                                                                                   | Если указано, для пода будет использоваться указанный планировщик.<br />Если не указано, для пода будет использоваться планировщик по умолчанию.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | false       |              |
+| `serviceAccountName`            | string                                                                                                                                   | ServiceAccountName — это имя ServiceAccount, используемое для запуска этого пода.<br />Подробнее: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | false       |              |
+| `priorityClassName`             | string                                                                                                                                   | PriorityClassName — имя PriorityClass, используемого для пода.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | false       |              |
+| `runtimeClassName`              | string                                                                                                                                   | RuntimeClassName — имя RuntimeClass, используемого для пода.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false       |              |
+| `volumes`                       | массив [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core)                                     | Volumes определяет список томов, которые могут быть смонтированы в контейнерах, входящих в под.<br />Подробнее: https://kubernetes.io/docs/concepts/storage/volumes<br />Объединяется с томами оператора по имени; пользовательский том заменяет любой том оператора с тем же именем.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | false       |              |
+| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                    | SecurityContext содержит атрибуты безопасности на уровне пода и общие настройки контейнеров.<br />Если SecurityContext не равен nil, он полностью заменяет значения по умолчанию, заданные оператором; пользователь отвечает за всю<br />структуру целиком. Если значение равно nil, сохраняются значения по умолчанию оператора.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false       |              |
+| `topologyZoneKey`               | string                                                                                                                                   | TopologyZoneKey — это ключ меток узлов.<br />Узлы с меткой с этим ключом и одинаковыми значениями считаются находящимися в одном и том же топологическом домене,<br />например, в одной и той же зоне доступности для &quot;topology.kubernetes.io/zone&quot; или на одном и том же узле для &quot;kubernetes.io/hostname&quot;.<br />Укажите его, чтобы равномерно распределить поды, содержащие одни и те же данные (реплики одного сегмента для ClickHouse, все реплики для Keeper),<br />по доменам: обязательное ограничение TopologySpreadConstraint (maxSkew 1, DoNotSchedule) и предпочтительное правило PodAntiAffinity.<br />Поды разных сегментов могут находиться в одном домене, поэтому допускается несколько подов в одном домене.<br />Если доменов меньше, чем реплик, несколько реплик будут находиться в одном домене, но распределение всё равно останется равномерным.<br />Поды ClickHouse также предпочитают домены, в которых размещены используемые ими поды Keeper.<br />Рекомендуется установить значение &quot;topology.kubernetes.io/zone&quot;. | false       |              |
+| `nodeHostnameKey`               | string                                                                                                                                   | NodeHostnameKey — это ключ меток узла.<br />Узлы с меткой с этим ключом и одинаковыми значениями считаются находящимися на одном и том же узле.<br />Задайте его, чтобы обеспечить эксклюзивное размещение на узлах: обязательное правило PodAntiAffinity для всех подов кластера,<br />не более одного пода на узел независимо от сегмента. Для этого требуется как минимум столько же узлов, сколько подов;<br />если узлов меньше, лишние поды останутся в состоянии Pending.<br />Чтобы распределять реплики одного и того же сегмента по узлам, при этом размещая несколько подов на одном узле,<br />вместо этого задайте TopologyZoneKey значение &quot;kubernetes.io/hostname&quot;.<br />Рекомендуется установить значение &quot;kubernetes.io/hostname&quot;.                                                                                                                                                                                                                                                                                                       | false       |              |
+| `initContainers`                | массив [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core)                               | InitContainers — это список init-контейнеров, запускаемых до запуска основного контейнера сервера.<br />Объединяется со значениями по умолчанию оператора<br />для контейнеров с тем же именем.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false       |              |
 
 Встречается в:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## SecretKeySelector {#secretkeyselector}
+<div id="secretkeyselector">
+  ## SecretKeySelector
+</div>
 
 SecretKeySelector выбирает ключ объекта Secret.
 
@@ -525,7 +594,9 @@ SecretKeySelector выбирает ключ объекта Secret.
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## TemplateMeta {#templatemeta}
+<div id="templatemeta">
+  ## TemplateMeta
+</div>
 
 TemplateMeta определяет поддерживаемые параметры метаданных для объектов шаблона.
 
@@ -539,7 +610,9 @@ TemplateMeta определяет поддерживаемые параметр�
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbeContainer {#versionprobecontainer}
+<div id="versionprobecontainer">
+  ## VersionProbeContainer
+</div>
 
 VersionProbeContainer задаёт переопределения для проверки версии на уровне контейнера.
 Имена полей и JSON-теги соответствуют corev1.Container, чтобы SMP выполнял слияние по имени.
@@ -554,7 +627,9 @@ VersionProbeContainer задаёт переопределения для про�
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-## VersionProbeJobSpec {#versionprobejobspec}
+<div id="versionprobejobspec">
+  ## VersionProbeJobSpec
+</div>
 
 VersionProbeJobSpec задаёт переопределения на уровне задачи для проверки версии.
 
@@ -567,7 +642,9 @@ VersionProbeJobSpec задаёт переопределения на уровн�
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbePodSpec {#versionprobepodspec}
+<div id="versionprobepodspec">
+  ## VersionProbePodSpec
+</div>
 
 VersionProbePodSpec задаёт переопределения на уровне пода для проверки версии.
 Имена полей и JSON-теги соответствуют corev1.PodSpec для совместимости со strategic merge patch.
@@ -583,7 +660,9 @@ VersionProbePodSpec задаёт переопределения на уровн�
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-## VersionProbePodTemplate {#versionprobepodtemplate}
+<div id="versionprobepodtemplate">
+  ## VersionProbePodTemplate
+</div>
 
 VersionProbePodTemplate описывает переопределения для пода проверки версии.
 
@@ -596,7 +675,9 @@ VersionProbePodTemplate описывает переопределения для
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-## VersionProbeTemplate {#versionprobetemplate}
+<div id="versionprobetemplate">
+  ## VersionProbeTemplate
+</div>
 
 VersionProbeTemplate задает переопределения для задачи определения версии.
 Структура повторяет batchv1.JobTemplateSpec и содержит только поддерживаемые поля.

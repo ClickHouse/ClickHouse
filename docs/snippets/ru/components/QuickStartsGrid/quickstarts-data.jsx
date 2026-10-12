@@ -112,6 +112,20 @@ export const quickStartsData = [
     ]
   },
   {
+    "id": "tutorial",
+    "title": "Расширенное руководство",
+    "description": "Узнайте, как загружать данные в ClickHouse и выполнять запросы на примере демонстрационного набора данных о такси Нью-Йорка.",
+    "href": "/ru/get-started/quickstarts/tutorial",
+    "useCases": [
+      "real-time-analytics",
+      "data-warehousing"
+    ],
+    "products": [
+      "cloud",
+      "self-managed"
+    ]
+  },
+  {
     "id": "working-with-the-map-type",
     "title": "Работа с типом Map в ClickHouse",
     "description": "Узнайте, как использовать тип Map в ClickHouse для хранения, запросов и агрегации динамических данных в формате ключ-значение на практическом примере атрибутов ресурса в OTel.",
