@@ -134,35 +134,6 @@ void flushAsyncTextLogsIfPossible()
 /// `ALIAS` columns keep it query-compatible with the older `wide` schema.
 constexpr auto DEFAULT_METRIC_LOG_SCHEMA_TYPE = "bucketed";
 
-/// The schema of `system.metric_log` configured in `config_prefix`.
-///
-/// The `bucketed` schema is the default, but it needs two things that the configuration can take
-/// away, and in both cases the previous `wide` schema remains the default, so that an existing
-/// configuration keeps working as before and `bucketed` has to be requested explicitly:
-/// - every metric is an `ALIAS` column over the `metrics` `Map`, so the table has no per-metric
-///   interface at all when alias columns are skipped (`skip_alias_columns`, which is how
-///   system logs are configured on top of object storage);
-/// - the bucketed `Map` serialization comes from the default table definition, and an explicit
-///   `engine` in the configuration replaces it, which would give a table with the shape of the
-///   `bucketed` schema but without the bucketed reads that motivate it.
-String getMetricLogSchemaType(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    if (config.has(config_prefix + ".schema_type"))
-        return config.getString(config_prefix + ".schema_type");
-
-    if (DefaultSystemLogFlushPolicy(config).shouldSkipAliasColumns())
-        return "wide";
-
-    if (config.has(config_prefix + ".engine"))
-        return "wide";
-
-    return DEFAULT_METRIC_LOG_SCHEMA_TYPE;
-}
-
-constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-
 bool getSystemTableSkipAliasColumnsOption(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.has("system_tables.skip_alias_columns"))
@@ -174,6 +145,36 @@ bool getSystemTableSkipAliasColumnsOption(const Poco::Util::AbstractConfiguratio
     }
     return false;
 }
+
+/// The schema of `system.metric_log` configured in `config_prefix`.
+///
+/// The `bucketed` schema is the default, but it needs two things that the configuration can take
+/// away, and in both cases the previous `wide` schema remains the default, so that an existing
+/// configuration keeps working as before and `bucketed` has to be requested explicitly:
+/// - every metric is an `ALIAS` column over the `metrics` `Map`, so the table has no per-metric
+///   interface at all when alias columns are skipped (`skip_alias_columns`, which is how
+///   system logs are configured on top of object storage);
+/// - the bucketed `Map` serialization comes from the default table definition, and an explicit
+///   `engine` in the configuration replaces it, which would give a table with the shape of the
+///   `bucketed` schema but without the bucketed reads that motivate it.
+
+String getMetricLogSchemaType(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    if (config.has(config_prefix + ".schema_type"))
+        return config.getString(config_prefix + ".schema_type");
+
+    if (getSystemTableSkipAliasColumnsOption(config))
+        return "wide";
+
+    if (config.has(config_prefix + ".engine"))
+        return "wide";
+
+    return DEFAULT_METRIC_LOG_SCHEMA_TYPE;
+}
+
+constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
+constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
+constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
