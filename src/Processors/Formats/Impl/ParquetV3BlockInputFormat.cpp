@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -19,6 +20,11 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+
+namespace ProfileEvents
+{
+    extern const Event ParquetReadMinMaxFromStatistics;
+}
 
 namespace DB
 {
@@ -295,6 +301,14 @@ Chunk ParquetV3BlockInputFormat::read()
     }
 
     initializeIfNeeded();
+    if (reader->reader.min_max_chunk.has_value())
+    {
+        Chunk chunk = std::move(*reader->reader.min_max_chunk);
+        reader->reader.min_max_chunk.reset();
+        min_max_from_statistics = true;
+        ProfileEvents::increment(ProfileEvents::ParquetReadMinMaxFromStatistics);
+        return chunk;
+    }
 
     while (true)
     {
@@ -314,7 +328,7 @@ Chunk ParquetV3BlockInputFormat::read()
 
 std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
 {
-    if (!reader)
+    if (!reader || min_max_from_statistics)
         return std::nullopt;
     std::vector<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
@@ -393,6 +407,7 @@ void ParquetV3BlockInputFormat::resetParser()
     {
         std::lock_guard lock(reader_mutex);
         reader.reset();
+        min_max_from_statistics = false;
     }
     deferred_prewhere_actions.reset();
     deferred_prewhere_column_name.clear();
