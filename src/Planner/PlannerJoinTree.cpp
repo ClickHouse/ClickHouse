@@ -3453,6 +3453,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan,
     const ColumnIdentifierSet & outer_scope_columns,
+    bool is_part_of_multi_way_join,
     PlannerContextPtr & planner_context)
 {
     auto & join_node = join_table_expression->as<JoinNode &>();
@@ -3470,6 +3471,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         right_join_tree_query_plan.query_plan.getCurrentHeader(),
         outer_scope_columns,
         join_node,
+        is_part_of_multi_way_join,
         planner_context);
 
     /// A prepared storage replaces the right-side plan, and with it the `FilterStep` applying the
@@ -4151,6 +4153,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                     std::move(left_query_plan),
                     std::move(right_query_plan),
                     table_expressions_outer_scope_columns[i],
+                    joins_count > 1,
                     planner_context));
             }
         }

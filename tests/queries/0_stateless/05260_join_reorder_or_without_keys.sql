@@ -81,6 +81,12 @@ SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR m
 SELECT count(), sum(t6.yb) FROM t5 LEFT JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR materialize(1)) SETTINGS join_algorithm = 'auto';
 SELECT count(), sum(t6.yb) FROM t5 FULL JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR materialize(NULL)) SETTINGS join_algorithm = 'auto';
 
+-- A join that is not reordered with other joins is split as before, so that each clause filters its table before matching.
+SELECT count() FROM (EXPLAIN SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5)) WHERE match(explain, 'Join conditions: .*(xk = yk|yk = xk)') AND explain LIKE '% OR %';
+SELECT count() FROM (EXPLAIN SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5) JOIN t7 ON t6.yz = t7.zk AND t5.xa = t7.zc SETTINGS query_plan_optimize_join_order_limit = 0) WHERE match(explain, 'Join conditions: .*(xk = yk|yk = xk)') AND explain LIKE '% OR %';
+SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5);
+SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5) JOIN t7 ON t6.yz = t7.zk AND t5.xa = t7.zc SETTINGS query_plan_optimize_join_order_limit = 0;
+
 DROP TABLE t5;
 DROP TABLE t6;
 DROP TABLE t7;

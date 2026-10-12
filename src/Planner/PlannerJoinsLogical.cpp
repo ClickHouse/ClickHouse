@@ -79,6 +79,7 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool semi_join_include_columns_from_both_sides;
     extern const SettingsBool anti_join_include_columns_from_both_sides;
+    extern const SettingsUInt64 query_plan_optimize_join_order_limit;
 }
 
 static const ActionsDAG::Node * appendExpression(
@@ -173,6 +174,9 @@ struct JoinOperatorBuildContext
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
+
+    /// The join is part of a join graph of more than two inputs, and join reordering is allowed to reorder it.
+    bool join_keys_used_by_reordering = false;
 };
 
 struct JoinCondition
@@ -456,12 +460,12 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 bool plan_as_single_clause = with_key_expression != 0 && with_key_expression < result.size();
                 /// Without key expressions a clause narrows the candidate pairs only by the conditions evaluated before
                 /// matching. If one clause has none, splitting cannot narrow what an ALL join matches.
-                /// An ALL INNER join is never split: every join algorithm evaluates the whole `OR` after matching on the keys of the enclosing `AND`, while splitting hides these keys inside one `or` predicate from join reordering.
+                /// An ALL INNER join is split, so that each clause filters both tables before matching, unless join reordering can use the keys of the enclosing `AND`: splitting hides them inside one `or` predicate. Kept as one clause, the `OR` is evaluated only on the pairs matched by these keys.
                 /// An outer join is split if every clause has a condition evaluated before matching, because a single clause with a condition on both tables requires the `hash` or `grace_hash` algorithm.
                 if (with_key_expression == 0 && builder_context.join_operator.strictness == JoinStrictness::All)
                 {
                     if (builder_context.join_operator.kind == JoinKind::Inner)
-                        plan_as_single_clause = true;
+                        plan_as_single_clause = builder_context.join_keys_used_by_reordering;
                     else
                         plan_as_single_clause = !std::ranges::all_of(result, [&](const JoinCondition & clause)
                         {
@@ -541,6 +545,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     SharedHeader right_header,
     const NameSet & outer_scope_columns,
     const JoinNode & join_node,
+    bool is_part_of_multi_way_join,
     const PlannerContextPtr & planner_context)
 {
     JoinOperatorBuildContext build_context(join_node, left_header, right_header, planner_context);
@@ -557,6 +562,9 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
 
     const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();
     const auto & join_algorithms = query_settings[Setting::join_algorithm];
+
+    /// `optimizeJoinLogical` flattens a join graph of more than two inputs only if the limit is above 2.
+    build_context.join_keys_used_by_reordering = is_part_of_multi_way_join && query_settings[Setting::query_plan_optimize_join_order_limit] > 2;
 
     std::unordered_map<String, const ActionsDAG::Node *> changed_types;
     /// CROSS/PASTE JOIN: doesn't have expression

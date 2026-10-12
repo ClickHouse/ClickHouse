@@ -25,6 +25,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     SharedHeader right_header,
     const NameSet & outer_scope_columns,
     const JoinNode & join_node,
+    bool is_part_of_multi_way_join,
     const PlannerContextPtr & planner_context);
 
 /// Get label to annotate table in query plan,
