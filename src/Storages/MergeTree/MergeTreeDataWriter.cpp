@@ -1076,7 +1076,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part->setPatchPartIndex(std::move(*patch_part_index));
 
     new_data_part->rows_count = block.rows();
-    new_data_part->existing_rows_count = block.rows();
+    if (!new_data_part->hasLightweightDelete())
+        new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;

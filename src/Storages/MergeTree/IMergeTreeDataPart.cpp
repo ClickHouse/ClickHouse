@@ -2632,19 +2632,19 @@ void IMergeTreeDataPart::loadExistingRowsCount()
     if (existing_rows_count.has_value())
         return;
 
-    if (!rows_count || !supportLightweightDeleteMutate() || !hasLightweightDelete()
-        || !(*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge]
-        || !(*storage.getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts])
+    if (!rows_count || !hasLightweightDelete())
         existing_rows_count = rows_count;
-    else
+    else if (supportLightweightDeleteMutate()
+        && (*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge]
+        && (*storage.getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts])
         existing_rows_count = readExistingRowsCount();
 }
 
 UInt64 IMergeTreeDataPart::readExistingRowsCount()
 {
     const size_t total_mark = getMarksCount();
-    if (!total_mark)
-        return rows_count;
+    if (!total_mark && rows_count)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot count existing rows in part {} without marks", name);
 
     NamesAndTypesList cols;
     cols.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
@@ -2684,21 +2684,16 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         result.resize(1);
 
         size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result);
-        if (!rows_read)
-        {
-            LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
-            return rows_count;
-        }
+        if (!rows_read || !result[0])
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read _row_exists column to count existing rows in part {}", name);
 
         current_row += rows_read;
         current_mark += (rows_to_read == rows_read);
 
-        const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(result[0].get());
+        auto column = result[0]->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+        const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(column.get());
         if (!row_exists_col)
-        {
-            LOG_WARNING(storage.log, "Part {} _row_exists column type is not UInt8", name);
-            return rows_count;
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} _row_exists column type is not UInt8", name);
 
         for (UInt8 row_exists : row_exists_col->getData())
             if (row_exists)

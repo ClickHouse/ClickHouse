@@ -297,9 +297,9 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     if (auto computed_index = writer->releaseIndexColumns())
         new_part->setIndex(std::move(*computed_index));
 
-    /// In mutation, existing_rows_count is already calculated in PartMergerWriter
-    /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
-    if (!new_part->existing_rows_count.has_value())
+    /// Without a deletion mask, the written row count is exact even after a row-removing mutation.
+    /// Otherwise keep the count calculated by `PartMergerWriter`, or leave it unknown.
+    if (!new_part->hasLightweightDelete())
         new_part->existing_rows_count = rows_count;
 
     if (default_codec != nullptr)

@@ -324,7 +324,7 @@ public:
 
     size_t rows_count = 0;
 
-    /// Existing rows count (excluding lightweight deleted rows)
+    /// Exact number of rows excluding lightweight deleted rows, or `std::nullopt` if not calculated.
     std::optional<size_t> existing_rows_count;
 
     time_t modification_time = 0;

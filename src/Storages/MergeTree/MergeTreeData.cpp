@@ -271,6 +271,7 @@ namespace Setting
     extern const SettingsBool allow_minmax_index_for_json;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -12660,6 +12661,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     bool need_primary_key_max_column = false;
     const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
+    const bool apply_deleted_mask = query_context->getSettingsRef()[Setting::apply_deleted_mask];
 
     if (!primary_key_max_column_name.empty())
         need_primary_key_max_column = required_columns_set.contains(primary_key_max_column_name);
@@ -12799,6 +12801,18 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (need_primary_key_max_column && !part->index_granularity->hasFinalMark())
             return {};
 
+        /// The settings may have changed since the part was loaded or mutated.
+        /// Only use metadata counting when the visible row count is known for every selected part.
+        if (apply_deleted_mask && part->hasLightweightDelete())
+        {
+            if (!part->existing_rows_count.has_value())
+                return {};
+
+            /// Preserve empty-input semantics, including `empty_result_for_aggregation_by_empty_set`.
+            if (part->existing_rows_count.value() == 0)
+                continue;
+        }
+
         real_parts.push_back(part);
         filter_column_data.back() = 1;
     }
@@ -12894,7 +12908,10 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         for (const auto & part : real_parts)
         {
             auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
-            insert(column, part->rows_count);
+            if (apply_deleted_mask && part->hasLightweightDelete())
+                insert(column, part->existing_rows_count.value());
+            else
+                insert(column, part->rows_count);
         }
     }
 
