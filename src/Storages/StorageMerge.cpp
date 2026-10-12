@@ -2677,16 +2677,13 @@ void ReadFromMerge::setPreferMultipleStreams()
 
     /// The opt-out has to reach the child `ReadFromMergeTree` steps: it is their
     /// `PrefetchingConcatProcessor` that would otherwise collapse a single-part filtered read into
-    /// a single stream and serialize the per-stream work above the `Merge` table.
-    auto prefer_multiple_streams = [](ReadFromMergeTree & read_from_merge_tree)
-    {
-        read_from_merge_tree.setPreferMultipleStreams();
-        return true;
-    };
-
+    /// a single stream and serialize the per-stream work above the `Merge` table. Only the reads of
+    /// the ordered pipeline are affected: `preferMultipleStreamsForResidualCPUWork` follows all
+    /// branches of a `UnionStep` but only the first child of a join or a set-creating step, so the
+    /// build side of a join or the source of a set keeps `PrefetchingConcatProcessor`.
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
-            recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), prefer_multiple_streams);
+            preferMultipleStreamsForResidualCPUWork(child_plan.plan.getRootNode(), /* passed_residual_cpu_step */ true);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)

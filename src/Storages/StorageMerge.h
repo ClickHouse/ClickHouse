@@ -205,7 +205,8 @@ public:
     bool canReadInReverseOrder();
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
-    /// Forwards `ReadFromMergeTree::setPreferMultipleStreams` to every child reading step, so that
+    /// Forwards `ReadFromMergeTree::setPreferMultipleStreams` to the child reading steps of the ordered
+    /// pipeline (not to the build side of a join or the source of a set), so that
     /// per-stream work installed above a `Merge` table is not serialized by the child reads.
     void setPreferMultipleStreams();
 
