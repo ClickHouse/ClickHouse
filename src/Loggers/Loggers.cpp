@@ -114,7 +114,11 @@ Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfi
 
 /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
-void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
+void Loggers::buildLoggers(
+    Poco::Util::AbstractConfiguration & config,
+    Poco::Logger & logger /*_root*/,
+    const std::string & cmd_name,
+    const DB::Strings & keep_loggers)
 {
     auto current_logger = config.getString("logger", "");
     if (config_logger.has_value() && *config_logger == current_logger)
@@ -333,6 +337,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     for (const auto & name : names)
     {
+        if (std::ranges::contains(keep_loggers, name))
+            continue;
         logger.get(name).setLevel(max_log_level);
         logger.get(name).setChannel(split);
     }

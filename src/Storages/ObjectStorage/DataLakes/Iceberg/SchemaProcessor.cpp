@@ -230,6 +230,19 @@ String canonicalizeTypeSpacing(const String & s)
     return result;
 }
 
+/// canonicalizeTypeSpacing, then resolve the names catalogs report instead of the spec ones: AWS Glue
+/// reports `binary` as the Redshift `varbyte` / `varbyte(N)` (a maximum length, no ClickHouse
+/// counterpart), and Hive 3 reports `timestamptz` as `timestamp with local time zone`.
+String canonicalizeTypeName(const String & s)
+{
+    String result = canonicalizeTypeSpacing(s);
+    if (result == f_varbyte || (result.starts_with("varbyte(") && result.ends_with(')')))
+        return f_binary;
+    if (result == f_timestamp_with_local_time_zone)
+        return f_timestamptz;
+    return result;
+}
+
 /// Compare two Iceberg type descriptors for the same field. A type is either a primitive
 /// string ("long", "decimal(20, 0)", ...) or a nested object ("struct" with a fields array,
 /// or "list" / "map" wrappers whose element/key/value members are themselves types).
@@ -248,7 +261,7 @@ bool typesAreStructurallyIdentical(
     /// "binary" would compare unequal and be wrongly rejected.
     if (first.isString())
     {
-        const String canon = canonicalizeTypeSpacing(first.toString());
+        const String canon = canonicalizeTypeName(first.toString());
         first = canon;
         for (const auto & [prefix, mapped] : type_mapping)
             if (canon.starts_with(prefix))
@@ -259,7 +272,7 @@ bool typesAreStructurallyIdentical(
     }
     if (second.isString())
     {
-        const String canon = canonicalizeTypeSpacing(second.toString());
+        const String canon = canonicalizeTypeName(second.toString());
         second = canon;
         for (const auto & [prefix, mapped] : type_mapping)
             if (canon.starts_with(prefix))
@@ -579,7 +592,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
     /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
     /// serialized with different inner whitespace across metadata files. Canonicalize by removing
     /// ASCII whitespace so parsing accepts every spelling the whitespace-insensitive comparison does.
-    const String type_name = canonicalizeTypeSpacing(type_name_arg);
+    const String type_name = canonicalizeTypeName(type_name_arg);
 
     if (type_name == f_boolean)
         return DataTypeFactory::instance().get("Bool");
@@ -808,7 +821,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 /// Parameterized primitive types (decimal, geography, ...) can be serialized with
                 /// different spacing across metadata files, so compare ignoring ASCII whitespace:
                 /// a whitespace-only difference is the same type and needs only a rename, not a cast.
-                if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
+                if (canonicalizeTypeName(old_type) == canonicalizeTypeName(new_type))
                 {
                     /// Nullability is carried by the separate `required` key, so equal type strings
                     /// can still resolve to different types. Only relaxing required to optional is

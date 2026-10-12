@@ -3,11 +3,18 @@
 #include <Analyzer/TableNode.h>
 
 #include <Common/Exception.h>
+#include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
@@ -19,14 +26,17 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <IO/Operators.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/NullSource.h>
 
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 
 #include <fmt/ranges.h>
 
@@ -47,7 +57,7 @@ extern const int LOGICAL_ERROR;
 
 }
 
-/// In-source filtering for the row-level security filter and PREWHERE.
+/// In-source filtering for the TopN threshold, the row-level security filter and PREWHERE.
 /// The steps are applied to every stored block one after another, and each step reads its columns
 /// only for the rows that passed the previous steps. A conjunction in PREWHERE is split into several
 /// steps, like `MergeTreeSelectProcessor` does with `enable_multiple_prewhere_read_steps`, with the
@@ -102,7 +112,8 @@ public:
         InitializerFunc initializer_func_ = {},
         MaterializedCTEPtr materialized_cte_ = {},
         MemorySourceFilterPtr filter_ = {},
-        SharedHeader filtered_header_ = {})
+        SharedHeader filtered_header_ = {},
+        Names nested_arrays_ = {})
         : ISource(filter_ ? filtered_header_ : std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
@@ -111,6 +122,7 @@ public:
         , initializer_func(std::move(initializer_func_))
         , materialized_cte(std::move(materialized_cte_))
         , filter(std::move(filter_))
+        , nested_arrays(std::move(nested_arrays_))
     {
         if (filter && !virtual_columns.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
@@ -196,12 +208,83 @@ private:
         return tryGetColumnFromBlock(src, name_and_type);
     }
 
+    /// Only dotted names are members of a `Nested`, and the members of one `Nested` are checked to have equal sizes on insert.
+    const ColumnWithTypeAndName * findSizesSource(const Block & src, const NameAndTypePair & column) const
+    {
+        if (nested_arrays.empty() || !isArray(column.getTypeInStorage()))
+            return nullptr;
+
+        const String name_in_storage = column.getNameInStorage();
+        const auto [nested_name, member_name] = Nested::splitName(name_in_storage);
+        if (member_name.empty() || src.has(name_in_storage))
+            return nullptr;
+
+        for (const auto & array_name : nested_arrays)
+        {
+            if (Nested::splitName(std::string_view(array_name)).first != nested_name)
+                continue;
+
+            const auto * stored = src.findByName(array_name);
+            if (stored && stored->column && isArray(stored->type))
+                return stored;
+        }
+
+        return nullptr;
+    }
+
+    /// Each missing entry is filled from `src` alone, independently of the other columns of the read.
+    void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns) const
+    {
+        NamesAndTypesList columns_without_sizes;
+        std::vector<size_t> positions_without_sizes;
+        std::unordered_map<const ColumnWithTypeAndName *, ColumnPtr> decompressed_sources;
+
+        auto column_it = columns_to_read.begin();
+        for (size_t i = 0; i < columns.size(); ++i, ++column_it)
+        {
+            if (columns[i])
+                continue;
+
+            const ColumnArray * source_array = nullptr;
+            if (const auto * source = findSizesSource(src, *column_it))
+            {
+                auto & source_column = decompressed_sources[source];
+                if (!source_column)
+                    source_column = source->column->decompress();
+                source_array = typeid_cast<const ColumnArray *>(source_column.get());
+            }
+
+            if (!source_array)
+            {
+                columns_without_sizes.push_back(*column_it);
+                positions_without_sizes.push_back(i);
+                continue;
+            }
+
+            /// Only the outer sizes: the deeper levels of a member are its own.
+            const auto & type_in_storage = column_it->getTypeInStorage();
+            const auto & offsets = source_array->getOffsets();
+            auto elements = assert_cast<const DataTypeArray &>(*type_in_storage).getNestedType()
+                ->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())->convertToFullColumnIfConst();
+            ColumnPtr column = ColumnArray::create(elements, source_array->getOffsetsPtr());
+            columns[i] = column_it->isSubcolumn() ? type_in_storage->getSubcolumn(column_it->getSubcolumnName(), column) : column;
+        }
+
+        if (!positions_without_sizes.empty())
+        {
+            Columns filled(positions_without_sizes.size());
+            fillMissingColumns(filled, src.rows(), columns_without_sizes, columns_without_sizes, {}, nullptr);
+            for (size_t j = 0; j < positions_without_sizes.size(); ++j)
+                columns[positions_without_sizes[j]] = std::move(filled[j]);
+        }
+    }
+
     void fillPhysicalColumns(const Block & src, Columns & result_columns) const
     {
         for (const auto & name_and_type : physical_columns)
             result_columns.emplace_back(readColumn(src, name_and_type));
 
-        fillMissingColumns(result_columns, src.rows(), physical_columns, physical_columns, {}, nullptr);
+        fillColumnsMissingFromBlock(src, physical_columns, result_columns);
         chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
     }
 
@@ -247,7 +330,7 @@ private:
             for (const auto & name_and_type : missing)
                 columns.emplace_back(readColumn(src, name_and_type));
 
-            fillMissingColumns(columns, num_src_rows, missing, missing, {}, nullptr);
+            fillColumnsMissingFromBlock(src, missing, columns);
 
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
@@ -340,6 +423,8 @@ private:
     InitializerFunc initializer_func;
     MaterializedCTEPtr materialized_cte;
     MemorySourceFilterPtr filter;
+    /// The arrays of the table that are members of the `Nested` of a requested member; see `findSizesSource`.
+    const Names nested_arrays;
 };
 
 ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
@@ -423,13 +508,87 @@ void ReadFromMemoryStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
         VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
 }
 
+bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    /// Virtual columns do not qualify.
+    if (std::ranges::find(columns_to_read, sort_column.name) == columns_to_read.end())
+        return false;
+
+    const auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), sort_column.name);
+    if (!column)
+        return false;
+
+    /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
+    /// after the block was inserted) with the defaults of the type. For a column without a default
+    /// expression these are exactly the values the query sees. For a column with a `DEFAULT` expression
+    /// the values agree only as long as nothing evaluates the expression above the source; do not rely
+    /// on that and exclude such columns and their subcolumns, the same way
+    /// `StorageMemory::supportedPrewhereColumns` does for `PREWHERE`.
+    return !storage_snapshot->metadata->getColumns().hasDefault(column->getNameInStorage());
+}
+
+void ReadFromMemoryStorageStep::setTopKFilter(FormatTopKFilterInfoPtr info)
+{
+    top_k_filter = std::move(info);
+}
+
+void ReadFromMemoryStorageStep::describeActions(FormatSettings & format_settings) const
+{
+    SourceStepWithFilter::describeActions(format_settings);
+    if (top_k_filter)
+        format_settings.out << format_settings.detail_prefix << "TopN filter column: " << top_k_filter->column_name << '\n';
+}
+
+void ReadFromMemoryStorageStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    SourceStepWithFilter::describeActions(map);
+    if (top_k_filter)
+        map.add("TopN Filter Column", top_k_filter->column_name);
+}
+
 MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAndTypesList & physical_columns) const
 {
-    if (!query_info.row_level_filter && !query_info.prewhere_info)
-        return nullptr;
+    /// The threshold filter runs first and shrinks the block before the other steps, which then see
+    /// a different set of rows. `tryOptimizeTopK` checks that the filters do not depend on that, but
+    /// `optimizePrewhere` may have moved such a condition into PREWHERE after it.
+    const bool use_top_k_filter = top_k_filter
+        && !(query_info.row_level_filter && query_info.row_level_filter->actions.hasNonDeterministicOrStatefulFunctions())
+        && !(query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions());
 
     auto result = std::make_shared<MemorySourceFilter>();
     ExpressionActionsSettings actions_settings(context);
+
+    /// Drop the rows that cannot enter the top-K heap of the query. The comparison is cheap and, once
+    /// the threshold is set, usually the most selective of the filters, so it goes first: the columns
+    /// of the later steps are then read only for the few remaining rows, and a block where no row is
+    /// within the threshold is skipped after reading only the sort column.
+    if (use_top_k_filter)
+    {
+        const auto sort_column = physical_columns.tryGetByName(top_k_filter->column_name);
+        if (!sort_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The sort column '{}' of the TopN filter is not read", top_k_filter->column_name);
+
+        ActionsDAG dag({*sort_column});
+        const auto * input_node = dag.getInputs().front();
+        const auto & filter_node = dag.addFunction(
+            createInternalFunctionTopKFilterResolver(top_k_filter->threshold_tracker), {input_node}, {});
+        dag.getOutputs() = {input_node, &filter_node};
+
+        /// The steps find columns in the block by name.
+        if (!physical_columns.contains(filter_node.result_name) && !output_header->has(filter_node.result_name))
+        {
+            String filter_column_name = filter_node.result_name;
+            result->steps.push_back({
+                .actions = std::make_shared<ExpressionActions>(std::move(dag), actions_settings),
+                .filter_column_name = std::move(filter_column_name),
+                .remove_filter_column = true,
+                .input_columns = {},
+            });
+        }
+    }
+
+    if (result->steps.empty() && !query_info.row_level_filter && !query_info.prewhere_info)
+        return nullptr;
 
     /// The row-level security filter runs first, so PREWHERE expressions are never evaluated
     /// on the rows the policy hides.
@@ -501,6 +660,30 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     return result;
 }
 
+static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_columns, const StorageSnapshotPtr & storage_snapshot)
+{
+    NameSet nested_names;
+    for (const auto & column : physical_columns)
+    {
+        auto [nested_name, member_name] = Nested::splitName(column.getNameInStorage());
+        if (isArray(column.getTypeInStorage()) && !member_name.empty())
+            nested_names.insert(std::move(nested_name));
+    }
+
+    Names result;
+    if (nested_names.empty())
+        return result;
+
+    for (const auto & column : storage_snapshot->metadata->getColumns().getAllPhysical())
+    {
+        auto [nested_name, member_name] = Nested::splitName(column.name);
+        if (isArray(column.type) && !member_name.empty() && nested_names.contains(nested_name))
+            result.push_back(column.name);
+    }
+
+    return result;
+}
+
 Pipe ReadFromMemoryStorageStep::makePipe()
 {
     storage_snapshot->check(columns_to_read);
@@ -510,6 +693,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     auto source_filter = makeSourceFilter(physical_columns);
+    auto nested_arrays = getArraysOfRequestedNested(physical_columns, storage_snapshot);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;
@@ -536,7 +720,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             },
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
             source_filter,
-            output_header));
+            output_header,
+            nested_arrays));
     }
 
     size_t size = current_data->size();
@@ -548,7 +733,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         auto source = std::make_shared<MemorySource>(
-            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header);
+            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header,
+            nested_arrays);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows);
         pipes.emplace_back(std::move(source));
