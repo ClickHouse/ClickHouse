@@ -4491,17 +4491,20 @@ TEST_F(FileCacheTest, EfficiencyWindow)
             c->write(data.data(), G, c->getCurrentWriteOffset());
         };
         std::string failure_reason;
-        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// reserves 2 * G (`reserve_granularity`)
+        FileCacheReserveAhead reserve_ahead;
+        auto reserve_granule = [&]
+        {
+            return c->reserve(G, 1000, failure_reason, /*reserve_stat=*/nullptr, /*reserve_hint=*/std::nullopt, &reserve_ahead);
+        };
+        ASSERT_TRUE(reserve_granule());   /// the first reservation is exact: G
         write_granule();
-        c->markRead(2 * S, G);                              /// active G, passive G
-        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// fits into the reserved 2 * G
+        c->markRead(2 * S, G);            /// active G, passive 0
+        ASSERT_TRUE(reserve_granule());   /// reserves ahead 2 * G (`reserve_granularity`): passive 2 * G
         write_granule();
-        ASSERT_TRUE(c->reserve(G, 1000, failure_reason));   /// reserves 2 * G more: passive 3 * G
-        write_granule();
-        ASSERT_EQ(c->getReservedSize(), 4 * G);
+        ASSERT_EQ(c->getReservedSize(), 3 * G);
     }
-    /// The shrink at completion returns G bytes: passive 2 * G.
-    expect(next_window(), G, 2 * G);
+    /// The shrink at completion returns the G bytes that were not written: passive G.
+    expect(next_window(), G, G);
 
     /// Window 6: a read past the end of a file segment of `G + 100` bytes stops at its end.
     auto short_key = FileCacheKey::fromPath("efficiency_window_short");
@@ -4942,12 +4945,16 @@ TEST_F(FileCacheTest, SegmentSizes)
 
         /// Temporary data does not count.
         {
-            auto temporary_holder = cache.set(
-                FileCacheKey::fromPath("segment_sizes_temporary"), 0, G, CreateFileSegmentSettings(FileSegmentKind::Ephemeral), user);
+            auto temporary_key = FileCacheKey::fromPath("segment_sizes_temporary");
+            auto temporary_holder = cache.set(temporary_key, 0, G, CreateFileSegmentSettings(FileSegmentKind::Ephemeral), user);
             auto & temporary = temporary_holder->front();
             ASSERT_EQ(temporary.getOrSetDownloader(), FileSegment::getCallerId());
             std::string failure_reason;
             ASSERT_TRUE(temporary.reserve(G, 1000, failure_reason));
+            /// Write the reservation: an empty segment must not keep its queue entry on removal.
+            fs::create_directories(cache.getKeyPath(temporary_key, user));
+            std::string data(G, '0');
+            temporary.write(data.data(), data.size(), temporary.getCurrentWriteOffset());
             EXPECT_EQ(cache.getUsedCacheSize(), 5 * G + 100 + 4 * S);
             expectSegmentSizes(cache, {{bucket_512k, {2, 4 * G + 100}}, {bucket_2m, {1, 4 * S}}}, 4 * S);
         }
