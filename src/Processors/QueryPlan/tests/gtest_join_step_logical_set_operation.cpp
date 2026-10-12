@@ -124,7 +124,7 @@ TEST(JoinStepLogicalSetOperation, MarkIsNotCarriedTowardsAnOlderPeer)
     const auto step_version = registry.versionToWrite("Join", pre_mark_version);
     EXPECT_EQ(step_version, 0);
 
-    /// A receiver at the older version takes the byte for empty flags, so a sender must write it so.
+    /// A receiver at the older version does not know the bit of the mark, so a sender must leave it unset.
     EXPECT_EQ(
         serializeStep(*makeStep(true), pre_mark_version, step_version),
         serializeStep(*makeStep(false), pre_mark_version, step_version));

@@ -294,6 +294,10 @@ public:
     ~ZooKeeperMetadataTransaction() = default;
 };
 
+/// Whether the query re-executes a DDL that its initiator already validated and committed: an entry of a `Replicated`
+/// database queue, or a Shared Catalog replay (marked in the client info, not in a metadata transaction).
+bool isSecondaryDDLReplay(const ContextPtr & context);
+
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 
 }
