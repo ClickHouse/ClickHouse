@@ -212,8 +212,7 @@ SQLQueryPiece applyLabelManipulationFunction(
             SelectQueryBuilder builder;
 
             ASTs group_function_args;
-            group_function_args.push_back(makeASTFunction(
-                "CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"))); /// Group "0" means no tags
+            group_function_args.push_back(timeSeriesNoTagsGroupToAST());
 
             size_t array_argument_index = impl_info->array_argument_index;
             insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
