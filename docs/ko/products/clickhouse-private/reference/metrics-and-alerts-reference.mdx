@@ -1,0 +1,472 @@
+---
+noindex: true
+title: "메트릭 및 알림 참고"
+sidebarTitle: "메트릭 및 알림"
+description: "ClickHouse Private 구성 요소의 핵심 메트릭과 권장되는 알림 규칙입니다."
+---
+
+ClickHouse Private 구성 요소의 핵심 메트릭과 권장되는 알림 규칙입니다. 이 목록은 전체를 망라한 것이 아니며, 구성에 따라 환경에서 추가 메트릭이 노출될 수 있습니다.
+
+***
+
+<div id="operator-metrics">
+  ## 연산자 메트릭
+</div>
+
+| 메트릭                                         | 유형      | 설명                                                                                                       |
+| ------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
+| `last_cluster_reconcile`                    | Gauge   | 지정된 CR(`app` 레이블로 구분되며, 예: `c-default-xx-01`)의 마지막 리컨실리에이션 타임스탬프입니다. 리컨실리에이션이 정기적으로 수행되는지 확인하는 데 사용하십시오. |
+| `controller_runtime_reconcile_errors_total` | Counter | 컨트롤러별 리컨실리에이션 오류의 총 개수입니다. 리컨실리에이션 오류율을 계산할 때 `controller_runtime_reconcile_total`과 함께 사용하십시오.           |
+| `controller_runtime_reconcile_total`        | Counter | 컨트롤러별 리컨실리에이션 시도의 총 개수입니다.                                                                               |
+
+***
+
+<div id="clickhouse-server-metrics">
+  ## ClickHouse 서버 메트릭
+</div>
+
+서버 메트릭은 각 서버 파드의 `:8123/metrics` Prometheus 엔드포인트를 통해 노출됩니다. 이 엔드포인트는 **인증이 필요**하며, 읽기 전용 권한만 가진 전용 사용자를 사용해야 합니다.
+
+**참고:** 서버 파드의 `prometheus.io/*` 어노테이션은 일부 메트릭을 노출하지만, 아래에 나열된 `ClickHouse_CustomMetrics_*` 메트릭은 **포함하지 않습니다**. `:8123/metrics`에 대해 PodMonitor 또는 이에 준하는 스크레이프 대상을 설정하세요.
+
+| 메트릭                                                     | 유형      | 설명                                                                                |
+| ------------------------------------------------------- | ------- | --------------------------------------------------------------------------------- |
+| `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`   | Gauge   | 손상된 분리된 파트의 수입니다.                                                                 |
+| `ClickHouse_CustomMetric_LostPartCount`                 | Gauge   | 손실된 파트 수로, 데이터 손실을 나타냅니다. **오탐이 발생할 수 있습니다.**                                     |
+| `ClickHouseErrorMetric_CANNOT_WRITE_TO_FILE_DESCRIPTOR` | Counter | CANNOT&#95;WRITE&#95;TO&#95;FILE&#95;DESCRIPTOR 오류 수입니다. 주로 캐시 디스크가 가득 찼음을 나타냅니다. |
+| `ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH`           | Counter | 체크섬 불일치 오류 수입니다. 업그레이드 후 버그를 나타낼 수 있습니다.                                     |
+| `ClickHouseErrorMetric_CORRUPTED_DATA`                  | Counter | 손상된 데이터 오류 수입니다. 업그레이드 후 버그를 나타낼 수 있습니다.                                          |
+| `ClickHouseErrorMetric_LOGICAL_ERROR`                   | Counter | 논리 오류 수입니다. 대개 코드베이스의 버그입니다.                                                      |
+| `ClickHouseErrorMetric_NOT_ENOUGH_SPACE`                | Counter | NOT&#95;ENOUGH&#95;SPACE 오류 수입니다. PVC 용량 부족, 잘못된 구성 또는 대용량 임시 데이터 예약을 나타낼 수 있습니다. |
+| `ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART`    | Counter | 잠재적으로 손상된 데이터 파트 오류 수입니다. SELECT 시 데이터 손실을 나타냅니다.                                 |
+| `ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS`          | Counter | 레플리카가 이미 존재함 오류 수입니다. 일반적으로 Replicated 데이터베이스 엔진의 버그입니다.                          |
+| `ClickHouseMetrics_IsServerShuttingDown`                | Gauge   | ClickHouse 서버가 종료 중이면 `1`입니다.                                                     |
+| `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds`  | Gauge   | 테이블이 READONLY 모드였던 기간(초)입니다.                                                      |
+
+***
+
+<div id="clickhouse-keeper-metrics">
+  ## ClickHouse Keeper 메트릭
+</div>
+
+Keeper 메트릭은 `:8001/metrics`에서 노출됩니다. 이러한 메트릭을 수집하려면 Keeper 파드용 PodMonitor를 생성해야 합니다.
+
+> **참고:** 개별 Keeper 메트릭의 정의는 아직 문서화되지 않았습니다(원본에 TODO로 표시됨). 메트릭 엔드포인트는 사용 가능하지만, 각 메트릭에 대한 설명은 아직 정리되지 않았습니다.
+
+***
+
+<div id="alert-rule-definitions">
+  ## 알림 규칙 정의
+</div>
+
+<div id="operator-alerts">
+  ### 연산자 관련 알림
+</div>
+
+<div id="clickhouseoperatornotreconciling">
+  #### ClickhouseOperatorNotReconciling
+</div>
+
+```yaml
+alert: ClickhouseOperatorNotReconciling
+expr: avg(increase(last_cluster_reconcile[90m])) by (app) == 0
+for: 120m
+```
+
+**목적:** 연산자가 2시간 동안 리컨실리에이션하지 않은 경우 알림을 보냅니다.
+
+**권장 조치:** 1. 연산자 파드가 실행 중이고 정상 상태인지 확인하세요. 2. 리컨실리에이션을 막는 원인을 확인하려면 연산자 로그를 점검하세요. 3. CR에 `clickhouse.com/skip-reconcile` 어노테이션이 없는지 확인하세요.
+
+***
+
+<div id="clickhouseoperatorreconcileerrors">
+  #### ClickhouseOperatorReconcileErrors
+</div>
+
+```yaml
+alert: ClickhouseOperatorReconcileErrors
+expr: |
+  (
+    sum(rate(controller_runtime_reconcile_errors_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+    /
+    sum(rate(controller_runtime_reconcile_total{namespace="clickhouse-operator-system"}[5m])) by (controller, namespace)
+  ) > 0.05
+for: 15m
+```
+
+**목적:** 리컨실리에이션 오류가 전체 리컨실리에이션 시도의 5%를 초과할 때 알림을 보냅니다.
+
+**권장 조치:** 근본 원인을 파악하려면 오류 메시지가 있는지 연산자 logs를 확인하십시오.
+
+***
+
+<div id="clickhouse-server-alerts">
+  ### ClickHouse 서버 알림
+</div>
+
+<div id="clickhousebrokendetachedparts">
+  #### ClickHouseBrokenDetachedParts
+</div>
+
+```yaml
+alert: ClickHouseBrokenDetachedParts
+expr: ClickHouse_CustomMetric_NumberOfBrokenDetachedParts > 100
+for: 60m
+```
+
+**목적:** 손상된 분리된 파트가 60분 이상 100개를 초과할 때 트리거됩니다.
+
+**권장 조치:** - `ClickHouseDataLoss`도 트리거되는지 지켜보십시오. - SMT/RMT 테이블의 경우: 데이터 손실 알림도 발생하면 먼저 데이터 손실을 조사하고 완화하십시오. - 로컬 메타데이터(metadata) 테이블(`s3disk` 또는 `s3diskWithCache`)의 경우: 소수의 손상된 분리된 파트는 **반드시 장애를 의미하지는 않을 수 있습니다**(강제 재시작 중 파일이 생성되었지만 기록되지 않았을 수 있음). - 문제가 지속되면 ClickHouse 지원팀에 문의하십시오.
+
+***
+
+<div id="clickhousedataloss">
+  #### ClickHouseDataLoss
+</div>
+
+```yaml
+alert: ClickHouseDataLoss
+expr: ClickHouse_CustomMetric_LostPartCount > 0
+```
+
+**목적:** 잠재적인 데이터 손실을 나타냅니다. 손실된 파트가 감지되면 즉시 알림이 발생합니다.
+
+**권장 조치:** ClickHouse 지원팀에 문의하십시오. 초기 조사 단계는 다음과 같습니다.
+
+1. 손실된 파트를 조회합니다.
+
+   ```sql
+   SELECT database, table, lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+2. 로그에서 손실된 파트를 검색합니다.
+
+   ```sql
+   SELECT hostName(), event_time, logger_name, message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+3. 특정 손실 파트의 이력을 조사합니다.
+
+   ```sql
+   SELECT event_time, message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%'
+     AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+4. 오탐(false positives) 여부를 확인합니다.
+
+5. 테이블에 TTL이 있는지, 그리고 손실된 파트가 TTL에 의해 삭제되었어야 하는지 확인합니다.
+
+6. `system.query_log`에서 TRUNCATE 또는 DROP PARTITION 쿼리를 확인합니다.
+
+***
+
+<div id="clickhousecannotwritetofiledescriptor">
+  #### ClickHouseCannotWriteToFileDescriptor
+</div>
+
+```yaml
+alert: ClickHouseCannotWriteToFileDescriptor
+expr: |
+    increase(ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CANNOT_READ_FROM_FILE_DESCRIPTOR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**참고:** 알림 표현식은 `CANNOT_WRITE`가 아니라 `CANNOT_READ_FROM_FILE_DESCRIPTOR`를 확인합니다. 이는 업스트림 알림 정의에서 의도된 사항으로, 동일한 장애 시나리오(캐시 디스크가 가득 찬 상태)에서 읽기 메트릭이 알림을 발생시키기 때문입니다.
+
+**목적:** 대체로 캐시 디스크가 가득 찼음을 의미합니다(&quot;장치에 남은 공간이 없음&quot;).
+
+**권장 조치:** - 최근 노드 크기나 유형을 변경했다면 구성 오류와 관련이 있을 수 있습니다. - 알려진 문제: `join_algorithm = 'partial_merge'`를 사용할 경우 캐시 디스크 사용량 추적이 부정확할 수 있습니다. - 진단 단계: 1. `kubectl exec`로 파드에 접속한 뒤 `df -h`를 실행하여 캐시 디스크 크기를 확인하십시오. 2. `SELECT path, max_size FROM system.filesystem_cache_settings`를 실행하여 필요한 캐시 크기를 확인하십시오. 3. 실제 디스크가 구성된 값보다 작으면 구성 오류입니다. - ClickHouse 지원팀에 문의하십시오.
+
+***
+
+<div id="clickhousechecksumsmismatch">
+  #### ClickHouseChecksumsMismatch
+</div>
+
+```yaml
+alert: ClickHouseChecksumsMismatch
+expr: |
+    increase(ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CHECKSUM_DOESNT_MATCH > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**목적:** 데이터 파트의 체크섬이 일치하지 않습니다. 업그레이드 후 발생한 버그일 수 있습니다.
+
+**권장 조치:** ClickHouse 지원팀에 문의하십시오.
+
+***
+
+<div id="clickhousecorrupteddata">
+  #### ClickHouse 데이터 손상
+</div>
+
+```yaml
+alert: ClickHouseCorruptedData
+expr: |
+    increase(ClickHouseErrorMetric_CORRUPTED_DATA[30s]) > 0
+    or (
+        ClickHouseErrorMetric_CORRUPTED_DATA > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**목적:** 데이터 파트가 손상되었습니다. 업그레이드 후 발생한 버그일 수 있습니다.
+
+**권장 조치:** ClickHouse 지원팀에 문의하십시오.
+
+***
+
+<div id="clickhouselogicalerrors">
+  #### ClickHouse 논리적 오류
+</div>
+
+```yaml
+alert: ClickHouseLogicalErrors
+expr: |
+    increase(ClickHouseErrorMetric_LOGICAL_ERROR[30s]) > 0
+    or (
+        ClickHouseErrorMetric_LOGICAL_ERROR > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**목적:** 논리 오류가 발생했습니다. 일반적으로 코드베이스의 버그로 인해 발생합니다.
+
+**권장 조치:** ClickHouse 지원팀에 문의하십시오.
+
+***
+
+<div id="clickhousenotenoughspaceerrors">
+  #### ClickHouseNotEnoughSpaceErrors
+</div>
+
+```yaml
+alert: ClickHouseNotEnoughSpaceErrors
+expr: |
+    increase(ClickHouseErrorMetric_NOT_ENOUGH_SPACE[30s]) > 0
+    or (
+        ClickHouseErrorMetric_NOT_ENOUGH_SPACE > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**목적:** NOT&#95;ENOUGH&#95;SPACE 오류가 발생했습니다. PVC가 가득 찼거나, 구성이 잘못되었거나, 대용량 임시 데이터 예약이 발생했을 수 있습니다.
+
+**권장 조치:** ClickHouse 지원팀에 문의하십시오.
+
+***
+
+<div id="clickhousebrokenpartdetectedonselect">
+  #### ClickHouseBrokenPartDetectedOnSelect
+</div>
+
+```yaml
+alert: ClickHouseBrokenPartDetectedOnSelect
+expr: |
+    increase(ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART[30s]) > 0
+    or (
+        ClickHouseErrorMetric_POTENTIALLY_BROKEN_DATA_PART > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**목적:** SELECT가 POTENTIALLY&#95;BROKEN&#95;DATA&#95;PART 오류로 인해 실패했으며, 이는 데이터 손실을 의미합니다.
+
+**권장 조치:** ClickHouseDataLoss 조치를 참조하십시오. `POTENTIALLY_BROKEN_DATA_PART` 예외 관련 로그를 확인하십시오. 로그에서 찾을 수 없으면 `system.errors`를 확인하십시오. ClickHouse 지원팀에 문의하십시오.
+
+***
+
+<div id="clickhousereplicaalreadyexists">
+  #### ClickHouse 레플리카가 이미 존재합니다
+</div>
+
+```yaml
+alert: ClickHouseReplicaAlreadyExists
+expr: |
+    increase(ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS[30s]) > 0
+    or (
+        ClickHouseErrorMetric_REPLICA_ALREADY_EXISTS > 0
+        and
+        ignoring (table) ClickHouseAsyncMetrics_Uptime < 3 * 60 * 60
+    )
+```
+
+**목적:** 경로에 이미 레플리카가 있어 레플리카 생성에 실패했습니다. 일반적으로 Replicated 데이터베이스 엔진 또는 Shared Catalog의 버그입니다.
+
+**권장 조치:** 사용자 오류일 가능성은 낮습니다. ClickHouse 지원팀에 문의하십시오.
+
+***
+
+<div id="clickhouseservershutdownstuck">
+  #### ClickHouseServerShutdownStuck
+</div>
+
+```yaml
+alert: ClickHouseServerShutdownStuck
+expr: ClickHouseMetrics_IsServerShuttingDown == 1
+for: 70m
+```
+
+**목적:** ClickHouse 서버의 종료 절차가 1시간 넘게 진행 중입니다.
+
+**권장 조치:** `system.stack_trace` 또는 GDB를 사용해 스레드를 확인하십시오.
+
+***
+
+<div id="clickhousetablereplicasreadonly">
+  #### ClickHouseTableReplicasReadOnly
+</div>
+
+```yaml
+alert: ClickHouseTableReplicasReadOnly
+expr: ClickHouse_CustomMetric_TableReadOnlyDurationSeconds > 3600
+```
+
+**목적:** 테이블이 1시간 넘게 READONLY 모드로 유지되고 있습니다.
+
+**권장 조치:** 1. 영향을 받는 테이블 이름으로 필터링한 서버 로그를 확인합니다. 2. 잠재적인 문제가 있는지 Keeper 로그를 확인합니다. 3. 현재 읽기 전용 테이블을 조회합니다:
+
+```sql
+SELECT dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds, database, table, hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+`SYSTEM RESTART REPLICA`
+
+***
+
+<div id="diagnostic-sql-queries">
+  ## 진단용 SQL 쿼리
+</div>
+
+<div id="replication-queue-size-per-table">
+  ### 테이블별 복제 큐 크기
+</div>
+
+**조건:** 테이블의 개수가 100을 초과하면 알림을 생성합니다.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+대안:
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table">
+  ### 테이블별 복제 큐에서 가장 오래된 항목
+</div>
+
+**트리거:** 가장 오래된 항목이 1일보다 오래되면 알림.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY database, table
+```
+
+<div id="read-only-tables">
+  ### 읽기 전용 테이블
+</div>
+
+```sql
+SELECT
+    dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+    database,
+    table,
+    hostname()
+FROM clusterAllReplicas(default, system.replicas)
+WHERE is_readonly = 1
+```
+
+<div id="lost-parts-by-table">
+  ### 테이블별 손실된 파트
+</div>
+
+```sql
+SELECT database, table, lost_part_count AS value
+FROM system.replicas
+WHERE value > 0
+```
+
+<div id="lost-parts-log-search">
+  ### 손실된 파트 로그 검색
+</div>
+
+```sql
+SELECT hostName(), event_time, logger_name, message
+FROM clusterAllReplicas(default, system.text_log)
+WHERE message_format_string = 'Part {} is lost forever.'
+ORDER BY hostName(), event_time
+```
+
+<div id="part-history-investigation">
+  ### 파트 이력 확인
+</div>
+
+```sql
+SELECT event_time, message
+FROM system.text_log
+WHERE message LIKE '%<part name>%'
+  AND hostName() = '<host>'
+ORDER BY event_time ASC
+```
+
+<div id="cache-disk-configuration-check">
+  ### 캐시 디스크 구성 점검
+</div>
+
+```sql
+SELECT path, max_size
+FROM system.filesystem_cache_settings
+```
+
+***
+
+<div id="general-alerting-recommendations">
+  ## 일반 알림 권장 사항
+</div>
+
+다음 항목에 대해서는 표준 인프라 알림을 구성해야 합니다.
+
+* 크래시 루프 상태의 파드
+* 스케줄링할 수 없는 파드
+* 파드 OOM 종료
+* PVC 용량
+* 노드 상태
+
+이러한 항목은 환경에 따라 달라지므로 위의 ClickHouse 전용 알림에는 포함되지 않습니다.
+
+[Grafana ClickHouse mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/)은 다양한 ClickHouse 메트릭에 대한 사전 구축 대시보드를 제공합니다.

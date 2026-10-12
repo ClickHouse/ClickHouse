@@ -1,0 +1,84 @@
+---
+slug: /cloud/guides/sql-console/manage-sql-console-role-assignments
+sidebarTitle: 'Управление назначениями ролей в консоли SQL'
+title: 'Настройка назначений ролей в консоли SQL'
+description: 'Руководство по управлению назначениями ролей в консоли SQL'
+doc_type: 'guide'
+keywords: ['консоль SQL', 'назначения ролей', 'управление доступом', 'разрешения', 'безопасность']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<Warning>
+  Эта настройка устарела и заменена новой настройкой на экране создания ролей в организациях, которые перешли на пользовательские роли. Дополнительные сведения см. в разделе [Manage cloud users](/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users).
+</Warning>
+
+> В этом руководстве показано, как настроить назначения ролей в консоли SQL, которые
+> определяют права доступа на уровне всей консоли и возможности, доступные пользователю
+> в консоли Cloud.
+
+<Steps>
+  <Step>
+    ### Доступ к настройкам сервиса
+
+    На странице сервисов нажмите меню в правом верхнем углу нужного сервиса, для которого вы хотите изменить параметры доступа к консоли SQL.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/1_service_settings.webp" size="lg" />
+
+    Выберите `settings` во всплывающем меню.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/2_service_settings.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Настройка доступа к консоли SQL
+
+    В разделе &quot;Security&quot; найдите область &quot;SQL console access&quot;:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/3_service_settings.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Обновление настроек для Service Admin
+
+    Выберите раскрывающееся меню для Service Admin, чтобы изменить настройки управления доступом для ролей Service Admin:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/4_service_settings.webp" size="md" />
+
+    Вы можете выбрать одну из следующих ролей:
+
+    | Роль          |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### Обновление настроек для Service Read Only
+
+    Выберите раскрывающееся меню для Service Read Only, чтобы изменить настройки управления доступом для ролей Service Read Only:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/5_service_settings.webp" size="md" />
+
+    Вы можете выбрать одну из следующих ролей:
+
+    | Роль          |
+    | ------------- |
+    | `No access`   |
+    | `Read only`   |
+    | `Full access` |
+  </Step>
+
+  <Step>
+    ### Просмотр пользователей с доступом
+
+    Сводку по пользователям сервиса можно открыть, выбрав число пользователей:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/6_service_settings.webp" size="md" />
+
+    Справа на странице откроется вкладка, где показано общее количество пользователей и их роли:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/7_service_settings.webp" size="md" />
+  </Step>
+</Steps>

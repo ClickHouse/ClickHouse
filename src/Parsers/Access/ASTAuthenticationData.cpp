@@ -13,56 +13,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void formatAuthenticationValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+namespace
 {
-    ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
-    valid_until.format(ostr, settings);
-}
-
-void formatAuthenticationGrants(const AccessRightsElements & grants, WriteBuffer & ostr)
-{
-    ostr << " GRANTS (";
-    if (grants.empty())
-        /// The clause is present (checked by the caller with structurallyEmpty()) but grants nothing,
-        /// e.g. `GRANTS (USAGE ON *.*)`. `formatElementsWithoutOptions` skips zero-flag elements, which
-        /// would produce an empty and unparseable `GRANTS ()`, so emit the canonical no-privileges form.
-        ostr << "USAGE ON *.*";
-    else
-        /// Render precisely: auth-method grants must never be widened by the backward-compatibility
-        /// rewrites, otherwise a narrow token grant such as `ALTER USER ON alice` would round-trip as
-        /// `ALTER USER ON *.*` through `SHOW CREATE USER`, backup, restart, or `ATTACH USER` and become
-        /// broader. Older replicas cannot parse this clause anyway, so there is no compatibility to keep.
-        grants.formatElementsWithoutOptions(ostr, /*precise=*/true);
-    ostr << ")";
-}
-
-ASTPtr ASTAuthenticationData::clone() const
-{
-    auto res = make_intrusive<ASTAuthenticationData>(*this);
-    res->children.clear();
-    res->valid_until = nullptr;
-
-    for (const auto & child : children)
+    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        auto child_clone = child->clone();
-        if (valid_until && child.get() == valid_until.get())
-            res->valid_until = child_clone;
-        res->children.push_back(std::move(child_clone));
+        ostr << " VALID UNTIL ";
+        valid_until.format(ostr, settings);
     }
-
-    return res;
-}
-
-void ASTAuthenticationData::setValidUntil(ASTPtr ast)
-{
-    if (!ast)
-        return;
-    setOrReplace(valid_until, std::move(ast));
-}
-
-void ASTAuthenticationData::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
-{
-    f(nullptr, &valid_until);
 }
 
 std::optional<String> ASTAuthenticationData::getPassword() const
@@ -80,7 +37,7 @@ std::optional<String> ASTAuthenticationData::getPassword() const
 
 std::optional<String> ASTAuthenticationData::getSalt() const
 {
-    if (type && (*type == AuthenticationType::SHA256_PASSWORD || *type == AuthenticationType::SCRAM_SHA256_PASSWORD) && numPayloadChildren() == 2)
+    if (type && (*type == AuthenticationType::SHA256_PASSWORD || *type == AuthenticationType::SCRAM_SHA256_PASSWORD) && children.size() == 2)
     {
         if (const auto * salt = children[1]->as<const ASTLiteral>())
         {
@@ -100,12 +57,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
         if (valid_until)
         {
-            formatAuthenticationValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
-        }
-
-        if (!grants.structurallyEmpty())
-        {
-            formatAuthenticationGrants(grants, ostr);
+            formatValidUntil(*valid_until, ostr, settings);
         }
 
         return;
@@ -138,7 +90,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
                 prefix = "BY";
                 password = true;
-                if (numPayloadChildren() == 2)
+                if (children.size() == 2)
                     salt = true;
                 break;
             }
@@ -149,7 +101,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
                 prefix = "BY";
                 password = true;
-                if (numPayloadChildren() == 2)
+                if (children.size() == 2)
                     salt = true;
                 break;
             }
@@ -176,7 +128,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::KERBEROS:
             {
-                if (numPayloadChildren() != 0)
+                if (!children.empty())
                 {
                     prefix = "REALM";
                     parameter = true;
@@ -208,7 +160,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             {
                 prefix = "SERVER";
                 parameter = true;
-                if (numPayloadChildren() == 2)
+                if (children.size() == 2)
                     scheme = true;
                 break;
             }
@@ -266,11 +218,11 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
     {
         ostr << " ";
         bool need_comma = false;
-        for (size_t i = 0; i < numPayloadChildren(); ++i)
+        for (const auto & child : children)
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            children[i]->format(ostr, settings);
+            child->format(ostr, settings);
         }
     }
 
@@ -282,13 +234,9 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (valid_until)
     {
-        formatAuthenticationValidUntil(*valid_until, valid_until_is_interval, ostr, settings);
+        formatValidUntil(*valid_until, ostr, settings);
     }
 
-    if (!grants.structurallyEmpty())
-    {
-        formatAuthenticationGrants(grants, ostr);
-    }
 }
 
 bool ASTAuthenticationData::hasSecretParts() const

@@ -63,7 +63,7 @@ MarkRanges skipIndexWindowsOverlapping(const MarkRanges & baseline, size_t granu
 }
 
 bool tryEstimateEmpirical(
-    WhatIfCandidateResult & result,
+    WhatIfIndexEstimator::IndexResult & result,
     const MergeTreeIndexPtr & index_helper,
     const MergeTreeIndexConditionPtr & condition,
     ReadFromMergeTree * read_step,
@@ -83,12 +83,7 @@ bool tryEstimateEmpirical(
     /// With non-zero seek gaps a real read coalesces ranges, so our per-granule count would diverge
     if (context->getSettingsRef()[Setting::merge_tree_min_rows_for_seek] != 0
         || context->getSettingsRef()[Setting::merge_tree_min_bytes_for_seek] != 0)
-    {
-        result.empirical_unsupported_reason = "A real read coalesces mark ranges when "
-            "`merge_tree_min_rows_for_seek` or `merge_tree_min_bytes_for_seek` is not 0, which the "
-            "per-granule count does not model";
         return false;
-    }
 
     UInt64 total_data_granules = 0;
     UInt64 skipped_data_granules = 0;
@@ -242,11 +237,7 @@ bool tryEstimateEmpirical(
                 /// throw mode raises here; break mode returns false so we don't pass off a partial scan as done
                 if (!read_limits.check(total_rows_read, total_bytes_read, "rows or bytes to read",
                                        ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
-                {
-                    result.empirical_unsupported_reason = "The scan hit `max_rows_to_read` or "
-                        "`max_bytes_to_read` before finishing, so the partial result is discarded";
                     return false;
-                }
 
                 /// Evaluate the index expression so the aggregator sees what a real
                 /// MATERIALIZE INDEX would see (lower(s) instead of raw s)
@@ -281,15 +272,12 @@ bool tryEstimateEmpirical(
     }
 
     if (total_data_granules == 0)
-    {
-        result.empirical_unsupported_reason = "The baseline selected no granules, so there was nothing to aggregate";
         return false;
-    }
 
     result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
     result.estimated_marks = total_data_granules - skipped_data_granules;
-    result.estimate_source = WhatIfCandidateResult::Empirical;
-    result.empirical_status = WhatIfCandidateResult::Ok;
+    result.estimate_source = "empirical";
+    result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
     result.sampled_parts = analysis.selected_parts;
     result.sampled_marks = analysis.selected_marks;
     result.elapsed_us = watch.elapsedMicroseconds();

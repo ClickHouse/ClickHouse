@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -108,8 +107,6 @@ public:
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
-        /// Marks the const column that carries a join runtime-filter id (added by `tryAddJoinRuntimeFilter`).
-        bool is_runtime_filter_id = false;
         /// Display-only: this constant holds a secret (e.g. an `encrypt` key). The value stays in
         /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
@@ -121,8 +118,7 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
-        /// See `ActionsDAG::updateHash` for `with_variable_size_constant_values`.
-        void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
+        void updateHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -175,13 +171,7 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(
-        ColumnConstPtr column,
-        DataTypePtr type,
-        std::string name,
-        bool is_deterministic_constant = true,
-        bool is_masked_secret = false,
-        bool is_runtime_filter_id = false);
+    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true, bool is_masked_secret = false);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -197,14 +187,6 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
-    /// Convert a node used as a condition to `result_type` keeping its truth value, e.g. 256 and 0.5
-    /// stay true where a bare cast to `UInt8` would make them false. `context` is only needed to turn
-    /// a NULL into false, which happens when `result_type` cannot hold a NULL.
-    const Node & addBooleanCondition(const Node & node, const DataTypePtr & result_type, ContextPtr context);
-    /// Same as `addCast`, but the values that cannot be represented in the destination type exactly
-    /// are converted to NULL instead of being wrapped around, saturated or leading to an exception.
-    /// The result type is always Nullable, so `cast_type` must be allowed inside Nullable.
-    const Node & addAccurateCastOrNull(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
@@ -235,20 +217,15 @@ public:
     /// If column is not in outputs, try to find it in nodes and insert back into outputs.
     bool tryRestoreColumn(const std::string & column_name);
 
-    /// Removes the output `column_name`, and the chain of nodes it is computed by - the output node, its only child, and
-    /// so on, down to an input or a column - up to the first node that another node or output still uses.
-    /// Returns true if the whole chain is gone, so that the DAG no longer reads the input at its end.
-    /// Throws if a node on the chain has more than one child.
+    /// Find column in result. Remove it from outputs.
+    /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
+    /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
     /// Remove node with <node_name> from outputs.
     /// Remove unused actions after that.
     /// Do not remove any inputs.
     void removeFromOutputs(const std::string & node_name);
-
-    /// Remove all outputs whose result name is in `node_names`. Unlike the single-name overload above,
-    /// names not present among the outputs are ignored (no throw), and unused actions are not pruned.
-    void removeFromOutputs(const NameSet & node_names);
 
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.
@@ -277,16 +254,6 @@ public:
     size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
 
     void removeAliasesForFilter(const std::string & filter_name);
-
-    /// Fold a filter predicate that reaches a Const through `materialize`/`alias` wrappers.
-    /// Limited to value-only predicate functions (equals/and/or/comparisons) so the result
-    /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
-    /// representation-observing parents elsewhere in the DAG are never touched.
-    /// A removed filter column is replaced by the constant. A kept one stays an output as it is, for whoever reads
-    /// it, and the constant becomes a new output under a new name that clashes with no output and no column of
-    /// `input_header`: the filter column from now on, which the filter removes. So the filter always reads the
-    /// constant, and a kept predicate is an ordinary output that removing unused columns can drop.
-    void foldFilterPredicateThroughMaterialize(std::string & filter_column_name, bool & remove_filter_column, const Block & input_header);
 
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
@@ -319,18 +286,9 @@ public:
     bool hasCorrelatedColumns() const noexcept;
     bool hasArrayJoin() const noexcept;
     bool hasStatefulFunctions() const;
-    /// Returns true for stateful functions or functions non-deterministic within the query,
-    /// including functions in lambda bodies.
-    bool hasNonDeterministicOrStatefulFunctions() const;
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
-    /// A lambda keeps its body in an inner DAG that neither `getNodes()` nor a walk over `Node::children`
-    /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
-    /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
-    static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
-    /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
-    bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
@@ -346,15 +304,8 @@ public:
     /// Replace each node listed in `substitutions` (a node of this DAG) with a constant COLUMN node.
     void substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions);
 
-    /// Rewire consumers of the input named `input_name` to a constant. The input node and the output
-    /// list are unchanged, so an output that IS that input keeps the value supplied for it; an output
-    /// computed FROM it, including an alias, is a consumer and sees `replacement`.
-    void substituteInputForConsumersOnly(const std::string & input_name, const ColumnWithTypeAndName & replacement);
-
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
-    /// The result only ever widens the filter: a non-computable child of a logical AND is replaced with
-    /// constant true where that AND is read with positive polarity, and a filter that cannot be expressed
-    /// at all becomes constant true.
+    /// Special handling for logical AND: non-computable children are replaced with constant true.
     /// Useful for evaluating boolean filters in projection indices when some input columns are missing.
     ActionsDAG restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const;
 
@@ -380,6 +331,18 @@ public:
 
     /// Same as above, but with an explicit list of input nodes instead of using the DAG's inputs.
     static MatchedInputPositions matchInputNodesToHeader(const NodeRawConstPtrs & input_nodes, const Block & header);
+
+    /// Split output positions into DAG output indices and pass-through indices.
+    /// The output header is structured as [DAG outputs..., pass-through inputs...].
+    /// Positions below getOutputs().size() are DAG output indices;
+    /// positions at or above are pass-through indices (with the DAG output count subtracted),
+    /// can be used to index into the list of pass-through inputs from matchInputPositionsToHeader.
+    struct SplitOutputPositions
+    {
+        std::vector<size_t> dag_indices;
+        std::vector<size_t> passthrough_indices;
+    };
+    SplitOutputPositions splitOutputPositions(const std::vector<size_t> & output_positions) const;
 
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
@@ -467,24 +430,13 @@ public:
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
-    struct SplitArrayJoinResult;
+    /// Splits actions into two parts. First part has minimal size sufficient for calculation of column_name.
+    /// Outputs of initial actions must contain column_name.
+    SplitResult splitActionsForFilter(const std::string & column_name) const;
 
-    /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
-    /// With `nondeterministic_before_expansion`, a non-deterministic node that does not depend on the join
-    /// goes to `before` too, so it is drawn once per source row.
-    std::optional<SplitArrayJoinResult> extractFirstArrayJoin(bool nondeterministic_before_expansion = false) const;
-
-    /// Splits actions into two parts. First part has minimal size sufficient for calculation of
-    /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.
-    SplitResult splitActionsForFilter(
-        const std::string & column_name,
-        std::unordered_set<const Node *> additional_split_nodes = {}) const;
-
-    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns
-    /// and additional_split_nodes. The second contains the rest.
-    SplitResult splitActionsBySortingDescription(
-        const NameSet & sort_columns,
-        std::unordered_set<const Node *> additional_split_nodes = {}) const;
+    /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns.
+    /// The second contains the rest.
+    SplitResult splitActionsBySortingDescription(const NameSet & sort_columns) const;
 
     /** Returns true if filter DAG is always false for inputs with default values.
       *
@@ -511,15 +463,12 @@ public:
     /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
     /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
-    ///
-    /// @param allow_index_hints - false for key steps like window: a hint prunes whole granules, which can leave a key with part of its rows
     std::optional<ActionsForFilterPushDown> splitActionsForFilterPushDown(
         const std::string & filter_name,
         bool removes_filter,
         const Names & available_inputs,
         const ColumnsWithTypeAndName & all_inputs,
-        bool allow_non_deterministic_functions,
-        bool allow_index_hints = true);
+        bool allow_non_deterministic_functions);
 
     struct ActionsForJOINFilterPushDown;
 
@@ -537,9 +486,6 @@ public:
       * to left and right streams.
       * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
-      * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
-      * key rather than a rename of an equal-typed column.
-      * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -550,9 +496,7 @@ public:
         const Block & right_stream_header,
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-        const NameSet & cross_type_equivalent_columns,
-        bool filter_is_always_false);
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
 
     /** Build filter dag from multiple filter dags.
       *
@@ -580,15 +524,7 @@ public:
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
     UInt64 getHash() const;
-    /// With `with_variable_size_constant_values = false` a constant whose value has no fixed size
-    /// (`IColumn::valuesHaveFixedSize` is false: a string, an array, an aggregate function state) is
-    /// hashed by its name and type but not by its value, which can be arbitrarily large - a folded
-    /// scalar subquery can carry a `groupBitmap` state of millions of elements. Fixed-size values are
-    /// always hashed. Two such constants that share a name then collide even when their values differ,
-    /// e.g. a string passed through a subquery column (named `__table1.s`, not by its value) or a
-    /// heavy scalar subquery over changed data (named `__getScalar('<hash of the subquery>')`). Meant
-    /// for keys where a wrong match only costs a worse estimate, such as the hash-table-stats key.
-    void updateHash(SipHash & hash_state, bool with_variable_size_constant_values = true) const;
+    void updateHash(SipHash & hash_state) const;
 
     friend class QueryPlanOptimizations::TextIndexDAGReplacer;
 
@@ -609,14 +545,6 @@ public:
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
-
-    /// See `restrictFilterDAGToInputs`; `walk_or` also weakens an `AND` under an `OR`, and `substitutes` receives
-    /// the constants that replace a conjunct.
-    ActionsDAG restrictFilterDAGToInputsImpl(
-        const Node * filter_node,
-        const NameSet & available_inputs,
-        bool walk_or,
-        std::unordered_set<const Node *> * substitutes = nullptr) const;
 
     Node & addNode(Node node);
 
@@ -640,13 +568,6 @@ struct ActionsDAG::SplitResult
     ActionsDAG first;
     ActionsDAG second;
     std::unordered_map<const Node *, const Node *> split_nodes_mapping;
-};
-
-struct ActionsDAG::SplitArrayJoinResult
-{
-    ActionsDAG before;                 /// computes the array argument under array_join_column_name, passes columns through
-    ActionsDAG after;                  /// consumes array_join_column_name (element type) as input, produces the original outputs
-    std::string array_join_column_name;
 };
 
 struct ActionsDAG::ActionsForFilterPushDown

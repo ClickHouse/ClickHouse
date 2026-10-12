@@ -43,10 +43,6 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid S2 cell id, so executing on the whole dictionary
-    /// would fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -151,7 +147,7 @@ Determines if an S2 latitude-longitude rectangle contains the given S2 point. Th
         {"s2Point", "S2 cell identifier of the point to test.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the rectangle contains the point and 0 otherwise.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectContains(5178914411069187297, 5177056748191934217, 5177222610104078385)", "1"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectContains(5765131099823669248, 5765131099956887552, 5765131099880128512)", "1"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};

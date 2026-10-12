@@ -3,8 +3,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndAliases.h>
-#include <Processors/ProcessorsProfileLogInfo.h>
-#include <Processors/IProcessor_fwd.h>
+#include <Processors/IProcessor.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -41,10 +40,6 @@ struct ProcessorProfileLogElement
     size_t output_rows{};
     size_t output_bytes{};
 
-    /// Set if the query failed with an exception.
-    Int32 exception_code{};
-    String exception;
-
     static std::string name() { return "ProcessorsProfileLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
@@ -57,14 +52,9 @@ public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
 
-VectorWithMemoryTracking<ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
+VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
 
-void logProcessorProfile(ContextPtr context, const Processors & processors, Int32 exception_code = 0, const String & exception = {});
-void logProcessorProfile(
-    ContextPtr context,
-    const VectorWithMemoryTracking<ProcessorsProfileLogInfo> & profile_infos,
-    String pipeline_dump,
-    Int32 exception_code = 0,
-    const String & exception = {});
+void logProcessorProfile(ContextPtr context, const Processors & processors);
+void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
 
 }

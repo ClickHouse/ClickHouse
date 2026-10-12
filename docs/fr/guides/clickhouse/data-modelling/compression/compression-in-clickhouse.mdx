@@ -71,8 +71,8 @@ GROUP BY name
 <Accordion title="Remarque sur les parts `compact` et `wide`">
   Si vous voyez des valeurs `compressed_size` ou `uncompressed_size` égales à `0`, cela peut venir du fait que le type des
   parts est `compact` et non `wide` (voir la description de `part_type` dans [`system.parts`](/fr/reference/system-tables/parts)).
-  Le format des parts est contrôlé par les paramètres [`min_bytes_for_wide_part`](/fr/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
-  et [`min_rows_for_wide_part`](/fr/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part). Cela signifie que si les données insérées
+  Le format des parts est contrôlé par les paramètres [`min_bytes_for_wide_part`](/fr/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  et [`min_rows_for_wide_part`](/fr/reference/settings/merge-tree-settings#min_rows_for_wide_part). Cela signifie que si les données insérées
   produisent une part qui ne dépasse pas les valeurs des paramètres ci-dessus, la part sera au format `compact` plutôt
   qu’au format `wide`, et vous ne verrez pas les valeurs de `compressed_size` ou `uncompressed_size`.
 
@@ -141,7 +141,7 @@ Nous affichons ici à la fois la taille compressée et la taille non compressée
 
 > La requête ci-dessus s’appuie sur la table `columns` de la base de données système. Cette base de données, gérée par ClickHouse, regorge d’informations utiles, des métriques de performance des requêtes aux logs d’arrière-plan du cluster. Nous recommandons [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) ainsi que les articles associés[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse) pour les lecteurs curieux.
 
-Pour obtenir la taille totale de la table, nous pouvons simplifier la requête ci-dessus :
+Pour résumer la taille totale de la table, nous pouvons simplifier la requête ci-dessus :
 
 ```sql
 SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
@@ -236,7 +236,7 @@ ClickHouse prend en charge un grand nombre de codecs et d’algorithmes de compr
 | **`Gorilla` and `T64` for unknown patterns?** | Si les données suivent un pattern inconnu, il peut être utile d’essayer `Gorilla` et `T64`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **`Gorilla` for gauge data**                  | `Gorilla` peut être efficace sur des données à virgule flottante, en particulier lorsqu’elles représentent des mesures de type Gauge, c.-à-d. des pics aléatoires.                                                                                                                                                                                                                                                                                                                                                         |
 
-Voir [ici](/fr/reference/statements/create/table/codec) pour plus d’options.
+Voir [ici](/fr/reference/statements/create/table#column_compression_codec) pour plus d’options.
 
 Ci-dessous, nous spécifions le codec `Delta` pour `Id`, `ViewCount` et `AnswerCount`, en partant de l’hypothèse qu’ils seront corrélés linéairement avec la clé de tri et devraient donc bénéficier de l’encodage Delta.
 

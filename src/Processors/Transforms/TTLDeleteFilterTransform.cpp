@@ -1,15 +1,19 @@
 #include <Processors/Transforms/TTLDeleteFilterTransform.h>
-#include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
 
-static void attachRowFilter(Chunk & chunk, IColumnFilter mask)
+namespace ErrorCodes
 {
-    chunk.getChunkInfos().add(std::make_shared<RowFilterInfo>(std::move(mask)));
+    extern const int LOGICAL_ERROR;
 }
 
 static bool isTTLExpired(time_t ttl, time_t current_time)
@@ -34,6 +38,13 @@ static TTLExpressions buildTTLExpressions(
     }
 
     return {expr.expression, where_expr.expression};
+}
+
+SharedHeader TTLDeleteFilterTransform::transformHeader(const SharedHeader & header)
+{
+    auto result = *header;
+    result.insert({std::make_shared<DataTypeUInt8>()->createColumn(), std::make_shared<DataTypeUInt8>(), TTL_FILTER_COLUMN_NAME});
+    return std::make_shared<const Block>(std::move(result));
 }
 
 std::pair<std::shared_ptr<const TTLDeleteFilterTransform::SharedState>, PreparedSets::Subqueries>
@@ -87,15 +98,73 @@ TTLDeleteFilterTransform::build(
 TTLDeleteFilterTransform::TTLDeleteFilterTransform(
     const SharedHeader & header_,
     std::shared_ptr<const SharedState> shared_state_)
-    : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/ false)
+    : ISimpleTransform(header_, transformHeader(header_), /*skip_empty_chunks=*/ false)
     , shared_state(std::move(shared_state_))
     , date_lut(DateLUT::instance())
 {
 }
 
-void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column)
+void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column, size_t num_rows)
 {
-    ITTLAlgorithm::extractTimestamps(ttl_column, date_lut, timestamps);
+    timestamps.resize_exact(num_rows);
+
+    /// Sparse columns must be converted to dense before type dispatch, since
+    /// typeid_cast does not see through the ColumnSparse wrapper.
+    ColumnPtr dense;
+    if (typeid_cast<const ColumnSparse *>(ttl_column))
+    {
+        dense = ttl_column->convertToFullColumnIfSparse();
+        ttl_column = dense.get();
+    }
+
+    if (const auto * col_date = typeid_cast<const ColumnUInt16 *>(ttl_column))
+    {
+        const auto & data = col_date->getData();
+        for (size_t i = 0; i < num_rows; ++i)
+            timestamps[i] = date_lut.fromDayNum(DayNum(data[i]));
+    }
+    else if (const auto * col_datetime = typeid_cast<const ColumnUInt32 *>(ttl_column))
+    {
+        const auto & data = col_datetime->getData();
+        for (size_t i = 0; i < num_rows; ++i)
+            timestamps[i] = static_cast<Int64>(data[i]);
+    }
+    else if (const auto * col_date32 = typeid_cast<const ColumnInt32 *>(ttl_column))
+    {
+        const auto & data = col_date32->getData();
+        for (size_t i = 0; i < num_rows; ++i)
+            timestamps[i] = date_lut.fromDayNum(ExtendedDayNum(data[i]));
+    }
+    else if (const auto * col_datetime64 = typeid_cast<const ColumnDateTime64 *>(ttl_column))
+    {
+        const auto & data = col_datetime64->getData();
+        const auto scale = intExp10OfSize<Int64>(col_datetime64->getScale());
+        for (size_t i = 0; i < num_rows; ++i)
+            timestamps[i] = data[i] / scale;
+    }
+    else if (const auto * col_const = typeid_cast<const ColumnConst *>(ttl_column))
+    {
+        /// Same inner-type dispatch as ITTLAlgorithm::getTimestampByIndex,
+        /// but only executed once for the constant value.
+        const auto & inner = col_const->getDataColumn();
+        Int64 value = 0;
+        if (typeid_cast<const ColumnUInt16 *>(&inner))
+            value = date_lut.fromDayNum(DayNum(col_const->getValue<UInt16>()));
+        else if (typeid_cast<const ColumnUInt32 *>(&inner))
+            value = col_const->getValue<UInt32>();
+        else if (typeid_cast<const ColumnInt32 *>(&inner))
+            value = date_lut.fromDayNum(ExtendedDayNum(col_const->getValue<Int32>()));
+        else if (const auto * inner_dt64 = typeid_cast<const ColumnDateTime64 *>(&inner))
+            value = col_const->getValue<DateTime64>() / intExp10OfSize<Int64>(inner_dt64->getScale());
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of inner column in constant TTL column");
+
+        std::fill(timestamps.begin(), timestamps.end(), value);
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+    }
 }
 
 void TTLDeleteFilterTransform::transform(Chunk & chunk)
@@ -104,19 +173,18 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
 
     if (shared_state->all_data_dropped)
     {
-        attachRowFilter(chunk, IColumnFilter(num_rows, 0));
+        chunk.addColumn(ColumnUInt8::create(num_rows, UInt8(0)));
         return;
     }
 
     if (num_rows == 0)
     {
-        attachRowFilter(chunk, IColumnFilter());
+        chunk.addColumn(ColumnUInt8::create());
         return;
     }
 
-    IColumnFilter filter_vec(num_rows, 1);
-
-    auto chunk_infos = std::move(chunk.getChunkInfos());
+    auto filter_data = ColumnUInt8::create(num_rows, UInt8(1));
+    auto & filter_vec = filter_data->getData();
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -125,7 +193,7 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
         /// Phase 1: extract typed TTL column into a flat Int64 timestamp array.
         auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(
             entry.expressions.expression, block, entry.description.result_column);
-        extractTimestamps(ttl_column.get());
+        extractTimestamps(ttl_column.get(), num_rows);
 
         /// Phase 2: apply TTL expiration and WHERE filter to produce the filter mask.
         auto where_column = ITTLAlgorithm::executeExpressionAndGetColumn(
@@ -145,8 +213,7 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
     }
 
     chunk = Chunk(block.getColumns(), num_rows);
-    chunk.setChunkInfos(std::move(chunk_infos));
-    attachRowFilter(chunk, std::move(filter_vec));
+    chunk.addColumn(std::move(filter_data));
 }
 
 }
