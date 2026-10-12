@@ -12,6 +12,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool group_by_use_nulls;
+extern const SettingsBool group_by_use_nulls_with_totals;
 extern const SettingsBool optimize_injective_functions_in_limit_by;
 }
 
@@ -54,7 +55,8 @@ public:
             /// converted shape as well. Only a `FunctionNode` needs it: `unwrapInjectiveFunctionsInKeys`
             /// keeps every other kind of node anyway.
             const bool group_by_use_nulls = getSettings()[Setting::group_by_use_nulls]
-                && (query->isGroupByWithGroupingSets() || query->isGroupByWithRollup() || query->isGroupByWithCube());
+                && (query->isGroupByWithGroupingSets() || query->isGroupByWithRollup() || query->isGroupByWithCube()
+                    || (query->isGroupByWithTotals() && getSettings()[Setting::group_by_use_nulls_with_totals]));
 
             auto register_key = [&](const QueryTreeNodePtr & key)
             {
