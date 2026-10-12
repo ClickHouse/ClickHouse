@@ -169,6 +169,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         bool remote;
     };
 
+    const bool show_zero_values = context->getSettingsRef()[Setting::system_events_show_zero_values];
     std::vector<ErrorRow> rows;
     for (const auto code : ErrorCodes::getCodes())
     {
@@ -179,8 +180,10 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             continue;
 
         auto error = ErrorCodes::values[code].get();
-        rows.push_back({name, code, std::move(error.local), /* remote= */ false});
-        rows.push_back({name, code, std::move(error.remote), /* remote= */ true});
+        if (error.local.count || show_zero_values)
+            rows.push_back({name, code, std::move(error.local), /* remote= */ false});
+        if (error.remote.count || show_zero_values)
+            rows.push_back({name, code, std::move(error.remote), /* remote= */ true});
     }
 
     /// Positions of `last_error_symbols` and `last_error_lines` in getColumnsDescription().

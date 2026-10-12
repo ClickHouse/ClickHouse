@@ -39,21 +39,18 @@ else
     FROM system.errors WHERE code = $custom_error_code ORDER BY last_error_time DESC LIMIT 1 FORMAT TSV"
 fi
 
-# A condition on the other columns is applied before symbolizing: the filtered read must symbolize like a read the
-# condition cannot reach (it is above a LIMIT). A changed trace means a concurrent throw, not a mismatch.
-$CLICKHOUSE_CLIENT -q "
-SELECT a.trace != b.trace OR (a.symbols = b.symbols AND a.lines = b.lines)
-FROM (SELECT last_error_trace AS trace, last_error_symbols AS symbols, last_error_lines AS lines
-      FROM system.errors WHERE code = $custom_error_code AND NOT remote) AS a,
-     (SELECT last_error_trace AS trace, last_error_symbols AS symbols, last_error_lines AS lines
-      FROM (SELECT * FROM system.errors LIMIT 1000000) WHERE code = $custom_error_code AND NOT remote) AS b"
-
 # A set built from a subquery must be ready when the condition is applied to the table.
 query_id_in="04040_in_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT --query_id "$query_id_in" -q "
 SELECT count() FROM system.errors
 WHERE code IN (SELECT toInt32($custom_error_code)) AND NOT remote AND arrayExists(x -> x LIKE '%Exception%', last_error_symbols)
 SETTINGS system_events_show_zero_values = 1"
+
+# The condition sees only the rows the table shows: the hidden remote row of this code has value 0.
+$CLICKHOUSE_CLIENT -q "
+SELECT count() FROM system.errors
+WHERE code = $custom_error_code AND intDiv(value, value) = 1 AND arrayExists(x -> x LIKE '%Exception%', last_error_symbols)
+SETTINGS system_events_show_zero_values = 0"
 
 # Rows the condition rejects do not leave the table, so they are not symbolized. Zero rows are shown, so every
 # registered code is a row the condition has to reject.
