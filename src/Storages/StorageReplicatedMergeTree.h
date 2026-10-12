@@ -329,6 +329,13 @@ public:
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
     void restoreMetadataInZooKeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach);
 
+    /// Makes the table's metadata version in ZooKeeper and in memory at least `metadata_version`.
+    /// Used by RESTORE to apply the metadata version saved in a backup, so that restored parts
+    /// with a non-zero metadata version don't block merges. Never decreases the version.
+    /// Reaching the target version takes one ZooKeeper write per version, so `process_list_element`
+    /// (may be null) is used to interrupt that loop when the RESTORE query is cancelled or times out.
+    void restoreMetadataVersionFromBackup(Int32 metadata_version, const QueryStatusPtr & process_list_element);
+
     /// Get throttler for replicated fetches
     ThrottlerPtr getFetchesThrottler() const
     {
