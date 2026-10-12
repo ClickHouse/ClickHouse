@@ -222,8 +222,9 @@ Lines are kept to at most 76 characters with soft line breaks (`=\r\n`).
     FunctionDocumentation::Description description_decode = R"(
 Decodes a [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) encoded string, according to [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
 
-`=XX` (hex digits in either case) is replaced by the byte it encodes and soft line breaks (`=` at the end of a line) are removed.
-Other malformed escape sequences (such as `=ZZ` or a `=` followed by a single character) are kept as is, except that a bare `=` at the very end of the string is dropped.
+`=XX` (hex digits in either case) is replaced by the byte it encodes.
+A `=` followed by `\r` or `\n` is a soft line break: it is removed together with the rest of the line up to and including the next `\n`.
+Other malformed escape sequences (such as `=ZZ`, or `=4` at the end of the string) are kept as is, except that a bare `=` at the very end of the string is dropped.
 The behavior matches Python's `quopri.decodestring`.
     )";
     FunctionDocumentation::Syntax syntax_decode = "decodeQuotedPrintable(s)";
