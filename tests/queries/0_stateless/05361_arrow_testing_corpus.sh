@@ -43,7 +43,8 @@ function file_format()
 # Print the name of the error from the exception message in the file $1.
 function error_name()
 {
-    grep -m1 -oE '\(([A-Z][A-Z0-9_]+)\)$' "$1" | tr -d '()'
+    # `-a`: the message may contain binary column names from the fuzzer-generated files.
+    grep -a -m1 -oE '\(([A-Z][A-Z0-9_]+)\)$' "$1" | tr -d '()'
 }
 
 function read_file()
