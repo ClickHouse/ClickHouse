@@ -9,6 +9,8 @@
 namespace DB
 {
 
+struct Settings;
+
 /** Merges several sorted inputs into one.
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
   *  collapses them into one row, summing all the numeric columns except the primary key.
@@ -31,7 +33,8 @@ public:
         const String & sum_function_map_name,
         bool remove_default_values,
         bool aggregate_all_columns,
-        bool allow_tuple_element_aggregation);
+        bool allow_tuple_element_aggregation,
+        const Settings * settings = nullptr);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;

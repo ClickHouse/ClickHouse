@@ -385,6 +385,12 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 {
     assertUnary(name, argument_types);
 
+    /// The non-numeric fallback stores and compares Fields: a Variant (or Dynamic) value loses its original
+    /// alternative type on ingest and gets the first compatible one reinferred on output (1::UInt8 and 1::UInt64
+    /// collapse), and is ordered by Field comparison instead of ColumnVariant::compareAt. Reject these types at
+    /// resolution so that AggregateFunctionVariantAdapter retries over the least common supertype of the variants.
+    assertNoDynamicOrVariantArguments(name, argument_types);
+
     UInt64 max_elems = std::numeric_limits<UInt64>::max();
 
     if (parameters.empty())

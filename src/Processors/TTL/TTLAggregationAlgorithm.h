@@ -21,6 +21,7 @@ public:
         bool force_,
         const Block & header_,
         const MergeTreeData & storage_,
+        const ContextPtr & merge_context,
         const StorageMetadataPtr & metadata_snapshot_);
 
     void execute(Block & block) override;

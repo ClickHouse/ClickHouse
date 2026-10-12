@@ -831,7 +831,14 @@ void registerAggregateFunctionMVTEncode(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctionMVTEncode(AggregateFunctionFactory & factory)
 {
-    const AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    /// The `Geometry` argument is a Variant, and the function resolves over it natively. Its `add` skips the
+    /// rows whose geometry is NULL (a clipped-out feature) itself, so it must not be wrapped in
+    /// AggregateFunctionVariantNull: the result stays a plain String and an empty group produces an empty tile.
+    const AggregateFunctionProperties properties
+        = {.returns_default_when_only_null = false,
+           .is_order_dependent = true,
+           .support_variant_argument = true,
+           .skips_variant_nulls = true};
 
     FunctionDocumentation::Description description = R"(
 Encodes a group of features into a binary [Mapbox Vector Tile](https://github.com/mapbox/vector-tile-spec) layer.

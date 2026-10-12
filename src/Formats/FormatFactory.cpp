@@ -697,7 +697,7 @@ InputFormatPtr FormatFactory::getInputImpl(
 
     if (header_to_parse)
         format = std::make_shared<AggregateFunctionStatesFromValuesInputFormat>(
-            std::make_shared<const Block>(sample), &buf, std::move(format), format_settings.aggregate_function_input_format);
+            std::make_shared<const Block>(sample), &buf, std::move(format), format_settings.aggregate_function_input_format, settings);
 
     return format;
 }

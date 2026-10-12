@@ -109,14 +109,17 @@ FROM
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyData>>(argument_types);
         },
         documentation,
-        {},
+        /// See the note on `Variant` arguments in CrossTab.h.
+        {.is_distinctness_sensitive = true},
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
+            assertNoDynamicOrVariantArguments(name, argument_types);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyWindowData>>(argument_types);
         }
     });

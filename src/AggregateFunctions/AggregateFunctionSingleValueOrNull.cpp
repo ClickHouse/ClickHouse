@@ -250,6 +250,11 @@ SELECT singleValueOrNull(x) FROM test;
     FunctionDocumentation::Category category_singleValueOrNull = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_singleValueOrNull = {description_singleValueOrNull, syntax_singleValueOrNull, arguments_singleValueOrNull, parameters_singleValueOrNull, returned_value_singleValueOrNull, examples_singleValueOrNull, introduced_in_singleValueOrNull, category_singleValueOrNull};
 
-    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, documentation_singleValueOrNull});
+    /// is_distinctness_sensitive: the result keys on whether all input values are equal to each other, so the
+    /// Variant fallback adapter (which would collapse Variant values of different alternative types that compare
+    /// equal after a cast to the common supertype, e.g. 1::UInt8 vs 1::UInt64) must never be applied to it.
+    factory.registerFunction(
+        "singleValueOrNull",
+        {createAggregateFunctionSingleValueOrNull, documentation_singleValueOrNull, {.is_distinctness_sensitive = true}});
 }
 }

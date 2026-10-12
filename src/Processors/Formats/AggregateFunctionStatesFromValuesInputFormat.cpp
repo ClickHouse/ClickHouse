@@ -1,5 +1,6 @@
 #include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
@@ -12,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -29,6 +31,7 @@ namespace
 {
 
 using Mode = AggregateFunctionStatesFromValuesInputFormat::Mode;
+using FunctionsForValues = std::unordered_map<const IDataType *, AggregateFunctionPtr>;
 
 /// The type of the values the aggregate function takes: the argument type, or a Tuple of them if there are several
 /// (an empty Tuple for functions without arguments, such as `count`), or an Array of the above in the `array` mode.
@@ -83,9 +86,35 @@ DataTypePtr getTypeToParse(const DataTypePtr & type, Mode mode)
     return type;
 }
 
-ColumnPtr buildStates(const ColumnPtr & column, const DataTypeAggregateFunction & type, Mode mode)
+/// Fills `functions_for_values` for every `AggregateFunction` type in `type` that has a `Variant` among its arguments
+/// (at any depth: a combinator can expose a nested `Variant`, as `-Array` over `Array(Variant(...))` does).
+void resolveFunctionsForValues(const DataTypePtr & type, const Settings & settings, FunctionsForValues & functions_for_values)
 {
-    const AggregateFunctionPtr & function = type.getFunction();
+    forEachInTypeTree(*type, [&](const IDataType & node)
+    {
+        const auto * type_aggregate_function = typeid_cast<const DataTypeAggregateFunction *>(&node);
+        if (!type_aggregate_function)
+            return;
+
+        const auto & argument_types = type_aggregate_function->getArgumentsDataTypes();
+        if (!std::any_of(argument_types.begin(), argument_types.end(),
+                [](const auto & argument_type) { return anyInTypeTree(*argument_type, [](const IDataType & t) { return isVariant(t); }); }))
+            return;
+
+        /// Resolved as a declared state type, as in `DataTypeAggregateFunction`, so the type stays admissible
+        /// regardless of the settings, but with the settings that decide how the new values are aggregated.
+        AggregateFunctionProperties properties;
+        functions_for_values[&node] = AggregateFunctionFactory::instance().get(
+            type_aggregate_function->getFunctionName(), NullsAction::EMPTY, argument_types,
+            type_aggregate_function->getParameters(), properties, AggregateFunctionStateVariant::Aggregation,
+            /*from_declared_state_type=*/ true, /*from_declared_simple_aggregate_function=*/ false, &settings);
+    });
+}
+
+ColumnPtr buildStates(const ColumnPtr & column, const DataTypeAggregateFunction & type, Mode mode, const FunctionsForValues & functions_for_values)
+{
+    auto it = functions_for_values.find(&type);
+    const AggregateFunctionPtr & function = it != functions_for_values.end() ? it->second : type.getFunction();
     size_t num_rows = column->size();
 
     ColumnPtr values = column;
@@ -141,23 +170,24 @@ ColumnPtr buildStates(const ColumnPtr & column, const DataTypeAggregateFunction 
 }
 
 /// `column` is what the underlying format has parsed for `parsed_type`; returns a column of `type`.
-ColumnPtr buildStatesRecursively(const ColumnPtr & column, const DataTypePtr & parsed_type, const DataTypePtr & type, Mode mode)
+ColumnPtr buildStatesRecursively(
+    const ColumnPtr & column, const DataTypePtr & parsed_type, const DataTypePtr & type, Mode mode, const FunctionsForValues & functions_for_values)
 {
     if (parsed_type.get() == type.get())
         return column;
 
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
-        return ColumnConst::create(buildStatesRecursively(column_const->getDataColumnPtr(), parsed_type, type, mode), column_const->size());
+        return ColumnConst::create(buildStatesRecursively(column_const->getDataColumnPtr(), parsed_type, type, mode, functions_for_values), column_const->size());
 
     if (const auto * type_aggregate_function = typeid_cast<const DataTypeAggregateFunction *>(type.get()))
-        return buildStates(column, *type_aggregate_function, mode);
+        return buildStates(column, *type_aggregate_function, mode, functions_for_values);
 
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
     {
         const auto & column_array = assert_cast<const ColumnArray &>(*column);
         const auto & parsed_type_array = assert_cast<const DataTypeArray &>(*parsed_type);
         return ColumnArray::create(
-            buildStatesRecursively(column_array.getDataPtr(), parsed_type_array.getNestedType(), type_array->getNestedType(), mode),
+            buildStatesRecursively(column_array.getDataPtr(), parsed_type_array.getNestedType(), type_array->getNestedType(), mode, functions_for_values),
             column_array.getOffsetsPtr());
     }
 
@@ -166,7 +196,7 @@ ColumnPtr buildStatesRecursively(const ColumnPtr & column, const DataTypePtr & p
         const auto & column_map = assert_cast<const ColumnMap &>(*column);
         const auto & parsed_type_map = assert_cast<const DataTypeMap &>(*parsed_type);
         return ColumnMap::create(
-            buildStatesRecursively(column_map.getNestedColumnPtr(), parsed_type_map.getNestedType(), type_map->getNestedType(), mode));
+            buildStatesRecursively(column_map.getNestedColumnPtr(), parsed_type_map.getNestedType(), type_map->getNestedType(), mode, functions_for_values));
     }
 
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -177,7 +207,7 @@ ColumnPtr buildStatesRecursively(const ColumnPtr & column, const DataTypePtr & p
         const auto & parsed_elements = parsed_type_tuple.getElements();
         Columns columns(elements.size());
         for (size_t i = 0; i < elements.size(); ++i)
-            columns[i] = buildStatesRecursively(column_tuple.getColumnPtr(i), parsed_elements[i], elements[i], mode);
+            columns[i] = buildStatesRecursively(column_tuple.getColumnPtr(i), parsed_elements[i], elements[i], mode, functions_for_values);
         return ColumnTuple::create(std::move(columns));
     }
 
@@ -211,12 +241,15 @@ std::optional<Block> AggregateFunctionStatesFromValuesInputFormat::getHeaderToPa
 }
 
 AggregateFunctionStatesFromValuesInputFormat::AggregateFunctionStatesFromValuesInputFormat(
-    SharedHeader header_, ReadBuffer * in_, InputFormatPtr underlying_, Mode mode_)
+    SharedHeader header_, ReadBuffer * in_, InputFormatPtr underlying_, Mode mode_, const Settings & settings)
     : IInputFormat(std::move(header_), in_)
     , underlying(std::move(underlying_))
     , port(underlying->getPort().getHeader(), this)
     , mode(mode_)
 {
+    for (const auto & column : getPort().getHeader())
+        resolveFunctionsForValues(column.type, settings, functions_for_values);
+
     connect(underlying->getPort(), port);
     port.setNeeded();
 }
@@ -255,7 +288,7 @@ Chunk AggregateFunctionStatesFromValuesInputFormat::read()
     size_t num_rows = chunk.getNumRows();
     Columns columns = chunk.detachColumns();
     for (size_t i = 0; i < columns.size(); ++i)
-        columns[i] = buildStatesRecursively(columns[i], parsed_header.getByPosition(i).type, header.getByPosition(i).type, mode);
+        columns[i] = buildStatesRecursively(columns[i], parsed_header.getByPosition(i).type, header.getByPosition(i).type, mode, functions_for_values);
     chunk.setColumns(std::move(columns), num_rows);
     return chunk;
 }

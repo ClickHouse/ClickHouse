@@ -1,0 +1,3 @@
+sumArgMax lossless key	20
+sumArgMin lossless key	10
+sumArgMax float-promoting value	2.5	Nullable(Float64)

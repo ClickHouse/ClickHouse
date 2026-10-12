@@ -1,0 +1,12 @@
+SimpleState outermost
+\N
+SimpleState under -If
+\N
+SimpleAggregateFunction(any, Variant(String, UInt64))
+SimpleState under -ArgMax
+\N
+SimpleState under -If, stored and merged
+\N
+Plain aggregate functions still skip Variant NULLs
+x
+x

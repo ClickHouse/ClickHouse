@@ -1,0 +1,14 @@
+linear over Variant
+AggregateFunction(stochasticLinearRegression(0.001, 0.1, 5, \'SGD\'), Nullable(Float64), Nullable(Float64), Nullable(Float64))	1	1	1
+logistic over Variant
+AggregateFunction(stochasticLogisticRegression(0.001, 0.1, 5, \'SGD\'), Nullable(Float64), Nullable(Float64), Nullable(Float64))	1	1
+linear over Variant with NULLs
+1
+linear over Nullable
+AggregateFunction(stochasticLinearRegression(0.001, 0.1, 5, \'SGD\'), Nullable(Float64), Nullable(Float64), Nullable(Float64))	1
+linear over Variant with If
+AggregateFunction(stochasticLinearRegressionIf(0.001, 0.1, 5, \'SGD\'), Nullable(Float64), Nullable(Float64), Nullable(Float64), UInt8)	1
+logistic over Variant with If
+1
+linear with If
+AggregateFunction(stochasticLinearRegressionIf(0.001, 0.1, 5, \'SGD\'), Float64, Float64, Float64, UInt8)	1
