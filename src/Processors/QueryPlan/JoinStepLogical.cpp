@@ -932,24 +932,75 @@ static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinAction
     return {std::move(is_null), std::move(value)};
 }
 
+/// The bytes a key takes in the packed fixed-width hash key of `HashJoin`, which joins on the nested values of `Nullable`
+/// keys and on the full column of `LowCardinality` keys; std::nullopt for a key without a fixed width.
+static std::optional<size_t> getFixedKeyWidth(const DataTypePtr & type)
+{
+    const auto value_type = removeLowCardinalityAndNullable(type);
+    if (!value_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return {};
+    return value_type->getSizeOfValueInMemory();
+}
+
+/// `HashJoin` packs the keys of a clause into one fixed-width key only if all of them are fixed-width and take at most
+/// 32 bytes together, otherwise it hashes their serialized values. A split null-safe key adds the byte of `isNull`, so
+/// it pays off only if every key of the clause still fits: a split that does not escape the serialized path only adds
+/// work. A tuple is never fixed-width, so either every null-safe key of the clause is split or none is.
+static bool shouldSplitNullSafeKeys(
+    const std::vector<std::tuple<JoinActionRef, JoinActionRef, bool>> & keys, const JoinPlanningContext & planning_context)
+{
+    /// Keep the tuple for `StorageJoin` and key-value storages: `TableJoin` rejects their null-safe keys,
+    /// and a split key would probe the prebuilt table with a derived key.
+    if (planning_context.is_storage_join)
+        return false;
+
+    static constexpr size_t max_packed_keys_bytes = 32;
+    bool has_split_key = false;
+    size_t keys_bytes = 0;
+    for (const auto & [lhs, rhs, null_safe_comparison] : keys)
+    {
+        const bool is_null_safe_nullable_key
+            = null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType());
+        if (is_null_safe_nullable_key && !canSplitNullSafeKey(lhs.getType()))
+            return false;
+
+        const auto width = getFixedKeyWidth(lhs.getType());
+        if (!width)
+            return false;
+
+        keys_bytes += *width;
+        if (is_null_safe_nullable_key)
+        {
+            has_split_key = true;
+            keys_bytes += 1;
+        }
+    }
+    return has_split_key && keys_bytes <= max_packed_keys_bytes;
+}
+
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
     std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
 {
-    bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
+    std::vector<std::tuple<JoinActionRef, JoinActionRef, bool>> keys;
 
     for (auto & pred : predicates)
     {
-        auto & predicate = new_predicates.emplace_back(std::move(pred));
-        auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
+        auto [predicate_op, lhs, rhs] = pred.asBinaryPredicate();
         if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+        {
+            new_predicates.emplace_back(std::move(pred));
             continue;
+        }
 
         if (lhs.fromRight() && rhs.fromLeft())
             std::swap(lhs, rhs);
         else if (!lhs.fromLeft() || !rhs.fromRight())
+        {
+            new_predicates.emplace_back(std::move(pred));
             continue;
+        }
 
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
         predicateOperandsToCommonType(
@@ -957,11 +1008,17 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             /* allow_conversion_to_subtype= */ !null_safe_comparison);
         if (!null_safe_comparison)
             preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
+
+        /// We applied predicate, do not add it to residual conditions; the keys are added below, once the clause is known.
+        keys.emplace_back(std::move(lhs), std::move(rhs), null_safe_comparison);
+    }
+
+    const bool split_null_safe_keys = shouldSplitNullSafeKeys(keys, planning_context);
+    for (auto & [lhs, rhs, null_safe_comparison] : keys)
+    {
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
-            /// Keep the tuple for `StorageJoin` and key-value storages: `TableJoin` rejects their null-safe keys,
-            /// and a split key would probe the prebuilt table with a derived key.
-            if (canSplitNullSafeKey(lhs.getType()) && !planning_context.is_storage_join)
+            if (split_null_safe_keys)
             {
                 auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
                 auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
@@ -991,19 +1048,14 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             }
         }
 
-        has_join_predicates = true;
-        // std::cerr << "Adding key " << lhs.getColumnName() << ' ' << rhs.getColumnName() << std::endl;
         table_join_clause.addKey(lhs.getColumnName(), rhs.getColumnName(), null_safe_comparison);
-
-        /// We applied predicate, do not add it to residual conditions
         used_expressions.push_back(lhs);
         used_expressions.push_back(rhs);
-        new_predicates.pop_back();
     }
 
     predicates = std::move(new_predicates);
 
-    return has_join_predicates;
+    return !keys.empty();
 }
 
 /// An inequality (`<`, `<=`, `>`, `>=`) between an expression over the left table and an
