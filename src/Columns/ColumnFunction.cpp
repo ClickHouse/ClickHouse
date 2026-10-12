@@ -18,6 +18,7 @@ namespace ProfileEvents
 {
     extern const Event FunctionExecute;
     extern const Event CompiledFunctionExecute;
+    extern const Event InterpretedFunctionRows;
 }
 
 namespace DB
@@ -484,8 +485,11 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
     ColumnWithTypeAndName res{nullptr, function->getResultType(), ""};
 
     ProfileEvents::increment(ProfileEvents::FunctionExecute);
+    /// Compiled expressions count their rows in `CompiledFunctionRows` themselves, once per fused function.
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+    else
+        ProfileEvents::increment(ProfileEvents::InterpretedFunctionRows, elements_size);
 
     res.column = function->execute(columns, res.type, elements_size, dry_run);
     /// The result can be lazily replicated (ColumnReplicated), e.g. when the lambda just returns a captured column. Materialize it here so

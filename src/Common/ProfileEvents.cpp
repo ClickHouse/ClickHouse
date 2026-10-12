@@ -443,6 +443,8 @@
     \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.", ValueType::Number) \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.", ValueType::Number) \
+    M(CompiledFunctionRows, "Number of rows processed by JIT-compiled expressions, counted once per function fused into the compiled expression: a block of N rows through a compiled expression of three functions adds 3N. Together with InterpretedFunctionRows, it shows the share of function evaluations that ran compiled.", ValueType::Number) \
+    M(InterpretedFunctionRows, "Number of rows processed by ordinary functions of expressions that ran without JIT compilation, counted once per function: a block of N rows through three interpreted functions adds 3N. Together with CompiledFunctionRows, it shows the share of function evaluations that ran compiled.", ValueType::Number) \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.", ValueType::Microseconds) \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.", ValueType::Bytes) \
     M(CompileRegexpFunction, "Number of times a regular expression was JIT-compiled to machine code.", ValueType::Number) \

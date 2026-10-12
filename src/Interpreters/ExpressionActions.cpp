@@ -35,6 +35,7 @@ namespace ProfileEvents
 {
     extern const Event FunctionExecute;
     extern const Event CompiledFunctionExecute;
+    extern const Event InterpretedFunctionRows;
 }
 
 namespace DB
@@ -687,8 +688,11 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
+                /// Compiled expressions count their rows in `CompiledFunctionRows` themselves, once per fused function.
                 if (action.node->is_function_compiled)
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+                else
+                    ProfileEvents::increment(ProfileEvents::InterpretedFunctionRows, num_rows);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
                 if (!columnMatchesType(*res_column.column, *res_column.type))
