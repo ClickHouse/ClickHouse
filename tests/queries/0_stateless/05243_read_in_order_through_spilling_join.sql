@@ -19,21 +19,24 @@ SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 -- Force the switch to the external join during the build phase: a small absolute threshold, with
 -- the ratio-based one disabled for determinism. The threshold also sizes the probe-time cache of
 -- the sorted right blocks, so it is not too tiny.
-SET max_bytes_before_external_join = 1000000, max_bytes_ratio_before_external_join = 0;
+SET max_bytes_before_external_join = 250000, max_bytes_ratio_before_external_join = 0;
 
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS payloads;
 
-CREATE TABLE events (t UInt32, id UInt32) ENGINE = MergeTree ORDER BY t;
+-- The granularity is pinned: the in-order LIMIT read below cuts at least one granule-sized
+-- task per stream, and a CI-randomized granularity could blow through the read_rows bound.
+CREATE TABLE events (t UInt32, id UInt32) ENGINE = MergeTree ORDER BY t
+    SETTINGS index_granularity = 2048;
 -- `id` swaps every adjacent pair of numbers, so the probe blocks are NOT sorted by the join key
 -- and the order-preserving probe has to work through a real permutation, while the matches stay
 -- local to keep the disk cache of the sorted right blocks effective.
-INSERT INTO events SELECT number, bitXor(number, 1) FROM numbers(400000);
+INSERT INTO events SELECT number, bitXor(number, 1) FROM numbers(100000);
 
 CREATE TABLE payloads (id UInt32, payload String) ENGINE = MergeTree ORDER BY tuple();
--- Every id of [0, 100000) exactly twice: ALL joins get a 2x fanout, ANY joins have to pick one
--- match, and left ids of [100000, 400000) stay unmatched.
-INSERT INTO payloads SELECT number % 100000, concat('p', toString(number)) FROM numbers(200000);
+-- Every id of [0, 25000) exactly twice: ALL joins get a 2x fanout, ANY joins have to pick one
+-- match, and left ids of [25000, 100000) stay unmatched.
+INSERT INTO payloads SELECT number % 25000, concat('p', toString(number)) FROM numbers(50000);
 
 CREATE TEMPORARY TABLE start_ts AS ( SELECT now() AS ts );
 
@@ -74,7 +77,7 @@ SETTINGS join_algorithm = 'hash', log_comment = '05243_read_in_order_through_spi
 
 SELECT '-- Full results: correct multisets, emitted in the left order';
 
--- INNER ALL: 100000 matched left rows, fanout 2.
+-- INNER ALL: 25000 matched left rows, fanout 2.
 SELECT count(), uniqExact(t) FROM (
     SELECT events.t AS t FROM events INNER JOIN payloads ON events.id = payloads.id
     SETTINGS join_algorithm = 'hash'
@@ -89,7 +92,7 @@ SELECT arraySort(g) = g FROM (
     )
 );
 
--- LEFT ALL: 200000 matched rows + 300000 unmatched with a default payload.
+-- LEFT ALL: 50000 matched rows + 75000 unmatched with a default payload.
 SELECT count(), countIf(payload = ''), arraySort(groupArray(materialize(t))) = groupArray(materialize(t)) FROM (
     SELECT events.t AS t, payloads.payload AS payload FROM events
     LEFT JOIN payloads ON events.id = payloads.id
@@ -152,10 +155,10 @@ SELECT '-- The join did spill through MergeJoin, and the read was short';
 
 SYSTEM FLUSH LOGS system.query_log;
 
--- The right table (200000 rows) is always read fully for the build; a full left scan would push
--- the total to 600000 rows, the in-order read keeps it well below.
+-- The right table (50000 rows) is always read fully for the build; a full left scan would push
+-- the total to 150000 rows, the in-order read keeps it well below.
 SELECT
-    if(read_rows < 400_000, 'OK', format('Fail: {} rows read, query_id="{}"', read_rows, query_id)),
+    if(read_rows < 100_000, 'OK', format('Fail: {} rows read, query_id="{}"', read_rows, query_id)),
     if(ProfileEvents['JoinSpillingHashJoinSwitchedToMergeJoin'] >= 1, 'OK',
        format('Fail: no switch to MergeJoin, query_id="{}"', query_id)),
     if(ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] = 0, 'OK',
@@ -174,8 +177,8 @@ SELECT '-- Left order uncorrelated with the join key: matches hop between the sp
 -- blocks even though consecutive left rows reference distant ones.
 DROP TABLE IF EXISTS events_scattered;
 CREATE TABLE events_scattered (t UInt32, id UInt32) ENGINE = MergeTree ORDER BY t;
--- `id` is a permutation of [0, 400000): 7919 is coprime with 400000.
-INSERT INTO events_scattered SELECT number, (number * 7919) % 400000 FROM numbers(400000);
+-- `id` is a permutation of [0, 100000): 7919 is coprime with 100000.
+INSERT INTO events_scattered SELECT number, (number * 7919) % 100000 FROM numbers(100000);
 
 SELECT count(), uniqExact(t), arraySort(groupArray(materialize(t))) = groupArray(materialize(t)) FROM (
     SELECT events_scattered.t AS t FROM events_scattered
