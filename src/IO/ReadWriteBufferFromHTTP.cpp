@@ -542,7 +542,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                     LOG_DEBUG(log,
                               "Stopped retrying the request to '{}'{} at try {}/{}, because the read was cancelled. "
                               "Error: '{}'.",
-                              initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                              maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
                               attempt, read_settings.http_settings.max_tries,
                               error_message);
 
