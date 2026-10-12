@@ -5,8 +5,8 @@
 #if USE_DATASKETCHES
 
 #include <Storages/Statistics/Statistics.h>
+#include <Common/HashTable/HashMap.h>
 
-#include <frequent_items_sketch.hpp>
 #include <kll_sketch.hpp>
 
 #include <mutex>
@@ -16,18 +16,23 @@
 namespace DB
 {
 
-/// Misra-Gries summary (DataSketches frequent_items_sketch) of the most common finite values of a
-/// histogram column statistic. Keys are finite Float64 values with canonical zero.
+/// Misra-Gries summary of the most common finite values of a histogram column statistic.
+/// Keys are finite Float64 values with canonical zero.
 ///
-/// Every unit of weight that a purge removes from the counters is reported to a spill buffer, so the
-/// counters and the spilled weight together account for every update exactly. This is not an
-/// `IStatistics`: it is owned by `StatisticsHistogram`, which forwards spilled weight to its KLL sketch.
+/// The summary keeps at most `capacity` counters. When a new value would exceed it, a purge subtracts the
+/// median of all counters from every counter and deletes the counters that reach zero. The median is an
+/// exact order statistic, so purges depend only on the counters and never on the hash table layout or on
+/// the history of the summary. For every value: counter <= true count <= counter + maximum error, and values
+/// without a counter occur at most maximum error times.
+///
+/// Every unit of weight that a purge removes from a counter is appended to a spill buffer, so the counters
+/// and the spilled weight together account for every update exactly. This is not an `IStatistics`: it is
+/// owned by `StatisticsHistogram`, which forwards the spilled weight to its KLL sketch.
 class HistogramFrequentValues
 {
 public:
     static constexpr UInt64 MIN_VALUES = 1;
-    /// With at most 768 counters a purge sees at most 769 active counters, below the purge sample size
-    /// of 1024, so the purge median is exact and purges do not depend on the hash map layout.
+    /// Bounds the payload (about 17 bytes per value) and the cost of a purge.
     static constexpr UInt64 MAX_VALUES = 768;
 
     struct Item
@@ -41,29 +46,30 @@ public:
 
     explicit HistogramFrequentValues(UInt64 requested_values_);
 
-    /// log2 of the smallest map size whose capacity holds at least `values` values.
-    static UInt8 getLgMapSize(UInt64 values);
-    static UInt64 getMapCapacity(UInt8 lg_map_size);
+    /// The number of counters kept for `requested_values`: the documented summary sizes 6, 12, 24, ..., 768,
+    /// rounded up.
+    static UInt64 getCapacityFor(UInt64 requested_values);
 
     /// Counts one row with a finite value with canonical zero.
     /// Weight evicted by a purge is appended to `spill`.
     void update(Float64 finite_value, Spill & spill);
-    /// Merges in item order, so the result depends only on the logical states of both summaries.
-    /// Weight evicted by purges is appended to `spill`.
+    /// Adds the counters of `other` in value order, so the result depends only on the counters, total weights and
+    /// maximum errors of both summaries. Weight evicted by purges is appended to `spill`.
     void merge(const HistogramFrequentValues & other, Spill & spill);
 
     /// The number of values requested in `histogram(N, M)` (`M`).
     UInt64 getRequestedValues() const { return requested_values; }
-    /// The number of values that are held at least, `M` rounded up.
-    UInt64 getCapacity() const { return getMapCapacity(sketch.get_lg_max_map_size()); }
+    /// The number of counters, `M` rounded up.
+    UInt64 getCapacity() const { return capacity; }
     /// Maximum error (delta): true count - counter <= delta for every value, and untracked values occur
-    /// at most delta times.
-    UInt64 getMaximumError() const { return sketch.get_maximum_error(); }
+    /// at most delta times. Every purge removes at least `delta_of_purge * (capacity / 2 + 1)`, so
+    /// delta <= (total weight - retained weight) / (capacity / 2 + 1) for summaries of one capacity.
+    UInt64 getMaximumError() const { return maximum_error; }
     /// Sum of all counters.
     UInt64 getRetainedWeight() const { return retained_weight; }
     /// Number of finite rows seen.
-    UInt64 getTotalWeight() const { return sketch.get_total_weight(); }
-    size_t size() const { return sketch.get_num_active_items(); }
+    UInt64 getTotalWeight() const { return total_weight; }
+    size_t size() const { return counters.size(); }
 
     /// Tracked values with their counters, sorted by value.
     Items getSortedItems() const;
@@ -73,18 +79,21 @@ public:
     void deserialize(ReadBuffer & buf, UInt64 finite_rows, Float64 finite_min, Float64 finite_max);
 
 private:
-    /// The map applies fmix64 to the hash, so the raw bit pattern is enough and does not depend on `std::hash`.
-    struct CanonicalFloat64Hash
-    {
-        size_t operator()(Float64 value) const;
-    };
-    using Sketch = datasketches::frequent_items_sketch<Float64, UInt64, CanonicalFloat64Hash, std::equal_to<>>;
+    /// Iteration order is never observable: purges are order independent and outputs are sorted by value.
+    using Counters = HashMap<Float64, UInt64>;
 
-    void reserveSpill(Spill & spill) const;
+    void add(Float64 value, UInt64 weight, Spill & spill);
+    void purge(Spill & spill);
 
     UInt64 requested_values;
-    Sketch sketch;
+    UInt64 capacity;
+    Counters counters;
+    UInt64 total_weight = 0;
     UInt64 retained_weight = 0;
+    UInt64 maximum_error = 0;
+    /// Scratch space of `purge`, reserved upfront so a purge does not allocate while it modifies the counters.
+    Items purge_items;
+    std::vector<UInt64> purge_counts;
 };
 
 /// `histogram(N, M)`: an equi-depth histogram with `N` buckets combined with the `M` most common values.

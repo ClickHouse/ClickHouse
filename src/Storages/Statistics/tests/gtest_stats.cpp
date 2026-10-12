@@ -1066,7 +1066,10 @@ void checkHistogram(const ColumnStatisticsPtr & stats, const std::vector<Float64
     ASSERT_EQ(finite_rows, retained + residual_rows);
     ASSERT_GE(residual_rows, delta);
     ASSERT_EQ(delta == 0, residual_rows == 0);
-    ASSERT_LE(frequent_values.size(), HistogramFrequentValues(histogram.getMcvValues()).getCapacity());
+    const UInt64 capacity = HistogramFrequentValues::getCapacityFor(histogram.getMcvValues());
+    ASSERT_LE(frequent_values.size(), capacity);
+    /// Every purge removes at least its median times (capacity / 2 + 1) rows (all summaries here have one capacity).
+    ASSERT_LE(delta * (capacity / 2 + 1), residual_rows);
 
     /// Misra-Gries guarantees: c(m) <= true count <= c(m) + delta, untracked values occur at most delta times.
     std::set<Float64> tracked;
@@ -1217,7 +1220,239 @@ TEST(Statistics, HistogramMCVCapacityRounding)
     const std::vector<std::pair<UInt64, UInt64>> expected
         = {{1, 6}, {6, 6}, {7, 12}, {12, 12}, {13, 24}, {25, 48}, {49, 96}, {97, 192}, {193, 384}, {384, 384}, {385, 768}, {768, 768}};
     for (const auto & [requested, capacity] : expected)
+    {
+        EXPECT_EQ(HistogramFrequentValues::getCapacityFor(requested), capacity) << requested;
         EXPECT_EQ(HistogramFrequentValues(requested).getCapacity(), capacity) << requested;
+    }
+}
+
+namespace
+{
+
+/// A deliberately naive Misra-Gries summary with the same purge rule, to check `HistogramFrequentValues` against.
+struct ReferenceFrequentValues
+{
+    explicit ReferenceFrequentValues(UInt64 capacity_) : capacity(capacity_) {}
+
+    UInt64 capacity;
+    std::map<Float64, UInt64> counters;
+    UInt64 total_weight = 0;
+    UInt64 maximum_error = 0;
+    std::map<Float64, UInt64> spilled;
+
+    void add(Float64 value, UInt64 weight)
+    {
+        total_weight += weight;
+        auto [it, inserted] = counters.try_emplace(value, 0);
+        it->second += weight;
+        if (inserted && counters.size() > capacity)
+            purge();
+    }
+
+    void purge()
+    {
+        std::vector<UInt64> sorted;
+        for (const auto & [_, count] : counters)
+            sorted.push_back(count);
+        std::sort(sorted.begin(), sorted.end());
+        const UInt64 median = sorted[sorted.size() / 2];
+        for (auto it = counters.begin(); it != counters.end();)
+        {
+            const UInt64 removed = std::min(it->second, median);
+            spilled[it->first] += removed;
+            it->second -= removed;
+            it = it->second == 0 ? counters.erase(it) : std::next(it);
+        }
+        maximum_error += median;
+    }
+
+    void merge(const ReferenceFrequentValues & other)
+    {
+        const UInt64 merged_total_weight = total_weight + other.total_weight;
+        for (const auto & [value, count] : other.counters)
+            add(value, count);
+        total_weight = merged_total_weight;
+        maximum_error += other.maximum_error;
+    }
+};
+
+std::map<Float64, UInt64> aggregateSpill(const HistogramFrequentValues::Spill & spill)
+{
+    std::map<Float64, UInt64> result;
+    for (const auto & [value, weight] : spill)
+    {
+        EXPECT_GT(weight, 0u);
+        result[value] += weight;
+    }
+    return result;
+}
+
+void expectSameState(const HistogramFrequentValues & actual, const ReferenceFrequentValues & expected)
+{
+    std::map<Float64, UInt64> actual_counters;
+    UInt64 retained = 0;
+    for (const auto & item : actual.getSortedItems())
+    {
+        actual_counters.emplace(item.value, item.count);
+        retained += item.count;
+    }
+    ASSERT_EQ(actual_counters, expected.counters);
+    ASSERT_EQ(actual.getTotalWeight(), expected.total_weight);
+    ASSERT_EQ(actual.getMaximumError(), expected.maximum_error);
+    ASSERT_EQ(actual.getRetainedWeight(), retained);
+    ASSERT_EQ(actual.size(), expected.counters.size());
+}
+
+HistogramFrequentValues roundTripFrequentValues(const HistogramFrequentValues & summary)
+{
+    WriteBufferFromOwnString out;
+    summary.serialize(out);
+    HistogramFrequentValues restored(summary.getRequestedValues());
+    ReadBufferFromString in(out.str());
+    restored.deserialize(in, summary.getTotalWeight(), -1e12, 1e12);
+    EXPECT_TRUE(in.eof());
+    return restored;
+}
+
+}
+
+TEST(Statistics, HistogramFrequentValuesPurgeEvictsEverything)
+{
+    /// Capacity 6: the 7th distinct value purges, and all counters equal the median.
+    HistogramFrequentValues summary(1);
+    HistogramFrequentValues::Spill spill;
+    for (Int64 value = 0; value < 6; ++value)
+        summary.update(static_cast<Float64>(value), spill);
+    EXPECT_TRUE(spill.empty());
+    summary.update(6.0, spill);
+    EXPECT_EQ(spill.size(), 7u);
+    EXPECT_EQ(summary.size(), 0u);
+    EXPECT_EQ(summary.getTotalWeight(), 7u);
+    EXPECT_EQ(summary.getRetainedWeight(), 0u);
+    EXPECT_EQ(summary.getMaximumError(), 1u);
+
+    /// A summary without counters still carries its total weight and maximum error, also through merges and round trips.
+    HistogramFrequentValues target(1);
+    HistogramFrequentValues::Spill merge_spill;
+    target.update(100.0, merge_spill);
+    target.merge(roundTripFrequentValues(summary), merge_spill);
+    EXPECT_TRUE(merge_spill.empty());
+    EXPECT_EQ(target.getTotalWeight(), 8u);
+    EXPECT_EQ(target.getMaximumError(), 1u);
+    EXPECT_EQ(target.getRetainedWeight(), 1u);
+}
+
+TEST(Statistics, HistogramFrequentValuesSpillAccounting)
+{
+    for (UInt64 requested : {UInt64(1), UInt64(10), UInt64(100), UInt64(768)})
+    {
+        SCOPED_TRACE(requested);
+        const auto values = generateStream(StreamKind::Zipf, 30000, requested);
+        HistogramFrequentValues summary(requested);
+        HistogramFrequentValues::Spill spill;
+        std::map<Float64, UInt64> truth;
+        for (Float64 value : values)
+        {
+            summary.update(value, spill);
+            ++truth[value];
+        }
+        ASSERT_GT(summary.getMaximumError(), 0u);
+
+        /// Every row is either retained in a counter or spilled exactly once.
+        const auto spilled = aggregateSpill(spill);
+        UInt64 total_spilled = 0;
+        for (const auto & [_, weight] : spilled)
+            total_spilled += weight;
+        EXPECT_EQ(summary.getRetainedWeight() + total_spilled, values.size());
+
+        std::map<Float64, UInt64> counters;
+        for (const auto & item : summary.getSortedItems())
+            counters.emplace(item.value, item.count);
+        for (const auto & [value, count] : truth)
+        {
+            const UInt64 counter = counters.contains(value) ? counters.at(value) : 0;
+            const UInt64 value_spilled = spilled.contains(value) ? spilled.at(value) : 0;
+            ASSERT_EQ(counter + value_spilled, count);
+            ASSERT_LE(value_spilled, summary.getMaximumError());
+        }
+        EXPECT_LE(summary.getMaximumError() * (summary.getCapacity() / 2 + 1), total_spilled);
+    }
+}
+
+TEST(Statistics, HistogramFrequentValuesMatchesReference)
+{
+    for (UInt64 seed = 1; seed <= 6; ++seed)
+    {
+        SCOPED_TRACE(seed);
+        TestRandom random(seed);
+        const UInt64 requested = std::vector<UInt64>{1, 7, 24, 64, 300, 768}[seed - 1];
+        const auto values = generateStream(seed % 2 ? StreamKind::Zipf : StreamKind::Uniform, 20000, seed);
+
+        /// Build parts, then merge them in a random tree with random round trips, comparing every step.
+        struct Node
+        {
+            HistogramFrequentValues actual;
+            ReferenceFrequentValues expected;
+        };
+        std::vector<Node> nodes;
+        size_t begin = 0;
+        while (begin < values.size())
+        {
+            const size_t end = std::min(values.size(), begin + 1 + random.below(6000));
+            Node node{HistogramFrequentValues(requested), ReferenceFrequentValues(HistogramFrequentValues::getCapacityFor(requested))};
+            HistogramFrequentValues::Spill spill;
+            for (size_t i = begin; i < end; ++i)
+            {
+                node.actual.update(values[i], spill);
+                node.expected.add(values[i], 1);
+            }
+            expectSameState(node.actual, node.expected);
+            ASSERT_EQ(aggregateSpill(spill), node.expected.spilled);
+            nodes.push_back(std::move(node));
+            begin = end;
+        }
+
+        while (nodes.size() > 1)
+        {
+            const size_t first = random.below(nodes.size());
+            Node left = std::move(nodes[first]);
+            nodes.erase(nodes.begin() + first);
+            const size_t second = random.below(nodes.size());
+            Node right = std::move(nodes[second]);
+            nodes.erase(nodes.begin() + second);
+
+            if (random.below(2))
+                left.actual = roundTripFrequentValues(left.actual);
+            if (random.below(2))
+                right.actual = roundTripFrequentValues(right.actual);
+
+            left.expected.spilled.clear();
+            HistogramFrequentValues::Spill spill;
+            left.actual.merge(right.actual, spill);
+            left.expected.merge(right.expected);
+            expectSameState(left.actual, left.expected);
+            ASSERT_EQ(aggregateSpill(spill), left.expected.spilled);
+            nodes.push_back(std::move(left));
+        }
+        expectSameState(roundTripFrequentValues(nodes.front().actual), nodes.front().expected);
+    }
+}
+
+TEST(Statistics, HistogramFrequentValuesMergeIntoItself)
+{
+    const auto values = generateStream(StreamKind::Zipf, 5000, 3);
+    HistogramFrequentValues summary(16);
+    ReferenceFrequentValues reference(HistogramFrequentValues::getCapacityFor(16));
+    HistogramFrequentValues::Spill spill;
+    for (Float64 value : values)
+    {
+        summary.update(value, spill);
+        reference.add(value, 1);
+    }
+    const ReferenceFrequentValues copy = reference;
+    summary.merge(summary, spill);
+    reference.merge(copy);
+    expectSameState(summary, reference);
 }
 
 TEST(Statistics, HistogramRejectsCorruptPayload)
@@ -2123,7 +2358,7 @@ TEST(Statistics, HistogramMCVSkewedAccuracy)
     std::sort(by_frequency.rbegin(), by_frequency.rend());
     const auto & histogram = getHistogram(large);
     const UInt64 delta = histogram.getMaximumError();
-    EXPECT_LE(static_cast<Float64>(delta), 3.5 / 512 * static_cast<Float64>(values.size()));
+    EXPECT_LE(delta * (HistogramFrequentValues::getCapacityFor(256) / 2 + 1), histogram.getResidualCount());
 
     Float64 large_equal_error = 0;
     Float64 tiny_equal_error = 0;

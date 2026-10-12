@@ -14,11 +14,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
+#include <base/sort.h>
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
-#include <functional>
 
 namespace DB
 {
@@ -48,89 +47,114 @@ bool isNegativeZero(Float64 value)
     return value == 0 && std::signbit(value);
 }
 
-/// Collects the weight that purges remove from the Misra-Gries counters.
-struct SpillObserver
+/// Grows `spill` geometrically, so that repeated purges while merging do not reallocate every time.
+void reserveSpill(HistogramFrequentValues::Spill & spill, size_t additional)
 {
-    HistogramFrequentValues::Spill & spill;
-    UInt64 & retained_weight;
-
-    void operator()(const Float64 & value, UInt64 removed)
-    {
-        /// `reserveSpill` guarantees that this does not allocate in the middle of a purge.
-        spill.emplace_back(value, removed);
-        retained_weight -= removed;
-    }
-};
+    const size_t required = spill.size() + additional;
+    if (spill.capacity() < required)
+        spill.reserve(std::max(required, 2 * spill.capacity()));
+}
 
 }
 
-size_t HistogramFrequentValues::CanonicalFloat64Hash::operator()(Float64 value) const
+UInt64 HistogramFrequentValues::getCapacityFor(UInt64 requested_values)
 {
-    return std::bit_cast<UInt64>(value);
-}
-
-UInt8 HistogramFrequentValues::getLgMapSize(UInt64 values)
-{
-    UInt8 lg_map_size = Sketch::LG_MIN_MAP_SIZE;
-    while (getMapCapacity(lg_map_size) < values)
-        ++lg_map_size;
-    return lg_map_size;
-}
-
-UInt64 HistogramFrequentValues::getMapCapacity(UInt8 lg_map_size)
-{
-    /// Same as the capacity of DataSketches' reverse_purge_hash_map, whose load factor is 0.75.
-    return (1ULL << lg_map_size) * 3 / 4;
+    UInt64 result = 6;
+    while (result < requested_values)
+        result *= 2;
+    return result;
 }
 
 HistogramFrequentValues::HistogramFrequentValues(UInt64 requested_values_)
     : requested_values(requested_values_)
-    , sketch(getLgMapSize(requested_values_))
+    , capacity(getCapacityFor(requested_values_))
 {
     if (requested_values < MIN_VALUES || requested_values > MAX_VALUES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of histogram frequent values: {}", requested_values);
-}
-
-void HistogramFrequentValues::reserveSpill(Spill & spill) const
-{
-    /// A purge reports every active counter, including the one just inserted.
-    const size_t required = spill.size() + sketch.get_num_active_items() + 1;
-    if (spill.capacity() < required)
-        spill.reserve(std::max(required, 2 * spill.capacity()));
+    /// A purge happens with capacity + 1 counters.
+    purge_items.reserve(capacity + 1);
+    purge_counts.reserve(capacity + 1);
 }
 
 void HistogramFrequentValues::update(Float64 finite_value, Spill & spill)
 {
     chassert(std::isfinite(finite_value) && !isNegativeZero(finite_value));
-    reserveSpill(spill);
-    SpillObserver observer{spill, retained_weight};
-    retained_weight += 1;
-    sketch.update(finite_value, 1, observer);
+    add(finite_value, 1, spill);
+}
+
+void HistogramFrequentValues::add(Float64 value, UInt64 weight, Spill & spill)
+{
+    Counters::LookupResult it = nullptr;
+    bool inserted = false;
+    counters.emplace(value, it, inserted);
+    total_weight += weight;
+    retained_weight += weight;
+    if (!inserted)
+    {
+        it->getMapped() += weight;
+        return;
+    }
+
+    it->getMapped() = weight;
+    if (counters.size() > capacity)
+        purge(spill);
+}
+
+void HistogramFrequentValues::purge(Spill & spill)
+{
+    /// Allocate everything before the counters are modified.
+    reserveSpill(spill, counters.size());
+    purge_items.clear();
+    purge_counts.clear();
+    for (const auto & cell : counters)
+    {
+        purge_items.push_back({cell.getKey(), cell.getMapped()});
+        purge_counts.push_back(cell.getMapped());
+    }
+
+    /// The median is an order statistic of the counters, so it does not depend on the order of `counters`. The counters
+    /// at or above it (at least half of them, rounded up) each lose the full median, so each purge removes at least
+    /// `median * (capacity / 2 + 1)`, and the counters at or below it are deleted.
+    const size_t middle = purge_counts.size() / 2;
+    ::nth_element(purge_counts.begin(), purge_counts.begin() + middle, purge_counts.end());
+    const UInt64 median = purge_counts[middle];
+
+    /// Rebuilding a cleared table with fewer elements does not allocate.
+    counters.clear();
+    for (const auto & item : purge_items)
+    {
+        const UInt64 removed = std::min(item.count, median);
+        spill.emplace_back(item.value, removed);
+        retained_weight -= removed;
+        if (item.count > median)
+            counters[item.value] = item.count - median;
+    }
+    maximum_error += median;
 }
 
 void HistogramFrequentValues::merge(const HistogramFrequentValues & other, Spill & spill)
 {
-    /// A purge deletes at least half of the capacity + 1 counters, so at least capacity / 2 insertions happen between
-    /// purges, and each purge reports at most capacity + 1 counters. Reserve for all of them, because a purge cannot be
-    /// interrupted.
-    const size_t max_purges = other.size() / std::max<UInt64>(1, getCapacity() / 2) + 1;
-    const size_t required = spill.size() + max_purges * (getCapacity() + 1);
-    if (spill.capacity() < required)
-        spill.reserve(required);
+    /// Copy first, which also makes merging a summary into itself safe. A summary whose counters were all purged
+    /// still carries its total weight and maximum error.
+    const auto other_items = other.getSortedItems();
+    const UInt64 merged_total_weight = total_weight + other.total_weight;
+    const UInt64 other_maximum_error = other.maximum_error;
 
-    SpillObserver observer{spill, retained_weight};
-    retained_weight += other.retained_weight;
-    /// Merge in value order, so the result does not depend on the hash map layout of `other`.
-    sketch.merge(other.sketch, observer, std::less<>());
+    /// In value order, so the result depends only on the counters of `other` and not on its hash table.
+    for (const auto & item : other_items)
+        add(item.value, item.count, spill);
+
+    /// `add` counted the counters of `other` as weight, but `other` also saw the rows it already evicted.
+    total_weight = merged_total_weight;
+    maximum_error += other_maximum_error;
 }
 
 HistogramFrequentValues::Items HistogramFrequentValues::getSortedItems() const
 {
     Items items;
-    items.reserve(sketch.get_num_active_items());
-    /// Every tracked value has an upper bound above zero.
-    for (const auto & row : sketch.get_frequent_items(datasketches::NO_FALSE_NEGATIVES, 0))
-        items.push_back({row.get_item(), row.get_lower_bound()});
+    items.reserve(counters.size());
+    for (const auto & cell : counters)
+        items.push_back({cell.getKey(), cell.getMapped()});
     std::sort(items.begin(), items.end(), [](const Item & lhs, const Item & rhs) { return lhs.value < rhs.value; });
     return items;
 }
@@ -138,7 +162,7 @@ HistogramFrequentValues::Items HistogramFrequentValues::getSortedItems() const
 void HistogramFrequentValues::serialize(WriteBuffer & buf) const
 {
     const auto items = getSortedItems();
-    writeVarUInt(getMaximumError(), buf);
+    writeVarUInt(maximum_error, buf);
     writeVarUInt(items.size(), buf);
     for (const auto & item : items)
     {
@@ -149,65 +173,57 @@ void HistogramFrequentValues::serialize(WriteBuffer & buf) const
 
 void HistogramFrequentValues::deserialize(ReadBuffer & buf, UInt64 finite_rows, Float64 finite_min, Float64 finite_max)
 {
-    UInt64 maximum_error = 0;
-    readVarUInt(maximum_error, buf);
+    UInt64 stored_maximum_error = 0;
+    readVarUInt(stored_maximum_error, buf);
 
     UInt64 item_count = 0;
     readVarUInt(item_count, buf);
-    if (item_count > getCapacity() || item_count > finite_rows)
+    if (item_count > capacity || item_count > finite_rows)
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Histogram has {} frequent values, but at most {} are possible for {} finite rows",
             item_count,
-            getCapacity(),
+            capacity,
             finite_rows);
 
-    std::vector<Float64> values(item_count);
-    std::vector<UInt64> counts(item_count);
+    Counters restored;
     UInt64 sum = 0;
+    Float64 previous_value = 0;
     for (UInt64 i = 0; i < item_count; ++i)
     {
-        readBinary(values[i], buf);
-        readVarUInt(counts[i], buf);
+        Float64 value = 0;
+        UInt64 count = 0;
+        readBinary(value, buf);
+        readVarUInt(count, buf);
 
-        const Float64 value = values[i];
         if (!std::isfinite(value) || isNegativeZero(value))
             throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram frequent value {} is not finite or not canonical", value);
-        if (i > 0 && !(values[i - 1] < value))
+        /// Strictly increasing values are also unique.
+        if (i > 0 && !(previous_value < value))
             throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram frequent values are not strictly increasing");
         if (value < finite_min || value > finite_max)
             throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram frequent value {} is outside of the finite bounds", value);
-        if (counts[i] == 0 || counts[i] > finite_rows - sum)
-            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram frequent value {} has an invalid count {}", value, counts[i]);
-        sum += counts[i];
+        if (count == 0 || count > finite_rows - sum)
+            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Histogram frequent value {} has an invalid count {}", value, count);
+
+        restored[value] = count;
+        sum += count;
+        previous_value = value;
     }
 
     /// Equivalent to `delta <= kll.n` and `delta = 0 <=> kll.n = 0`, because kll.n = F - sum(c) is validated by the caller.
-    if (maximum_error > finite_rows - sum || (maximum_error == 0) != (sum == finite_rows))
+    if (stored_maximum_error > finite_rows - sum || (stored_maximum_error == 0) != (sum == finite_rows))
         throw Exception(
             ErrorCodes::ILLEGAL_STATISTICS,
             "Histogram frequent values have an inconsistent maximum error {} for {} retained of {} finite rows",
-            maximum_error,
+            stored_maximum_error,
             sum,
             finite_rows);
 
-    try
-    {
-        /// The logical state does not depend on the current map size, so use the smallest map that holds the items.
-        sketch = Sketch::restore(
-            sketch.get_lg_max_map_size(),
-            getLgMapSize(item_count),
-            finite_rows,
-            maximum_error,
-            values.data(),
-            counts.data(),
-            static_cast<UInt32>(item_count));
-    }
-    catch (const std::exception & e)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Cannot restore histogram frequent values: {}", e.what());
-    }
+    counters = std::move(restored);
+    total_weight = finite_rows;
     retained_weight = sum;
+    maximum_error = stored_maximum_error;
 }
 
 namespace

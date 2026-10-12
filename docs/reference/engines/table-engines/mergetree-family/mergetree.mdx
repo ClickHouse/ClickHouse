@@ -1351,12 +1351,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
     between ordered buckets. ClickHouse persists both structures in each part, merges them for the
     selected parts, and derives the estimates from the merged state.
 
-    `M` is rounded up to the capacity of the summary's internal hash map: `1` to `6` track 6 values,
-    `7` to `12` track 12, and so on up to `385` to `768`, which track 768 values. The counter of a tracked
-    value underestimates its row count by at most the maximum error of the summary, which is about
-    `3.5 * rows / (4 / 3 * capacity)`, and most of the evicted rows are recovered from the sketch. Columns
-    with at most that many distinct values (also across all merged parts) are represented exactly: the
-    sketch stays empty, and both equality and range estimates are exact.
+    `M` is rounded up to a summary size of 6, 12, 24, 48, 96, 192, 384 or 768 values: `1` to `6` track
+    6 values, `7` to `12` track 12, and so on up to `385` to `768`, which track 768 values. The counter of
+    a tracked value underestimates its row count by at most the maximum error of the summary, which is at
+    most `2 * rows / (size + 2)` for the smallest size among the merged parts, and most of the evicted rows
+    are recovered from the sketch. Columns with
+    at most that many distinct values (also across all merged parts) are represented exactly: the sketch
+    stays empty, and both equality and range estimates are exact.
 
     The statistic improves estimates for `=`, `<`, `<=`, `>`, `>=`, and bounded range predicates. Equality
     is estimated for the tracked values, and for other values when the sketch holds enough evidence;
