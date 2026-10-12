@@ -990,9 +990,9 @@ UInt64 MemoryTracker::convertMemoryCreditsToByteSeconds(UInt64 bytes, UInt64 mic
     /// the carry is the number of byte-second boundaries crossed by this addition.
     static constexpr UInt64 microseconds_per_second = 1'000'000;
 
-    UInt64 whole;
-    UInt64 fraction;
-    UInt64 product;
+    UInt64 whole = 0;
+    UInt64 fraction = 0;
+    UInt64 product = 0;
     if (!common::mulOverflow(bytes, microseconds, product))
     {
         whole = product / microseconds_per_second;
