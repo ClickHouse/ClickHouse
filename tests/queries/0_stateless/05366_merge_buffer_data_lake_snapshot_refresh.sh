@@ -10,7 +10,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 DIR="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/"
-trap 'rm -rf "${DIR}"' EXIT
+DIR_LAZY="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_lazy/"
+DB_LAZY="${CLICKHOUSE_DATABASE}_lazy"
+trap 'rm -rf "${DIR}" "${DIR_LAZY}"' EXIT
 
 $CLICKHOUSE_CLIENT --allow_insert_into_iceberg 1 --allow_experimental_iceberg_compaction 0 --iceberg_delete_data_on_drop 0 -m -q "
 CREATE TABLE t_lake (k Int64) ENGINE = IcebergLocal('${DIR}', 'Parquet');
@@ -45,4 +47,30 @@ DROP TABLE t_nested;
 DROP TABLE t_merge;
 DROP TABLE t_writer;
 DROP TABLE t_lake;
+"
+
+# In a database with `lazy_load_tables` the catalog holds a stand-in, and an `INSERT` pins the snapshot
+# of the storage behind it. `DETACH` / `ATTACH DATABASE` installs the stand-in, as a restart does.
+$CLICKHOUSE_CLIENT --allow_insert_into_iceberg 1 --allow_experimental_iceberg_compaction 0 --iceberg_delete_data_on_drop 0 -m -q "
+DROP DATABASE IF EXISTS ${DB_LAZY};
+CREATE DATABASE ${DB_LAZY} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+CREATE TABLE ${DB_LAZY}.t_lake (k Int64) ENGINE = IcebergLocal('${DIR_LAZY}', 'Parquet');
+INSERT INTO ${DB_LAZY}.t_lake SELECT number FROM numbers(100);
+CREATE TABLE ${DB_LAZY}.t_merge ENGINE = Merge('${DB_LAZY}', '^t_lake\$');
+CREATE TABLE ${DB_LAZY}.t_buffer (k Int64) ENGINE = Buffer('${DB_LAZY}', t_lake, 1, 100000, 100000, 1000000000, 1000000000, 1000000000000, 1000000000000);
+CREATE TABLE ${DB_LAZY}.t_alias ENGINE = Alias('${DB_LAZY}', 't_lake');
+DETACH DATABASE ${DB_LAZY};
+ATTACH DATABASE ${DB_LAZY};
+SELECT 'lazy', engine FROM system.tables WHERE database = '${DB_LAZY}' AND name = 't_lake';
+
+INSERT INTO ${DB_LAZY}.t_lake SELECT number + 100 FROM numbers(10);
+SELECT 'lazy merge()', count(), sum(k) FROM merge('${DB_LAZY}', '^t_lake\$');
+INSERT INTO ${DB_LAZY}.t_lake SELECT number + 200 FROM numbers(10);
+SELECT 'lazy Merge', count(), sum(k) FROM ${DB_LAZY}.t_merge;
+INSERT INTO ${DB_LAZY}.t_lake SELECT number + 300 FROM numbers(10);
+SELECT 'lazy Buffer', count(), sum(k) FROM ${DB_LAZY}.t_buffer;
+INSERT INTO ${DB_LAZY}.t_lake SELECT number + 400 FROM numbers(10);
+SELECT 'lazy merge() over Alias', count(), sum(k) FROM merge('${DB_LAZY}', '^t_alias\$');
+
+DROP DATABASE ${DB_LAZY};
 "

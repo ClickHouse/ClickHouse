@@ -85,6 +85,7 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageView.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -331,7 +332,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
                 storage_id.getNameForLogs());
 
         /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query.
-        t->updateExternalDynamicMetadataIfExists(query_context);
+        resolveStorageProxy(t)->updateExternalDynamicMetadataIfExists(query_context);
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
         const auto & structure = table_metadata->getColumns();
         String prev_column_name;
@@ -1210,7 +1211,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             Aliases aliases;
             RowPolicyDataOpt row_policy_data_opt;
             /// The analyzer refreshes only the outer storage, so a data lake child would keep the snapshot of its last direct query.
-            storage->updateExternalDynamicMetadataIfExists(modified_context);
+            resolveStorageProxy(storage)->updateExternalDynamicMetadataIfExists(modified_context);
             auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
             if (storage_metadata_snapshot->getColumns().empty())

@@ -6,3 +6,8 @@ merge() over Alias	140	15130
 Buffer	150	20175
 v	Int64
 merge() after rename	160	26220
+lazy	TableProxy
+lazy merge()	110	5995
+lazy Merge	120	8040
+lazy Buffer	130	11085
+lazy merge() over Alias	140	15130
