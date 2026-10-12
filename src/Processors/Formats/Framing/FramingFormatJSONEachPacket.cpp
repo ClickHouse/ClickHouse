@@ -57,6 +57,19 @@ void FramingFormatJSONEachPacket::writeProfileEventsPacket(const Block & block)
     writeCString("]}\n", out);
 }
 
+void FramingFormatJSONEachPacket::writeProfileTracesPacket(const Block & block)
+{
+    writeCString("{\"packet\":\"profile_traces\",\"profile_traces\":[", out);
+    size_t rows = block.rows();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (i != 0)
+            writeChar(',', out);
+        writeProfileTraceRowJSON(block, i, out);
+    }
+    writeCString("]}\n", out);
+}
+
 void FramingFormatJSONEachPacket::writeExceptionPacket(const String & message)
 {
     writeCString("{\"packet\":\"exception\",\"exception\":", out);

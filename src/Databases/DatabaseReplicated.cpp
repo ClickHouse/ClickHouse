@@ -8,6 +8,7 @@
 
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -1545,8 +1546,12 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     checkQueryValid(query, query_context);
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
 
+    /// The replicas executing the entry have no trace receiver.
+    auto query_to_enqueue = query->clone();
+    stripProfileTraceSettingsFromDDLQuery(query_to_enqueue);
+
     DDLLogEntry entry;
-    entry.query = query->formatWithSecretsOneLine();
+    entry.query = query_to_enqueue->formatWithSecretsOneLine();
     entry.initiator = host_fqdn_id;
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();

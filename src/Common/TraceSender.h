@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 
 #include <Common/PipeFDs.h>
 #include <Common/ProfileEvents.h>
@@ -51,8 +52,22 @@ public:
     /// Precondition: the TraceCollector object must be created.
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
 
-    /// True when a TraceCollector is running, i.e. when `send()` can deliver rather than discard.
-    static bool isCollecting() { return pipe.fds_rw[1] >= 0 && !shutdown.load(); }
+    enum class ProfileTracesFlushResult
+    {
+        NotRunning,
+        MarkerSent,
+        TimedOut,
+    };
+
+    /// Send an ordering marker from a regular thread, waiting for pipe space until the deadline.
+    /// Not signal-safe. A timeout stops trace delivery without failing the query.
+    static ProfileTracesFlushResult flushProfileTraces(UInt64 subscription_id, std::chrono::steady_clock::time_point deadline);
+
+    /// True when a `TraceCollector` is running, i.e. when `send` can deliver rather than discard.
+    static bool isCollecting()
+    {
+        return pipe.fds_rw[1] >= 0 && !shutdown.load();
+    }
 
 private:
     friend class TraceCollector;

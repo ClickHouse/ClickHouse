@@ -1,0 +1,2 @@
+hedged=0: plain HTTP disabled, supported transports and SQL opt-outs preserved
+hedged=1: plain HTTP disabled, supported transports and SQL opt-outs preserved

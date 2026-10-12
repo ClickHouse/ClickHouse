@@ -1,0 +1,4 @@
+async=0 hedged=0: remote samples received without decoder feedback
+async=0 hedged=1: remote samples received without decoder feedback
+async=1 hedged=0: remote samples received without decoder feedback
+async=1 hedged=1: remote samples received without decoder feedback
