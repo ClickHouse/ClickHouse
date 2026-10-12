@@ -166,7 +166,7 @@ FROM
 )
 GROUP BY series
 ORDER BY series
-SETTINGS max_threads = 8, max_block_size = 100, group_by_two_level_threshold = 1, max_bytes_before_external_group_by = 1;
+SETTINGS max_threads = 8, max_block_size = 1000, group_by_two_level_threshold = 1, max_bytes_before_external_group_by = 1;
 
 DROP VIEW shapes;
 DROP TABLE states;
