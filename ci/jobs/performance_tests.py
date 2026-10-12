@@ -1328,7 +1328,7 @@ class CHServer:
         # server over HTTP.
         self.start_cmd = f"{taskset_prefix}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
-            --top_level_domains_path {serever_path}/top_level_domains --tcp_port {server_port} \
+            --top_level_domains_path {perf_wd}/top_level_domains --tcp_port {server_port} \
             --http_port {http_port} \
             --keeper_server.tcp_port {keeper_port} --keeper_server.raft_configuration.server.port {raft_port} \
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
@@ -2543,6 +2543,7 @@ def main():
             f"cp ./programs/server/users.xml {perf_right_config}",
             f"cp -r --dereference ./programs/server/config.d {perf_right_config}",
             f"cp ./tests/performance/scripts/config/config.d/*xml {perf_right_config}/config.d/",
+            f"cp ./tests/config/config.d/top_level_domains_lists.xml {perf_right_config}/config.d/",
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
