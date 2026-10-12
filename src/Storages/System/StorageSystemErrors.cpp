@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemErrors.h>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -64,6 +66,21 @@ Block StorageSystemErrors::getFilterSampleBlock() const
         {{}, std::make_shared<DataTypeUInt8>(), "remote"},
         {{}, std::make_shared<DataTypeString>(), "query_id"},
     };
+}
+
+/// Whether the condition reads a set that can change while the query runs (a `Set` table).
+static bool hasSetMutableDuringQuery(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+        if (column_set && column_set->getData()->isMutableDuringQuery())
+            return true;
+    }
+    return false;
 }
 
 void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
@@ -217,9 +234,9 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             block.getByPosition(i).column = std::move(columns[i]);
         block.insert({std::move(idx_column), std::make_shared<DataTypeUInt64>(), "_idx"});
 
-        /// An unbuilt subquery set cannot be evaluated here, so all rows are kept for the filter above.
+        /// A set that is not built yet, or one that can change before the filter above runs, cannot drop rows here.
         auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
-        if (filter_dag && VirtualColumnUtils::buildSetsForDAG(*filter_dag, context))
+        if (filter_dag && !hasSetMutableDuringQuery(*filter_dag) && VirtualColumnUtils::buildSetsForDAG(*filter_dag, context))
             VirtualColumnUtils::filterBlockWithExpression(
                 VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), context), block);
 
