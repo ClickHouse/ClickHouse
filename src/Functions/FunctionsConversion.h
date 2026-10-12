@@ -3423,7 +3423,7 @@ struct ConvertImplGenericFromString
         const IDataType & data_type_to = *result_type;
         auto res = data_type_to.createColumn();
         auto serialization = data_type_to.getDefaultSerialization();
-        const auto * null_map = column_nullable ? &column_nullable->getNullMapData() : nullptr;
+        const auto * null_map = column_nullable ? column_nullable->tryGetNullMapData() : nullptr;
 
         executeImpl(column_from, *res, *serialization, input_rows_count, null_map, result_type.get(), settings);
         return res;

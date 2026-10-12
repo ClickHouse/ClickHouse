@@ -15,10 +15,11 @@ void AggregationMethodOneNumber<FieldType, TData, consecutive_keys_optimization,
     ColumnFixedSizeHelper * column = nullptr;
     if constexpr (nullable)
     {
+        /// The NULL key is inserted separately, and the null map is not needed while there are no NULLs.
         ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[0]);
-        ColumnUInt8 * null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
-        null_map->insertDefault();
-        column = static_cast<ColumnFixedSizeHelper *>(&nullable_col.getNestedColumn());
+        if (nullable_col.hasNullMap())
+            nullable_col.getNullMapColumn().insertDefault();
+        column = static_cast<ColumnFixedSizeHelper *>(&nullable_col.getNestedColumnNoMaterialize());
     }
     else
     {
@@ -70,8 +71,9 @@ void AggregationMethodStringNoCache<TData, nullable>::insertKeyIntoColumns(
     if constexpr (nullable)
     {
         ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*key_columns[0]);
-        assert_cast<ColumnString &>(column_nullable.getNestedColumn()).insertData(key.data(), key.size());
-        column_nullable.getNullMapData().push_back(false);
+        assert_cast<ColumnString &>(column_nullable.getNestedColumnNoMaterialize()).insertData(key.data(), key.size());
+        if (column_nullable.hasNullMap())
+            column_nullable.getNullMapData().push_back(false);
     }
     else
     {

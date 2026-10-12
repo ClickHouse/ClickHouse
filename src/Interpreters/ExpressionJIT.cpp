@@ -115,7 +115,7 @@ public:
                 columns[i] = getColumnData(column.get());
             }
 
-            columns[arguments.size()] = getColumnData(result_column.get());
+            columns[arguments.size()] = getMutableColumnData(result_column.get());
 
             auto jit_compiled_function = compiled_function_holder->compiled_function.compiled_function;
             callJITFunction(jit_compiled_function, input_rows_count, columns.data());

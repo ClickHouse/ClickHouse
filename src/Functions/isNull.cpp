@@ -66,6 +66,10 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
     {
+        /// A column without a null map has no NULLs. Do not create the null map in the argument, it may be shared.
+        if (!nullable->hasNullMap())
+            return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+
         /// A null map byte only has to be non-zero to mean NULL, so it cannot be returned as the result.
         auto res_column = ColumnUInt8::create(input_rows_count);
         const auto & null_map = nullable->getNullMapData();

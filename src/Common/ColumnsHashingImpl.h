@@ -432,17 +432,23 @@ protected:
 
         if constexpr (nullable)
         {
-            const auto & null_map_column = checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
-            const auto & null_map_container = null_map_column.getData();
-            null_map_data = null_map_container.data();
-            /// Scan the null map once per block. `PaddedPODArray<UInt8>` stores 0/1 bytes, so
-            /// finding a single 0x01 byte is enough to know the block contains a null. We use
-            /// `memchr` which is typically vectorized in libc and amortizes well for blocks of
-            /// the usual aggregation size (`max_block_size` = 65505). For tiny blocks the cost
-            /// is dominated by the function-call overhead, but the per-row payload saves a
-            /// virtual call and a branch, so the break-even is small.
-            const size_t size = null_map_container.size();
-            block_has_no_nulls = (size == 0) || (std::memchr(null_map_data, 1, size) == nullptr);
+            /// A column without a null map has no NULLs.
+            if (const auto * null_map_container = checkAndGetColumn<ColumnNullable>(*column).tryGetNullMapData())
+            {
+                null_map_data = null_map_container->data();
+                /// Scan the null map once per block. `PaddedPODArray<UInt8>` stores 0/1 bytes, so
+                /// finding a single 0x01 byte is enough to know the block contains a null. We use
+                /// `memchr` which is typically vectorized in libc and amortizes well for blocks of
+                /// the usual aggregation size (`max_block_size` = 65505). For tiny blocks the cost
+                /// is dominated by the function-call overhead, but the per-row payload saves a
+                /// virtual call and a branch, so the break-even is small.
+                const size_t size = null_map_container->size();
+                block_has_no_nulls = (size == 0) || (std::memchr(null_map_data, 1, size) == nullptr);
+            }
+            else
+            {
+                block_has_no_nulls = true;
+            }
         }
     }
 
@@ -599,7 +605,8 @@ protected:
             if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col))
             {
                 actual_columns.push_back(&nullable_col->getNestedColumn());
-                null_maps.push_back(&nullable_col->getNullMapColumn());
+                /// nullptr if the column has no null map, which means it has no NULLs.
+                null_maps.push_back(nullable_col->tryGetNullMapColumn());
             }
             else
             {
