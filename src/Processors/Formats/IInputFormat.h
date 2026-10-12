@@ -146,9 +146,7 @@ public:
     virtual bool isTopKFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
-    /// Called by a storage after it read the file, if the file version provably did not change during the read.
-    /// A format may keep with its cached file metadata what later reads of the same version can use,
-    /// see `ParquetCachedStatisticsFilter`.
+    /// Called after the file was read, if its version provably did not change during the read.
     virtual void cacheFilterColumnStatistics() {}
 
 protected:

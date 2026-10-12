@@ -46,8 +46,7 @@ struct ParquetMetadataCacheKeyHash
     size_t operator()(const ParquetMetadataCacheKey & key) const;
 };
 
-/// The min/max statistics ranges of filter columns that reads of a file version kept with its cached metadata,
-/// see `ParquetV3BlockInputFormat::cacheFilterColumnStatistics`.
+/// Min/max statistics ranges of filter columns, kept with the cached metadata of a file version.
 struct ParquetKeptStatistics : private boost::noncopyable
 {
     /// The ranges of one column for every non-empty row group of the file, in the type of the column.

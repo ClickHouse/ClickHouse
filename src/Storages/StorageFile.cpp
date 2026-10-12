@@ -1779,8 +1779,7 @@ StorageFileSource::~StorageFileSource()
 bool StorageFileSource::canSkipFileByCachedStatistics()
 {
 #if USE_PARQUET
-    /// Gated like the query condition cache: only a settled version token proves that the file was not rewritten
-    /// since the statistics were kept (they are kept only from reads of a settled version, see `generate`).
+    /// Only a settled version token proves that the file was not rewritten since its statistics were kept.
     if (storage->use_table_fd || storage->archive_info || !current_file_version_settled || !current_file_cache_version
         || !format_filter_info || !format_filter_info->filter_actions_dag || format_filter_info->column_mapper
         || !boost::iequals(storage->format_name, "Parquet") || !getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
@@ -2472,7 +2471,6 @@ Chunk StorageFileSource::generate()
                         getContext());
                 }
 
-                /// Lets later reads of this file version with other filters skip it without opening it.
                 if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
                     input_format->cacheFilterColumnStatistics();
             }

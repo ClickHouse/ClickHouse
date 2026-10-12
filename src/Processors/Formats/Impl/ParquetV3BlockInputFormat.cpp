@@ -145,7 +145,6 @@ void ParquetV3BlockInputFormat::cacheFilterColumnStatistics()
     bool added = false;
     for (const auto & [idx, ranges] : parquet_reader.key_condition_column_ranges)
     {
-        /// Without statistics a column is unknown, as if no ranges were kept for it.
         if (std::ranges::all_of(ranges, [](const Range & range) { return range.isInfinite(); }))
             continue;
         const auto & column = parquet_reader.extended_sample_block.getByPosition(idx);
