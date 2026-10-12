@@ -365,6 +365,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecSZ3(*this);
 #endif
     registerCodecZXC(*this);
+    registerCodecWallaby(*this);
 
     default_codec = get("ZSTD", 3);
 }
