@@ -191,7 +191,7 @@ The _time ranges_ table exists if the `store_time_ranges` setting is enabled.
 Tables of [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 7 or earlier keep the columns `min_time` and `max_time`
 in the [tags](/reference/engines/table-engines/integrations/time-series#tags-table) table.
 </Note>
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::MetricFamilies>>(
         {.description = R"DOCS_MD(
