@@ -42,29 +42,34 @@ double contextSwitches()
     return double(current.ru_nvcsw + current.ru_nivcsw);
 }
 
-void addMetrics(Runtime::V2::Metrics & total, const IExecutor & executor)
+void addMetrics(Runtime::V2::PoolMetrics & total, const IExecutor & executor)
 {
     const auto * v2 = dynamic_cast<const Runtime::V2::PipelineExecutor *>(&executor);
     if (!v2)
         return;
 
-    total = combine(total, v2->getMetrics());
+    const auto run = v2->getMetrics();
+    addCounters(total, run.workers);
+    addCounters(total, run.poller);
 }
 
-void reportMetrics(benchmark::State & state, const Runtime::V2::Metrics & total)
+void reportMetrics(benchmark::State & state, const Runtime::V2::PoolMetrics & total)
 {
     const auto average = [&](UInt64 value) { return benchmark::Counter(double(value), benchmark::Counter::kAvgIterations); };
-    state.counters["local_picks"] = average(total.local_picks);
-    state.counters["global_picks"] = average(total.global_picks);
-    state.counters["poll_picks"] = average(total.poll_picks);
-    state.counters["polled_records"] = average(total.polled_records);
-    state.counters["steal_picks"] = average(total.steal_picks);
-    state.counters["stolen_records"] = average(total.stolen_records);
-    state.counters["offloads"] = average(total.offloads);
-    state.counters["parks"] = average(total.parks);
-    state.counters["steal_misses"] = average(total.steal_misses);
-    state.counters["wakes"] = average(total.wakes);
-    state.counters["wake_skips"] = average(total.wake_skips);
+    state.counters["local_picks"] = average(total.workers.local_picks);
+    state.counters["global_picks"] = average(total.workers.global_picks);
+    state.counters["steal_picks"] = average(total.workers.steal_picks);
+    state.counters["stolen_records"] = average(total.workers.stolen_records);
+    state.counters["steal_misses"] = average(total.workers.steal_misses);
+    state.counters["offloads"] = average(total.workers.offloads);
+    state.counters["parks"] = average(total.workers.parks);
+    state.counters["wakes"] = average(total.workers.wakes);
+    state.counters["wake_skips"] = average(total.workers.wake_skips);
+    state.counters["spawns"] = average(total.workers.spawns);
+    state.counters["no_op_wakes"] = average(total.workers.no_op_wakes);
+    state.counters["polls"] = average(total.poller.polls);
+    state.counters["fired"] = average(total.poller.fired);
+    state.counters["poller_wakes"] = average(total.poller.wakes);
 }
 
 ExecutorPtr makeExecutor(Executor executor, std::shared_ptr<Processors> processors)
@@ -84,7 +89,7 @@ void runShape(benchmark::State & state, Executor executor, const Build & build)
 {
     const size_t threads = state.range(0);
     double switches = 0;
-    Runtime::V2::Metrics metrics;
+    Runtime::V2::PoolMetrics metrics;
 
     for (auto _ : state)
     {

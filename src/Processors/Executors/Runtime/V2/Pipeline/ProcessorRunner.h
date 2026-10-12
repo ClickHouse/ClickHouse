@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Pipeline/Async/PollRequest.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/PollRequest.h>
 #include <Processors/Executors/Runtime/V2/ExecutionOptions.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>

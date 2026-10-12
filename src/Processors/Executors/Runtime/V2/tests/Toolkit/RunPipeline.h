@@ -6,6 +6,6 @@
 namespace DB::Runtime::V2
 {
 
-Metrics runPipeline(Processors processors, size_t threads);
+PoolMetrics runPipeline(Processors processors, size_t threads);
 
 }

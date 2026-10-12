@@ -20,14 +20,14 @@ WYRD_TEST(ScriptedPipeline, ChainDeliversEveryChunkInOrder, .runs = 1000, .simul
     chain({source, transform, sink});
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    Metrics metrics;
+    PoolMetrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline({source, transform, sink}, threads));
     EXPECT_EQ(received(*sink), (VectorWithMemoryTracking<UInt64>{1, 2, 3}));
 
     if (threads == 1)
     {
-        EXPECT_EQ(metrics.steal_picks, 0u);
-        EXPECT_EQ(metrics.parks, 0u);
+        EXPECT_EQ(metrics.workers.steal_picks, 0u);
+        EXPECT_EQ(metrics.workers.parks, 0u);
     }
 }
 
@@ -49,7 +49,7 @@ WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation 
     auto resize = fanIn({first, second}, sink);
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    Metrics metrics;
+    PoolMetrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline({first, second, resize, sink}, threads));
 
     auto values = received(*sink);
@@ -58,8 +58,8 @@ WYRD_TEST(ScriptedPipeline, FanInCollectsBothSources, .runs = 1000, .simulation 
 
     if (threads == 1)
     {
-        EXPECT_EQ(metrics.steal_picks, 0u);
-        EXPECT_EQ(metrics.parks, 0u);
+        EXPECT_EQ(metrics.workers.steal_picks, 0u);
+        EXPECT_EQ(metrics.workers.parks, 0u);
     }
 }
 
@@ -71,7 +71,7 @@ WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulat
     auto resize = fanOut(source, {first, second});
 
     const size_t threads = 1 + Wyrd::randomNumber() % 4;
-    Metrics metrics;
+    PoolMetrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline({source, resize, first, second}, threads));
 
     auto values = received(*first);
@@ -82,7 +82,7 @@ WYRD_TEST(ScriptedPipeline, FanOutDeliversEveryChunkOnce, .runs = 1000, .simulat
 
     if (threads == 1)
     {
-        EXPECT_EQ(metrics.steal_picks, 0u);
-        EXPECT_EQ(metrics.parks, 0u);
+        EXPECT_EQ(metrics.workers.steal_picks, 0u);
+        EXPECT_EQ(metrics.workers.parks, 0u);
     }
 }

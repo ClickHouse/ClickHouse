@@ -1,4 +1,5 @@
-#include <Processors/Executors/Runtime/V2/Pipeline/Async/Poller.h>
+#include <Processors/Executors/Runtime/V2/Engine/Poller.h>
+#include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Invariants.h>
 #include <Common/Exception.h>
 #include <Common/MapWithMemoryTracking.h>
@@ -114,8 +115,9 @@ size_t Poller::collectExpired(std::span<ExecutingProcessor *> out)
     return fired;
 }
 
-Poller::Poller()
-    : epoll(EpollNesting::PipelinePoller)
+Poller::Poller(WorkerPool & pool_)
+    : pool(pool_)
+    , epoll(EpollNesting::PipelinePoller)
     , deadlines(std::make_unique<Deadlines>())
 {
     epoll.add(wakeup_signal.fd(), &wakeup_signal);
@@ -157,7 +159,7 @@ void Poller::pushMany(std::span<const PollRequest> requests)
         updateTimer();
 }
 
-size_t Poller::poll(std::span<ExecutingProcessor *> out, int timeout_ms)
+size_t Poller::poll(std::span<ExecutingProcessor *> out)
 {
     {
         std::lock_guard lock(mutex);
@@ -167,7 +169,7 @@ size_t Poller::poll(std::span<ExecutingProcessor *> out, int timeout_ms)
 
     constexpr size_t max_events = 16;
     epoll_event events[max_events]{};
-    const size_t num_events = epoll.getManyReady(static_cast<int>(std::min(max_events, out.size())), events, timeout_ms);
+    const size_t num_events = epoll.getManyReady(static_cast<int>(std::min(max_events, out.size())), events, -1);
 
     std::lock_guard lock(mutex);
 
@@ -207,9 +209,43 @@ size_t Poller::pending() const
     return pending_count.load();
 }
 
-void Poller::wakeup()
+void Poller::run()
+{
+    while (!pool.isStopped())
+    {
+        metrics.polls += 1;
+        const size_t fired = poll(fired_buffer);
+        if (fired == 0)
+            continue;
+
+        metrics.fired += fired;
+        pool.global_tasks.pushManyFront(std::span(fired_buffer).first(fired));
+        switch (pool.wakeWorker())
+        {
+            case WakeOutcome::Skipped:
+                metrics.wake_skips += 1;
+                break;
+            case WakeOutcome::Woken:
+                metrics.wakes += 1;
+                break;
+            case WakeOutcome::Spawned:
+                metrics.spawns += 1;
+                break;
+            case WakeOutcome::AllBusy:
+                metrics.no_op_wakes += 1;
+                break;
+        }
+    }
+}
+
+void Poller::stop()
 {
     wakeup_signal.notify();
+}
+
+const PollerMetrics & Poller::getMetrics() const
+{
+    return metrics;
 }
 
 #else

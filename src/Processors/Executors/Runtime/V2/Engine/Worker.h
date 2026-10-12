@@ -25,7 +25,6 @@ class Worker
     ExecutingProcessor * pick(WorkerSlot & slot, std::atomic_bool * yield_flag);
     ExecutingProcessor * tryPick();
     ExecutingProcessor * pickFromBatch(std::span<ExecutingProcessor *> batch, bool source_not_empty);
-    ExecutingProcessor * pickFromFired(std::span<ExecutingProcessor *> fired);
     size_t trySteal(size_t rounds);
     bool anyWorkHasAppeared() const;
 
@@ -39,7 +38,7 @@ public:
     Worker(WorkerPool & pool_, size_t worker_id_);
 
     void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
-    const Metrics & getMetrics() const;
+    const WorkerMetrics & getMetrics() const;
 
     UInt32 stealFifo(std::span<ExecutingProcessor *> out);
     void handOver();
@@ -50,7 +49,7 @@ private:
     const size_t worker_id;
     ProcessorRunner runner;
 
-    Metrics metrics;
+    WorkerMetrics metrics;
     LocalQueue local_tasks;
     std::array<ExecutingProcessor *, LocalQueue::capacity> tmp_buffer{};
 

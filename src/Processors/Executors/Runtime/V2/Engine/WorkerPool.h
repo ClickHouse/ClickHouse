@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Pipeline/Async/Poller.h>
 #include <Processors/Executors/Runtime/V2/ExecutionOptions.h>
 #include <Processors/Executors/Runtime/V2/Engine/Metrics.h>
+#include <Processors/Executors/Runtime/V2/Engine/Poller.h>
 #include <Processors/Executors/Runtime/V2/Engine/Queues/GlobalQueue.h>
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
@@ -24,16 +24,26 @@ namespace DB
 namespace Runtime::V2
 {
 
+enum class WakeOutcome : UInt8
+{
+    Skipped,
+    Woken,
+    Spawned,
+    AllBusy,
+};
+
 class WorkerPool
 {
     friend class Worker;
     friend class WorkersCoordinator;
+    friend class Poller;
 
     SlotAllocationPtr allocateCPU(bool concurrency_control, SlotCount initial_max);
     void initializeExecution();
     void runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag);
     void spawn(AcquiredSlotPtr slot);
-    void grow(size_t threads_needed);
+    void spawnPoller();
+    size_t grow(size_t threads_needed);
     void preempt(size_t worker_id);
     void resume(size_t worker_id);
 
@@ -50,7 +60,8 @@ public:
 
     void join();
     void rethrowIfFailed();
-    Metrics getMetrics() const;
+    WakeOutcome wakeWorker();
+    PoolMetrics getMetrics() const;
 
 private:
     ExecutingPipeline & pipeline;
@@ -72,6 +83,10 @@ private:
     VectorWithMemoryTracking<std::optional<Wyrd::Thread>> threads;
     Wyrd::Mutex spawn_mutex;
     Wyrd::Atomic<size_t> workers_count = 0;
+
+    /// Poller thread
+    std::optional<Wyrd::Thread> poller_thread;
+    Wyrd::Atomic<bool> poller_spawned = false;
 
     /// First failure
     Wyrd::Atomic<bool> failed = false;

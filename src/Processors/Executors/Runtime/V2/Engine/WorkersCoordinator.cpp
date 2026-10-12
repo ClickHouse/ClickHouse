@@ -21,7 +21,6 @@ WorkersCoordinator::WorkersCoordinator(WorkerPool & pool_, size_t max_workers)
     Wyrd::setName(registered_workers, "coordinator.registered_workers");
     Wyrd::setName(sleepers_count, "coordinator.sleepers_count");
     Wyrd::setName(stealing_count, "coordinator.stealing_count");
-    Wyrd::setName(is_polling, "coordinator.is_polling");
     Wyrd::setName(is_stopped, "coordinator.is_stopped");
 }
 
@@ -49,7 +48,7 @@ void WorkersCoordinator::stopLocked()
     is_stopped.store(true);
     while (auto worker_id = takeAnySleepingWorker())
         pool.workers[*worker_id].wake();
-    pool.poller.wakeup();
+    pool.poller.stop();
 }
 
 void WorkersCoordinator::enter(size_t worker_id)
@@ -79,8 +78,6 @@ void WorkersCoordinator::leave(size_t worker_id)
         stopLocked();
     else if (auto sleeper = takeAnySleepingWorker())
         pool.workers[*sleeper].wake();
-    else if (is_polling.load())
-        pool.poller.wakeup();
 }
 
 size_t WorkersCoordinator::registeredWorkers() const
@@ -110,21 +107,6 @@ void WorkersCoordinator::stopStealing()
 bool WorkersCoordinator::hasStealer() const
 {
     return stealing_count.load() > 0;
-}
-
-bool WorkersCoordinator::startPolling()
-{
-    return !is_polling.exchange(true);
-}
-
-void WorkersCoordinator::stopPolling()
-{
-    is_polling.store(false);
-}
-
-bool WorkersCoordinator::hasPoller() const
-{
-    return is_polling.load();
 }
 
 bool WorkersCoordinator::startParking(size_t worker_id)
@@ -167,9 +149,6 @@ bool WorkersCoordinator::wakeOne()
         pool.workers[*worker_id].wake();
         return true;
     }
-
-    if (is_polling.load())
-        pool.poller.wakeup();
 
     return false;
 }

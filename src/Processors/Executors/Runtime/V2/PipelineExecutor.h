@@ -35,7 +35,7 @@ public:
     void setReadProgressCallback(ReadProgressCallbackPtr callback) override;
     void setStepProfiler(StepProfilerPtr step_profiler_) override;
 
-    Metrics getMetrics() const;
+    PoolMetrics getMetrics() const;
 
 private:
     const std::shared_ptr<Processors> processors;

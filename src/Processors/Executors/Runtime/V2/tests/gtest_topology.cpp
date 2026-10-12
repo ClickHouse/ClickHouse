@@ -52,14 +52,14 @@ WYRD_TEST(Topology, ChainOfTransformsKeepsTheOrder, .runs = 300)
     chain(stages);
 
     const size_t threads = Wyrd::randomNumberBetween(1, 4);
-    Metrics metrics;
+    PoolMetrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline(Processors(stages.begin(), stages.end()), threads));
     EXPECT_EQ(received(*sink), values(1, chunks));
 
     if (threads == 1)
     {
-        EXPECT_EQ(metrics.steal_picks, 0u);
-        EXPECT_EQ(metrics.parks, 0u);
+        EXPECT_EQ(metrics.workers.steal_picks, 0u);
+        EXPECT_EQ(metrics.workers.parks, 0u);
     }
 }
 
@@ -83,14 +83,14 @@ WYRD_TEST(Topology, FanInGathersEverySource, .runs = 300)
     processors.push_back(sink);
 
     const size_t threads = Wyrd::randomNumberBetween(1, 4);
-    Metrics metrics;
+    PoolMetrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline(std::move(processors), threads));
     EXPECT_EQ(sorted(received(*sink)), expected);
 
     if (threads == 1)
     {
-        EXPECT_EQ(metrics.steal_picks, 0u);
-        EXPECT_EQ(metrics.parks, 0u);
+        EXPECT_EQ(metrics.workers.steal_picks, 0u);
+        EXPECT_EQ(metrics.workers.parks, 0u);
     }
 }
 
@@ -110,14 +110,14 @@ WYRD_TEST(Topology, FanOutDeliversEachChunkToOneSink, .runs = 300)
     processors.append_range(sinks);
 
     const size_t threads = Wyrd::randomNumberBetween(1, 4);
-    Metrics metrics;
+    PoolMetrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline(std::move(processors), threads));
     EXPECT_EQ(sorted(receivedByAll(sinks)), values(1, chunks));
 
     if (threads == 1)
     {
-        EXPECT_EQ(metrics.steal_picks, 0u);
-        EXPECT_EQ(metrics.parks, 0u);
+        EXPECT_EQ(metrics.workers.steal_picks, 0u);
+        EXPECT_EQ(metrics.workers.parks, 0u);
     }
 }
 
@@ -149,13 +149,13 @@ WYRD_TEST(Topology, FanInThroughATransformIntoFanOut, .runs = 300)
     processors.append_range(sinks);
 
     const size_t threads = Wyrd::randomNumberBetween(1, 4);
-    Metrics metrics;
+    PoolMetrics metrics;
     EXPECT_NO_THROW(metrics = runPipeline(std::move(processors), threads));
     EXPECT_EQ(sorted(receivedByAll(sinks)), expected);
 
     if (threads == 1)
     {
-        EXPECT_EQ(metrics.steal_picks, 0u);
-        EXPECT_EQ(metrics.parks, 0u);
+        EXPECT_EQ(metrics.workers.steal_picks, 0u);
+        EXPECT_EQ(metrics.workers.parks, 0u);
     }
 }

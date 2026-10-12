@@ -32,10 +32,6 @@ public:
     void stopStealing();
     bool hasStealer() const;
 
-    bool startPolling();
-    void stopPolling();
-    bool hasPoller() const;
-
     bool startParking(size_t worker_id);
     void becomeNormal(size_t worker_id);
     bool wakeOne();
@@ -54,7 +50,6 @@ private:
     Wyrd::Atomic<Int32> registered_workers = 0;
     Wyrd::Atomic<Int32> sleepers_count = 0;
     Wyrd::Atomic<Int32> stealing_count = 0;
-    Wyrd::Atomic<bool> is_polling = false;
     Wyrd::Atomic<bool> is_stopped = false;
 };
 

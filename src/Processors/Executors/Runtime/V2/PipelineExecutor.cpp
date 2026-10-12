@@ -190,7 +190,7 @@ void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
     options.step_profiler = step_profiler.get();
 }
 
-Metrics PipelineExecutor::getMetrics() const
+PoolMetrics PipelineExecutor::getMetrics() const
 {
     Wyrd::verify(pool.has_value(), "The metrics of the executor are available only after it has run");
     return pool->getMetrics();

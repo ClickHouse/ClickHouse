@@ -6,22 +6,29 @@ namespace DB
 namespace Runtime::V2
 {
 
-Metrics combine(const Metrics & lhs, const Metrics & rhs)
+void addCounters(PoolMetrics & pool, const WorkerMetrics & worker)
 {
-    return Metrics
-    {
-        .local_picks = lhs.local_picks + rhs.local_picks,
-        .global_picks = lhs.global_picks + rhs.global_picks,
-        .poll_picks = lhs.poll_picks + rhs.poll_picks,
-        .polled_records = lhs.polled_records + rhs.polled_records,
-        .steal_picks = lhs.steal_picks + rhs.steal_picks,
-        .stolen_records = lhs.stolen_records + rhs.stolen_records,
-        .steal_misses = lhs.steal_misses + rhs.steal_misses,
-        .offloads = lhs.offloads + rhs.offloads,
-        .parks = lhs.parks + rhs.parks,
-        .wakes = lhs.wakes + rhs.wakes,
-        .wake_skips = lhs.wake_skips + rhs.wake_skips,
-    };
+    pool.workers.local_picks += worker.local_picks;
+    pool.workers.global_picks += worker.global_picks;
+    pool.workers.steal_picks += worker.steal_picks;
+    pool.workers.stolen_records += worker.stolen_records;
+    pool.workers.steal_misses += worker.steal_misses;
+    pool.workers.offloads += worker.offloads;
+    pool.workers.parks += worker.parks;
+    pool.workers.wakes += worker.wakes;
+    pool.workers.wake_skips += worker.wake_skips;
+    pool.workers.spawns += worker.spawns;
+    pool.workers.no_op_wakes += worker.no_op_wakes;
+}
+
+void addCounters(PoolMetrics & pool, const PollerMetrics & poller)
+{
+    pool.poller.polls += poller.polls;
+    pool.poller.fired += poller.fired;
+    pool.poller.wakes += poller.wakes;
+    pool.poller.wake_skips += poller.wake_skips;
+    pool.poller.spawns += poller.spawns;
+    pool.poller.no_op_wakes += poller.no_op_wakes;
 }
 
 }

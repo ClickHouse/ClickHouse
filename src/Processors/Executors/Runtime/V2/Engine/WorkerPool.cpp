@@ -131,10 +131,25 @@ void WorkerPool::spawn(AcquiredSlotPtr slot)
     }
 }
 
-void WorkerPool::grow(size_t threads_needed)
+void WorkerPool::spawnPoller()
+{
+    if (poller_spawned.load())
+        return;
+
+    if (poller_spawned.exchange(true))
+        return;
+
+    poller_thread.emplace([this, thread_group = CurrentThread::getGroup()]
+    {
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
+        poller.run();
+    });
+}
+
+size_t WorkerPool::grow(size_t threads_needed)
 {
     if (max_threads == 1 || threads_needed == 0 || workers_count.load() >= max_threads)
-        return;
+        return 0;
 
     std::lock_guard lock(spawn_mutex);
 
@@ -145,13 +160,18 @@ void WorkerPool::grow(size_t threads_needed)
         cpu_slots->setMax(requested_threads);
     }
 
+    size_t spawned = 0;
     while (workers_count.load() < target)
     {
-        if (auto slot = cpu_slots->tryAcquire())
-            spawn(std::move(slot));
-        else
+        auto slot = cpu_slots->tryAcquire();
+        if (!slot)
             break;
+
+        spawn(std::move(slot));
+        ++spawned;
     }
+
+    return spawned;
 }
 
 void WorkerPool::preempt(size_t worker_id)
@@ -171,6 +191,7 @@ WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, const ExecutionOptions & o
     , max_threads(max_threads_)
     , coordinator(*this, max_threads)
     , global_tasks(pipeline.size())
+    , poller(*this)
     , requested_threads(concurrency_control && ConcurrencyControl::instance().getLazyAllocation() ? 1 : max_threads)
     , cpu_slots(allocateCPU(concurrency_control, requested_threads))
     , threads(max_threads)
@@ -178,6 +199,7 @@ WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, const ExecutionOptions & o
     Wyrd::setName(spawn_mutex, "pool.spawn_mutex");
     Wyrd::setName(workers_count, "pool.workers_count");
     Wyrd::setName(failed, "pool.failed");
+    Wyrd::setName(poller_spawned, "pool.poller_spawned");
 
     for (size_t worker_id = 0; worker_id < max_threads; ++worker_id)
         workers.emplace_back(*this, worker_id);
@@ -186,6 +208,7 @@ WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, const ExecutionOptions & o
 WorkerPool::~WorkerPool()
 {
     Wyrd::verify(std::ranges::none_of(threads, [](const auto & thread) { return thread.has_value(); }), "The pool is destroyed with worker threads still alive");
+    Wyrd::verify(!poller_thread.has_value(), "The pool is destroyed with the poller's thread still alive");
 }
 
 void WorkerPool::run()
@@ -260,6 +283,12 @@ void WorkerPool::join()
         thread.reset();
     }
 
+    if (poller_thread)
+    {
+        poller_thread->join();
+        poller_thread.reset();
+    }
+
     single_slot.reset();
     cpu_slots.reset();
 }
@@ -270,12 +299,24 @@ void WorkerPool::rethrowIfFailed()
         std::rethrow_exception(exception);
 }
 
-Metrics WorkerPool::getMetrics() const
+WakeOutcome WorkerPool::wakeWorker()
 {
-    Metrics merged;
-    for (const Worker & worker : workers)
-        merged = combine(merged, worker.getMetrics());
+    if (coordinator.hasStealer())
+        return WakeOutcome::Skipped;
 
+    if (coordinator.hasSleepers())
+        if (coordinator.wakeOne())
+            return WakeOutcome::Woken;
+
+    return grow(1) > 0 ? WakeOutcome::Spawned : WakeOutcome::AllBusy;
+}
+
+PoolMetrics WorkerPool::getMetrics() const
+{
+    PoolMetrics merged;
+    for (const Worker & worker : workers)
+        addCounters(merged, worker.getMetrics());
+    addCounters(merged, poller.getMetrics());
     return merged;
 }
 

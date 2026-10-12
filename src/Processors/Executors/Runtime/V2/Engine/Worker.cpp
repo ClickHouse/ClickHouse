@@ -96,21 +96,7 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
         if (pool.pipeline.hasReadyForRemoval())
             pool.pipeline.removeReady();
 
-        if (pool.poller.pending() > 0 && pool.coordinator.startPolling())
-        {
-            if (anyWorkHasAppeared())
-            {
-                pool.coordinator.stopPolling();
-                continue;
-            }
-
-            const size_t fired = pool.poller.poll(tmp_buffer, -1);
-            pool.coordinator.stopPolling();
-
-            if (auto * picked = pickFromFired(std::span(tmp_buffer).first(fired)))
-                return picked;
-        }
-        else
+        /// Parking logic
         {
             UInt32 wakeups_before = wakeups.load();
             if (!pool.coordinator.startParking(worker_id))
@@ -141,15 +127,6 @@ ExecutingProcessor * Worker::tryPick()
         return pickFromBatch(std::span(tmp_buffer).first(count), pool.global_tasks.size() > 0);
     }
 
-    if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
-    {
-        const size_t fired = pool.poller.poll(tmp_buffer, 0);
-        pool.coordinator.stopPolling();
-
-        if (auto * picked = pickFromFired(std::span(tmp_buffer).first(fired)))
-            return picked;
-    }
-
     if (pool.coordinator.startStealing())
     {
         const size_t count = trySteal(steal_rounds);
@@ -169,16 +146,6 @@ ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor *> batch
     if (batch.size() > 1 || source_not_empty)
         wakeWorker();
     return batch.back();
-}
-
-ExecutingProcessor * Worker::pickFromFired(std::span<ExecutingProcessor *> fired)
-{
-    if (fired.empty())
-        return nullptr;
-
-    metrics.poll_picks += 1;
-    metrics.polled_records += fired.size();
-    return pickFromBatch(fired, pool.poller.pending() > 0);
 }
 
 size_t Worker::trySteal(size_t rounds)
@@ -228,22 +195,21 @@ void Worker::pushManyLifo(std::span<ExecutingProcessor * const> many)
 
 void Worker::wakeWorker()
 {
-    if (pool.coordinator.hasStealer())
+    switch (pool.wakeWorker())
     {
-        metrics.wake_skips += 1;
-        return;
-    }
-
-    if (pool.coordinator.hasSleepers() || pool.coordinator.hasPoller())
-    {
-        if (pool.coordinator.wakeOne())
-        {
+        case WakeOutcome::Skipped:
+            metrics.wake_skips += 1;
+            return;
+        case WakeOutcome::Woken:
             metrics.wakes += 1;
             return;
-        }
+        case WakeOutcome::Spawned:
+            metrics.spawns += 1;
+            return;
+        case WakeOutcome::AllBusy:
+            metrics.no_op_wakes += 1;
+            return;
     }
-
-    pool.grow(1);
 }
 
 void Worker::execute(ExecutingProcessor & executing)
@@ -254,13 +220,16 @@ void Worker::execute(ExecutingProcessor & executing)
     pushManyLifo(runnable);
 
     const auto & poll_requests = runner.getPollRequests();
-    pool.poller.pushMany(poll_requests);
+    if (!poll_requests.empty())
+    {
+        pool.poller.pushMany(poll_requests);
+        pool.spawnPoller();
+    }
 
     const auto & finished_processors = runner.getFinishedProcessors();
     pool.pipeline.recordAsFinished(finished_processors);
 
-    const size_t published = runnable.size() + poll_requests.size();
-    if (published > 1 && (!poll_requests.empty() || !allLightWork(runnable)))
+    if (runnable.size() > 1 && !allLightWork(runnable))
         wakeWorker();
 }
 
@@ -306,7 +275,7 @@ void Worker::wake()
     futexWakeOne(wakeups);
 }
 
-const Metrics & Worker::getMetrics() const
+const WorkerMetrics & Worker::getMetrics() const
 {
     return metrics;
 }
