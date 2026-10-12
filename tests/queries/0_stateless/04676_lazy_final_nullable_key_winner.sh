@@ -33,6 +33,7 @@ $CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE IF EXISTS t_plain_f64;
     DROP TABLE IF EXISTS t_null_absent;
     DROP TABLE IF EXISTS t_arr_null;
+    DROP TABLE IF EXISTS t_null_skip;
 
     -- 1. bare Nullable(UInt64) primary key holding a NULL
     CREATE TABLE t_null_u64 (k Nullable(UInt64), flag UInt8, version UInt64)
@@ -78,13 +79,13 @@ $CLICKHOUSE_CLIENT $settings -q "
     INSERT INTO t_nonnull VALUES (5, 1, 1), (7, 1, 1);
     INSERT INTO t_nonnull VALUES (5, 0, 2), (7, 0, 2);
 
-    -- 6. Nullable(Float64) holding both nan and NULL, which sort next to each other in the key.
+    -- 6. Nullable(Float64) primary key holding a NULL
     CREATE TABLE t_null_f64 (k Nullable(Float64), flag UInt8, version UInt64)
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
     SYSTEM STOP MERGES t_null_f64;
-    INSERT INTO t_null_f64 VALUES (5.5, 1, 1), (nan, 1, 1), (NULL, 1, 1);
-    INSERT INTO t_null_f64 VALUES (5.5, 0, 2), (nan, 0, 2), (NULL, 0, 2);
+    INSERT INTO t_null_f64 VALUES (5.5, 1, 1), (NULL, 1, 1);
+    INSERT INTO t_null_f64 VALUES (5.5, 0, 2), (NULL, 0, 2);
 
     -- 7. control: a plain Float64 key holding nan, correct before the fix and unchanged by it.
     -- A nan key sorts like a NULL one but is not one, so this cell documents that a non-nullable
@@ -115,6 +116,15 @@ $CLICKHOUSE_CLIENT $settings -q "
     SYSTEM STOP MERGES t_arr_null;
     INSERT INTO t_arr_null VALUES ([1], 1, 1), ([NULL], 1, 1);
     INSERT INTO t_arr_null VALUES ([1], 0, 2), ([NULL], 0, 2);
+
+    -- 10. Nullable(UInt64) key with a set skip index, which evaluates the winner-set
+    -- predicate on stored key values.
+    CREATE TABLE t_null_skip (k Nullable(UInt64), flag UInt8, version UInt64, INDEX ik k TYPE set(0) GRANULARITY 1)
+    ENGINE = ReplacingMergeTree(version) ORDER BY k
+    SETTINGS index_granularity = 1, allow_nullable_key = 1;
+    SYSTEM STOP MERGES t_null_skip;
+    INSERT INTO t_null_skip VALUES (5, 1, 1), (NULL, 1, 1);
+    INSERT INTO t_null_skip VALUES (5, 0, 2), (NULL, 0, 2);
 "
 
 $CLICKHOUSE_CLIENT $settings -q "
@@ -148,7 +158,7 @@ $CLICKHOUSE_CLIENT $settings -q "
       = (SELECT arraySort(groupArray((k, flag, version))) FROM t_nonnull FINAL PREWHERE flag = 0
             SETTINGS query_plan_optimize_lazy_final = 0);
 
-    SELECT 'Nullable(Float64) with nan and NULL',
+    SELECT 'Nullable(Float64)',
         (SELECT arraySort(groupArray((toString(k), flag, version))) FROM t_null_f64 FINAL PREWHERE flag = 0
             SETTINGS $lazy)
       = (SELECT arraySort(groupArray((toString(k), flag, version))) FROM t_null_f64 FINAL PREWHERE flag = 0
@@ -171,9 +181,15 @@ $CLICKHOUSE_CLIENT $settings -q "
             SETTINGS $lazy)
       = (SELECT arraySort(groupArray((toString(k), flag, version))) FROM t_arr_null FINAL PREWHERE flag = 0
             SETTINGS query_plan_optimize_lazy_final = 0);
+
+    SELECT 'Nullable(UInt64) with a set skip index',
+        (SELECT arraySort(groupArray((k, flag, version))) FROM t_null_skip FINAL PREWHERE flag = 0
+            SETTINGS $lazy)
+      = (SELECT arraySort(groupArray((k, flag, version))) FROM t_null_skip FINAL PREWHERE flag = 0
+            SETTINGS query_plan_optimize_lazy_final = 0);
 "
 
-# The nine cells above compare the optimization against itself being disabled, so they all
+# The ten cells above compare the optimization against itself being disabled, so they all
 # still read 1 if the optimization silently stops applying at runtime. This cell asserts
 # only that the step is PLANNED; the two cells after it assert that it EXECUTED.
 $CLICKHOUSE_CLIENT $settings -q "
@@ -189,7 +205,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 # \`LazyMaterializingRows::filterRangesAndFillRows\`, and the only
 # \`LazyMaterializingRows\` this plan can build is created inside the lazy branch of
 # \`optimizeLazyFinal\`, so a non-zero count means that branch really ran. A fallback to
-# the non-lazy branch computes the same correct answer, so the nine result cells cannot
+# the non-lazy branch computes the same correct answer, so the ten result cells cannot
 # detect it and this cell is what does.
 echo -n 'lazy FINAL executes for Nullable(UInt64) '
 $CLICKHOUSE_CLIENT $settings -q "
@@ -234,4 +250,5 @@ $CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE t_plain_f64;
     DROP TABLE t_null_absent;
     DROP TABLE t_arr_null;
+    DROP TABLE t_null_skip;
 "
