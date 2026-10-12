@@ -1,0 +1,9 @@
+--- the pattern fits into the limit: as many streams as requested
+URL × 4
+--- and they read exactly the survivors
+1500
+1700
+--- the pattern is larger than the limit: one stream
+URL
+--- which reads the early survivors without asking the generator past the limit
+1500

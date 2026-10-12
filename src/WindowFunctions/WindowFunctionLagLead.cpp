@@ -92,16 +92,16 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        const auto & current_block = transform->blockAt(transform->current_row);
-        IColumn & to = *current_block.output_columns[function_index];
+        const auto & current_block = transform->blocks.blockAt(transform->current.location.block);
+        IColumn & to = *current_block.result_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
         Int64 offset = 1;
         if (argument_types.size() > 1)
         {
-            offset = (*current_block.input_columns[
+            offset = (*current_block.materialized_columns[
                     workspace.argument_column_indices[1]])[
-                        transform->current_row.row].safeGet<Int64>();
+                        transform->current.location.row].safeGet<Int64>();
 
             /// Either overflow or really negative value, both is not acceptable.
             if (offset < 0)
@@ -112,20 +112,20 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
             }
         }
 
-        const auto [target_row, offset_left] = transform->moveRowNumber(
-            transform->current_row, offset * (is_lead ? 1 : -1));
+        const auto target_row = transform->blocks.move(
+            transform->current.location, offset * (is_lead ? 1 : -1));
 
-        if (offset_left != 0
-            || target_row < transform->frame_start
-            || transform->frame_end <= target_row)
+        if (!target_row
+            || *target_row < transform->frame_start
+            || transform->frame_end <= *target_row)
         {
             // Offset is outside the frame.
             if (argument_types.size() > 2)
             {
                 // Column with default values is specified.
-                const IColumn & default_column = *current_block.input_columns[workspace.argument_column_indices[2]];
+                const IColumn & default_column = *current_block.materialized_columns[workspace.argument_column_indices[2]];
 
-                to.insert(default_column[transform->current_row.row]);
+                to.insert(default_column[transform->current.location.row]);
             }
             else
             {
@@ -135,9 +135,9 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(target_row).input_columns[
+            to.insertFrom(*transform->blocks.blockAt(target_row->block).materialized_columns[
                     workspace.argument_column_indices[0]],
-                target_row.row);
+                target_row->row);
         }
     }
 };

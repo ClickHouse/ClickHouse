@@ -302,6 +302,12 @@ struct QueryGraphBuilder
     /// See QueryGraph::cross_product_links
     std::vector<std::pair<BitSet, BitSet>> cross_product_links;
 
+    /// Whether the disjunction push-down already ran on the joins this graph was built from. Reordering
+    /// rebuilds the join steps, and a fresh step would let the push-down run a second time and add the
+    /// same partial predicate again - a filter the read already applies through PREWHERE. Only a plan
+    /// that is optimized more than once reaches that state (the parallel-replicas plan-based path does).
+    bool disjunctions_optimization_applied = false;
+
     /// One record per binary join operator of the original tree, captured for the optional conflict
     /// detector (CD-A/CD-C). Relation ids are local to this (sub)graph and shifted in `uniteGraphs`.
     /// See QueryGraph::conflict_ops / ConflictJoinOp.
@@ -405,6 +411,10 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
         right.shift(shift);
         lhs.cross_product_links.emplace_back(std::move(left), std::move(right));
     }
+
+    /// The mark belongs to the flattened graph as a whole: reordering rebuilds every join step from it,
+    /// so a mark carried by any join of the merged sub-graph has to survive the merge.
+    lhs.disjunctions_optimization_applied |= rhs.disjunctions_optimization_applied;
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
@@ -467,6 +477,9 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
     return false;
 }
 
+/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
+/// allows it and the expression cannot be applied twice by the name-based merge.
+///
 /// Merging puts the expression into the join graph, where reordering can leave it computed twice from the
 /// raw inputs - once for the join key that decides matching and once for the output column - and can also
 /// evaluate it on rows the original join order would have discarded. An expression whose result or whose
@@ -474,27 +487,7 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
 /// non-deterministic function draws independently in the two places, so the returned rows can violate the
 /// query's own `JOIN ON` condition, a stateful function (`aiEmbed`, `timeSeriesStoreTags`, ...) makes
 /// extra external calls or mutates per-query state, and a function with observable side effects (`sleep`)
-/// spends a different amount of time and accounts different profile events. A lambda without captures is
-/// constant-folded into a `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body
-/// from a plain scan over the function nodes, so the check descends into it with `allNodeFunctions`.
-static bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
-{
-    auto is_insensitive = [](const IFunctionBase & function)
-    {
-        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
-    };
-
-    for (const auto & node : dag.getNodes())
-    {
-        if (!allNodeFunctions(node, is_insensitive))
-            return true;
-    }
-
-    return false;
-}
-
-/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
-/// allows it and the expression cannot be applied twice by the name-based merge.
+/// spends a different amount of time and accounts different profile events.
 static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
 {
     if (!merge_expression_into_join)
@@ -737,6 +730,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical expected");
+    query_graph.disjunctions_optimization_applied |= join_step->isDisjunctionsOptimizationApplied();
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
@@ -1017,6 +1011,8 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
 
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
+    const bool disjunctions_optimization_applied = query_graph_builder.disjunctions_optimization_applied;
+
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
@@ -1389,6 +1385,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 actions_after_join,
                 join_settings,
                 sorting_settings);
+
+            join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
 
             /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
             bool imprecise_estimate = false;
