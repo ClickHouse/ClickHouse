@@ -34,11 +34,17 @@ enum class SeccompMode : uint8_t
 };
 
 /// The mode the server passed to `installSeccompFilter` at startup, or nothing if it has not called
-/// it. This, not the configuration, is the policy in force: the configuration can be reloaded, but
-/// the filter cannot be changed once installed - nor installed later, if it was not at startup.
-std::optional<SeccompMode> getInstalledSeccompMode();
+/// it. The configuration can be reloaded, but the filter cannot be changed once installed - nor
+/// installed later, if it was not at startup - so a different value in a reloaded configuration
+/// takes effect only after a restart.
+std::optional<SeccompMode> getRequestedSeccompMode();
 
-#if defined(OS_LINUX)
+/// The mode of the filter in force: the one requested at startup, or `Disabled` if no filter was
+/// installed - because the server does not run on Linux, because the policy is not implemented for
+/// this architecture, or because the `Log`
+/// mode was requested and the kernel cannot install its filter. Nothing if `installSeccompFilter`
+/// has not been called. This, not the configuration, is the policy in force.
+std::optional<SeccompMode> getInstalledSeccompMode();
 
 struct SeccompFilterStatus
 {
@@ -52,11 +58,11 @@ struct SeccompFilterStatus
 /// Installs a seccomp-BPF system call filter on every thread of the current process, allowing only
 /// the system calls ClickHouse is known to use and applying `mode` to all the others.
 ///
-/// In every mode but `Disabled` this also sets `PR_SET_NO_NEW_PRIVS`, which does not depend on the
-/// architecture and happens even where no filter can be installed.
+/// On Linux, in every mode but `Disabled` this also sets `PR_SET_NO_NEW_PRIVS`, which does not depend
+/// on the architecture and happens even where no filter can be installed.
 ///
-/// No filter is installed if `mode` is `Disabled`, if the policy is not implemented for this
-/// architecture (only x86-64 and AArch64 are covered), or if `mode` is `Log` and the kernel cannot
+/// No filter is installed if `mode` is `Disabled`, if the server does not run on Linux, if the
+/// policy is not implemented for this architecture (only x86-64 and AArch64 are covered), or if `mode` is `Log` and the kernel cannot
 /// install a filter with that action: the `Log` mode refuses nothing, so running without it takes
 /// away nothing a filter would have enforced, and a server that used to start must not stop
 /// starting because of it. Throws if one of the enforcing modes was requested but its filter could
@@ -65,7 +71,5 @@ struct SeccompFilterStatus
 /// Call this once, as early in the startup as the configuration allows: the filter takes effect
 /// immediately and there is no way to widen it afterwards.
 SeccompFilterStatus installSeccompFilter(SeccompMode mode);
-
-#endif
 
 }
