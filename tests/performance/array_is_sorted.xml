@@ -1,0 +1,16 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE array_is_sorted_perf (a Array(UInt64)) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO array_is_sorted_perf
+        SELECT range(256)
+        FROM numbers(10000)</fill_query>
+
+    <query>SELECT sum(arrayIsSorted(a)) FROM array_is_sorted_perf FORMAT Null</query>
+    <query>SELECT sum(a = arraySort(a)) FROM array_is_sorted_perf FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_is_sorted_perf</drop_query>
+</test>
