@@ -3,6 +3,8 @@
 #include <Parsers/IParserBase.h>
 #include <Core/Field.h>
 
+#include <string_view>
+
 
 namespace DB
 {
@@ -15,6 +17,13 @@ public:
     ParserPrometheusQuery(const String & database_name_, const String & table_name_, const Field & evaluation_time_);
 
     const char * getName() const override { return "PromQL Statement"; }
+
+    /// Returns true if parsing failed exactly at the end of the input.
+    static bool isIncompleteAtEOF(std::string_view query);
+
+    /// Returns the position of the `;` ending the PromQL statement in [begin, end), or `end`.
+    /// Unlike the SQL lexer, this follows the PromQL rules for comments and string literals.
+    static const char * findStatementEnd(const char * begin, const char * end);
 
     /// PromQL is parsed from the raw text by its own grammar, which has tokens such as `=~` that
     /// the SQL lexer rejects; the SQL tokens are only used here to find the end of the statement.

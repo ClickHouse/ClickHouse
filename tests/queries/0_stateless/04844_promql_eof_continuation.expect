@@ -1,0 +1,46 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+# Tag no-fasttest: the PromQL grammar requires ANTLR4, which is disabled in the
+# fast-test build; there `--dialect promql` reports `ANTLR4 support is disabled`.
+
+# Regression test: the single-line continuation probe must recognize an
+# incomplete PromQL statement even though `ParserPrometheusQuery` reports the
+# parse failure by throwing. The first <ENTER> must keep the input buffer open;
+# the completed query then reaches execution and fails only because the local
+# test has no `ts` table.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# `offset` requires a duration. It is a syntax error at EOF, not a complete
+# query. Complete it after the client has processed the first <ENTER>.
+send -- "up offset\r"
+sleep 1
+send -- "1m\r"
+expect {
+    "mismatched input '<EOF>'" { exit 1 }
+    -re {Table .*ts.* does not exist} {}
+}
+expect ":) "
+
+send -- "\4"
+expect eof
