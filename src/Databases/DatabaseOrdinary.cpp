@@ -244,6 +244,20 @@ String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & table_nam
     return fs::path(getTableDataPath(table_name)) / CONVERT_TO_REPLICATED_FLAG_NAME;
 }
 
+bool DatabaseOrdinary::hasConvertToReplicatedFlag(const ASTCreateQuery & create_query)
+{
+    /// Get table's storage policy
+    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
+    auto policy = getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
+    if (auto * query_settings = create_query.storage->settings)
+        if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
+            policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
+
+    auto storage_disks = policy->getDisks();
+    auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
+    return checking_disk->existsFile(getConvertToReplicatedFlagPath(create_query));
+}
+
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
 {
     auto db_disk = getDisk();
@@ -257,18 +271,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree") || create_query.storage->engine->name.starts_with("Replicated") || create_query.storage->engine->name.starts_with("Shared"))
         return;
 
-    /// Get table's storage policy
-    MergeTreeSettings default_settings = getContext()->getMergeTreeSettings();
-    auto policy = getContext()->getStoragePolicy(default_settings[MergeTreeSetting::storage_policy]);
-    if (auto * query_settings = create_query.storage->settings)
-        if (Field * policy_setting = query_settings->changes.tryGet("storage_policy"))
-            policy = getContext()->getStoragePolicy(policy_setting->safeGet<String>());
-
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(create_query);
-
-    auto storage_disks = policy->getDisks();
-    auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
-    if (!checking_disk->existsFile(convert_to_replicated_flag_path))
+    if (!hasConvertToReplicatedFlag(create_query))
         return;
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
@@ -503,7 +506,17 @@ void DatabaseOrdinary::loadTableFromMetadata(
     chassert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
-    if (shouldLazyLoad(query, name, mode))
+    /// A table converted to replicated by the `convert_to_replicated` flag is readonly until
+    /// `restoreMetadataAfterConvertingToReplicated` removes the flag and restores its metadata in Keeper,
+    /// which only the startup of an eagerly loaded table does. So such a table is not deferred.
+    auto is_converted_to_replicated = [&]
+    {
+        return query.storage && query.storage->engine
+            && query.storage->engine->name.starts_with("Replicated") && query.storage->engine->name.ends_with("MergeTree")
+            && hasConvertToReplicatedFlag(query);
+    };
+
+    if (shouldLazyLoad(query, name, mode) && !is_converted_to_replicated())
     {
         loadTableLazy(local_context, name, ast, mode);
         return;
