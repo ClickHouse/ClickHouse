@@ -9545,19 +9545,20 @@ bool Context::isParallelReplicasEnabled() const
              && getAutomaticParallelReplicasMode(settings_ref) != 0);
 }
 
-bool Context::canUseTaskBasedParallelReplicas() const
-{
-    return canUseTaskBasedParallelReplicasForClusterEngines() && getAutomaticParallelReplicasMode(getSettingsRef()) == 0;
-}
-
-bool Context::canUseTaskBasedParallelReplicasForClusterEngines() const
+bool Context::canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const
 {
     const auto & settings_ref = getSettingsRef();
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
-            || !settings_ref[Setting::parallel_replicas_prefer_local_replica]);
+            || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
+        && (ignore_automatic_parallel_replicas || getAutomaticParallelReplicasMode(settings_ref) == 0);
+}
+
+bool Context::canUseTaskBasedParallelReplicas() const
+{
+    return canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/false);
 }
 
 bool Context::canReplaceClusterEngineWithClusterVariant() const
@@ -9568,7 +9569,7 @@ bool Context::canReplaceClusterEngineWithClusterVariant() const
     /// `serialize_query_plan` does not help here: cluster engines ship the query text, not the plan.
     return !settings_ref[Setting::cluster_for_parallel_replicas].value.empty()
         && settings_ref[Setting::parallel_replicas_for_cluster_engines]
-        && canUseTaskBasedParallelReplicasForClusterEngines()
+        && canUseTaskBasedParallelReplicasImpl(/*ignore_automatic_parallel_replicas=*/true)
         && settings_ref[Setting::additional_table_filters].value.empty()
         && !isDistributed();
 }

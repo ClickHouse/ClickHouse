@@ -2119,10 +2119,6 @@ public:
     /// automatic mode off. Read the mode through it rather than from the setting.
     static UInt64 getAutomaticParallelReplicasMode(const Settings & settings_ref);
     bool canUseTaskBasedParallelReplicas() const;
-    /// Unlike `canUseTaskBasedParallelReplicas`, ignores `automatic_parallel_replicas_mode`: the automatic mode
-    /// only decides for `MergeTree` reads, so a cluster engine (`s3`, `url`, a table of a data lake catalog, ...)
-    /// uses parallel replicas whenever they are enabled.
-    bool canUseTaskBasedParallelReplicasForClusterEngines() const;
     /// Whether a cluster engine (`s3`, `url`, a table of a data lake catalog, ...) may be replaced by its `*Cluster`
     /// variant over `cluster_for_parallel_replicas`, which ships the query text to the replicas.
     bool canReplaceClusterEngineWithClusterVariant() const;
@@ -2171,6 +2167,11 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
+    /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
+    /// they are enabled.
+    bool canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const;
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
