@@ -48,10 +48,22 @@ SELECT 'i32 = 23',
 SELECT count() FROM t_legacy WHERE i32 = 23
 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1, log_comment = '05366_spec_value_probe';
 
+-- Per-file partition pruning still skips a spec-valued entry, and a summary is not widened past it.
+SELECT count() FROM t_legacy WHERE i32 = -1
+SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0, log_comment = '05366_file_probe';
+SELECT count() FROM t_legacy WHERE i32 = 33
+SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1, log_comment = '05366_list_probe';
+
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['IcebergPartitionPrunedManifestFiles']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05366_spec_value_probe';
+SELECT ProfileEvents['IcebergPartitionPrunedFiles']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05366_file_probe';
+SELECT ProfileEvents['IcebergPartitionPrunedManifestFiles']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05366_list_probe';
 
 -- Mutations are refused on a table holding such a value. The predicates match no row, so even
 -- without the refusal nothing would be written and the shared fixture stays untouched.
