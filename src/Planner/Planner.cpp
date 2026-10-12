@@ -2265,8 +2265,10 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     PlannerContextPtr & planner_context
 )
 {
-    /// A plan united into a parent plan (a local shard, a `Merge` or `Buffer` child) leaves the filter to the parent.
-    if (select_query_options.subquery_depth != 0 || select_query_options.is_local_plan_for_distributed_query)
+    /// A plan united into a parent plan (a local shard, a `Merge` or `Buffer` child) leaves the filter to the parent,
+    /// and a header-only plan (`only_analyze`) has no rows to filter.
+    if (select_query_options.subquery_depth != 0 || select_query_options.is_local_plan_for_distributed_query
+        || select_query_options.only_analyze)
         return;
 
     const auto & query_context = planner_context->getQueryContext();

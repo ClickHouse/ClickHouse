@@ -74,7 +74,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsString additional_result_filter;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
@@ -1303,7 +1302,6 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
     subquery_settings[Setting::max_result_bytes] = 0;
     /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
     subquery_settings[Setting::extremes] = false;
-    subquery_settings[Setting::additional_result_filter] = "";
     mutable_context->setSettings(subquery_settings);
 }
 

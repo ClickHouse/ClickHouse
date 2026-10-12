@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_mm1;
 DROP VIEW IF EXISTS t_v0;
 DROP VIEW IF EXISTS t_v1;
 DROP VIEW IF EXISTS t_v2;
+DROP VIEW IF EXISTS t_pv;
 
 CREATE TABLE t_local (number UInt64) ENGINE = MergeTree ORDER BY number;
 INSERT INTO t_local SELECT number FROM numbers(10);
@@ -52,6 +53,12 @@ SELECT number AS x FROM t_v2 ORDER BY x SETTINGS additional_result_filter = 'x <
 SELECT y AS z FROM (SELECT number AS y FROM remote('127.0.0.1', numbers(10))) ORDER BY z SETTINGS additional_result_filter = 'z < 3';
 SELECT number AS x FROM numbers(10) WHERE number IN (SELECT number FROM remote('127.0.0.1', numbers(5))) ORDER BY x SETTINGS additional_result_filter = 'x < 3';
 
+-- A header-only plan (the schema of `view()` or of a parameterized view) must not evaluate the filter either.
+CREATE VIEW t_pv AS SELECT number FROM t_d1 WHERE number < {n:UInt64};
+SELECT number AS x FROM view(SELECT number FROM remote('127.0.0.1', numbers(10))) ORDER BY x SETTINGS additional_result_filter = 'x < 3';
+SELECT number AS x FROM t_pv(n = 10) ORDER BY x SETTINGS additional_result_filter = 'x < 3';
+
+DROP VIEW t_pv;
 DROP VIEW t_v2;
 DROP VIEW t_v1;
 DROP VIEW t_v0;
