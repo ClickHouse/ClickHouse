@@ -3,9 +3,14 @@
         <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
     </settings>
 
-    <create_query>CREATE TABLE timeseries_insert ENGINE = TimeSeries</create_query>
-    <create_query>CREATE TABLE timeseries_insert_no_recent ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0</create_query>
-    <create_query>SYSTEM STOP MERGES</create_query>
+    <!-- Fixed UUIDs give the inner tables known names, so merges are stopped only on them. -->
+    <create_query>CREATE TABLE timeseries_insert UUID '7e5a0000-0000-4000-8000-000000000001' ENGINE = TimeSeries</create_query>
+    <create_query>CREATE TABLE timeseries_insert_no_recent UUID '7e5a0000-0000-4000-8000-000000000002' ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0</create_query>
+    <create_query>SYSTEM STOP MERGES `.inner_id.samples.7e5a0000-0000-4000-8000-000000000001`</create_query>
+    <create_query>SYSTEM STOP MERGES `.inner_id.recentsamples.7e5a0000-0000-4000-8000-000000000001`</create_query>
+    <create_query>SYSTEM STOP MERGES `.inner_id.tags.7e5a0000-0000-4000-8000-000000000001`</create_query>
+    <create_query>SYSTEM STOP MERGES `.inner_id.samples.7e5a0000-0000-4000-8000-000000000002`</create_query>
+    <create_query>SYSTEM STOP MERGES `.inner_id.tags.7e5a0000-0000-4000-8000-000000000002`</create_query>
 
     <substitutions>
         <substitution>
@@ -28,7 +33,6 @@
         SETTINGS max_block_size = 2000, min_insert_block_size_rows = 2000
     </query>
 
-    <drop_query>SYSTEM START MERGES</drop_query>
-    <drop_query>DROP TABLE IF EXISTS timeseries_insert</drop_query>
-    <drop_query>DROP TABLE IF EXISTS timeseries_insert_no_recent</drop_query>
+    <drop_query>DROP TABLE IF EXISTS timeseries_insert SYNC</drop_query>
+    <drop_query>DROP TABLE IF EXISTS timeseries_insert_no_recent SYNC</drop_query>
 </test>
