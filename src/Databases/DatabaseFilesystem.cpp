@@ -210,7 +210,12 @@ DatabaseFilesystem::DatabaseFilesystem(
     else
         path = fs::absolute(path).lexically_normal();
 
-    if (!is_local && !getContext()->isUserFilesPath(path))
+    /// On a plain `user_files_path` the database root is checked after resolving symlinks
+    /// (`pathStartsWith`), as before `user_files_policy` existed: the lexical
+    /// `Context::isUserFilesPath` would accept a root that is an in-root symlink to an outside
+    /// directory, and every table of the database would then be read from there.
+    if (!is_local
+        && !(user_files_volume ? getContext()->isUserFilesPath(path) : pathStartsWith(fs::path(path), fs::path(user_files_path))))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path");
