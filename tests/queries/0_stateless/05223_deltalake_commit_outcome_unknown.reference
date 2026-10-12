@@ -1,0 +1,37 @@
+==== Arm A: the commit reached the log and only the response was lost ====
+-- the acknowledged rows must survive; deleting the data files here is the data loss
+plain: reported as unknown outcome: yes
+plain: original error chained: yes
+plain: retained files logged: yes
+plain: retained files named: 1 (expected 1)
+plain: sum(c0) after reopen: 15 (expected 15)
+plain: rows after reopen: [0,1,2,3,4,5] (expected [0,1,2,3,4,5])
+plain: data files kept: 1 (expected 1)
+plain: commits in log: 2 (expected 2)
+partitioned: reported as unknown outcome: yes
+partitioned: original error chained: yes
+partitioned: retained files logged: yes
+partitioned: retained files named: 2 (expected 2)
+partitioned: retained files carry the physical partition dirs: yes/yes, encoded form absent: no
+partitioned: sum(c0) after reopen: 15 (expected 15)
+partitioned: rows after reopen: [0,1,2,3,4,5] (expected [0,1,2,3,4,5])
+partitioned: data files kept: 2 (expected 2)
+partitioned: commits in log: 2 (expected 2)
+
+==== Arm B: the commit never reached the log ====
+-- the data files are unreferenced for certain, so they must still be cleaned up
+plain: failed for the injected reason: yes
+plain: reported as unknown outcome: no
+plain: data files removed: 0 (expected 0)
+plain: commits in log: 1 (expected 1)
+plain: rows readable: [] (expected [])
+partitioned: failed for the injected reason: yes
+partitioned: reported as unknown outcome: no
+partitioned: data files removed: 0 (expected 0)
+partitioned: commits in log: 1 (expected 1)
+partitioned: rows readable: [] (expected [])
+
+==== control: an INSERT with no failpoint commits and reads back ====
+control: sum(c0): 15 (expected 15)
+control: data files: 1 (expected 1)
+control: commits in log: 2 (expected 2)
