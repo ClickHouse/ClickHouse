@@ -399,6 +399,8 @@ struct HashMethodSerialized
     static constexpr bool has_pre_computed_hashes = prealloc;
 
     ColumnRawPtrs key_columns;
+    /// Owns the key columns with negative zeros replaced by positive zeros, if there were any.
+    Columns canonicalized_columns;
     size_t keys_size;
     std::vector<const UInt8 *> null_maps;
 
@@ -462,6 +464,9 @@ struct HashMethodSerialized
                             demangle(typeid(cached_val).name()));
         }
 
+        /// Canonicalize negative zeros in the serializer as well: `canonicalizeNegativeZeroInKeyColumns` below
+        /// does not see floating point values nested inside `LowCardinality` and other composite columns.
+        serialization_settings = IColumn::SerializationSettings::createForHashTableKey();
         serialization_settings.serialize_string_with_zero_byte = hash_serialized_context->settings.serialize_string_with_zero_byte;
         if constexpr (nullable)
         {
@@ -475,6 +480,9 @@ struct HashMethodSerialized
                 }
             }
         }
+
+        /// The keys are serialized as raw bytes, so negative zeros have to be canonicalized in advance.
+        canonicalizeNegativeZeroInKeyColumns(key_columns, canonicalized_columns);
 
         if constexpr (!nullable && Base::has_mapped)
         {

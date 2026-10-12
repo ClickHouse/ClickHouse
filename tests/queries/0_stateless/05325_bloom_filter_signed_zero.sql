@@ -36,7 +36,7 @@ SET optimize_functions_to_subcolumns = 1;
 SELECT 'm[0.0] = \'x\'', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE m[0.0] = 'x' SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE m[0.0] = 'x';
 -- The key of `m[k]` is looked up by equality, also when the value is compared with `IN`.
 SELECT 'm[0.0] IN (\'x\')', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE m[0.0] IN ('x') SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE m[0.0] IN ('x');
--- `IN` compares bits, with and without the index.
+-- `IN` treats the two zeros as equal, like `=`, with and without the index.
 SELECT 'f IN (0.0)', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE f IN (0.0) SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE f IN (0.0);
 SELECT 'f = 0.5', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_signed_zero WHERE f = 0.5 SETTINGS use_skip_indexes = 0) FROM t_bf_signed_zero WHERE f = 0.5;
 
@@ -44,7 +44,7 @@ SET optimize_functions_to_subcolumns = DEFAULT;
 
 DROP TABLE t_bf_signed_zero;
 
--- A `mapValues` index: `mapContainsValue` looks up both zeros, `IN` on the value compares bits.
+-- A `mapValues` index: `mapContainsValue` looks up both zeros, `IN` on the value finds both zeros as well.
 DROP TABLE IF EXISTS t_bf_signed_zero_map_values;
 CREATE TABLE t_bf_signed_zero_map_values (id UInt64, mv Map(String, Float64), INDEX idx_mv mapValues(mv) TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;

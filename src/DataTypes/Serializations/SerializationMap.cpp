@@ -14,6 +14,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
@@ -973,8 +974,16 @@ size_t getBucketForKeyImpl(const KeyColumn & key_column, size_t row, size_t buck
     if (buckets == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of buckets cannot be zero");
 
+    /// The bucket of a key is a part of the format of a data part: it is computed again on read, to find the bucket
+    /// of a key in a subcolumn. `updateHashWithValue` hashes negative zero as positive zero, but parts written by older
+    /// versions put the keys into the buckets by the raw bits of the floating point values, so they are hashed this way.
     SipHash hash;
-    key_column.updateHashWithValue(row, hash);
+    if constexpr (std::is_same_v<KeyColumn, ColumnVector<Float32>> || std::is_same_v<KeyColumn, ColumnVector<Float64>>)
+        hash.update(key_column.getData()[row]);
+    else if constexpr (std::is_same_v<KeyColumn, IColumn>)
+        updateHashWithRawValue(key_column, row, hash);
+    else
+        key_column.updateHashWithValue(row, hash);
     return hash.get64() % buckets;
 }
 

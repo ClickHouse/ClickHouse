@@ -130,7 +130,7 @@ WITH rhs AS (SELECT toString(number * 3) FROM numbers(3000))
 SELECT 'cast LowCardinality to String', countIf(x IN rhs), countIf(x NOT IN rhs), sum(cityHash64(number) * (x IN rhs))
 FROM (SELECT number, toLowCardinality(toString(number)) AS x FROM numbers(10000));
 
--- Special floating-point values compare by their binary representation, in memory and on disk alike.
+-- Special floating-point values compare by their binary representation, except that negative zero is equal to zero, in memory and on disk alike.
 SELECT 'floats', groupArray(x IN (SELECT arrayJoin([0., nan, inf, 1.5]))), groupArray(x NOT IN (SELECT arrayJoin([0., nan, inf, 1.5])))
 FROM (SELECT arrayJoin([0., -0., nan, -nan, inf, -inf, 1.5, 2.5]) AS x);
 

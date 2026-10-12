@@ -30,7 +30,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <cmath>
 
 
 namespace DB
@@ -625,58 +624,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
-/// `-0.0 = 0.0`, but the index holds the hash of each value's bits, and the bits of the two zeros differ.
-static bool isFloatZero(const DataTypePtr & type, const Field & field)
-{
-    return isFloat(removeLowCardinalityAndNullable(type)) && field.getType() == Field::Types::Float64 && field.safeGet<Float64>() == 0;
-}
-
-static Field otherFloatZero(const Field & zero)
-{
-    return std::signbit(zero.safeGet<Float64>()) ? Field(0.0) : Field(-0.0);
-}
-
-/// The hash of `field`, and for a float zero also the hash of the other zero. A predicate with several
-/// hashes matches a granule that may hold any of them, except for `FUNCTION_HAS_ALL`.
-static ColumnPtr hashWithFieldAndOtherZero(const DataTypePtr & type, const Field & field)
-{
-    ColumnPtr hash = BloomFilterHash::hashWithField(type.get(), field);
-    if (!isFloatZero(type, field))
-        return hash;
-
-    auto hashes = ColumnUInt64::create();
-    hashes->insertValue(hash->getUInt(0));
-    hashes->insertValue(BloomFilterHash::hashWithField(type.get(), otherFloatZero(field))->getUInt(0));
-    return hashes;
-}
-
-/// The hashes of the values in `column`, and for each float zero also the hash of the other zero.
-/// Sets `has_float_zero` if there is one, which `FUNCTION_HAS_ALL` cannot express.
-static ColumnPtr hashWithColumnAndOtherZeros(const DataTypePtr & type, const ColumnPtr & column, bool & has_float_zero)
-{
-    has_float_zero = false;
-    ColumnPtr hashes = BloomFilterHash::hashWithColumn(type, column, 0, column->size());
-    if (!isFloat(removeLowCardinalityAndNullable(type)))
-        return hashes;
-
-    MutableColumnPtr result;
-    for (size_t i = 0; i < column->size(); ++i)
-    {
-        Field value = (*column)[i];
-        if (!isFloatZero(type, value))
-            continue;
-
-        if (!result)
-            result = IColumn::mutate(hashes->convertToFullColumnIfConst());
-        has_float_zero = true;
-        assert_cast<ColumnUInt64 &>(*result).insertValue(BloomFilterHash::hashWithField(type.get(), otherFloatZero(value))->getUInt(0));
-    }
-
-    if (result)
-        return result;
-    return hashes;
-}
-
 /// True when converting the constant to the element type yields the exact bytes the index holds, so
 /// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
 static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
@@ -724,7 +671,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             && setHasEmptyArray(index_type, converted_column, row_size))
             return false;
 
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+            index_type, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size), /*match_all=*/ false)));
 
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
@@ -842,7 +790,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, map_info->key_field)));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), map_info->key_field)));
         }
         else if (map_info->has_values_index)
         {
@@ -853,7 +801,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                array_nested_type, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size), /*match_all=*/ false)));
         }
         else
         {
@@ -892,8 +841,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    out.predicate.emplace_back(
-        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
+    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+        array_nested_type, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size()), /*match_all=*/ false)));
     out.function = RPNElement::FUNCTION_HAS_ANY;
     return true;
 }
@@ -1195,7 +1144,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (converted_field.isNull())
                         return false;
 
-                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
                 }
             }
             else if (function_name == "has")
@@ -1209,8 +1158,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
 
                 out.function = RPNElement::FUNCTION_HAS_ANY;
-                bool has_float_zero = false;
-                out.predicate.emplace_back(std::make_pair(position, hashWithColumnAndOtherZeros(actual_type, column, has_float_zero)));
+                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                    actual_type, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size()), /*match_all=*/ false)));
             }
         }
         else if (function_name == "hasAny" || function_name == "hasAll")
@@ -1224,17 +1173,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (!column)
                 return false;
 
-            bool has_float_zero = false;
-            ColumnPtr hashes = hashWithColumnAndOtherZeros(actual_type, column, has_float_zero);
-
-            /// `hasAll` needs one of the two zeros in the granule, while `FUNCTION_HAS_ALL` needs every hash.
-            if (function_name == "hasAll" && has_float_zero)
-                return false;
-
             out.function = function_name == "hasAny" ?
                 RPNElement::FUNCTION_HAS_ANY :
                 RPNElement::FUNCTION_HAS_ALL;
-            out.predicate.emplace_back(std::make_pair(position, std::move(hashes)));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                actual_type, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size()), out.function == RPNElement::FUNCTION_HAS_ALL)));
         }
         else
         {
@@ -1276,7 +1219,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (converted_field.isNull())
                 return false;
 
-            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
 
         return true;
@@ -1349,7 +1292,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (converted_field.isNull())
             return false;
 
-        out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         return true;
     }
 
@@ -1436,7 +1379,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, const_value)));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
 
             return true;
         }
@@ -1486,8 +1429,24 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
         const auto & index_data = index_col.getData();
+
+        /// A floating point zero is hashed with negative zero canonicalized away
+        /// (see `base/normalizeNegativeZero.h`), but a server of an older version probes -0. with the
+        /// raw-bit hash, and would skip this granule. Both hashes are written, so that the readers of
+        /// both versions find it. Extra hashes only make the filter more permissive, and at most one
+        /// of them is added per granule and column.
+        const bool is_floating_point = BloomFilterHash::isFloatingPointIndexType(column_and_type.type);
+        const UInt64 zero_hash = BloomFilterHash::canonicalZeroHash();
+        bool has_zero = false;
+
         for (const auto & hash: index_data)
+        {
             column_hashes[column].insert(hash);
+            has_zero |= hash == zero_hash;
+        }
+
+        if (is_floating_point && has_zero)
+            column_hashes[column].insert(BloomFilterHash::legacyNegativeZeroHash());
     }
 
     *pos += max_read_rows;

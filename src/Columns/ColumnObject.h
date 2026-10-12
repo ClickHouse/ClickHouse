@@ -383,8 +383,8 @@ public:
 private:
 
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
-    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
-    void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
+    void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res, const IColumn::SerializationSettings * settings) const;
+    void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res, const IColumn::SerializationSettings * settings) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
     /// Rebuild sorted_typed_path_columns from current typed_paths pointers.
     /// Must be called after any operation that can replace typed path column pointers

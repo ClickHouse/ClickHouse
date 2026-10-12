@@ -303,6 +303,30 @@ FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
 
 The same approach works for `DISTINCT`, `GROUP BY`, and `JOIN` keys.
 
+## Negative zero in set semantics {#negative-zero-in-set-semantics}
+
+Negative zero is a different case. IEEE 754 defines `-0. = 0.` as `true`, and unlike `NaN`,
+there is exactly one bit pattern for negative zero, so it can be canonicalized. ClickHouse
+replaces negative zero with positive zero before a floating point value is hashed or used as a
+hash table key, which makes `DISTINCT`, `GROUP BY`, `IN`, `uniqExact`, `countDistinct` and
+equi-`JOIN` agree with the `=` operator:
+
+```sql
+SELECT countDistinct(arrayJoin([0., -0.]));
+-- Returns 1.
+```
+
+Because a `GROUP BY` key is reconstructed from the hash table, a group that contains a negative
+zero is reported as a positive zero:
+
+```sql
+SELECT x FROM (SELECT arrayJoin([-0.]) AS x) GROUP BY x;
+-- Returns 0.
+```
+
+The values selected from a `JOIN` are taken from the source blocks, so negative zero is preserved
+there.
+
 ## BFloat16 {#bfloat16}
 
 `BFloat16` is a 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa.
