@@ -118,6 +118,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
@@ -214,6 +219,16 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override

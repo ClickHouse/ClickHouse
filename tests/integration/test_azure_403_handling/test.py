@@ -283,6 +283,7 @@ def test_transient_forbidden_on_write_succeeds(started_cluster):
             node.query(
                 "INSERT INTO t_write_transient SELECT number + 300, toString(number) FROM numbers(100)",
                 query_id=query_id,
+                settings={"async_insert": "0"},  # rely on synchronous query executed
             )
         finally:
             node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_once")

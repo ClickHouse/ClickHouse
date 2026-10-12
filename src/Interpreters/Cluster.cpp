@@ -68,14 +68,6 @@ inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::Socke
     return address.default_database.empty() && isLocalAddress(resolved_address, clickhouse_port);
 }
 
-void concatInsertPath(std::string & insert_path, const std::string & dir_name)
-{
-    if (insert_path.empty())
-        insert_path = dir_name;
-    else
-        insert_path += "," + dir_name;
-}
-
 }
 
 /// Implementation of Cluster::Address class
@@ -109,7 +101,8 @@ Cluster::Address::Address(
         const String & cluster_,
         const String & cluster_secret_,
         UInt32 shard_index_,
-        UInt32 replica_index_)
+        UInt32 replica_index_,
+        bool treat_local_port_as_remote)
     : cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , shard_index(shard_index_)
@@ -149,7 +142,12 @@ Cluster::Address::Address(
     stateless_worker_port = read_optional_port(".stateless_worker_port");
     streaming_exchange_port = read_optional_port(".streaming_exchange_port");
 
-    is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    /// In clickhouse-local, an address of a configured cluster is always a genuinely remote server:
+    /// the tool starts no TCP listener unless `SYSTEM START LISTEN` is used, yet it fills `tcp_port`
+    /// in with the default value regardless (see `LocalServer::processConfig`). The port a replica
+    /// inherits from the top-level `tcp_port` - the shape of the built-in `remote_servers.default`
+    /// cluster - therefore says nothing about this process, exactly like an explicit `<port>`.
+    is_local = !treat_local_port_as_remote && isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
@@ -239,94 +237,49 @@ std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_
 }
 
 
-String Cluster::Address::toFullString(bool use_compact_format) const
+String Cluster::Address::toFullString() const
 {
-    if (use_compact_format)
-    {
-        if (shard_index == 0 || replica_index == 0)
-            // shard_num/replica_num like in system.clusters table
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_num/replica_num cannot be zero");
+    if (shard_index == 0 || replica_index == 0)
+        // shard_num/replica_num like in system.clusters table
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "shard_num/replica_num cannot be zero");
 
-        return fmt::format("shard{}_replica{}", shard_index, replica_index);
-    }
-
-    return escapeForFileName(user) + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' + escapeForFileName(host_name)
-        + ':' + std::to_string(port) + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
-        + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+    return fmt::format("shard{}_replica{}", shard_index, replica_index);
 }
 
-Cluster::Address Cluster::Address::fromFullString(std::string_view full_string)
+std::optional<Cluster::Address> Cluster::Address::tryParseFullString(std::string_view full_string)
 {
-    std::string_view user_password;
-    if (auto pos = full_string.find('@'); pos != std::string_view::npos)
-        user_password = full_string.substr(pos + 1);
+    /// The only directory name format is the one produced by toFullString() and by Cluster::addShard():
+    /// shard{shard_index}_replica{replica_index} or shard{shard_index}_all_replicas
+    if (!full_string.starts_with("shard"))
+        return {};
 
-    /// parsing with the new shard{shard_index}[_replica{replica_index}] format
-    if (user_password.empty() && full_string.starts_with("shard"))
-    {
-        Address address;
+    std::string_view rest = full_string.substr(strlen("shard"));
 
-        if (auto underscore_pos = full_string.find('_'); underscore_pos != std::string_view::npos)
-        {
-            address.shard_index = parse<UInt32>(full_string.substr(0, underscore_pos).substr(strlen("shard")));
-
-            if (full_string.substr(underscore_pos + 1).starts_with("replica"))
-            {
-                address.replica_index = parse<UInt32>(full_string.substr(underscore_pos + 1 + strlen("replica")));
-            }
-            else if (full_string.substr(underscore_pos + 1).starts_with("all_replicas"))
-            {
-                address.replica_index = 0;
-            }
-            else
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', should be in a form of `shardN_all_replicas` or `shardN_replicaM`", full_string);
-        }
-        else
-        {
-            address.shard_index = parse<UInt32>(full_string.substr(strlen("shard")));
-            address.replica_index = 0;
-        }
-
-        return address;
-    }
-
-    /// parsing with the old user[:password]@host:port#default_database format
-    /// This format is appeared to be inconvenient for the following reasons:
-    /// - credentials are exposed in file name;
-    /// - the file name can be too long.
-
-    const char * address_begin = full_string.data();
-    const char * address_end = address_begin + full_string.size();
-    const char * user_pw_end = strchr(address_begin, '@');
-
-    Protocol::Secure secure = Protocol::Secure::Disable;
-    const char * secure_tag = "+secure";
-    if (full_string.ends_with(secure_tag))
-    {
-        address_end -= strlen(secure_tag);
-        secure = Protocol::Secure::Enable;
-    }
-
-    const char * colon = strchr(full_string.data(), ':'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    if (!user_pw_end || !colon)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect user[:password]@host:port#default_database format {}", full_string);
-
-    const bool has_pw = colon < user_pw_end;
-    const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
-    if (!host_end)
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Incorrect address '{}', it does not contain port", full_string);
-
-    const char * has_db = strchr(full_string.data(), '#'); /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    const char * port_end = has_db ? has_db : address_end;
+    auto underscore_pos = rest.find('_');
+    if (underscore_pos == std::string_view::npos)
+        return {};
 
     Address address;
-    address.secure = secure;
-    address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
-    address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
-    address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
-    address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
-    address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
-    // address.priority ignored
+    if (!tryParse<UInt32>(address.shard_index, rest.substr(0, underscore_pos)) || address.shard_index == 0)
+        return {};
+
+    /// "_all_replicas" is a marker for all the replicas of the shard, see Cluster::addShard().
+    std::string_view replica = rest.substr(underscore_pos + 1);
+    if (replica == "all_replicas")
+        address.replica_index = 0;
+    else if (!replica.starts_with("replica"))
+        return {};
+    else if (!tryParse<UInt32>(address.replica_index, replica.substr(strlen("replica"))) || address.replica_index == 0)
+        return {};
+
+    /// tryParse accepts spellings the writer never produces (leading zeros, an explicit sign),
+    /// so only a name that round-trips to exactly the same string is a directory queue name.
+    String canonical = address.replica_index == 0
+        ? fmt::format("shard{}_all_replicas", address.shard_index)
+        : address.toFullString();
+    if (canonical != full_string)
+        return {};
+
     return address;
 }
 
@@ -437,7 +390,8 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
-    const String & cluster_name) : name(cluster_name)
+    const String & cluster_name,
+    bool treat_local_port_as_remote) : name(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -521,7 +475,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         {
             /// Shard without replicas.
             Addresses addresses;
-            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
+            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1, treat_local_port_as_remote);
             const auto & address = addresses.back();
             shard_keys.push_back(use_shards_names ? shard_name : shard_key_from_addresses(addresses));
 
@@ -585,7 +539,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                         cluster_name,
                         secret,
                         current_shard_num,
-                        current_replica_num);
+                        current_replica_num,
+                        treat_local_port_as_remote);
                     ++current_replica_num;
                 }
                 else
@@ -758,11 +713,11 @@ void Cluster::addShard(
     ConnectionPoolPtrs all_replicas_pools;
     all_replicas_pools.reserve(addresses.size());
 
-    ShardInfoInsertPathForInternalReplication insert_paths;
+    std::string insert_path_for_internal_replication;
     if (internal_replication)
         /// "_all_replicas" is a marker that will be replaced with all replicas
         /// (for creating connections in the Distributed engine)
-        insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
+        insert_path_for_internal_replication = fmt::format("shard{}_all_replicas", current_shard_num);
 
     for (const auto & replica : addresses)
     {
@@ -787,14 +742,6 @@ void Cluster::addShard(
         all_replicas_pools.emplace_back(replica_pool);
         if (replica.is_local && !treat_local_as_remote)
             shard_local_addresses.push_back(replica);
-
-        if (internal_replication)
-        {
-            auto dir_name = replica.toFullString(/* use_compact_format= */ false);
-            if (!replica.is_local)
-                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
-            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
-        }
     }
 
     ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
@@ -807,7 +754,7 @@ void Cluster::addShard(
         slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
     shards_info.emplace_back(
-        std::move(insert_paths),
+        std::move(insert_path_for_internal_replication),
         current_shard_num,
         std::move(current_shard_name),
         weight,
@@ -873,6 +820,27 @@ std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
 std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector<size_t> & indices) const
 {
     return std::unique_ptr<Cluster>{ new Cluster(SubclusterTag{}, *this, indices) };
+}
+
+std::unique_ptr<Cluster> Cluster::tryGetClusterWithoutLocalReplicas(const Settings & settings) const
+{
+    /// The locality is judged by `ShardInfo` rather than by `Address::is_local` alone: a cluster
+    /// built with `treat_local_as_remote` keeps its addresses marked local while every shard is
+    /// effectively remote, and such a cluster needs no stripping.
+    bool has_local_replicas = false;
+    for (const auto & shard_info : shards_info)
+    {
+        if (!shard_info.isLocal())
+            continue;
+        if (!shard_info.hasRemoteConnections())
+            return nullptr;
+        has_local_replicas = true;
+    }
+
+    if (!has_local_replicas)
+        return nullptr;
+
+    return std::unique_ptr<Cluster>(new Cluster(RemoteReplicasTag{}, *this, settings));
 }
 
 namespace
@@ -979,6 +947,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     secret = from.secret;
     name = from.name;
+    replicas_as_shards = true;
     /// Every replica became a shard of its own, so a shard number here denotes a different shard than the same
     /// number does in `from`. The identity is left empty, and an empty identity authenticates nothing.
 
@@ -1005,6 +974,48 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     /// `shards_info.emplace_back(from_shard)` above keeps each shard's `shard_num`, so a shard number
     /// still denotes the same shard as in `from` and the identity carries over.
     shard_scope_identity = from.shard_scope_identity;
+    replicas_as_shards = from.replicas_as_shards;
+
+    initMisc();
+}
+
+
+Cluster::Cluster(Cluster::RemoteReplicasTag, const Cluster & from, const Settings & settings)
+{
+    if (from.addresses_with_failover.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
+
+    secret = from.secret;
+    name = from.name;
+
+    UInt32 current_shard_num = 1;
+    for (size_t shard_index : collections::range(0, from.addresses_with_failover.size()))
+    {
+        const auto & from_shard = from.shards_info.at(shard_index);
+
+        /// `tryGetClusterWithoutLocalReplicas` guarantees that the source cluster does not treat its
+        /// local addresses as remote (such a cluster is returned as nullptr before this constructor
+        /// runs), so `Address::is_local` is exactly the effective locality here, and every shard
+        /// keeps at least one replica.
+        Addresses replicas;
+        for (const auto & address : from.addresses_with_failover[shard_index])
+        {
+            if (!address.is_local)
+                replicas.push_back(address);
+        }
+
+        addresses_with_failover.emplace_back(replicas);
+
+        addShard(
+            settings,
+            std::move(replicas),
+            /* treat_local_as_remote = */ false,
+            current_shard_num,
+            from_shard.name,
+            from_shard.weight,
+            from_shard.has_internal_replication);
+        ++current_shard_num;
+    }
 
     initMisc();
 }
@@ -1058,16 +1069,12 @@ std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(s
     return res;
 }
 
-const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
+const std::string & Cluster::ShardInfo::insertPathForInternalReplication() const
 {
     if (!has_internal_replication)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "internal_replication is not set");
 
-    const auto & paths = insert_path_for_internal_replication;
-    if (!use_compact_format)
-        return prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
-
-    return paths.compact;
+    return insert_path_for_internal_replication;
 }
 
 bool Cluster::maybeCrossReplication() const
