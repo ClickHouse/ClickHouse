@@ -6,13 +6,12 @@ INSERT INTO jt_a SELECT number FROM numbers(1000);
 INSERT INTO jt_b SELECT number % 1000, number % 100 FROM numbers(100000);
 INSERT INTO jt_c SELECT number FROM numbers(100);
 
--- the partial push-down of the WHERE puts the always-true filter between the joins
-SET query_plan_optimize_join_order_limit = 10, enable_parallel_replicas = 0, use_join_disjunctions_push_down = 1;
+SET query_plan_optimize_join_order_limit = 10, enable_parallel_replicas = 0;
 
 SELECT countIf(explain LIKE '%⋈%⋈%')
-FROM (EXPLAIN SELECT count() FROM jt_a, jt_b, jt_c WHERE jt_a.k = jt_b.k AND jt_b.d = jt_c.d AND materialize('w') = 'w');
-SELECT count() FROM jt_a, jt_b, jt_c WHERE jt_a.k = jt_b.k AND jt_b.d = jt_c.d AND materialize('w') = 'w';
+FROM (EXPLAIN SELECT count() FROM (SELECT jt_b.d AS d FROM jt_a, jt_b WHERE jt_a.k = jt_b.k AND materialize('w') = 'w') AS ab, jt_c WHERE ab.d = jt_c.d);
+SELECT count() FROM (SELECT jt_b.d AS d FROM jt_a, jt_b WHERE jt_a.k = jt_b.k AND materialize('w') = 'w') AS ab, jt_c WHERE ab.d = jt_c.d;
 
 SET query_plan_replace_always_true_filter = 0;
 SELECT countIf(explain LIKE '%⋈%⋈%')
-FROM (EXPLAIN SELECT count() FROM jt_a, jt_b, jt_c WHERE jt_a.k = jt_b.k AND jt_b.d = jt_c.d AND materialize('w') = 'w');
+FROM (EXPLAIN SELECT count() FROM (SELECT jt_b.d AS d FROM jt_a, jt_b WHERE jt_a.k = jt_b.k AND materialize('w') = 'w') AS ab, jt_c WHERE ab.d = jt_c.d);
