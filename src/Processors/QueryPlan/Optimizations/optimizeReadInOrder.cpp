@@ -235,6 +235,7 @@ bool equalsMatchesSeveralValues(
 {
     if (const auto * column_const = typeid_cast<const ColumnConst *>(constant.get()))
         constant = column_const->getDataColumnPtr();
+    chassert(constant->size() == 1);
     /// NULL is not equal to anything.
     if (constant->isNullAt(0))
         return false;
