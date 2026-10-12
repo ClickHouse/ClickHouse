@@ -50,9 +50,14 @@ SELECT '-- the same result with either order and on one node';
 SELECT sum(f.v), count() FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p WHERE d.name LIKE '%keep%';
 SELECT sum(f.v), count() FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p WHERE d.name LIKE '%keep%' SETTINGS cascades_join_order_alternatives = 0;
 SELECT sum(f.v), count() FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p WHERE d.name LIKE '%keep%' SETTINGS make_distributed_plan = 0;
+SELECT '-- all three ways to split the tables, the same plan and result';
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT sum(f.v) FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p WHERE d.name LIKE '%keep%'
+    SETTINGS enable_join_transitive_predicates = 1, query_plan_join_swap_table = 'auto', cascades_join_order_alternatives = 4)
+WHERE explain LIKE '%JoinLogical%' OR explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Exchange%';
+SELECT sum(f.v), count() FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p WHERE d.name LIKE '%keep%' SETTINGS cascades_join_order_alternatives = 4;
 
 -- The same three tables inside a correlated subquery: the join with the outer table builds a runtime
--- filter, which must reach the reads of both join orders.
+-- filter, which must reach the reads of every join order.
 SELECT '-- the runtime filter from the outer table reaches the reads inside the subquery';
 SELECT if(explain LIKE '%Runtime filters%',
         if(explain LIKE '%from ' || currentDatabase() || '.t_alt_out)%', 'filtered by t_alt_out', 'not filtered by t_alt_out'),
@@ -65,7 +70,7 @@ SELECT if(explain LIKE '%Runtime filters%',
         query_plan_convert_outer_join_to_inner_join = 1,
         -- Shows the runtime filters in the reads instead of in separate filter steps.
         optimize_move_to_prewhere = 1,
-        correlated_subqueries_use_in_memory_buffer = 0, explain_query_plan_default = 'pretty')
+        correlated_subqueries_use_in_memory_buffer = 0, explain_query_plan_default = 'pretty', cascades_join_order_alternatives = 4)
 WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Runtime filters%';
 SELECT count() FROM t_alt_out AS o WHERE o.w <= (
     SELECT max(f.v) FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p

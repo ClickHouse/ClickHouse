@@ -400,9 +400,9 @@ void optimizeTreeSecondPass(
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
-    /// Join reordering also builds a second join order when Cascades will choose between them, see
+    /// Join reordering also builds other join orders when Cascades will choose between them, see
     /// `JoinOrderAlternativesStep`; the same condition decides below whether Cascades runs.
-    optimization_settings.build_join_order_alternatives = optimization_settings.cascades_join_order_alternatives
+    optimization_settings.build_join_order_alternatives = optimization_settings.cascades_join_order_alternatives > 0
         && optimization_settings.make_distributed_plan && optimization_settings.enable_cascades_optimizer
         && !planContainsLogicalExchange(root);
 

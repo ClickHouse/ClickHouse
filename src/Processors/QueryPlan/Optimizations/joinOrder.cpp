@@ -376,7 +376,7 @@ public:
 
     std::shared_ptr<DPJoinEntry> solve();
 
-    DPJoinEntryPtr getRunnerUp() const { return query_graph.full_set_runner_up; }
+    const std::vector<DPJoinEntryPtr> & getFullSetAlternatives() const { return query_graph.full_set_alternatives; }
 
 private:
     QueryGraph query_graph;
@@ -396,8 +396,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     for (const auto & algorithm : enabled_algorithms)
     {
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
-        /// The runner-up belongs to the algorithm that returns the plan.
-        query_graph.full_set_runner_up = nullptr;
+        /// The other orders belong to the algorithm that returns the plan.
+        query_graph.full_set_alternatives.clear();
         switch (algorithm)
         {
             case JoinOrderAlgorithm::DPSUB:
@@ -473,21 +473,26 @@ JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiz
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
-    DPJoinEntryPtr runner_up;
-    if (auto found = reorderer.getRunnerUp())
+    std::vector<DPJoinEntryPtr> alternatives;
+    for (const auto & found : reorderer.getFullSetAlternatives())
     {
-        runner_up = deepCopyJoinTree(found);
-        best_plan = deepCopyJoinTree(best_plan);
-        LOG_TRACE(getJoinOrderOptimizerLogger(), "Runner-up join order '{}', cost: {}", runner_up->dump(), runner_up->cost);
+        if (alternatives.size() == optimization_settings.cascades_join_order_alternatives)
+            break;
+        if (found->left->relations == best_plan->left->relations || found->left->relations == best_plan->right->relations)
+            continue;
+        alternatives.push_back(deepCopyJoinTree(found));
+        LOG_TRACE(getJoinOrderOptimizerLogger(), "Other join order '{}', cost: {}", alternatives.back()->dump(), alternatives.back()->cost);
     }
+    if (!alternatives.empty())
+        best_plan = deepCopyJoinTree(best_plan);
 
     if (optimization_settings.enable_join_transitive_predicates)
     {
         cleanupJoinPredicates(best_plan, column_equivalences, prepared_storage_relations);
-        if (runner_up)
-            cleanupJoinPredicates(runner_up, column_equivalences, prepared_storage_relations);
+        for (auto & alternative : alternatives)
+            cleanupJoinPredicates(alternative, column_equivalences, prepared_storage_relations);
     }
-    return {.best = best_plan, .runner_up = runner_up};
+    return {.best = best_plan, .alternatives = std::move(alternatives)};
 }
 
 }

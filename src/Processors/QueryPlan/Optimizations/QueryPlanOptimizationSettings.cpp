@@ -31,7 +31,7 @@ namespace Setting
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool cascades_aggregation_pushdown;
-    extern const SettingsBool cascades_join_order_alternatives;
+    extern const SettingsUInt64 cascades_join_order_alternatives;
     extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;

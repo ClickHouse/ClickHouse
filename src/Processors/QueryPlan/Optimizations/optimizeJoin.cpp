@@ -1090,13 +1090,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     const UInt64 cluster_id = ++optimization_settings.join_reorder_next_cluster_id;
 
-    /// A second complete order for Cascades to choose from needs the plain case: inner joins without
+    /// Other complete orders for Cascades to choose from need the plain case: inner joins without
     /// columns whose type a join changes, and more than one way to split the relations.
     const bool inner_joins_only = query_graph.join_strictness == JoinStrictness::All && query_graph.join_kinds.empty()
         && query_graph.outer_join_conditions.empty() && query_graph.prepared_storage_relations.none()
         && std::ranges::all_of(query_graph_builder.type_changes, [](const auto & changes) { return changes.second.empty(); });
-    query_graph.keep_runner_up = optimization_settings.build_join_order_alternatives && inner_joins_only
-        && query_graph.relation_stats.size() > 2;
+    if (optimization_settings.build_join_order_alternatives && inner_joins_only && query_graph.relation_stats.size() > 2)
+        query_graph.max_join_order_alternatives = optimization_settings.cascades_join_order_alternatives;
 
     const auto join_order = optimizeJoinOrder(std::move(query_graph), optimization_settings);
 
@@ -1493,51 +1493,62 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         return taken;
     };
 
-    if (join_order.runner_up)
+    if (!join_order.alternatives.empty())
     {
-        /// The second order reads its own copy of every relation, see `JoinOrderAlternativesStep`. All
+        /// Every other order reads its own copy of every relation, see `JoinOrderAlternativesStep`. All
         /// copies are made before any node is added, so a relation that cannot be copied leaves the plan as it was.
-        std::vector<QueryPlan> input_copies;
+        std::vector<std::vector<QueryPlan>> input_copies(join_order.alternatives.size());
         try
         {
-            for (auto * input : leaf_input_nodes)
-                input_copies.push_back(QueryPlan::cloneSubtree(input));
+            for (auto & copies : input_copies)
+                for (auto * input : leaf_input_nodes)
+                    copies.push_back(QueryPlan::cloneSubtree(input));
         }
         catch (const Exception & e)
         {
             /// Only a step that does not support copying is skipped; any other error is a real failure.
             if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                 throw;
-            LOG_DEBUG(getLogger("optimizeJoin"), "No second join order for Cascades: {}", e.message());
+            LOG_DEBUG(getLogger("optimizeJoin"), "No other join orders for Cascades: {}", e.message());
             input_copies.clear();
         }
 
-        if (!input_copies.empty())
+        const auto & best_header = best_root->step->getOutputHeader();
+        SharedHeaders headers{best_header};
+        std::vector<QueryPlan::Node *> roots{best_root};
+        for (size_t alternative = 0; alternative < input_copies.size(); ++alternative)
         {
             std::vector<QueryPlan::Node *> copied_inputs;
-            for (size_t i = 0; i < input_copies.size(); ++i)
+            for (size_t i = 0; i < input_copies[alternative].size(); ++i)
             {
-                auto * copy_root = input_copies[i].getRootNode();
-                auto [copy_nodes, copy_resources] = QueryPlan::detachNodesAndResources(std::move(input_copies[i]));
+                auto * copy_root = input_copies[alternative][i].getRootNode();
+                auto [copy_nodes, copy_resources] = QueryPlan::detachNodesAndResources(std::move(input_copies[alternative][i]));
                 nodes.splice(nodes.end(), copy_nodes);
                 /// The copy reads the same data, so its joins get the same hash table history keys.
                 query_graph_builder.context->statistics_context.copyHashes(leaf_input_nodes[i], copy_root);
                 copied_inputs.push_back(copy_root);
             }
 
-            QueryPlan::Node * alternative_root = build_tree(join_order.runner_up, copied_inputs);
-            const auto & best_header = best_root->step->getOutputHeader();
+            QueryPlan::Node * alternative_root = build_tree(join_order.alternatives[alternative], copied_inputs);
             const auto & alternative_header = alternative_root->step->getOutputHeader();
-            if (blocksHaveEqualStructure(*best_header, *alternative_header))
+            if (!blocksHaveEqualStructure(*best_header, *alternative_header))
             {
-                QueryPlan::Node result;
-                result.step = std::make_unique<JoinOrderAlternativesStep>(SharedHeaders{best_header, alternative_header});
-                result.children = {best_root, alternative_root};
-                result.cost_estimation = best_root->cost_estimation;
-                return result;
+                /// The copies stay in the plan nodes without a parent and are never used.
+                LOG_DEBUG(getLogger("optimizeJoin"), "Skipped a join order for Cascades: headers differ, {} and {}",
+                    best_header->dumpStructure(), alternative_header->dumpStructure());
+                continue;
             }
-            LOG_DEBUG(getLogger("optimizeJoin"), "No second join order for Cascades: headers differ, {} and {}",
-                best_header->dumpStructure(), alternative_header->dumpStructure());
+            headers.push_back(alternative_header);
+            roots.push_back(alternative_root);
+        }
+
+        if (roots.size() > 1)
+        {
+            QueryPlan::Node result;
+            result.step = std::make_unique<JoinOrderAlternativesStep>(std::move(headers));
+            result.children = std::move(roots);
+            result.cost_estimation = best_root->cost_estimation;
+            return result;
         }
     }
 

@@ -10850,13 +10850,14 @@ Consider pushing partial aggregation below a join (eager aggregation) as a cost-
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
 )", BETA, \
         {"26.9", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."}) \
-    DECLARE(Bool, cascades_join_order_alternatives, true, R"(
-Give the Cascades optimizer a second join order to choose from: the cheapest complete order of another shape
-that the join order optimizer found, besides the one it chose. The join order optimizer counts only rows, while
-Cascades also counts the data moved between nodes, so it can pick the order that moves less.
+    DECLARE(UInt64, cascades_join_order_alternatives, 1, R"(
+How many join orders besides the chosen one the join order optimizer gives the Cascades optimizer to choose from:
+the cheapest complete orders that split the joined tables in other ways at the top join. The join order optimizer
+counts only rows, while Cascades also counts the data moved between nodes, so it can pick an order that moves less.
+0 gives Cascades only the chosen order.
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
 )", BETA, \
-        {"26.10", false, true, "New setting to give the Cascades optimizer a second join order to choose from."}) \
+        {"26.10", 0, 1, "New setting to give the Cascades optimizer other join orders to choose from."}) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", 0, \

@@ -18,11 +18,12 @@ JoinOrderAlternativesStep::JoinOrderAlternativesStep(SharedHeaders input_headers
 
 void JoinOrderAlternativesStep::updateOutputHeader()
 {
-    if (input_headers.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderAlternatives expects 2 inputs, got {}", input_headers.size());
-    if (!blocksHaveEqualStructure(*input_headers[0], *input_headers[1]))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderAlternatives inputs have different headers: {} and {}",
-            input_headers[0]->dumpStructure(), input_headers[1]->dumpStructure());
+    if (input_headers.size() < 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderAlternatives expects at least 2 inputs, got {}", input_headers.size());
+    for (const auto & header : input_headers)
+        if (!blocksHaveEqualStructure(*input_headers.front(), *header))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderAlternatives inputs have different headers: {} and {}",
+                input_headers.front()->dumpStructure(), header->dumpStructure());
     output_header = input_headers.front();
 }
 

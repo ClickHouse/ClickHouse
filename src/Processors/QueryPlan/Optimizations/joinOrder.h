@@ -142,10 +142,11 @@ struct QueryGraph
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
 
-    /// When set, the DP solvers keep `full_set_runner_up`: the cheapest plan over all relations whose
-    /// top join splits them differently from the best plan, not just with its inputs swapped.
-    bool keep_runner_up = false;
-    mutable DPJoinEntryPtr full_set_runner_up;
+    /// How many complete orders besides the best one the DP solvers keep: the cheapest plans over all
+    /// relations whose top joins split them in different ways (a swap of the two inputs is the same split).
+    size_t max_join_order_alternatives = 0;
+    /// The kept plans by cost, the best plan among them; filled while a solver runs.
+    mutable std::vector<DPJoinEntryPtr> full_set_alternatives;
 
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
@@ -160,8 +161,8 @@ struct QueryPlanOptimizationSettings;
 struct JoinOrderResult
 {
     DPJoinEntryPtr best;
-    /// Another complete order, see `QueryGraph::full_set_runner_up`; null when not asked for or not found.
-    DPJoinEntryPtr runner_up;
+    /// Other complete orders by cost, see `QueryGraph::max_join_order_alternatives`.
+    std::vector<DPJoinEntryPtr> alternatives;
 };
 
 JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);

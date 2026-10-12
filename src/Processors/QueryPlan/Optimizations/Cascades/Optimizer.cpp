@@ -176,17 +176,18 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
         return {child_group_id, stripped_props};
     }
 
-    /// Two join trees with the same result go into one group: the root expression of the second tree
-    /// becomes another logical expression of the group of the first, and the search keeps the cheaper one.
+    /// Join trees with the same result go into one group: the root expression of every other tree becomes
+    /// another logical expression of the group of the first, and the search keeps the cheapest one.
     /// The group statistics come from the first tree, the order the join order optimizer chose.
     if (typeid_cast<const JoinOrderAlternativesStep *>(node.step.get()))
     {
-        chassert(node.children.size() == 2);
-        auto [group_id, pending_props] = addGroup(*node.children[0]);
-        auto [alternative_group_id, alternative_pending_props] = addGroup(*node.children[1]);
-        if (pending_props == alternative_pending_props)
+        auto [group_id, pending_props] = addGroup(*node.children.front());
+        auto group = memo.getGroup(group_id);
+        for (size_t i = 1; i < node.children.size(); ++i)
         {
-            auto group = memo.getGroup(group_id);
+            auto [alternative_group_id, alternative_pending_props] = addGroup(*node.children[i]);
+            if (!(alternative_pending_props == pending_props))
+                continue;
             for (const auto & expression : memo.getGroup(alternative_group_id)->logical_expressions)
                 group->addLogicalExpression(expression);
         }

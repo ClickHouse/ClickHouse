@@ -3,6 +3,7 @@
 #include <Interpreters/JoinOperator.h>
 #include <IO/Operators.h>
 
+#include <functional>
 #include <ranges>
 
 namespace DB
@@ -60,6 +61,29 @@ static DPJoinEntryPtr makeJoinEntry(
     return entry;
 }
 
+/// Keeps in `QueryGraph::full_set_alternatives` the cheapest plans over all relations, one per way to split
+/// them at the top join, at most one more than `max_join_order_alternatives` (the best plan is among them).
+/// `make_entry` builds the plan only when it is kept.
+static void keepFullSetAlternative(
+    const QueryGraph & query_graph, const BitSet & left_relations, double cost, const std::function<DPJoinEntryPtr()> & make_entry)
+{
+    auto & kept = query_graph.full_set_alternatives;
+    auto same_split = std::ranges::find_if(kept, [&](const auto & entry) { return !splitsDifferently(*entry, left_relations); });
+    if (same_split != kept.end())
+    {
+        if (cost >= (*same_split)->cost)
+            return;
+        kept.erase(same_split);
+    }
+    else if (kept.size() > query_graph.max_join_order_alternatives && cost >= kept.back()->cost)
+        return;
+
+    auto position = std::ranges::upper_bound(kept, cost, {}, [](const auto & entry) { return entry->cost; });
+    kept.insert(position, make_entry());
+    if (kept.size() > query_graph.max_join_order_alternatives + 1)
+        kept.pop_back();
+}
+
 DPJoinEntryPtr evaluateJoin(
     const QueryGraph & query_graph,
     PlanMemo & dp_table,
@@ -75,31 +99,19 @@ DPJoinEntryPtr evaluateJoin(
 
     const BitSet combined_rels = left->relations | right->relations;
     auto current_best = dp_table.find(combined_rels);
-    const bool track_runner_up = query_graph.keep_runner_up && combined_rels.count() == query_graph.relation_stats.size();
+    const bool track_alternatives = query_graph.max_join_order_alternatives > 0
+        && combined_rels.count() == query_graph.relation_stats.size();
     if (current_best != dp_table.end() && new_cost >= current_best->second->cost)
     {
-        if (track_runner_up && splitsDifferently(*current_best->second, left->relations)
-            && (!query_graph.full_set_runner_up || new_cost < query_graph.full_set_runner_up->cost))
-            query_graph.full_set_runner_up = makeJoinEntry(query_graph, keys, left, right, join_kind, predicates, new_cost);
+        if (track_alternatives)
+            keepFullSetAlternative(query_graph, left->relations, new_cost,
+                [&] { return makeJoinEntry(query_graph, keys, left, right, join_kind, predicates, new_cost); });
         return nullptr;
     }
 
     auto new_entry = makeJoinEntry(query_graph, keys, left, right, join_kind, predicates, new_cost);
-
-    if (track_runner_up)
-    {
-        /// The runner-up must split the relations differently from the best plan, and the replaced best
-        /// plan becomes the runner-up when it does and is cheaper than the runner-up so far.
-        auto & runner_up = query_graph.full_set_runner_up;
-        if (runner_up && !splitsDifferently(*new_entry, runner_up->left->relations))
-            runner_up = nullptr;
-        if (current_best != dp_table.end())
-        {
-            const auto & replaced = current_best->second;
-            if (splitsDifferently(*new_entry, replaced->left->relations) && (!runner_up || replaced->cost < runner_up->cost))
-                runner_up = replaced;
-        }
-    }
+    if (track_alternatives)
+        keepFullSetAlternative(query_graph, left->relations, new_cost, [&] { return new_entry; });
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
         new_entry->dump(), left->dump(), right->dump(),
