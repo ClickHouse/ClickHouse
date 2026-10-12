@@ -45,9 +45,8 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
         spark.sql(f"INSERT INTO {table} SELECT id, id % 3 FROM range({start}, {start + 100})")
     spark.sql(f"DELETE FROM {table} WHERE id % 10 = 0")
     first_snapshot = spark.sql(f"SELECT snapshot_id FROM default.{table}.snapshots ORDER BY committed_at LIMIT 1").first()[0]
-    # The files replaced here stay reachable from older snapshots until they expire. Without
-    # `remove-dangling-deletes`, Spark keeps the v2 position delete files live in the new snapshot.
-    spark.sql(f"CALL spark_catalog.system.rewrite_data_files(table => 'default.{table}', options => map('rewrite-all', 'true', 'remove-dangling-deletes', 'true'))")
+    # The files replaced here stay reachable from older snapshots until they expire.
+    spark.sql(f"CALL spark_catalog.system.rewrite_data_files(table => 'default.{table}', options => map('rewrite-all', 'true'))")
     spark.sql(f"CALL spark_catalog.system.compute_table_stats(table => 'default.{table}')")
     expected = spark.sql(f"SELECT count(*), sum(id) FROM {table}").first()
 
@@ -56,8 +55,12 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
 
     expired = metrics(instance, table, "expire_snapshots(retention_period = '1ms', retain_last = 1)")
     assert expired["deleted_data_files_count"] > 0
-    # Position delete files in v2 and deletion vectors in v3 are counted together.
-    assert expired["deleted_position_delete_files_count"] > 0
+    # v3 deletion vectors go with the data files they belong to. v2 position delete files stay live:
+    # the rewritten files keep the sequence number of the delete, so the deletes still apply to them.
+    if format_version == "3":
+        assert expired["deleted_position_delete_files_count"] > 0
+    else:
+        assert expired["deleted_position_delete_files_count"] == 0
 
     orphan = f"{local_path}/data/orphan.parquet"
     if storage_type == "s3":

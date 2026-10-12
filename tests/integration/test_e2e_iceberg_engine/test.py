@@ -886,7 +886,7 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
 
     # Orphans are removed before ClickHouse's first commit: that commit names its metadata file
     # `vN.metadata.json` next to pyiceberg's `NNNNN-<uuid>.metadata.json`, and then both commands
-    # refuse to run on the table.
+    # refuse to run on the table: https://github.com/ClickHouse/ClickHouse/issues/125431
     manager.put_file(table_name, f"data/orphan-{uuid.uuid4().hex[:8]}.parquet", b"orphan")
     # Object timestamps have one-second precision and come from the storage's clock;
     # the margin covers normal clock drift between it and the server.
