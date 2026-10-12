@@ -43,6 +43,9 @@ UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) 
 namespace
 {
 
+/// Creating a `ZSTD` context for every block is expensive: at level 3 it allocates about 650 KiB and zeroes a large part of it,
+/// which is comparable to compressing a 64 KiB block of incompressible data. A context keeps no state that affects the next
+/// block once it is reset, so the contexts are shared by all queries and tables through process-wide per-CPU pools.
 template <typename ContextPtr>
 SimpleObjectPool<ContextPtr> & contextPool()
 {
