@@ -3197,7 +3197,8 @@ struct ToYYYYMMDDhhmmssImpl
     }
     static UInt64 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDDhhmmss(t);
+        /// A `DateTime` is a `UInt32`, so it is never outside the lookup table.
+        return time_zone.toNumYYYYMMDDhhmmss<false>(t);
     }
     static UInt64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -3205,7 +3206,8 @@ struct ToYYYYMMDDhhmmssImpl
     }
     static UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(DayNum(d)));
+        /// `toDate` of a `DayNum` is a start-of-day timestamp read out of the lookup table.
+        return time_zone.toNumYYYYMMDDhhmmss<false>(time_zone.toDate(DayNum(d)));
     }
     static constexpr bool hasPreimage() { return false; }
 
