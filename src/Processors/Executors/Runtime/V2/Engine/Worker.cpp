@@ -1,6 +1,5 @@
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
-#include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunOrder.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Enabled.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
@@ -236,7 +235,7 @@ void Worker::execute(ExecutingProcessor & executing)
     const auto & finished_processors = runner.getFinishedProcessors();
     pool.pipeline.recordAsFinished(finished_processors);
 
-    if (runnable.size() > 1 && !allLightWork(runnable))
+    if (runnable.size() > 1)
         wakeWorker();
 }
 

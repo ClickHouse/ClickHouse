@@ -1,5 +1,4 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunner.h>
-#include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunOrder.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -299,8 +298,6 @@ void ProcessorRunner::run(ExecutingProcessor & picked)
         case ExecutingProcessor::Status::Finished:
             Wyrd::abort("Processor {} was picked while not scheduled", picked.processor->getName());
     }
-
-    sortRunnable(runnable, picked);
 }
 
 const VectorWithMemoryTracking<ExecutingProcessor *> & ProcessorRunner::getRunnable() const
