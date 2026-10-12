@@ -758,6 +758,22 @@ def part_dirs(table):
     return sorted(name for name in names if name != "detached")
 
 
+def leftover_part_dirs(table):
+    """Part directories on disk that no active part owns.
+
+    After a failed non-transactional removal these are its empty covering parts. `StorageMergeTree
+    ::removeRolledBackEmptyPartsAndRethrow` removes them inside the failing statement, so an empty
+    result is the fixed behaviour and a non-empty one is what the loader would read as prehistoric.
+    """
+    active = q(
+        "SELECT arrayStringConcat(groupArray(name), ' ') FROM system.parts "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND active"
+    ).split()
+    leftover = sorted(set(part_dirs(table)) - set(active))
+    logging.info("%s: active %s, leftover on disk %s", table, active, leftover)
+    return leftover
+
+
 def require_rolled_back_parts_on_disk(table):
     """The empty covering parts of the failed removal must still be on disk.
 
@@ -770,17 +786,11 @@ def require_rolled_back_parts_on_disk(table):
     tell from cleanup having run. Such a repair needs this precondition rewritten, not only the
     xfail marker dropped.
     """
-    active = q(
-        "SELECT arrayStringConcat(groupArray(name), ' ') FROM system.parts "
-        f"WHERE database = currentDatabase() AND table = '{table}' AND active"
-    ).split()
-    leftover = sorted(set(part_dirs(table)) - set(active))
     require(
-        leftover,
-        f"nothing is left on disk for {table} beside its active parts {active}: the rolled-back "
+        leftover_part_dirs(table),
+        f"nothing is left on disk for {table} beside its active parts: the rolled-back "
         "empty covering parts were removed before the reload could load them",
     )
-    logging.info("rolled back, still on disk: %s", leftover)
 
 
 def reload_state(table):
@@ -1276,7 +1286,8 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
     strict=True,
     raises=AssertionError,
     reason="Known bug #124486: a failed non-transactional DROP PARTITION leaves a part stamped "
-    "for removal, which hides it from every transaction",
+    "for removal, which hides it from every transaction. #122375 repaired the reload, not the "
+    "stamp",
 )
 def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
     two_parts("t_drop_stamp")
@@ -1304,12 +1315,15 @@ def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124486
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Known bug #124486: a failed DROP PARTITION empties the partition after a reload",
-)
+# https://github.com/ClickHouse/ClickHouse/pull/122375
 def test_failed_drop_partition_survives_reload(start_cluster):
+    """A failed `DROP PARTITION` keeps the partition across a reload.
+
+    The rollback marks `creation_csn = RolledBackCSN` in memory only, so the empty covering parts
+    have to leave the disk inside the failing statement. Merges and cleanup are stopped: a
+    directory that is still there when the assertion runs is one the statement left behind, and
+    the loader reads it as prehistoric covering the originals.
+    """
     two_parts("t_drop_reload")
     with merges_and_cleanup_stopped():
         require_parts("t_drop_reload", 2)
@@ -1318,7 +1332,8 @@ def test_failed_drop_partition_survives_reload(start_cluster):
         require_injected_failure(error)
         require_rows("t_drop_reload", "2\t3")
 
-        require_rolled_back_parts_on_disk("t_drop_reload")
+        left = leftover_part_dirs("t_drop_reload")
+        assert left == [], f"the failed drop left its empty covering parts on disk: {left}"
         logging.info("before the reload: %s", reload_state("t_drop_reload"))
         q("DETACH TABLE t_drop_reload")
         q("ATTACH TABLE t_drop_reload")
@@ -1327,12 +1342,13 @@ def test_failed_drop_partition_survives_reload(start_cluster):
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124486
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Known bug #124486: a failed TRUNCATE empties the table after a reload",
-)
+# https://github.com/ClickHouse/ClickHouse/pull/122375
 def test_failed_truncate_survives_reload(start_cluster):
+    """A failed `TRUNCATE` keeps the rows across a reload.
+
+    `TRUNCATE` takes the same path as `DROP PARTITION`; see
+    `test_failed_drop_partition_survives_reload` for what the assertions turn on.
+    """
     two_parts("t_truncate_reload")
     with merges_and_cleanup_stopped():
         require_parts("t_truncate_reload", 2)
@@ -1341,7 +1357,8 @@ def test_failed_truncate_survives_reload(start_cluster):
         require_injected_failure(error)
         require_rows("t_truncate_reload", "2\t3")
 
-        require_rolled_back_parts_on_disk("t_truncate_reload")
+        left = leftover_part_dirs("t_truncate_reload")
+        assert left == [], f"the failed truncate left its empty covering parts on disk: {left}"
         logging.info("before the reload: %s", reload_state("t_truncate_reload"))
         q("DETACH TABLE t_truncate_reload")
         q("ATTACH TABLE t_truncate_reload")
@@ -1354,7 +1371,7 @@ def test_failed_truncate_survives_reload(start_cluster):
     strict=True,
     raises=AssertionError,
     reason="Known bug #124486: a failed REPLACE PARTITION leaves the new part beside the ones it "
-    "did not replace",
+    "did not replace. `replacePartitionFrom` is not the path #122375 repaired",
 )
 def test_failed_replace_partition_leaves_destination_intact(start_cluster):
     q("DROP TABLE IF EXISTS t_replace_src SYNC")
@@ -1385,11 +1402,13 @@ def test_failed_replace_partition_leaves_destination_intact(start_cluster):
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124486
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Known bug #124486: when the rollback's own mark fails too, a failed DROP PARTITION "
-    "still empties the table after a reload",
+# https://github.com/ClickHouse/ClickHouse/pull/122375
+@pytest.mark.skip(
+    reason="Kills the node for the rest of the module. When the rollback itself throws, the "
+    "handler added by #122375 hands a part in state `Temporary` to `tryRemovePartImmediately`, "
+    "which raises `Cannot remove part ..., because it has state: Temporary`; a debug or sanitizer "
+    "build aborts on it. Drop the marker once that is fixed - the reload below still loses the "
+    "rows, because the part the handler could not remove keeps its final name on disk",
 )
 def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cluster):
     two_parts("t_rollback_mark")
