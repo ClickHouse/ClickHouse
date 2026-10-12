@@ -4,7 +4,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
 #include <Common/PageCache.h>
-#include <Common/IMemoryReleasableCache.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <atomic>
@@ -104,9 +103,6 @@ class MemoryWorker
 public:
     MemoryWorker(MemoryWorkerConfig config, std::shared_ptr<PageCache> page_cache_);
 
-    /// Register (or, with nullptr, unregister) a cache to resize on every tick, see `releasable_cache`.
-    void setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache);
-
     enum class MemoryUsageSource : uint8_t
     {
         None,
@@ -137,13 +133,7 @@ public:
 
     ~MemoryWorker();
 private:
-    struct MemoryUsage
-    {
-        Int64 resident = 0;
-        Int64 allocated = 0;
-    };
-
-    MemoryUsage getMemoryUsage(bool log_error);
+    uint64_t getMemoryUsage(bool log_error);
 
     void updateResidentMemoryThread();
 
@@ -253,12 +243,6 @@ private:
     std::shared_ptr<ICgroupsReader> cgroups_reader;
 
     std::shared_ptr<PageCache> page_cache;
-
-    /// Another cache that gives memory back on demand, resized on every tick like the page cache.
-    /// Set after construction, once the cache exists. See `IMemoryReleasableCache`.
-    std::mutex releasable_cache_mutex;
-    std::shared_ptr<IMemoryReleasableCache> releasable_cache;
-    std::shared_ptr<IMemoryReleasableCache> getReleasableCache();
 
 #if USE_JEMALLOC
     void purgeDirtyPagesThread();

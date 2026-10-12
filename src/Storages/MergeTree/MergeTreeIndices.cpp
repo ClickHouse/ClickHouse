@@ -303,7 +303,7 @@ namespace
 
 /// The two part representations answer these questions with the same method names, so the checks
 /// below are written once. A concrete part must not be wrapped in a part-info here: the physical
-/// format is asked about parts that cannot be shared.
+/// format is also asked from ~IMergeTreeDataPart, where the part can no longer be shared.
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part) { return part.checksums; }
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }
@@ -457,11 +457,9 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
 {
     /// Not routed through `getDeserializedFormat`: that answers the read-time question and
     /// reports nothing once a required system column is invalidated, while a file left on disk
-    /// still has to be skipped/stripped here. Probes `getPotentialSubstreams`, not `getSubstreams`:
-    /// a part may hold a substream that the current definition does not write (the legacy minmax
-    /// `.idx`, the text index `.pos` after the index was redefined without `support_phrase_search`).
+    /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
     MergeTreeIndexSubstreams substreams;
-    for (const auto & substream : getPotentialSubstreams())
+    for (const auto & substream : getSubstreams())
         if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
             substreams.push_back(substream);
 

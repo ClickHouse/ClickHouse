@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest
+# Tags: no-replicated-database
 # ^ creates a user and a DEFINER view; access entities are not part of the Replicated test database.
 
 # Plan-based parallel replicas merges a UNION ALL over MergeTree branches into a single distributed plan

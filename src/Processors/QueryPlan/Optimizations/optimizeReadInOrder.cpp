@@ -1,9 +1,9 @@
 #include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -28,11 +28,24 @@
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 
 #include <stack>
+
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool query_plan_read_in_order;
+    extern const SettingsBool optimize_read_in_order;
+    extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
+}
+}
 
 namespace DB::QueryPlanOptimizations
 {
@@ -222,35 +235,6 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
-/// `equals` compares a `String` with a `FixedString` zero-padded, so `s = toFixedString('a', 2)` holds for
-/// the `String` values `'a'`, `'a\0'` and `'a\0\0'`. They sort differently, so such a condition does not fix `s`.
-/// `Tuple` values are compared element by element with `equals`, so the same holds for a `String` element compared
-/// with a `FixedString` element: `t = tuple(toFixedString('a', 2))` holds for `tuple('a')` and `tuple('a\0')`.
-/// `Array` and `Map` values are cast to a common type and compared byte by byte, so they are not affected.
-/// A `FixedString` column is not affected either: all its values have the same length, so at most one of them matches.
-bool comparesStringWithFixedString(const DataTypePtr & column_type_with_wrappers, const DataTypePtr & constant_type_with_wrappers)
-{
-    auto column_type = removeLowCardinalityAndNullable(column_type_with_wrappers);
-    auto constant_type = removeLowCardinalityAndNullable(constant_type_with_wrappers);
-    if (isString(column_type) && isFixedString(constant_type))
-        return true;
-
-    const auto * column_tuple = typeid_cast<const DataTypeTuple *>(column_type.get());
-    const auto * constant_tuple = typeid_cast<const DataTypeTuple *>(constant_type.get());
-    if (!column_tuple || !constant_tuple)
-        return false;
-
-    const auto & column_elements = column_tuple->getElements();
-    const auto & constant_elements = constant_tuple->getElements();
-    if (column_elements.size() != constant_elements.size())
-        return false;
-
-    for (size_t i = 0; i < column_elements.size(); ++i)
-        if (comparesStringWithFixedString(column_elements[i], constant_elements[i]))
-            return true;
-    return false;
-}
-
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
@@ -275,21 +259,16 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
             else if (name == "equals")
             {
                 const ActionsDAG::Node * maybe_fixed_column = nullptr;
-                const ActionsDAG::Node * constant = nullptr;
                 size_t num_constant_columns = 0;
                 for (const auto & child : node->children)
                 {
                     if (child->column)
-                    {
                         ++num_constant_columns;
-                        constant = child;
-                    }
                     else
                         maybe_fixed_column = child;
                 }
 
-                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
-                    && !comparesStringWithFixedString(maybe_fixed_column->result_type, constant->result_type))
+                if (maybe_fixed_column && num_constant_columns + 1 == node->children.size())
                 {
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fixed_columns.insert(maybe_fixed_column);
@@ -298,7 +277,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                     const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
                     while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
                         && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
+                        && maybe_injective->function_base->isInjective({}))
                     {
                         maybe_injective = maybe_injective->children.front();
                         fixed_columns.insert(maybe_injective);
@@ -1396,10 +1375,6 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return {};
 
-        /// A follower forced to aggregate in order cannot use an aggregate projection and would read the base table.
-        if (reading->isParallelReadingFromReplicas() && aggregating.getParams().only_merge)
-            return {};
-
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -1494,18 +1469,6 @@ bool canImproveOrderForDistinct(InputOrder & required_order, const InputOrderInf
     return true;
 }
 
-/// The groups of the in-order `DISTINCT` come from comparison - a group is a range of rows that
-/// compare equal - while the hash variant, the one that agrees with `GROUP BY`, groups by value.
-/// For a float-like key the two disagree (`-0.0` against `0.0`, the `NaN` payloads), so a key that
-/// comparison cannot tell apart must not enter the sort prefix, otherwise the answer would depend on
-/// which variant the plan happens to pick. `getCollationAwareSortPrefixInColumns` drops such a key,
-/// and the whole description has to survive, because a key left out of the prefix would be grouped by
-/// comparison all the same by the sorted-stream transform.
-bool sortPrefixCanGroupDistinctKeys(const InputOrder & order_info, const Names & keys, const Block & header)
-{
-    return getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, header).size() == order_info.sort_description.size();
-}
-
 InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Here we allow improving existing in-order optimization.
@@ -1523,7 +1486,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         return {};
 
     const auto & keys = distinct.getColumnNames();
-    const auto & header = *distinct.getInputHeaders().front();
     size_t limit = 0;
 
     std::optional<ActionsDAG> dag;
@@ -1545,10 +1507,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             fixed_columns,
             dag, keys);
 
-        /// Decline before the in-order read is requested, so that no needless in-order read is left behind.
-        if (!sortPrefixCanGroupDistinctKeys(order_info, keys, header))
-            return {};
-
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
             return {};
 
@@ -1569,10 +1527,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             fixed_columns,
             dag, keys);
 
-        /// Decline before the in-order read is requested, so that no needless in-order read is left behind.
-        if (!sortPrefixCanGroupDistinctKeys(order_info, keys, header))
-            return {};
-
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
             return {};
 
@@ -1590,10 +1544,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
             object_storage_step,
             fixed_columns,
             dag, keys);
-
-        /// Decline before the in-order read is requested, so that no needless in-order read is left behind.
-        if (!sortPrefixCanGroupDistinctKeys(order_info, keys, header))
-            return {};
 
         if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
             return {};
@@ -1646,8 +1596,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         auto order_info = buildInputOrderFromUnorderedKeys(reading, fixed_columns, dag, keys);
 
         /// The order of BY columns does not matter for LIMIT BY
-        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, *limit_by.getInputHeaders().front()).size()
-            != keys.size())
+        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys).size() != keys.size())
             return {};
 
         if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
@@ -1667,8 +1616,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         auto order_info = buildInputOrderFromUnorderedKeys(merge, fixed_columns, dag, keys);
 
         /// The order of BY columns does not matter for LIMIT BY
-        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys, *limit_by.getInputHeaders().front()).size()
-            != keys.size())
+        if (getCollationAwareSortPrefixInColumns(order_info.sort_description, keys).size() != keys.size())
             return {};
 
         if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
@@ -1700,24 +1648,15 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
 }
 
-QueryPlan::Node * findReadingStepForReadInOrder(QueryPlan::Node & node, bool read_in_order_through_join)
-{
-    FindReadingStepContext find_reading_ctx{
-        .allow_existing_order = false,
-        .read_in_order_through_join = read_in_order_through_join,
-    };
-    return findReadingStep(node, find_reading_ctx);
-}
-
-InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
+bool wouldReadInOrderBeUseful(
     const SortingStep & sorting,
     const KeyDescription & sorting_key,
     const QueryPlan::Node & subtree_above_reading)
 {
     if (sorting.getType() != SortingStep::Type::Full)
-        return nullptr;
+        return false;
     if (sorting_key.column_names.empty())
-        return nullptr;
+        return false;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1735,35 +1674,7 @@ InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
         sorting_key.column_names,
         limit);
 
-    return order_info.input_order;
-}
-
-InputOrderInfoPtr getInputOrderIfReadInOrderIsUseful(
-    const SortingStep & sorting,
-    ReadFromMerge & merge,
-    const QueryPlan::Node & subtree_above_reading)
-{
-    if (sorting.getType() != SortingStep::Type::Full)
-        return nullptr;
-
-    std::optional<ActionsDAG> dag;
-    FixedColumns fixed_columns;
-    size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
-
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
-
-    /// The same matching as in `optimizeReadInOrder` itself: every child's sorting key against the sort
-    /// description, through the renaming that the child plan performs on top of the child table.
-    auto order_info = buildInputOrderFromSortDescription(
-        &merge,
-        fixed_columns,
-        dag,
-        sorting.getSortDescription(),
-        limit);
-
-    return order_info.input_order;
+    return order_info.input_order != nullptr;
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -1954,12 +1865,102 @@ void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Qu
 
     /// The sorted-stream transform needs every key in the sort prefix (and in that order); otherwise a
     /// key not covered by the prefix would be dropped from grouping.
-    auto sort_prefix
-        = getCollationAwareSortPrefixInColumns(order_info.sort_description, limit_by->getColumns(), *limit_by->getInputHeaders().front());
+    auto sort_prefix = getCollationAwareSortPrefixInColumns(order_info.sort_description, limit_by->getColumns());
     if (sort_prefix.size() != limit_by->getColumns().size())
         return;
 
     limit_by->applyOrder(sort_prefix);
+}
+
+/// This optimization is obsolete and will be removed.
+/// optimizeReadInOrder covers it.
+size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & /*settings*/)
+{
+    /// Find the following sequence of steps, add InputOrderInfo and apply prefix sort description to
+    /// SortingStep:
+    /// WindowStep <- SortingStep <- [Expression] <- ReadFromMergeTree
+
+    auto * window_node = parent_node;
+    auto * window = typeid_cast<WindowStep *>(window_node->step.get());
+    if (!window)
+        return 0;
+    if (window_node->children.size() != 1)
+        return 0;
+
+    auto * sorting_node = window_node->children.front();
+    auto * sorting = typeid_cast<SortingStep *>(sorting_node->step.get());
+    if (!sorting)
+        return 0;
+    if (sorting_node->children.size() != 1)
+        return 0;
+
+    auto * possible_read_from_merge_tree_node = sorting_node->children.front();
+
+    if (typeid_cast<ExpressionStep *>(possible_read_from_merge_tree_node->step.get()))
+    {
+        if (possible_read_from_merge_tree_node->children.size() != 1)
+            return 0;
+
+        possible_read_from_merge_tree_node = possible_read_from_merge_tree_node->children.front();
+    }
+
+    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(possible_read_from_merge_tree_node->step.get());
+    if (!read_from_merge_tree)
+    {
+        return 0;
+    }
+
+    auto context = read_from_merge_tree->getContext();
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
+        || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
+        || context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        return 0;
+    }
+
+    const auto & query_info = read_from_merge_tree->getQueryInfo();
+    const auto * select_query = query_info.query->as<ASTSelectQuery>();
+
+    /// TODO: Analyzer syntax analyzer result
+    if (!query_info.syntax_analyzer_result)
+        return 0;
+
+    ManyExpressionActions order_by_elements_actions;
+    const auto & window_desc = window->getWindowDescription();
+
+    for (const auto & actions_dag : window_desc.partition_by_actions)
+    {
+        order_by_elements_actions.emplace_back(
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings(context, CompileExpressions::yes)));
+    }
+
+    for (const auto & actions_dag : window_desc.order_by_actions)
+    {
+        order_by_elements_actions.emplace_back(
+            std::make_shared<ExpressionActions>(actions_dag->clone(), ExpressionActionsSettings(context, CompileExpressions::yes)));
+    }
+
+    auto order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+            *select_query,
+            order_by_elements_actions,
+            window->getWindowDescription().full_sort_description,
+            query_info.syntax_analyzer_result);
+
+    /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
+    UInt64 limit = (select_query->hasFiltration() || select_query->groupBy()) ? 0 : InterpreterSelectQuery::getLimitForSorting(*select_query, context);
+
+    auto order_info = order_optimizer->getInputOrder(read_from_merge_tree->getStorageMetadata(), context, limit);
+
+    if (order_info)
+    {
+        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
+        if (!can_read)
+            return 0;
+        sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);
+    }
+
+    return 0;
 }
 
 }
