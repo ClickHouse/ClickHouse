@@ -725,6 +725,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
+    /// Keeps a disk defined inline with `disk = disk(...)` alive until the table takes it over.
+    CustomDiskRegistrationPtr custom_disk_registration;
 
     if (is_extended_storage_def)
     {
@@ -951,7 +953,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// table was originally created.
         /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
         /// still be subject to these checks.
-        storage_settings->loadFromQuery(
+        custom_disk_registration = storage_settings->loadFromQuery(
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
@@ -1243,7 +1245,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             local_settings[Setting::keeper_retry_max_backoff_ms],
             args.getLocalContext()->getProcessListElementSafe()};
 
-        return std::make_shared<StorageReplicatedMergeTree>(
+        auto storage = std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_info,
             args.mode,
             args.table_id,
@@ -1255,9 +1257,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             std::move(storage_settings),
             need_check_table_structure,
             create_query_zk_retries_info);
+        storage->setCustomDiskRegistration(std::move(custom_disk_registration));
+        return storage;
     }
 
-    return std::make_shared<StorageMergeTree>(
+    auto storage = std::make_shared<StorageMergeTree>(
         args.table_id,
         args.relative_data_path,
         metadata,
@@ -1266,6 +1270,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         date_column_name,
         merging_params,
         std::move(storage_settings));
+    storage->setCustomDiskRegistration(std::move(custom_disk_registration));
+    return storage;
 }
 
 
