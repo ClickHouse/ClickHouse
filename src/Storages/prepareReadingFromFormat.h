@@ -44,6 +44,10 @@ namespace DB
 
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+        /// The filter without the conjuncts on hive partition and virtual columns (except row lineage ones if `keep_row_lineage_columns`):
+        /// they are added after the format, and a column of the data file with the same name holds other values.
+        std::shared_ptr<const ActionsDAG> getFormatFilter(
+            const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns = false) const;
         PrewhereInfoPtr prewhere_info;
         FilterDAGInfoPtr row_level_filter;
     };

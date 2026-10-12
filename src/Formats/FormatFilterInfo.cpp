@@ -83,7 +83,7 @@ FormatFilterInfo::FormatFilterInfo() = default;
 
 bool FormatFilterInfo::hasFilter() const
 {
-    return filter_actions_dag != nullptr;
+    return filter_actions_dag || row_level_filter || prewhere_info;
 }
 
 namespace
