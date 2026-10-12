@@ -8,8 +8,8 @@
 # - T2: the smaller table becomes the build side.
 # - T3: a table that was never written has 0 rows.
 # - T4: the count comes from the snapshot the read uses.
-# - T5: an aggregation over an Iceberg read estimates its groups from the NDV; without rows it is named in the data lake
-#   hint line.
+# - T5: an aggregation over an Iceberg read estimates its groups from the NDV, also under a filter that prunes nothing;
+#   without column statistics such a filter gives no rows, so the read is named in the data lake hint line.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,6 +28,7 @@ PINS="--query_plan_optimize_join_order_randomize=0 --query_plan_optimize_join_or
 ON="--use_iceberg_manifest_statistics=1 --use_iceberg_manifest_column_statistics=1"
 # The column flag alone does nothing.
 OFF="--use_iceberg_manifest_statistics=0 --use_iceberg_manifest_column_statistics=1"
+ROWS_ONLY="--use_iceberg_manifest_statistics=1 --use_iceberg_manifest_column_statistics=0"
 
 LAKE="${CLICKHOUSE_USER_FILES_UNIQUE}"
 rm -rf "${LAKE}"
@@ -107,16 +108,19 @@ labels "${T4}" --iceberg_snapshot_id="${FIRST_ID}" ${ON}
 echo '--- T4: latest snapshot'
 labels "${T4}" ${ON}
 
-# Prints how many data lake and column statistics hint lines name a relation. Usage: hint_lines <query> <relation>.
+# Prints how many data lake and column statistics hint lines name a relation.
+# Usage: hint_lines <query> <relation> [client flags].
 hint_lines()
 {
+    local query="$1" relation="$2"
+    shift 2
     local log
-    log=$(${CLICKHOUSE_CLIENT_DEBUG} ${PINS} ${ON} --query "EXPLAIN keep_logical_steps = 1, actions = 1 $1" 2>&1 >/dev/null)
+    log=$(${CLICKHOUSE_CLIENT_DEBUG} ${PINS} "$@" --query "EXPLAIN keep_logical_steps = 1, actions = 1 ${query}" 2>&1 >/dev/null)
     local data_lake column_statistics
-    data_lake=$(echo "${log}" | grep 'derived from data lake metadata' | grep -c "$2")
-    column_statistics=$(echo "${log}" | grep 'Consider creating column statistics' | grep -c "$2")
-    echo "data lake hint lines naming $2: ${data_lake}"
-    echo "column statistics hint lines naming $2: ${column_statistics}"
+    data_lake=$(echo "${log}" | grep 'derived from data lake metadata' | grep -c "${relation}")
+    column_statistics=$(echo "${log}" | grep 'Consider creating column statistics' | grep -c "${relation}")
+    echo "data lake hint lines naming ${relation}: ${data_lake}"
+    echo "column statistics hint lines naming ${relation}: ${column_statistics}"
 }
 
 # The NDV of `k` from the manifests gives the 1000 groups, an exact estimate.
@@ -124,11 +128,12 @@ T5="SELECT count() FROM mt AS m JOIN (SELECT k, count() AS c FROM ice_big GROUP 
 echo '--- T5: aggregation over an Iceberg read'
 labels "${T5}" ${ON}
 
-# A filter that prunes nothing leaves the read without rows and column statistics, so the data lake hint line names it.
 T5_FILTERED="SELECT count() FROM mt AS m
     JOIN (SELECT k, count() AS c FROM ice_big WHERE v % 2 = 0 GROUP BY k) AS ice_filtered ON m.k = ice_filtered.k"
 echo '--- T5: aggregation over an Iceberg read with a filter that prunes nothing'
 labels "${T5_FILTERED}" ${ON}
-hint_lines "${T5_FILTERED}" ice_filtered
+echo '--- T5: the same without column statistics'
+labels "${T5_FILTERED}" ${ROWS_ONLY}
+hint_lines "${T5_FILTERED}" ice_filtered ${ROWS_ONLY}
 
 rm -rf "${LAKE}"

@@ -229,7 +229,7 @@ void ManifestColumnStatistics::addFile(const ProcessedManifestFileEntry & entry,
     }
 }
 
-UInt64 ManifestColumnStatistics::estimateDistinctValues(
+ManifestColumnStatistics::DistinctValues ManifestColumnStatistics::estimateDistinctValues(
     const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows)
 {
     const UInt64 nulls = column.null_fraction ? static_cast<UInt64>(std::llround(*column.null_fraction * static_cast<Float64>(rows))) : 0;
@@ -240,14 +240,23 @@ UInt64 ManifestColumnStatistics::estimateDistinctValues(
         range_width = valueRangeWidth(*column.min_value, *column.max_value);
 
     UInt64 num_distinct_values = 1;
+    bool counted = false;
     if (non_null_rows == 0)
         num_distinct_values = 1;
     else if (inputs.identity_partition_known)
+    {
         num_distinct_values = inputs.identity_partition_values.size();
+        counted = true;
+    }
     /// A timestamp counts microseconds, but its values usually step by thousands of them or more, so its range is far
     /// above the rows and the clamp below gives the estimate.
     else if (range_width)
+    {
         num_distinct_values = *range_width;
+        /// As MergeTree interpolates ranges between min and max, the values are taken to fill the range, so equality and
+        /// `IN` use it; a column with gaps would look more selective than it is
+        counted = *range_width <= non_null_rows;
+    }
     /// `column_sizes` over the width of a fixed-width type; a variable-width type skips to the guess below.
     else if (inputs.sizes_known && target.nested_type->haveMaximumSizeOfValue())
         num_distinct_values = inputs.sizes / target.nested_type->getSizeOfValueInMemory();
@@ -256,10 +265,10 @@ UInt64 ManifestColumnStatistics::estimateDistinctValues(
         num_distinct_values = column.num_distinct_values;
 
     /// A distinct count excludes NULL, as for MergeTree statistics, and 0 would make a join a cross product.
-    return std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1));
+    return {std::clamp<UInt64>(num_distinct_values, 1, std::max<UInt64>(non_null_rows, 1)), counted};
 }
 
-void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate) const
+void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
 {
     if (!estimate.rows || *estimate.rows == 0)
         return;
@@ -270,9 +279,17 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate) const
 
     const auto merged = estimate.column_statistics->estimateRelationProfile();
     for (size_t i = 0; i < targets.size(); ++i)
-        if (const auto it = merged.column_stats.find(targets[i].name); it != merged.column_stats.end())
-            estimate.num_distinct_values.emplace(
-                targets[i].name, estimateDistinctValues(targets[i], distinct_values_inputs[i], it->second, *estimate.rows));
+    {
+        const auto it = merged.column_stats.find(targets[i].name);
+        if (it == merged.column_stats.end())
+            continue;
+
+        const auto distinct_values = estimateDistinctValues(targets[i], distinct_values_inputs[i], it->second, *estimate.rows);
+        estimate.num_distinct_values.emplace(targets[i].name, distinct_values.count);
+        /// Equality and `IN` then divide the rows by it, as with a `uniq` statistic; otherwise they get the default factor.
+        if (distinct_values.counted)
+            statistics_builder.setCardinality(targets[i].name, distinct_values.count);
+    }
 }
 
 }
