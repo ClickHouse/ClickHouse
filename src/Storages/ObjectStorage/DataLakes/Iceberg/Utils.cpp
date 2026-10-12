@@ -38,6 +38,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -79,6 +80,11 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
+}
+
+namespace DB::FailPoints
+{
+extern const char iceberg_writes_skip_version_hint[];
 }
 
 namespace DB::DataLakeStorageSetting
@@ -489,6 +495,8 @@ bool writeMetadataFileAndVersionHint(
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
+    fiu_do_on(DB::FailPoints::iceberg_writes_skip_version_hint, { return true; });
+
     (void)tryWriteVersionHintFile(
         resolver,
         metadata_file_info,
@@ -563,6 +571,24 @@ void removeDroppedMetadataFiles(
 
         if (paths_to_remove.empty())
             return;
+
+        /// The hint is updated best-effort after the commit, so the file it names may be one this commit dropped.
+        StoredObject version_hint(metadata_directory + "version-hint.text");
+        if (object_storage->exists(version_hint))
+        {
+            String hint = object_storage->readSmallObjectAndGetObjectMetadata(version_hint, ReadSettings{}, MAX_HINT_FILE_SIZE).data;
+            boost::algorithm::trim(hint);
+            if (!hint.empty())
+            {
+                const Int32 hinted_version = std::all_of(hint.begin(), hint.end(), isdigit)
+                    ? parseMetadataVersion(hint, hint)
+                    : getMetadataFileAndVersion(hint).version;
+                std::erase_if(paths_to_remove, [&](const String & path) { return getMetadataFileAndVersion(path).version == hinted_version; });
+                if (paths_to_remove.empty())
+                    return;
+            }
+        }
+
         StoredObjects objects;
         for (const auto & path : paths_to_remove)
             objects.emplace_back(path);

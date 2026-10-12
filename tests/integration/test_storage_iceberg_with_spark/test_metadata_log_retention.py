@@ -64,6 +64,18 @@ def download_for_spark(cluster, storage_type, table_name):
     return table_dir
 
 
+def create_table_keeping_two_previous_files(cluster, storage_type, table_name, schema, **kwargs):
+    """Create the table and set `previous-versions-max = 2` and `delete-after-commit.enabled = true` with Spark."""
+    create_iceberg_table(storage_type, cluster.instances["node1"], table_name, cluster, schema, **kwargs)
+    # ClickHouse has no DDL for Iceberg table properties.
+    table_dir = download_for_spark(cluster, storage_type, table_name)
+    cluster.spark_session.sql(
+        f"ALTER TABLE {table_name} SET TBLPROPERTIES("
+        "'write.metadata.previous-versions-max' = '2', 'write.metadata.delete-after-commit.enabled' = 'true')"
+    )
+    default_upload_directory(cluster, storage_type, table_dir, table_dir)
+
+
 def test_metadata_log_default_limit(started_cluster_iceberg_with_spark):
     """Without table properties `metadata-log` keeps 100 previous files, so `remove_orphan_files` collects older ones."""
     cluster = started_cluster_iceberg_with_spark
@@ -103,15 +115,7 @@ def test_metadata_delete_after_commit(started_cluster_iceberg_with_spark, storag
     spark = cluster.spark_session
     table_name = f"test_metadata_delete_after_commit_{storage_type}_{get_uuid_str()}"
 
-    create_iceberg_table(storage_type, instance, table_name, cluster, "(x Int, p Int)", partition_by="p")
-
-    # ClickHouse has no DDL for Iceberg table properties.
-    table_dir = download_for_spark(cluster, storage_type, table_name)
-    spark.sql(
-        f"ALTER TABLE {table_name} SET TBLPROPERTIES("
-        "'write.metadata.previous-versions-max' = '2', 'write.metadata.delete-after-commit.enabled' = 'true')"
-    )
-    default_upload_directory(cluster, storage_type, table_dir, table_dir)
+    create_table_keeping_two_previous_files(cluster, storage_type, table_name, "(x Int, p Int)", partition_by="p")
 
     writers = [
         (f"INSERT INTO {table_name} VALUES (1, 1), (2, 2)", ICEBERG_SETTINGS),
@@ -144,3 +148,37 @@ def test_metadata_delete_after_commit(started_cluster_iceberg_with_spark, storag
     if storage_type == "local":
         table_dir = download_for_spark(cluster, storage_type, table_name)
         assert spark.read.format("iceberg").load(table_dir).count() == 2
+
+
+def test_metadata_delete_after_commit_keeps_version_hint_target(started_cluster_iceberg_with_spark):
+    """A metadata file dropped from `metadata-log` is not deleted while `version-hint.text` still names it."""
+    cluster = started_cluster_iceberg_with_spark
+    instance = cluster.instances["node1"]
+    storage_type = "local"
+    table_name = f"test_metadata_keeps_version_hint_target_{get_uuid_str()}"
+    hint_path = f"{LOCAL_TABLE_PREFIX}/{table_name}/metadata/version-hint.text"
+
+    create_table_keeping_two_previous_files(cluster, storage_type, table_name, "(x Int)")
+    hint = instance.exec_in_container(["cat", hint_path]).strip()
+    hinted = f"v{hint}.metadata.json"
+    assert hinted in list_metadata_files(cluster, storage_type, table_name)
+
+    # The commits succeed but leave the hint behind, so the last one drops the hinted file from the log.
+    instance.query("SYSTEM ENABLE FAILPOINT iceberg_writes_skip_version_hint")
+    try:
+        for i in range(1, 4):
+            instance.query(f"INSERT INTO {table_name} VALUES ({i})", settings=ICEBERG_SETTINGS)
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT iceberg_writes_skip_version_hint")
+
+    latest, log = read_latest_metadata(cluster, storage_type, table_name)
+    assert instance.exec_in_container(["cat", hint_path]).strip() == hint
+    assert len(log) == 2, log
+    assert list_metadata_files(cluster, storage_type, table_name) == {latest, *log, hinted}
+
+    instance.query(f"INSERT INTO {table_name} VALUES (4)", settings=ICEBERG_SETTINGS)
+    latest, log = read_latest_metadata(cluster, storage_type, table_name)
+    assert instance.exec_in_container(["cat", hint_path]).strip() == str(metadata_version(latest))
+    assert len(log) == 2, log
+    assert hinted in list_metadata_files(cluster, storage_type, table_name)
+    assert instance.query(f"SELECT count() FROM {table_name}") == "4\n"

@@ -455,7 +455,7 @@ void MetadataGenerator::addPreviousMetadataFile(const Iceberg::IcebergPathFromMe
 
 std::vector<Iceberg::IcebergPathFromMetadata> MetadataGenerator::trimMetadataLog()
 {
-    Int64 max_previous_versions = 100;
+    Int32 max_previous_versions = 100;
     if (metadata_object->has(Iceberg::f_properties))
     {
         auto properties = metadata_object->getObject(Iceberg::f_properties);
@@ -469,7 +469,7 @@ std::vector<Iceberg::IcebergPathFromMetadata> MetadataGenerator::trimMetadataLog
                     "Invalid value '{}' of Iceberg table property '{}'",
                     value_string,
                     Iceberg::f_metadata_previous_versions_max);
-            max_previous_versions = std::max<Int64>(max_previous_versions, 1);
+            max_previous_versions = std::max<Int32>(max_previous_versions, 1);
         }
     }
 
