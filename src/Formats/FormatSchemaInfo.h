@@ -7,6 +7,8 @@
 #include <Common/Macros.h>
 
 #include <filesystem>
+#include <optional>
+#include <utility>
 
 namespace DB
 {
@@ -46,7 +48,24 @@ public:
     /// Returns whether this schema info is auto-generated.
     bool isGenerated() const { return generated; }
 
+    /// Removes the schema files in `cache_directory`, except the ones in use by a running query.
+    /// Returns {removed, kept}.
+    static std::pair<size_t, size_t> removeCachedSchemaFiles(const fs::path & cache_directory);
+
 private:
+    /// While it exists, `removeCachedSchemaFiles` keeps the named file.
+    class CachedSchemaFileInUse
+    {
+    public:
+        explicit CachedSchemaFileInUse(const String & file_name_);
+        ~CachedSchemaFileInUse();
+        CachedSchemaFileInUse(const CachedSchemaFileInUse &) = delete;
+        CachedSchemaFileInUse & operator=(const CachedSchemaFileInUse &) = delete;
+
+    private:
+        const String file_name;
+    };
+
     void handleSchemaFile(
         const String & format_schema, const String & format, bool require_message, bool is_server, const String & format_schema_path);
     void verifySchemaFileName(const String & format_schema, bool require_message, fs::path & path);
@@ -56,12 +75,17 @@ private:
     void storeSchemaOnDisk(const fs::path & file_path, const String & content);
     void processSchemaFile(fs::path path, const String & default_file_extension, bool is_server, const String & format_schema_path);
 
+    /// Registers the cache file as in use and reports whether it still has to be published.
+    bool useCachedSchemaFile(const fs::path & file_path);
+
     /// `key_salt` participates in the hash but not in the readable part of the name.
     static String generateSchemaFileName(const String & hashing_content, const String & file_extention, const String & key_salt = "");
 
     String schema_path;
     String schema_directory;
     String message_name;
+
+    std::optional<CachedSchemaFileInUse> cache_file_in_use;
 
     bool generated = false;
 
