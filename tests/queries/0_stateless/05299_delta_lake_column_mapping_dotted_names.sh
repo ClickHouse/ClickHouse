@@ -139,7 +139,6 @@ write_log("plain", [
 ], [("data.parquet", {}, 2)], mapped=False)
 EOF
 
-# The engine predicate is disabled in the filtered query: it does not support dotted names yet (#118775).
 # A subcolumn name that matches two fields, like s.`a.b` here, reads the first of them in the order of the table schema,
 # which can be declared in a different order than the Delta log.
 $CLICKHOUSE_LOCAL -q "
@@ -178,7 +177,7 @@ SELECT 'partitioned';
 SELECT id, a, \`a.b\`, p FROM deltaLakeLocal('$DIR/partitioned') ORDER BY id;
 SELECT 'partitioned by a.b';
 SELECT id, a, \`a.b\` FROM deltaLakeLocal('$DIR/partitioned_by_dotted') ORDER BY id;
-SELECT id FROM deltaLakeLocal('$DIR/partitioned_by_dotted') WHERE \`a.b\` = 'y' ORDER BY id SETTINGS delta_lake_enable_engine_predicate = 0;
+SELECT id FROM deltaLakeLocal('$DIR/partitioned_by_dotted') WHERE \`a.b\` = 'y' ORDER BY id;
 SELECT 'no column mapping';
 SELECT id, \`x.y\`, d FROM deltaLakeLocal('$DIR/plain') ORDER BY id;
 SELECT id, d.\`x.y\` FROM deltaLakeLocal('$DIR/plain') ORDER BY id;
