@@ -126,6 +126,8 @@ public:
     bool isOperationSupported(Coordination::OpNum operation) const;
     bool isS3ExperimentalChangelog() const;
     DiskPtr getS3LogDisk() const;
+    /// Whether `s3_log_disk` is configured, regardless of `s3_experimental_changelog`.
+    bool hasS3LogDisk() const;
 
     bool shouldLogRequests() const;
     void setLogRequests(bool log_requests_);

@@ -155,6 +155,11 @@ DiskPtr KeeperContext::getS3LogDisk() const
     return disk_selector->get(s3_log_disk_name);
 }
 
+bool KeeperContext::hasS3LogDisk() const
+{
+    return !s3_log_disk_name.empty();
+}
+
 namespace
 {
 

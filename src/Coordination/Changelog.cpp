@@ -4597,6 +4597,36 @@ Changelog::Changelog(
             reject_local_changelogs(getDisk());
             reject_local_changelogs(getLatestLogDisk());
         }
+        else if (keeper_context->hasS3LogDisk())
+        {
+            /// Once the experimental S3 changelog has written to `s3_log_disk`, that disk is part of the durable log
+            /// even if the setting is turned off later. With the setting off only the regular and old log disks are
+            /// read on startup, so a rollback or a config typo would silently drop the only copy of the log. Fail
+            /// closed, as for leftover local changelogs above, unless that disk is scanned anyway.
+            const auto s3_log_disk = keeper_context->getS3LogDisk();
+            const auto old_log_disks = keeper_context->getOldLogDisks();
+            const bool is_scanned = s3_log_disk == getDisk() || s3_log_disk == getLatestLogDisk()
+                || std::find(old_log_disks.begin(), old_log_disks.end(), s3_log_disk) != old_log_disks.end();
+
+            if (!is_scanned && s3_log_disk->existsDirectory(""))
+            {
+                for (auto it = s3_log_disk->iterateDirectory(""); it->isValid(); it->next())
+                {
+                    if (!it->name().starts_with(DEFAULT_PREFIX))
+                        continue;
+
+                    throw DB::Exception(
+                        DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Disk '{}' configured as s3_log_disk still contains changelog file '{}', but s3_experimental_changelog "
+                        "is disabled, so this disk is not read on startup and the file would be ignored. "
+                        "Enable s3_experimental_changelog, declare '{}' as keeper_server.old_log_storage_disk "
+                        "(it is always scanned) or move the files away.",
+                        s3_log_disk->getName(),
+                        it->name(),
+                        s3_log_disk->getName());
+                }
+            }
+        }
 
         /// Load all files on changelog disks
 
