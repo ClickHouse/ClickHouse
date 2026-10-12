@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <numeric>
 #include <vector>
@@ -8,6 +9,7 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -74,13 +76,23 @@ const ColumnArray * getArrayColumn(const ColumnPtr & column, bool & is_const)
     return nullptr;
 }
 
+/// Every generated inner array occupies its `size` values in the nested data column plus one entry in the
+/// inner offsets stream. Charging that entry keeps zero-length results (`[[]]`) and small `k` within
+/// `function_range_max_elements_in_block` instead of letting the `Array(Array(T))` block grow unbounded.
+size_t getVariantCost(size_t size)
+{
+    return size + 1;
+}
+
 /// Builds `Array(Array(T))` and owns all offsets/state needed to append rows.
 struct ArrayResultBuilder
 {
-    explicit ArrayResultBuilder(const IColumn & array_data, size_t input_rows_count)
+    ArrayResultBuilder(const IColumn & array_data, size_t input_rows_count, const char * function_name)
         : result_data(array_data.cloneEmpty())
         , result_inner_offsets(ColumnArray::ColumnOffsets::create())
         , result_outer_offsets(ColumnArray::ColumnOffsets::create())
+        , check_cancellation(makeCancellationCheck(function_name))
+        , cancellation_budget(check_cancellation)
     {
         result_outer_offsets->getData().reserve(input_rows_count);
     }
@@ -109,10 +121,26 @@ struct ArrayResultBuilder
         previous_array_offset = current_array_offset;
     }
 
+    /// Remembers the byte sizes of the source row elements, so that `appendVariant` can charge the data it copies.
+    void prepareSourceRow(const IColumn & source_data, size_t source_row_begin, size_t n)
+    {
+        source_element_bytes.resize(n);
+        for (size_t i = 0; i < n; ++i)
+            source_element_bytes[i] = source_data.byteSizeAt(source_row_begin + i);
+    }
+
     void appendVariant(const IColumn & source_data, size_t source_row_begin, const VectorWithMemoryTracking<size_t> & indexes)
     {
+        size_t variant_bytes = 0;
         for (size_t idx : indexes)
+        {
             result_data->insertFrom(source_data, source_row_begin + idx);
+            variant_bytes += source_element_bytes[idx];
+        }
+
+        /// A whole block can be generated inside this one call, and the result size is driven by the arguments,
+        /// not by the input size, so the executor's between-blocks cancellation check cannot bound it.
+        cancellation_budget.chargeUnits(getVariantCost(indexes.size()) + variant_bytes / CancellationBudget::bytes_per_unit);
 
         current_result_data_offset += indexes.size();
         result_inner_offsets->getData().push_back(current_result_data_offset);
@@ -142,15 +170,13 @@ private:
     size_t current_result_data_offset = 0;
     size_t current_result_array_offset = 0;
     size_t total_generated_elements = 0;
-};
 
-/// Every generated inner array occupies its `size` values in the nested data column plus one entry in the
-/// inner offsets stream. Charging that entry keeps zero-length results (`[[]]`) and small `k` within
-/// `function_range_max_elements_in_block` instead of letting the `Array(Array(T))` block grow unbounded.
-size_t getVariantCost(size_t size)
-{
-    return size + 1;
-}
+    VectorWithMemoryTracking<size_t> source_element_bytes;
+
+    /// Must be declared before `cancellation_budget`, which keeps a pointer to it.
+    const std::function<void()> check_cancellation;
+    CancellationBudget cancellation_budget;
+};
 
 /// Returns true if n! fits into count_limit and writes it to result.
 bool tryCalculatePermutationsCount(size_t n, size_t count_limit, size_t & result)
@@ -253,7 +279,7 @@ public:
         const auto & array_offsets = column_array->getOffsets();
         const auto & array_data = column_array->getData();
 
-        ArrayResultBuilder builder(array_data, input_rows_count);
+        ArrayResultBuilder builder(array_data, input_rows_count, name);
         VectorWithMemoryTracking<size_t> permutation_indexes;
 
         for (size_t row = 0; row < input_rows_count; ++row)
@@ -288,6 +314,7 @@ public:
                 continue;
             }
 
+            builder.prepareSourceRow(array_data, source_row_begin, n);
             permutation_indexes.resize(n);
             std::iota(permutation_indexes.begin(), permutation_indexes.end(), 0);
 
@@ -356,7 +383,7 @@ public:
         const auto & array_data = column_array->getData();
         const bool k_is_unsigned = which_k.isNativeUInt();
 
-        ArrayResultBuilder builder(array_data, input_rows_count);
+        ArrayResultBuilder builder(array_data, input_rows_count, name);
         VectorWithMemoryTracking<size_t> partial_indexes;
         VectorWithMemoryTracking<size_t> partial_next_candidate;
         VectorWithMemoryTracking<UInt8> partial_used;
@@ -417,6 +444,8 @@ public:
                 builder.appendEmptyRow(current_array_offset);
                 continue;
             }
+
+            builder.prepareSourceRow(array_data, source_row_begin, n);
 
             if constexpr (mode == ArrayKCombinatoricsMode::PartialPermutations)
             {
