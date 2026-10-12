@@ -1,0 +1,41 @@
+<test>
+    <settings>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <query_plan_optimize_count_from_text_index>0</query_plan_optimize_count_from_text_index>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE text_index_single_block
+        (
+            ts DateTime,
+            msg String,
+            INDEX idx msg TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'none')
+        )
+        ENGINE = MergeTree PARTITION BY toDate(ts) ORDER BY ts
+    </create_query>
+    <create_query>
+        CREATE TABLE text_index_single_block_pfor
+        (
+            ts DateTime,
+            msg String,
+            INDEX idx msg TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'pfor')
+        )
+        ENGINE = MergeTree PARTITION BY toDate(ts) ORDER BY ts
+    </create_query>
+
+    <!-- 11 daily parts of about 910000 rows, so the posting list of every token is one block. ERROR is in 25% of the rows,
+         timeout in 5%, panic in 0.1%. -->
+    <fill_query>INSERT INTO text_index_single_block SELECT toDateTime('2026-09-01 00:00:00') + intDiv(number * 950400, 10000000), concat(multiIf(cityHash64(number, 1) % 100 &lt; 25, 'ERROR', cityHash64(number, 1) % 100 &lt; 35, 'WARN', 'INFO'), ' request ', toString(number % 1000), if(cityHash64(number, 2) % 100 &lt; 5, ' timeout', ''), if(cityHash64(number, 3) % 1000 = 0, ' panic', ''), ' done') FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO text_index_single_block_pfor SELECT * FROM text_index_single_block</fill_query>
+    <fill_query>OPTIMIZE TABLE text_index_single_block FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE text_index_single_block_pfor FINAL</fill_query>
+
+    <query>SELECT count() FROM text_index_single_block WHERE hasToken(msg, 'ERROR')</query>
+    <query>SELECT toStartOfHour(ts) AS h, count() FROM text_index_single_block WHERE hasAnyTokens(msg, ['timeout', 'ERROR']) GROUP BY h FORMAT Null</query>
+    <query>SELECT count() FROM text_index_single_block WHERE hasToken(msg, 'panic')</query>
+    <query>SELECT count() FROM text_index_single_block_pfor WHERE hasToken(msg, 'ERROR')</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_single_block</drop_query>
+    <drop_query>DROP TABLE IF EXISTS text_index_single_block_pfor</drop_query>
+</test>
