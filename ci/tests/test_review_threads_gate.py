@@ -993,8 +993,12 @@ def _mergeable_claim_snippet():
 
 def _run_mergeable_claim(desired_blocked, mergeable, last_pr_conclusion="failure"):
     """Run that block with the GitHub calls stubbed, and return the list of
-    `<state> <context> <description>` statuses it posted."""
-    statuses = [mergeable] if mergeable else []
+    `<state> <context> <description>` statuses it posted. `mergeable` is a
+    single status, or a list of statuses with the newest first."""
+    if isinstance(mergeable, list):
+        statuses = mergeable
+    else:
+        statuses = [mergeable] if mergeable else []
     script = f"""
 set -euo pipefail
 GH_REPO=ClickHouse/ClickHouse
@@ -1054,6 +1058,7 @@ def test_mergeable_check_is_claimed_only_when_the_gate_owns_it():
         "description": "Failed: review threads only",
         "target_url": REPORT_URL,
     }
+    unrelated_own = {**unrelated, "target_url": REPORT_URL}
     # The same markers, written for another open PR that shares the commit.
     other_pr = {**own, "target_url": PR_URL.replace("114729", "114730")}
     other_pr_post_hook = {
@@ -1084,6 +1089,22 @@ def test_mergeable_check_is_claimed_only_when_the_gate_owns_it():
     # ... nor to clear.
     assert _run_mergeable_claim(False, other_pr, last_pr_conclusion="success") == []
     assert _run_mergeable_claim(False, other_pr_post_hook) == []
+
+    # A newer marker of another PR that shared the head and is closed now (the
+    # workflow reaches the clearing path only when this PR is the only open
+    # one on the head) is decided by the latest status of this PR.
+    assert _run_mergeable_claim(False, [other_pr_post_hook, own_post_hook]) == [cleared]
+    assert _run_mergeable_claim(
+        False, [other_pr, own], last_pr_conclusion="success"
+    ) == [cleared]
+    assert _run_mergeable_claim(
+        False, [other_pr, own], last_pr_conclusion="failure"
+    ) == []
+    # ... but not when the latest status of this PR is an unrelated failure,
+    assert _run_mergeable_claim(False, [other_pr_post_hook, unrelated_own]) == []
+    # ... and a foreign failure for another reason stays intact.
+    unrelated_other_pr = {**unrelated, "target_url": other_pr_post_hook["target_url"]}
+    assert _run_mergeable_claim(False, [unrelated_other_pr, own_post_hook]) == []
 
 
 def test_review_thread_gate_never_widens_the_coverage_family(monkeypatch, fake_info):
