@@ -226,9 +226,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
-        ParserCodec codec_parser;
-        auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
+        CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 
         const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
 
@@ -263,6 +261,10 @@ void MergeTreeDataPartWriterWide::addStreams(
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
         });
+
+        if (settings.stream_base_manifest && claim_column_stream_bases)
+            settings.stream_base_manifest->registerStreamBase(
+                stream_name, {StreamBaseManifest::Kind::Column, name_and_type.name});
 
         column_streams.emplace(stream_name, std::make_unique<MergeTreeWriterStream>(
             stream_name,
@@ -839,6 +841,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
 {
     /// If no data was written, streams and columns substreams will be uninitialized, but we need them.
+    claim_column_stream_bases = streams_initialized;
     initStreamsAndSubstreamsIfNeeded();
 
     auto serialize_settings = getSerializationSettings();

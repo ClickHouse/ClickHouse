@@ -20,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/scope_guard_safe.h>
 
+#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
@@ -1198,7 +1199,8 @@ void normalizeAnalyzerSettings(ASTPtr ast)
     }
 }
 
-/// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from the
+/// Remove the resource-limit settings and the stream-like direct-select ban that executeASTFuzzerQueries
+/// pins on the fuzz context, plus `profile` (it would re-apply a whole settings profile over them), from the
 /// query-level SETTINGS carriers of the fuzzed AST. These caps (row/time/memory/result/block-size
 /// limits) keep a single fuzzed query from running away. They are applied to the fuzz context up front, but
 /// executeQueryImpl re-applies the query's own SETTINGS on top of the context
@@ -1221,6 +1223,8 @@ static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
         "max_result_bytes",
         "max_block_size",
         "min_insert_block_size_rows",
+        "stream_like_engine_allow_direct_select",
+        "profile",
     };
 
     removeSettingsFromQuery(ast, limit_settings);
@@ -2895,6 +2899,12 @@ static BlockIO executeQueryImpl(
                 query_table = query_with_table_output->getTable();
             }
 
+            /// Freeze the meaning of division before the AST can enter table metadata, a mutation
+            /// entry, a SQL UDF, or a distributed query. Replayed ASTs already carry that decision.
+            if (!internal && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
+                && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                normalizeDivision(*out_ast, context);
+
             /// Propagate WITH statement to children ASTSelect.
             if (settings[Setting::enable_global_with_statement])
             {
@@ -3719,6 +3729,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+            /// A direct read of a stream-like table (Kafka, FileLog, ...) consumes its messages, which may belong to another session.
+            fuzz_context->setSetting("stream_like_engine_allow_direct_select", Field(false));
 
             /// Limit resources for each fuzzed query to prevent runaway execution.
             fuzz_context->setSetting("max_execution_time", Field(UInt64(10)));

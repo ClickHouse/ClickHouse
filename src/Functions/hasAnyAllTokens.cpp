@@ -36,7 +36,8 @@ constexpr size_t arg_input = 0;
 constexpr size_t arg_needles = 1;
 constexpr size_t arg_tokenizer = 2;
 
-TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name)
+/// Compaction drops tokens covered by longer ones; valid only for `hasAllTokens`.
+TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & arguments, const ITokenizer & tokenizer, std::string_view function_name, bool compact_tokens)
 {
     if (arguments.size() < 2)
         return {};
@@ -62,7 +63,8 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
     {
         auto tokens_str = needles_field.safeGet<String>();
         tokenizer.stringToTokens(tokens_str.data(), tokens_str.size(), tokens_array);
-        tokens_array = tokenizer.compactTokens(tokens_array);
+        if (compact_tokens)
+            tokens_array = tokenizer.compactTokens(tokens_array);
     }
     else if (needles_field.getType() == Field::Types::Array)
     {
@@ -129,7 +131,7 @@ FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildI
         : arguments[arg_tokenizer].column->getDataAt(0);
 
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-    auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName());
+    auto search_tokens = initializeSearchTokens(arguments, *tokenizer, getName(), HasTokensTraits::mode == HasAnyAllTokensMode::All);
     DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
     return std::make_shared<FunctionBaseHasAnyAllTokens<HasTokensTraits>>(std::move(tokenizer), std::move(search_tokens), std::move(argument_types), return_type);
 }
