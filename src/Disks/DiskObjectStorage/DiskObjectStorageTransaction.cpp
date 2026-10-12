@@ -1,3 +1,4 @@
+#include <Common/OperationCancellation.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
@@ -561,7 +562,7 @@ void DiskObjectStorageTransaction::copyFileImpl(
     /// itself submits onto that pool via `writeObject`, which would risk pool self-deadlock.
     /// `ThreadPoolCallbackRunnerLocal` drains tasks in its destructor, so on exception unwinding
     /// the captured state stays alive until in-flight workers complete.
-    ThreadPoolCallbackRunnerLocal<void> runner(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_COPY);
+    ThreadPoolCallbackRunnerLocal<void> runner(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_COPY, /* check_cancellation */ true);
 
     for (const auto & location : locations_for_writing)
     {
@@ -727,11 +728,12 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
+    ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
     for (const auto & [location, blobs] : written_blobs)
     {
         try
         {
-            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs);
+            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs, nullptr);
         }
         catch (...)
         {

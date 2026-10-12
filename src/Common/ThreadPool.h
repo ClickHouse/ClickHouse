@@ -146,7 +146,9 @@ public:
     /// NOTE: Probably you should call wait() if an exception was thrown. If some previously scheduled jobs are using some objects,
     /// located on the stack of the current thread, the stack must not be unwound until all jobs are finished. However,
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in its own destructor.
-    void scheduleOrThrowOnError(Job job, Priority priority = {});
+    /// If check_cancellation is true, observe current-thread cancellation before admission and while waiting for capacity.
+    /// Already admitted jobs are unaffected; the caller must still drain jobs that reference its resources.
+    void scheduleOrThrowOnError(Job job, Priority priority = {}, bool check_cancellation = false);
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
     /// The timeout is signed, because it is fed by settings such as `lock_acquire_timeout`, whose value is an
@@ -250,7 +252,9 @@ private:
     size_t idle_thread_count = 0;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(
+        Job job, Priority priority, std::optional<Int64> wait_microseconds,
+        bool propagate_opentelemetry_tracing_context = true, bool check_cancellation = false);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();

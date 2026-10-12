@@ -14,13 +14,14 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-std::unique_ptr<WriteBufferFromFileBase>
-PackedFilesWriter::writeFile(const String & file_name, const WriteSettings & settings)
+PackedFilesWriter::PackedFilesWriter(WriteSettings write_settings_)
+    : write_settings(std::move(write_settings_))
 {
-    if (!write_settings && settings != WriteSettings{})
-        write_settings = settings;
+}
 
-    return writeFile(file_name);
+void PackedFilesWriter::setArchiveWriteSettings(WriteSettings write_settings_)
+{
+    write_settings = std::move(write_settings_);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

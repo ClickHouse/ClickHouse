@@ -1,3 +1,4 @@
+#include <Common/OperationCancellation.h>
 #include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -141,9 +142,10 @@ bool removeBlobsBatch(
 {
     try
     {
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
         LOG_TRACE(log, "Removing {} blobs from '{}' location", remove_batch.size(), location);
 
-        object_storages->takePointingTo(location)->removeObjectsIfExist(remove_batch);
+        object_storages->takePointingTo(location)->removeObjectsIfExist(remove_batch, nullptr);
         ProfileEvents::increment(ProfileEvents::BlobKillerThreadRemovedBlobs, remove_batch.size());
 
         return true;

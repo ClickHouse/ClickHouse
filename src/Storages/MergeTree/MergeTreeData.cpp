@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -11750,7 +11751,10 @@ void MergeTreeData::optimizeDryRun(
     auto merge_list_entry = getContext()->getMergeList().insert(
         getStorageID(),
         future_part,
-        task_context);
+        task_context,
+        merger_mutator.merges_blocker.getCancellationRequestPredicate(future_part->part_info.getPartitionId()),
+        CurrentThread::getGroup());
+    ThreadGroupSwitcher operation_group((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     /// `DRY RUN` takes no merge guard, so a concurrent real merge on the same parts would otherwise
     /// reserve the same temporary directory. See `MergeTask::buildTempPartBasename`. Random rather than

@@ -6,6 +6,7 @@
 #include <base/defines.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/IThrottler.h>
+#include <Common/OperationCancellation.h>
 #include <Common/FiberLocal.h>
 #include <Common/Scheduler/ResourceLink.h>
 
@@ -115,6 +116,8 @@ public:
     /// Throws the real cancellation cause of the current query (`TIMEOUT_EXCEEDED`, or an exception
     /// stored by `QueryStatus::cancelQuery`) if it has been cancelled. No-op otherwise.
     static void checkIfNotCancelled();
+    static CancellationRequest getCancellationRequest();
+    static ExecutionPhase getExecutionPhase() noexcept;
 
     // For IO Scheduling
     static void attachReadResource(ResourceLink link);

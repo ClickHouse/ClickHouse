@@ -14,10 +14,16 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char packed_part_freeze_pause_before_copy[];
+}
 
 namespace ErrorCodes
 {
@@ -420,10 +426,13 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
         return volume->getDisk()->writeFile(file_path, buf_size, mode, settings);
     }
 
-    if (writer)
-        return writer->writeFile(name, settings);
+    if (!writer)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
 
-    throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
+    if (!writer->hasWriteSettings())
+        writer->setArchiveWriteSettings(settings);
+
+    return writer->writeFile(name);
 }
 
 void DataPartStorageOnDiskPacked::createFile(const String & name)
@@ -744,6 +753,10 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
         return;
     }
 
+    /// Metadata-only transactions use default settings. Member writes select their settings in `writeFile`.
+    if (!writer->hasWriteSettings())
+        writer->setArchiveWriteSettings(WriteSettings{});
+
     PackedFilesIO::Index old_index;
     bool file_is_rewriten = false;
 
@@ -908,6 +921,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     bool need_commit = false;
     if (!to_detached && (params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params)))
     {
+        FailPointInjection::pauseFailPoint(FailPoints::packed_part_freeze_pause_before_copy);
+
         if (!dest_storage->transaction)
         {
             dest_storage->beginTransaction();
@@ -972,7 +987,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             if (params.external_transaction)
                 params.external_transaction->copyFile(getRelativeDataPath(), dest_storage->getRelativeDataPath(), read_settings, write_settings);
             else
-                disk->copyFile(getRelativeDataPath(), *disk, dest_storage->getRelativeDataPath(), read_settings);
+                disk->copyFile(getRelativeDataPath(), *disk, dest_storage->getRelativeDataPath(), read_settings, write_settings);
         }
         else if (params.external_transaction)
             params.external_transaction->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());

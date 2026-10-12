@@ -42,12 +42,13 @@ struct CallbackRunnerTask
 {
     std::promise<Result> promise;
     ThreadGroupPtr thread_group;
+    ExecutionPhase execution_phase;
     ThreadName thread_name;
     Callback callback;
     bool was_run = false;
 
-    CallbackRunnerTask(ThreadGroupPtr thread_group_, ThreadName thread_name_, Callback && callback_)
-        : thread_group(std::move(thread_group_)), thread_name(thread_name_), callback(std::move(callback_))
+    CallbackRunnerTask(ThreadGroupPtr thread_group_, ExecutionPhase execution_phase_, ThreadName thread_name_, Callback && callback_)
+        : thread_group(std::move(thread_group_)), execution_phase(execution_phase_), thread_name(thread_name_), callback(std::move(callback_))
     {
     }
 
@@ -60,7 +61,10 @@ struct CallbackRunnerTask
             {
                 {
                     ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    ExecutionPhaseScope phase(getCurrentThreadGroup() == thread_group ? execution_phase : ExecutionPhase::Work);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
+                    if (thread_group && getCurrentThreadGroup() != thread_group)
+                        throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Could not attach callback to its thread group");
                     callback();
                 }
                 /// The ThreadGroupSwitcher is destroyed (thread group detached) and the callback is
@@ -73,7 +77,10 @@ struct CallbackRunnerTask
                 std::optional<Result> res;
                 {
                     ThreadGroupSwitcher switcher(thread_group, thread_name);
+                    ExecutionPhaseScope phase(getCurrentThreadGroup() == thread_group ? execution_phase : ExecutionPhase::Work);
                     SCOPE_EXIT_SAFE({ [[maybe_unused]] auto tmp = std::move(callback); });
+                    if (thread_group && getCurrentThreadGroup() != thread_group)
+                        throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Could not attach callback to its thread group");
                     res.emplace(callback());
                 }
                 promise.set_value(std::move(*res));
@@ -99,6 +106,7 @@ struct CallbackRunnerTask
         /// (e.g. shutdown drain) runs on a group-less pool worker and must keep asserting.
         {
             ThreadGroupSwitcher switcher(thread_group, thread_name, /*allow_existing_group=*/ std::uncaught_exceptions() > 0);
+            ExecutionPhaseScope phase(getCurrentThreadGroup() == thread_group ? execution_phase : ExecutionPhase::Work);
             SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
         }
 
@@ -142,7 +150,7 @@ ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(
         /// otherwise the accounting will be incorrect
         auto thread_group = getCurrentThreadGroup();
 
-        auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
+        auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, getCurrentExecutionPhase(), thread_name, std::move(callback));
 
         auto future = task->promise.get_future();
 
@@ -206,6 +214,7 @@ private:
 
     PoolT & pool;
     ThreadName thread_name{};
+    const bool check_cancellation;
 
     /// NOTE It will leak for a global object with long lifetime
     std::vector<std::shared_ptr<Task>> tasks;
@@ -219,55 +228,12 @@ private:
         }
     }
 
-    /// Set promise result for non-void callbacks
-    template <typename Function, typename FunctionResult>
-    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name)
-    {
-        /// Release callback before setting value to the promise to avoid
-        /// destruction of captured resources after waitForAllToFinish returns.
-        try
-        {
-            FunctionResult res;
-            {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
-                res = callback();
-                callback = {};
-            }
-            promise.set_value(std::move(res));
-        }
-        catch (...)
-        {
-            callback = {};
-            promise.set_exception(std::current_exception());
-        }
-    }
-
-    /// Set promise result for void callbacks
-    template <typename Function>
-    static void executeCallback(std::promise<void> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name)
-    {
-        /// Release callback before setting value to the promise to avoid
-        /// destruction of captured resources after waitForAllToFinish returns.
-        try
-        {
-            {
-                ThreadGroupSwitcher switcher(thread_group, thread_name);
-                callback();
-                callback = {};
-            }
-            promise.set_value();
-        }
-        catch (...)
-        {
-            callback = {};
-            promise.set_exception(std::current_exception());
-        }
-    }
-
 public:
-    ThreadPoolCallbackRunnerLocal(PoolT & pool_, ThreadName thread_name_)
+    /// Cancellation applies to unbounded admission waits, not destructor draining or explicit scheduling timeouts.
+    ThreadPoolCallbackRunnerLocal(PoolT & pool_, ThreadName thread_name_, bool check_cancellation_ = false)
         : pool(pool_)
         , thread_name(thread_name_)
+        , check_cancellation(check_cancellation_)
     {
     }
 
@@ -295,44 +261,35 @@ public:
     /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
     [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
     {
-        auto promise = std::make_shared<std::promise<Result>>();
         auto task = std::make_shared<Task>();
-        task->future = promise->get_future();
+        auto pending_callback_task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(
+            getCurrentThreadGroup(), getCurrentExecutionPhase(), thread_name, std::move(callback));
+        task->future = pending_callback_task->promise.get_future();
 
-        auto task_func = [this, task, thread_group = getCurrentThreadGroup(), my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = [task, callback_task = std::move(pending_callback_task)]() mutable -> void
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))
             {
                 if (expected == CANCELLED)
                     return;
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, thread_name);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when running a task in {}", expected, callback_task->thread_name);
             }
 
             SCOPE_EXIT_SAFE(
             {
                 expected = RUNNING;
                 if (!task->state.compare_exchange_strong(expected, FINISHED))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, thread_name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, callback_task->thread_name);
             });
 
-            executeCallback(*promise, std::move(my_callback), std::move(thread_group), thread_name);
+            callback_task->run();
         };
 
-        try
-        {
-            /// Note: calling method scheduleOrThrowOnError in intentional, because we don't want to throw exceptions
-            /// in critical places where this callback runner is used (e.g. loading or deletion of parts)
-            if (wait_microseconds)
-                pool.scheduleOrThrow(std::move(task_func), priority, *wait_microseconds);
-            else
-                pool.scheduleOrThrowOnError(std::move(task_func), priority);
-        }
-        catch (...)
-        {
-            promise->set_exception(std::current_exception());
-            throw;
-        }
+        if (wait_microseconds)
+            pool.scheduleOrThrow(std::move(task_func), priority, *wait_microseconds);
+        else
+            pool.scheduleOrThrowOnError(std::move(task_func), priority, check_cancellation);
 
         return task;
     }
@@ -448,7 +405,23 @@ private:
     bool shutdown_requested = false;
     std::condition_variable shutdown_cv;
 
-    std::deque<std::function<void()>> queue;
+    struct Task
+    {
+        Task() = default;
+        Task(std::function<void()> callback_, ThreadGroupPtr group_, ExecutionPhase phase_);
+        Task(Task && other) noexcept;
+        Task & operator=(Task && other) noexcept;
+        ~Task();
+
+        void run();
+        void release();
+
+        std::function<void()> callback;
+        ThreadGroupPtr group;
+        ExecutionPhase phase = ExecutionPhase::Work;
+    };
+
+    std::deque<Task> queue;
 
     /// Queue size + busy threads. If zero, the thread pool is idle.
     /// In particular, consider a self-sustaining graph of tasks: some initial tasks are scheduled

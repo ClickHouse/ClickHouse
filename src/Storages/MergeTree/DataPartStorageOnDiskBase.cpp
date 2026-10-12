@@ -1288,14 +1288,13 @@ void DataPartStorageOnDiskBase::copyArchiveEntryTo(
     const PackedFilesReader & source_archive,
     const String & file_name,
     PackedFilesWriter & target,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings) const
+    const ReadSettings & read_settings) const
 {
     /// Route the read through this storage's readFile (the overlay), not source_archive.readFile,
     /// so a storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
     const auto file_size = source_archive.getFileSize(file_name);
     auto src = readFile(file_name, read_settings, file_size);
-    auto dst = target.writeFile(file_name, write_settings);
+    auto dst = target.writeFile(file_name);
     copyData(*src, *dst);
     dst->finalize();
     /// Carry over the uncompressed size so the rewritten archive keeps v1 accounting.
@@ -1306,8 +1305,7 @@ void DataPartStorageOnDiskBase::copyArchiveEntryTo(
 void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     const NameSet & file_names,
     PackedFilesWriter & target,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings) const
+    const ReadSettings & read_settings) const
 {
     if (file_names.empty())
         return;
@@ -1319,7 +1317,7 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     for (const auto & file_name : file_names)
     {
         if (source_archive->exists(file_name))
-            copyArchiveEntryTo(*source_archive, file_name, target, read_settings, write_settings);
+            copyArchiveEntryTo(*source_archive, file_name, target, read_settings);
     }
 }
 
@@ -1341,7 +1339,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     /// reflects "no skip-index archive at all".
     checksums.remove(packed_filename);
 
-    PackedFilesWriter writer;
+    PackedFilesWriter writer(write_settings);
     bool any_kept = false;
 
     for (const auto & file_name : source_archive->getFileNames())
@@ -1353,7 +1351,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
             continue;
 
         any_kept = true;
-        copyArchiveEntryTo(*source_archive, file_name, writer, read_settings, write_settings);
+        copyArchiveEntryTo(*source_archive, file_name, writer, read_settings);
     }
 
     if (!any_kept)

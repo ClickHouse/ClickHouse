@@ -89,8 +89,7 @@ public:
     void copyPackedSkipIndicesFilesInto(
         const NameSet & file_names,
         PackedFilesWriter & target,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings) const;
+        const ReadSettings & read_settings) const;
 
     /// Rewrite this storage's skp_idx.packed into a fresh archive on @new_storage, dropping any
     /// virtual file whose name is in @dropped_skip_index_archive_file_names (exact match). Callers must
@@ -214,8 +213,7 @@ protected:
         const PackedFilesReader & source_archive,
         const String & file_name,
         PackedFilesWriter & target,
-        const ReadSettings & read_settings,
-        const WriteSettings & write_settings) const;
+        const ReadSettings & read_settings) const;
 
 public:
     /// Pre-populate the cached PackedFilesReader from an in-memory index produced by the

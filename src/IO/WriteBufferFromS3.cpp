@@ -1,3 +1,4 @@
+#include <Common/OperationCancellation.h>
 #include "config.h"
 #include <Common/CurrentThread.h>
 
@@ -463,6 +464,7 @@ void WriteBufferFromS3::createMultipartUpload()
 
 void WriteBufferFromS3::abortMultipartUpload()
 {
+    ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
     if (multipart_upload_id.empty())
     {
         if (!isEmpty())

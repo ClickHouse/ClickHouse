@@ -1,3 +1,4 @@
+#include <Common/OperationCancellation.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <IO/S3/copyS3File.h>
 
@@ -265,6 +266,7 @@ namespace
 
         void abortMultipartUpload()
         {
+            ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
             LOG_TRACE(log, "Aborting multipart upload. Bucket: {}, Key: {}, Upload_id: {}", dest_bucket, dest_key, multipart_upload_id);
             S3::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dest_bucket);

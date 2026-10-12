@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int LOGICAL_ERROR;
 }
 
@@ -61,16 +62,61 @@ void ThreadPoolCallbackRunnerFast::startMoreThreadsIfNeeded(size_t active_tasks_
     }
 }
 
+ThreadPoolCallbackRunnerFast::Task::Task(std::function<void()> callback_, ThreadGroupPtr group_, ExecutionPhase phase_)
+    : callback(std::move(callback_)), group(std::move(group_)), phase(phase_)
+{
+}
+
+ThreadPoolCallbackRunnerFast::Task::Task(Task && other) noexcept
+    : callback(std::exchange(other.callback, {})), group(std::move(other.group)), phase(other.phase)
+{
+}
+
+ThreadPoolCallbackRunnerFast::Task & ThreadPoolCallbackRunnerFast::Task::operator=(Task && other) noexcept
+{
+    release();
+    callback = std::exchange(other.callback, {});
+    group = std::move(other.group);
+    phase = other.phase;
+    return *this;
+}
+
+ThreadPoolCallbackRunnerFast::Task::~Task()
+{
+    release();
+}
+
+void ThreadPoolCallbackRunnerFast::Task::release()
+{
+    if (!callback)
+        return;
+    ThreadGroupSwitcher attached(group, getThreadName(), /*allow_existing_group=*/true);
+    ExecutionPhaseScope scope(getCurrentThreadGroup() == group ? phase : ExecutionPhase::Work);
+    callback = {};
+}
+
+void ThreadPoolCallbackRunnerFast::Task::run()
+{
+    ThreadGroupSwitcher attached(group, getThreadName(), /*allow_existing_group=*/true);
+    ExecutionPhaseScope scope(getCurrentThreadGroup() == group ? phase : ExecutionPhase::Work);
+    SCOPE_EXIT_SAFE({ callback = {}; });
+    if (group && getCurrentThreadGroup() != group)
+        throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Could not attach callback to its thread group");
+    callback();
+}
+
 void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
 {
     if (mode == Mode::Disabled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
 
+    auto group = mode == Mode::ThreadPool ? thread_group : getCurrentThreadGroup();
+    auto phase = group == getCurrentThreadGroup() ? getCurrentExecutionPhase() : ExecutionPhase::Work;
     size_t active_tasks_ = 1 + active_tasks.fetch_add(1, std::memory_order_relaxed);
 
     {
         std::unique_lock lock(mutex);
-        queue.push_back(std::move(f));
+        queue.emplace_back(std::move(f), std::move(group), phase);
 
         try
         {
@@ -107,12 +153,16 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
     if (mode == Mode::Disabled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
 
+    auto group = mode == Mode::ThreadPool ? thread_group : getCurrentThreadGroup();
+    auto phase = group == getCurrentThreadGroup() ? getCurrentExecutionPhase() : ExecutionPhase::Work;
+
     size_t n = fs.size();
     size_t active_tasks_ = n + active_tasks.fetch_add(n, std::memory_order_relaxed);
 
     {
         std::unique_lock lock(mutex);
-        queue.insert(queue.end(), std::move_iterator(fs.begin()), std::move_iterator(fs.end()));
+        for (auto & callback : fs)
+            queue.emplace_back(std::move(callback), group, phase);
 
         try
         {
@@ -145,7 +195,7 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
 
 bool ThreadPoolCallbackRunnerFast::runTaskInline()
 {
-    std::function<void()> f;
+    Task f;
     {
         std::unique_lock lock(mutex);
         if (queue.empty())
@@ -153,8 +203,8 @@ bool ThreadPoolCallbackRunnerFast::runTaskInline()
         f = std::move(queue.front());
         queue.pop_front();
     }
-    f();
-    active_tasks.fetch_sub(1, std::memory_order_relaxed);
+    SCOPE_EXIT_SAFE({ active_tasks.fetch_sub(1, std::memory_order_relaxed); });
+    f.run();
     return true;
 }
 
@@ -188,7 +238,7 @@ void ThreadPoolCallbackRunnerFast::threadFunction()
         }
 #endif
 
-        std::function<void()> f;
+        Task f;
         {
             std::unique_lock lock(mutex);
 
@@ -234,7 +284,7 @@ void ThreadPoolCallbackRunnerFast::threadFunction()
 
         try
         {
-            f();
+            f.run();
 
             CurrentThread::updatePerformanceCountersIfNeeded();
         }

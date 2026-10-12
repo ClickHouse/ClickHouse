@@ -406,8 +406,13 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
+    Job job, Priority priority, std::optional<Int64> wait_microseconds,
+    bool propagate_opentelemetry_tracing_context, bool check_cancellation)
 {
+    if (check_cancellation)
+        DB::CurrentThread::checkIfNotCancelled();
+
     auto on_error = [&](const std::string & reason)
     {
         if constexpr (std::is_same_v<ReturnType, void>)
@@ -479,6 +484,21 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             /// gives up at once, and a count above the cap keeps meaning "wait until a thread frees up".
             if (!job_finished.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
+        }
+        else if (check_cancellation)
+        {
+            /// Cancellation does not notify `job_finished`. Check in bounded slices, without
+            /// holding the pool mutex while invoking the current operation's cancellation predicate.
+            constexpr auto cancellation_check_interval = std::chrono::milliseconds(100);
+            while (true)
+            {
+                lock.unlock();
+                DB::CurrentThread::checkIfNotCancelled();
+                lock.lock();
+                if (pred())
+                    break;
+                job_finished.wait_for(lock, cancellation_check_interval);
+            }
         }
         else
             job_finished.wait(lock, pred);
@@ -650,9 +670,9 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, Priority priority)
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, Priority priority, bool check_cancellation)
 {
-    scheduleImpl<void>(std::move(job), priority, std::nullopt);
+    scheduleImpl<void>(std::move(job), priority, std::nullopt, true, check_cancellation);
 }
 
 template <typename Thread>

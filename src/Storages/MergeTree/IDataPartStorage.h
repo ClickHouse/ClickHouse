@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Core/NamesAndTypes.h>
 #include <Disks/WriteMode.h>
 #include <IO/ReadBufferFromFileBase.h>

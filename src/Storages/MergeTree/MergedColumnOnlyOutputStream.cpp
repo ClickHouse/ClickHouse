@@ -18,6 +18,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     size_t part_uncompressed_bytes,
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
+    const WriteSettings & write_settings,
     PackedFilesWriter * external_packed_skip_indices_writer,
     StreamBaseManifestPtr stream_base_manifest)
     : IMergedBlockOutputStream(
@@ -36,7 +37,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     /// Granularity is never recomputed while writing only columns.
     MergeTreeWriterSettings writer_settings(
         data_part->storage.getContext()->getSettingsRef(),
-        data_part->storage.getContext()->getWriteSettings(),
+        write_settings,
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,

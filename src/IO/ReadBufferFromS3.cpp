@@ -131,6 +131,8 @@ ReadBufferFromS3::ReadBufferFromS3(
 
 bool ReadBufferFromS3::nextImpl()
 {
+    CurrentThread::checkIfNotCancelled();
+
     if (read_until_position)
     {
         if (read_until_position == offset)
@@ -203,6 +205,8 @@ bool ReadBufferFromS3::nextImpl()
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; !next_result; ++attempt)
     {
+        CurrentThread::checkIfNotCancelled();
+
         bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
@@ -242,7 +246,11 @@ bool ReadBufferFromS3::nextImpl()
             impl.reset();
 
             /// Pause before next attempt.
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds, []
+            {
+                CurrentThread::checkIfNotCancelled();
+            });
+            CurrentThread::checkIfNotCancelled();
             sleep_time_with_backoff_milliseconds *= 2;
         }
     }
@@ -306,6 +314,8 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; n > 0; ++attempt)
     {
+        CurrentThread::checkIfNotCancelled();
+
         bool last_attempt = attempt >= request_settings[S3RequestSetting::max_single_read_retries];
         size_t bytes_copied = 0;
         Stopwatch request_watch{CLOCK_MONOTONIC};
@@ -355,7 +365,11 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             /// would only keep it away from the other readers of the same group.
             result.reset();
 
-            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds, []
+            {
+                CurrentThread::checkIfNotCancelled();
+            });
+            CurrentThread::checkIfNotCancelled();
             sleep_time_with_backoff_milliseconds *= 2;
         }
 
@@ -371,6 +385,9 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
 
 bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) const
 {
+    /// Do not retry an operation that was cancelled while its request was in flight.
+    CurrentThread::checkIfNotCancelled();
+
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3RequestsErrors, 1);
 
     LOG_DEBUG(

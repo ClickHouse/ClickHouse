@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -184,4 +185,237 @@ TEST(ThreadPoolCallbackRunner, DroppedSynchronouslyWhileAttachedToAnotherGroup)
         CurrentThread::detachFromGroupIfNotDetached();
     });
     t.join();
+}
+
+TEST(ThreadPoolCallbackRunner, DroppedCallbacksKeepTheirSubmissionPhase)
+{
+    for (bool use_local_runner : {false, true})
+    {
+        std::async(std::launch::async, [use_local_runner]
+        {
+            ThreadStatus status;
+            auto group = ThreadGroup::createForMergeMutate(getContext().context);
+            ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+            /// Capacity includes the blocked worker and both callbacks queued behind it.
+            ThreadPool pool(
+                CurrentMetrics::LocalThread,
+                CurrentMetrics::LocalThreadActive,
+                CurrentMetrics::LocalThreadScheduled,
+                /*max_threads=*/ 1,
+                /*max_free_threads=*/ 1,
+                /*queue_size=*/ 3);
+            std::promise<void> release;
+            auto gate = release.get_future().share();
+            pool.scheduleOrThrowOnError([gate]
+            {
+                gate.wait();
+                throw std::runtime_error("drop queued callbacks");
+            });
+            bool released = false;
+            SCOPE_EXIT_SAFE({ if (!released) release.set_value(); });
+            auto unsafe = threadPoolCallbackRunnerUnsafe<void>(pool, ThreadName::MERGE_MUTATE);
+            ThreadPoolCallbackRunnerLocal<void> local(pool, ThreadName::MERGE_MUTATE);
+            std::atomic_size_t destroyed{0};
+            struct Recorder
+            {
+                ThreadGroupPtr group;
+                ExecutionPhase phase;
+                std::atomic_size_t * destroyed;
+                ~Recorder()
+                {
+                    EXPECT_EQ(getCurrentThreadGroup(), group);
+                    EXPECT_EQ(CurrentThread::getExecutionPhase(), phase);
+                    ++*destroyed;
+                }
+            };
+            std::vector<std::future<void>> futures;
+            for (auto phase : {ExecutionPhase::Work, ExecutionPhase::Cleanup})
+            {
+                ExecutionPhaseScope scope(phase);
+                std::function<void()> callback = [recorder = std::make_shared<Recorder>(group, phase, &destroyed)]
+                {
+                    FAIL() << "Dropped callback must not execute";
+                };
+                if (use_local_runner)
+                    futures.emplace_back(std::move(local.enqueueAndGiveOwnership(std::move(callback))->future));
+                else
+                    futures.emplace_back(unsafe(std::move(callback), {}));
+            }
+            release.set_value();
+            released = true;
+            EXPECT_THROW(pool.wait(), std::runtime_error);
+            for (auto & future : futures)
+                EXPECT_THROW(future.get(), Exception);
+            EXPECT_EQ(destroyed.load(), 2);
+            EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+        }).get();
+    }
+}
+
+TEST(ThreadPoolCallbackRunner, FastRunnerRestoresPhaseForExecutionAndDiscard)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        std::atomic_size_t destroyed{0};
+        struct Recorder
+        {
+            std::atomic_size_t * destroyed;
+            ~Recorder()
+            {
+                EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Cleanup);
+                ++*destroyed;
+            }
+        };
+        {
+            ThreadPoolCallbackRunnerFast runner(ThreadPoolCallbackRunnerFast::Mode::Manual);
+            runner([]
+            {
+                EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+                EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+            });
+            {
+                ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+                EXPECT_TRUE(runner.runTaskInline());
+                runner([recorder = std::make_shared<Recorder>(&destroyed)]
+                {
+                    EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+                    throw std::runtime_error("unwind callback");
+                });
+            }
+            EXPECT_THROW(runner.runTaskInline(), std::runtime_error);
+            EXPECT_EQ(destroyed.load(), 1);
+            EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+            {
+                ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+                runner([recorder = std::make_shared<Recorder>(&destroyed)] {});
+            }
+        }
+        EXPECT_EQ(destroyed.load(), 2);
+        EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+    }).get();
+}
+
+TEST(ThreadPoolCallbackRunner, CallbackDestructionPrecedesExceptionalCompletion)
+{
+    for (bool use_local_runner : {false, true})
+    {
+        std::async(std::launch::async, [use_local_runner]
+        {
+            ThreadStatus status;
+            auto group = ThreadGroup::createForMergeMutate(getContext().context);
+            ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+            ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+            auto unsafe = threadPoolCallbackRunnerUnsafe<void>(pool, ThreadName::MERGE_MUTATE);
+            ThreadPoolCallbackRunnerLocal<void> local(pool, ThreadName::MERGE_MUTATE);
+            std::atomic_bool destroyed{false};
+            struct Recorder
+            {
+                ThreadGroupPtr group;
+                std::atomic_bool * destroyed;
+                ~Recorder()
+                {
+                    EXPECT_EQ(getCurrentThreadGroup(), group);
+                    EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Cleanup);
+                    *destroyed = true;
+                }
+            };
+            std::future<void> future;
+            {
+                ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+                std::function<void()> callback = [recorder = std::make_shared<Recorder>(group, &destroyed)]
+                {
+                    throw std::runtime_error("unwind callback");
+                };
+                if (use_local_runner)
+                    future = std::move(local.enqueueAndGiveOwnership(std::move(callback))->future);
+                else
+                    future = unsafe(std::move(callback), {});
+            }
+            EXPECT_THROW(future.get(), std::runtime_error);
+            EXPECT_TRUE(destroyed.load());
+            EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+            pool.wait();
+        }).get();
+    }
+}
+
+namespace DB::FailPoints
+{
+    extern const char thread_group_switcher_post_attach_failure[];
+}
+
+TEST(ThreadPoolCallbackRunner, FailedAttachmentDoesNotRunTaskOrGrantCleanup)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto target = ThreadGroup::createForMergeMutate(getContext().context);
+        auto caller = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
+        bool ran = false;
+        size_t destroyed = 0;
+        struct Recorder
+        {
+            size_t * destroyed;
+            ~Recorder()
+            {
+                EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+                EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+                ++*destroyed;
+            }
+        };
+        for (bool discard : {false, true})
+        {
+            auto runner = std::make_unique<ThreadPoolCallbackRunnerFast>(ThreadPoolCallbackRunnerFast::Mode::Manual);
+            {
+                ThreadGroupSwitcher attached(target, ThreadName::MERGE_MUTATE);
+                ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+                (*runner)([recorder = std::make_shared<Recorder>(&destroyed), &ran] { ran = true; });
+            }
+            ThreadGroupSwitcher attached(caller, ThreadName::MERGE_MUTATE);
+            FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
+            SCOPE_EXIT({ FailPointInjection::disableFailPoint(FailPoints::thread_group_switcher_post_attach_failure); });
+            if (discard)
+                runner.reset();
+            else
+                EXPECT_THROW(runner->runTaskInline(), Exception);
+            EXPECT_FALSE(ran);
+            EXPECT_EQ(CurrentThread::getGroup(), caller);
+            EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+        }
+        EXPECT_EQ(destroyed, 2);
+    }).get();
+}
+
+TEST(ThreadPoolCallbackRunner, FailedUnsafeAttachmentReleasesBeforeFuture)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto target = ThreadGroup::createForMergeMutate(getContext().context);
+        bool ran = false;
+        bool destroyed = false;
+        struct Recorder
+        {
+            bool * destroyed;
+            ~Recorder()
+            {
+                EXPECT_EQ(CurrentThread::getGroup(), nullptr);
+                EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+                *destroyed = true;
+            }
+        };
+        std::function<void()> callback = [recorder = std::make_shared<Recorder>(&destroyed), &ran] { ran = true; };
+        DB::detail::CallbackRunnerTask<void, std::function<void()>> task(
+            target, ExecutionPhase::Cleanup, ThreadName::MERGE_MUTATE, std::move(callback));
+        auto future = task.promise.get_future();
+        FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
+        SCOPE_EXIT({ FailPointInjection::disableFailPoint(FailPoints::thread_group_switcher_post_attach_failure); });
+        task.run();
+        EXPECT_THROW(future.get(), Exception);
+        EXPECT_FALSE(ran);
+        EXPECT_TRUE(destroyed);
+    }).get();
 }

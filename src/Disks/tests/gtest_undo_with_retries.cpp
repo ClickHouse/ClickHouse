@@ -1,6 +1,11 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoWithRetries.h>
 
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
+#include <future>
 #include <Common/ProfileEvents.h>
 
 #include <gtest/gtest.h>
@@ -49,3 +54,28 @@ TEST(UndoWithRetries, DoesNotRepeatAStageThatSucceeds)
 /// `LOGICAL_ERROR` is the one code that is not repeated, because asking again cannot make an invariant hold. It is not
 /// covered here: `DB::Exception` aborts the process for that code in a debug or sanitizer build, which is every build
 /// these tests run in, so the case cannot be reached from a test.
+
+TEST(UndoWithRetries, CleanupStopsAfterEscalation)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto state = std::make_shared<OperationCancellationState>();
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        state->request(CancellationRequest::StopWork);
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+        size_t attempts = 0;
+        EXPECT_THROW(
+            undoWithRetries(getLogger("UndoWithRetries"), "restore metadata", [&]
+            {
+                ++attempts;
+                EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+                state->request(CancellationRequest::StopAll);
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Object storage is unavailable");
+            }),
+            Exception);
+        EXPECT_EQ(attempts, 1);
+        EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopAll);
+    }).get();
+}

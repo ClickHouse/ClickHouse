@@ -14,6 +14,8 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
 #include <IO/Expect404ResponseScope.h>
@@ -482,6 +484,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto sdk_attempt = getSDKAttemptNumber(request);
     auto ch_attempt = getClickHouseAttemptNumber(request);
     bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
+    CurrentThread::checkIfNotCancelled();
 
     if (!first_attempt)
         LOG_DEBUG(
@@ -552,6 +555,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
         for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
+            /// Recheck the live cancellation request before each redirect.
+            CurrentThread::checkIfNotCancelled();
             Poco::URI target_uri(uri);
 
             if (enable_s3_requests_logging && !proxy_configuration.isEmpty())
@@ -626,6 +631,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             Stopwatch watch;
 
+            CurrentThread::checkIfNotCancelled();
             auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.

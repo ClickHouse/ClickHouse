@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoWithRetries.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/DynamicDelay.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -41,6 +42,7 @@ void undoWithRetries(const LoggerPtr & log, std::string_view description, const 
 
     for (size_t attempt = 1;; ++attempt)
     {
+        CurrentThread::checkIfNotCancelled();
         try
         {
             stage();
@@ -53,10 +55,11 @@ void undoWithRetries(const LoggerPtr & log, std::string_view description, const 
             if (getCurrentExceptionCode() == ErrorCodes::LOGICAL_ERROR)
                 throw;
 
+            CurrentThread::checkIfNotCancelled();
             ProfileEvents::increment(ProfileEvents::DiskPlainRewritableUndoStageRetries);
             tryLogCurrentException(log, fmt::format("Attempt {} to {} failed", attempt, description));
 
-            sleepForMilliseconds(pause.getCurrentDelayWithJitter(0, MAX_JITTER_MS));
+            sleepForMilliseconds(pause.getCurrentDelayWithJitter(0, MAX_JITTER_MS), [] { CurrentThread::checkIfNotCancelled(); });
             pause.up();
         }
     }

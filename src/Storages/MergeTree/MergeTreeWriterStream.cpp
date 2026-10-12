@@ -59,7 +59,6 @@ public:
         ClaimArchiveBaseFunc claim_archive_base_,
         PackedFilesWriter * packed_writer_,
         const String & packed_virtual_name_,
-        const WriteSettings & packed_write_settings_,
         const String & display_file_name_,
         bool & coupled_spilled_)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
@@ -68,7 +67,6 @@ public:
         , claim_archive_base(std::move(claim_archive_base_))
         , packed_writer(packed_writer_)
         , packed_virtual_name(packed_virtual_name_)
-        , packed_write_settings(packed_write_settings_)
         , display_file_name(display_file_name_)
         , coupled_spilled(coupled_spilled_)
     {
@@ -91,7 +89,6 @@ private:
     const ClaimArchiveBaseFunc claim_archive_base;
     PackedFilesWriter * const packed_writer;
     const String packed_virtual_name;
-    const WriteSettings packed_write_settings;
     const String display_file_name;
 
     /// In-memory accumulator for the "still packable" phase.
@@ -166,7 +163,7 @@ void SizeAdaptiveSpoolBuffer::commitToPackedIfNeeded()
     if (claim_archive_base)
         claim_archive_base();
 
-    auto packed_buf = packed_writer->writeFile(packed_virtual_name, packed_write_settings);
+    auto packed_buf = packed_writer->writeFile(packed_virtual_name);
     if (!accumulator.empty())
         packed_buf->write(reinterpret_cast<const char *>(accumulator.data()), accumulator.size());
     if (sync_requested)
@@ -262,7 +259,6 @@ static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
             std::move(claim_archive_base),
             packed_writer,
             packed_virtual_name,
-            write_settings,
             file_path,
             coupled_spilled);
     }

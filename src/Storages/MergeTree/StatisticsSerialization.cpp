@@ -23,12 +23,12 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     const CompressionCodecPtr & compression_codec,
     const WriteSettings & write_settings)
 {
-    PackedFilesWriter packed_writer;
+    PackedFilesWriter packed_writer(write_settings);
 
     for (const auto & [column_name, stat] : statistics)
     {
         String filename = getStatisticsFilename(column_name);
-        auto out = packed_writer.writeFile(filename, write_settings);
+        auto out = packed_writer.writeFile(filename);
 
         CompressedWriteBuffer compressor(*out, compression_codec, 1024 * 1024);
         stat->serialize(compressor);

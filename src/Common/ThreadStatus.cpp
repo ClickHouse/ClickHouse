@@ -17,6 +17,7 @@
 
 #include <Poco/Logger.h>
 
+#include <algorithm>
 #include <csignal>
 #include <sys/mman.h>
 
@@ -26,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int ABORTED;
 }
 
 #if !defined(SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
@@ -300,23 +302,52 @@ bool ThreadStatus::QueryCancellationBlocker::isActive()
     return query_cancellation_blocked;
 }
 
+ExecutionPhaseScope::ExecutionPhaseScope(ExecutionPhase phase) noexcept
+    : thread(current_thread)
+    , group(thread ? thread->getThreadGroup().get() : nullptr)
+    , previous(thread ? thread->execution_phase : ExecutionPhase::Work)
+{
+    if (thread && group)
+        thread->execution_phase = phase;
+}
+
+ExecutionPhaseScope::~ExecutionPhaseScope()
+{
+    if (thread && current_thread == thread && thread->getThreadGroup().get() == group)
+        thread->execution_phase = previous;
+}
+
+CancellationRequest ThreadStatus::getCancellationRequest() const
+{
+    if (!thread_group)
+        return CancellationRequest::None;
+    auto request = local_data.operation_cancellation_request
+        ? local_data.operation_cancellation_request() : CancellationRequest::None;
+    if (local_data.query_is_canceled_predicate && local_data.query_is_canceled_predicate())
+        request = std::max(request, CancellationRequest::StopWork);
+    return request;
+}
+
 bool ThreadStatus::isQueryCanceled() const
 {
-    if (!thread_group || query_cancellation_blocked)
+    if (query_cancellation_blocked)
         return false;
-
-    if (local_data.query_is_canceled_predicate)
-        return local_data.query_is_canceled_predicate();
-    return false;
+    const auto request = getCancellationRequest();
+    return request == CancellationRequest::StopAll
+        || (request == CancellationRequest::StopWork && execution_phase == ExecutionPhase::Work);
 }
 
 void ThreadStatus::throwIfQueryCanceled() const
 {
     if (!thread_group || query_cancellation_blocked)
         return;
-
+    if (execution_phase == ExecutionPhase::Cleanup && getCancellationRequest() != CancellationRequest::StopAll)
+        return;
+    /// Preserve the foreground query's original exception when both sources requested cancellation.
     if (local_data.throw_if_query_canceled_predicate)
         local_data.throw_if_query_canceled_predicate();
+    if (local_data.operation_cancellation_request && local_data.operation_cancellation_request() != CancellationRequest::None)
+        throw Exception(ErrorCodes::ABORTED, "Cancelled merging or mutating parts");
 }
 
 size_t ThreadStatus::getNextPlanStepIndex() const

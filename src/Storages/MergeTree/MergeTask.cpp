@@ -115,6 +115,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_pause_after_write[];
     extern const char merge_task_pause_after_reserving_tmp_dir[];
 }
 
@@ -341,22 +342,9 @@ static void addMissedColumnsToSerializationInfos(
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
-    /// Once cancellation is detected, persist it so that subsequent checks still see it
-    /// even if the merge blocker is released in between (e.g. rapid SYSTEM STOP/START MERGES toggling).
-    if (merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
-        return true;
-
-    bool cancelled = future_part
-        ? merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId())
-        : merges_blocker->isCancelled();
-
-    if (cancelled)
-    {
-        merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
-        return true;
-    }
-
-    return false;
+    /// A projection's synthetic partition ID does not identify the parent partition's blocker.
+    /// Use the inherited predicate so stopping the parent operation also stops its projection work.
+    return operation_request() != CancellationRequest::None;
 }
 
 void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
@@ -686,6 +674,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
         ctx->need_remove_expired_values = false;
     }
+
+    if (ctx->need_remove_expired_values)
+        global_ctx->merge_list_element_ptr->enableTTLCancellation(*global_ctx->ttl_merges_blocker);
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
@@ -1227,6 +1218,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
+    global_ctx->write_settings = global_ctx->context->getWriteSettings();
+
+
     if (can_short_circuit_ttl_drop)
     {
         LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
@@ -1318,7 +1312,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
-        global_ctx->context->getWriteSettings(),
+        global_ctx->write_settings,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->stream_base_manifest);
@@ -1326,37 +1320,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
 
-    ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
-        ttl_merges_blocker = global_ctx->ttl_merges_blocker,
-        need_remove = ctx->need_remove_expired_values,
-        merge_list_element = global_ctx->merge_list_element_ptr,
-        partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
+    ctx->is_cancelled = [request = global_ctx->operation_request]
     {
-        /// Once cancellation is detected, persist it so that subsequent checks still see it
-        /// even if the merge blocker is released in between (e.g. rapid SYSTEM STOP/START MERGES toggling).
-        if (merge_list_element->is_cancelled.load(std::memory_order_relaxed))
-            return true;
-
-        bool cancelled = merges_blocker->isCancelledForPartition(partition_id)
-            || (need_remove && ttl_merges_blocker->isCancelled());
-
-        if (cancelled)
-        {
-            merge_list_element->is_cancelled.store(true, std::memory_order_relaxed);
-            return true;
-        }
-
-        return false;
+        return request() != CancellationRequest::None;
     };
-
-    /// Lets the worker threads of long single-block steps (e.g. vector similarity index build) stop on cancellation.
-    global_ctx->merge_list_element_ptr->thread_group->setQueryCancellationPredicates(
-        ctx->is_cancelled,
-        [is_cancelled = ctx->is_cancelled]
-        {
-            if (is_cancelled())
-                throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
-        });
 
     /// This is the end of preparation. Execution will be per block.
     return false;
@@ -1760,7 +1727,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
     /// `projection.calculate` and temp-part write here only to throw the part away in
     /// `checkOperationIsNotCanceled` below wastes work proportional to the squash size.
     if (ctx->pre_calculate_squash
-        && !global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
+        && global_ctx->merge_list_element_ptr->cancellation_state->getRequest() == CancellationRequest::None)
     {
         auto & pre_squash = *ctx->pre_calculate_squash;
         Chunk remaining = Squashing::squash(pre_squash.flush(), pre_squash.getHeader());
@@ -1930,7 +1897,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         if (cancelled || !global_ctx->merging_executor->pull(block))
         {
             if (cancelled)
-                global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+                global_ctx->merge_list_element_ptr->cancellation_state->request(CancellationRequest::StopWork);
             else
                 throwIfPipelineCancelled(global_ctx->merged_pipeline);
             finalize();
@@ -1954,6 +1921,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         global_ctx->rows_written += block.rows();
         ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
+
+        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_write);
 
         if (global_ctx->merge_may_reduce_rows)
         {
@@ -2285,6 +2254,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
+        global_ctx->write_settings,
         global_ctx->to->getSkipIndicesPackedWriter(),
         global_ctx->stream_base_manifest);
 
@@ -2309,7 +2279,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
         if (cancelled || !ctx->executor->pull(block))
         {
             if (cancelled)
-                global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+                global_ctx->merge_list_element_ptr->cancellation_state->request(CancellationRequest::StopWork);
             else
                 throwIfPipelineCancelled(ctx->column_parts_pipeline);
             return false;
@@ -2428,7 +2398,9 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
         if (projection->type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
-        auto child_merge_list_element = std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context);
+        auto child_merge_list_element = std::make_unique<MergeListElement>(
+            (*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context,
+            global_ctx->merge_list_element_ptr->getCancellationRequestPredicate());
         if (!global_ctx->projection)
             child_merge_list_element->parent_progress = &(*global_ctx->merge_entry)->ptr()->current_projection_progress;
 
@@ -3339,7 +3311,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
     MergeTreeWriterSettings writer_settings(
         global_ctx->data->getContext()->getSettingsRef(),
-        global_ctx->context->getWriteSettings(),
+        global_ctx->write_settings,
         global_ctx->data->getSettings(),
         global_ctx->new_data_part,
         global_ctx->new_data_part->index_granularity_info.mark_type.adaptive,
