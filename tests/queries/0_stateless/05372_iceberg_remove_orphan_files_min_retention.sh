@@ -35,6 +35,7 @@ run()
 echo "explicit older_than 1 hour ago: $(run -q "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files(older_than = '${recent}')")"
 echo "positional older_than 1 hour ago, dry_run: $(run -q "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files('${recent}', dry_run = 1)")"
 echo "default older_than from a 1 hour setting: $(run --iceberg_orphan_files_older_than_seconds=3600 -q "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files()")"
+echo "default older_than from a 1 hour setting, compatibility 26.9: $(run --compatibility=26.9 --iceberg_orphan_files_older_than_seconds=3600 -q "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files()")"
 echo "min retention 2 hours: $(run --iceberg_orphan_files_min_retention_seconds=7200 -q "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files('${recent}')")"
 echo "min retention 30 minutes: $(run --iceberg_orphan_files_min_retention_seconds=1800 -q "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files('${recent}')")"
 echo "min retention disabled: $(run --iceberg_orphan_files_min_retention_seconds=0 -q "ALTER TABLE ${TABLE} EXECUTE remove_orphan_files('${recent}')")"
