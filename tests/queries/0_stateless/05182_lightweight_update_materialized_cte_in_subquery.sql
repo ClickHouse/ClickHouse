@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: a materialized CTE referenced twice is sent to a remote replica as the initiator's `_materialized_cte_*` table, `UNKNOWN_TABLE`, https://github.com/ClickHouse/ClickHouse/issues/112642
 -- Lightweight UPDATE / DELETE whose IN subquery defines a materialized CTE.
 -- The mutation plan must gate the CTE readers like the Planner does for a SELECT,
 -- also when the set is built at run time (empty table, non-key column, index analysis for IN disabled).
