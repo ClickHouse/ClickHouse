@@ -37,6 +37,7 @@ SELECT fn, name,
 FROM states WHERE name IN ('small', 'medium', 'large') ORDER BY fn, hi - lo;
 
 SELECT 'merge with a state in a bigger container, both orders, compared with direct aggregation';
+WITH arrayConcat(range(a.lo, a.hi), range(b.lo, b.hi)) AS vals
 SELECT a.fn, a.name, b.name,
     multiIf(a.fn = 'uniqCombined', arrayReduce('uniqCombinedMerge', [a.s, b.s]),
         a.fn = 'uniqCombined64', arrayReduce('uniqCombined64Merge', [a.s64, b.s64]),
@@ -44,9 +45,9 @@ SELECT a.fn, a.name, b.name,
     ab = multiIf(a.fn = 'uniqCombined', arrayReduce('uniqCombinedMerge', [b.s, a.s]),
         a.fn = 'uniqCombined64', arrayReduce('uniqCombined64Merge', [b.s64, a.s64]),
         arrayReduce('uniqCombinedMerge(12)', [b.s12, a.s12])),
-    ab = multiIf(a.fn = 'uniqCombined', arrayReduce('uniqCombined', arrayConcat(range(a.lo, a.hi), range(b.lo, b.hi))),
-        a.fn = 'uniqCombined64', arrayReduce('uniqCombined64', arrayConcat(range(a.lo, a.hi), range(b.lo, b.hi))),
-        arrayReduce('uniqCombined(12)', arrayConcat(range(a.lo, a.hi), range(b.lo, b.hi))))
+    ab = multiIf(a.fn = 'uniqCombined', arrayReduce('uniqCombined', vals),
+        a.fn = 'uniqCombined64', arrayReduce('uniqCombined64', vals),
+        arrayReduce('uniqCombined(12)', vals))
 FROM states AS a, states AS b
 WHERE a.fn = b.fn AND (a.name, b.name) IN [
     ('empty', 'medium'), ('empty', 'large'),
@@ -55,6 +56,25 @@ WHERE a.fn = b.fn AND (a.name, b.name) IN [
     ('medium', 'large'), ('medium_disjoint', 'large'),
     ('small_full', 'medium_almost_full')]
 ORDER BY a.fn, a.name, b.name;
+
+SELECT 'merge of a small state into a medium state which the union fills, both orders: the same results as before copying the medium state';
+-- Either a full medium set and a small set of its values only, or a medium set with one free slot and a small set of a new value followed by one of its values.
+SELECT fn, case,
+    multiIf(fn = 'uniqCombined', arrayReduce('uniqCombinedMerge', [arrayReduce('uniqCombinedState', lhs), arrayReduce('uniqCombinedState', rhs)]),
+        fn = 'uniqCombined64', arrayReduce('uniqCombined64Merge', [arrayReduce('uniqCombined64State', lhs), arrayReduce('uniqCombined64State', rhs)]),
+        arrayReduce('uniqCombinedMerge(12)', [arrayReduce('uniqCombinedState(12)', lhs), arrayReduce('uniqCombinedState(12)', rhs)])),
+    multiIf(fn = 'uniqCombined', arrayReduce('uniqCombinedMerge', [arrayReduce('uniqCombinedState', rhs), arrayReduce('uniqCombinedState', lhs)]),
+        fn = 'uniqCombined64', arrayReduce('uniqCombined64Merge', [arrayReduce('uniqCombined64State', rhs), arrayReduce('uniqCombined64State', lhs)]),
+        arrayReduce('uniqCombinedMerge(12)', [arrayReduce('uniqCombinedState(12)', rhs), arrayReduce('uniqCombinedState(12)', lhs)]))
+FROM
+(
+    SELECT t.1 AS fn, t.2 AS medium_max, c.1 AS case, c.2 AS lhs, c.3 AS rhs
+    FROM (SELECT arrayJoin([('uniqCombined', 8192), ('uniqCombined64', 4096), ('uniqCombined(12)', 256)]::Array(Tuple(String, UInt64))) AS t)
+    ARRAY JOIN [
+        ('only_duplicates', arrayMap(i -> i * intDiv(medium_max, 16), range(16)), range(medium_max)),
+        ('new_then_duplicate', [1000000, 0], range(medium_max - 1))]::Array(Tuple(String, Array(UInt64), Array(UInt64))) AS c
+)
+ORDER BY fn, case;
 
 DROP TABLE ranges;
 DROP TABLE states;

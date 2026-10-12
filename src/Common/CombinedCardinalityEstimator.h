@@ -215,16 +215,21 @@ public:
 
         if (rhs_container_type == details::ContainerType::MEDIUM && container_type == details::ContainerType::SMALL)
         {
-            auto tmp_medium = std::make_unique<Medium>();
-            *tmp_medium = rhs.getContainer<Medium>();
+            const auto & rhs_medium = rhs.getContainer<Medium>();
 
-            medium = tmp_medium.release();
-            setContainerType(details::ContainerType::MEDIUM);
+            /// `insert` into a full medium set converts it to `HyperLogLogCounter` even for a value that is already there,
+            /// so whether the merge converts depends on the order of insertion when the union may fill the medium set.
+            /// Copy only if the union cannot fill it before the last value: then neither order converts, and the result is the same.
+            if (rhs_medium.size() + small.size() <= medium_set_size_max)
+            {
+                /// Reserve the same buffer size as rhs, so that the copy does not reallocate.
+                auto tmp_medium = std::make_unique<Medium>(rhs_medium.size());
+                *tmp_medium = rhs_medium;
+                toMedium(std::move(tmp_medium));
+                return;
+            }
 
-            /// The small set is not shared with the medium container, so its values are still there.
-            for (const auto & x : small)
-                insert(x.getValue());
-            return;
+            toMedium();
         }
 
         /// Here our container is not smaller than the one of rhs.
@@ -277,12 +282,11 @@ public:
     }
 
 private:
-    void toMedium()
+    /// Inserts our values into `tmp_medium` (an empty set by default) and switches to it.
+    void toMedium(std::unique_ptr<Medium> tmp_medium = std::make_unique<Medium>())
     {
         if (getContainerType() != details::ContainerType::SMALL)
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
-
-        auto tmp_medium = std::make_unique<Medium>();
 
         for (const auto & x : small)
             tmp_medium->insert(x.getValue());
