@@ -7,6 +7,7 @@
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
+#include <Common/RemoteHostFilter.h>
 #include <IO/Archives/ArchiveUtils.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -243,6 +244,15 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     else
         storage_name = name;
     return true;
+}
+
+void URI::checkRemoteHostFilter(const RemoteHostFilter & filter) const
+{
+    Poco::URI endpoint_uri(endpoint);
+    if (filter.isBucketAllowed(endpoint_uri.getHost(), endpoint_uri.getPort(), bucket))
+        return;
+
+    filter.checkURL(uri);
 }
 
 void URI::addRegionToURI(const std::string &region)
