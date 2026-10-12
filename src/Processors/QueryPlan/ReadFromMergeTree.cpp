@@ -4753,8 +4753,10 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
     return new_reading;
 }
 
-void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset)
+ReadFromMergeTree::PartOffsetColumns ReadFromMergeTree::addStartingPartOffsetAndPartOffset()
 {
+    PartOffsetColumns result;
+
     /// A read column consumed by a filter is exposed again by adding it back to the filter outputs,
     /// the same way `PREWHERE` keeps pass-through columns. When the column is the filter column itself
     /// (e.g. `PREWHERE _part_offset`), it is already among the outputs, so the remove-filter flag is
@@ -4808,22 +4810,27 @@ void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_sta
         return true;
     };
 
-    added_part_starting_offset = expose_in_output("_part_starting_offset");
-    added_part_offset = expose_in_output("_part_offset");
+    result.added_part_starting_offset = expose_in_output("_part_starting_offset");
+    result.added_part_offset = expose_in_output("_part_offset");
 
-    if (!added_part_starting_offset && !added_part_offset)
-        return;
+    if (result.added_part_starting_offset || result.added_part_offset)
+    {
+        output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(all_column_names),
+            query_info.row_level_filter,
+            query_info.prewhere_info));
 
-    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(all_column_names),
-        query_info.row_level_filter,
-        query_info.prewhere_info));
+        /// Update analysis result if it exists
+        if (analyzed_result_ptr)
+            analyzed_result_ptr->column_names_to_read = all_column_names;
 
-    /// Update analysis result if it exists
-    if (analyzed_result_ptr)
-        analyzed_result_ptr->column_names_to_read = all_column_names;
+        required_source_columns = all_column_names;
+    }
 
-    required_source_columns = all_column_names;
+    /// Virtual columns, so their names are unique.
+    result.part_starting_offset_position = output_header->getPositionByName("_part_starting_offset");
+    result.part_offset_position = output_header->getPositionByName("_part_offset");
+    return result;
 }
 
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
@@ -6488,11 +6495,12 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     return true;
 }
 
-ReadFromMergeTree::RemoveUnusedColumnsResult
-ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & /*inputs*/)
+ReadFromMergeTree::ColumnPruning ReadFromMergeTree::pruneColumns(
+    const std::vector<size_t> & unneeded_output_positions,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter) const
 {
-    if (output_header == nullptr)
-        return {};
+    ColumnPruning pruning;
 
     /// Positions in the output header that go away: the unneeded ones, except the ones FINAL merges by.
     std::set<size_t> dropped_output_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
@@ -6517,44 +6525,42 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
         }
     }
 
-    const std::vector<size_t> dropped_output_positions(dropped_output_set.begin(), dropped_output_set.end());
+    pruning.dropped_output_positions.assign(dropped_output_set.begin(), dropped_output_set.end());
 
     Block storage_header = storage_snapshot->getSampleBlockForColumns(all_column_names);
     Block row_level_output_header = storage_header;
-    if (query_info.row_level_filter)
-        row_level_output_header = SourceStepWithFilter::applyPrewhereActions(std::move(row_level_output_header), query_info.row_level_filter, nullptr);
+    if (row_level_filter)
+        row_level_output_header = SourceStepWithFilter::applyPrewhereActions(std::move(row_level_output_header), row_level_filter, nullptr);
 
     /// Positions in the row-policy output header, which is the input header for PREWHERE, that nothing needs.
     std::vector<size_t> unneeded_row_level_output_positions;
-    bool removed_output_from_prewhere = false;
-    if (query_info.prewhere_info)
+    if (prewhere_info)
     {
         auto prewhere_pruning = FilterStep::pruneDAGOutputsByPosition(
-            query_info.prewhere_info->prewhere_actions,
-            query_info.prewhere_info->prewhere_column_name,
-            query_info.prewhere_info->remove_prewhere_column,
+            prewhere_info->prewhere_actions,
+            prewhere_info->prewhere_column_name,
+            prewhere_info->remove_prewhere_column,
             row_level_output_header,
-            dropped_output_positions);
-        removed_output_from_prewhere = prewhere_pruning.changed;
+            pruning.dropped_output_positions);
+        pruning.changes_filters |= prewhere_pruning.changed;
         unneeded_row_level_output_positions = std::move(prewhere_pruning.unneeded_input_positions);
     }
     else
     {
-        unneeded_row_level_output_positions = dropped_output_positions;
+        unneeded_row_level_output_positions = pruning.dropped_output_positions;
     }
 
-    bool removed_output_from_row_level_filter = false;
     /// Positions in the storage header that neither the row policy nor PREWHERE filters need.
     std::vector<size_t> unneeded_storage_positions;
-    if (query_info.row_level_filter)
+    if (row_level_filter)
     {
         auto row_level_pruning = FilterStep::pruneDAGOutputsByPosition(
-            query_info.row_level_filter->actions,
-            query_info.row_level_filter->column_name,
-            query_info.row_level_filter->do_remove_column,
+            row_level_filter->actions,
+            row_level_filter->column_name,
+            row_level_filter->do_remove_column,
             storage_header,
             unneeded_row_level_output_positions);
-        removed_output_from_row_level_filter = row_level_pruning.changed;
+        pruning.changes_filters |= row_level_pruning.changed;
         unneeded_storage_positions = std::move(row_level_pruning.unneeded_input_positions);
     }
     else
@@ -6566,17 +6572,21 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
     for (size_t pos : final_storage_column_positions)
         dropped_storage_column_positions.erase(pos);
 
-    Names new_column_names;
     for (size_t pos = 0; pos < all_column_names.size(); ++pos)
     {
         if (!dropped_storage_column_positions.contains(pos))
-            new_column_names.push_back(all_column_names[pos]);
+            pruning.column_names.push_back(all_column_names[pos]);
     }
 
-    if (!removed_output_from_prewhere && !removed_output_from_row_level_filter && new_column_names.size() == all_column_names.size())
+    return pruning;
+}
+
+ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::applyColumnPruning(ColumnPruning pruning)
+{
+    if (!pruning.changes_filters && pruning.column_names.size() == all_column_names.size())
         return {};
 
-    all_column_names = std::move(new_column_names);
+    all_column_names = std::move(pruning.column_names);
 
     const size_t former_output_column_count = output_header->columns();
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
@@ -6584,13 +6594,13 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
         query_info.row_level_filter,
         query_info.prewhere_info));
 
-    if (former_output_column_count - dropped_output_positions.size() != output_header->columns())
+    if (former_output_column_count - pruning.dropped_output_positions.size() != output_header->columns())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected number of output columns after removing unused columns from ReadFromMergeTree: "
             "{} columns, {} of them dropped, but {} left",
             former_output_column_count,
-            dropped_output_positions.size(),
+            pruning.dropped_output_positions.size(),
             output_header->columns());
 
     /// Update analysis result if it exists
@@ -6601,10 +6611,92 @@ ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_outp
 
     RemoveUnusedColumnsResult result;
     result.step_changed = true;
-    result.dropped_output_positions = dropped_output_positions;
+    result.dropped_output_positions = std::move(pruning.dropped_output_positions);
     return result;
 }
 
+ReadFromMergeTree::RemoveUnusedColumnsResult
+ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & /*inputs*/)
+{
+    if (output_header == nullptr)
+        return {};
+
+    return applyColumnPruning(pruneColumns(unneeded_output_positions, query_info.prewhere_info, query_info.row_level_filter));
+}
+
+std::vector<size_t> ReadFromMergeTree::getLazilyReadablePositions(const std::vector<size_t> & unneeded_output_positions) const
+{
+    if (output_header == nullptr)
+        return {};
+
+    /// Worked out on copies of the filters, which the pruning changes.
+    const auto prewhere_info = query_info.prewhere_info ? std::make_shared<PrewhereInfo>(query_info.prewhere_info->clone()) : nullptr;
+    FilterDAGInfoPtr row_level_filter;
+    if (query_info.row_level_filter)
+        row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo{
+            query_info.row_level_filter->actions.clone(), query_info.row_level_filter->column_name, query_info.row_level_filter->do_remove_column});
+
+    const auto pruning = pruneColumns(unneeded_output_positions, prewhere_info, row_level_filter);
+
+    /// The columns of a read are storage columns, so their names are unique.
+    const NameSet still_read(pruning.column_names.begin(), pruning.column_names.end());
+    const NameSet read_now(all_column_names.begin(), all_column_names.end());
+    const auto & virtuals = getStorageMetadata()->virtuals;
+
+    std::vector<size_t> positions;
+    for (size_t position : pruning.dropped_output_positions)
+    {
+        const auto & column_name = output_header->getByPosition(position).name;
+        if (read_now.contains(column_name) && !still_read.contains(column_name) && !virtuals.has(column_name))
+            positions.push_back(position);
+    }
+    return positions;
+}
+
+std::pair<ReadFromMergeTree::RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>>
+ReadFromMergeTree::removeUnusedColumnsAndCreateLazyReadStep(
+    const std::vector<size_t> & unneeded_output_positions, const std::vector<size_t> & lazy_output_positions)
+{
+    if (output_header == nullptr)
+        return {};
+
+    if (lazy_output_positions.empty())
+        return {removeUnusedColumns(unneeded_output_positions, {}), nullptr};
+
+    const auto readable = getLazilyReadablePositions(unneeded_output_positions);
+    NameSet lazy_names;
+    for (size_t position : lazy_output_positions)
+    {
+        if (!std::ranges::binary_search(readable, position))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} of the read cannot be read lazily", output_header->getByPosition(position).name);
+        lazy_names.insert(output_header->getByPosition(position).name);
+    }
+
+    /// In the order the read reads them.
+    Names columns_to_read_lazily;
+    for (const auto & column_name : all_column_names)
+        if (lazy_names.contains(column_name))
+            columns_to_read_lazily.push_back(column_name);
+
+    auto lazy_reading_header = std::make_shared<const Block>(
+        MergeTreeSelectProcessor::transformHeader(storage_snapshot->getSampleBlockForColumns(columns_to_read_lazily), nullptr, nullptr));
+
+    PartRangesReadInfo info(getParts(), context->getSettingsRef(), *data.getSettings());
+    auto lazy_reading = std::make_unique<LazilyReadFromMergeTree>(
+        std::move(lazy_reading_header),
+        block_size.max_block_size_rows,
+        info.min_marks_for_concurrent_read,
+        reader_settings,
+        mutations_snapshot,
+        storage_snapshot,
+        context,
+        data.getLogName());
+
+    auto result = removeUnusedColumns(unneeded_output_positions, {});
+    has_lazily_read_columns = true;
+    return {std::move(result), std::move(lazy_reading)};
+}
 
 void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
 {

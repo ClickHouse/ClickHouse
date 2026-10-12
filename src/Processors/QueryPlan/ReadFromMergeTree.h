@@ -621,10 +621,30 @@ public:
     /// The columns `keepOnlyRequiredColumnsAndCreateLazyReadStep` would move to the lazy read, without moving
     /// them: the read keeps more than it is asked to, such as the inputs of PREWHERE and virtual columns.
     Names getLazilyReadColumns(const NameSet & required_outputs) const;
+
+    /// Of `unneeded_output_positions`, the ones whose storage column `removeUnusedColumns` would stop reading, so that a
+    /// lazy read can read it instead. The read keeps the others: FINAL merges by them, PREWHERE or the row policy reads
+    /// them, or they are virtual.
+    std::vector<size_t> getLazilyReadablePositions(const std::vector<size_t> & unneeded_output_positions) const;
+    /// `removeUnusedColumns`, and a lazy read of the columns at `lazy_output_positions`, which are among the ones
+    /// `getLazilyReadablePositions` returns for `unneeded_output_positions`. Without them, it is `removeUnusedColumns`.
+    std::pair<RemoveUnusedColumnsResult, std::unique_ptr<LazilyReadFromMergeTree>> removeUnusedColumnsAndCreateLazyReadStep(
+        const std::vector<size_t> & unneeded_output_positions, const std::vector<size_t> & lazy_output_positions);
+
     /// Whether some columns of this read were moved to a lazy read, which addresses the rows of this one by
     /// their part offsets. Reading a projection instead would address other rows.
     bool hasLazilyReadColumns() const { return has_lazily_read_columns; }
-    void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
+
+    /// The columns `addStartingPartOffsetAndPartOffset` reads, where they are in the output header, and whether it added
+    /// them. The columns the output header had keep their order.
+    struct PartOffsetColumns
+    {
+        size_t part_starting_offset_position = 0;
+        size_t part_offset_position = 0;
+        bool added_part_starting_offset = false;
+        bool added_part_offset = false;
+    };
+    PartOffsetColumns addStartingPartOffsetAndPartOffset();
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 
@@ -666,6 +686,21 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    /// What removing the columns at `unneeded_output_positions` comes to, worked out on the given filters, which it
+    /// prunes: the output positions that go away, the columns the read reads then, and whether a filter changed.
+    struct ColumnPruning
+    {
+        std::vector<size_t> dropped_output_positions;
+        Names column_names;
+        bool changes_filters = false;
+    };
+    ColumnPruning pruneColumns(
+        const std::vector<size_t> & unneeded_output_positions,
+        const PrewhereInfoPtr & prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter) const;
+    /// Makes this read read `pruning.column_names`, with the filters it was worked out on.
+    RemoveUnusedColumnsResult applyColumnPruning(ColumnPruning pruning);
+
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
         const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,

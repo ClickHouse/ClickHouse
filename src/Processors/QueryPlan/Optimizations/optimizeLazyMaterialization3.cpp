@@ -197,34 +197,33 @@ bool canReadLazily(const QueryPlan::Node & source, const QueryPlanOptimizationSe
     return false;
 }
 
-/// The row index of a read, under `index_name`, after the columns of `former_header` the read still has, in their order,
-/// so that the columns of the read keep their positions and the index comes after them. For MergeTree the index is the
-/// offset of the part in the read plus the offset of the row in its part: the read is asked for the two virtual columns
-/// this is computed from, and the ones it did not produce before are consumed here, so they do not leak into the rest
-/// of the plan. An object storage read produces the index itself. Below a join that can leave the source unmatched
-/// the index is `Nullable`, so that the join stands it at NULL for the rows it stuffs.
-ActionsDAG makeRowIndexDAG(ReadFromMergeTree * merge_tree, const Block & former_header, const Block & read_header, const String & index_name, bool nullable)
+/// The row index of a read, under `index_name`, after the other columns of `read_header`, in their order, so that the
+/// columns of the read keep their positions and the index comes after them. The columns at `index_positions` are what
+/// the index is computed from - for MergeTree the offset of the part in the read and the offset of the row in its part,
+/// for an object storage read the index it produces itself - and are consumed here unless the read had them before,
+/// which `consumed_positions` says. Below a join that can leave the source unmatched the index is `Nullable`, so that
+/// the join stands it at NULL for the rows it stuffs.
+ActionsDAG makeRowIndexDAG(
+    const Block & read_header,
+    const std::vector<size_t> & index_positions,
+    const std::vector<size_t> & consumed_positions,
+    const String & index_name,
+    bool nullable)
 {
     ActionsDAG dag(read_header.getColumnsWithTypeAndName());
-    const auto & inputs = dag.getInputs();
-    /// The columns of a read are storage columns, so their names are unique.
-    const auto find_input = [&](const String & name) { return inputs[read_header.getPositionByName(name)]; };
+    const auto inputs = dag.getInputs();
 
     auto & outputs = dag.getOutputs();
     outputs.clear();
-    for (const auto & column : former_header)
-        if (read_header.has(column.name))
-            outputs.push_back(find_input(column.name));
+    for (size_t position = 0; position < inputs.size(); ++position)
+        if (std::ranges::find(consumed_positions, position) == consumed_positions.end())
+            outputs.push_back(inputs[position]);
 
-    const ActionsDAG::Node * index = nullptr;
-    if (merge_tree)
+    const ActionsDAG::Node * index = inputs.at(index_positions.front());
+    if (index_positions.size() == 2)
     {
         auto plus = FunctionFactory::instance().get("plus", nullptr);
-        index = &dag.addFunction(plus, {find_input("_part_starting_offset"), find_input("_part_offset")}, {});
-    }
-    else
-    {
-        index = find_input(String(global_row_index_name));
+        index = &dag.addFunction(plus, {index, inputs.at(index_positions.back())}, {});
     }
 
     if (nullable)
@@ -572,8 +571,10 @@ public:
 private:
     struct LazySource
     {
-        /// The source columns the main read keeps, and the ones the lazy read fetches.
+        /// The source columns the main read keeps, by name, for an object storage read; the positions of the ones the lazy
+        /// read fetches, for a MergeTree read; and the inputs standing for them.
         NameSet eager_names;
+        std::vector<size_t> positions;
         std::vector<const ActionsDAG::Node *> inputs;
 
         /// Set by `apply`.
@@ -660,23 +661,51 @@ private:
             LazySource lazy;
             const auto * step = merged.sources[source].plan_node->step.get();
 
-            /// The FINAL merge reads the sorting key, the version and the is_deleted columns in the main read.
-            NameSet merged_on;
-            if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(step); merge_tree && merge_tree->isQueryWithFinal())
+            if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(step))
             {
-                const auto & merging_params = merge_tree->getMergeTreeData().merging_params;
-                merged_on.insert_range(merge_tree->getStorageMetadata()->getColumnsRequiredForSortingKey());
-                if (!merging_params.version_column.empty())
-                    merged_on.insert(merging_params.version_column);
-                if (!merging_params.is_deleted_column.empty())
-                    merged_on.insert(merging_params.is_deleted_column);
+                /// The read is split by its pruning, which is not right for every read.
+                if (!merge_tree->canRemoveUnusedColumns())
+                    continue;
+
+                /// The positions the main read need not produce: nothing below the `LIMIT` reads them, and they do not
+                /// cross it. The inputs of a source follow its header.
+                const auto & inputs = merged.sources[source].inputs;
+                std::vector<size_t> unneeded;
+                for (size_t position = 0; position < inputs.size(); ++position)
+                {
+                    const auto placed = frontier.at(inputs[position]);
+                    if (!placed.computed_below && placed.above != Placement::Above::Crossing)
+                        unneeded.push_back(position);
+                }
+
+                /// A column meant for the lazy read that the main read reads anyway, such as one FINAL merges by or
+                /// PREWHERE reads, crosses the `LIMIT` instead.
+                const auto readable = merge_tree->getLazilyReadablePositions(unneeded);
+                for (size_t position = 0; position < inputs.size(); ++position)
+                {
+                    const auto * input = inputs[position];
+                    if (frontier.at(input).above != Placement::Above::LazyRead)
+                        continue;
+
+                    if (std::ranges::binary_search(unneeded, position) && std::ranges::binary_search(readable, position))
+                    {
+                        lazy.positions.push_back(position);
+                        lazy.inputs.push_back(input);
+                    }
+                    else
+                        kept_by_read.push_back(input);
+                }
+
+                if (!lazy.inputs.empty())
+                    lazy_by_source.emplace(source, std::move(lazy));
+                continue;
             }
 
             std::vector<const ActionsDAG::Node *> candidates;
             for (const auto * input : merged.sources[source].inputs)
             {
                 const auto placed = frontier.at(input);
-                if (placed.above == Placement::Above::LazyRead && !placed.computed_below && !merged_on.contains(input->result_name))
+                if (placed.above == Placement::Above::LazyRead && !placed.computed_below)
                     candidates.push_back(input);
                 else
                 {
@@ -686,16 +715,10 @@ private:
                 }
             }
 
-            lazy.eager_names.insert(merged_on.begin(), merged_on.end());
-
             if (candidates.empty())
                 continue;
 
-            NameSet lazily_read;
-            if (const auto * merge_tree = typeid_cast<const ReadFromMergeTree *>(step))
-                lazily_read.insert_range(merge_tree->getLazilyReadColumns(lazy.eager_names));
-            else
-                lazily_read = typeid_cast<const ReadFromObjectStorageStep &>(*step).getLazilyReadColumns(lazy.eager_names);
+            const auto lazily_read = typeid_cast<const ReadFromObjectStorageStep &>(*step).getLazilyReadColumns(lazy.eager_names);
 
             for (const auto * input : candidates)
             {
@@ -950,7 +973,7 @@ private:
     Assembled assemble(QueryPlan::Node * node, const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
         if (const auto it = source_numbers.find(node); it != source_numbers.end())
-            return assembleSource(node, it->second, nodes);
+            return assembleSource(node, it->second, unneeded, nodes);
 
         auto * step = node->step.get();
 
@@ -1017,63 +1040,90 @@ private:
         return result;
     }
 
-    Assembled assembleSource(QueryPlan::Node * node, size_t source, QueryPlan::Nodes & nodes)
+    Assembled assembleSource(QueryPlan::Node * node, size_t source, const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
         /// Whatever is below the source stays as it is.
         Assembled result;
         auto & plan = result.plan;
         plan = QueryPlan::extractSubplan(node, nodes);
-        const Block former_header = *plan.getCurrentHeader();
 
         auto * merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get());
         auto * object_storage = typeid_cast<ReadFromObjectStorageStep *>(plan.getRootNode()->step.get());
 
         const auto lazy_it = lazy_by_source.find(source);
-        if (lazy_it != lazy_by_source.end())
+        auto * lazy = lazy_it != lazy_by_source.end() ? &lazy_it->second : nullptr;
+        const Block * lazy_header = nullptr;
+
+        if (merge_tree && merge_tree->canRemoveUnusedColumns())
         {
-            auto & lazy = lazy_it->second;
-            const Block * lazy_header = nullptr;
-            if (merge_tree)
+            /// The read drops what nothing below the `LIMIT` needs, and hands the columns read lazily to a lazy read.
+            static const std::vector<size_t> no_positions;
+            const auto & lazy_positions = lazy ? lazy->positions : no_positions;
+            for (size_t position : lazy_positions)
+                if (!std::ranges::binary_search(unneeded, position))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Column {} of source {} is read lazily, but needed below the LIMIT",
+                        plan.getCurrentHeader()->getByPosition(position).name, source);
+
+            auto [pruned, lazy_reading] = merge_tree->removeUnusedColumnsAndCreateLazyReadStep(unneeded, lazy_positions);
+            result.dropped_positions = std::move(pruned.dropped_output_positions);
+
+            if (lazy)
             {
-                lazy.merge_tree_reading = merge_tree->keepOnlyRequiredColumnsAndCreateLazyReadStep(lazy.eager_names);
-                if (lazy.merge_tree_reading)
-                    lazy_header = lazy.merge_tree_reading->getOutputHeader().get();
+                lazy->merge_tree_reading = std::move(lazy_reading);
+                if (lazy->merge_tree_reading)
+                    lazy_header = lazy->merge_tree_reading->getOutputHeader().get();
 
                 /// The lazy read fetches exactly the rows the main read selected, addressed by their row
                 /// index. It must not apply the vector search rescoring filter again: that one belongs to
                 /// the main read, and applying it against the candidates of the vector index can drop a
                 /// requested row.
-                lazy.parts = merge_tree->getParts();
-                for (auto & part : lazy.parts)
+                lazy->parts = merge_tree->getParts();
+                for (auto & part : lazy->parts)
                     part.read_hints.use_vector_search_result_filter = false;
             }
-            else
-            {
-                lazy.object_storage_reading = object_storage->keepOnlyRequiredColumnsAndCreateLazyReadStep(lazy.eager_names);
-                if (lazy.object_storage_reading)
-                    lazy_header = lazy.object_storage_reading->getOutputHeader().get();
-                lazy.row_index_registry = object_storage->getLazyRowIndexRegistry();
-            }
-
-            if (!lazy_header || lazy_header->columns() != lazy.inputs.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "The lazy read of source {} does not read the columns it was chosen for", source);
         }
+        else if (lazy)
+        {
+            /// The columns of a read are storage columns, with unique names.
+            const Block former_header = *plan.getCurrentHeader();
+            lazy->object_storage_reading = object_storage->keepOnlyRequiredColumnsAndCreateLazyReadStep(lazy->eager_names);
+            if (lazy->object_storage_reading)
+                lazy_header = lazy->object_storage_reading->getOutputHeader().get();
+            lazy->row_index_registry = object_storage->getLazyRowIndexRegistry();
+
+            const auto & read_header = *plan.getCurrentHeader();
+            for (size_t position = 0; position < former_header.columns(); ++position)
+                if (!read_header.has(former_header.getByPosition(position).name))
+                    result.dropped_positions.push_back(position);
+        }
+
+        if (lazy && (!lazy_header || lazy_header->columns() != lazy->inputs.size()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The lazy read of source {} does not read the columns it was chosen for", source);
 
         const bool masks_stuffing = std::ranges::any_of(mask_sources, [&](const auto & mask_source) { return mask_source.second == source; });
-        if (lazy_it == lazy_by_source.end() && !masks_stuffing)
+        if (!lazy && !masks_stuffing)
             return result;
 
-        /// The columns now read lazily are gone from the read. Its columns are storage columns, with unique names.
+        /// The columns the row index is computed from, and the ones of them the read did not produce before.
+        std::vector<size_t> index_positions;
+        std::vector<size_t> consumed_positions;
         if (merge_tree)
         {
-            bool added_part_starting_offset = false;
-            bool added_part_offset = false;
-            merge_tree->addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
+            const auto offsets = merge_tree->addStartingPartOffsetAndPartOffset();
+            index_positions = {offsets.part_starting_offset_position, offsets.part_offset_position};
+            if (offsets.added_part_starting_offset)
+                consumed_positions.push_back(offsets.part_starting_offset_position);
+            if (offsets.added_part_offset)
+                consumed_positions.push_back(offsets.part_offset_position);
         }
-        const auto & read_header = *plan.getCurrentHeader();
-        for (size_t position = 0; position < former_header.columns(); ++position)
-            if (!read_header.has(former_header.getByPosition(position).name))
-                result.dropped_positions.push_back(position);
+        else
+        {
+            /// The lazy split appends the index the read produces; the name is one this pass reserves.
+            const auto position = plan.getCurrentHeader()->getPositionByName(String(global_row_index_name));
+            index_positions = {position};
+            consumed_positions = {position};
+        }
 
         const auto index_name = makeRowIndexName(source);
         index_names.emplace(source, index_name);
@@ -1084,7 +1134,7 @@ private:
         const auto & source_inputs = merged.sources[source].inputs;
         const bool nullable_index = !source_inputs.empty() && merged.getNearestStuffing(source_inputs.front()) != nullptr;
 
-        auto above_read = makeRowIndexDAG(merge_tree, former_header, read_header, index_name, nullable_index);
+        auto above_read = makeRowIndexDAG(*plan.getCurrentHeader(), index_positions, consumed_positions, index_name, nullable_index);
         auto step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(above_read));
         step->setStepDescription("Row index");
         row_index_steps.insert(step.get());
