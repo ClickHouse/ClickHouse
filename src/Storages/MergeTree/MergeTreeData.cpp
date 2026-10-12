@@ -10538,13 +10538,13 @@ static void checkDateTimeConversionArgument(
         bool match_by_name = false;
         if (value_tuple_type->hasExplicitNames() && tuple_type->hasExplicitNames())
             for (size_t i = 0; i < converted_elements.size() && !match_by_name; ++i)
-                match_by_name = value_tuple_type->tryGetPositionByName(tuple_type->getNameByPosition(i)).has_value();
+                match_by_name = value_tuple_type->tryGetPositionByName(tuple_type->getElementNames()[i]).has_value();
 
         for (size_t i = 0; i < converted_elements.size(); ++i)
         {
             std::optional<size_t> source = i;
             if (match_by_name)
-                source = value_tuple_type->tryGetPositionByName(tuple_type->getNameByPosition(i));
+                source = value_tuple_type->tryGetPositionByName(tuple_type->getElementNames()[i]);
             else if (i >= elements.size())
                 source.reset();
 
