@@ -21,6 +21,7 @@
 #include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -334,15 +335,22 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                     chassert(place);
                     if (it++ % period == 0)
                     {
-                        is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
-                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                        is_simple_count ? writeVarUInt(getInlineCountState(place), wbuf)
+                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wbuf);
                     }
                     /// A hundred samples should be enough to get a good estimate.
                     return it < 100 * period;
                 });
 
             wbuf.finalize();
-            res += it ? static_cast<size_t>(table.size() * wb.count() / ((it + period - 1) / period)) : 0;
+            /// `wb.count()` also carries the per-frame checksum and header, which the scaling below would
+            /// multiply by the sampling period - on a hundred cheap states (a `count` state is a varint)
+            /// that fixed cost outweighs the states themselves. The replicas write their states into full
+            /// blocks, where it is amortized away, so charge only the compressed payload.
+            const size_t frames = (wbuf.count() + DBMS_DEFAULT_BUFFER_SIZE - 1) / DBMS_DEFAULT_BUFFER_SIZE;
+            const size_t frame_overhead = frames * (sizeof(CityHash_v1_0_2::uint128) + COMPRESSED_BLOCK_HEADER_SIZE);
+            const size_t payload = wb.count() > frame_overhead ? wb.count() - frame_overhead : 0;
+            res += it ? static_cast<size_t>(table.size() * payload / ((it + period - 1) / period)) : 0;
         }
         return res;
     };
@@ -361,10 +369,12 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
         {
             NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
-            is_simple_count ? writeVarUInt(getCountState(result.without_key), wb)
-                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+            is_simple_count ? writeVarUInt(getCountState(result.without_key), wbuf)
+                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wbuf);
             wbuf.finalize();
-            res += wb.count();
+            /// One state, one frame: charge the payload, as above.
+            const size_t frame_overhead = sizeof(CityHash_v1_0_2::uint128) + COMPRESSED_BLOCK_HEADER_SIZE;
+            res += wb.count() > frame_overhead ? wb.count() - frame_overhead : 0;
         }
         return res;
     }
@@ -420,7 +430,8 @@ Aggregator::Params::Params(
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
     UInt64 adaptive_aggregator_freeze_threshold_,
-    UInt64 adaptive_aggregator_freeze_threshold_bytes_)
+    UInt64 adaptive_aggregator_freeze_threshold_bytes_,
+    bool use_aggregation_memory_tracker_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -446,6 +457,7 @@ Aggregator::Params::Params(
     , enable_adaptive_aggregator(enable_adaptive_aggregator_)
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
     , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
+    , use_aggregation_memory_tracker(use_aggregation_memory_tracker_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
@@ -888,6 +900,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     cache_settings.enable_prefetch = params.enable_prefetch;
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
+    cache_settings.simple_count = is_simple_count;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -1057,7 +1070,7 @@ void Aggregator::executeOnBlockSmall(
         result.key_sizes = key_sizes;
     }
 
-    executeImpl(result, row_begin, row_end, key_columns, aggregate_instructions);
+    executeImpl</*for_sub_range=*/true>(result, row_begin, row_end, key_columns, aggregate_instructions);
     CurrentMemoryTracker::check();
 }
 
@@ -1091,7 +1104,7 @@ void Aggregator::mergeOnBlockSmall(
     if (false) {} // NOLINT
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(result.aggregates_pool, *result.NAME, result.NAME->data, \
+        mergeStreamsImpl<!(IS_TWO_LEVEL)>(result.aggregates_pool, *result.NAME, result.NAME->data, \
                          result.without_key, \
                          result.consecutive_keys_cache_stats, \
                          /* no_more_keys= */ false, \
@@ -1106,6 +1119,7 @@ void Aggregator::mergeOnBlockSmall(
     CurrentMemoryTracker::check();
 }
 
+template <bool for_sub_range>
 void Aggregator::executeImpl(
     AggregatedDataVariants & result,
     size_t row_begin,
@@ -1116,9 +1130,11 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    /// A two-level variant keeps the whole-block state, which serves any rows: the in-order path reaches one only
+    /// through a size hint, which does not justify a second copy of its aggregation loops.
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
+            executeImpl<for_sub_range && !(IS_TWO_LEVEL)>(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
                         result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
 
     if (false) {} // NOLINT
@@ -1126,7 +1142,7 @@ void Aggregator::executeImpl(
     #undef M
 }
 
-template <typename Method>
+template <bool for_sub_range, typename Method>
 void NO_INLINE Aggregator::executeImpl(
     Method & method,
     Arena * aggregates_pool,
@@ -1143,15 +1159,23 @@ void NO_INLINE Aggregator::executeImpl(
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
 
+    using State = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::State>, typename Method::State>;
+    using StateNoCache
+        = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::StateNoCache>, typename Method::StateNoCache>;
+
+    /// Const key columns hold one row, addressed as row 0 rather than through the block's range.
+    const ColumnsHashing::RowRange rows
+        = all_keys_are_const ? ColumnsHashing::RowRange{} : ColumnsHashing::RowRange{row_begin, row_end};
+
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        State state(key_columns, key_sizes, aggregation_state_cache, rows);
         executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        StateNoCache state(key_columns, key_sizes, aggregation_state_cache, rows);
         executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -1169,21 +1193,28 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    if (params.top_k && method.top_k_heap.shouldFreeze())
+    if (params.top_k && !method.top_k_heap.frozen)
     {
-        method.top_k_heap.freeze();
-        ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
-    }
-
-    const bool top_k = params.top_k && !method.top_k_heap.frozen;
-
-    if (top_k)
         method.top_k_heap.initIfNeeded(
             key_columns, params.top_k->key_columns,
             params.keys.size(),
             params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
-            params.top_k->observation_rows);
+            params.top_k->observation_rows,
+            params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr,
+            params.top_k->threshold_tracker);
+
+        /// Before the freeze check, which must judge the heap against the latest shared boundary.
+        method.top_k_heap.exchangeSharedBoundary();
+
+        if (method.top_k_heap.shouldFreeze())
+        {
+            method.top_k_heap.freeze();
+            ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
+        }
+    }
+
+    const bool top_k = params.top_k && !method.top_k_heap.frozen;
 
     auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
     {
@@ -1232,7 +1263,11 @@ void Aggregator::executeImpl(
     };
 
     if (top_k)
+    {
         dispatch.template operator()<true>();
+        /// Publish this block's tightenings now: this may be the thread's last block.
+        method.top_k_heap.exchangeSharedBoundary();
+    }
     else
         dispatch.template operator()<false>();
 }
@@ -1467,7 +1502,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
     if constexpr (top_k)
     {
-        if (method.top_k_heap.size() >= params.top_k->k)
+        if (method.top_k_heap.hasBoundary())
             skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
     }
 
@@ -1491,7 +1526,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         if constexpr (top_k)
         {
             if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                            : (method.top_k_heap.size() >= params.top_k->k
+                            : (method.top_k_heap.hasBoundary()
                                && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
             {
                 ++top_k_rows_skipped;
@@ -1680,8 +1715,38 @@ void NO_INLINE Aggregator::executeImplBatch(
             [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
             if constexpr (top_k)
             {
-                if (method.top_k_heap.size() >= params.top_k->k)
+                if (method.top_k_heap.hasBoundary())
                     skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
+            }
+
+            if constexpr (prefetch && !top_k && std::is_same_v<KeyHolder, ArenaPackedStringHolder>)
+            {
+                /// Building a packed key computes its hash, so the keys built for the prefetch are reused by the insert.
+                static constexpr size_t ring_size = 64; /// A power of two above the maximum look-ahead.
+                PackedStringRef ring[ring_size]{};
+                size_t built_end = row_begin;
+                for (size_t i = row_begin; i < row_end; ++i)
+                {
+                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
+                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+                    const size_t want_end = std::min(row_end, i + std::min(prefetch_look_ahead, ring_size - 1) + 1);
+                    for (; built_end < want_end; ++built_end)
+                    {
+                        const PackedStringRef key = state.getKeyHolder(built_end, *aggregates_pool).key;
+                        ring[built_end % ring_size] = key;
+                        method.data.prefetchByHash(method.data.hash(key));
+                    }
+
+                    typename Method::Data::LookupResult it;
+                    bool inserted = false;
+                    method.data.emplace(ArenaPackedStringHolder{ring[i % ring_size], *aggregates_pool}, it, inserted);
+                    if (inserted)
+                        getInlineCountState(it->getMapped()) = 1;
+                    else
+                        ++getInlineCountState(it->getMapped());
+                }
+                return;
             }
 
             for (size_t i = row_begin; i < row_end; ++i)
@@ -1701,7 +1766,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_k)
                 {
                     if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                                    : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
+                                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
                     {
                         ++top_k_rows_skipped;
                         continue;
@@ -1797,7 +1862,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if constexpr (top_k)
         {
             destroyed_states.clear();
-            if (method.top_k_heap.size() >= params.top_k->k)
+            if (method.top_k_heap.hasBoundary())
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
@@ -1823,7 +1888,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (skip_bitmap
                     ? static_cast<bool>(skip_bitmap[i])
-                    : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
+                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
                 {
                     places[i] = nullptr;
                     ++top_k_rows_skipped;
@@ -2307,9 +2372,11 @@ bool Aggregator::executeOnBlock(Columns columns,
             all_keys_are_const &= isColumnConst(*columns.at(keys_positions[i]));
     }
 
-    /// The plan's `top_k` flag stays set after the heap has frozen, and `executeImpl` freezes the
-    /// heap at the start of this block when `shouldFreeze()` is already true. `topKHeapInactive`
-    /// covers both states, so this mirrors exactly whether `executeImpl` will rank the block.
+    /// The plan's `top_k` flag stays set after the heap has frozen, and `executeImpl` may freeze
+    /// the heap at the start of this block. `topKHeapInactive` is true only when `executeImpl`
+    /// certainly will not rank the block: it errs towards "active" when the shared-boundary
+    /// exchange in `executeImpl` may still restart the profitability window and keep the heap
+    /// running, so an active heap never sees key columns in a representation it cannot rank.
     const bool top_k_active = params.top_k && !result.topKHeapInactive();
 
     /// Remember the columns we will work with
@@ -2440,7 +2507,9 @@ bool Aggregator::executeOnBlock(Columns columns,
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
-    Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
+    Int64 result_size_bytes = use_own_tracker && params.use_aggregation_memory_tracker
+        ? memory_tracker->get()
+        : current_memory_usage - memory_usage_before_aggregation;
 
     if (adaptive && !adaptive->isBaseline())
     {
@@ -2859,6 +2928,22 @@ private:
     bool sampling = true;
 };
 
+/// Visits cells in `forEachValue` order. Tables that never prefetch keys only call `forEachValue`, so `func` stays inlined.
+template <typename Table, typename Func>
+void forEachValueSkippingKeyPrefetchIf(Table & table, bool skip_key_prefetch, Func && func)
+{
+    if constexpr (CouldPrefetchKey<typename Table::cell_type> && requires { table.begin(); table.end(); })
+    {
+        if (skip_key_prefetch)
+        {
+            for (auto & cell : table)
+                func(cell.getKey(), cell.getMapped());
+            return;
+        }
+    }
+    table.forEachValue(func);
+}
+
 }
 
 std::optional<UInt64> Aggregator::getPeakMemoryUsage() const
@@ -2984,7 +3069,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
 
     std::vector<Candidate> top;
     top.reserve(std::min(params.bucket_top_k, data.size()));
-    data.forEachValue(
+    /// A simple count is stored in the cell, so unless the key bytes are metered the ranking reads no key bytes.
+    forEachValueSkippingKeyPrefetchIf(
+        data,
+        /*skip_key_prefetch=*/ is_simple_count && !key_bytes_meter,
         [&](const auto & key, auto & mapped)
         {
             if (key_bytes_meter)
@@ -3156,7 +3244,8 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
     }
 }
 
-Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
+    AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys) const
 {
     const auto method = variants.type;
     AggregatedChunk agg_chunk;
@@ -3164,7 +3253,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVa
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
-        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, /*untruncated_keys=*/nullptr, /*full_group_count=*/nullptr); \
+        agg_chunk = convertOneBucketToChunk(variants, *variants.NAME, arena, final, bucket, untruncated_keys, /*full_group_count=*/nullptr); \
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
@@ -5332,7 +5421,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const AggregateColumnsConstData & aggregate_columns_data = makeAggregateColumnsData(columns, params.keys_size, params.aggregates_size);
     ColumnRawPtrs key_columns = makeRawKeyColumns(columns, params.keys_size);
 
-    mergeStreamsImpl<Method, Table>(
+    mergeStreamsImpl</*for_sub_range=*/false, Method, Table>(
         aggregates_pool,
         method,
         data,
@@ -5347,7 +5436,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         arena_for_keys);
 }
 
-template <typename Method, typename Table>
+template <bool for_sub_range, typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * aggregates_pool,
     Method & method [[maybe_unused]],
@@ -5401,9 +5490,13 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         }
     };
 
+    using State = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::State>, typename Method::State>;
+    using StateNoCache
+        = std::conditional_t<for_sub_range, ColumnsHashing::SubRangeState<typename Method::StateNoCache>, typename Method::StateNoCache>;
+
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        State state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
@@ -5431,7 +5524,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        StateNoCache state(key_columns, key_sizes, aggregation_state_cache, {row_begin, row_end});
         if (is_simple_count)
         {
             /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
