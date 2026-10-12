@@ -19,15 +19,16 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "SunOS")
     add_definitions(-D OS_SUNOS)
 
     # Disable features that aren't currently supported on illumos.
-    set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE BOOL "Enable Azure Blob Storage")
-    set (ENABLE_HDFS OFF CACHE BOOL "Enable HDFS")
-    set (ENABLE_LDAP OFF CACHE BOOL "Enable LDAP")
-    set (ENABLE_LIBPQXX OFF CACHE BOOL "Enable libpqxx")
-    set (USE_MONGODB OFF CACHE BOOL "Enable MongoDB")
-    set (ENABLE_PARQUET OFF CACHE BOOL "Enable parquet")
-    set (ENABLE_ROCKSDB OFF CACHE BOOL "Enable RocksDB")
-    set (ENABLE_SSH OFF CACHE BOOL "Enable support for libssh")
-    set (ENABLE_RUST OFF CACHE BOOL "Enable rust")
+    # `CACHE INTERNAL` forces the value, so it also applies on reconfigure of an existing build directory.
+    set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
+    set (ENABLE_HDFS OFF CACHE INTERNAL "")
+    set (ENABLE_LDAP OFF CACHE INTERNAL "")
+    set (ENABLE_LIBPQXX OFF CACHE INTERNAL "")
+    set (USE_MONGODB OFF CACHE INTERNAL "")
+    set (ENABLE_PARQUET OFF CACHE INTERNAL "")
+    set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
+    set (ENABLE_SSH OFF CACHE INTERNAL "")
+    set (ENABLE_RUST OFF CACHE INTERNAL "")
 elseif (CMAKE_SYSTEM_NAME MATCHES "Emscripten")
     # WebAssembly, through the Emscripten toolchain. Configure with `emcmake cmake ...`, which
     # sets CMAKE_SYSTEM_NAME and points CMAKE_TOOLCHAIN_FILE at Emscripten's own toolchain file.
