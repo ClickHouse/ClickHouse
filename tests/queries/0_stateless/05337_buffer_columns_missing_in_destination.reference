@@ -1,0 +1,105 @@
+before flush
+-- { echoOn }
+SELECT count() FROM buf_s;
+2
+SELECT k, x, y FROM buf_s ORDER BY k;
+1	3	13
+2	1	11
+SELECT x FROM buf_s ORDER BY x;
+1
+3
+SELECT k, m FROM buf_s ORDER BY k;
+1	3
+2	1
+SELECT k, z FROM buf_s ORDER BY k;
+1	3
+2	1
+SELECT k, c FROM buf_s ORDER BY k;
+1	0
+2	0
+SELECT k, w FROM buf_s ORDER BY k;
+1	2
+2	1
+SELECT k, length(a2), t.p, nl.null FROM buf_s ORDER BY k SETTINGS optimize_functions_to_subcolumns = 1;
+1	2	5	1
+2	2	5	1
+SELECT k, length(a2), t.p, nl.null FROM buf_s ORDER BY k SETTINGS optimize_functions_to_subcolumns = 0;
+1	2	5	1
+2	2	5	1
+SELECT k, n.b FROM buf_s ORDER BY k;
+1	[0,0]
+2	[0]
+SELECT k, x FROM buf_s PREWHERE has(arr, 2) ORDER BY k;
+1	3
+2	1
+SELECT k, n.b FROM buf_s PREWHERE has(n.a, 4) ORDER BY k;
+1	[0,0]
+SELECT k FROM buf_s WHERE x = 3 ORDER BY k;
+1
+CREATE ROW POLICY p_05337 ON buf_s USING has(arr, 3) TO ALL;
+SELECT k, x FROM buf_s ORDER BY k;
+1	3
+DROP ROW POLICY p_05337 ON buf_s;
+SELECT k, arr, x, z FROM buf_m ORDER BY k;
+1	[1,2,3]	3	3
+SELECT k, x FROM buf_m ORDER BY k;
+1	3
+SELECT x FROM buf_m ORDER BY x;
+3
+SELECT count() FROM buf_m;
+1
+SELECT k, l, x, j2.c FROM buf_w ORDER BY k;
+1	4	42	7
+after flush	2	1	1
+-- { echoOn }
+SELECT count() FROM buf_s;
+2
+SELECT k, x, y FROM buf_s ORDER BY k;
+1	3	13
+2	1	11
+SELECT x FROM buf_s ORDER BY x;
+1
+3
+SELECT k, m FROM buf_s ORDER BY k;
+1	3
+2	1
+SELECT k, z FROM buf_s ORDER BY k;
+1	3
+2	1
+SELECT k, c FROM buf_s ORDER BY k;
+1	0
+2	0
+SELECT k, w FROM buf_s ORDER BY k;
+1	2
+2	1
+SELECT k, length(a2), t.p, nl.null FROM buf_s ORDER BY k SETTINGS optimize_functions_to_subcolumns = 1;
+1	2	5	1
+2	2	5	1
+SELECT k, length(a2), t.p, nl.null FROM buf_s ORDER BY k SETTINGS optimize_functions_to_subcolumns = 0;
+1	2	5	1
+2	2	5	1
+SELECT k, n.b FROM buf_s ORDER BY k;
+1	[0,0]
+2	[0]
+SELECT k, x FROM buf_s PREWHERE has(arr, 2) ORDER BY k;
+1	3
+2	1
+SELECT k, n.b FROM buf_s PREWHERE has(n.a, 4) ORDER BY k;
+1	[0,0]
+SELECT k FROM buf_s WHERE x = 3 ORDER BY k;
+1
+CREATE ROW POLICY p_05337 ON buf_s USING has(arr, 3) TO ALL;
+SELECT k, x FROM buf_s ORDER BY k;
+1	3
+DROP ROW POLICY p_05337 ON buf_s;
+SELECT k, arr, x, z FROM buf_m ORDER BY k;
+1	[1,2,3]	3	3
+SELECT k, x FROM buf_m ORDER BY k;
+1	3
+SELECT x FROM buf_m ORDER BY x;
+3
+SELECT count() FROM buf_m;
+1
+SELECT k, l, x, j2.c FROM buf_w ORDER BY k;
+1	4	42	7
+1	5
