@@ -136,6 +136,10 @@ public:
     /** Get the alias, if any, or an empty string if it does not exist, or if the element does not support aliases. */
     virtual String tryGetAlias() const { return String(); }
 
+    /// Whether the node carries an alias in any form, including one given as a query parameter
+    /// (`AS {name:Identifier}`), which `tryGetAlias` cannot report until the parameter is resolved.
+    virtual bool hasAlias() const { return !tryGetAlias().empty(); }
+
     /** Set the alias. */
     virtual void setAlias(const String & to)
     {
