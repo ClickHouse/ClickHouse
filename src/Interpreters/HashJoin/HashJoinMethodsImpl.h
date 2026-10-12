@@ -824,7 +824,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
     size_t rows = ScatteredBlock::Selector::size(range);
-
     const size_t num_clauses = added_columns.join_on_keys.size();
 
     /// Per-clause skip bytes, prepared once per call (see `JoinOnKeyColumns::buildRowSkipData`).
@@ -854,8 +853,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         added_columns.offsets_to_replicate.reserve(rows);
     }
 
-    /// The row loop reads the maps, key getters and skip bytes through raw pointers. A hardened `operator[]` computes
-    /// the size of its vector on every lookup, and that work takes registers this memory-bound loop needs.
+    /// Raw pointers: a hardened `operator[]` computes the vector size on every lookup, which takes registers this memory-bound loop needs.
     if (mapv.size() != num_clauses || key_getter_vector.size() != num_clauses)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

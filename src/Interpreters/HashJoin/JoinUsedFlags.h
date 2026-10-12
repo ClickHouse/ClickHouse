@@ -125,34 +125,34 @@ public:
     template <bool use_flags, bool flag_per_row, typename FindResult>
     void setUsed(const FindResult & f [[maybe_unused]])
     {
-        if constexpr (use_flags)
+        /// Keep the `else`: the no-flags `FindResult` has no `getOffset`, and code after a plain early return is still instantiated.
+        if constexpr (!use_flags)
+            return;
+        /// Could be set simultaneously from different threads.
+        else if constexpr (flag_per_row)
         {
-            /// Could be set simultaneously from different threads.
-            if constexpr (flag_per_row)
+            auto & mapped = f.getMapped();
+            if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
             {
-                auto & mapped = f.getMapped();
-                if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
+                for (const UInt64 ref_word : refsOf(mapped.word))
                 {
-                    for (const UInt64 ref_word : refsOf(mapped.word))
-                    {
-                        auto & flag = per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
-                        if (!flag.load(std::memory_order_relaxed))
-                            flag.store(true, std::memory_order_relaxed);
-                    }
-                }
-                else
-                {
-                    auto & flag = headRowFlag(mapped);
+                    auto & flag = per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
                     if (!flag.load(std::memory_order_relaxed))
                         flag.store(true, std::memory_order_relaxed);
                 }
             }
             else
             {
-                auto flag = offsetFlag(f.getOffset());
+                auto & flag = headRowFlag(mapped);
                 if (!flag.load(std::memory_order_relaxed))
-                    flag.store(1, std::memory_order_relaxed);
+                    flag.store(true, std::memory_order_relaxed);
             }
+        }
+        else
+        {
+            auto flag = offsetFlag(f.getOffset());
+            if (!flag.load(std::memory_order_relaxed))
+                flag.store(1, std::memory_order_relaxed);
         }
     }
 
@@ -190,54 +190,47 @@ public:
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
-    bool getUsed(const FindResult & f [[maybe_unused]])
+    bool getUsed(const FindResult & f)
     {
-        /// `if constexpr` rather than an early return, so the no-flags instantiation never
-        /// mentions `getOffset`, which its `FindResult` does not have.
-        if constexpr (use_flags)
+        if constexpr (!use_flags)
+            return true;
+
+        if constexpr (flag_per_row)
         {
-            if constexpr (flag_per_row)
-                return headRowFlag(f.getMapped()).load();
-            else
-                return offsetFlag(f.getOffset()).load() != 0;
+            return headRowFlag(f.getMapped()).load();
         }
         else
         {
-            return true;
+            return offsetFlag(f.getOffset()).load() != 0;
         }
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
     bool setUsedOnce(const FindResult & f [[maybe_unused]])
     {
-        if constexpr (use_flags)
+        if constexpr (!use_flags)
+            return true;
+        else if constexpr (flag_per_row)
         {
-            if constexpr (flag_per_row)
-            {
-                auto & flag = headRowFlag(f.getMapped());
+            auto & flag = headRowFlag(f.getMapped());
 
-                /// fast check to prevent heavy CAS with seq_cst order
-                if (flag.load(std::memory_order_relaxed))
-                    return false;
+            /// fast check to prevent heavy CAS with seq_cst order
+            if (flag.load(std::memory_order_relaxed))
+                return false;
 
-                bool expected = false;
-                return flag.compare_exchange_strong(expected, true);
-            }
-            else
-            {
-                auto flag = offsetFlag(f.getOffset());
-
-                /// fast check to prevent heavy CAS with seq_cst order
-                if (flag.load(std::memory_order_relaxed))
-                    return false;
-
-                UInt8 expected = 0;
-                return flag.compare_exchange_strong(expected, 1);
-            }
+            bool expected = false;
+            return flag.compare_exchange_strong(expected, true);
         }
         else
         {
-            return true;
+            auto flag = offsetFlag(f.getOffset());
+
+            /// fast check to prevent heavy CAS with seq_cst order
+            if (flag.load(std::memory_order_relaxed))
+                return false;
+
+            UInt8 expected = 0;
+            return flag.compare_exchange_strong(expected, 1);
         }
     }
 
