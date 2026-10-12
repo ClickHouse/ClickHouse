@@ -189,6 +189,7 @@ def isolated_test(start_cluster, request):
     require(not _contaminated, f"an earlier test left this server unusable: {_contaminated}")
     _session_epoch += 1
     _session_names.clear()
+    _started_sessions.clear()
     _query_ids.clear()
     _pending_requests = 0
     expected_error = LOGICAL_ERROR_EXPECTED.get(request.node.name)
@@ -221,7 +222,9 @@ def isolated_test(start_cluster, request):
     # A transaction left open by a failed assertion would hold a snapshot and pin part cleanup.
     for name in sorted(_session_names):
         try:
-            _, error = tx_in_answer_with_error(name, "ROLLBACK", timeout=60)
+            # Without `session_check`: a test may have restarted the server on purpose, and a
+            # session the restart took with it has nothing left to roll back.
+            _, error = tx_in_answer_with_error(name, "ROLLBACK", timeout=60, check=False)
         except Exception as e:
             left_behind.append(f"session {name} unreachable: {e}")
             continue
@@ -281,6 +284,8 @@ def restart_server(timeout=RESTART_TIMEOUT):
     surviving old server would be accepted as the restarted one. Kill it here, prove it is gone,
     then poll readiness.
     """
+    # Every session goes with the process, and the next request in one has to create it again.
+    _started_sessions.clear()
     # What `stop_clickhouse(kill=True)` does before killing; a SIGKILL skips the flush at exit.
     # Outside the budget on purpose: under a coverage build this single request may take 300 s.
     node.flush_per_test_coverage()
@@ -332,6 +337,14 @@ def restart_if_down():
 
 _session_epoch = 0
 _session_names = set()
+# Sessions that have had a request, so the next one can insist the session is still there.
+_started_sessions = set()
+# `default_session_timeout` is 60 s (`HTTPHandler.cpp`), well inside the waits here. An expired
+# session is dropped with its transaction rolled back, and the next request silently gets a new
+# one: the reproduction would then read a table outside the transaction it believes it is in and
+# report the result as the defect. `max_session_timeout` is 3600 s, the largest value allowed
+# without server configuration.
+SESSION_TIMEOUT = 3600
 _query_ids = set()
 # Set when cleanup could not establish a clean server. The next test refuses to run rather than
 # reproduce anything against it.
@@ -347,18 +360,33 @@ def session_id(session):
     return name
 
 
+def session_params(name, check=True):
+    """Query parameters that keep a session alive and refuse to replace it silently.
+
+    `session_check` makes a request whose session is gone fail with `SESSION_NOT_FOUND` instead of
+    opening a new one, so a lost transaction is reported rather than reproduced. The first request
+    of a session has to create it, and a restart destroys every session, so `restart_server`
+    forgets them.
+    """
+    params = {"session_id": name, "session_timeout": SESSION_TIMEOUT}
+    if check and name in _started_sessions:
+        params["session_check"] = 1
+    _started_sessions.add(name)
+    return params
+
+
 def tx_in(name, query, query_id=None, timeout=QUERY_TIMEOUT):
     """Runs `query` in a named session, so `BEGIN`/`COMMIT` span calls. Raises on a server error."""
-    params = {"session_id": name}
+    params = session_params(name)
     if query_id is not None:
         params["query_id"] = query_id
         _query_ids.add(query_id)
     return node.http_query(None, data=query, params=params, timeout=timeout)
 
 
-def tx_in_answer_with_error(name, query, timeout=QUERY_TIMEOUT):
+def tx_in_answer_with_error(name, query, timeout=QUERY_TIMEOUT, check=True):
     return node.http_query_and_get_answer_with_error(
-        None, data=query, params={"session_id": name}, timeout=timeout
+        None, data=query, params=session_params(name, check), timeout=timeout
     )
 
 
