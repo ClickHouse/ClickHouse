@@ -70,91 +70,94 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
 {
     auto add_row = [&](std::string_view name, size_t code, const auto & error, bool remote)
     {
-        size_t src_index = 0;
-        size_t res_index = 0;
-
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(name);
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(code);
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(error.count);
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(error.error_time_ms / 1000);
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(error.message);
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(error.format_string);
-        if (columns_mask[src_index++])
+        if (error.count || context->getSettingsRef()[Setting::system_events_show_zero_values])
         {
-            Array trace_array;
-            trace_array.reserve(error.trace.size());
-            for (size_t i = 0; i < error.trace.size(); ++i)
-                trace_array.emplace_back(StackTrace::resolveAddressForStorage(error.trace[i]));
+            size_t src_index = 0;
+            size_t res_index = 0;
 
-            res_columns[res_index++]->insert(trace_array);
-        }
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(remote);
-        if (columns_mask[src_index++])
-            res_columns[res_index++]->insert(error.query_id);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(code);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(error.count);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(error.error_time_ms / 1000);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(error.message);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(error.format_string);
+            if (columns_mask[src_index++])
+            {
+                Array trace_array;
+                trace_array.reserve(error.trace.size());
+                for (size_t i = 0; i < error.trace.size(); ++i)
+                    trace_array.emplace_back(StackTrace::resolveAddressForStorage(error.trace[i]));
 
-        /// `last_error_symbols` and `last_error_lines` require expensive symbolization
-        /// (DWARF lookups), so resolve them only when at least one of the columns is requested.
-        const bool need_symbols = columns_mask[src_index++];
-        const bool need_lines = columns_mask[src_index++];
-        if (need_symbols || need_lines)
-        {
-            IColumn * symbols_column = need_symbols ? res_columns[res_index++].get() : nullptr;
-            IColumn * lines_column = need_lines ? res_columns[res_index++].get() : nullptr;
-            const size_t symbols_old_size = symbols_column ? symbols_column->size() : 0;
-            const size_t lines_old_size = lines_column ? lines_column->size() : 0;
+                res_columns[res_index++]->insert(trace_array);
+            }
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(remote);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(error.query_id);
+
+            /// `last_error_symbols` and `last_error_lines` require expensive symbolization
+            /// (DWARF lookups), so resolve them only when at least one of the columns is requested.
+            const bool need_symbols = columns_mask[src_index++];
+            const bool need_lines = columns_mask[src_index++];
+            if (need_symbols || need_lines)
+            {
+                IColumn * symbols_column = need_symbols ? res_columns[res_index++].get() : nullptr;
+                IColumn * lines_column = need_lines ? res_columns[res_index++].get() : nullptr;
+                const size_t symbols_old_size = symbols_column ? symbols_column->size() : 0;
+                const size_t lines_old_size = lines_column ? lines_column->size() : 0;
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-            /// These two columns are diagnostic sugar: a failure to parse DWARF debug info must not
-            /// make the whole `system.errors` table unreadable, so it is reported to the server log
-            /// and the columns are left empty. Any other exception propagates.
-            std::optional<std::pair<std::vector<String>, std::vector<String>>> symbolized;
-            if (!error.trace.empty())
-            {
-                try
+                /// These two columns are diagnostic sugar: a failure to parse DWARF debug info must not
+                /// make the whole `system.errors` table unreadable, so it is reported to the server log
+                /// and the columns are left empty. Any other exception propagates.
+                std::optional<std::pair<std::vector<String>, std::vector<String>>> symbolized;
+                if (!error.trace.empty())
                 {
-                    symbolized = symbolizeTrace(error.trace.data(), error.trace.size(), need_symbols, need_lines);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() != ErrorCodes::CANNOT_PARSE_DWARF)
-                        throw;
-
-                    /// Symbolization fails for the whole binary rather than for a single address,
-                    /// so report it only once instead of flooding the log on every query.
-                    static std::once_flag reported;
-                    std::call_once(reported, []
+                    try
                     {
-                        tryLogCurrentException(
-                            getLogger("StorageSystemErrors"),
-                            "Cannot symbolize the stack trace for system.errors, "
-                            "last_error_symbols and/or last_error_lines will be empty");
-                    });
-                }
-            }
+                        symbolized = symbolizeTrace(error.trace.data(), error.trace.size(), need_symbols, need_lines);
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::CANNOT_PARSE_DWARF)
+                            throw;
 
-            /// Insert outside of the `try`: `ColumnArray::insert` appends nested elements before the offset,
-            /// so an exception (e.g. `MEMORY_LIMIT_EXCEEDED`) thrown here must propagate, not leave a partial row.
-            if (symbolized)
-            {
-                if (symbols_column)
-                    symbols_column->insert(Array(symbolized->first.begin(), symbolized->first.end()));
-                if (lines_column)
-                    lines_column->insert(Array(symbolized->second.begin(), symbolized->second.end()));
-            }
+                        /// Symbolization fails for the whole binary rather than for a single address,
+                        /// so report it only once instead of flooding the log on every query.
+                        static std::once_flag reported;
+                        std::call_once(reported, []
+                        {
+                            tryLogCurrentException(
+                                getLogger("StorageSystemErrors"),
+                                "Cannot symbolize the stack trace for system.errors, "
+                                "last_error_symbols and/or last_error_lines will be empty");
+                        });
+                    }
+                }
+
+                /// Insert outside of the `try`: `ColumnArray::insert` appends nested elements before the offset,
+                /// so an exception (e.g. `MEMORY_LIMIT_EXCEEDED`) thrown here must propagate, not leave a partial row.
+                if (symbolized)
+                {
+                    if (symbols_column)
+                        symbols_column->insert(Array(symbolized->first.begin(), symbolized->first.end()));
+                    if (lines_column)
+                        lines_column->insert(Array(symbolized->second.begin(), symbolized->second.end()));
+                }
 #endif
-            /// Fill whatever was not inserted above (no trace, unsupported platform, or a DWARF failure),
-            /// keeping all columns of the row the same size.
-            if (symbols_column && symbols_column->size() == symbols_old_size)
-                symbols_column->insertDefault();
-            if (lines_column && lines_column->size() == lines_old_size)
-                lines_column->insertDefault();
+                /// Fill whatever was not inserted above (no trace, unsupported platform, or a DWARF failure),
+                /// keeping all columns of the row the same size.
+                if (symbols_column && symbols_column->size() == symbols_old_size)
+                    symbols_column->insertDefault();
+                if (lines_column && lines_column->size() == lines_old_size)
+                    lines_column->insertDefault();
+            }
         }
     };
 
@@ -166,7 +169,6 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         bool remote;
     };
 
-    const bool show_zero_values = context->getSettingsRef()[Setting::system_events_show_zero_values];
     std::vector<ErrorRow> rows;
     for (const auto code : ErrorCodes::getCodes())
     {
@@ -177,10 +179,8 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             continue;
 
         auto error = ErrorCodes::values[code].get();
-        if (error.local.count || show_zero_values)
-            rows.push_back({name, code, std::move(error.local), /* remote= */ false});
-        if (error.remote.count || show_zero_values)
-            rows.push_back({name, code, std::move(error.remote), /* remote= */ true});
+        rows.push_back({name, code, std::move(error.local), /* remote= */ false});
+        rows.push_back({name, code, std::move(error.remote), /* remote= */ true});
     }
 
     /// Positions of `last_error_symbols` and `last_error_lines` in getColumnsDescription().

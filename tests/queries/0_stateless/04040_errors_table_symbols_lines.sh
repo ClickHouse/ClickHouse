@@ -49,6 +49,25 @@ FROM (SELECT last_error_trace AS trace, last_error_symbols AS symbols, last_erro
       FROM (SELECT * FROM system.errors LIMIT 1000000) WHERE code = $custom_error_code AND NOT remote) AS b"
 
 # A set built from a subquery must be ready when the condition is applied to the table.
-$CLICKHOUSE_CLIENT -q "
+query_id_in="04040_in_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT --query_id "$query_id_in" -q "
 SELECT count() FROM system.errors
-WHERE code IN (SELECT toInt32($custom_error_code)) AND NOT remote AND arrayExists(x -> x LIKE '%Exception%', last_error_symbols)"
+WHERE code IN (SELECT toInt32($custom_error_code)) AND NOT remote AND arrayExists(x -> x LIKE '%Exception%', last_error_symbols)
+SETTINGS system_events_show_zero_values = 1"
+
+# Rows the condition rejects do not leave the table, so they are not symbolized. Zero rows are shown, so every
+# registered code is a row the condition has to reject.
+query_id_filtered="04040_filtered_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT --query_id "$query_id_filtered" -q "
+SELECT last_error_symbols, last_error_lines FROM system.errors
+WHERE code = $custom_error_code AND NOT remote
+SETTINGS system_events_show_zero_values = 1 FORMAT Null"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+SELECT read_rows FROM system.query_log
+WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '$query_id_filtered'"
+# One row of the table plus the rows the set's own subquery reads.
+$CLICKHOUSE_CLIENT -q "
+SELECT read_rows < 10 FROM system.query_log
+WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '$query_id_in'"
