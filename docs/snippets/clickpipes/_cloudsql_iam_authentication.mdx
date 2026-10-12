@@ -6,11 +6,7 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
       port: '5432',
       userName: '<name>@<project>.iam',
       userNameHint: <>For Postgres, the user name is the service account email <strong>without</strong> the <code>.gserviceaccount.com</code> suffix:</>,
-      grantsIntro: <>Connect through the admin user and grant the new user the same privileges as the password-based user above. Create the publication as described in the previous section.</>,
-      grantsSql: `GRANT USAGE ON SCHEMA "public" TO "<name>@<project>.iam";
-GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO "<name>@<project>.iam";
-ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO "<name>@<project>.iam";
-ALTER USER "<name>@<project>.iam" WITH REPLICATION;`,
+      grantsStep: <>Connect through the admin user and complete the steps in <a href="#creating-clickpipes-user-and-granting-permissions">Creating ClickPipes user and granting permissions</a>, skipping step 1 because the user already exists. Use <code>{'"<name>@<project>.iam"'}</code> in place of <code>clickpipes_user</code>, and keep the double quotes: the name contains special characters.</>,
       firewallAnchor: '#add-clickpipes-ips-to-firewall',
     },
     mysql: {
@@ -19,10 +15,7 @@ ALTER USER "<name>@<project>.iam" WITH REPLICATION;`,
       port: '3306',
       userName: '<name>',
       userNameHint: <>For MySQL, the user name is the part of the service account email <strong>before</strong> the <code>@</code>:</>,
-      grantsIntro: <>Connect as the root user and grant the new user the same schema and replication privileges as the password-based user above. Repeat the first command for each database you want to replicate:</>,
-      grantsSql: `GRANT SELECT ON \`clickpipes\`.* TO '<name>'@'%';
-GRANT REPLICATION CLIENT ON *.* TO '<name>'@'%';
-GRANT REPLICATION SLAVE ON *.* TO '<name>'@'%';`,
+      grantsStep: <>Connect as the root user and complete the steps in <a href="#configure-database-user-gcp">Configure a database user</a>, skipping step 1 because the user already exists. Use <code>{"'<name>'@'%'"}</code> in place of <code>'clickpipes_user'@'host'</code> and <code>'clickpipes_user'@'%'</code>.</>,
       firewallAnchor: '#configure-network-access-gcp-mysql',
       tlsSuffix: <> You can skip the <a href="#download-root-ca-certificate-gcp-mysql">certificate step</a>.</>,
     },
@@ -77,11 +70,7 @@ ${addBindingSql('roles/cloudsql.instanceUser')}`}</CodeBlock>
 
           <CodeBlock language="bash">{createUserSql}</CodeBlock>
         </li>
-        <li>
-          {cfg.grantsIntro}
-
-          <CodeBlock language="sql">{cfg.grantsSql}</CodeBlock>
-        </li>
+        <li>{cfg.grantsStep}</li>
       </ol>
 
       <h3 id="create-the-clickpipe-with-iam">Create the ClickPipe</h3>
