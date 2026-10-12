@@ -1,0 +1,22 @@
+<test requires_s3="1">
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- A compact part on object storage, read in a column order that differs from the storage order. -->
+    <create_query>
+        CREATE TABLE compact_part_read_order (k UInt64, v UInt64) ENGINE = ReplacingMergeTree ORDER BY k
+        SETTINGS disk = disk(type = s3, endpoint = 'http://localhost:11111/test/perf/compact_part_read_order/', access_key_id = 'clickhouse', secret_access_key = 'clickhouse'),
+            index_granularity = 256, min_bytes_for_wide_part = 10737418240, min_bytes_for_full_part_storage = 0,
+            compact_parts_max_granules_to_buffer = 1
+    </create_query>
+    <fill_query>SYSTEM STOP MERGES compact_part_read_order</fill_query>
+    <fill_query>INSERT INTO compact_part_read_order SELECT number, number FROM numbers(100000)</fill_query>
+    <fill_query>INSERT INTO compact_part_read_order SELECT number, number % 80000 FROM numbers(100000)</fill_query>
+
+    <query>SELECT v FROM compact_part_read_order FINAL FORMAT Null</query>
+    <query>SELECT v, k FROM compact_part_read_order FORMAT Null</query>
+    <query>SELECT k, v FROM compact_part_read_order FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS compact_part_read_order</drop_query>
+</test>
