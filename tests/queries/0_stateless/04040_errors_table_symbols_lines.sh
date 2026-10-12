@@ -53,10 +53,10 @@ WHERE code = $custom_error_code AND intDiv(value, value) = 1 AND arrayExists(x -
 SETTINGS system_events_show_zero_values = 0"
 
 # Rows the condition rejects do not leave the table, so they are not symbolized. Zero rows are shown, so every
-# registered code is a row the condition has to reject.
+# registered code is a row the condition has to reject. Only `last_error_lines` is read: the `IN` probe reads `last_error_symbols`.
 query_id_filtered="04040_filtered_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT --query_id "$query_id_filtered" -q "
-SELECT last_error_symbols, last_error_lines FROM system.errors
+SELECT last_error_lines FROM system.errors
 WHERE code = $custom_error_code AND NOT remote
 SETTINGS system_events_show_zero_values = 1 FORMAT Null"
 
