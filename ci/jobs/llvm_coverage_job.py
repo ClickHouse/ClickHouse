@@ -121,10 +121,10 @@ def report_s3_base():
 
 
 def master_coverage_url(sha):
-    """Link to the `llvm_coverage.info` published by `MasterCI` at master
-    commit `sha`."""
+    """Link to the `llvm_coverage.info` published by the scheduled
+    `CoverageReport` workflow at master commit `sha`."""
     prefix = _Environment.get_s3_prefix_static(
-        pr_number=0, branch="master", sha=sha, workflow_name="MasterCI"
+        pr_number=0, branch="master", sha=sha, workflow_name="CoverageReport"
     )
     return f"https://{S3_BUCKET_HTTP_ENDPOINT}/{prefix}/llvm_coverage/llvm_coverage.info"
 
