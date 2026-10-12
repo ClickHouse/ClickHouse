@@ -86,7 +86,7 @@ data/int64_decimal.parquet	value Nullable(Decimal(10, 2))	24	1335436400869501637
 data/int96_from_spark.parquet	a Nullable(DateTime64(9, 'UTC'))	Error: VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
 data/int96_timestamp_order.parquet	ts DateTime64(9, 'UTC')	4	11537879157323557244
 data/json.parquet	json_field Nullable(JSON)	Error: INCORRECT_DATA
-data/large_string_map.brotli.parquet	arr Map(String, Nullable(Int32))	2	6615783880001473238
+data/large_string_map.brotli.parquet	arr Map(String, Nullable(Int32))	Error: MEMORY_LIMIT_EXCEEDED
 data/list_columns.parquet	int64_list Array(Nullable(Int64)), utf8_list Array(Nullable(String))	3	1591896421580126706
 data/lz4_raw_compressed.parquet	c0 Int64, c1 String, v11 Nullable(Float64)	4	12663793641782637981
 data/lz4_raw_compressed_larger.parquet	a String	10000	2123126204979134156

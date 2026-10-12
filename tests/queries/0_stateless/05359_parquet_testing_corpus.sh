@@ -36,7 +36,9 @@ function read_file()
     result="$RESULTS_DIR/$(echo "$file" | tr '/' '_')"
     # Single-threaded reading, so that the error is deterministic for files with several corrupted columns.
     # Fixed time zone, because timestamps without a time zone inside variants are formatted in the session time zone.
-    $CLICKHOUSE_LOCAL --max_threads=1 --max_parsing_threads=1 --session_timezone=UTC --print_pretty_type_names=0 --query "
+    # Fixed memory limit, because some files decompress to gigabytes (a 1 GiB string in `large_string_map.brotli.parquet`),
+    # and whether they can be read would otherwise depend on the available memory.
+    $CLICKHOUSE_LOCAL --max_threads=1 --max_parsing_threads=1 --session_timezone=UTC --print_pretty_type_names=0 --max_memory_usage=1G --query "
         DESCRIBE file('$CORPUS_DIR/$file', Parquet) SETTINGS describe_compact_output = 1,
             format_custom_escaping_rule = 'Raw', format_custom_field_delimiter = ' ', format_custom_row_between_delimiter = ', ',
             format_custom_row_after_delimiter = '', format_custom_result_after_delimiter = '\n'
