@@ -100,7 +100,10 @@ private:
     NATSHandler event_handler;
     std::unique_ptr<ThreadFromGlobalPool> event_loop_thread;
 
-    NATSConnectionPtr consumers_connection; /// Connection for all consumers
+    mutable std::mutex consumers_connection_mutex;
+    NATSConnectionPtr consumers_connection TSA_GUARDED_BY(consumers_connection_mutex); /// Connection for all consumers
+    /// Serializes `createConsumersConnection` and `createConsumers`, which both background tasks call.
+    std::mutex consumers_setup_mutex;
     NATSConfiguration configuration;
 
     std::atomic<size_t> num_created_consumers = 0;
@@ -132,7 +135,7 @@ private:
 
     void scheduleStreamingTasksImpl() override;
 
-    INATSConsumerPtr createConsumer();
+    INATSConsumerPtr createConsumer(const NATSConnectionPtr & connection);
     INATSProducerPtr createProducer(String subject);
 
     bool isSubjectInSubscriptions(const std::string & subject);
@@ -141,6 +144,7 @@ private:
     void initializeConsumersFunc();
     void threadFunc();
 
+    NATSConnectionPtr getConsumersConnection() const;
     void createConsumersConnection();
     void createConsumers();
     void dropConsumers();
