@@ -4,20 +4,20 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
       docsPath: 'postgres',
       flag: 'cloudsql.iam_authentication',
       port: '5432',
-      userName: '<name>@<project>.iam',
+      createUserName: '<name>@<project>.iam',
       userNameHint: <>For Postgres, the user name is the service account email <strong>without</strong> the <code>.gserviceaccount.com</code> suffix:</>,
-      grantsStep: <>Connect through the admin user and complete the steps in <a href="#creating-clickpipes-user-and-granting-permissions">Creating ClickPipes user and granting permissions</a>, skipping step 1 because the user already exists. Use <code>{'"<name>@<project>.iam"'}</code> in place of <code>clickpipes_user</code>, and keep the double quotes: the name contains special characters.</>,
-      firewallAnchor: '#add-clickpipes-ips-to-firewall',
+      grantsStep: <>Connect through the admin user and complete the steps in <a href="/integrations/clickpipes/postgres/source/google-cloudsql#creating-clickpipes-user-and-granting-permissions">Creating ClickPipes user and granting permissions</a>, skipping step 1 because the user already exists. Use <code>{'"<name>@<project>.iam"'}</code> in place of <code>clickpipes_user</code>, and keep the double quotes: the name contains special characters.</>,
+      firewallAnchor: '/integrations/clickpipes/postgres/source/google-cloudsql#add-clickpipes-ips-to-firewall',
     },
     mysql: {
       docsPath: 'mysql',
       flag: 'cloudsql_iam_authentication',
       port: '3306',
-      userName: '<name>',
-      userNameHint: <>For MySQL, the user name is the part of the service account email <strong>before</strong> the <code>@</code>:</>,
-      grantsStep: <>Connect as the root user and complete the steps in <a href="#configure-database-user-gcp">Configure a database user</a>, skipping step 1 because the user already exists. Use <code>{"'<name>'@'%'"}</code> in place of <code>'clickpipes_user'@'host'</code> and <code>'clickpipes_user'@'%'</code>.</>,
-      firewallAnchor: '#configure-network-access-gcp-mysql',
-      tlsSuffix: <> You can skip the <a href="#download-root-ca-certificate-gcp-mysql">certificate step</a>.</>,
+      createUserName: 'SERVICE_ACCOUNT_EMAIL',
+      userNameHint: <>For MySQL, pass the full service account email. Cloud SQL creates the MySQL user from the part of the email <strong>before</strong> the <code>@</code>, and that shorter name (<code>{'<name>'}</code>) is the one you use in the grants below:</>,
+      grantsStep: <>Connect as the root user and complete the steps in <a href="/integrations/clickpipes/mysql/source/gcp#configure-database-user-gcp">Configure a database user</a>, skipping step 1 because the user already exists. Use <code>{"'<name>'@'%'"}</code> in place of <code>'clickpipes_user'@'host'</code> and <code>'clickpipes_user'@'%'</code>.</>,
+      firewallAnchor: '/integrations/clickpipes/mysql/source/gcp#configure-network-access-gcp-mysql',
+      tlsSuffix: <> You can skip the <a href="/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql">certificate step</a>.</>,
     },
   };
   const cfg = engines[String(engine).toLowerCase()];
@@ -29,7 +29,7 @@ export const CloudSQLIAMAuthentication = ({ engine }) => {
   --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \\
   --role="${role}"`;
 
-  const createUserSql = `gcloud sql users create "${cfg.userName}" \\
+  const createUserSql = `gcloud sql users create "${cfg.createUserName}" \\
   --instance=YOUR_INSTANCE \\
   --type=cloud_iam_service_account`;
 
