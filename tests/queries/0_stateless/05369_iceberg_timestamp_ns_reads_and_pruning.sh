@@ -4,8 +4,9 @@
 # pruning, min/max pruning and Parquet filter pushdown never change a result. Also covers ClickHouse
 # INSERTs into such tables and the documented mapping of `DateTime64(P)` to microsecond `timestamp`.
 #
-# Tags: no-fasttest
+# Tags: no-fasttest, long
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
+# - long: over a hundred table reads, a few seconds each under sanitizers
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

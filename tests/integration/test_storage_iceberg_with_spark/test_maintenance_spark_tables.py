@@ -45,8 +45,9 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
         spark.sql(f"INSERT INTO {table} SELECT id, id % 3 FROM range({start}, {start + 100})")
     spark.sql(f"DELETE FROM {table} WHERE id % 10 = 0")
     first_snapshot = spark.sql(f"SELECT snapshot_id FROM default.{table}.snapshots ORDER BY committed_at LIMIT 1").first()[0]
-    # The files replaced here stay reachable from older snapshots until they expire.
-    spark.sql(f"CALL spark_catalog.system.rewrite_data_files(table => 'default.{table}', options => map('rewrite-all', 'true'))")
+    # The files replaced here stay reachable from older snapshots until they expire. Without
+    # `remove-dangling-deletes`, Spark keeps the v2 position delete files live in the new snapshot.
+    spark.sql(f"CALL spark_catalog.system.rewrite_data_files(table => 'default.{table}', options => map('rewrite-all', 'true', 'remove-dangling-deletes', 'true'))")
     spark.sql(f"CALL spark_catalog.system.compute_table_stats(table => 'default.{table}')")
     expected = spark.sql(f"SELECT count(*), sum(id) FROM {table}").first()
 

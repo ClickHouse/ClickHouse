@@ -884,19 +884,9 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
     rows_before = node.query(select_all)
     assert rows_before == "2\tb\n3\tc\n4\td\n5\te\n6\tf\n"
 
-    expired = _nonzero_metrics(
-        node.query(
-            f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
-            settings=_MAINTENANCE_SETTINGS,
-        )
-    )
-    assert expired["deleted_data_files_count"] == 1
-    assert expired["deleted_manifest_lists_count"] == snapshot_count - 1
-    assert "No snapshot found" in node.query_and_get_error(
-        f"SELECT count() FROM {tbl}",
-        settings={"iceberg_snapshot_id": snapshot_ids[0]},
-    )
-
+    # Orphans are removed before ClickHouse's first commit: that commit names its metadata file
+    # `vN.metadata.json` next to pyiceberg's `NNNNN-<uuid>.metadata.json`, and then both commands
+    # refuse to run on the table.
     manager.put_file(table_name, f"data/orphan-{uuid.uuid4().hex[:8]}.parquet", b"orphan")
     # Object timestamps have one-second precision and come from the storage's clock;
     # the margin covers normal clock drift between it and the server.
@@ -911,9 +901,6 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
             query_id=query_id,
         )
     )
-    # A metadata file of ClickHouse's own commit is missing from `metadata-log`:
-    # https://github.com/ClickHouse/ClickHouse/issues/118812
-    deleted_metadata = removed.pop("deleted_metadata_files_count", 0)
     assert removed == {"deleted_data_files_count": 1}
 
     node.query("SYSTEM FLUSH LOGS query_log")
@@ -923,10 +910,24 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
         f"SELECT ProfileEvents['{delete_event}'], ProfileEvents['{list_event}'] "
         f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' FORMAT TSV"
     ).split()
-    assert int(deletes) == 1 + deleted_metadata
+    assert int(deletes) == 1
     # Counts list requests (pages), not files: a few listings of `metadata/` and one of the table root.
     # Listing once per file would exceed it.
     assert int(lists) <= 10
+
+
+    expired = _nonzero_metrics(
+        node.query(
+            f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+            settings=_MAINTENANCE_SETTINGS,
+        )
+    )
+    assert expired["deleted_data_files_count"] == 1
+    assert expired["deleted_manifest_lists_count"] == snapshot_count - 1
+    assert "No snapshot found" in node.query_and_get_error(
+        f"SELECT count() FROM {tbl}",
+        settings={"iceberg_snapshot_id": snapshot_ids[0]},
+    )
 
     assert node.query(select_all) == rows_before
     # The Azure manager's pyiceberg catalog reads data through local copies, so only S3 can prove
