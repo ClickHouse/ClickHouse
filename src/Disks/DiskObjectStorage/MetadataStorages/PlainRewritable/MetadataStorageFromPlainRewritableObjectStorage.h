@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/KeyLocks.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/PathLocks.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
@@ -122,6 +123,8 @@ private:
     /// Transactions hold the locks for the paths they modify while they talk to the object storage and publish the result;
     /// full reloads of the metadata hold the lock for the root. Transactions on unrelated paths run concurrently.
     PathLocks path_locks;
+    /// Transactions also hold the locks for the shared blobs of the files they touch, see `collectSharedBlobKeys`.
+    KeyLocks blob_locks;
     FsMetadata fs;
     std::shared_ptr<PlainRewritableLayout> layout;
 
@@ -162,8 +165,14 @@ protected:
 
     /// Normalized paths of the files and directories the operations modify; locked for the duration of the commit.
     std::vector<std::string> affected_paths;
+    /// Normalized paths of the files and directory subtrees where the operations may remove a link to a blob.
+    /// A subset of `affected_paths`: it does not include the directories locked only to serialize the rewrites
+    /// of their `prefix.path`, which do not remove links. The shared blobs under these paths are locked as well.
+    std::vector<std::string> link_removal_paths;
 
     void addAffectedPath(const std::string & path);
+    /// The same for a directory whose subtree the operation removes.
+    void addRemovedDirectoryPath(const std::string & path);
     /// The same for a file, and also for its directory if the operation may rewrite the `prefix.path` of the directory.
     void addAffectedFilePath(const std::string & path);
 

@@ -8,6 +8,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/Preconditions.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoWithRetries.h>
+#include <IO/WriteSettings.h>
 
 #include <filesystem>
 #include <memory>
@@ -24,6 +25,14 @@ bool isMetadataOnlyMove(
     const DirectoryRemoteInfo & directory_to,
     const std::string & blob_key_from,
     const std::optional<std::string> & blob_key_of_existing_target);
+
+/// Writes a metadata object of the layout (a `prefix.path` object or a marker) with a single write.
+/// `LocalObjectStorage` writes to the final key directly, and a small buffer would split the contents into several
+/// writes. A process killed between them would leave a torn object, and some torn shapes are indistinguishable from
+/// valid contents: an explicit file list cut right after the logical path reads as a directory in the implicit form,
+/// and a long logical path cut in the middle reads as another directory. With a single write, the object is either
+/// empty, which the load recognizes as unreadable, or complete.
+void writeMetadataObject(IObjectStorage & object_storage, const StoredObject & object, const std::string & contents, const WriteSettings & settings);
 
 class MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation final : public IMetadataOperation
 {
@@ -106,8 +115,8 @@ private:
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
 
-    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path);
-    void rewriteSingleDirectory(const std::filesystem::path & from, const std::filesystem::path & to, const DirectoryRemoteInfo & remote_info, WriteBuffer & buffer);
+    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path, size_t buf_size);
+    void rewriteSingleDirectory(const std::filesystem::path & from, const std::filesystem::path & to, const std::string & contents, WriteBuffer & buffer);
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -166,6 +175,9 @@ private:
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
     std::optional<StoredObject> replaced_blob;
+    std::string replaced_blob_key;
+    /// The marker of the removal of `replaced_blob`, see `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+    std::string blob_removal_marker_name;
 
 public:
     /// Records a file in the filesystem and changes nothing in object storage, so it has nothing to reverse.
@@ -209,6 +221,8 @@ private:
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
     std::optional<StoredObject> blob_to_remove;
+    /// The marker of the removal of `blob_to_remove`, see `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+    std::string blob_removal_marker_name;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -324,6 +338,8 @@ private:
     bool prefix_path_written_from{false};
     bool prefix_path_written_to{false};
     std::optional<StoredObject> replaced_blob;
+    /// The marker of the removal of `replaced_blob`, see `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+    std::string blob_removal_marker_name;
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
