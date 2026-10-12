@@ -9,9 +9,12 @@
 #include <Interpreters/InterserverIOHandler.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
 #include <Common/setThreadName.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/String.h>
@@ -87,6 +90,28 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     return {"", true};
 }
 
+OpenTelemetry::TracingContextHolderPtr InterserverIOHTTPHandler::startTracingContext(const HTTPServerRequest & request) const
+{
+    if (!request.has("traceparent"))
+        return nullptr;
+
+    OpenTelemetry::TracingContext client_trace_context;
+    const String traceparent = request.get("traceparent");
+    String error;
+    if (client_trace_context.parseTraceparentHeader(traceparent, error))
+        client_trace_context.tracestate = request.get("tracestate", "");
+    else
+        LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
+
+    auto thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>(
+        "InterserverIOHTTPHandler", client_trace_context, server.context()->getOpenTelemetrySpanLog());
+    thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+    thread_trace_context->root_span.addAttribute(
+        "clickhouse.uri", [&] { return maskSensitiveQueryParametersInURI(request.getURI()); });
+    thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
+    return thread_trace_context;
+}
+
 void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, OutputPtr output)
 {
     HTMLForm params(server.context()->getSettingsRef(), request);
@@ -130,6 +155,16 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
+    /// Spans the whole request, failures included. The trace context is installed on this thread
+    /// while the holder exists. A dispatch that fails before its task starts (authentication, an
+    /// exception in the endpoint) leaves this span as its only worker-side trace, so the failure
+    /// and the HTTP status are recorded on it, the same as `HTTPHandler` does.
+    OpenTelemetry::TracingContextHolderPtr thread_trace_context = startTracingContext(request);
+    SCOPE_EXIT({
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute("clickhouse.http_status", response.getStatus());
+    });
+
     auto output = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, write_event);
 
@@ -145,6 +180,8 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         else
         {
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", maskSensitiveQueryParametersInURI(request.getURI()));
+            if (thread_trace_context)
+                thread_trace_context->root_span.addAttribute(ExecutionStatus(ErrorCodes::REQUIRED_PASSWORD, message));
             output->cancelWithException(request, ErrorCodes::REQUIRED_PASSWORD, message, nullptr);
         }
     }
@@ -158,6 +195,8 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         else
             LOG_INFO(log, message);
 
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(ExecutionStatus::fromCurrentException("", /* with_stacktrace */ false, /* with_version */ false));
         output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
     }
     catch (...)
@@ -165,6 +204,8 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
         LOG_ERROR(log, message);
 
+        if (thread_trace_context)
+            thread_trace_context->root_span.addAttribute(ExecutionStatus::fromCurrentException("", /* with_stacktrace */ false, /* with_version */ false));
         output->cancelWithException(request, getCurrentExceptionCode(), message.text, nullptr);
     }
 }

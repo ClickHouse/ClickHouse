@@ -265,7 +265,7 @@
 	url = https://github.com/awslabs/aws-c-auth
 [submodule "contrib/aws-c-cal"]
 	path = contrib/aws-c-cal
-	url = https://github.com/awslabs/aws-c-cal
+	url = https://github.com/ClickHouse/aws-c-cal
 [submodule "contrib/aws-c-sdkutils"]
 	path = contrib/aws-c-sdkutils
 	url = https://github.com/awslabs/aws-c-sdkutils
@@ -384,6 +384,9 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/heks"]
+	path = contrib/heks
+	url = https://github.com/ClickHouse/heks.git
 [submodule "contrib/musl"]
 	path = contrib/musl
 	url = https://github.com/ClickHouse/musl
