@@ -22,7 +22,7 @@ INSERT INTO aj_big SELECT number, toString(cityHash64(number)) FROM numbers(1.25
 INSERT INTO aj_small SELECT number * 2 FROM numbers(6.25e4);
 
 -- Baseline with parallel replicas OFF, so it doesn't pre-collect stats (see 04341).
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 CREATE TABLE aj_baseline (kind String, c UInt64) ENGINE = Memory;
 INSERT INTO aj_baseline SELECT 'left', sum(cityHash64(t1.payload)) FROM aj_big AS t1 LEFT JOIN aj_small AS t2 USING (key);
 
@@ -49,7 +49,7 @@ SELECT DISTINCT (SELECT DISTINCT c FROM aj_baseline WHERE materialize('left') = 
 SELECT DISTINCT (SELECT DISTINCT c FROM aj_baseline WHERE materialize('left') = kind LIMIT 1024) = sum(cityHash64(t1.payload)) AS result_ok
     FROM aj_big AS t1 LEFT JOIN aj_small AS t2 USING (key) SETTINGS log_comment='04342_distinct_apply';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

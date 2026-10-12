@@ -35,7 +35,7 @@ SELECT count() FROM t_small GROUP BY key % 10 FORMAT Null SETTINGS log_comment='
 -- threshold), so the plan is built and statistics are collected as usual.
 SELECT count() FROM t_large GROUP BY key % 10 FORMAT Null SETTINGS log_comment='05045_gate_large';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

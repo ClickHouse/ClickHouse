@@ -57,7 +57,7 @@ SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='037
 SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03783_autopr_dataflow_cache_reuse_query_7'; -- stats available, don't apply since no benefit
 set send_logs_level='none';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 

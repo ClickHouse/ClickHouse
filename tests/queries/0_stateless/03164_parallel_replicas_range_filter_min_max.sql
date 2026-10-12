@@ -4,7 +4,6 @@ CREATE TABLE range_filter_custom_range_test (k UInt64) ENGINE=MergeTree ORDER BY
 
 INSERT INTO range_filter_custom_range_test SELECT number + 5 from numbers(10);
 
-SET automatic_parallel_replicas_mode = 0;
 SELECT count()
 FROM
 (

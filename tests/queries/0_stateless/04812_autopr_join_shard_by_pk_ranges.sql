@@ -69,7 +69,7 @@ SETTINGS enable_parallel_replicas=0, explain_query_plan_default='legacy';
 DROP TABLE jspr_left;
 DROP TABLE jspr_right;
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
+SET enable_parallel_replicas=0;
 
 SYSTEM FLUSH LOGS query_log;
 
