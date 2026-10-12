@@ -163,6 +163,11 @@ namespace Net
         void setPeerHostName(const std::string & hostName);
         /// Sets the peer host name for certificate validation purposes.
 
+        void setServerNameIndication(const std::string & serverName);
+        /// Sets the name sent in the TLS Server Name Indication extension instead
+        /// of the peer host name. A peer certificate that names either this name
+        /// or the peer host name is then accepted.
+
         const std::string & getPeerHostName() const;
         /// Returns the peer host name.
 
@@ -293,6 +298,12 @@ namespace Net
     inline void SecureStreamSocketImpl::setPeerHostName(const std::string & peerHostName)
     {
         _impl.setPeerHostName(peerHostName);
+    }
+
+
+    inline void SecureStreamSocketImpl::setServerNameIndication(const std::string & serverName)
+    {
+        _impl.setServerNameIndication(serverName);
     }
 
 

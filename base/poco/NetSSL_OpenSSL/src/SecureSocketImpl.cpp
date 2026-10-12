@@ -309,9 +309,10 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	SSL_set_bio(_pSSL, pBIO, pBIO);
 
 #if !defined(OPENSSL_NO_TLSEXT)
-	if (!_peerHostName.empty())
+	const std::string & serverName = _serverNameIndication.empty() ? _peerHostName : _serverNameIndication;
+	if (!serverName.empty())
 	{
-		SSL_set_tlsext_host_name(_pSSL, _peerHostName.c_str());
+		SSL_set_tlsext_host_name(_pSSL, serverName.c_str());
 	}
 #endif
 
@@ -629,10 +630,20 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 void SecureSocketImpl::verifyPeerCertificate()
 {
 	ScopedLock lock(*_mutex);
-	if (_peerHostName.empty())
-		verifyPeerCertificate(_pSocket->peerAddress().host().toString());
-	else
-		verifyPeerCertificate(_peerHostName);
+	const std::string hostName = _peerHostName.empty() ? _pSocket->peerAddress().host().toString() : _peerHostName;
+	if (_serverNameIndication.empty() || _serverNameIndication == hostName)
+	{
+		verifyPeerCertificate(hostName);
+		return;
+	}
+	long certErr = verifyPeerCertificateImpl(_serverNameIndication);
+	/// The host is matched by name only: the loopback exemption must not switch the check off for a tunnel endpoint.
+	if (certErr != X509_V_OK && matchPeerCertificate(hostName) == X509_V_OK)
+		certErr = X509_V_OK;
+	if (certErr != X509_V_OK)
+		throw CertificateValidationException(
+			"Unacceptable certificate from " + hostName + " (server name " + _serverNameIndication + ")",
+			Utility::convertCertificateError(certErr));
 }
 
 
@@ -656,6 +667,13 @@ long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
 	    (mode != Context::VERIFY_STRICT && isLocalHost(hostName)))
 		return X509_V_OK;
 
+	return matchPeerCertificate(hostName);
+}
+
+
+long SecureSocketImpl::matchPeerCertificate(const std::string& hostName)
+{
+	ScopedLock lock(*_mutex);
 	// SSL_get1_peer_certificate returns a certificate whose reference count has
 	// been incremented; the caller owns that reference and must X509_free it,
 	// otherwise the peer certificate leaks on every verified handshake.
@@ -838,6 +856,13 @@ void SecureSocketImpl::setPeerHostName(const std::string& peerHostName)
 {
 	ScopedLock lock(*_mutex);
 	_peerHostName = peerHostName;
+}
+
+
+void SecureSocketImpl::setServerNameIndication(const std::string& serverName)
+{
+	ScopedLock lock(*_mutex);
+	_serverNameIndication = serverName;
 }
 
 

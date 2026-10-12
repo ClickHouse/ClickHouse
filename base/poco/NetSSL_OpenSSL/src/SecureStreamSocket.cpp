@@ -140,6 +140,12 @@ void SecureStreamSocket::setPeerHostName(const std::string& hostName)
 	static_cast<SecureStreamSocketImpl*>(impl())->setPeerHostName(hostName);
 }
 
+
+void SecureStreamSocket::setServerNameIndication(const std::string& serverName)
+{
+	static_cast<SecureStreamSocketImpl*>(impl())->setServerNameIndication(serverName);
+}
+
 void SecureStreamSocket::bind(const SocketAddress& address, bool reuseAddress)
 {
        static_cast<SecureStreamSocketImpl*>(impl())->bind(address, reuseAddress);
@@ -194,6 +200,21 @@ SecureStreamSocket SecureStreamSocket::attach(const StreamSocket& streamSocket, 
 	SecureStreamSocketImpl* pImpl = new SecureStreamSocketImpl(static_cast<StreamSocketImpl*>(streamSocket.impl()), SSLManager::instance().defaultClientContext());
 	SecureStreamSocket result(pImpl);
 	result.setPeerHostName(peerHostName);
+	if (pImpl->context()->isForServerUse())
+		pImpl->acceptSSL();
+	else
+		pImpl->connectSSL();
+	return result;
+}
+
+
+SecureStreamSocket SecureStreamSocket::attach(const StreamSocket& streamSocket, const std::string& peerHostName, const std::string& serverNameIndication)
+{
+	SecureStreamSocketImpl* pImpl = new SecureStreamSocketImpl(static_cast<StreamSocketImpl*>(streamSocket.impl()), SSLManager::instance().defaultClientContext());
+	SecureStreamSocket result(pImpl);
+	result.setPeerHostName(peerHostName);
+	if (!serverNameIndication.empty())
+		result.setServerNameIndication(serverNameIndication);
 	if (pImpl->context()->isForServerUse())
 		pImpl->acceptSSL();
 	else

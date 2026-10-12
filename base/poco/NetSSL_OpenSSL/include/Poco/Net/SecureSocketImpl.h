@@ -163,6 +163,8 @@ namespace Net
         /// Performs post-connect (or post-accept) peer certificate validation,
         /// using the peer host name set with setPeerHostName(), or the peer's
         /// IP address string if no peer host name has been set.
+        /// If a server name was set with setServerNameIndication(), a certificate
+        /// that names either the server name or the peer host name is accepted.
 
         void verifyPeerCertificate(const std::string & hostName);
         /// Performs post-connect (or post-accept) peer certificate validation
@@ -170,6 +172,11 @@ namespace Net
 
         void setPeerHostName(const std::string & hostName);
         /// Sets the peer host name for certificate validation purposes.
+
+        void setServerNameIndication(const std::string & serverName);
+        /// Sets the name sent in the TLS Server Name Indication extension instead
+        /// of the peer host name. A peer certificate that names either this name
+        /// or the peer host name is then accepted.
 
         const std::string & getPeerHostName() const;
         /// Returns the peer host name.
@@ -297,6 +304,9 @@ namespace Net
         /// Returns the BIO_METHOD to use for the SSL transport BIO.
         /// Falls back to `BIO_s_socket()` when no custom method was set via `setBioMethod`.
 
+        long matchPeerCertificate(const std::string & hostName);
+        /// Checks that the peer certificate names the given host name or IP address.
+
         struct StdRecursiveMutex final : RecursiveMutex
         {
             void lock() override { _m.lock(); }
@@ -319,6 +329,7 @@ namespace Net
         /// Set while completeHandshakeImpl runs the handshake on a socket it made non-blocking, so
         /// that waiting for the peer stays this class's job rather than the caller's.
         std::string _peerHostName;
+        std::string _serverNameIndication;
         Session::Ptr _pSession;
         const BIO_METHOD * _bioMethod = nullptr;
         /// Contract: when set, store the `SocketImpl *` in the BIO's data.

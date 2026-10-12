@@ -177,7 +177,7 @@ void Connection::adoptSocket(Poco::Net::StreamSocket connected_socket)
         /// The IP is already resolved, so the host name has to be passed separately for Server Name
         /// Indication (SNI) to work, the same way as for a connection this class establishes itself.
         socket = std::make_unique<Poco::Net::SecureStreamSocket>(
-            Poco::Net::SecureStreamSocket::attach(connected_socket, tls_sni_override.empty() ? host : tls_sni_override));
+            Poco::Net::SecureStreamSocket::attach(connected_socket, host, tls_sni_override));
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
@@ -230,8 +230,9 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
             /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
             /// work we need to pass host name separately. It will be send into TLS Hello packet to let
             /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-            static_cast<Poco::Net::SecureStreamSocket *>(socket.get())
-                ->setPeerHostName(tls_sni_override.empty() ? host : tls_sni_override);
+            static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->setPeerHostName(host);
+            if (!tls_sni_override.empty())
+                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())->setServerNameIndication(tls_sni_override);
             /// we want to postpone SSL handshake until first read or write operation
             /// so any errors during negotiation would be properly processed
             static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
