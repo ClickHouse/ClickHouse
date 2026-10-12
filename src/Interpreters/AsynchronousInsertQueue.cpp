@@ -340,6 +340,14 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
 
     resetChunk();
     promise.set_exception(exception_);
+    countFailure();
+}
+
+void AsynchronousInsertQueue::InsertData::Entry::countFailure()
+{
+    if (failure_counted.exchange(true))
+        return;
+
     ProfileEvents::increment(ProfileEvents::FailedAsyncInsertQuery, 1);
 }
 
@@ -1475,6 +1483,9 @@ try
     }
     catch (...)
     {
+        /// The entries are finished with the exception only later, in `finishWithException`,
+        /// so count their failure now, before the snapshot of the profile events charged to the quotas.
+        countFailureOfUnfinishedEntries(*data);
         logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal);
 
         if (async_insert_log)
@@ -1551,6 +1562,8 @@ try
     }
     catch (...)
     {
+        /// See the comment above about `countFailureOfUnfinishedEntries`.
+        countFailureOfUnfinishedEntries(*data);
         bool log_error = true;
         logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, /*log_as_internal=*/ internal, log_error);
         if (!log_elements.empty())
@@ -1719,6 +1732,15 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     Chunk chunk(std::move(result_columns), total_rows);
     chunk.getChunkInfos().add(std::move(deduplication_info));
     return chunk;
+}
+
+void AsynchronousInsertQueue::countFailureOfUnfinishedEntries(const InsertData & data)
+{
+    for (const auto & entry : data.entries)
+    {
+        if (!entry->isFinished())
+            entry->countFailure();
+    }
 }
 
 template <typename E>

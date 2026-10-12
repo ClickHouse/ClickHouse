@@ -154,6 +154,7 @@ namespace ProfileEvents
 
 #include <Common/CurrentThread.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/StackTrace.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -220,6 +221,11 @@ namespace Poco
 namespace ProfileEvents
 {
     void incrementForLogMessage(Poco::Message::Priority) {}
+
+    /// `CREATE QUOTA` accepts a limit over any profile event, and the parser looks the name up to
+    /// tell an event from a typo. The table of events is generated in ProfileEvents.cpp, which
+    /// this module does not carry, so any name is accepted here; the server does the real check.
+    std::optional<Event> tryGetByName(std::string_view) { return Event(0); }
 }
 
 namespace FS

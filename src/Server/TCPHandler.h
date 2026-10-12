@@ -116,6 +116,9 @@ struct QueryState
 
     /// Data was sent.
     bool sent_all_data = false;
+    /// The result of a `SELECT` is being streamed to the client, so the client accepts `ProfileEvents`
+    /// packets at any moment, including right before an `Exception`.
+    bool streaming_select_result = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
     /// Data was read.

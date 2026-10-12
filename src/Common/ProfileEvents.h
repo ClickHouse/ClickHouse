@@ -8,6 +8,7 @@
 #include <base/strong_typedef.h>
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <new>
 #include <cstddef>
 
@@ -218,6 +219,9 @@ namespace ProfileEvents
 
     /// Get ProfileEvent by its name
     Event getByName(std::string_view name);
+
+    /// Get ProfileEvent by its name. Returns std::nullopt if there is no event with such name.
+    std::optional<Event> tryGetByName(std::string_view name);
 
     /// Get value type of event by identifier. Returns enum value.
     ValueType getValueType(Event event);
