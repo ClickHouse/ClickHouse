@@ -57,20 +57,19 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const Partition & partitio
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
         const std::vector<int64_t> & groups = block.index.peer_group_indexes;
-        bound.peer_group_index_in_partition = groups[bound.location.row];
-        if (bound.peer_group_index_in_partition >= group)
-            return true;
-
         const int64_t rows_end = partition_end.block == bound.location.block ? partition_end.row : block.rows_count;
-        const int64_t found = findEqualRangeEndAssumeSorted(bound.location.row, rows_end, 16, [&](size_t row) { return groups[row] < group; });
-        const int64_t rows_passed = found - bound.location.row;
-        bound.location = blocks.move(bound.location, rows_passed);
-        bound.row_index_in_partition += rows_passed;
-        if (found < rows_end)
+        const int64_t row = groups[bound.location.row] >= group
+            ? bound.location.row
+            : static_cast<int64_t>(findEqualRangeEndAssumeSorted(bound.location.row, rows_end, 16, [&](size_t i) { return groups[i] < group; }));
+
+        bound.row_index_in_partition += row - bound.location.row;
+        if (row < rows_end)
         {
-            bound.peer_group_index_in_partition = groups[found];
+            bound.location.row = row;
+            bound.peer_group_index_in_partition = groups[row];
             return true;
         }
+        bound.location = blocks.move(bound.location, row - bound.location.row);
     }
     return advanceToPartitionEnd(partition, bound);
 }
@@ -87,14 +86,19 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
     {
         const SlidingBlock & block = blocks.blockAt(bound.location.block);
         const IColumn * key_column = block.materialized_columns[key_position].get();
-        if (params.range_offset_comparator(key_column, bound.location.row, current_key_column, current.location.row, offset, offset_is_preceding) * direction >= past)
+        const int64_t rows_end = partition_end.block == bound.location.block ? partition_end.row : block.rows_count;
+        int64_t row = bound.location.row;
+        while (row < rows_end && params.range_offset_comparator(key_column, row, current_key_column, current.location.row, offset, offset_is_preceding) * direction < past)
+            ++row;
+
+        bound.row_index_in_partition += row - bound.location.row;
+        if (row < rows_end)
         {
-            bound.peer_group_index_in_partition = block.index.peer_group_indexes[bound.location.row];
+            bound.location.row = row;
+            bound.peer_group_index_in_partition = block.index.peer_group_indexes[row];
             return true;
         }
-
-        bound.location = blocks.next(bound.location);
-        ++bound.row_index_in_partition;
+        bound.location = blocks.move(bound.location, row - bound.location.row);
     }
 
     return advanceToPartitionEnd(partition, bound);
