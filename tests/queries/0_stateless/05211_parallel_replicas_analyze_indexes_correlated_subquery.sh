@@ -35,6 +35,9 @@ INSERT INTO t_pr_ai_2 SELECT number + 75 FROM numbers(25);
 # correlated_subqueries_use_in_memory_buffer = 0 is what a lowered compatibility setting gives;
 # with the in-memory buffer the decorrelated plan does not clone the referenced read.
 pr_settings="SETTINGS enable_analyzer = 1, automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', correlated_subqueries_use_in_memory_buffer = 0"
+# The same settings with the outer query's parallel replicas off, for a predicate subquery that
+# enables them for itself.
+pr_settings_outer_off="SETTINGS enable_analyzer = 1, automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 0, correlated_subqueries_use_in_memory_buffer = 0, parallel_replicas_plan_based = 0"
 
 # Reports whether the analysis produced rows, and the coordinators it created: exactly, when
 # none are expected, otherwise as a boolean, because the count of a query that legitimately
@@ -42,10 +45,10 @@ pr_settings="SETTINGS enable_analyzer = 1, automatic_parallel_replicas_mode = 0,
 # The row count of mergeTreeAnalyzeIndexes follows the number of active parts, which randomized
 # insert settings may change, so the analysis is asserted to be non-empty rather than exact.
 report() {
-    local label="$1" query="$2" expect="$4"
+    local label="$1" query="$2" expect="$4" settings="${5:-$pr_settings}"
     local query_id="05211_${CLICKHOUSE_DATABASE}_$3"
     local res ok=0
-    res=$(${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "$query $pr_settings" 2>&1)
+    res=$(${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "$query $settings" 2>&1)
     [[ $res =~ ^[0-9]+$ ]] && [ "$res" -ge 1 ] && ok=1
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
     local coordinators
@@ -68,9 +71,13 @@ report 'correlated predicate' "$correlated" correlated zero
 
 # A SETTINGS clause on the subquery itself must not re-enable parallel replicas: the pass runs
 # after the query tree builder has applied that clause to the subquery's own context. Expect 0.
-report 'correlated predicate, subquery SETTINGS' \
-    "SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_pr_ai, (key IN (SELECT (SELECT key) FROM t_pr_ai_2 ORDER BY key LIMIT 10 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost')))" \
-    subquery_settings zero
+subquery_settings="SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_pr_ai, (key IN (SELECT (SELECT key) FROM t_pr_ai_2 ORDER BY key LIMIT 10 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost')))"
+report 'correlated predicate, subquery SETTINGS' "$subquery_settings" subquery_settings zero
+
+# The same shape with the outer query's parallel replicas off, which is how the AST fuzzer reached
+# it: eligibility is a property of each (sub)query's own context, not of the top-level one. Expect 0.
+report 'correlated predicate, subquery SETTINGS, outer parallel replicas off' \
+    "$subquery_settings" subquery_settings_outer_off zero "$pr_settings_outer_off"
 
 # The correlated subquery one level deeper: the contexts of nested query nodes are read
 # separately by the planner, so all of them have to be covered. Expect 0.
