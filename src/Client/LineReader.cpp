@@ -325,7 +325,9 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
         /// trace, a query - reaches the agent whole instead of being split after its first line.
         need_next_line = hasInputData() || (!is_ai_chat && (has_extender || (multiline && !has_delimiter)));
 
-        if (has_extender)
+        /// The prompt of the AI agent is natural language sent verbatim: a trailing backslash in it
+        /// is a part of the question, not a line extender.
+        if (has_extender && !is_ai_chat)
         {
             input.resize(input.size() - strlen(has_extender));
             trim(input);
