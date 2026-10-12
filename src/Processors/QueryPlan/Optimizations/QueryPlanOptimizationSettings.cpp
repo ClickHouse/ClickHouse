@@ -62,6 +62,7 @@ namespace Setting
     extern const SettingsBool query_plan_short_circuit_constant_false_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool query_plan_optimize_count_from_text_index;
+    extern const SettingsBool query_plan_optimize_primary_key_filter_elimination;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
@@ -284,6 +285,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_count_from_text_index = direct_read_from_text_index
         && from[Setting::query_plan_optimize_count_from_text_index]
         && from[Setting::optimize_trivial_count_query];
+    query_plan_optimize_primary_key_filter_elimination = from[Setting::query_plan_enable_optimizations]
+        && from[Setting::query_plan_optimize_primary_key_filter_elimination];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
     /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,

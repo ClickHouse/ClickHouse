@@ -379,10 +379,16 @@ public:
         bool allow_query_condition_cache_,
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
-        bool check_row_limits);
+        bool check_row_limits,
+        bool allow_exact_count_optimization = true);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
+    /// Collect speculative proofs after the caller has analyzed the ordinary read and checked its row limits.
+    /// These ranges can bridge gaps, so intersect them with the ordinary selection before using them.
+    /// Do not check execution row limits on this temporary analysis or enable exact-count candidate policy.
+    AnalysisResultPtr selectRangesToReadForPredicateElimination() const;
+
     /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
     /// or memoizing the result. The executed read analyzes again after its final mode is known.
     /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
@@ -680,6 +686,8 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    AnalysisResultPtr selectRangesToReadImpl(bool find_exact_ranges, bool allow_exact_count_optimization, bool check_row_limits) const;
+
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
         const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
