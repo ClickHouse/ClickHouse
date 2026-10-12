@@ -1,0 +1,4 @@
+unreferenced-y partial-state snapshot: three distinct QueryFinish rows with zero loader time
+partial-state full-part snapshot: three distinct QueryFinish rows with zero loader time
+empty-estimator full-part snapshot: three distinct QueryFinish rows with zero loader time
+nullable-null-map snapshot: three distinct QueryFinish rows with zero loader time

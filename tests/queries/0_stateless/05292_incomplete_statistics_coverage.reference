@@ -1,0 +1,6 @@
+mixed part-statistics scope is pinned	1
+partial v falls back while retaining y	1
+mixed-state SELECT result is 250	1
+complete v statistics cover both parts	1
+complete v distribution estimates about 500 rows	1
+complete-state SELECT result is 500	1

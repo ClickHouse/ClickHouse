@@ -2,6 +2,7 @@
 
 #include <stack>
 #include <cmath>
+#include <string_view>
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -253,6 +254,25 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
         result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
     return result;
+}
+
+bool ConditionSelectivityEstimator::hasColumnStatistics(const Names & required_columns) const
+{
+    if (required_columns.empty())
+        return hasColumnStatistics();
+
+    constexpr std::string_view null_map_suffix = ".null";
+    for (const auto & required_column : required_columns)
+    {
+        if (column_estimators.contains(required_column))
+            return true;
+
+        if (required_column.ends_with(null_map_suffix)
+            && column_estimators.contains(required_column.substr(0, required_column.size() - null_map_suffix.size())))
+            return true;
+    }
+
+    return false;
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
@@ -629,8 +649,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     return false;
 }
 
-ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
-    : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
+ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_, bool require_complete_part_statistics_)
+    : require_complete_part_statistics(require_complete_part_statistics_)
+    , estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
 {
 }
 
@@ -641,30 +662,49 @@ void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 
 void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
 {
+    current_part_rows = data_part->rows_count;
     estimator->parts_names.push_back(data_part->name);
     estimator->total_rows += data_part->rows_count;
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
-    if (column_stats != nullptr)
-    {
-        has_data = true;
-        auto & column_estimator = estimator->column_estimators[column_name];
+    /// Check each part before merging: mismatched row counts must not cancel out.
+    if (column_stats == nullptr
+        || (require_complete_part_statistics && !estimator->parts_names.empty() && column_stats->getNumRows() != current_part_rows))
+        return;
 
-        if (column_estimator.stats == nullptr)
-            column_estimator.stats = column_stats;
-        else if (column_estimator.stats->structureEquals(*column_stats))
-            column_estimator.stats->merge(column_stats);
-        /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
-        /// shifting the aggregate-function state layout). Skip this part's statistics so the
-        /// estimator still works with the compatible parts instead of crashing.
-    }
+    auto & column_estimator = estimator->column_estimators[column_name];
+
+    if (column_estimator.stats == nullptr)
+        column_estimator.stats = column_stats;
+    else if (column_estimator.stats->structureEquals(*column_stats))
+        column_estimator.stats->merge(column_stats);
+    /// else: the incompatible part cannot contribute to this column. When complete coverage is
+    /// required, the final row-count check rejects the aggregate if that part contains rows.
 }
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    return has_data ? estimator : nullptr;
+    auto result = getEstimatorForCache();
+    return result->hasColumnStatistics() ? result : nullptr;
+}
+
+ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimatorForCache() const
+{
+    if (!require_complete_part_statistics || estimator->parts_names.empty())
+        return estimator;
+
+    /// Missing part statistics leave the merged column short of the selected row count.
+    for (auto it = estimator->column_estimators.begin(); it != estimator->column_estimators.end();)
+    {
+        if (it->second.stats->getNumRows() != estimator->total_rows)
+            it = estimator->column_estimators.erase(it);
+        else
+            ++it;
+    }
+
+    return estimator;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
