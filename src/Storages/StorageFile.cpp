@@ -2556,21 +2556,9 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
 
 bool ReadFromFile::supportsMinMaxFromStatistics() const
 {
-    if (!boost::iequals(storage->format_name, "Parquet") || storage->archive_info || need_only_count)
-        return false;
-
-    if (info.formatReadsHivePartitionColumns() || filter_actions_dag || query_info.prewhere_info || query_info.row_level_filter)
-        return false;
-
-    /// Every output column must come from the format unchanged: virtual columns are appended after the read, and a
-    /// `DEFAULT` column is recomputed for the values the format reports as missing.
-    for (const auto & column : *getOutputHeader())
-    {
-        const auto * format_column = info.format_header.findByName(column.name);
-        if (!format_column || !format_column->type->equals(*column.type) || info.columns_description.hasDefault(column.name))
-            return false;
-    }
-    return true;
+    return boost::iequals(storage->format_name, "Parquet") && !storage->archive_info && !need_only_count
+        && !filter_actions_dag && !query_info.prewhere_info && !query_info.row_level_filter
+        && info.formatReturnsColumnsUnchanged(*getOutputHeader());
 }
 
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2850,8 +2838,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
-    format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
-        && !query_info.prewhere_info && !query_info.row_level_filter;
+    format_filter_info->min_max_from_statistics = read_min_max_from_statistics && supportsMinMaxFromStatistics();
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
