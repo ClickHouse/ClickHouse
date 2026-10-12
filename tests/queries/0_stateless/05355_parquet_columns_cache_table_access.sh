@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: Parquet support is not built in fast-test images
+
+# The entries of a `Parquet` file read by a table (here `ENGINE = File`) belong to the table in
+# `system.columns_cache`: they are visible only to a user who may see the table, not to a user who
+# may only read from the source of the file.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
+FILE_PATH="${USER_FILES_PATH}/${FILE}"
+USER="user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO FUNCTION file('${FILE}', Parquet) SELECT number AS id FROM numbers(1000)
+    SETTINGS engine_file_truncate_on_insert = 1"
+# Only a file that has not been modified for a few seconds is cached.
+touch -d "1 minute ago" "${FILE_PATH}"
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_parquet_file;
+    CREATE TABLE t_parquet_file (id UInt64) ENGINE = File(Parquet, '${FILE}');"
+
+QUERY="SELECT count() > 0 FROM system.columns_cache WHERE endsWith(part, '/${FILE}')"
+QUERY_TABLE="SELECT DISTINCT database = currentDatabase(), table FROM system.columns_cache WHERE endsWith(part, '/${FILE}')"
+
+function populate()
+{
+    # The cache is shared by all tests, so its admission control can skip a write and another test
+    # can evict the entries: read the file until the entries are there.
+    for _ in {1..20}; do
+        $CLICKHOUSE_CLIENT -q "SELECT sum(id) FROM t_parquet_file FORMAT Null
+            SETTINGS use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,
+                columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0"
+        [ "$($CLICKHOUSE_CLIENT -q "${QUERY}")" = 1 ] && return
+    done
+    echo "the entries of the file are not in the cache"
+}
+
+$CLICKHOUSE_CLIENT -q "
+    DROP USER IF EXISTS ${USER};
+    CREATE USER ${USER} IDENTIFIED WITH no_password;
+    GRANT SELECT ON system.columns_cache TO ${USER};
+    GRANT READ ON FILE TO ${USER};"
+
+echo "--- the default user sees the entries of the table"
+populate
+$CLICKHOUSE_CLIENT -q "${QUERY_TABLE}"
+echo "--- READ ON FILE without access to the table"
+populate
+$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY}"
+echo "--- SHOW COLUMNS on the table"
+$CLICKHOUSE_CLIENT -q "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_parquet_file TO ${USER}"
+populate
+$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY}"
+
+$CLICKHOUSE_CLIENT -q "DROP USER ${USER}; DROP TABLE t_parquet_file;"
+rm -f "${FILE_PATH}"

@@ -325,6 +325,9 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                         clearColumnChunk(c, diff);
                     release_top_k_admission = true;
                 }
+                /// All subgroups are delivered (or there are none), so nothing forms columns from
+                /// the cached ones any more. Don't keep the columns alive after the cache evicts them.
+                row_group.cached_columns.clear();
                 break;
         }
 
@@ -408,6 +411,9 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 continue;
 
             ColumnChunk & c = row_group.columns.at(i);
+            /// Formed from the columns cache instead, see `Reader::getOrFormOutputColumn`.
+            if (c.served_from_cache)
+                continue;
             if (is_offset_index)
             {
                 if (c.offset_index_prefetch && c.offset_index.page_locations.empty())
@@ -606,6 +612,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             /// since we scheduled ColumnData prefetches for all of them and must release the memory.
             for (size_t i = 0; i < reader.primitive_columns.size(); ++i)
                 clearColumnChunk(row_group.columns.at(i), diff);
+
+            reader.flushColumnsCacheWrites(row_group);
 
             releaseTopKAdmission(row_group_idx, diff);
         }
@@ -1288,7 +1296,7 @@ ReadManager::ReadResult ReadManager::read()
     chassert(row_subgroup.stage == ReadStage::Deliver);
     Columns output_columns(reader.sample_block->columns());
     for (size_t i = 0; i < output_columns.size(); ++i)
-        output_columns[i] = std::move(reader.getOrFormOutputColumn(row_subgroup, i));
+        output_columns[i] = std::move(reader.getOrFormOutputColumn(row_group, row_subgroup, i));
     Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
     if (reader.top_k_best_value_column_pos)
         reader.updateTopKBestValue(row_group, *chunk.getColumns()[*reader.top_k_best_value_column_pos]);

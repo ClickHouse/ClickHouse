@@ -3305,11 +3305,13 @@ Contains information about all filesystem cache settings
 )DOCS_MD");
     attachNoDescription<StorageSystemColumnsCache>(context, system_database, "columns_cache", R"DOCS_MD(
 .description
-Contains one row per entry currently stored in the deserialized columns cache. The cache keeps previously read and deserialized columns of `MergeTree` data parts in memory, so repeated reads of the same row range do not pay for decompression and deserialization again.
+Contains one row per entry currently stored in the deserialized columns cache. The cache keeps previously read and deserialized columns of `MergeTree` data parts and of `Parquet` files in memory, so repeated reads of the same row range do not pay for decompression and deserialization again.
 
 Each entry corresponds to a contiguous range of granules `[row_begin, row_end)` of a single column of a single data part, within a fixed stripe of the part of about 65536 rows. Reads are served from the cache granule by granule, and the stripes are the same for every read of the part, so the entries do not depend on how a query splits the part into mark ranges: a read that touches only some granules of a stripe caches those, and adjacent ranges written by different reads are merged.
 
 The cache identifies entries by table UUID, so it is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud). Tables in legacy `Ordinary` databases have no UUID and are silently excluded from the cache. Only wide parts participate in the cache; compact parts are silently excluded.
+
+An entry of a `Parquet` file (read by the `file`, `s3`, `azureBlobStorage` table functions and table engines, and by data lake tables) holds a whole column of one row group of the file: `part` is the path of the file, `table_uuid` is the nil UUID, `database` and `table` are empty, and `[row_begin, row_end)` is the range of rows of the row group in the file. Such entries are visible only to a user holding `SHOW COLUMNS` globally and an unrestricted `READ` grant on the source of the file (`FILE`, `S3`, `AZURE`, `HDFS` or `URL`).
 
 The cache is controlled by the server settings `columns_cache_size` (by default `columns_cache_size_to_ram_ratio` of the memory available to the server) and `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`, `enable_reads_from_columns_cache`, `enable_writes_to_columns_cache`, `columns_cache_max_estimated_bytes_to_write_to_cache`, and `columns_cache_max_bytes_to_write_to_cache`. It can be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/system).
 
