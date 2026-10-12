@@ -78,6 +78,13 @@
                     <table>default.prometheus</table>
                 </handler>
             </my_rule_13>
+            <my_rule_19>
+                <url>/federate</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus</table>
+                </handler>
+            </my_rule_19>
             <!-- A table which never gets any metrics metadata: /api/v1/metadata must return an empty result for it. -->
             <my_rule_14>
                 <url>/empty/api/v1/metadata</url>
