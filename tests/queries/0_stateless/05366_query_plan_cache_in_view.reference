@@ -1,0 +1,22 @@
+-- 1. IN view: miss, hit, then replacing the view invalidates the entry
+3
+-- hits: 0
+3
+-- hits: 1
+5
+-- hits: 0
+-- 1b. GLOBAL IN view
+5
+5
+-- hits: 1
+7
+-- hits: 0
+-- 2. revoking SELECT on the view denies the next execution
+3
+3
+-- hits: 1
+ACCESS_DENIED
+-- 3. IN Set storage: the current contents of the set are used
+2
+2
+3

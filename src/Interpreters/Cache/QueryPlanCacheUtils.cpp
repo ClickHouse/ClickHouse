@@ -521,10 +521,26 @@ private:
             if (isSetFunction(function->name) && function->arguments && function->arguments->children.size() == 2)
             {
                 const auto & args = function->arguments->children;
+                if (!collectImpl(*args[0], default_database, /*in_set_or_table_position=*/ false, inside_scalar_subquery))
+                    return false;
+
+                /// `x IN name` names a table, a view or a `Set` storage directly. The parser emits a
+                /// plain `ASTIdentifier` there, not an `ASTTableExpression`, so route it through
+                /// `visitTableIdentifier` explicitly. Otherwise a view on the right side is expanded
+                /// into the set sub-plan and only its body tables are recorded, so a hit would skip
+                /// the revalidation and access recheck of the view itself, and a `Set` storage (which
+                /// has no sub-plan at all) would not be recorded. Should the name actually resolve to
+                /// something else, recording an existing table of the same name is only conservative.
+                if (const auto * identifier = args[1]->as<ASTIdentifier>())
+                {
+                    if (auto table_identifier = identifier->createTable())
+                        return visitTableIdentifier(*table_identifier, default_database, inside_scalar_subquery);
+                    return true;
+                }
+
                 /// The set (right) side is re-executed each run and its tables become plan leaves
                 /// in the IN-subquery sub-plan, so they are not folded; keep `inside_scalar_subquery`.
-                return collectImpl(*args[0], default_database, /*in_set_or_table_position=*/ false, inside_scalar_subquery)
-                    && collectImpl(*args[1], default_database, /*in_set_or_table_position=*/ true, inside_scalar_subquery);
+                return collectImpl(*args[1], default_database, /*in_set_or_table_position=*/ true, inside_scalar_subquery);
             }
 
             in_set_or_table_position = false;
