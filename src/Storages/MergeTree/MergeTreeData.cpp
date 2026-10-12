@@ -10317,6 +10317,13 @@ static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text
     size_t pos = 0;
     auto is_digit_at = [&](size_t at) { return at < text.size() && isNumericASCII(text[at]); };
     auto is_char_at = [&](size_t at, char c) { return at < text.size() && text[at] == c; };
+    auto skip_char = [&](char c)
+    {
+        if (!is_char_at(pos, c))
+            return false;
+        ++pos;
+        return true;
+    };
     auto read_two_digits = [&](UInt8 & to)
     {
         if (!is_digit_at(pos) || !is_digit_at(pos + 1))
@@ -10333,7 +10340,7 @@ static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text
 
     UInt8 month = 0;
     UInt8 day = 0;
-    if (!is_char_at(pos++, '-') || !read_two_digits(month) || !is_char_at(pos++, '-') || !read_two_digits(day))
+    if (!skip_char('-') || !read_two_digits(month) || !skip_char('-') || !read_two_digits(day))
         return {};
 
     SpelledDateTime spelled;
@@ -10349,7 +10356,7 @@ static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text
     if (is_char_at(pos, ' ') || is_char_at(pos, 'T'))
     {
         ++pos;
-        if (!read_two_digits(hour) || !is_char_at(pos++, ':') || !read_two_digits(minute))
+        if (!read_two_digits(hour) || !skip_char(':') || !read_two_digits(minute))
             return {};
         if (is_char_at(pos, ':'))
         {
@@ -10373,14 +10380,13 @@ static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text
         }
         else if (is_char_at(pos, '+') || is_char_at(pos, '-'))
         {
-            const bool negative = text[pos++] == '-';
+            const bool negative = text[pos] == '-';
+            ++pos;
             UInt8 offset_hours = 0;
             UInt8 offset_minutes = 0;
             if (!read_two_digits(offset_hours))
                 return {};
-            const bool has_colon = is_char_at(pos, ':');
-            if (has_colon)
-                ++pos;
+            const bool has_colon = skip_char(':');
             if ((has_colon || pos < text.size()) && !read_two_digits(offset_minutes))
                 return {};
             /// The readers of the conversions do not check the offset either, so `+00:60` would be read as `+01:00`.
