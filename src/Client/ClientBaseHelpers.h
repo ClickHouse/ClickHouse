@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <string_view>
 #include <Core/Types.h>
 #include "config.h"
@@ -44,6 +45,8 @@ std::string getChineseZodiac();
 bool isCloudEndpoint(const std::string & host);
 
 #if USE_REPLXX
+bool highlightClientCommand(
+    const String & query, std::vector<replxx::Replxx::Color> & colors, std::span<const std::string_view> command_names);
 /// When `lexer_fallback` is set, input that cannot be parsed as complete queries (e.g. the query
 /// fragments found in the documentation) is highlighted token-by-token using the lexer instead of being
 /// left unhighlighted. The line editor keeps the default (parser-only) behaviour.

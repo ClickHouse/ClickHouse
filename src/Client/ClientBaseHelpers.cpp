@@ -189,6 +189,34 @@ bool isCloudEndpoint(const std::string & host)
 }
 
 #if USE_REPLXX
+bool highlightClientCommand(
+    const String & query, std::vector<replxx::Replxx::Color> & colors, std::span<const std::string_view> command_names)
+{
+    size_t command_begin = 0;
+    while (command_begin < query.size() && isWhitespaceASCII(query[command_begin]))
+        ++command_begin;
+
+    for (const auto command : command_names)
+    {
+        if (command_begin + command.size() > query.size()
+            || !equalsCaseInsensitive(std::string_view(query).substr(command_begin, command.size()), command))
+            continue;
+
+        const size_t command_end = command_begin + command.size();
+        if (command_end < query.size() && !isWhitespaceASCII(query[command_end]) && query[command_end] != ';')
+            continue;
+        if (command_end < query.size() && query[command_end] == ';'
+            && std::ranges::any_of(query.begin() + command_end, query.end(), [](char c) { return c != ';' && !isWhitespaceASCII(c); }))
+            continue;
+
+        const auto command_color = replxx::color::bold(replxx::Replxx::Color::DEFAULT);
+        std::fill(colors.begin() + command_begin, colors.begin() + command_end, command_color);
+        return true;
+    }
+
+    return false;
+}
+
 /// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
 /// countCodePointsWithSeqLength calculates utf-8 code point position consistently with
 /// colors vector allocation (with iteration and `UTF8::seqLength`). This function replaces the use
