@@ -47,9 +47,9 @@ public:
     void commitTransaction() override;
     void precommitTransaction() override {}
     bool hasActiveTransaction() const override { return transaction != nullptr; }
-    void undoTransaction() override;
 #if CLICKHOUSE_CLOUD
     TransactionCommitOutcomeVariant tryCommitTransaction(const TransactionCommitOptionsVariant & options) override;
+    void undoTransaction() override;
     void serializeAuxiliaryInfo(WriteBuffer &) const override {}
     void deserializeAuxiliaryInfo(ReadBuffer &) override {}
 #endif
