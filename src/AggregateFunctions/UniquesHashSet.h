@@ -883,6 +883,22 @@ public:
 
         const size_t rhs_buf_size = rhs.buf_size();
         size_t rhs_pos = 0;
+
+        /// Batching does not pay off for tiny states (e.g. merging millions of single-element
+        /// states), so the plain loop is used for them and the batched loop below is skipped.
+        if (rhs.m_size < insert_many_batch_size)
+        {
+            for (; rhs_pos < rhs_buf_size; ++rhs_pos)
+            {
+                const HashValue x = rhs.buf[rhs_pos];
+                if (x && good(x))
+                {
+                    insertImpl(x);
+                    shrinkIfNeed();
+                }
+            }
+        }
+
         while (rhs_pos < rhs_buf_size)
         {
             /// Enough spare capacity: no resize/rehash can happen mid-batch, so place() can be
@@ -1044,24 +1060,40 @@ public:
 
         alloc(new_size_degree);
 
-        constexpr size_t chunk_elements = 256;
-        HashValue chunk[chunk_elements];
-
-        for (size_t left = m_size; left > 0;)
+        if (m_size <= 1)
         {
-            size_t chunk_size = std::min(left, chunk_elements);
-            rb.readStrict(reinterpret_cast<char *>(chunk), chunk_size * sizeof(HashValue));
-
-            for (size_t i = 0; i < chunk_size; ++i)
+            /// Fast path for tiny states, which are common when reading many stored single-element states.
+            for (size_t i = 0; i < m_size; ++i)
             {
-                DB::transformEndianness<std::endian::native, std::endian::little>(chunk[i]);
-                if (chunk[i] == 0)
+                HashValue x = 0;
+                DB::readBinaryLittleEndian(x, rb);
+                if (x == 0)
                     has_zero = true;
                 else
-                    reinsertImpl(chunk[i]);
+                    reinsertImpl(x);
             }
+        }
+        else
+        {
+            constexpr size_t chunk_elements = 256;
+            HashValue chunk[chunk_elements];
 
-            left -= chunk_size;
+            for (size_t left = m_size; left > 0;)
+            {
+                size_t chunk_size = std::min(left, chunk_elements);
+                rb.readStrict(reinterpret_cast<char *>(chunk), chunk_size * sizeof(HashValue));
+
+                for (size_t i = 0; i < chunk_size; ++i)
+                {
+                    DB::transformEndianness<std::endian::native, std::endian::little>(chunk[i]);
+                    if (chunk[i] == 0)
+                        has_zero = true;
+                    else
+                        reinsertImpl(chunk[i]);
+                }
+
+                left -= chunk_size;
+            }
         }
 
         if (!has_wide)
