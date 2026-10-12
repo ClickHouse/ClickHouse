@@ -1,0 +1,12 @@
+-- an external time ranges table is written by inserts and read by the selector
+1970-01-01 00:08:20.000	1970-01-01 00:25:00.000
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+5
+4
+4
+-- the filter is applied: a time series is hidden from a range which its stored time range does not intersect
+1970-01-01 00:33:20.000	1970-01-01 00:33:20.000
+1970-01-01 00:50:00.000	1970-01-01 00:50:00.000
+5
+0
+4
