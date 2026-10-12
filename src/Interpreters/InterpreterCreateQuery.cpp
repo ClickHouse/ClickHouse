@@ -85,6 +85,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseBackup.h>
@@ -192,6 +193,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_INDEX;
     extern const int LOGICAL_ERROR;
@@ -637,6 +639,17 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
     return res;
 }
 
+DataTypePtr InterpreterCreateQuery::makeNullableByDefault(const DataTypePtr & type, const String & column_name)
+{
+    /// Merges apply the function of `SimpleAggregateFunction(f, Nullable(T))`, but not of `Nullable(SimpleAggregateFunction(f, T))`.
+    if (!type->isNullable() && typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Setting data_type_default_nullable cannot make column {} of type {} Nullable, because merges do not apply the function "
+            "of a Nullable(SimpleAggregateFunction(...)) column. Declare the column NOT NULL, or use SimpleAggregateFunction(f, Nullable(T))",
+            backQuoteIfNeed(column_name), type->getName());
+    return makeNullable(type);
+}
+
 DataTypePtr InterpreterCreateQuery::getColumnType(
     const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version)
 {
@@ -674,7 +687,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
     }
     else if (make_columns_nullable)
     {
-        column_type = makeNullable(column_type);
+        column_type = makeNullableByDefault(column_type, col_decl.name);
     }
     else if (auto default_expr = col_decl.getDefaultExpression();
         !hasNullable(column_type) && col_decl.default_specifier == ColumnDefaultSpecifier::Default && default_expr
@@ -796,8 +809,15 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             {
                 column.type = defaults_sample_block.getByName(column.name).type;
                 /// set nullability for case of column declaration w/o type but with default expression
-                if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
-                    column.type = makeNullable(column.type);
+                if (col_decl.null_modifier)
+                {
+                    if (*col_decl.null_modifier)
+                        column.type = makeNullable(column.type);
+                }
+                else if (make_columns_nullable)
+                {
+                    column.type = makeNullableByDefault(column.type, column.name);
+                }
             }
 
             column.default_desc.kind = toColumnDefaultKind(col_decl.default_specifier);

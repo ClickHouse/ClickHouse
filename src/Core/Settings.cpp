@@ -6185,6 +6185,7 @@ Apply TTL for old data, after ALTER MODIFY TTL query
     DECLARE(Bool, data_type_default_nullable, false, R"(
 Allows data types without explicit modifiers [NULL or NOT NULL](/reference/statements/create/table#null-or-not-null-modifiers) in column definition will be [Nullable](/reference/data-types/nullable).
 It applies to `CREATE TABLE`, `ALTER TABLE ... ADD COLUMN` and `ALTER TABLE ... MODIFY COLUMN`.
+A column of a `SimpleAggregateFunction` type with a non-`Nullable` argument is rejected instead, because merges do not apply the function of a `Nullable(SimpleAggregateFunction(...))` column: declare it `NOT NULL`, or use a `Nullable` argument type such as `SimpleAggregateFunction(sum, Nullable(UInt64))`.
 
 Possible values:
 

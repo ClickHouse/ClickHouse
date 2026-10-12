@@ -1,0 +1,11 @@
+k	UInt32
+m	SimpleAggregateFunction(sum, UInt64)
+u	UInt64
+1	30	30	30
+k	UInt32
+m	SimpleAggregateFunction(sum, UInt64)
+n	SimpleAggregateFunction(sum, Nullable(UInt64))
+a	SimpleAggregateFunction(sum, UInt64)
+k	UInt32
+s	Nullable(SimpleAggregateFunction(sum, UInt64))
+e	Nullable(SimpleAggregateFunction(sum, UInt64))

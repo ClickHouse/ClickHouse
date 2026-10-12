@@ -143,7 +143,7 @@ void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
         /// Like `AlterCommand::parse`, only `ADD COLUMN` pins the current aggregate function state version.
         DataTypePtr type = is_add
             ? InterpreterCreateQuery::getColumnType(col_decl, /*make_columns_nullable=*/ true, /*pin_current_state_version=*/ true)
-            : makeNullable(DataTypeFactory::instance().get(col_decl.getType()));
+            : InterpreterCreateQuery::makeNullableByDefault(DataTypeFactory::instance().get(col_decl.getType()), col_decl.name);
         col_decl.setType(dataTypeToAST(type));
     }
 }
