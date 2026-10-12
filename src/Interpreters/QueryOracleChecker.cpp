@@ -1438,8 +1438,7 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
     /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
     /// — `break` would silently truncate the result before the cap fires, and the
-    /// caller's output cap would then never trip (the output sits at exactly the
-    /// cap). The caller catches the resulting
+    /// caller's output cap would then never trip. The caller catches the resulting
     /// `TOO_MANY_ROWS` / `TOO_MANY_BYTES` exception and treats the query as skipped.
     oracle_context->setSetting("max_result_rows", Field(UInt64(MAX_ORACLE_RESULT_ROWS)));
     oracle_context->setSetting("max_result_bytes", Field(UInt64(MAX_ORACLE_OUTPUT_SIZE)));
