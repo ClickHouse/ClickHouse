@@ -4,3 +4,5 @@ plus(plus(materialize(1), materialize(1)), n)
 Join: probe[10] ⋈ aggregated[10]
 toUInt64(dateTrunc((SELECT \'month\'), d))
 Join: probe[10] ⋈ aggregated[10]
+plus(length(queryID()), n)
+Join: probe[10] ⋈ aggregated[no_stats~100]

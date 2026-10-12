@@ -71,3 +71,21 @@ SELECT extract(explain, 'Join:.*') FROM
     ON probe.n = aggregated.key
 )
 WHERE explain LIKE '% Join:%';
+
+-- `queryID` can differ between servers and is not folded to a constant column.
+-- Do not propagate `NDV(n) = 10`; expect `aggregated[no_stats~100]`.
+SELECT 'plus(length(queryID()), n)';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT plus(length(queryID()), n) AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
