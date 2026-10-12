@@ -90,10 +90,16 @@ UDP	4	1
 1	34	76	['ETHERNET_II','IP']	TCP	34
 2	34	42	['ETHERNET_II','IP']	UDP	34
 3	34	42	['ETHERNET_II','IP']	ICMP	34
+--- headers cut by the snapshot length: dissected up to the last complete header ---
+1	58	112	['ETHERNET_II','IPv6','HOPOPT']	6	HOPOPT	\N
+2	66	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	IPv6-Route	\N
+3	74	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	TCP	\N
+4	38	76	['ETHERNET_II','IP']	4	TCP	\N
 --- length invariants hold across all fixtures ---
 packets.pcap	0	0	0
 packets.pcapng	0	0	0
 truncated.pcap	0	0	0
+truncated_headers.pcap	0	0	0
 raw_ip.pcap	0	0	0
 ipv4.pcap	0	0	0
 ipv6.pcap	0	0	0

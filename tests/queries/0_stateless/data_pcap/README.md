@@ -13,10 +13,10 @@ rewrite each other's files.
 - `packets.pcapng` — the same packets in a `pcapng` container.
 - `truncated.pcap` — the first three packets captured with a snapshot length of
   34 bytes, so `original_length > capture_length`.
-- `truncated_ipv6.pcap` — the IPv6 packet with the Hop-by-Hop and Routing chain
-  cut inside the Hop-by-Hop header, inside the Routing header, and inside the
-  TCP header, so `ip_protocol` names the last extension header captured
-  completely.
+- `truncated_headers.pcap` — the IPv6 packet with the Hop-by-Hop and Routing
+  chain cut inside the Hop-by-Hop header, inside the Routing header, and inside
+  the TCP header, and an IPv4 TCP packet cut inside the TCP header, so the
+  packets are dissected up to the last header captured completely.
 - `padded.pcap` — a UDP packet with a 4-byte payload in an Ethernet frame padded
   to the 60-byte minimum, so `raw` ends with padding bytes that are not part of
   `payload`.
