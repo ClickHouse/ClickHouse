@@ -69,13 +69,15 @@ private:
 class TTLPartDropMergeSelector : public ITTLMergeSelector
 {
 public:
-    explicit TTLPartDropMergeSelector(time_t current_time_, size_t max_parts_to_drop_at_once_);
+    explicit TTLPartDropMergeSelector(time_t current_time_, size_t max_parts_to_drop_at_once_, bool only_parts_expired_by_rows_ttl_);
 
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
 
-    /// Actually does not check anything. Allows to use any part.
+    /// Checks that part has unfinished TTLs and, with `only_parts_expired_by_rows_ttl`, that its rows TTL has expired for every row.
     bool canConsiderPart(const PartProperties & part) const override;
+
+    const bool only_parts_expired_by_rows_ttl;
 };
 
 /// Select parts that have some expired row ttls.
