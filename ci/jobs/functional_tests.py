@@ -245,6 +245,15 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "db disk": "--remote-database-disk",
 }
 
+# Runner flags that change how a test executes rather than which tests are
+# selected. The diagnostics rerun must keep them to reproduce the failure.
+DIAGNOSTICS_MODE_RUNNER_ARGUMENTS = (
+    "--replicated-database",
+    "--s3-storage",
+    "--azure-blob-storage",
+    "--encrypted-storage",
+)
+
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
@@ -986,6 +995,16 @@ def main():
             else:
                 print("skip log export config for local run")
 
+        # Randomize the mark and uncompressed cache policy (cache_policy.xml) across LRU, SLRU
+        # and SIEVE to exercise all eviction policies. SIEVE is only implemented for the
+        # CacheBase-backed caches, so it is not applied to the filesystem cache (storage_conf,
+        # backed by FileCachePolicy). During bugfix validation the install configs are used with
+        # downloaded master-side binaries that do not have the SIEVE branch in CacheBase, so SIEVE
+        # is excluded there to avoid a server start-up failure.
+        cache_policies = ["LRU", "SLRU"] if is_bugfix_validation else ["LRU", "SLRU", "SIEVE"]
+        cache_policy = random.choice(cache_policies)
+        print(f"Using mark/uncompressed cache policy: {cache_policy}")
+
         commands = [
             "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
@@ -1005,6 +1024,16 @@ def main():
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
             CH.set_random_timezone,
         ]
+
+        # The mark and uncompressed caches default to SLRU (in cache_policy.xml).
+        # Patch the replica config directories (/etc/clickhouse-server1, /etc/clickhouse-server2)
+        # too: install.sh has already copied the configs for DBReplicated jobs by this point.
+        if cache_policy != "SLRU":
+            commands.append(
+                f"sed -i -e 's|<mark_cache_policy>SLRU</mark_cache_policy>|<mark_cache_policy>{cache_policy}</mark_cache_policy>|' "
+                f"-e 's|<uncompressed_cache_policy>SLRU</uncompressed_cache_policy>|<uncompressed_cache_policy>{cache_policy}</uncompressed_cache_policy>|' "
+                f"/etc/clickhouse-server*/config.d/cache_policy.xml"
+            )
 
         # Sanitizer builds run under heavy memory pressure: besides the server's
         # own ASan overhead, the parallel runner keeps dozens of ASan-instrumented
@@ -1520,6 +1549,14 @@ def main():
             )
         elif failed_tests:
             memory_limit = stateless_memory_limit(Info().job_name)
+            # Rerun in the same mode as the main run. Without these flags a
+            # failure specific to `DBReplicated` or to the s3/azure/encrypted
+            # disk passes every rerun and is wrongly diagnosed as flaky.
+            diag_mode_args = "".join(
+                f" {flag}"
+                for flag in DIAGNOSTICS_MODE_RUNNER_ARGUMENTS
+                if flag in runner_options.split()
+            )
             diag_command = (
                 f"clickhouse-test --testname --check-zookeeper-session --hung-check"
                 f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
@@ -1527,6 +1564,7 @@ def main():
                 f" --diagnose-random-settings"
                 f" --random-settings-diagnostics-dir {diagnostics_dir}"
                 f" --no-random-settings --no-random-merge-tree-settings"
+                f"{diag_mode_args}"
                 f" -- {' '.join(failed_tests)}"
             )
             print(f"Running diagnostics for {len(failed_tests)} test(s)...")
@@ -1558,12 +1596,6 @@ def main():
                 label_key = diag.get("label", "")
                 if label_key in label_map:
                     test_case.set_label(label_map[label_key])
-                if label_key == "flaky" and is_llvm_coverage:
-                    # Coverage binaries are slow and prone to timing-related flakiness
-                    # (e.g. TIMEOUT_EXCEEDED on SystemLogQueue). Don't penalise them
-                    # for it — mark the test green so it doesn't block coverage jobs.
-                    # See: https://github.com/ClickHouse/ClickHouse/pull/95763
-                    test_case.set_status(Result.Status.OK)
             if diag_exit_code != 0:
                 diag_status = Result.Status.FAIL
                 diag_info = (
