@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block.h>
-#include <Core/Defines.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/IDataType.h>
@@ -14,8 +13,6 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -66,11 +63,13 @@ WindowStep::WindowStep(
     const SharedHeader & input_header_,
     const WindowDescription & window_description_,
     const std::vector<WindowFunctionDescription> & window_functions_,
-    bool streams_fan_out_)
+    bool streams_fan_out_,
+    const SortingStep::Settings & sort_settings_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(addWindowFunctionResultColumns(*input_header_, window_functions_)), getTraits(!streams_fan_out_))
     , window_description(window_description_)
     , window_functions(window_functions_)
     , streams_fan_out(streams_fan_out_)
+    , sort_settings(sort_settings_)
 {
     // We don't remove any columns, only add, so probably we don't have to update
     // the output DataStream::distinct_columns.
@@ -92,28 +91,9 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     /// The sorting step before the window sorts only the main stream, but `WindowTransform` also processes the totals,
     /// which an `arrayJoin` can expand into several unsorted rows.
     if (!window_description.full_sort_description.empty())
-    {
-        const auto & sort_description = window_description.full_sort_description;
-        pipeline.addSimpleTransform(
-            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-            {
-                if (stream_type != QueryPipelineBuilder::StreamType::Totals)
-                    return nullptr;
-                return std::make_shared<PartialSortingTransform>(header, sort_description);
-            });
-        pipeline.addSimpleTransform(
-            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-            {
-                if (stream_type != QueryPipelineBuilder::StreamType::Totals)
-                    return nullptr;
-                return std::make_shared<MergeSortingTransform>(
-                    header, sort_description, DEFAULT_BLOCK_SIZE,
-                    /*max_block_bytes=*/0, /*limit_=*/0, /*increase_sort_description_compile_attempts=*/false,
-                    /*max_bytes_before_remerge_=*/0, /*remerge_lowered_memory_bytes_ratio_=*/0,
-                    /*max_bytes_in_block_before_external_sort_=*/0, /*max_bytes_in_query_before_external_sort_=*/0,
-                    /*tmp_data_=*/nullptr, /*min_free_disk_space_=*/0);
-            });
-    }
+        SortingStep::fullSortStreams(
+            pipeline, sort_settings, window_description.full_sort_description, /*limit_=*/0,
+            /*skip_partial_sort=*/false, /*threshold_tracker=*/nullptr, /*sort_totals=*/true);
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & /*header*/)
@@ -350,6 +330,11 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     return window_functions;
 }
 
+void WindowStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+{
+    sort_settings.updatePlanSettings(settings);
+}
+
 void WindowStep::serialize(Serialization & ctx) const
 {
     /// `WindowStep` is only registered under `QueryPlanStepRegistry` since query-plan serialization
@@ -414,7 +399,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(),
         window_description,
         window_description.window_functions,
-        streams_fan_out);
+        streams_fan_out,
+        SortingStep::Settings(ctx.settings));
 }
 
 void registerWindowStep(QueryPlanStepRegistry & registry);

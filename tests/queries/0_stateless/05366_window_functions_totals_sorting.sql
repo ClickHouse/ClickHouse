@@ -16,3 +16,8 @@ FROM (SELECT arrayJoin([[2, 1, 2], [2, 1, 2], [2, 1, 2]]) AS a FROM values('k St
 ARRAY JOIN a AS y
 ORDER BY y
 SETTINGS max_block_size = 1;
+
+-- Q5: the sort limits apply to the totals rows too.
+SELECT arrayJoin(if(k = '', range(10), [0])) AS x, count() OVER (PARTITION BY x) AS c
+FROM values('k String', 'a') GROUP BY k WITH TOTALS
+FORMAT Null SETTINGS max_rows_to_sort = 5; -- { serverError TOO_MANY_ROWS_OR_BYTES }
