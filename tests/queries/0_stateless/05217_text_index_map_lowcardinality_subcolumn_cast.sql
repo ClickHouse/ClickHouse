@@ -4,8 +4,8 @@
 -- `arrayElement` on a `Map(K, LowCardinality(V))` returns `V`, while the subcolumn `m.key_<key>` is `LowCardinality(V)`.
 -- Hence `optimize_functions_to_subcolumns` rewrites `m['key'] = 'value'` into `_CAST(m.key_<key>, 'V') = 'value'`,
 -- and the text index has to look through the cast: for the `keyValuePairs` index on `m` and for an index on `mapValues(m)`.
--- The same applies to every conversion that cannot change a value or throw: adding or dropping `LowCardinality`,
--- adding `Nullable` (also as `toNullable`, which `join_use_nulls` emits in pushed-down filters), at any depth of `Array`.
+-- The same applies to every conversion that does not change a non-NULL value: adding or dropping `LowCardinality` or
+-- `Nullable` (adding also as `toNullable`, which `join_use_nulls` emits in pushed-down filters), at any depth of `Array`.
 
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
@@ -158,9 +158,10 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ns WHERE h
 SELECT 'idx', id FROM tab_ns WHERE hasToken(CAST(s, 'LowCardinality(Nullable(String))'), 'disk') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'scan', id FROM tab_ns WHERE hasToken(CAST(s, 'LowCardinality(Nullable(String))'), 'disk') ORDER BY id SETTINGS use_skip_indexes = 0;
 
-SELECT '-- Nullable column: dropping Nullable is not looked through, the cast still throws on the NULL row';
-SELECT count() FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'network')) WHERE explain LIKE '%Name: idx%';
-SELECT id FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'network'); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT '-- Nullable column: dropping Nullable is looked through, the cast does not throw if the granule with NULL is skipped';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'network')) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
+SELECT 'idx', id FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'disk') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'scan', id FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'disk') ORDER BY id SETTINGS use_skip_indexes = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 
 DROP TABLE tab_ns;
 

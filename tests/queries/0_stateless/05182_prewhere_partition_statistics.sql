@@ -48,7 +48,7 @@ SETTINGS use_statistics = 0, use_partition_pruning = 0, log_comment = '05182_bot
 
 SYSTEM FLUSH LOGS query_log;
 
--- `LoadedStatisticsParts` counts the parts whose statistics an uncached estimator build loads.
+-- `LoadedStatistics` counts the parts whose statistics an uncached estimator build loads.
 -- The identical query with statistics disabled loads none.
 SELECT
     maxIf(loaded_parts, log_comment = '05182_selected_on') - maxIf(loaded_parts, log_comment = '05182_selected_off') = 1,
@@ -57,7 +57,7 @@ SELECT
     countIf(log_comment = '05182_absent' AND ProfileEvents['LoadedStatisticsMicroseconds'] = 0) = 1
 FROM
 (
-    SELECT log_comment, ProfileEvents, toInt64(ProfileEvents['LoadedStatisticsParts']) AS loaded_parts
+    SELECT log_comment, ProfileEvents, toInt64(ProfileEvents['LoadedStatistics']) AS loaded_parts
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '05182_')

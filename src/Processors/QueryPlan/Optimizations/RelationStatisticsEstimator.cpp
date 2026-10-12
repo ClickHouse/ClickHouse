@@ -29,10 +29,6 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsUInt64 max_rows_to_read;
-extern const SettingsUInt64 max_rows_to_read_leaf;
-extern const SettingsOverflowMode read_overflow_mode;
-extern const SettingsOverflowMode read_overflow_mode_leaf;
 extern const SettingsBool use_statistics;
 }
 
@@ -95,7 +91,8 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     else
         total_number_of_distinct_values = input_stats.estimated_rows;
 
-    aggregation_stats.estimated_rows = total_number_of_distinct_values;
+    if (total_number_of_distinct_values)
+        aggregation_stats.estimated_rows = toUInt64Saturating(*total_number_of_distinct_values);
 
     return aggregation_stats;
 }
@@ -129,16 +126,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
-            const auto & settings = reading->getContext()->getSettingsRef();
-            const bool has_throwing_row_limit
-                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
-
             /// Range analysis normally enforces throwing read limits and memoizes its result.
             /// At this stage, however, later planning may make the executed read exempt from those
             /// limits. In that case use an estimation-only analysis; execution will analyze again
             /// after its final read mode is known.
-            analyzed_result = has_throwing_row_limit ? reading->selectRangesToReadForEstimation() : reading->selectRangesToRead();
+            analyzed_result = reading->hasThrowingReadRowLimit()
+                ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+                : reading->selectRangesToRead();
         }
 
         /// An exact empty range selection proves that the relation is empty. Other empty

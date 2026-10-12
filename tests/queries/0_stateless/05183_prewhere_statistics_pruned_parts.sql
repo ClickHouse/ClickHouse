@@ -24,13 +24,13 @@ SETTINGS use_statistics = 1, use_statistics_for_part_pruning = 0, log_comment = 
 
 SYSTEM FLUSH LOGS query_log;
 
--- `LoadedStatisticsParts` counts the parts whose statistics an uncached estimator build loads.
+-- `LoadedStatistics` counts the parts whose statistics an uncached estimator build loads.
 SELECT
     maxIf(loaded_parts, log_comment = '05183_pruned_on') - maxIf(loaded_parts, log_comment = '05183_pruned_off') = 1,
     maxIf(loaded_parts, log_comment = '05183_all_on') - maxIf(loaded_parts, log_comment = '05183_all_off') = 4
 FROM
 (
-    SELECT log_comment, toInt64(ProfileEvents['LoadedStatisticsParts']) AS loaded_parts
+    SELECT log_comment, toInt64(ProfileEvents['LoadedStatistics']) AS loaded_parts
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
         AND startsWith(log_comment, '05183_')

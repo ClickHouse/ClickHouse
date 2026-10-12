@@ -92,7 +92,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        const auto & current_block = transform->blocks.blockAt(transform->current_row.block);
+        const auto & current_block = transform->blocks.blockAt(transform->current.location.block);
         IColumn & to = *current_block.result_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
@@ -101,7 +101,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         {
             offset = (*current_block.materialized_columns[
                     workspace.argument_column_indices[1]])[
-                        transform->current_row.row].safeGet<Int64>();
+                        transform->current.location.row].safeGet<Int64>();
 
             /// Either overflow or really negative value, both is not acceptable.
             if (offset < 0)
@@ -113,7 +113,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         }
 
         const auto target_row = transform->blocks.move(
-            transform->current_row, offset * (is_lead ? 1 : -1));
+            transform->current.location, offset * (is_lead ? 1 : -1));
 
         if (!target_row
             || *target_row < transform->frame_start
@@ -125,7 +125,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
                 // Column with default values is specified.
                 const IColumn & default_column = *current_block.materialized_columns[workspace.argument_column_indices[2]];
 
-                to.insert(default_column[transform->current_row.row]);
+                to.insert(default_column[transform->current.location.row]);
             }
             else
             {

@@ -33,7 +33,7 @@ SELECT
     maxIf(loaded_parts, log_comment = '05210_probe_on') - maxIf(loaded_parts, log_comment = '05210_probe_off') = 2
 FROM
 (
-    SELECT log_comment, toInt64(ProfileEvents['LoadedStatisticsParts']) AS loaded_parts
+    SELECT log_comment, toInt64(ProfileEvents['LoadedStatistics']) AS loaded_parts
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWith(log_comment, '05210_')
 );
