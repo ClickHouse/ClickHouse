@@ -64,15 +64,21 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        instance.query("DROP DATABASE IF EXISTS test")
-        instance.query("DROP DATABASE IF EXISTS test2")
-        instance.query("DROP DATABASE IF EXISTS test3")
-        instance.query("DROP DATABASE IF EXISTS restored")
+        # Tables left by a failed test can depend on tables in another database.
+        drop_settings = {"check_table_dependencies": 0}
+        instance.query("DROP DATABASE IF EXISTS test", settings=drop_settings)
+        instance.query("DROP DATABASE IF EXISTS test2", settings=drop_settings)
+        instance.query("DROP DATABASE IF EXISTS test3", settings=drop_settings)
+        instance.query("DROP DATABASE IF EXISTS restored", settings=drop_settings)
+        instance.query("DROP TABLE IF EXISTS default.mv_1")
         instance.query("DROP USER IF EXISTS u1, u2")
         instance.query("DROP ROLE IF EXISTS r1, r2")
         instance.query("DROP SETTINGS PROFILE IF EXISTS prof1")
         instance.query("DROP ROW POLICY IF EXISTS rowpol1 ON test.table")
         instance.query("DROP QUOTA IF EXISTS q1")
+        instance.query("DROP FUNCTION IF EXISTS two_and_half")
+        instance.query("DROP FUNCTION IF EXISTS linear_equation")
+        instance.query("DROP FUNCTION IF EXISTS parity_str")
 
 
 backup_id_counter = 0
@@ -2405,58 +2411,61 @@ def test_async_backup_restore_with_max_execution_time_zero():
     import time
 
     inst = instance_with_short_timeout
+
+    # Only the BACKUP/RESTORE queries under test may run under the node's 0.5s profile timeout.
+    no_timeout = {"max_execution_time": 0}
+
+    def query(sql):
+        return inst.query(sql, settings=no_timeout)
+
     backup_name = new_backup_name()
-    inst.query("CREATE DATABASE IF NOT EXISTS test")
-    inst.query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
-    # The node's 0.5s profile timeout (used below to trigger the bug) also caps this
-    # foreground setup query; disable it so a slow CI lane can't time out the INSERT.
-    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100) SETTINGS max_execution_time = 0")
+    query("CREATE DATABASE IF NOT EXISTS test")
+    query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
+    query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)")
 
     try:
         # Pause backup before it starts so the 500ms profile-level timeout fires.
-        inst.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
+        query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
         [backup_id, _] = inst.query(
             f"BACKUP TABLE test.table TO {backup_name}"
             " SETTINGS async = 1, max_execution_time = 0",
         ).split("\t")
 
-        inst.query("SYSTEM WAIT FAILPOINT backup_pause_on_start PAUSE")
+        query("SYSTEM WAIT FAILPOINT backup_pause_on_start PAUSE")
         time.sleep(0.7)  # exceed the 500ms profile-level timeout
-        inst.query("SYSTEM NOTIFY FAILPOINT backup_pause_on_start")
+        query("SYSTEM NOTIFY FAILPOINT backup_pause_on_start")
 
         assert_eq_with_retry(
             inst,
             f"SELECT status, error FROM system.backups WHERE id='{backup_id}'",
             TSV([["BACKUP_CREATED", ""]]),
+            settings=no_timeout,
         )
 
         # Same for RESTORE.
-        inst.query("DROP TABLE test.table")
-        inst.query("SYSTEM ENABLE FAILPOINT restore_pause_on_start")
+        query("DROP TABLE test.table")
+        query("SYSTEM ENABLE FAILPOINT restore_pause_on_start")
         [restore_id, _] = inst.query(
             f"RESTORE TABLE test.table FROM {backup_name}"
             " SETTINGS async = 1, max_execution_time = 0",
         ).split("\t")
 
-        inst.query("SYSTEM WAIT FAILPOINT restore_pause_on_start PAUSE")
+        query("SYSTEM WAIT FAILPOINT restore_pause_on_start PAUSE")
         time.sleep(0.7)
-        inst.query("SYSTEM NOTIFY FAILPOINT restore_pause_on_start")
+        query("SYSTEM NOTIFY FAILPOINT restore_pause_on_start")
 
         assert_eq_with_retry(
             inst,
             f"SELECT status, error FROM system.backups WHERE id='{restore_id}'",
             TSV([["RESTORED", ""]]),
+            settings=no_timeout,
         )
 
-        # Same: don't let the 0.5s profile timeout cap this foreground verification query.
-        assert (
-            inst.query("SELECT count(), sum(x) FROM test.table SETTINGS max_execution_time = 0")
-            == "100\t4950\n"
-        )
+        assert query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     finally:
-        inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
-        inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")
-        inst.query("DROP DATABASE IF EXISTS test")
+        query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
+        query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")
+        query("DROP DATABASE IF EXISTS test")
 
 
 def test_structure_only_restores_access_entities_and_udfs():
