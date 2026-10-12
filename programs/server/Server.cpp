@@ -3863,8 +3863,11 @@ try
             stop_oom_canary();
 
             /// Killing remaining queries.
+            /// In wait mode the per-host parts of ON CLUSTER backups and restores, run by the DDL worker, are left to `BackupsWorker::shutdown`.
+            /// Any other backup or restore that missed the wait above is cancelled: an initiator's own part needs this host's DDL worker, stopped before that.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
-                global_context->getProcessList().killAllQueries();
+                global_context->getProcessList().killAllQueries(
+                    /* except_ddl_backups_and_restores= */ server_settings[ServerSetting::shutdown_wait_backups_and_restores]);
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();

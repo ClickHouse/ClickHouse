@@ -76,6 +76,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char backup_pause_on_start[];
+    extern const char backups_delay_before_registering_operation[];
     extern const char backups_pause_before_publishing_progress[];
     extern const char restore_pause_before_publishing_final_progress[];
     extern const char restore_pause_on_start[];
@@ -1346,6 +1347,9 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
                                                      const String & query_id, bool internal, QueryStatusPtr process_list_element,
                                                      BackupStatus status, std::map<String, String> settings)
 {
+    /// Outside `infos_mutex`, so that the delay does not block the shutdown wait.
+    fiu_do_on(FailPoints::backups_delay_before_registering_operation, { sleepForMilliseconds(5000); });
+
     ExtendedOperationInfo extended_info;
     auto & info = extended_info.info;
     info.id = id;
