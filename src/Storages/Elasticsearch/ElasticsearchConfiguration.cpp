@@ -163,7 +163,7 @@ ElasticsearchConfiguration ElasticsearchConfiguration::fromArguments(ASTs & args
             auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(equals_function->arguments->children[0], context);
             auto key = checkAndGetLiteralArgument<String>(literal_key, "key");
             if (!override_keys.emplace(key).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ealsticsearch argument '{}' is specified more than once", key);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch argument '{}' is specified more than once", key);
         }
     }
 

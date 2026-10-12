@@ -174,8 +174,10 @@ void ElasticsearchClient::setPointInTime()
 {
     static constexpr std::string_view point_in_time = "_pit";
 
+    String encoded_index;
+    Poco::URI::encode(config.index, "/", encoded_index);
     const String parameters = fmt::format("?keep_alive={}&allow_no_indices=false", pit_keep_alive);
-    const auto uri = Poco::URI(fmt::format("{}/{}/{}{}", config.url, config.index, point_in_time, parameters));
+    const auto uri = Poco::URI(fmt::format("{}/{}/{}{}", config.url, encoded_index, point_in_time, parameters), /*enable_url_encoding=*/ false);
     auto response_json = sendRequestToElastic(Poco::Net::HTTPRequest::HTTP_POST, uri, "");
 
     validateShards(response_json);
@@ -233,7 +235,10 @@ void ElasticsearchClient::validateShards(Poco::JSON::Object::Ptr response_json) 
     if (!shards)
         return;
 
-    auto failed = shards->getValue<Int64>("failed");
+    const auto failed = shards->optValue<Int64>("failed", -1);
+    const auto total = shards->optValue<Int64>("total", -1);
+    if (failed < 0 || total < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Elasticsearch response has no '_shards' counters: {}", responseExcerpt(response_json));
     if (failed == 0)
         return;
 
@@ -246,7 +251,7 @@ void ElasticsearchClient::validateShards(Poco::JSON::Object::Ptr response_json) 
     }
 
     throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-    "Elasticsearch operation failed on {} of {} shards, first failure: {}", failed, shards->getValue<Int64>("total"), reason);
+    "Elasticsearch operation failed on {} of {} shards, first failure: {}", failed, total, reason);
 }
 
 

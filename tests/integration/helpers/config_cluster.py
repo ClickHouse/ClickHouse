@@ -19,6 +19,10 @@ minio_secret_key = "ClickHouse_Minio_P@ssw0rd"
 mongo_user = "root"
 mongo_pass = "ClickHouse_MongoDB_P@ssw0rd"
 
+# ELASTICSEARCH CREDENTIALS
+elasticsearch_user = "elastic"
+elasticsearch_pass = "ClickHouse_Elasticsearch_P@ssw0rd"
+
 # ODBC CREDENTIALS
 odbc_mysql_uid = "root"
 odbc_mysql_db = "clickhouse"

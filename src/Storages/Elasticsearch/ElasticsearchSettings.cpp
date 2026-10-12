@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 #define LIST_OF_ELASTICSEARCH_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Seconds, keep_alive, 60, "The length of time that the point in time persists.", 0) \
+    DECLARE(Seconds, keep_alive, 60, "How long Elasticsearch keeps the point in time open between two consecutive page requests. It is extended on every request.", 0) \
     DECLARE(UInt64, page_size, 10'000, "The number of hits returned from Elasticsearch on every request.", 0)
 
 DECLARE_SETTINGS_TRAITS(ElasticsearchSettingsTraits, LIST_OF_ELASTICSEARCH_SETTINGS, ELASTICSEARCH_SETTINGS_SUPPORTED_TYPES)

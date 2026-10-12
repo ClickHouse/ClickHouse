@@ -101,9 +101,19 @@ private:
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} is not an object", i);
 
             if (index_pos)
-                columns[*index_pos]->insert(obj->getValue<String>("_index"));
+            {
+                auto index_name = obj->optValue<String>("_index", "");
+                if (index_name.empty())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has no '_index'", i);
+                columns[*index_pos]->insert(index_name);
+            }
             if (id_pos)
-                columns[*id_pos]->insert(obj->getValue<String>("_id"));
+            {
+                auto document_id = obj->optValue<String>("_id", "");
+                if (document_id.empty())
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Hit #{} has no '_id'", i);
+                columns[*id_pos]->insert(document_id);
+            }
 
             if (!json_pos)
                 continue;
@@ -277,7 +287,74 @@ void registerStorageElasticsearch(StorageFactory & factory)
             .has_builtin_setting_fn = ElasticsearchSettings::hasBuiltin,
         },
         Documentation{
-            .description = R"DOCS_MD(Table Engine for Elasticsearch))DOCS_MD",
+            .description = R"DOCS_MD(
+The `Elasticsearch` engine allows reading documents from an index in [Elasticsearch](https://www.elastic.co/elasticsearch). Each document is returned as one row: its `_source` is exposed as a single column of the [JSON](/reference/data-types/newjson) type, and the document id and index name are available as virtual columns.
+
+The engine is read-only. Documents are fetched with the `_search` API in pages, using a [point in time](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/paginate-search-results#search-after) so that a query sees a consistent snapshot of the index even while it is being modified.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+[(
+    name1 JSON
+)]
+ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
+[SETTINGS keep_alive = 60, page_size = 10000]
+```
+
+The column list is optional. When omitted, the table has a single column `document` of type `JSON`. When specified, it must contain exactly one column, and its type must be `JSON`, optionally with type hints and skip paths. `MATERIALIZED`, `ALIAS` and `EPHEMERAL` columns are not supported, and the names `_id` and `_index` are reserved for the virtual columns.
+
+**Engine parameters**
+
+- `url` — The base URL of the Elasticsearch cluster, for example `https://localhost:9200`. It must be an `http` or `https` URL without credentials, query string or fragment.
+- `index` — The index to read. It can also be an alias, a data stream, a comma-separated list, a wildcard pattern, or a date math expression such as `<logs-{now/d}>`, as accepted by the Elasticsearch point in time API. The value is the literal name and must not be URL-encoded. A pattern that matches no index is an error.
+- `user`, `password` — Optional credentials for HTTP basic authentication.
+
+The parameters can also be passed as a [named collection](/concepts/features/configuration/server-config/named-collections) with `key = value` overrides. See the [`elasticsearch` table function](/reference/functions/table-functions/elasticsearch#arguments) for the full list of keys and the description of the [authentication methods](/reference/functions/table-functions/elasticsearch#authentication).
+
+**Engine settings**
+
+| Setting      | Default | Description |
+|--------------|---------|-------------|
+| `keep_alive` | `60`    | How long, in seconds, Elasticsearch keeps the point in time open between two consecutive page requests. |
+| `page_size`  | `10000` | The number of documents requested from Elasticsearch per request. Values above the `index.max_result_window` index setting of Elasticsearch (`10000` by default) are rejected by Elasticsearch. |
+
+The settings can be changed with `ALTER TABLE ... MODIFY SETTING`.
+
+## Virtual columns {#virtual-columns}
+
+- `_id` — The document id. Type: `String`.
+- `_index` — The name of the index the document was read from. Type: `LowCardinality(String)`.
+
+When a query reads only virtual columns, the document `_source` is not requested from Elasticsearch.
+
+## Usage example {#usage-example}
+
+```sql
+CREATE TABLE logs
+ENGINE = Elasticsearch('https://localhost:9200', 'logs-*', 'elastic', 'changeme')
+SETTINGS page_size = 5000;
+
+SELECT _index, _id, document.message
+FROM logs
+WHERE document.level = 'error'
+LIMIT 10;
+```
+
+Filter on the Elasticsearch side with a Query DSL object:
+
+```sql
+CREATE TABLE recent_errors
+ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
+                       api_key = '...',
+                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "now-1h"}}}]}}');
+```
+
+## Related {#related}
+
+- [`elasticsearch` table function](/reference/functions/table-functions/elasticsearch)
+)DOCS_MD",
             .syntax ="",
             .related={}
         });
