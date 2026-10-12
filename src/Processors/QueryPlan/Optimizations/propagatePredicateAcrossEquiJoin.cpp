@@ -302,10 +302,7 @@ size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryP
     if (equi_pairs.empty())
         return 0;
 
-    /// join_use_nulls makes the JOIN-side type nullable, which would not match the target input
-    const bool changes_left  = join->typeChangingSides().contains(JoinTableSide::Left);
-    const bool changes_right = join->typeChangingSides().contains(JoinTableSide::Right);
-
+    /// Source and target are both below the join, so the join_use_nulls widening of its output does not reach them
     SubstitutionMap l_to_r;
     SubstitutionMap r_to_l;
     /// The substituted column must be in the child's header; for `ON l.k = r.k + 1` it is not
@@ -313,9 +310,9 @@ size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryP
     const auto & right_header = *parent_node->children[1]->step->getOutputHeader();
     for (const auto & [lhs, rhs] : equi_pairs)
     {
-        if (!changes_right && right_header.has(rhs.getColumn().name))
+        if (right_header.has(rhs.getColumn().name))
             l_to_r[lhs.getColumnName()] = rhs.getColumn();
-        if (!changes_left && left_header.has(lhs.getColumn().name))
+        if (left_header.has(lhs.getColumn().name))
             r_to_l[rhs.getColumnName()] = lhs.getColumn();
     }
 
