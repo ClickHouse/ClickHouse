@@ -699,6 +699,30 @@ TEST_F(MemoryTrackerLargeAllocationTrace, SilentWhenDisabledOnTheBlockedGlobalPa
     EXPECT_EQ(tracedLargeAllocations(), before);
 }
 
+/// A speculative reservation is not backed by an allocation, so it must not spend the trace budget
+/// on either path.
+
+TEST_F(MemoryTrackerLargeAllocationTrace, SilentForSpeculativeReservation)
+{
+    const auto before = tracedLargeAllocations();
+    auto * credited_tracker = CurrentMemoryTracker::allocGlobal(QUALIFYING_ALLOCATION);
+    CurrentMemoryTracker::freeGlobal(QUALIFYING_ALLOCATION, credited_tracker);
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, SilentForSpeculativeReservationOnTheBlockedGlobalPath)
+{
+    const auto before = tracedLargeAllocations();
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        auto * credited_tracker = CurrentMemoryTracker::allocGlobal(QUALIFYING_ALLOCATION);
+        CurrentMemoryTracker::freeGlobal(QUALIFYING_ALLOCATION, credited_tracker);
+    }
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
 TEST_F(MemoryTrackerLargeAllocationTrace, TracedUnderTheUntrackedAllocationsBlocker)
 {
     const auto before = tracedLargeAllocations();

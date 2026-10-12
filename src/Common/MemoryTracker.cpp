@@ -374,9 +374,13 @@ AllocationTrace MemoryTracker::allocImpl(
                 CurrentMetrics::add(metric_loaded, size);
 
             /// This branch returns below without reaching commitAllocation, so an allocation charged here would otherwise go unreported.
-            const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_acquire);
-            if (unlikely(trace_threshold && static_cast<UInt64>(size) >= trace_threshold))
-                traceLargeAllocation(size);
+            /// Speculative reservations (`enable_profiler` is false) are not backed by a real allocation and are not reported.
+            if (enable_profiler)
+            {
+                const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_acquire);
+                if (unlikely(trace_threshold && static_cast<UInt64>(size) >= trace_threshold))
+                    traceLargeAllocation(size);
+            }
         }
 
         /// Since the MemoryTrackerBlockerInThread should respect the level, we should go to the next parent.
