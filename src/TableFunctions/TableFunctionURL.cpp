@@ -667,6 +667,6 @@ SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ## Related {#related}
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, urlSecretArguments(0));
 }
 }

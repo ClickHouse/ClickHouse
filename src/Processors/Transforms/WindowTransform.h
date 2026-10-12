@@ -11,7 +11,6 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Block.h>
 
 #include <optional>
@@ -92,14 +91,11 @@ public:
     // last row already proven to be a peer of `start`, so a retry after more input arrives continues
     // from there instead of rescanning the group from its first row (which would make a peer group
     // spanning many blocks quadratic).
-    RowNumber findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data);
+    RowNumber findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const;
 
     // Advances `pointer` forward, peer group by peer group, until it reaches the first row of the
     // `target_group`-th peer group (1-based) or the partition end.
-    bool advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group);
-
-    // The end of the run of rows equal to `begin` across all ORDER BY columns within [begin, end) of `block`.
-    Int64 findPeerRunEnd(Int64 block, Int64 begin, Int64 end);
+    bool advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
 
     void updateAggregationState();
     void writeOutCurrentRow();
@@ -150,11 +146,6 @@ public:
     // row of a peer group.
     RowNumber frame_start_group_scan_frontier;
     RowNumber frame_end_group_scan_frontier;
-
-    // Runs of the ORDER BY key prefixes found by `findPeerRunEnd` in `peer_runs_block` within `peer_runs_end`.
-    SortedKeyRuns peer_runs;
-    Int64 peer_runs_block = -1;
-    Int64 peer_runs_end = -1;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the
