@@ -902,8 +902,8 @@ static void preferNullableRightKey(
 
 /// The split pays off only for keys that pack into a fixed-width hash key: a `String` value next to the `isNull` key
 /// still goes down the serialized-key path, and `if` copies it. A compound nested type, which only a function like `if`
-/// produces under `Nullable`, keeps the tuple: `if` over a tuple leaves the bytes under an outer NULL as they were, so
-/// equal NULLs would hash differently. `Nothing` has no value either.
+/// produces under `Nullable`, keeps the tuple: the hash join compares nested values with the bytes under their NULLs,
+/// which `if` over a tuple does not reset, so equal NULLs would hash differently. `Nothing` has no value either.
 static bool canSplitNullSafeKey(const DataTypePtr & type)
 {
     const auto value_type = removeLowCardinalityAndNullable(type);
