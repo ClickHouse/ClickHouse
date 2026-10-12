@@ -20,6 +20,6 @@
 9	1
 1	1	50
 500
-ReadType: Default
+ReadType: InOrder
 ReadType: Default
 1
