@@ -1,0 +1,34 @@
+-- disabled by default
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE arrayExists(lambda(tuple(_a), ilike(__table1.s, _a)), _CAST([\'%airport%\', \'%times sq%\'], \'Array(String)\'))
+-- rewritten
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE or(ilike(__table1.s, \'%airport%\'), ilike(__table1.s, \'%times sq%\'))
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE or(like(__table1.s, \'%Airport%\'), like(__table1.s, \'%Times%\'))
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE ilike(__table1.s, \'%airport%\')
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE or(ilike(__table1.s, \'%airport%\'), ilike(__table1.s, \'%times sq%\'))
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE or(ilike(__table1.lcs, \'%airport%\'), ilike(__table1.lcs, \'%times sq%\'))
+SELECT or(ilike(__table1.s, \'%airport%\'), ilike(__table1.s, \'%times sq%\')) AS `arrayExists(lambda(tuple(x), ilike(s, x)), [\'%airport%\', \'%times sq%\'])`\nFROM default.t_array_exists_like AS __table1
+-- not rewritten
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE arrayExists(lambda(tuple(_a), ilike(__table1.ns, _a)), _CAST([\'%airport%\', \'%times sq%\'], \'Array(String)\'))
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE arrayExists(lambda(tuple(_a), ilike(__table1.s, _a)), _CAST([\'%airport%\', NULL], \'Array(Nullable(String))\'))
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE arrayExists(lambda(tuple(_a), ilike(__table1.s, _a)), array(__table1.s, \'%times sq%\'))
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE arrayExists(lambda(tuple(_a), ilike(__table1.s, _a)), CAST(_CAST([], \'Array(Nothing)\'), \'Array(String)\'))
+SELECT arrayExists(lambda(tuple(x), ilike(x, \'%a%\')), _CAST([\'JFK Airport\'], \'Array(String)\')) AS `arrayExists(lambda(tuple(x), ilike(x, \'%a%\')), [\'JFK Airport\'])`\nFROM system.one AS __table1
+SELECT arrayExists(lambda(tuple(x), ilike(concat(x, \'!\'), x)), _CAST([\'%a%\'], \'Array(String)\')) AS `arrayExists(lambda(tuple(x), ilike(concat(x, \'!\'), x)), [\'%a%\'])`\nFROM system.one AS __table1
+SELECT count() AS `count()`\nFROM default.t_array_exists_like AS __table1\nWHERE arrayAll(lambda(tuple(_a), ilike(__table1.s, _a)), _CAST([\'%a%\', \'%t%\'], \'Array(String)\'))
+-- same results as the OR chain, with the rewrite enabled and disabled
+JFK Airport	1
+Midtown Center	0
+Times Sq/Theatre District	1
+JFK Airport	1
+Midtown Center	0
+Times Sq/Theatre District	1
+JFK Airport	1
+Midtown Center	0
+Times Sq/Theatre District	1
+2
+1
+2
+2
+2
+1
+3
