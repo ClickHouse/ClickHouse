@@ -3,9 +3,13 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessEntityIO.h>
 #include <Access/DiskAccessStorage.h>
+#include <Access/RowPolicy.h>
 #include <Access/User.h>
+#include <Core/Defines.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ParserAttachAccessEntity.h>
+#include <Parsers/parseQuery.h>
 
 #include <Poco/TemporaryFile.h>
 
@@ -40,6 +44,22 @@ TEST(AccessEntityIO, RejectsQueryParameters)
     EXPECT_THROW(deserializeAccessEntity("ATTACH USER u1 VALID UNTIL {ts:String};"), Exception);
     EXPECT_THROW(deserializeAccessEntity("ATTACH USER u1 DEFAULT ROLE {r:Identifier};"), Exception);
     EXPECT_THROW(deserializeAccessEntity("ATTACH ROLE r1; ATTACH GRANT SELECT ON *.* TO {g:Identifier};"), Exception);
+}
+
+TEST(AccessEntityIO, LoadsPolicyWithQueryParameterInExpression)
+{
+    for (const String & filter : Strings{"k = {x:UInt64}", "{c:Identifier} = 1"})
+    {
+        auto policy = std::dynamic_pointer_cast<const RowPolicy>(
+            deserializeAccessEntity("ATTACH ROW POLICY p ON db.t FOR SELECT USING " + filter + " TO ALL;"));
+        ASSERT_TRUE(policy);
+        EXPECT_EQ(policy->filters[static_cast<size_t>(RowPolicyFilterType::SELECT_FILTER)], filter);
+    }
+
+    ParserAttachAccessEntity parser;
+    auto masking_policy = parseQuery(parser, "ATTACH MASKING POLICY m ON db.t UPDATE c = {v:String} WHERE k = {x:UInt64} TO ALL",
+        0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    EXPECT_NO_THROW(checkAccessEntityHasNoQueryParameters(masking_policy));
 }
 
 TEST(DiskAccessStorageRecovery, RebuildRemovesTempFiles)
