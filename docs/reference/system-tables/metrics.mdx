@@ -30,6 +30,14 @@ Total count of addresses which are used for creation connections with connection
 
 Total count of addresses which are banned as faulty for creation connections with connection pools
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+Approximate memory used by the cache of resolved source locations (file:line:column) used for symbolizing stack traces, in bytes.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+Number of code addresses in the cache of resolved source locations (file:line:column) used for symbolizing stack traces in system.trace_log, system.errors and system.error_log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Number of threads in the Aggregator thread pool.
@@ -2125,6 +2133,10 @@ Number of temporary files created for JOIN
 ### TemporaryFilesForMerge {#temporaryfilesformerge}
 
 Number of temporary files for vertical merge
+
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+Number of temporary files created for `IN` sets in external memory
 
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 

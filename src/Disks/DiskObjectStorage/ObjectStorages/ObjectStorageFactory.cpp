@@ -21,6 +21,7 @@
 #include <Disks/loadLocalDiskConfig.h>
 
 #include <Interpreters/Context.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <Common/Macros.h>
 
@@ -73,7 +74,8 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const std::string & config_prefix,
     const ContextPtr & context,
     bool run_access_check,
-    bool run_local_paths_check) const
+    bool run_local_paths_check,
+    bool run_remote_host_filter_check) const
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
@@ -93,7 +95,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check);
+    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, run_remote_host_filter_check);
 }
 
 #if USE_AWS_S3
@@ -134,13 +136,18 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        bool run_remote_host_filter_check) -> ObjectStoragePtr
     {
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
         settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), Poco::URI(endpoint).getScheme(), true);
         auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
+        /// The endpoint of a disk created in SQL is user input, so it is subject to `remote_url_allow_hosts`
+        /// like the URL of an `s3` table; checked before the client is built, which already talks to the endpoint.
+        if (run_remote_host_filter_check)
+            uri.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -165,7 +172,8 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const std::string & config_prefix,
            const ContextPtr & context,
            bool /* run_access_check */,
-           bool /* run_local_paths_check */) -> ObjectStoragePtr
+           bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -189,7 +197,8 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -228,7 +237,8 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -256,7 +266,8 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool run_local_paths_check) -> ObjectStoragePtr
+        bool run_local_paths_check,
+        bool /* run_remote_host_filter_check */) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes = 0;
