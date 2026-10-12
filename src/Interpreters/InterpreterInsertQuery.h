@@ -4,6 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
@@ -69,6 +70,11 @@ public:
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 
+    /// Set for a nested INSERT that runs in the context of an outer INSERT (`AliasSink`), so the
+    /// sinks of the nested pipeline share the outer query's per-destination-table start gates
+    /// (the `Too many parts` check runs once per query per table). See InsertStartGates.h.
+    void setInsertStartGates(InsertStartGatesPtr gates) { insert_start_gates = std::move(gates); }
+
     /// Convert SELECT output to the insert schema, without attaching the write sink.
     static Block convertSelectToInsertSchema(
         QueryPipelineBuilder & pipeline,
@@ -117,6 +123,9 @@ private:
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
+
+    /// Non-null only for a nested INSERT run by an `AliasSink`: the outer query's gate registry.
+    InsertStartGatesPtr insert_start_gates;
 
     /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
     /// transform can drop it as soon as the queue has the block; the caller is left with an empty holder.

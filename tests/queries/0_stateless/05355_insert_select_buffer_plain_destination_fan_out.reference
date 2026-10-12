@@ -1,0 +1,8 @@
+-- plain destination
+4
+-- deduplicating destination
+1
+-- destination with a dependent view
+1
+-- all rows arrive through the parallel direct writes
+50	1225

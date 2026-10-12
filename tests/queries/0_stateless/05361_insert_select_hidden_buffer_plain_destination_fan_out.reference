@@ -1,0 +1,10 @@
+-- Alias over a Buffer with a plain destination
+4
+-- Alias over a Buffer with a deduplicating destination
+1
+-- materialized view to a Buffer with a plain destination
+4
+-- materialized view to a Buffer with a deduplicating destination
+1
+-- all rows arrive through the parallel writes
+100	2450
