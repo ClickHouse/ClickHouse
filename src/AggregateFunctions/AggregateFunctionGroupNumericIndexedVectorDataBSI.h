@@ -851,6 +851,22 @@ public:
         return number_of_1s;
     }
 
+    /// Writes the positions of the set bits of `words` to `out`, with the fastest kernel the CPU supports.
+    /// CRoaring builds its SIMD kernels with target attributes whatever the build's `-march` is.
+    static size_t extractSetBits(
+        const UInt64 * words, size_t length, UInt32 * out, [[maybe_unused]] size_t out_capacity, [[maybe_unused]] int hardware_support)
+    {
+#ifdef CROARING_IS_X64
+#if CROARING_COMPILER_SUPPORTS_AVX512
+        if (hardware_support & roaring::internal::ROARING_SUPPORTS_AVX512)
+            return roaring::internal::bitset_extract_setbits_avx512(words, length, out, out_capacity, 0);
+#endif
+        if (hardware_support & roaring::internal::ROARING_SUPPORTS_AVX2)
+            return roaring::internal::bitset_extract_setbits_avx2(words, length, out, out_capacity, 0);
+#endif
+        return roaring::internal::bitset_extract_setbits(words, length, out, 0);
+    }
+
     /** There are three main types of containers in Roaring Bitmap: array, bitset and run.
      * This function converts the specified indexes and values (belonging to container_id) into BSI format and
      *  saves them in the container of each bitmap of data_array of NumericIndexedVector vector.
@@ -887,24 +903,15 @@ public:
         size_t cnt = 0;
         constexpr UInt64 shift = 6;
 #ifdef CROARING_IS_X64
-        /// CRoaring builds its SIMD kernels with target attributes whatever the build's `-march` is.
         const int hardware_support = roaring::internal::croaring_hardware_support();
+#else
+        const int hardware_support = 0;
 #endif
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
             UInt32 len = std::min(k_batch_size, length - offset);
 
-#ifdef CROARING_IS_X64
-#if CROARING_COMPILER_SUPPORTS_AVX512
-            if (hardware_support & roaring::internal::ROARING_SUPPORTS_AVX512)
-                cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
-            else
-#endif
-            if (hardware_support & roaring::internal::ROARING_SUPPORTS_AVX2)
-                cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
-            else
-#endif
-                cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
+            cnt = extractSetBits(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, hardware_support);
             for (size_t i = 0; i < cnt; ++i)
             {
                 UInt64 val = bit_buffer[i];
