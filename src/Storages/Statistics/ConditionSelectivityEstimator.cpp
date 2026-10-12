@@ -494,10 +494,12 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
                     /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
                     /// Pre-set selectivity based on the function type so prewhere ordering is still reasonable.
+                    /// Compared with a `Bool` literal, the expression is assumed to be boolean: equality matches half of the rows.
+                    const Float64 equal_factor = const_type && isBool(const_type) ? default_bool_equal_factor : default_cond_equal_factor;
                     if (func_name == "equals" || func_name == "in")
-                        out.selectivity.true_sel = default_cond_equal_factor;
+                        out.selectivity.true_sel = equal_factor;
                     else if (func_name == "notEquals" || func_name == "notIn")
-                        out.selectivity.true_sel = 1.0 - default_cond_equal_factor;
+                        out.selectivity.true_sel = 1.0 - equal_factor;
                     else /// less, greater, lessOrEquals, greaterOrEquals
                         out.selectivity.true_sel = default_cond_range_factor;
                     out.finalized = true;
