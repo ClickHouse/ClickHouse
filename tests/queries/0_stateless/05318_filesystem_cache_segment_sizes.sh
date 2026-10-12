@@ -38,9 +38,9 @@ $CLICKHOUSE_CLIENT --query "
         disk = disk(type = cache, name = '$cache_name', path = '$cache_name/', max_size = '1Gi', $disk_settings);
     CREATE TABLE t_segment_sizes_small (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY key
     SETTINGS min_bytes_for_wide_part = 0,
-        disk = disk(type = cache, name = '$small_cache_name', path = '$small_cache_name/', max_size = '24Mi', $disk_settings);
-    INSERT INTO t_segment_sizes SELECT number, cityHash64(number) FROM numbers(4000000);
-    INSERT INTO t_segment_sizes_small SELECT number, cityHash64(number) FROM numbers(4000000);
+        disk = disk(type = cache, name = '$small_cache_name', path = '$small_cache_name/', max_size = '6Mi', $disk_settings);
+    INSERT INTO t_segment_sizes SELECT number, cityHash64(number) FROM numbers(1000000);
+    INSERT INTO t_segment_sizes_small SELECT number, cityHash64(number) FROM numbers(1000000);
     OPTIMIZE TABLE t_segment_sizes FINAL;
     OPTIMIZE TABLE t_segment_sizes_small FINAL;
     SYSTEM STOP MERGES t_segment_sizes;
@@ -65,42 +65,78 @@ function check()
         )
         SELECT
             arraySort(arrayFilter(x -> x.2 > 0, arrayZip(mapKeys(file_segments_by_size), mapValues(file_segments_by_size))))
-                = (SELECT arraySort(groupArray((bucket, segments))) FROM actual),
+                = (SELECT arraySort(groupArray((bucket, segments))) FROM actual) AS file_segments_by_size_eq_count,
             arraySort(arrayFilter(x -> x.2 > 0, arrayZip(mapKeys(bytes_by_segment_size), mapValues(bytes_by_segment_size))))
-                = (SELECT arraySort(groupArray((bucket, bytes))) FROM actual)
+                = (SELECT arraySort(groupArray((bucket, bytes))) FROM actual) AS bytes_by_segment_size_eq_downloaded_size
         FROM system.filesystem_cache_settings
-        WHERE cache_name = '$name'"
+        WHERE cache_name = '$name'
+        FORMAT TSKV"
 }
 
-# 1. A scan fills the cache with long segments.
+echo "1. A scan fills the cache with long segments"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_segment_sizes FORMAT Null"
 check "$cache_name"
 $CLICKHOUSE_CLIENT --query "
-    SELECT arraySum(mapValues(bytes_by_segment_size)) > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$cache_name'"
+    SELECT arraySum(mapValues(bytes_by_segment_size)) > 0 AS has_bytes
+    FROM system.filesystem_cache_settings WHERE cache_name = '$cache_name'
+    FORMAT TSKV"
 
-# 2. Point reads.
+echo "2. Point reads"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "
-    SELECT sum(value) FROM t_segment_sizes WHERE key IN (17, 1000017, 2000017, 3000017) FORMAT Null"
+    SELECT sum(value) FROM t_segment_sizes WHERE key IN (17, 250017, 500017, 750017) FORMAT Null"
 check "$cache_name"
 
-# 3. Dropping the cache removes everything.
+echo "3. Dropping the cache removes everything"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT --query "
-    SELECT arraySum(mapValues(file_segments_by_size)), arraySum(mapValues(bytes_by_segment_size))
-    FROM system.filesystem_cache_settings WHERE cache_name = '$cache_name'"
+    SELECT arraySum(mapValues(file_segments_by_size)) AS segments, arraySum(mapValues(bytes_by_segment_size)) AS bytes
+    FROM system.filesystem_cache_settings WHERE cache_name = '$cache_name'
+    FORMAT TSKV"
 
-# 4. A scan larger than the cache evicts file segments; the counters stay consistent.
+echo "4. A scan larger than the cache evicts file segments; the counters stay consistent"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$small_cache_name'"
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_segment_sizes_small FORMAT Null"
 check "$small_cache_name"
 
-# 5. The asynchronous metrics have one key per bucket.
+echo "5. The asynchronous metrics have one key per bucket"
 $CLICKHOUSE_CLIENT --query "
-    SELECT metric, arraySort(mapKeys(key_values)) FROM system.asynchronous_metrics
+    SELECT metric, arraySort(mapKeys(key_values)) AS keys FROM system.asynchronous_metrics
     WHERE metric IN ('FilesystemCacheFileSegmentsBySize', 'FilesystemCacheBytesBySegmentSize')
-    ORDER BY metric"
+    ORDER BY metric
+    FORMAT TSKV"
+
+# The asynchronous metrics sum all caches, and other tests change their caches. So the values of this
+# cache are a lower bound, and the totals of all caches are an upper bound: a count is not above the
+# number of file segments, and bytes are not above the cache size. The metrics update every second, and a
+# concurrent change can make one update inconsistent, so wait for an update that satisfies all bounds.
+function check_asynchronous_metrics()
+{
+    $CLICKHOUSE_CLIENT --query "
+        WITH
+            (SELECT key_values FROM system.asynchronous_metrics WHERE metric = 'FilesystemCacheFileSegmentsBySize') AS all_segments,
+            (SELECT key_values FROM system.asynchronous_metrics WHERE metric = 'FilesystemCacheBytesBySegmentSize') AS all_bytes,
+            (SELECT value FROM system.asynchronous_metrics WHERE metric = 'FilesystemCacheFiles') AS all_files,
+            (SELECT value FROM system.asynchronous_metrics WHERE metric = 'FilesystemCacheBytes') AS all_cache_bytes,
+            (SELECT file_segments_by_size FROM system.filesystem_cache_settings WHERE cache_name = '$small_cache_name') AS segments,
+            (SELECT bytes_by_segment_size FROM system.filesystem_cache_settings WHERE cache_name = '$small_cache_name') AS bytes
+        SELECT
+            arrayAll(k -> all_segments[k] >= segments[k], mapKeys(segments)) AS segments_include_this_cache,
+            arraySum(mapValues(all_segments)) <= all_files AS segments_not_above_files,
+            arrayAll(k -> all_bytes[k] >= bytes[k], mapKeys(bytes)) AS bytes_include_this_cache,
+            arraySum(mapValues(all_bytes)) <= all_cache_bytes AS bytes_not_above_cache_bytes
+        FORMAT TSKV"
+}
+
+echo "6. The asynchronous metrics count file segments and bytes"
+expected="segments_include_this_cache=1	segments_not_above_files=1	bytes_include_this_cache=1	bytes_not_above_cache_bytes=1"
+for _ in {1..120}; do
+    result=$(check_asynchronous_metrics)
+    [ "$result" = "$expected" ] && break
+    sleep 0.5
+done
+echo "$result"
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE t_segment_sizes;
