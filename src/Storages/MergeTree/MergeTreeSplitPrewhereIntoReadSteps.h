@@ -24,8 +24,6 @@ bool tryBuildPrewhereSteps(
     bool force_short_circuit_execution,
     const ColumnsDescription * columns = nullptr,
     bool read_ahead_columns = false,
-    /// Adjacent conditions on the virtual columns of one index may share a step, like conditions on subcolumns of one column,
-    /// so that the index reader fills these columns in one pass.
     const IndexReadTasks * index_read_tasks = nullptr);
 
 }
