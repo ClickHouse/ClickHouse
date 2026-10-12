@@ -294,8 +294,15 @@ void optimizeTreeSecondPass(
 
     Stack stack;
 
-    /// Before the join reordering and index analysis below, which read the join kinds it rewrites.
-    convertOuterJoinToInnerJoinTransitively(optimization_settings, root);
+    /// Before the join reordering and index analysis below, which read the join kinds it rewrites and the derived IS NOT NULL filters.
+    const bool not_null_filters_were_added = convertOuterToInnerAndAddNotNullFilters(optimization_settings, root, nodes);
+    if (not_null_filters_were_added && optimization_settings.merge_filters)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            tryMergeFilters(&frame_node, nodes, extra_settings);
+        });
+    }
 
     /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
     /// filters, which would hide the source filters
