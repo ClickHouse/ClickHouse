@@ -116,4 +116,26 @@ inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out, 
     return static_cast<size_t>(p - in);
 }
 
+// Size of the blocks holding `count` values, from their headers alone. Returns 0 on a corrupt block, as bulkDecode does.
+template <typename T>
+inline size_t bulkSkip(const uint8_t * in, size_t count, const uint8_t * end = nullptr) noexcept
+{
+    if (count == 0)
+        return 0;
+
+    const uint8_t * p = in;
+    for (size_t s = 0; s < count; s += BLOCK)
+    {
+        const unsigned cnt = static_cast<unsigned>((count - s < BLOCK) ? (count - s) : BLOCK);
+        const size_t bytes = blockSkip<T>(p, cnt, end);
+
+        if (bytes == 0)
+            return 0;
+
+        p += bytes;
+    }
+
+    return static_cast<size_t>(p - in);
+}
+
 }
