@@ -79,7 +79,7 @@ SELECT countIf(explain ILIKE '%Filter column:%rand64%') = 1 AS not_pushed FROM (
     EXPLAIN actions = 1
     SELECT key, ts, row_number() OVER (PARTITION BY key ORDER BY ts) AS rn
     FROM t_04365 QUALIFY rn = 1 AND rand64(key) % 2 = 0
-    SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+    SETTINGS optimize_move_to_prewhere = 0
 );
 
 -- Correctness is preserved: the optimized query returns the same rows as forcing the

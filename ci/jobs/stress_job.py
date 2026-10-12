@@ -16,6 +16,18 @@ from ci.praktika.utils import Shell, Utils
 RUNNER_MEMORY_RESERVE = 8 * 1024**3
 
 
+# Rows the harness writes about a consequence of a server crash rather than
+# about its cause. When the server logs name the crash, such a row only repeats
+# it as a separate, less specific failure.
+CRASH_CONSEQUENCE_RESULT_NAMES = frozenset(
+    {
+        "Cannot start clickhouse-server",
+        "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)",
+        "Test script failed",
+    }
+)
+
+
 def container_memory_limit() -> int:
     visible = Utils.physical_memory()
     limit = visible - RUNNER_MEMORY_RESERVE
@@ -397,6 +409,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     test_results, additional_logs = process_results(result_path, server_log_path)
 
     server_died = False
+    crash_named = False
     failed_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
@@ -441,6 +454,17 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         else:
             results = select_replica_failures(replica_log_pairs)
             if results:
+                # The crash named in the server logs is the cause, so drop the rows
+                # about its consequences to report it once.
+                crash_named = any(
+                    name != FuzzerLogParser.UNKNOWN_ERROR for name, _, _ in results
+                )
+                if crash_named:
+                    failed_results = [
+                        r
+                        for r in failed_results
+                        if r.name not in CRASH_CONSEQUENCE_RESULT_NAMES
+                    ]
                 for name, description, files in results:
                     failed_results.append(
                         Result.create_from(
@@ -468,7 +492,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             )
         )
 
-    if exit_code != 0:
+    # The crash named in the server logs explains the non-zero exit code of the
+    # script, so a generic row about it would only duplicate that failure. Any
+    # other failed row does not: the script may also have failed on its own later.
+    if exit_code != 0 and not crash_named:
         failed_results.append(
             Result.create_from(
                 name="Check failed",

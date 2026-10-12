@@ -163,7 +163,7 @@ static void testServerSideEncryption(
 
     client_configuration.endpointOverride = uri.endpoint;
 
-    DB::HTTPHeaderEntries headers;
+    DB::NormalizedHTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
@@ -344,7 +344,7 @@ TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
 
     client_configuration.endpointOverride = uri.endpoint;
 
-    DB::HTTPHeaderEntries headers;
+    DB::NormalizedHTTPHeaderEntries headers;
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
         .gcs_issue_compose_request = false,
@@ -491,7 +491,7 @@ TEST(IOTestAwsS3Client, AssumeRole)
     client_configuration.endpointOverride = uri.endpoint;
     client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>();
 
-    DB::HTTPHeaderEntries headers;
+    DB::NormalizedHTTPHeaderEntries headers;
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 

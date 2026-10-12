@@ -26,7 +26,14 @@ public:
 
     void transform(Chunk & chunk) override;
 
+    void onCancel() noexcept override;
+
 private:
+    /// If the query was killed, drops the chunk (its rows were already dropped by the inner
+    /// transform if it observed the cancellation mid-evaluation) and stops pulling further input.
+    /// Returns whether the cancellation was observed.
+    bool stopIfCancelled(Chunk & chunk);
+
     FilterTransform filter_transform;
 };
 

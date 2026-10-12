@@ -14,6 +14,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/QueryExecutionCounters.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -75,9 +76,10 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 class RecursiveCTEChunkGenerator
 {
 public:
-    RecursiveCTEChunkGenerator(SharedHeader header_, QueryTreeNodePtr recursive_cte_union_node_)
+    RecursiveCTEChunkGenerator(SharedHeader header_, QueryTreeNodePtr recursive_cte_union_node_, String repeated_build_scope_name_)
         : header(std::move(header_))
         , recursive_cte_union_node(std::move(recursive_cte_union_node_))
+        , repeated_build_scope_name(std::move(repeated_build_scope_name_))
     {
         auto & recursive_cte_union_node_typed = recursive_cte_union_node->as<UnionNode &>();
         chassert(recursive_cte_union_node_typed.hasRecursiveCTETable());
@@ -184,7 +186,8 @@ private:
                 recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth].value,
                 recursive_cte_union_node->formatASTForErrorMessage());
 
-        auto & query_to_execute = recursive_step > 0 ? recursive_query : non_recursive_query;
+        const bool is_recursive_member = recursive_step > 0;
+        auto & query_to_execute = is_recursive_member ? recursive_query : non_recursive_query;
         ++recursive_step;
 
         SelectQueryOptions select_query_options;
@@ -193,7 +196,18 @@ private:
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
-        auto pipeline_builder = interpreter->buildQueryPipeline();
+
+        QueryPipelineBuilder pipeline_builder;
+        {
+            /// Mark the region, so that the joins of the recursive member are counted once instead of
+            /// once per iteration. The non-recursive member stays outside: it is built once, and sharing
+            /// the scope would make the joins of both members share ordinals and hide one of them.
+            std::optional<QueryExecutionCounters::RepeatedPipelineBuildScope> repeated_build_scope;
+            if (is_recursive_member)
+                repeated_build_scope.emplace(repeated_build_scope_name);
+
+            pipeline_builder = interpreter->buildQueryPipeline();
+        }
 
         pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
         {
@@ -277,6 +291,8 @@ private:
 
     QueryTreeNodePtr non_recursive_query;
     QueryTreeNodePtr recursive_query;
+    String repeated_build_scope_name;
+
     ContextMutablePtr recursive_query_context;
 
     TemporaryTableHolderPtr working_temporary_table_holder;
@@ -293,9 +309,11 @@ private:
     bool finished = false;
 };
 
-RecursiveCTESource::RecursiveCTESource(SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_)
+RecursiveCTESource::RecursiveCTESource(
+    SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_, String repeated_build_scope_name_)
     : ISource(header)
-    , generator(std::make_unique<RecursiveCTEChunkGenerator>(std::move(header), std::move(recursive_cte_union_node_)))
+    , generator(std::make_unique<RecursiveCTEChunkGenerator>(
+          std::move(header), std::move(recursive_cte_union_node_), std::move(repeated_build_scope_name_)))
 {}
 
 RecursiveCTESource::~RecursiveCTESource() = default;

@@ -76,6 +76,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
     RetryStrategy retry_strategy;
+    UInt64 expired_token_retry_timeout_ms = 0;
     bool s3_slow_all_threads_after_network_error;
     bool s3_slow_all_threads_after_retryable_error;
     bool enable_s3_requests_logging;
@@ -83,7 +84,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
 
-    HTTPHeaderEntries extra_headers;
+    NormalizedHTTPHeaderEntries extra_headers;
     String http_client;
     String service_account;
     String metadata_service;
@@ -244,7 +245,7 @@ protected:
 
     HTTPRequestThrottler request_throttler;
 
-    const HTTPHeaderEntries extra_headers;
+    const NormalizedHTTPHeaderEntries extra_headers;
 };
 
 class PocoHTTPClientGCPOAuth : public PocoHTTPClient

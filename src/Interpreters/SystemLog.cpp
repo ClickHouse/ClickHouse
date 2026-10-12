@@ -6,6 +6,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
@@ -63,10 +64,12 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/SystemLogDefaultFlushPolicy.h>
 
 #if CLICKHOUSE_CLOUD
@@ -75,6 +78,7 @@
 #endif
 
 #include <fmt/core.h>
+#include <fmt/ranges.h>
 
 
 namespace ProfileEvents
@@ -123,6 +127,37 @@ void flushAsyncTextLogsIfPossible()
         base_daemon->get().flushTextLogs();
 }
 
+/// The default schema of `system.metric_log`; see `docs/reference/system-tables/metric_log.mdx`.
+/// `bucketed` keeps every metric in a single `Map` column with the bucketed serialization,
+/// which is why the table has a few columns instead of thousands, while the per-metric
+/// `ALIAS` columns keep it query-compatible with the older `wide` schema.
+constexpr auto DEFAULT_METRIC_LOG_SCHEMA_TYPE = "bucketed";
+
+/// The schema of `system.metric_log` configured in `config_prefix`.
+///
+/// The `bucketed` schema is the default, but it needs two things that the configuration can take
+/// away, and in both cases the previous `wide` schema remains the default, so that an existing
+/// configuration keeps working as before and `bucketed` has to be requested explicitly:
+/// - every metric is an `ALIAS` column over the `metrics` `Map`, so the table has no per-metric
+///   interface at all when alias columns are skipped (`skip_alias_columns`, which is how
+///   system logs are configured on top of object storage);
+/// - the bucketed `Map` serialization comes from the default table definition, and an explicit
+///   `engine` in the configuration replaces it, which would give a table with the shape of the
+///   `bucketed` schema but without the bucketed reads that motivate it.
+String getMetricLogSchemaType(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    if (config.has(config_prefix + ".schema_type"))
+        return config.getString(config_prefix + ".schema_type");
+
+    if (DefaultSystemLogFlushPolicy(config).shouldSkipAliasColumns())
+        return "wide";
+
+    if (config.has(config_prefix + ".engine"))
+        return "wide";
+
+    return DEFAULT_METRIC_LOG_SCHEMA_TYPE;
+}
+
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
@@ -135,7 +170,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const String & default_table_name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    const String & comment)
+    const String & comment,
+    const char * documentation_source = SYSTEM_LOG_DOCUMENTATION_SOURCE)
 {
     if (!config.has(config_prefix))
     {
@@ -165,6 +201,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         log_settings.queue_settings.database = default_database_name;
     }
+
+    registerSystemTableDocumentationSource(log_settings.queue_settings.table, documentation_source, comment);
 
     if (config.has(config_prefix + ".engine"))
     {
@@ -234,10 +272,63 @@ std::shared_ptr<TSystemLog> createSystemLog(
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
+    /// The engine settings that are required by the log (e.g. the bucketed `Map` serialization of
+    /// the `bucketed` schema of `metric_log`) but are missing or have a different value in the
+    /// parsed engine. Compare the parsed settings rather than the text of the engine, because a
+    /// substring search would also match `map_serialization_version_for_zero_level_parts`.
+    Strings engine_settings_mismatches;
+    if (const String default_engine_settings = TSystemLog::getDefaultEngineSettings(); !default_engine_settings.empty())
+    {
+        ParserSetQuery default_settings_parser(/* parse_only_internals_ = */ true, /* shorthand_syntax_ = */ false);
+        auto default_settings_ast = parseQuery(default_settings_parser, default_engine_settings,
+            "Default engine settings for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+        const auto * engine_storage = storage_with_comment.storage ? storage_with_comment.storage->as<ASTStorage>() : nullptr;
+        const auto * engine_settings = engine_storage ? engine_storage->settings : nullptr;
+        /// A setting omitted from the engine takes the effective `MergeTree` default, which may already be the required value.
+        const bool is_replicated = engine_storage && engine_storage->engine && engine_storage->engine->name.starts_with("Replicated");
+        const MergeTreeSettings & effective_defaults = is_replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
+        for (const auto & required : default_settings_ast->as<ASTSetQuery &>().changes)
+        {
+            /// It only controls how zero-level parts are written before merges, not the bucket layout of merged parts.
+            if (required.name == "map_serialization_version_for_zero_level_parts")
+                continue;
+
+            /// The last occurrence wins, e.g. when `settings` from the configuration override the defaults.
+            const Field * actual = nullptr;
+            if (engine_settings)
+                for (const auto & change : engine_settings->changes)
+                    if (change.name == required.name)
+                        actual = &change.value;
+            if (!actual)
+            {
+                if (effective_defaults.get(required.name) != required.value)
+                    engine_settings_mismatches.push_back(fmt::format("{} is not set", required.name));
+            }
+            else if (*actual != required.value)
+                engine_settings_mismatches.push_back(fmt::format("{} = {} instead of {}",
+                    required.name, applyVisitor(FieldVisitorToString(), *actual), applyVisitor(FieldVisitorToString(), required.value)));
+        }
+    }
+
     /// Add comment to AST. So it will be saved when the table will be renamed.
-    const char * comment_addendum = "\n\nIt is safe to truncate or drop this table at any time.";
-    if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment + comment_addendum));
+    constexpr std::string_view comment_addendum = "It is safe to truncate or drop this table at any time.";
+    String merged_comment = comment;
+    if (storage_with_comment.comment)
+    {
+        const String configured_comment = storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>();
+        if (!configured_comment.empty())
+            merged_comment += "\n\n.description\n" + configured_comment;
+
+        /// Replace the configured comment instead of appending a second `COMMENT` clause.
+        log_settings.engine = storage_with_comment.storage->formatWithSecretsOneLine();
+    }
+    if (!merged_comment.contains(comment_addendum))
+    {
+        merged_comment += "\n\n.description\n";
+        merged_comment += comment_addendum;
+    }
+    log_settings.engine += fmt::format(" COMMENT {} ", quoteString(merged_comment));
 
     /// The optional `create_union_system_log_tables` section requests the creation of `all_...`
     /// tables querying the set of rotated tables (`query_log`, `query_log_0`, `query_log_1`, ...)
@@ -290,7 +381,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     if constexpr (std::is_same_v<TSystemLog, MetricLog>)
     {
-        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        auto schema = getMetricLogSchemaType(config, config_prefix);
         if (schema == "wide")
             return std::make_shared<TSystemLog>(context, log_settings);
 
@@ -301,7 +392,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     }
     else if constexpr (std::is_same_v<TSystemLog, TransposedMetricLog>)
     {
-        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        auto schema = getMetricLogSchemaType(config, config_prefix);
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
             return std::make_shared<TSystemLog>(context, log_settings);
 
@@ -309,11 +400,22 @@ std::shared_ptr<TSystemLog> createSystemLog(
     }
     else if constexpr (std::is_same_v<TSystemLog, BucketedMetricLog>)
     {
-        auto schema = config.getString(config_prefix + ".schema_type", "wide");
-        if (schema == "bucketed")
-            return std::make_shared<TSystemLog>(context, log_settings);
+        auto schema = getMetricLogSchemaType(config, config_prefix);
+        if (schema != "bucketed")
+            return {};
 
-        return {};
+        /// The bucketed `Map` serialization with 128 constant buckets is a part of the default table
+        /// definition, which an explicit `engine` replaces, so say it out loud instead of quietly
+        /// creating a table that has the shape of the `bucketed` schema without the bucketed reads
+        /// that motivate it.
+        if (!engine_settings_mismatches.empty())
+            LOG_WARNING(getLogger("SystemLog"),
+                "The '{}' schema of {} is requested together with an explicit 'engine' whose settings differ from "
+                "the ones of the bucketed Map serialization ({}), so the 'metrics' column will not be stored in "
+                "128 constant buckets. Add the following to the SETTINGS of the engine: {}",
+                schema, config_prefix, fmt::join(engine_settings_mismatches, ", "), BucketedMetricLog::getDefaultEngineSettings());
+
+        return std::make_shared<TSystemLog>(context, log_settings);
     }
     else
         return std::make_shared<TSystemLog>(context, log_settings);
@@ -330,6 +432,34 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
     /// Reset UUID
     old_create_query_ast.uuid = UUIDHelpers::Nil;
     return old_ast;
+}
+
+/// The last sentence of the comment of every union table generated by this feature (since its
+/// introduction). It is stored in the table definition and serves as the ownership marker:
+/// a table without it in the comment was created by a user and is never replaced.
+constexpr auto union_table_ownership_marker = "It is safe to drop this table at any time: it will be recreated automatically.";
+
+/// Whether the definition of an existing table is one that this feature generated (possibly by an
+/// older version of the server, with an obsolete structure): a stateless proxy over the `merge` or
+/// `clusterAllReplicas` table function that carries the ownership marker in its comment. Such a
+/// table holds no data of its own and can be replaced; a table of any other shape - a `MergeTree`
+/// table or a hand-written proxy that a user happened to put on one of the `all_...` names - must
+/// never be dropped automatically.
+bool isGeneratedUnionTableDefinition(const ASTCreateQuery & create)
+{
+    if (!create.as_table_function)
+        return false;
+
+    const auto * function = create.as_table_function->as<ASTFunction>();
+    if (!function || (function->name != "merge" && function->name != "clusterAllReplicas"))
+        return false;
+
+    if (!create.comment)
+        return false;
+
+    const auto * comment = create.comment->as<ASTLiteral>();
+    return comment && comment->value.getType() == Field::Types::String
+        && comment->value.safeGet<String>().contains(union_table_ownership_marker);
 }
 
 /// Escapes a table name for use inside a regular expression
@@ -352,6 +482,24 @@ String escapeStringForRegexp(const String & s)
 
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
+/// Register default names even for disabled logs whose old tables may still be attached.
+#define REGISTER_DOCUMENTATION_SOURCE(log_type, member, descr) \
+    registerSystemTableDocumentationSource(#member, SYSTEM_LOG_DOCUMENTATION_SOURCE, descr); \
+
+    LIST_OF_ALL_SYSTEM_LOGS(REGISTER_DOCUMENTATION_SOURCE)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(REGISTER_DOCUMENTATION_SOURCE)
+    #endif
+#undef REGISTER_DOCUMENTATION_SOURCE
+
+    /// These schema variants are configured under the canonical `metric_log` name, so register their complete
+    /// comments even when another schema is active. This lets rotated tables retain the source of the schema they
+    /// actually contain instead of inheriting the source of the new live schema.
+    registerSystemTableDocumentationSource(
+        "transposed_metric_log", TransposedMetricLog::DOCUMENTATION_SOURCE, TransposedMetricLog::DOCUMENTATION);
+    registerSystemTableDocumentationSource(
+        "bucketed_metric_log", BucketedMetricLog::DOCUMENTATION_SOURCE, BucketedMetricLog::DOCUMENTATION);
+
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CREATE_PUBLIC_MEMBERS(log_type, member, descr) \
     member = createSystemLog<log_type>(global_context, "system", #member, config, #member, descr); \
@@ -366,13 +514,25 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
     if (metric_log == nullptr && config.has("metric_log"))
     {
-        auto schema = config.getString("metric_log.schema_type", "wide");
+        auto schema = getMetricLogSchemaType(config, "metric_log");
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
             transposed_metric_log = createSystemLog<TransposedMetricLog>(
-                global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+                global_context,
+                "system",
+                "metric_log",
+                config,
+                "metric_log",
+                TransposedMetricLog::DOCUMENTATION,
+                TransposedMetricLog::DOCUMENTATION_SOURCE);
         else if (schema == "bucketed")
             bucketed_metric_log = createSystemLog<BucketedMetricLog>(
-                global_context, "system", "metric_log", config, "metric_log", BucketedMetricLog::DESCRIPTION);
+                global_context,
+                "system",
+                "metric_log",
+                config,
+                "metric_log",
+                BucketedMetricLog::DOCUMENTATION,
+                BucketedMetricLog::DOCUMENTATION_SOURCE);
     }
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
@@ -872,13 +1032,60 @@ void SystemLog<LogElement>::prepareTable()
 
         if (old_create_query != create_query)
         {
-            /// TODO: Handle altering comment, because otherwise all table will be renamed.
+            auto old_create_query_ast = getCreateTableQueryClean(table_id, getContext());
+            auto expected_create_query_ast = getCreateTableQuery();
 
+            auto & expected_create = expected_create_query_ast->template as<ASTCreateQuery &>();
+            const String expected_comment = expected_create.comment
+                ? expected_create.comment->template as<ASTLiteral &>().value.template safeGet<String>()
+                : String{};
+
+            auto format_without_comment = [](ASTPtr query_ast)
+            {
+                auto & create = query_ast->as<ASTCreateQuery &>();
+                create.reset(create.comment);
+                return query_ast->formatWithSecretsOneLine();
+            };
+
+            if (format_without_comment(old_create_query_ast) == format_without_comment(expected_create_query_ast))
+            {
+                LOG_DEBUG(log, "Updating the comment of existing system log table {}", description);
+
+                auto alter_context = Context::createCopy(context);
+                alter_context->makeQueryContext();
+                addSettingsForQuery(alter_context, IAST::QueryKind::Alter);
+
+                auto alter_command = make_intrusive<ASTAlterCommand>();
+                alter_command->type = ASTAlterCommand::MODIFY_COMMENT;
+                alter_command->set(alter_command->comment, make_intrusive<ASTLiteral>(expected_comment));
+
+                auto alter_commands = make_intrusive<ASTExpressionList>();
+                alter_commands->children.push_back(alter_command);
+
+                auto alter_query = make_intrusive<ASTAlterQuery>();
+                alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
+                alter_query->setDatabase(table_id.database_name);
+                alter_query->setTable(table_id.table_name);
+                alter_query->command_list = alter_commands.get();
+                alter_query->children.push_back(alter_commands);
+
+                InterpreterAlterQuery(alter_query, alter_context).execute();
+                old_create_query = create_query;
+            }
+        }
+
+        if (old_create_query != create_query)
+        {
             /// Rename the existing table.
             int suffix = 0;
             while (DatabaseCatalog::instance().isTableExist(
                 {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
+
+            const String rotated_table_name = table_id.table_name + "_" + toString(suffix);
+            const auto old_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+            const char * rotated_documentation_source
+                = getSystemTableDocumentationSourceFromComment(old_metadata_snapshot->comment);
 
             ASTRenameQuery::Element elem
             {
@@ -890,7 +1097,7 @@ void SystemLog<LogElement>::prepareTable()
                 ASTRenameQuery::Table
                 {
                     table_id.database_name.empty() ? nullptr : make_intrusive<ASTIdentifier>(table_id.database_name),
-                    make_intrusive<ASTIdentifier>(table_id.table_name + "_" + toString(suffix))
+                    make_intrusive<ASTIdentifier>(rotated_table_name)
                 }
             };
 
@@ -912,7 +1119,13 @@ void SystemLog<LogElement>::prepareTable()
             query_context->makeQueryContext();
             addSettingsForQuery(query_context, IAST::QueryKind::Rename);
 
-            InterpreterRenameQuery(rename, query_context).execute();
+            InterpreterRenameQuery interpreter_rename(rename, query_context);
+            /// Views over the log read it by name, so they stay with the name, not with the archived table.
+            interpreter_rename.setKeepSourceViewDependencies(true);
+            interpreter_rename.execute();
+
+            if (rotated_documentation_source)
+                registerSystemTableDocumentationSource(rotated_table_name, rotated_documentation_source);
 
             /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree without a TTL.
             /// This prevents the old table from wasting CPU on background operations.
@@ -936,7 +1149,7 @@ void SystemLog<LogElement>::prepareTable()
             /// the current batch of log entries.
             try
             {
-                StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
+                StorageID old_table_id(table_id.database_name, rotated_table_name);
                 auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
 
                 bool old_table_has_ttl = false;
@@ -1046,9 +1259,33 @@ void SystemLog<LogElement>::prepareUnionTable()
 
         if (union_table)
         {
-            String existing_create_query = getCreateTableQueryClean(union_table_id, getContext())->formatWithSecretsOneLine();
+            ASTPtr existing_create_query_ast = getCreateTableQueryClean(union_table_id, getContext());
+            String existing_create_query = existing_create_query_ast->formatWithSecretsOneLine();
             if (existing_create_query == union_create_query)
             {
+                union_table_check_pending = false;
+                return;
+            }
+
+            /// Replacing the table drops the old one together with all of its data, which is only
+            /// acceptable for a stateless proxy over a table function - the shape this feature
+            /// generates. A user table that happens to occupy the name (the `all_...` names are not
+            /// reserved, and a hand-rolled union table is exactly what users created before this
+            /// feature existed) is left untouched instead.
+            const auto * existing_create = existing_create_query_ast->as<ASTCreateQuery>();
+            if (!existing_create || !isGeneratedUnionTableDefinition(*existing_create))
+            {
+                LOG_WARNING(
+                    log,
+                    "Not creating {}: a table with this name already exists and it was not created by the"
+                    " `create_union_system_log_tables` feature, so it may contain data. Drop or rename it"
+                    " to let the union table be created at the next flush of the log.\nExisting definition: {}",
+                    union_table_id.getNameForLogs(),
+                    /// The table is user-owned and may use a secret-bearing engine or table function.
+                    existing_create_query_ast->formatForLogging());
+                /// This is a recoverable state, unlike `union_table_broken`: the check is not repeated
+                /// (and the warning is not written again) while the user table is in place, but as soon
+                /// as the name becomes free, the union table is created at the next flush.
                 union_table_check_pending = false;
                 return;
             }
@@ -1057,13 +1294,17 @@ void SystemLog<LogElement>::prepareUnionTable()
                 log,
                 "Existing table {} has an obsolete or different definition. Recreating it.\nOld: {}\nNew: {}\n.",
                 union_table_id.getNameForLogs(),
-                existing_create_query,
+                existing_create_query_ast->formatForLogging(),
                 union_create_query);
         }
         else
         {
             LOG_DEBUG(log, "Creating new table {} for {}", union_table_id.getNameForLogs(), LogElement::name());
         }
+
+        /// Replacing the table may wait for the previous one to be dropped, which cannot
+        /// happen while it is still referenced here.
+        union_table.reset();
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
@@ -1249,7 +1490,27 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
     auto new_columns_list = make_intrusive<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
-    if (!flush_policy->shouldSkipAliasColumns())
+    if constexpr (std::is_same_v<LogElement, BucketedMetricLogElement>)
+    {
+        /// The per-metric columns of the `bucketed` schema are `ALIAS metrics['...']`, while the rotated
+        /// tables of the `wide` schema (which was the default before) have them as ordinary columns and
+        /// have no `metrics` column at all. An `ALIAS` in the union table would be expanded before reading
+        /// and give the default values for the rotated `wide` tables, so declare these columns as physical
+        /// ones: then every underlying table provides them on its own, either physically or as its `ALIAS`.
+        /// They are `MATERIALIZED` rather than ordinary, so that, like the `ALIAS` columns of the log table,
+        /// they are not expanded by an asterisk: `SELECT *` would otherwise compute a thousand of them.
+        if (!flush_policy->shouldSkipAliasColumns())
+        {
+            ColumnsDescription materialized_columns;
+            materialized_columns.setAliases(std::move(alias_columns));
+            for (auto column : materialized_columns)
+            {
+                column.default_desc.kind = ColumnDefaultKind::Materialized;
+                ordinary_columns.add(std::move(column));
+            }
+        }
+    }
+    else if (!flush_policy->shouldSkipAliasColumns())
         ordinary_columns.setAliases(alias_columns);
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
     create->set(create->columns_list, new_columns_list);
@@ -1306,7 +1567,8 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
 
     create->set(create->as_table_function, table_function);
 
-    comment += "\n\nIt is safe to drop this table at any time: it will be recreated automatically.";
+    /// The marker is checked by `isGeneratedUnionTableDefinition`.
+    comment += fmt::format("\n\n{}", union_table_ownership_marker);
     create->set(create->comment, make_intrusive<ASTLiteral>(comment));
 
     return create;
