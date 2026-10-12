@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
@@ -3316,6 +3317,109 @@ static bool typeHasValueCarriers(const IDataType & type)
     return anyInTypeTree(type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); });
 }
 
+/// True when casting the KEY into `set_element_type` -- the direction runtime membership takes --
+/// can map two distinct key values onto one set value silently. Detects only the classes below, and
+/// the caller consults it only where the forward `canBeSafelyCast` was rejected.
+static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
+{
+    auto key_unwrapped = removeLowCardinalityAndNullable(key_type);
+    auto set_unwrapped = removeLowCardinalityAndNullable(set_element_type);
+
+    auto key_which = WhichDataType(key_unwrapped);
+    auto set_which = WhichDataType(set_unwrapped);
+
+    /// A shape mismatch is not itself a collapse, so it falls through rather than declining.
+    if (key_which.isArray() && set_which.isArray())
+        return keyToSetConversionMayCollapse(
+            assert_cast<const DataTypeArray &>(*key_unwrapped).getNestedType(),
+            assert_cast<const DataTypeArray &>(*set_unwrapped).getNestedType());
+
+    if (key_which.isMap() && set_which.isMap())
+    {
+        const auto & key_map = assert_cast<const DataTypeMap &>(*key_unwrapped);
+        const auto & set_map = assert_cast<const DataTypeMap &>(*set_unwrapped);
+        return keyToSetConversionMayCollapse(key_map.getKeyType(), set_map.getKeyType())
+            || keyToSetConversionMayCollapse(key_map.getValueType(), set_map.getValueType());
+    }
+
+    if (key_which.isTuple() && set_which.isTuple())
+    {
+        const auto & key_tuple = assert_cast<const DataTypeTuple &>(*key_unwrapped);
+        const auto & set_tuple = assert_cast<const DataTypeTuple &>(*set_unwrapped);
+        const auto & key_elements = key_tuple.getElements();
+        const auto & set_elements = set_tuple.getElements();
+
+        /// Named tuples sharing an element name are cast by name, and a key element without a
+        /// counterpart is dropped, which merges keys that differ only in it.
+        if (key_tuple.hasExplicitNames() && set_tuple.hasExplicitNames())
+        {
+            const auto & key_names = key_tuple.getElementNames();
+            if (std::ranges::any_of(key_names, [&](const String & name) { return set_tuple.tryGetPositionByName(name).has_value(); }))
+            {
+                for (size_t i = 0; i < key_elements.size(); ++i)
+                {
+                    auto set_position = set_tuple.tryGetPositionByName(key_names[i]);
+                    if (!set_position || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position]))
+                        return true;
+                }
+
+                return false;
+            }
+        }
+
+        if (key_elements.size() != set_elements.size())
+            return false;
+
+        for (size_t i = 0; i < key_elements.size(); ++i)
+            if (keyToSetConversionMayCollapse(key_elements[i], set_elements[i]))
+                return true;
+
+        return false;
+    }
+
+    /// A text key is equality-preserving only against the same text type: `FixedString` padding and
+    /// text-to-numeric parsing both merge distinct keys. A `FixedString` key cast into `String` only
+    /// loses its trailing zero bytes, which is injective at a fixed width.
+    if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped)
+        && !(key_which.isFixedString() && set_which.isString()))
+        return true;
+
+    /// A temporal target that cannot represent a component the key carries merges every key sharing
+    /// the surviving component, and no round-trip check rejects it.
+    if (key_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64()
+        && set_which.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
+    {
+        auto carries_date = [](const WhichDataType & which)
+        { return which.isDateOrDate32() || which.isDateTimeOrDateTime64(); };
+        auto carries_time_of_day = [](const WhichDataType & which)
+        { return which.isTimeOrTime64() || which.isDateTimeOrDateTime64(); };
+
+        if ((carries_date(key_which) && !carries_date(set_which))
+            || (carries_time_of_day(key_which) && !carries_time_of_day(set_which)))
+            return true;
+    }
+
+    /// A scaled key is cast through `DecimalUtils::convertToImpl`, which rejects only on range
+    /// overflow, so each branch below loses a different part of the value silently.
+    if (auto key_scale = tryGetDecimalScale(*key_unwrapped))
+    {
+        /// Coarser target scale divides the extra digits away.
+        if (auto set_scale = tryGetDecimalScale(*set_unwrapped))
+        {
+            if (*key_scale > *set_scale)
+                return true;
+        }
+        /// An integer target keeps only the whole part; at scale 0 that division is the identity.
+        else if (set_which.isInteger() && *key_scale > 0)
+            return true;
+        /// A float target loses mantissa precision at any scale.
+        else if (set_which.isFloat())
+            return true;
+    }
+
+    return false;
+}
+
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -3465,6 +3569,12 @@ static bool tryPrepareSetColumnsForIndex(
             }
 
             set_element_type = removeNullable(set_element_type);
+
+            /// A key-to-set cast that maps two distinct keys onto one set value makes the pruning set
+            /// an UNDER-approximation, which `relaxed` cannot repair: it only ever forces
+            /// `can_be_false = true` and never widens `can_be_true`.
+            if (keyToSetConversionMayCollapse(key_column_type, set_element_type))
+                return false;
 
             const auto * source_nullable_column = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
             if (!source_nullable_column)
