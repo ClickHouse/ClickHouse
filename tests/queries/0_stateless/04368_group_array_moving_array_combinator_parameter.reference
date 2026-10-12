@@ -12,12 +12,12 @@ AggregateFunction(kolmogorovSmirnovTest(\'two-sided\'), Float64, Float64)
 AggregateFunction(mannWhitneyUTest(\'two-sided\', 1), Float64, Float64)
 1025
 10
-AggregateFunction(intervalLengthSum(\'two-sided\', 1), Float64, Float64)
+AggregateFunction(intervalLengthSum, Float64, Float64)
 0
 0
 3
 0
-AggregateFunction(argMin(\'x\', 1), UInt64, UInt64)
+AggregateFunction(argMin, UInt64, UInt64)
 0
 3
 -- legacy parameterless state compatibility --
