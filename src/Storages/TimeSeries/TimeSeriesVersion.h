@@ -30,14 +30,10 @@ class StorageTimeSeries;
 ///   6 - The column `metric_family_name` of the "metric families" target table was renamed to `metric_family`, the name of
 ///       the corresponding outer column. Tables of earlier versions keep the old name of the column
 ///       (see `TimeSeriesColumnNames::getInnerMetricFamily`).
+///   7 - The deduplication caches of the metric families and tags tables were introduced together with their settings
+///       (`metric_families_deduplication_cache_*` and `tags_deduplication_cache_*`). Tables of earlier versions don't use the caches.
 namespace TimeSeriesVersion
 {
-    /// The latest version, new tables get it unless the CREATE query specifies another supported version.
-    /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
-    /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
-    /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 6;
-
     /// The first version recording the `id_type` setting (see the version history above).
     /// A table of an earlier version must not have the setting: an older server wouldn't understand it.
     constexpr UInt64 MIN_WITH_ID_TYPE_SETTING = 2;
@@ -45,12 +41,27 @@ namespace TimeSeriesVersion
     /// The first version naming the outer column with samples `samples` instead of `time_series` (see the version history above).
     constexpr UInt64 MIN_WITH_SAMPLES_OUTER_COLUMN = 3;
 
+    /// The first version whose "metric families" target is named "metricfamilies" in the names of inner tables
+    /// and in backups, and is written with the keyword `METRIC FAMILIES` in the definition.
+    /// The earlier versions name it "metrics" and write it with the keyword `METRICS`, so an older server can read them.
+    constexpr UInt64 MIN_WITH_METRIC_FAMILIES_TARGET_NAME = 4;
+
     /// The first version creating a text index on the `tags` map by default.
     constexpr UInt64 MIN_WITH_TAGS_TEXT_INDEX = 5;
 
     /// The first version naming the column of the "metric families" target table with the name of a metric family
     /// `metric_family` instead of `metric_family_name` (see the version history above).
     constexpr UInt64 MIN_WITH_METRIC_FAMILY_INNER_COLUMN = 6;
+
+    /// The first version with the deduplication caches and their settings (see the version history above).
+    /// A table of an earlier version doesn't use the caches and must not have the settings: an older server wouldn't understand them.
+    constexpr UInt64 MIN_WITH_DEDUPLICATION_CACHES = 7;
+
+    /// The latest version, new tables get it unless the CREATE query specifies another supported version.
+    /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
+    /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
+    /// version-aware or bump MIN_SUPPORTED too.
+    constexpr UInt64 LATEST = 7;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -65,20 +76,16 @@ namespace TimeSeriesVersion
     /// The PromQL layer may support fewer versions than the table engine itself.
     constexpr UInt64 MIN_SUPPORTED_BY_PROMQL = 0;
 
-    /// The first version whose "metric families" target is named "metricfamilies" in the names of inner tables
-    /// and in backups, and is written with the keyword `METRIC FAMILIES` in the definition.
-    /// The earlier versions name it "metrics" and write it with the keyword `METRICS`, so an older server can read them.
-    constexpr UInt64 MIN_WITH_METRIC_FAMILIES_TARGET_NAME = 4;
-
-    static_assert(MIN_SUPPORTED <= MIN_WRITABLE);
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
     static_assert(MIN_WITH_TAGS_TEXT_INDEX <= LATEST);
-    static_assert(MIN_WITH_METRIC_FAMILY_INNER_COLUMN <= LATEST);
-    static_assert(MIN_WRITABLE <= LATEST);
-    static_assert(MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL);
-    static_assert(MIN_SUPPORTED_BY_PROMQL <= LATEST);
     static_assert(MIN_WITH_METRIC_FAMILIES_TARGET_NAME <= LATEST);
+    static_assert(MIN_WITH_METRIC_FAMILY_INNER_COLUMN <= LATEST);
+    static_assert(MIN_WITH_DEDUPLICATION_CACHES <= LATEST);
+
+    static_assert(MIN_SUPPORTED <= LATEST);
+    static_assert((MIN_SUPPORTED <= MIN_WRITABLE) && (MIN_WRITABLE <= LATEST));
+    static_assert((MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL) && (MIN_SUPPORTED_BY_PROMQL <= LATEST));
 }
 
 /// Whether a version is in the range [MIN_SUPPORTED, LATEST].

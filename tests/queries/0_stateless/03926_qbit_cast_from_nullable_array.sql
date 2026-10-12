@@ -7,7 +7,7 @@
 
 SET allow_suspicious_variant_types = 1;
 SET allow_experimental_variant_type = 1;
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET allow_experimental_bfloat16_type = 1;
 
 -- Basic Array-to-QBit inside a Tuple with Nullable wrapping
