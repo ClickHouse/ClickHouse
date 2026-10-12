@@ -1878,7 +1878,11 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     const bool count_first = MapAggregationMethod<Method> && final && params.bucket_top_k && bucket_top_k_ranks_by_count_state
         && !is_simple_count && !updater;
     const size_t rank_offset = count_first ? offsets_of_aggregate_states[params.bucket_top_k_rank_index] : 0;
-    const auto better = [ascending = params.bucket_top_k_ascending](UInt64 a, UInt64 b) { return ascending ? a < b : a > b; };
+    /// With a descending order, a count-first unit keeps its best groups up to date while it counts them. An ascending
+    /// order cannot be kept this way, so a pass over the counted groups selects them.
+    std::optional<GrowingCountTopK<typename Table::key_type>> top_k;
+    if (count_first && !params.bucket_top_k_ascending)
+        top_k.emplace(params.bucket_top_k);
     /// A count-first unit keeps integer counts outside `AggregatedDataVariants`, whose cleanup treats mapped values
     /// as aggregate-state pointers. Its counting table takes the buffer retained from the previous bucket, while the
     /// bucket's own table holds the states of the best groups and remains valid during exception unwinding.
@@ -1960,7 +1964,10 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 using Key = AdaptiveRecordKey<Method>;
 
                 /// The first pass counts the groups in the table, each count kept in the mapped value as a lone
-                /// `count()` keeps it: a source cell adds its count state, a record one row.
+                /// `count()` keeps it: a source cell adds its count state, a record one row. With a descending order, the
+                /// top takes every grown count and keeps its indices in the high bits of the counts.
+                if (top_k)
+                    top_k->clear();
                 for (const auto & cell : cells)
                 {
                     if (alive_bins && !alive_bins[bucketCountBin(cell.hash)])
@@ -1969,49 +1976,72 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                     bool inserted = false;
                     emplaceSourceKey(counting_table, cell.key, it, inserted, cell.hash);
                     const UInt64 count = getCountState(*cell.mapped + rank_offset);
+                    UInt64 & group_count = getInlineCountState(it->getMapped());
                     if (inserted)
-                        getInlineCountState(it->getMapped()) = count;
+                        group_count = count;
                     else
-                        getInlineCountState(it->getMapped()) += count;
+                        group_count += count;
+                    if (top_k)
+                        top_k->update(group_count, cell.key, cell.hash);
                 }
                 for (size_t partition = unit_first_partition; partition < unit_first_partition + partitions_per_unit; ++partition)
                 {
                     collectPartitionRecords(session, spilled, partition, partition - first_partition, scratch.ranges);
                     pruned_records += drainAdaptivePartition<Method>(
-                        counting_table, arena, scratch.ranges, alive_bins, places, scratch.records, /*count_only=*/true);
+                        counting_table,
+                        arena,
+                        scratch.ranges,
+                        alive_bins,
+                        places,
+                        scratch.records,
+                        [&](UInt64 & group_count, const Key & key, UInt64 hash) ALWAYS_INLINE
+                        {
+                            if (top_k)
+                                top_k->update(group_count, key, hash);
+                        });
                 }
                 unit_groups = counting_table.size();
 
                 /// The unit's best groups by their counts, which are exact: the unit holds every record and source cell
-                /// of its keys. With the pruning, a group counted below the threshold cannot reach the top. Only the
-                /// cells that enter the heap are hashed.
-                const UInt64 threshold = pruning ? pruning->threshold.load(std::memory_order_relaxed) : 0;
-                auto & best = scratch.best_counts_and_hashes;
-                best.clear();
-                const auto worse_first = [&](const auto & lhs, const auto & rhs) { return better(lhs.first, rhs.first); };
-                forEachMappedCellWithHashOnDemand(
-                    counting_table,
-                    [&](AggregateDataPtr & mapped, const auto & hash_of)
-                    {
-                        const UInt64 count = getInlineCountState(mapped);
-                        if (count < threshold)
-                            return;
-                        if (best.size() < params.bucket_top_k)
-                        {
-                            best.emplace_back(count, hash_of());
-                            std::push_heap(best.begin(), best.end(), worse_first);
-                        }
-                        else if (better(count, best.front().first))
-                        {
-                            std::pop_heap(best.begin(), best.end(), worse_first);
-                            best.back() = {count, hash_of()};
-                            std::push_heap(best.begin(), best.end(), worse_first);
-                        }
-                    });
+                /// of its keys.
                 auto & best_hashes = scratch.best_hashes;
                 best_hashes.clear();
-                for (const auto & [count, hash] : best)
-                    best_hashes.push_back(hash);
+                if (top_k)
+                {
+                    /// With the pruning, which serves a descending order only, a group counted below the threshold
+                    /// cannot reach the top.
+                    const UInt64 threshold = pruning ? pruning->threshold.load(std::memory_order_relaxed) : 0;
+                    for (const auto & group : top_k->getGroups())
+                        if (group.count >= threshold)
+                            best_hashes.push_back(group.hash);
+                }
+                else
+                {
+                    /// The smallest counts, selected by a pass over the counted groups. Only the cells that enter the heap
+                    /// are hashed; its front holds the largest count kept.
+                    auto & best = scratch.best_counts_and_hashes;
+                    best.clear();
+                    const auto by_count = [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; };
+                    forEachMappedCellWithHashOnDemand(
+                        counting_table,
+                        [&](AggregateDataPtr & mapped, const auto & hash_of)
+                        {
+                            const UInt64 count = getInlineCountState(mapped);
+                            if (best.size() < params.bucket_top_k)
+                            {
+                                best.emplace_back(count, hash_of());
+                                std::push_heap(best.begin(), best.end(), by_count);
+                            }
+                            else if (count < best.front().first)
+                            {
+                                std::pop_heap(best.begin(), best.end(), by_count);
+                                best.back() = {count, hash_of()};
+                                std::push_heap(best.begin(), best.end(), by_count);
+                            }
+                        });
+                    for (const auto & [count, hash] : best)
+                        best_hashes.push_back(hash);
+                }
                 std::sort(best_hashes.begin(), best_hashes.end());
                 /// By hash: a group that shares the hash of a best one is merged completely as well, and the conversion
                 /// ranks it by its count with the others. The second pass tests every record, so a bitset on 12 hash bits
