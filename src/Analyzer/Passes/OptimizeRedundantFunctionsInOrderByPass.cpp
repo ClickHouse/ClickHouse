@@ -45,6 +45,13 @@ public:
         if (!query->hasOrderBy())
             return;
 
+        /// CUBE, ROLLUP and GROUPING SETS add rows in which a key is replaced by its default value
+        /// independently of the other keys, so a function of an earlier ORDER BY column no longer
+        /// follows from that column in the result and the sort key cannot be dropped. The WITH TOTALS
+        /// row is emitted out of band and is not sorted, so it needs no guard.
+        if (query->isGroupByWithCube() || query->isGroupByWithRollup() || query->isGroupByWithGroupingSets())
+            return;
+
         auto & order_by = query->getOrderBy();
         for (auto & elem : order_by.getNodes())
         {
