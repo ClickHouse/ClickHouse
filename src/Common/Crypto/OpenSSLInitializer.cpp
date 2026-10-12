@@ -7,6 +7,8 @@
 
 #if USE_SSL
 #    include <openssl/crypto.h>
+#    include <openssl/err.h>
+#    include <openssl/evp.h>
 #    include <openssl/provider.h>
 #    include <openssl/ssl.h>
 #endif
@@ -119,6 +121,22 @@ bool OpenSSLInitializer::isFIPSEnabled() const
 {
 #if USE_SSL
     return EVP_default_properties_is_fips_enabled(nullptr);
+#else
+    return false;
+#endif
+}
+
+bool OpenSSLInitializer::isMD5Available() const
+{
+#if USE_SSL
+    EVP_MD * md5 = EVP_MD_fetch(nullptr, "MD5", nullptr);
+    if (!md5)
+    {
+        ERR_clear_error();
+        return false;
+    }
+    EVP_MD_free(md5);
+    return true;
 #else
     return false;
 #endif

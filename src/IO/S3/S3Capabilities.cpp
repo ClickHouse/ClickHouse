@@ -4,6 +4,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -11,6 +13,19 @@ namespace DB
 S3Capabilities::S3Capabilities(const S3Capabilities & src)
     : S3Capabilities(src.isBatchDeleteSupported(), src.support_proxy)
 {
+    delete_md5_rejected = src.isDeleteMD5Rejected();
+}
+
+bool S3Capabilities::isDeleteMD5Rejected() const
+{
+    std::lock_guard lock{mutex};
+    return delete_md5_rejected;
+}
+
+bool S3Capabilities::setDeleteMD5Rejected()
+{
+    std::lock_guard lock{mutex};
+    return !std::exchange(delete_md5_rejected, true);
 }
 
 std::optional<bool> S3Capabilities::isBatchDeleteSupported() const
