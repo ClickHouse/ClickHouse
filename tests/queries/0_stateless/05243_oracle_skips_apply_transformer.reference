@@ -1,0 +1,14 @@
+any not checked
+lambda any not checked
+quantile not checked
+randConstant parameter not checked
+system table in lambda not checked
+stored definition in lambda not checked
+inline settings in lambda not checked
+thread settings in lambda not checked
+with fill in lambda not checked
+unordered window in lambda not checked
+asof join in lambda not checked
+toString checked
+ordered window in lambda checked
+deterministic subquery in lambda checked
