@@ -9,7 +9,6 @@
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/StorageAlias.h>
-#include <Storages/System/extractTablesFilter.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -63,14 +62,12 @@ public:
         SharedHeader header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
-        ContextPtr context_,
-        IDatabase::FilterByNameFunction table_name_filter_)
+        ContextPtr context_)
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
-        , table_name_filter(std::move(table_name_filter_))
     {
     }
 
@@ -132,8 +129,7 @@ protected:
             const String & database_name = databases_cursor.getDatabaseName();
 
             if (!databases_cursor.hasTablesIterator())
-                databases_cursor.setTablesIterator(
-                    databases_cursor.getDatabase()->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false));
+                databases_cursor.setTablesIterator(databases_cursor.getDatabase()->getTablesIterator(context));
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
@@ -165,11 +161,7 @@ protected:
             }
 
             for (; rows_count < max_block_size && external_tables_it != external_tables.end(); ++external_tables_it)
-            {
-                if (table_name_filter && !table_name_filter(external_tables_it->first))
-                    continue;
                 add_constraints("", external_tables_it->first, external_tables_it->second);
-            }
         }
 
         if (rows_count == 0)
@@ -183,7 +175,6 @@ private:
     UInt64 max_block_size;
     DatabaseTablesCursor databases_cursor;
     ContextPtr context;
-    IDatabase::FilterByNameFunction table_name_filter;
     Tables external_tables;
     Tables::const_iterator external_tables_it;
     bool external_tables_initialized = false;
@@ -223,8 +214,6 @@ private:
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
     ExpressionActionsPtr virtual_columns_filter;
-    IDatabase::FilterByNameFunction database_name_filter;
-    IDatabase::FilterByNameFunction table_name_filter;
 };
 
 void ReadFromSystemConstraints::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -237,15 +226,6 @@ void ReadFromSystemConstraints::applyFilters(ActionDAGNodes added_filter_nodes)
         {
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
-
-        /// A condition on `table` prunes the enumeration the same way the one on `database` does.
-        /// It is read before the filter below is built: that build drops the elements of an `IN`
-        /// over a subquery, and the extraction needs them (it builds such a set itself, keeping them).
-        table_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "table", context);
-        /// The filter below only sees `database`, so it cannot use a condition that names the
-        /// database together with the table, such as `(database, table) IN ((db, t))`; the
-        /// extraction reads that shape too, and shortlists the databases first.
-        database_name_filter = extractNameFilter(filter_actions_dag->getOutputs().at(0), "database", context);
 
         auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
@@ -288,8 +268,6 @@ void ReadFromSystemConstraints::initializePipeline(QueryPipelineBuilder & pipeli
             continue;
         if (database->isExternal())
             continue;
-        if (database_name_filter && !database_name_filter(database_name))
-            continue;
         column->insert(database_name);
     }
 
@@ -299,7 +277,7 @@ void ReadFromSystemConstraints::initializePipeline(QueryPipelineBuilder & pipeli
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<ConstraintsSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context, std::move(table_name_filter))));
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context)));
 }
 
 }

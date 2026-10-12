@@ -3,53 +3,11 @@
   "item": "Premiers pas",
   "pages": [
     {
-      "group": "Premiers pas",
+      "group": "Prise en main",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "fr/get-started/index",
-        {
-          "expandable": true,
-          "expanded": false,
-          "group": "Guides de démarrage rapide",
-          "pages": [
-            "fr/get-started/quickstarts/home",
-            {
-              "expanded": false,
-              "group": "Tous les cas d’usage",
-              "pages": [
-                "fr/get-started/setup/cloud",
-                "fr/get-started/quickstarts/obtain-your-cloud-connection-details",
-                "fr/get-started/quickstarts/insert-data-using-clickhouse-client",
-                "fr/get-started/quickstarts/creating-tables",
-                "fr/get-started/quickstarts/writing-queries",
-                "fr/get-started/quickstarts/create-your-first-mergetree-table"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "Analytique en temps réel",
-              "pages": [
-                "fr/get-started/quickstarts/create-your-first-materialized-view",
-                "fr/get-started/quickstarts/create-your-first-projection"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "Entrepôt de données",
-              "pages": [
-                "fr/get-started/quickstarts/connect-your-iceberg-catalog",
-                "fr/get-started/quickstarts/mutations"
-              ]
-            },
-            {
-              "expanded": false,
-              "group": "Observabilité",
-              "pages": [
-                "fr/get-started/quickstarts/working-with-the-map-type"
-              ]
-            }
-          ]
-        },
+        "fr/get-started/quickstarts/home",
         {
           "expandable": true,
           "expanded": true,
@@ -65,7 +23,6 @@
           "group": "Cas d’utilisation",
           "pages": [
             "fr/get-started/use-cases/overview",
-            "fr/get-started/use-cases/choosing-a-service",
             "fr/get-started/use-cases/real-time-analytics",
             "fr/get-started/use-cases/observability",
             "fr/get-started/use-cases/data-warehousing",
@@ -84,7 +41,7 @@
         "fr/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Autogéré",
+          "group": "Auto-géré",
           "pages": [
             "fr/get-started/setup/self-managed/overview",
             {
@@ -111,7 +68,7 @@
     },
     {
       "expanded": true,
-      "group": "Exemples de jeux de données",
+      "group": "Jeux de données d’exemple",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "fr/get-started/sample-datasets/index",
@@ -129,7 +86,7 @@
           ]
         },
         {
-          "group": "Recherche vectorielle et représentations vectorielles",
+          "group": "Recherche vectorielle et embeddings",
           "pages": [
             "fr/get-started/sample-datasets/dbpedia",
             "fr/get-started/sample-datasets/hacker-news-vector-search",
@@ -138,7 +95,7 @@
           ]
         },
         {
-          "group": "Analyse du Web et des réseaux sociaux",
+          "group": "Analytique web et réseaux sociaux",
           "pages": [
             "fr/get-started/sample-datasets/amazon-reviews",
             "fr/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -150,7 +107,7 @@
           ]
         },
         {
-          "group": "Données géospatiales et localisation",
+          "group": "Géo et lieux",
           "pages": [
             "fr/get-started/sample-datasets/cell-towers",
             "fr/get-started/sample-datasets/foursquare-os-places",
@@ -180,7 +137,7 @@
     },
     {
       "expanded": true,
-      "group": "Migrer",
+      "group": "Migration",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "fr/get-started/migrate/overview",
@@ -230,7 +187,7 @@
           ]
         },
         {
-          "group": "Migration d’OSS vers le Cloud",
+          "group": "OSS vers Cloud",
           "pages": [
             "fr/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "fr/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
