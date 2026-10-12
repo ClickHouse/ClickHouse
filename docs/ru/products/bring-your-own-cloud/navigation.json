@@ -53,6 +53,7 @@
         "ru/products/bring-your-own-cloud/reference/faq",
         {
           "group": "Режим коннектора",
+          "hidden": true,
           "pages": [
             "ru/products/bring-your-own-cloud/connector/overview",
             "ru/products/bring-your-own-cloud/connector/onboarding",

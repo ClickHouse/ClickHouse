@@ -8,11 +8,13 @@ the format per table.
 
 import json
 import os
+import shlex
 import uuid
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_access_key, minio_secret_key
 
 CATALOG = "unity"
 
@@ -129,7 +131,8 @@ def start_proxy(node):
         [
             "bash",
             "-c",
-            f"python3 {PROXY_PATH} {PROXY_PORT} > {PROXY_LOG} 2>&1 &",
+            f"python3 {PROXY_PATH} {PROXY_PORT} {shlex.quote(minio_access_key)} {shlex.quote(minio_secret_key)}"
+            f" > {PROXY_LOG} 2>&1 &",
         ]
     )
 
@@ -164,6 +167,7 @@ def started_cluster():
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
             stay_alive=True,
+            with_minio=True,
             tag=os.environ.get("DOCKER_BASE_WITH_UNITY_CATALOG_TAG", "latest"),
         )
 
@@ -241,12 +245,20 @@ def assert_seeded_rows(node, db_name, table):
 
 def uc_api_post(node, route, payload):
     """Registers objects the seeded data does not provide, such as a CSV table."""
+    return uc_api_request(node, "POST", route, json.dumps(payload).encode())
+
+
+def uc_api_delete(node, route):
+    return uc_api_request(node, "DELETE", route)
+
+
+def uc_api_request(node, method, route, data=None):
     script = f"""
 import json, urllib.request
 request = urllib.request.Request(
     {UC_URL + "/" + route!r},
-    data={json.dumps(payload)!r}.encode(),
-    method="POST",
+    data={data!r},
+    method={method!r},
     headers={{"Content-Type": "application/json"}},
 )
 print(urllib.request.urlopen(request).status)
@@ -483,6 +495,82 @@ def test_create_and_insert_delta_table(started_cluster):
         ["bash", "-c", f"ls {location}/_delta_log/*.json"]
     ).split()
     assert len(commits) == 2, commits
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_insert_requests_write_credentials(started_cluster, use_v2):
+    """Unity vends read-only credentials for `READ`, so `INSERT` into an
+    external Delta table on S3 must request `READ_WRITE` ones."""
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    schema_name = unique_name("write_credentials")
+    table_name = "on_s3"
+    db_name = unique_name("write_credentials_db")
+    table_key = f"{schema_name}/{table_name}"
+    minio_endpoint = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/"
+
+    node.query(
+        f"CREATE TABLE {schema_name} (id Int32, name String) ENGINE = DeltaLake("
+        f"'{minio_endpoint}{started_cluster.minio_bucket}/{table_key}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings=DELTA_WRITE_SETTINGS,
+    )
+    node.query(f"DROP TABLE {schema_name}")
+
+    uc_api_post(node, "schemas", {"name": schema_name, "catalog_name": CATALOG})
+    uc_api_post(
+        node,
+        "tables",
+        {
+            "name": table_name,
+            "catalog_name": CATALOG,
+            "schema_name": schema_name,
+            "table_type": "EXTERNAL",
+            "data_source_format": "DELTA",
+            "storage_location": f"s3://{started_cluster.minio_bucket}/{table_key}",
+            "columns": [
+                {
+                    "name": name,
+                    "type_text": type_text,
+                    "type_json": json.dumps(
+                        {"name": name, "type": type_json, "nullable": True, "metadata": {}}
+                    ),
+                    "type_name": type_name,
+                    "position": position,
+                    "nullable": True,
+                }
+                for position, (name, type_text, type_json, type_name) in enumerate(
+                    [("id", "int", "integer", "INT"), ("name", "string", "string", "STRING")]
+                )
+            ],
+        },
+    )
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""
+CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{PROXY_URL}')
+SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = {use_v2},
+         vended_credentials = true, catalog_credential = '{PAT_TOKEN}',
+         storage_endpoint = '{minio_endpoint}'
+        """,
+        settings={GATE_SETTING: "1"},
+    )
+    table = f"{db_name}.`{schema_name}.{table_name}`"
+
+    try:
+        proxy_control(node, "reset_credential_operations")
+        node.query(f"SELECT count() FROM {table}")
+        assert set(json.loads(proxy_control(node, "credential_operations"))) == {"READ"}
+
+        proxy_control(node, "reset_credential_operations")
+        node.query(f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b')", settings=DELTA_WRITE_SETTINGS)
+        assert "READ_WRITE" in json.loads(proxy_control(node, "credential_operations"))
+
+        assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name}")
+        uc_api_delete(node, f"tables/{CATALOG}.{schema_name}.{table_name}")
+        uc_api_delete(node, f"schemas/{CATALOG}.{schema_name}")
 
 
 def test_pat_token_authentication(started_cluster):

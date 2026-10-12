@@ -86,6 +86,8 @@ private:
     /// Object-local bytes we wrote, from the first write to the end of the last (writes append). Used
     /// from one thread, so no lock.
     ByteRange own_fill;
+    /// One state per writer: it owns a single append-only segment.
+    FileCacheReserveAhead reserve_ahead;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 
