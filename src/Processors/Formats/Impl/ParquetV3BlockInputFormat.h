@@ -104,7 +104,6 @@ private:
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher);
 
     ParquetMetadataCache::MappedPtr metadata_cache_cell;
-    std::optional<ParquetMetadataCacheKey> metadata_cache_key;
 };
 
 /// Skips a file version, without opening it, if the kept statistics show that the reader would prune every row group.

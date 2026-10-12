@@ -16,6 +16,7 @@
 #include <IO/WithFileName.h>
 #include <generated/parquet_types.h>
 
+#include <atomic>
 #include <mutex>
 #include <unordered_map>
 
@@ -55,16 +56,19 @@ struct ParquetKeptStatistics : private boost::noncopyable
 
     explicit ParquetKeptStatistics(size_t max_bytes_) : max_bytes(max_bytes_) {}
 
-    /// Returns false if ranges are already kept under `column_key` or all kept ranges would exceed `max_bytes`.
-    bool add(const String & column_key, const Ranges & ranges);
+    /// Does nothing if ranges are already kept under `column_key` or all kept ranges would exceed `max_bytes`.
+    void add(const String & column_key, const Ranges & ranges);
     RangesPtr get(const String & column_key) const;
     size_t bytes() const;
+    /// Whether ranges were added since the previous call.
+    bool takeAdded();
 
 private:
     const size_t max_bytes;
     mutable std::mutex mutex;
     std::unordered_map<String, RangesPtr> ranges_by_column TSA_GUARDED_BY(mutex);
     size_t total_bytes TSA_GUARDED_BY(mutex) = 0;
+    std::atomic<bool> added{false};
 };
 
 /// Cache cell containing Parquet metadata
@@ -72,7 +76,7 @@ struct ParquetMetadataCacheCell : private boost::noncopyable
 {
     parquet::format::FileMetaData metadata;
     UInt64 memory_bytes;
-    /// Counts in the weight of the cell (see `ParquetMetadataCache::updateWeight`).
+    /// Counts in the weight of the cell from the next cache hit on.
     std::shared_ptr<ParquetKeptStatistics> kept_statistics;
     explicit ParquetMetadataCacheCell(parquet::format::FileMetaData metadata_);
 private:
@@ -120,15 +124,19 @@ public:
         {
             LOG_TRACE(log, "cache hit {} | {}", key.file_path, key.etag);
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+            countKeptStatistics(key, result.first);
         }
         return result.first;
     }
 
-    /// Recomputes the weight of `cell` after statistics were kept in it, if the cache still holds it under `key`.
-    void updateWeight(const ParquetMetadataCacheKey & key, const MappedPtr & cell);
+    /// The cell under `key` if the cache holds it, as a hit of `getOrSetMetadataCell` without loading.
+    MappedPtr getCell(const ParquetMetadataCacheKey & key);
 
 private:
     LoggerPtr log;
+    /// Recomputes the weight of `cell` if statistics were kept in it since. Only on a hit, which moves the cell anyway:
+    /// keeping statistics must not change the position of a cell in the cache.
+    void countKeptStatistics(const ParquetMetadataCacheKey & key, const MappedPtr & cell);
     /// Called for each individual entry being evicted from cache
     void onEntryRemoval(size_t weight_loss, const MappedPtr &) override;
 };

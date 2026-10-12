@@ -124,7 +124,6 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
         metadata_cache_cell = metadata_cache->getOrSetMetadataCell(
             cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size); });
-        metadata_cache_key = std::move(cache_key);
         return metadata_cache_cell->metadata;
     }
     else
@@ -142,17 +141,14 @@ void ParquetV3BlockInputFormat::cacheFilterColumnStatistics()
     /// With a column mapper (data lakes) the column names do not identify the columns of the file.
     if (!parquet_reader.key_condition_column_ranges_complete || format_filter_info->column_mapper)
         return;
-    bool added = false;
     for (const auto & [idx, ranges] : parquet_reader.key_condition_column_ranges)
     {
         if (std::ranges::all_of(ranges, [](const Range & range) { return range.isInfinite(); }))
             continue;
         const auto & column = parquet_reader.extended_sample_block.getByPosition(idx);
-        added |= metadata_cache_cell->kept_statistics->add(
+        metadata_cache_cell->kept_statistics->add(
             ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings), ranges);
     }
-    if (added && metadata_cache && metadata_cache_key)
-        metadata_cache->updateWeight(*metadata_cache_key, metadata_cache_cell);
 }
 
 String ParquetCachedStatisticsFilter::makeColumnKey(
@@ -205,7 +201,7 @@ std::shared_ptr<const ParquetCachedStatisticsFilter> ParquetCachedStatisticsFilt
 std::optional<size_t> ParquetCachedStatisticsFilter::canSkipFile(
     ParquetMetadataCache & metadata_cache, const String & path, const String & version) const
 {
-    auto cell = metadata_cache.get(ParquetMetadataCache::createKey(path, version));
+    auto cell = metadata_cache.getCell(ParquetMetadataCache::createKey(path, version));
     if (!cell)
         return std::nullopt;
 
@@ -359,7 +355,6 @@ void ParquetV3BlockInputFormat::resetParser()
         reader.reset();
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
-        metadata_cache_key.reset();
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
