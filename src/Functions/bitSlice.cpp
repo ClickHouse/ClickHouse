@@ -10,7 +10,6 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -223,7 +222,6 @@ public:
     }
 
     template <class Source>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void bitSliceDynamicOffsetUnbounded(Source && src, StringSink && sink, const IColumn & offset_column) const
     {
         while (!src.isEnd())
@@ -343,7 +341,6 @@ public:
     }
 
     template <class Source>
-    NO_SANITIZE_UNSIGNED_OVERFLOW
     void bitSliceDynamicOffsetBounded(Source && src, StringSink && sink, const IColumn & offset_column, const IColumn & length_column) const
     {
         while (!src.isEnd())
@@ -377,7 +374,7 @@ public:
                     shift_bit = left_truncate ? 0 : offset_bit;
                 }
 
-                ssize_t remain_byte = left_offset ? size - offset_byte : offset_byte;
+                ssize_t remain_byte = left_offset ? static_cast<ssize_t>(size) - static_cast<ssize_t>(offset_byte) : static_cast<ssize_t>(offset_byte);
 
                 size_t length_byte = 0;
                 size_t over_bit = 0;
