@@ -987,10 +987,14 @@ def main():
                 print("skip log export config for local run")
 
         def checkout_test_data_submodules():
-            # Tests read the Arrow test corpus from this submodule. The job runs as `root`
-            # in docker on a checkout owned by another user, hence `safe.directory`.
+            # Some tests read test data from submodules, which are not checked out in CI.
+            # Check out only those needed by the selected tests, all of them for a full run.
+            # The job runs as `root` in docker on a checkout owned by another user, hence `safe.directory`.
+            submodules = Targeting.test_data_submodules_for(tests)
+            if not submodules:
+                return True
             return Shell.check(
-                "git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- contrib/arrow-testing",
+                f"git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- {' '.join(submodules)}",
                 retries=3,
                 verbose=True,
             )
