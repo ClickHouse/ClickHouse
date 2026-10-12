@@ -1531,8 +1531,16 @@ public:
 
     ExpressionActionsPtr
     getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
-    ExpressionActionsPtr
-    getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
+    /// `use_index_expression` selects skip index expressions by result name; without it all of them are used.
+    ExpressionActionsPtr getSortingKeyAndSkipIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::function<bool(const String &)> & use_index_expression = {}) const;
+    /// Returns nullptr when no expression is selected.
+    ExpressionActionsPtr getSkipIndicesExpression(
+        const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeIndices & indices,
+        const std::function<bool(const String &)> & use_index_expression = {}) const;
 
     struct PartCompressionCodec
     {
