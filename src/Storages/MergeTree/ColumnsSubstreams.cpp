@@ -235,6 +235,9 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
             readString(substream, buf);
             assertChar('\n', buf);
 
+            if (substream.empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has an empty substream", column);
+
             if (!substream_positions.emplace(substream, total_substreams + substreams.size()).second)
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has duplicate substream {}", column, substream);
             substreams.emplace_back(std::move(substream));
