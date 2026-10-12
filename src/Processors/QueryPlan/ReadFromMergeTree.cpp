@@ -7486,6 +7486,10 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             writeVarUInt(query_info.input_order_info->used_prefix_of_sorting_key_size, ctx.out);
             writeIntBinary(static_cast<Int8>(query_info.input_order_info->direction), ctx.out);
             writeVarUInt(query_info.input_order_info->limit, ctx.out);
+            /// Step version 2: the soft limit that sizes the first read task (see `requestReadingInOrder`).
+            /// An older peer does not get it and only reads a full first task.
+            if (ctx.step_version >= 2)
+                writeVarUInt(query_task_size_limit, ctx.out);
         }
     }
     else if (ship_input_order_info)
@@ -7566,6 +7570,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     size_t input_order_prefix_size = 0;
     Int8 input_order_direction = 1;
     UInt64 input_order_limit = 0;
+    UInt64 input_order_query_limit = 0;
     bool has_input_order_info = false;
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER)
     {
@@ -7577,6 +7582,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
             readVarUInt(input_order_prefix_size, ctx.in);
             readIntBinary(input_order_direction, ctx.in);
             readVarUInt(input_order_limit, ctx.in);
+            if (ctx.step_version >= 2)
+                readVarUInt(input_order_query_limit, ctx.in);
         }
     }
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
@@ -7661,7 +7668,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
             /// exchange pair collapses, which means the read was made distributed.
             if (has_input_order_info
                 && !read_from_merge_tree_step->requestReadingInOrder(
-                    input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
+                    input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit, input_order_query_limit))
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Coordinator asked for a read-in-order distributed read that this node refused");
             read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
@@ -7680,10 +7687,13 @@ void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
     /// Version 1 carries the `allow_query_condition_cache` flag bit (bit 64 of the flags byte).
+    /// Version 2 carries the soft limit of a shipped read-in-order request (`query_task_size_limit`).
     registry.registerStep(
         "ReadFromMergeTree",
         ReadFromMergeTree::deserialize,
-        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG}});
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER_QUERY_LIMIT}});
 }
 
 }
