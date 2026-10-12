@@ -32,3 +32,14 @@
 -- `__topKFilter` in PREWHERE must still populate the cache
 1
 1
+-- a filter widened after index analysis must not populate the cache
+1
+194
+0
+194
+194
+0
+-- control: with no runtime filter the same join leaves the table readable
+0
+194
+0
