@@ -28,6 +28,7 @@ protected:
  *  - path that should be skipped
  *  - path regexp for paths that should be skipped
  *  - setting in a form of `setting=N`
+ *  - default data type for all non-typed paths (`DEFAULT PATH TYPE type`)
  */
 class ASTObjectTypeArgument : public IAST
 {
@@ -36,6 +37,8 @@ public:
     ASTPtr skip_path;
     ASTPtr skip_path_regexp;
     ASTPtr parameter;
+    /// Data type AST for `DEFAULT PATH TYPE type` argument.
+    ASTPtr default_path_type;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "ASTObjectTypeArgument"; }

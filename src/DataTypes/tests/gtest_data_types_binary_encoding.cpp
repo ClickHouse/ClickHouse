@@ -134,6 +134,12 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("JSON"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
+    check(DataTypeFactory::instance().get("JSON(DEFAULT PATH TYPE String)"));
+    check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, a.b.c UInt32, SKIP a.c, DEFAULT PATH TYPE Array(Nullable(UInt32)))"));
+    check(DataTypeFactory::instance().get("JSON(default UInt8, DEFAULT PATH TYPE String)"));
+    /// A typed path named `default` must not be confused with `DEFAULT PATH TYPE`.
+    auto type_with_default_path = DataTypeFactory::instance().get("JSON(default UInt8)");
+    ASSERT_TRUE(type_with_default_path->equals(*DataTypeFactory::instance().get(type_with_default_path->getName())));
 }
 
 GTEST_TEST(DataTypesCache, GetSerializationFromDeepType)

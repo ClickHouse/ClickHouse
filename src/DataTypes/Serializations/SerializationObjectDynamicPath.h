@@ -12,11 +12,11 @@ namespace DB
 class SerializationObjectDynamicPath final : public SerializationWrapper
 {
 private:
-    SerializationObjectDynamicPath(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
+    SerializationObjectDynamicPath(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, const DataTypePtr & default_path_type_);
 
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
-    static SerializationPtr create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_);
+    static UInt128 getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, const DataTypePtr & default_path_type_ = nullptr);
+    static SerializationPtr create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_, const DataTypePtr & default_path_type_ = nullptr);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return SerializationWrapper::supportsPooling() && dynamic_serialization->supportsPooling(); }
 
@@ -59,6 +59,11 @@ private:
     SerializationPtr dynamic_serialization;
     DataTypePtr dynamic_type;
     DataTypePtr subcolumn_type;
+    /// Default type of all non-typed paths (`JSON(DEFAULT PATH TYPE T)`), nullptr if not specified.
+    DataTypePtr default_path_type;
+    /// Type and serialization of the dynamic path stream: `Variant(T)` with `DEFAULT PATH TYPE T`, nested serialization otherwise.
+    DataTypePtr runtime_path_type;
+    SerializationPtr runtime_path_serialization;
 };
 
 }

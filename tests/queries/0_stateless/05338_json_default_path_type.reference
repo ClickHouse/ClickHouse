@@ -1,0 +1,140 @@
+JSON(DEFAULT PATH TYPE Int64)
+JSON(max_dynamic_paths=0, DEFAULT PATH TYPE String, d UInt32)
+{"a":[1,null]}	Array(Nullable(UInt32))
+{"a":"x"}	LowCardinality(String)
+{"a":"2020-01-02 03:04:05"}	2020-01-02 03:04:05	DateTime(\'UTC\')
+{"default":7,"x":8}	7	JSON(default UInt8)	UInt8	Dynamic
+{"default":7,"x":"8"}	7	JSON(DEFAULT PATH TYPE String, default UInt8)	UInt8	String
+{"default":1,"x":2}	{"default":3,"x":"4"}	JSON(default UInt8)	JSON(DEFAULT PATH TYPE String, default UInt8)	UInt8	String
+{"a":1,"b":10}
+{"a":2,"c":40}
+{"a":3}
+{"b":20,"c":30}
+{"b":50}
+{"z":60}
+{}
+{}
+{"a":1}	1
+{"a":2.5}	2.5
+{}	0
+{"a":1}
+{"a":2.5}
+{}
+{"a":"x","b":"y"}	x	y
+{"a":"z"}	z	
+{"c":"w"}		
+{}		
+{"a":"x","b":"y"}
+{"a":"z"}
+{"c":"w"}
+{}
+Int64
+Int64
+1	1
+3	3
+0	0
+Nullable(Int64)
+1
+3
+\N
+{"a":1}	Float64	Float64
+{"b":2.5}	Float64	Float64
+{}	Float64	Float64
+{"a":1}	Float64	Float64
+{"b":2.5}	Float64	Float64
+{}	Float64	Float64
+{"a":{"b":1}}	{"b":1}
+{"a":{"b":2,"c":3}}	{"b":2,"c":3}
+{}	{}
+{"a":{"b":1}}
+{"a":{"b":2,"c":3}}
+{}
+before merge
+{"b":2}|{}|{}
+after merge
+{"b":2}|{}|{}
+JSON
+['{"a":"x"}','{}']	Array(JSON)
+['{"a":"x"}','{"a":"y"}']	Array(JSON(DEFAULT PATH TYPE Int64, a String))
+{"a":5,"s":"text"}	text	5	String
+{"a":1}	Int64	Int64
+{"b":2}	Int64	Int64
+{"a":[1,2,3]}	[1,2,3]	[]
+{"b":[]}	[]	[]
+{}	[]	[]
+3
+3	0
+0	0
+0	0
+2	1
+0	0
+1	{"a":1,"b":2}
+0	{}
+1	{"a":1,"b":2}
+0	{}
+{"a":1,"b":2}	1	0	0	Int64
+{"a":3,"c":4}	3	4	0	Int64
+{"d":5,"e":6,"f":7}	0	0	7	Int64
+{}	0	0	0	Int64
+{"a":1,"b":2}	1	0	0
+{"a":3,"c":4}	3	4	0
+{"d":5,"e":6,"f":7}	0	0	7
+{}	0	0	0
+{"a":{"b":1,"c":2}}	{"b":1,"c":2}	JSON(max_dynamic_paths=0, DEFAULT PATH TYPE Int64)	0
+{"a":{"b":3}}	{"b":3}	JSON(max_dynamic_paths=0, DEFAULT PATH TYPE Int64)	0
+{}	{}	JSON(max_dynamic_paths=0, DEFAULT PATH TYPE Int64)	0
+{"b":1,"c":2}	0
+{"b":3}	0
+{}	0
+{"a":5}	5	Dynamic	5
+{"a":{"b":6}}	{"b":6}	Dynamic	{"b":6}
+{}	\N	Dynamic	\N
+{"a":0,"a":{"b":1}}	0	Dynamic	0
+5	5
+{"b":6}	{"b":6}
+\N	\N
+0	0
+5
+{"b":6}
+\N
+0
+[1,2]	Array(Int64)
+18446744073709551615	UInt64
+2020-01-02 03:04:05	DateTime(\'UTC\')
+[1,2]	Array(Int64)	18446744073709551615	UInt64	2020-01-02 03:04:05	DateTime(\'UTC\')
+{}		String
+{"a":"5"}	5	String
+{"a":"hello"}	hello	String
+{}	
+{"a":"5"}	5
+{"a":"hello"}	hello
+{"a":1,"b":2}	{'a':'Int64','b':'Int64'}
+{"a":1,"b":2}	{'a':'Int64','b':'Int64'}
+{"a":1,"b":2}	{'a':'Int64','b':'Int64'}	Int64
+{"a":1,"b":2}	{'a':'Int64','b':'Int64'}	Dynamic
+JSON(max_dynamic_paths=1, DEFAULT PATH TYPE Int64), Object(size = 1, Variant(size = 1, UInt8(size = 1), UInt64(size = 1), Int64(size = 1)), Array(size = 1, UInt64(size = 1), Tuple(size = 1, String(size = 1), Int64(size = 1))))
+JSON(max_dynamic_paths=1, DEFAULT PATH TYPE String), Object(size = 1, Variant(size = 1, UInt8(size = 1), UInt64(size = 1), String(size = 1)), Array(size = 1, UInt64(size = 1), Tuple(size = 1, String(size = 1), String(size = 1))))
+{"a":0,"b":1}	0	['a','b']	{'a':'Int64','b':'Int64'}	['0','1']	0
+{"a":"","b":"x"}		['a','b']	{'a':'String','b':'String'}	['','x']	0
+['a','b']	{'a':['Int64'],'b':['Int64']}	{"a":0,"b":0}
+['a','b']	{'a':['String'],'b':['String']}	{"a":"","b":""}
+['{"a":0,"b":1}','{"a":"0","b":"1"}']
+{"a":0}	1	0
+{}	0	0
+{"a":0}	1	0
+{}	0	0
+1207134042873729554
+2202906307356721367
+{}	1
+{"a":0}	1
+{}	2
+{"a":0}	2
+{"a":""}	1	
+{}	0	
+{"a":""}	1	
+{}	0	
+{'a.b':['UInt8'],'expires_at':['LowCardinality(String)'],'partition.address':['LowCardinality(String)'],'referrer':['LowCardinality(String)'],'status':['LowCardinality(String)']}
+100	1
+{"a":"1","b":"2.5","c":"[1,2]"}	['a']	['b','c']
+{}	[]	[]
+{"b":1}	['b']	[]

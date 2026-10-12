@@ -844,7 +844,10 @@ private:
         JSONSchema::Leaf leaf;
         leaf.path = path;
         leaf.absent_threshold = drawAbsentThreshold();
-        leaf.types = makeDynamicSchema(drawLeafTypes(can_nest), object_type.getMaxDynamicTypes());
+        /// With `DEFAULT PATH TYPE` every non-typed path holds values of exactly that type.
+        const auto & default_path_type = object_type.getDefaultPathType();
+        leaf.types = makeDynamicSchema(
+            default_path_type ? DataTypes{default_path_type} : drawLeafTypes(can_nest), object_type.getMaxDynamicTypes());
         leaves.push_back(std::move(leaf));
         --remaining_paths;
     }
@@ -1770,8 +1773,9 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
                 typed_path_columns[path]
                     = fillColumnWithRandomData(object_type.getTypedPaths().at(path), limit, ctx.nestedChild(path))->assumeMutable();
 
-            /// Every generated path becomes a `Dynamic` column of `limit` rows; a NULL there means
-            /// that the key is absent from that row.
+            /// Every generated path becomes a `Dynamic` column of `limit` rows, or a `Variant(T)` one
+            /// with `DEFAULT PATH TYPE T`; a NULL there means that the key is absent from that row.
+            const auto & default_path_type = object_type.getDefaultPathType();
             std::vector<String> leaf_paths;
             MutableColumns leaf_columns;
             leaf_paths.reserve(schema.leaves.size());
@@ -1794,11 +1798,25 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
                 for (size_t i = 0; i < num_types; ++i)
                 {
                     value_columns[i] = fillColumnWithRandomData(leaf.types.types[i], counts[i], leaf_ctx.child(i))->assumeMutable();
-                    raiseUInt64ValuesAboveInt64Max(*value_columns[i]);
+                    if (!default_path_type)
+                        raiseUInt64ValuesAboveInt64Max(*value_columns[i]);
                 }
 
                 leaf_paths.push_back(leaf.path);
-                leaf_columns.push_back(buildDynamicColumn(leaf.types, type_index, std::move(value_columns))->assumeMutable());
+                if (default_path_type)
+                {
+                    /// The only alternative is 0, and `num_types` (1) marks an absent key.
+                    auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+                    auto & data = discriminators->getData();
+                    data.reserve(limit);
+                    for (const auto index : type_index)
+                        data.push_back(index == 0 ? ColumnVariant::Discriminator{0} : ColumnVariant::NULL_DISCRIMINATOR);
+                    leaf_columns.push_back(ColumnVariant::create(std::move(discriminators), std::move(value_columns)));
+                }
+                else
+                {
+                    leaf_columns.push_back(buildDynamicColumn(leaf.types, type_index, std::move(value_columns))->assumeMutable());
+                }
             }
 
             /// `max_dynamic_paths`, `max_dynamic_paths_upper_bound` and `global_max_dynamic_paths` are
@@ -1808,11 +1826,13 @@ ColumnPtr fillColumnWithRandomData(const DataTypePtr & type, UInt64 limit, const
             auto object = ColumnObject::create(
                 std::move(typed_path_columns),
                 std::move(no_dynamic_paths),
-                DataTypeObject::getTypeOfSharedData()->createColumn(),
+                DataTypeObject::getTypeOfSharedData(default_path_type)->createColumn(),
                 max_dynamic_paths,
                 max_dynamic_paths,
                 max_dynamic_paths,
-                object_type.getMaxDynamicTypes());
+                object_type.getMaxDynamicTypes(),
+                /*statistics_=*/{},
+                default_path_type);
 
             /// Takes the leading `max_dynamic_paths` leaves as dynamic paths of the column and
             /// serialises the rest into the shared data, sorted by path, one offset per row.

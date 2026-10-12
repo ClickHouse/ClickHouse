@@ -74,7 +74,8 @@ public:
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
-        const SerializationPtr & dynamic_serialization_);
+        const SerializationPtr & dynamic_serialization_,
+        const DataTypePtr & default_path_type_ = nullptr);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -181,6 +182,12 @@ protected:
     std::list<re2::RE2> path_regexps_to_skip;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
+    /// Default type of all non-typed paths (`JSON(DEFAULT PATH TYPE T)`), nullptr if not specified.
+    DataTypePtr default_path_type;
+    /// Type and serialization of dynamic path columns and streams: `Dynamic` for ordinary JSON,
+    /// `Variant(T)` with `DEFAULT PATH TYPE T` (NULL means the path is missing in the row).
+    DataTypePtr runtime_path_type;
+    SerializationPtr runtime_path_serialization;
 
 private:
     void checkPathIsNotTyped(const String & path, bool native_format) const;
