@@ -37,6 +37,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
+#include <chrono>
 #include <limits>
 #include <unordered_set>
 
@@ -885,6 +886,7 @@ void alter(
             }
         }
 
+        metadata->set(Iceberg::f_last_updated_ms, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
         std::string json_representation = stringifyJSON(metadata, 4);
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();

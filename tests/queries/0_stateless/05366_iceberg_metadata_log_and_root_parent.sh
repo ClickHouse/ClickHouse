@@ -15,7 +15,8 @@ CH="${CH_BASE} --allow_experimental_iceberg_compaction 0"
 CH_OPTIMIZE="${CH_BASE} --allow_experimental_iceberg_compaction 1"
 
 # One row per metadata file: the basenames its `metadata-log` lists, whether every entry carries the
-# `last-updated-ms` and the location-based path of the file it names, and which snapshots have a parent.
+# `last-updated-ms` and the location-based path of the file it names, whether the entries' times are distinct,
+# and which snapshots have a parent.
 dump()
 {
     local src="$1"
@@ -26,6 +27,8 @@ dump()
             arrayMap(e -> splitByChar('/', JSONExtractString(e, 'metadata-file'))[-1], JSONExtractArrayRaw(json, 'metadata-log')) AS log,
             arrayAll(e -> JSONExtractInt(e, 'timestamp-ms') = updated_ms[splitByChar('/', JSONExtractString(e, 'metadata-file'))[-1]],
                 JSONExtractArrayRaw(json, 'metadata-log')) AS ts_ok,
+            length(arrayDistinct(arrayMap(e -> JSONExtractInt(e, 'timestamp-ms'), JSONExtractArrayRaw(json, 'metadata-log'))))
+                = length(JSONExtractArrayRaw(json, 'metadata-log')) AS ts_distinct,
             arrayAll(e -> JSONExtractString(e, 'metadata-file') = concat(trim(TRAILING '/' FROM JSONExtractString(json, 'location')), '/metadata/',
                 splitByChar('/', JSONExtractString(e, 'metadata-file'))[-1]), JSONExtractArrayRaw(json, 'metadata-log')) AS path_ok,
             arrayMap(s -> JSONHas(s, 'parent-snapshot-id'), JSONExtractArrayRaw(json, 'snapshots')) AS has_parent
