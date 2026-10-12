@@ -1,10 +1,13 @@
+import concurrent.futures
 import logging
 import random
 import string
+import uuid
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 TABLE_NAME = "s3_test"
 
@@ -127,6 +130,98 @@ def insert(cluster, node_idxs, verify=True):
                 )
                 == all_values
             )
+
+
+def test_custom_query_cancellation_does_not_report_broken_part(cluster):
+    create_table(
+        cluster,
+        additional_settings={
+            "min_bytes_for_wide_part": 0,
+            "write_marks_for_substreams_in_compact_parts": 1,
+        },
+    )
+
+    node = cluster.instances["node1"]
+    node.query(
+        f"INSERT INTO {TABLE_NAME} SELECT toDate('2020-01-01'), number, repeat('x', 1024) FROM numbers(4096)"
+    )
+    node.query("SYSTEM DROP MARK CACHE")
+    node.query("SYSTEM DROP FILESYSTEM CACHE")
+
+    query_id = uuid.uuid4().hex
+    s3_pause_failpoint = "s3_read_before_get_object"
+    report_broken_pause_failpoint = "merge_tree_reader_pause_before_report_broken"
+    cancellation_failpoint = "query_status_cancel_with_injected_exception"
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {s3_pause_failpoint}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {report_broken_pause_failpoint}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {cancellation_failpoint}")
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    query_future = executor.submit(
+        node.query_and_get_answer_with_error,
+        f"SELECT sum(id) FROM {TABLE_NAME} SETTINGS "
+        "max_threads=1, allow_prefetched_read_pool_for_remote_filesystem=1, "
+        "remote_filesystem_read_method='threadpool', remote_filesystem_read_prefetch=1, "
+        "filesystem_prefetches_limit=1, enable_filesystem_cache=0, use_uncompressed_cache=0",
+        query_id=query_id,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {s3_pause_failpoint} PAUSE", timeout=60)
+        node.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+        assert_eq_with_retry(
+            node,
+            f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=20,
+            sleep_time=0.25,
+        )
+        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_pause_failpoint}")
+        node.query(
+            f"SYSTEM WAIT FAILPOINT {report_broken_pause_failpoint} PAUSE",
+            timeout=60,
+        )
+
+        part_checks_before = int(
+            node.query(
+                "SELECT sum(value) FROM system.events WHERE event='ReplicatedPartChecks'"
+            ).strip()
+        )
+        node.query(f"SYSTEM NOTIFY FAILPOINT {report_broken_pause_failpoint}")
+
+        _, error = query_future.result(timeout=10)
+        assert "FAULT_INJECTED" in error, error
+        assert "Injected query cancellation exception" in error, error
+
+        node.query("SYSTEM FLUSH LOGS")
+        assert (
+            node.query(
+                "SELECT sum(ProfileEvents['S3GetObject']), "
+                "sum(ProfileEvents['ReadBufferFromS3RequestsErrors']) FROM system.query_log "
+                f"WHERE query_id='{query_id}' AND type!='QueryStart'"
+            ).strip()
+            == "0\t0"
+        )
+
+        parts_to_check, part_checks_after = map(
+            int,
+            node.query(
+                "SELECT parts_to_check, "
+                "(SELECT sum(value) FROM system.events WHERE event='ReplicatedPartChecks') "
+                "FROM system.replicas WHERE database=currentDatabase() "
+                f"AND table='{TABLE_NAME}'"
+            ).strip().split("\t"),
+        )
+        assert parts_to_check == 0
+        assert part_checks_after == part_checks_before
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {s3_pause_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {report_broken_pause_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {s3_pause_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {report_broken_pause_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {cancellation_failpoint}")
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 @pytest.fixture(autouse=True)

@@ -4528,7 +4528,8 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
             }
             catch (...)
             {
-                if (isRetryableException(std::current_exception()))
+                const auto exception = std::current_exception();
+                if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
                     throw;
 
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
@@ -4544,7 +4545,8 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
             }
             catch (...)
             {
-                if (isRetryableException(std::current_exception()))
+                const auto exception = std::current_exception();
+                if (CurrentThread::isQueryCancellationException(exception) || isRetryableException(exception))
                     throw;
 
                 return CheckResult(part->name, false, getCurrentExceptionMessage(false));
