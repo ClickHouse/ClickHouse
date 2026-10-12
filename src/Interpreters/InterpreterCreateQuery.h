@@ -79,8 +79,7 @@ public:
         is_restore_from_backup = is_restore_from_backup_;
     }
 
-    /// `makeNullable` for a column type that `data_type_default_nullable` makes nullable.
-    /// Throws for a `SimpleAggregateFunction` type that is not nullable already.
+    /// `makeNullable` for `data_type_default_nullable`; throws for a `SimpleAggregateFunction` type that is not nullable already.
     static DataTypePtr makeNullableByDefault(const DataTypePtr & type, const String & column_name);
 
     static DataTypePtr getColumnType(const ASTColumnDeclaration & col_decl, bool make_columns_nullable, bool pin_current_state_version);
