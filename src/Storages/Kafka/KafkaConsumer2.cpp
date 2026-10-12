@@ -204,10 +204,15 @@ void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic
         /// Unassigning clears only librdkafka's own pause flag, so a partition we paused stays paused when it comes back.
         cppkafka::TopicPartitionList partitions_to_resume;
         for (const auto & topic_partition : new_partitions)
-            if (paused_partitions.erase(topic_partition))
+            if (paused_partitions.contains(topic_partition))
                 partitions_to_resume.emplace_back(topic_partition.topic, topic_partition.partition_id);
         if (!partitions_to_resume.empty())
+        {
             consumer->resume_partitions(partitions_to_resume);
+            /// Forget the partitions only after the resume succeeded, so that if it throws, the next call retries it.
+            for (const auto & topic_partition : partitions_to_resume)
+                paused_partitions.erase(TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()});
+        }
     }
     catch (...)
     {
