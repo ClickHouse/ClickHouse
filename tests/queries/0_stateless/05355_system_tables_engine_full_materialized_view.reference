@@ -1,0 +1,6 @@
+dst	MergeTree	MergeTree ORDER BY x SETTINGS index_granularity = 8192
+mv_inner	MaterializedView	MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192
+mv_inner_with_clauses	MaterializedView	SummingMergeTree PARTITION BY x % 2 ORDER BY x SETTINGS index_granularity = 1024
+mv_to	MaterializedView	
+plain_view	View	
+src	MergeTree	MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192
