@@ -108,7 +108,7 @@ private:
 
     void createIterator();
 
-    ObjectStorageTopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+    ObjectStorageTopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey() const;
 };
 
 }
