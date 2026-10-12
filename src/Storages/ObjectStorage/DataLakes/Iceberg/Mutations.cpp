@@ -40,11 +40,6 @@
 #include <limits>
 #include <unordered_set>
 
-#if USE_AVRO
-#include <Generic.hh>
-#include <GenericDatum.hh>
-#endif
-
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -116,8 +111,9 @@ static bool existingDataUsesDifferentPartitionSpec(
     Poco::JSON::Object::Ptr metadata,
     Int64 default_spec_id,
     ObjectStoragePtr object_storage,
-    const Iceberg::IcebergPathResolver & path_resolver,
-    ContextPtr context)
+    const PersistentTableComponents & persistent_table_components,
+    ContextPtr context,
+    LoggerPtr log)
 {
     if (!metadata->has(Iceberg::f_current_snapshot_id))
         return false;
@@ -161,18 +157,12 @@ static bool existingDataUsesDifferentPartitionSpec(
 
         auto manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(
             snapshot->getValue<String>(Iceberg::f_manifest_list));
-        bool mismatch = false;
-        forEachAvroEntry(
-            path_resolver.resolve(manifest_list), object_storage, context, "IcebergMutations",
-            [&](const avro::GenericDatum & datum)
-            {
-                // Clang analyzer wrongly thinks GenericDatum::value can return an uninitialized reference (same as IcebergWrites.cpp).
-                // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.UndefReturn)
-                const avro::GenericRecord & entry = datum.value<avro::GenericRecord>();
-                if (layoutDiffersFromDefault(entry.field(Iceberg::f_partition_spec_id).value<Int32>()))
-                    mismatch = true;
-            });
-        return mismatch;
+        for (const auto & manifest : getManifestList(object_storage, persistent_table_components, context, manifest_list, log))
+        {
+            if (layoutDiffersFromDefault(manifest.partition_spec_id))
+                return true;
+        }
+        return false;
     }
     return false;
 }
@@ -878,7 +868,7 @@ void mutate(
         /// Position deletes are partitioned by the current default spec, so data written under a
         /// different spec cannot be superseded (silent row duplication).
         if (existingDataUsesDifferentPartitionSpec(
-                metadata, partition_spec_id, object_storage, persistent_table_components.path_resolver, context))
+                metadata, partition_spec_id, object_storage, persistent_table_components, context, log))
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Cannot mutate an Iceberg table whose data was written under a partition spec other "
