@@ -39,7 +39,7 @@ void CompressedWriteBuffer::nextImpl()
     if (out.available() >= compressed_reserve_size + sizeof(CityHash_v1_0_2::uint128))
     {
         char * out_compressed_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
-        UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr);
+        UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr, codec_state.get());
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
 
@@ -51,7 +51,7 @@ void CompressedWriteBuffer::nextImpl()
     else
     {
         compressed_buffer.resize(compressed_reserve_size);
-        UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
+        UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data(), codec_state.get());
 
         CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
 
@@ -81,6 +81,7 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     enableAdaptiveBufferGrowth(use_adaptive_buffer_size_, buf_size);
     if (!codec)
         codec = CompressionCodecFactory::instance().getDefaultCodec();
+    codec_state = codec->createCompressionState();
 }
 
 void CompressedWriteBuffer::cancelImpl() noexcept
@@ -98,5 +99,6 @@ void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)
 
     chassert(codec_);
     codec = std::move(codec_);
+    codec_state = codec->createCompressionState();
 }
 }

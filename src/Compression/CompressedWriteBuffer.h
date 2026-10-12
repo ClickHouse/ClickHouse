@@ -58,6 +58,7 @@ private:
 
     WriteBuffer & out;
     CompressionCodecPtr codec;
+    CompressionStatePtr codec_state;
 
     PODArray<char> compressed_buffer;
 };
