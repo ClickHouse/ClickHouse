@@ -65,6 +65,7 @@ def clone_submodules():
         "contrib/StringZilla",
         "contrib/rust_vendor",
         "contrib/clickstack",
+        "contrib/heks",
         "contrib/sql-console",
     ]
 
