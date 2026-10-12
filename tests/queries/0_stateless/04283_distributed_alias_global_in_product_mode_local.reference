@@ -1,0 +1,35 @@
+case1_global_in_unnamed_identical_derived_subqueries
+1
+case2_global_join_unnamed_identical_derived_subqueries
+id	left_b0	right_b0
+1	10	20
+case3_global_join_unnamed_identical_derived_subqueries_serialize_query_plan
+id	left_b0	right_b0
+1	10	20
+case4_global_join_unnamed_remote_over_distributed_subqueries
+id	left_b0	right_b0
+1	10	20
+case5_global_join_unnamed_identical_dual_alias_columns
+id	left_b0	right_b1
+1	10	20
+case6_local_join_unnamed_identical_derived_subqueries
+id	left_b0	right_b0
+1	10	20
+case7_local_join_unnamed_identical_derived_subqueries_serialize_query_plan
+id	left_b0	right_b0
+1	10	20
+case8_global_join_direct_distributed_serialize_query_plan
+id	b0	b1
+1	10	10
+2	20	20
+case9_global_join_direct_remote_over_distributed_serialize_query_plan
+id	b0	b1
+1	10	10
+2	20	20
+case10_wrapper_alias_subquery_serialize_query_plan
+id	left_foo	right_foo
+1	1	20
+case11_wrapper_constant_alias_subquery_serialize_query_plan
+id	left_foo	right_foo
+1	foo	foo
+2	foo	foo
