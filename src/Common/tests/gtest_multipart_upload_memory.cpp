@@ -474,3 +474,45 @@ TEST(MultipartUploadMemory, ExponentialPolicySubFirstBufferWindowNeverExceedsThe
         }
     }
 }
+
+TEST(MultipartUploadMemory, AdaptiveInitialBufferIsReplayedFromItsRealStart)
+{
+    /// With use_adaptive_write_buffer, S3ObjectStorage::writeObject and AzureObjectStorage::writeObject start
+    /// the writer from adaptive_write_buffer_initial_size (16 KiB by default), not from
+    /// DBMS_DEFAULT_BUFFER_SIZE. A stream that has written 100 KiB holds a 128 KiB buffer, not 1 MiB.
+    const UInt64 adaptive_initial = 16 * 1024;
+    EXPECT_EQ(getMultipartUploadInitialBufferSize(true, adaptive_initial), adaptive_initial);
+    EXPECT_EQ(getMultipartUploadInitialBufferSize(true, 64ULL * 1024 * 1024), DBMS_DEFAULT_BUFFER_SIZE);
+    EXPECT_EQ(getMultipartUploadInitialBufferSize(false, adaptive_initial), DBMS_DEFAULT_BUFFER_SIZE);
+
+    BufferAllocationPolicy::Settings exponential;
+    exponential.max_single_size = 32 * 1024 * 1024;
+    exponential.min_size = 16 * 1024 * 1024;
+    exponential.max_size = 5ULL * 1024 * 1024 * 1024;
+
+    BufferAllocationPolicy::Settings strict;
+    strict.strict_size = 16 * 1024 * 1024;
+
+    for (const auto & settings : {exponential, strict})
+    {
+        auto memory = getMultipartUploadMemory(settings, 4);
+        memory.initial_buffer_size = adaptive_initial;
+        const UInt64 first_part = firstPolicyBufferSize(settings);
+
+        for (const UInt64 bytes_written : {1ULL, 16ULL * 1024, 16ULL * 1024 + 1, 100ULL * 1024, 1024ULL * 1024, 3ULL * 1024 * 1024})
+        {
+            EXPECT_EQ(
+                getMultipartUploadMemoryCeilingForWrittenBytes(memory, bytes_written),
+                firstBufferMemoryAfterWriting(settings, adaptive_initial, bytes_written))
+                << "first part " << first_part << ", bytes_written " << bytes_written;
+        }
+
+        EXPECT_EQ(getMultipartUploadMemoryCeilingForWrittenBytes(memory, 100ULL * 1024), 128ULL * 1024);
+
+        /// Once the first part is full the first-buffer start no longer matters.
+        auto default_start = getMultipartUploadMemory(settings, 4);
+        EXPECT_EQ(
+            getMultipartUploadMemoryCeilingForWrittenBytes(memory, first_part + 1),
+            getMultipartUploadMemoryCeilingForWrittenBytes(default_start, first_part + 1));
+    }
+}

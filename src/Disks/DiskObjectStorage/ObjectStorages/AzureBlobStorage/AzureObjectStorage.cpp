@@ -420,12 +420,15 @@ MultipartUploadMemory AzureObjectStorage::getWriteBufferMemory(const WriteSettin
     /// cannot hold the configured number of detached buffers at once (see getEffectiveMaxInflightParts).
     /// That flag comes from the write settings of the writer's caller, not from the disk configuration.
     const auto settings_ptr = settings.get();
-    return getMultipartUploadMemory(
-               getUploadBufferAllocationSettings(*settings_ptr),
-               getEffectiveMaxInflightParts(
-                   settings_ptr->max_inflight_parts_for_one_file,
-                   patchSettings(write_settings).azure_allow_parallel_part_upload))
-        ;
+    auto memory = getMultipartUploadMemory(
+        getUploadBufferAllocationSettings(*settings_ptr),
+        getEffectiveMaxInflightParts(
+            settings_ptr->max_inflight_parts_for_one_file,
+            patchSettings(write_settings).azure_allow_parallel_part_upload));
+    /// writeObject starts the writer from adaptive_write_buffer_initial_size when use_adaptive_write_buffer is set.
+    memory.initial_buffer_size = getMultipartUploadInitialBufferSize(
+        write_settings.use_adaptive_write_buffer, write_settings.adaptive_write_buffer_initial_size);
+    return memory;
 }
 
 void AzureObjectStorage::removeObjectImpl(

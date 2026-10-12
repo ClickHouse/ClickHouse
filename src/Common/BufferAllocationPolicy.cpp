@@ -115,6 +115,13 @@ UInt64 getEffectiveMaxInflightParts(UInt64 max_inflight_parts_for_one_file, bool
     return 1;
 }
 
+UInt64 getMultipartUploadInitialBufferSize(bool use_adaptive_write_buffer, UInt64 adaptive_write_buffer_initial_size)
+{
+    if (use_adaptive_write_buffer)
+        return std::min<UInt64>(adaptive_write_buffer_initial_size, DBMS_DEFAULT_BUFFER_SIZE);
+    return DBMS_DEFAULT_BUFFER_SIZE;
+}
+
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file)
 {
     MultipartUploadMemory result;
@@ -161,13 +168,16 @@ namespace
 {
 
 /// Neither `WriteBufferFromS3` nor `WriteBufferFromAzureBlobStorage` allocates the allocation policy's first
-/// buffer up front: both start from the buffer the caller asks for, capped at `DBMS_DEFAULT_BUFFER_SIZE` in
-/// the constructor, and `reallocateFirstBuffer` doubles that allocation - capped by the policy's first buffer
-/// size - every time it fills up. Replay that growth, so that output which does not even fill the first
-/// buffer is not priced at the whole first part size. Returns false when the doubling overflows.
-bool replayFirstBufferGrowth(UInt64 first_policy_buffer_size, UInt64 bytes_written, UInt64 & first_buffer_size)
+/// buffer up front: both start from the buffer the caller asks for (`initial_buffer_size`, already capped at
+/// `DBMS_DEFAULT_BUFFER_SIZE` as in the constructor), and `reallocateFirstBuffer` doubles that allocation -
+/// capped by the policy's first buffer size - every time it fills up. Replay that growth, so that output
+/// which does not even fill the first buffer is not priced at the whole first part size. Returns false when
+/// the doubling overflows.
+bool replayFirstBufferGrowth(UInt64 initial_buffer_size, UInt64 first_policy_buffer_size, UInt64 bytes_written, UInt64 & first_buffer_size)
 {
-    first_buffer_size = std::min<UInt64>(first_policy_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+    /// An empty initial buffer cannot be doubled; start the replay from one byte, which still reaches the
+    /// same power-of-two sizes the writer would grow through.
+    first_buffer_size = std::min<UInt64>(first_policy_buffer_size, std::max<UInt64>(initial_buffer_size, 1));
     while (bytes_written > first_buffer_size && first_buffer_size < first_policy_buffer_size)
     {
         if (__builtin_mul_overflow(first_buffer_size, static_cast<UInt64>(2), &first_buffer_size))
@@ -195,14 +205,14 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
     UInt64 largest_reachable_buffer = settings.strict_size;
     if (settings.strict_size != 0)
     {
-        /// The writer does not allocate a strict-size first buffer up front. It starts with at most
-        /// DBMS_DEFAULT_BUFFER_SIZE and doubles that allocation in nextImpl until it reaches strict_size.
+        /// The writer does not allocate a strict-size first buffer up front. It starts with
+        /// initial_buffer_size (at most DBMS_DEFAULT_BUFFER_SIZE) and doubles that allocation in nextImpl until it reaches strict_size.
         /// After that, each complete strict-size part can leave one detached or in-flight buffer behind
         /// while the next buffer is being filled. Do not charge more such buffers than the written data
         /// can reach, otherwise a small merge with a large strict upload part size is rejected for memory
         /// the writer cannot allocate.
         UInt64 first_buffer_size = 0;
-        if (!replayFirstBufferGrowth(settings.strict_size, bytes_written, first_buffer_size))
+        if (!replayFirstBufferGrowth(memory.initial_buffer_size, settings.strict_size, bytes_written, first_buffer_size))
             return MultipartUploadMemory::UNLIMITED;
 
         if (bytes_written <= first_buffer_size)
@@ -228,7 +238,7 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         /// over-reserve a small remote merge by the whole first tier - 32 MiB per stream with the default S3
         /// sizing - and close `merges_mutations_memory_usage_soft_limit` on memory the writer never allocates.
         UInt64 first_buffer_size = 0;
-        if (!replayFirstBufferGrowth(first_policy_buffer_size, bytes_written, first_buffer_size))
+        if (!replayFirstBufferGrowth(memory.initial_buffer_size, first_policy_buffer_size, bytes_written, first_buffer_size))
             return MultipartUploadMemory::UNLIMITED;
 
         if (bytes_written <= first_buffer_size)

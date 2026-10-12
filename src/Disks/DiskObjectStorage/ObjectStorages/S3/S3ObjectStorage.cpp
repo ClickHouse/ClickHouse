@@ -385,12 +385,15 @@ MultipartUploadMemory S3ObjectStorage::getWriteBufferMemory(const WriteSettings 
     /// buffers at once (see getEffectiveMaxInflightParts). That flag comes from the write settings of the
     /// writer's caller, not from the disk configuration.
     const auto & request_settings = s3_settings.get()->request_settings;
-    return getMultipartUploadMemory(
-               getUploadBufferAllocationSettings(request_settings),
-               getEffectiveMaxInflightParts(
-                   request_settings[S3RequestSetting::max_inflight_parts_for_one_file],
-                   IObjectStorage::patchSettings(write_settings).s3_allow_parallel_part_upload))
-        ;
+    auto memory = getMultipartUploadMemory(
+        getUploadBufferAllocationSettings(request_settings),
+        getEffectiveMaxInflightParts(
+            request_settings[S3RequestSetting::max_inflight_parts_for_one_file],
+            IObjectStorage::patchSettings(write_settings).s3_allow_parallel_part_upload));
+    /// writeObject starts the writer from adaptive_write_buffer_initial_size when use_adaptive_write_buffer is set.
+    memory.initial_buffer_size = getMultipartUploadInitialBufferSize(
+        write_settings.use_adaptive_write_buffer, write_settings.adaptive_write_buffer_initial_size);
+    return memory;
 }
 
 

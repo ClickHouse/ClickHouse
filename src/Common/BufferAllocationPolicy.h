@@ -1,6 +1,7 @@
 #pragma once
 
 
+#include <Core/Defines.h>
 #include <base/types.h>
 
 #include <limits>
@@ -61,11 +62,21 @@ struct MultipartUploadMemory
     /// the ceiling to the largest buffer tier reachable by a bounded amount of output data.
     BufferAllocationPolicy::Settings allocation_settings;
     UInt64 max_inflight_parts = 0;
+
+    /// The size of the buffer the writer starts with, before reallocateFirstBuffer grows it toward the
+    /// policy's first part: the buf_size passed to the writer's constructor, capped there at
+    /// DBMS_DEFAULT_BUFFER_SIZE. With use_adaptive_write_buffer that is adaptive_write_buffer_initial_size
+    /// (see S3ObjectStorage::writeObject and AzureObjectStorage::writeObject); otherwise the caller's buffer
+    /// size is not known up front, and the cap is the bound.
+    UInt64 initial_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 };
 
 /// max_inflight_parts_for_one_file == 0 means unlimited (see TaskTracker::waitTilInflightShrink), which
 /// yields MultipartUploadMemory::UNLIMITED as the ceiling.
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file);
+
+/// The buffer a multipart writer starts with for the given write settings (MultipartUploadMemory::initial_buffer_size).
+UInt64 getMultipartUploadInitialBufferSize(bool use_adaptive_write_buffer, UInt64 adaptive_write_buffer_initial_size);
 
 /// Like MultipartUploadMemory::ceiling, but does not charge a buffer tier that cannot be reached after
 /// writing `bytes_written` through one stream. The returned value still includes all simultaneously live
