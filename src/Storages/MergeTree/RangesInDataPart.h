@@ -9,12 +9,14 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 namespace DB
 {
 
 class IMergeTreeDataPart;
+class MergeTreeData;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 /// The only purpose of this struct is that serialize and deserialize methods
@@ -31,11 +33,65 @@ struct RangesInDataPartDescription
     /// The initiator computes this per part after PK analysis and propagates back to replicas in read request responses.
     size_t min_marks_per_task = 0;
 
+    /// Total mark count of the underlying part on disk (NOT of the analyzed `ranges` above).
+    /// Populated from `data_part->index_granularity->getMarksCountWithoutFinal` in
+    /// `RangesInDataPart::getDescription`. Used by `ParallelReplicasReadingCoordinator` as a cheap
+    /// sanity check (mark count mismatch implies divergent underlying parts), but mark count alone
+    /// is not a part identity. A value of `0` means the field was not populated (older replica
+    /// protocol or coordinator-internal queue entry).
+    size_t total_marks_in_part = 0;
+
+    /// Content fingerprint of the underlying part (`IMergeTreeDataPart::getContentFingerprint`): the two
+    /// halves of a 128-bit `SipHash` of the names, uncompressed sizes and uncompressed hashes of the
+    /// part's `.bin` files and of the number of rows in every mark. Two replicas that hold the same data
+    /// produce the same fingerprint, even when they wrote it with different compression codecs or
+    /// server versions (the same tolerance `ReplicatedMergeTree` applies when it compares checksums
+    /// of same-named parts), and it is independent of per-replica PK or skip-index analysis. Two replicas that
+    /// hold genuinely different parts that happen to share a name (for example, two non-replicated
+    /// `MergeTree` instances each created from independent local inserts that produced parts
+    /// named `all_1_1_0`) will produce different fingerprints, even when their `total_marks_in_part`
+    /// happen to coincide. The coordinator uses the fingerprint to reject the latter case while
+    /// still accepting the former. A value of `(0, 0)` means the field was not populated (older
+    /// replica protocol, coordinator-internal queue entry, or a part whose checksums were not
+    /// loaded); the coordinator skips fingerprint validation and falls back to `total_marks_in_part`
+    /// in that case.
+    UInt64 part_checksum_low64 = 0;
+    UInt64 part_checksum_high64 = 0;
+
+    /// Whether the announcing replica's table guarantees that a part name identifies the same
+    /// content on every cluster member.
+    enum class PartNameIdentity : UInt8
+    {
+        /// Field was not populated: the announcement came from a replica whose protocol predates
+        /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`, or the description is a
+        /// coordinator-internal queue entry.
+        Unknown = 0,
+        /// Part names are allocated per node, as in a plain `MergeTree` on any disks: block numbers
+        /// come from a node-local `SimpleIncrement`, so two cluster members can independently
+        /// produce same-named parts with divergent content. Same-named parts MUST be verified by content fingerprint; the
+        /// coordinator fails closed when the fingerprint is unavailable.
+        NodeLocal = 1,
+        /// A part name implies identical content on every cluster member, so same-named parts are
+        /// safe to merge even without a fingerprint: `ReplicatedMergeTree` and descendants, where
+        /// block numbers come from a Keeper-coordinated counter.
+        ClusterWide = 2,
+    };
+
+    /// Populated by `RangesInDataPart::getDescription` from the table's replication support. Used by
+    /// `ParallelReplicasReadingCoordinator` to decide whether a missing part fingerprint is
+    /// tolerable (`ClusterWide`: yes, guaranteed by the engine) or must fail closed (`NodeLocal`: same-named parts may hold divergent data).
+    PartNameIdentity part_name_identity = PartNameIdentity::Unknown;
+
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
     String getPartOrProjectionName() const;
 };
+
+/// Whether a part name of `storage` identifies the same content on every cluster member: only when
+/// the engine coordinates block numbers through Keeper (`ReplicatedMergeTree` and descendants).
+/// Otherwise part names are node-local and same-named parts may hold divergent content.
+RangesInDataPartDescription::PartNameIdentity partNameIdentityOf(const MergeTreeData & storage);
 
 struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescription>
 {

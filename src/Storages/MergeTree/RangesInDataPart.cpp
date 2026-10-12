@@ -8,6 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <IO/VarInt.h>
 
 template <>
@@ -28,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 namespace
@@ -49,6 +51,16 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_r
 
     if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
         writeVarUInt(min_marks_per_task, out);
+
+    if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_TOTAL_MARKS_IN_PART)
+        writeVarUInt(total_marks_in_part, out);
+
+    if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT)
+    {
+        writeVarUInt(part_checksum_low64, out);
+        writeVarUInt(part_checksum_high64, out);
+        writeVarUInt(static_cast<UInt64>(part_name_identity), out);
+    }
 }
 
 String RangesInDataPartDescription::describe() const
@@ -82,6 +94,24 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in, UInt64 parallel_r
 
     if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
         readVarUInt(min_marks_per_task, in);
+
+    if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_TOTAL_MARKS_IN_PART)
+        readVarUInt(total_marks_in_part, in);
+
+    if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT)
+    {
+        readVarUInt(part_checksum_low64, in);
+        readVarUInt(part_checksum_high64, in);
+
+        UInt64 part_name_identity_value = 0;
+        readVarUInt(part_name_identity_value, in);
+        if (part_name_identity_value > static_cast<UInt64>(PartNameIdentity::ClusterWide))
+            throw Exception(
+                ErrorCodes::UNKNOWN_PROTOCOL,
+                "Unexpected part name identity value {} in parallel replicas part description",
+                part_name_identity_value);
+        part_name_identity = static_cast<PartNameIdentity>(part_name_identity_value);
+    }
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const
@@ -161,14 +191,45 @@ RangesInDataPart::RangesInDataPart(
         ranges.emplace_back(0, total_marks_count);
 }
 
+/// Whether a part name of `storage` identifies the same content on every cluster member.
+///
+/// Only an engine that coordinates block numbers through Keeper (`ReplicatedMergeTree` and
+/// descendants) guarantees it: there a part name is globally unique by construction.
+///
+/// A plain `MergeTree` is always node-local, whatever its disks are. Even on storage whose metadata
+/// lives next to the data (`MetadataStorageType::Plain`, `PlainRewritable`, `StaticWeb`, ...), the
+/// table's disks only tell what this node points at, not whether every cluster member points at the
+/// same namespace: two members with per-node object storage prefixes can each mint an `all_1_1_0`
+/// holding different rows. Same-named parts of such tables are verified by the content fingerprint
+/// instead, and the coordinator fails closed when the fingerprint is unavailable.
+RangesInDataPartDescription::PartNameIdentity partNameIdentityOf(const MergeTreeData & storage)
+{
+    using PartNameIdentity = RangesInDataPartDescription::PartNameIdentity;
+    return storage.supportsReplication() ? PartNameIdentity::ClusterWide : PartNameIdentity::NodeLocal;
+}
+
 RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
     chassert(!data_part->isProjectionPart() || parent_part);
+
+    /// `(0, 0)` when checksums are not loaded: the coordinator then falls back to `total_marks_in_part`
+    /// where the part name identity allows it.
+    const UInt128 fingerprint = data_part->getContentFingerprint();
+
     return RangesInDataPartDescription{
         .info = data_part->isProjectionPart() ? parent_part->info : data_part->info,
         .ranges = ranges,
         .rows = getRowsCount(),
         .projection_name = data_part->isProjectionPart() ? data_part->name : "",
+        /// Total mark count of the underlying part — invariant across replicas with the same
+        /// underlying data and unaffected by per-replica PK or skip-index analysis. Used by
+        /// `ParallelReplicasReadingCoordinator` as a cheap sanity check.
+        .total_marks_in_part = data_part->index_granularity->getMarksCountWithoutFinal(),
+        .part_checksum_low64 = static_cast<UInt64>(fingerprint),
+        .part_checksum_high64 = static_cast<UInt64>(fingerprint >> 64),
+        /// Tells the coordinator whether a part name is a content identity here (replicated engines)
+        /// or same-named parts must be verified by fingerprint (a plain `MergeTree`).
+        .part_name_identity = partNameIdentityOf(data_part->storage),
     };
 }
 
