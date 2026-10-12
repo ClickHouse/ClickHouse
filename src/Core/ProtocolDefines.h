@@ -161,6 +161,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN
 /// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
 /// than executed differently.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
+/// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
+/// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
+/// aggregation with its own two-level decision.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
@@ -211,6 +215,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDI
 /// operator (see `JoinOperator::multiset`). Version 19 shipped without it, so the flag is anchored at the
 /// first global version no release has shipped yet.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MULTISET_JOIN = 20;
+/// First global query-plan version that writes version 1 of `Aggregating`, which carries the
+/// `GROUP BY` top-K parameters. Towards an older peer the parameters are omitted rather than
+/// rejected: the peer aggregates without the heap and returns partial states for all its groups,
+/// which the initiator's merge, sort and limit handle correctly - the safe direction.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K = 20;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
@@ -325,6 +334,12 @@ static constexpr auto DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE 
 /// Send String columns in the native protocol with a separate stream of cumulative byte offsets.
 static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION = 54492;
 
+/// Version 1 of the `uniq` aggregate function state (64-bit hashes instead of 32-bit ones).
+static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
+
+/// A `-Merge` aggregate function state takes the state version of the function it merges, instead of always 0.
+static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54494;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -333,5 +348,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54492;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54494;
 }
