@@ -242,12 +242,16 @@ SELECT 'parallel replicas';
 -- say which plan produced them, so each arm asserts below that replicas were really used. Only the
 -- query-based path reads at that boundary, so the plan-based one is pinned off too: it splits the read
 -- later in the plan, and the assertion below is positive either way.
+-- `parallel_replicas_min_number_of_rows_per_replica` is pinned off as well: the table holds a single row,
+-- so any positive value leaves `rows_to_read / setting <= 1` and the planner turns parallel replicas off
+-- again, which would make the assertions below state nothing.
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
 FROM loc_win ORDER BY rn
 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
          automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0, enable_analyzer = 1,
+         parallel_replicas_min_number_of_rows_per_replica = 0,
          log_comment = '05043_pr_alias';
 SELECT al AS category, cur, row_number() OVER (PARTITION BY a ORDER BY dt DESC) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;
@@ -258,6 +262,7 @@ SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3,
          cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
          parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1,
          automatic_parallel_replicas_mode = 0, parallel_replicas_plan_based = 0, enable_analyzer = 1,
+         parallel_replicas_min_number_of_rows_per_replica = 0,
          log_comment = '05043_pr_upper_alias';
 SELECT upper_al AS category, cur, row_number() OVER (ORDER BY a) AS rn
 FROM loc_win ORDER BY rn SETTINGS enable_parallel_replicas = 0;

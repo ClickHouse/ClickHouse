@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree
+# Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-parallel-replicas
 # SYSTEM SYNC MERGES returns only once a transaction started afterwards sees the merged part.
 # A merge run inside a transaction makes its part active at once but visible to other transactions
 # only from COMMIT.
