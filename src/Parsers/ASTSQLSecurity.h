@@ -10,7 +10,8 @@ namespace DB
 
 /// DEFINER = <user_name | CURRENT_USER> SQL SECURITY <DEFINER | INVOKER | NONE>
 /// If type was not set during parsing, the default type from settings will be used.
-/// Supported for views and for the table engines that declare `supports_sql_security`.
+/// Supported for the shapes `ASTCreateQuery::supportSQLSecurity` accepts, and for the table engines
+/// that declare `supports_sql_security`.
 class ASTSQLSecurity : public IAST
 {
 public:
