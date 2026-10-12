@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -85,7 +85,7 @@ PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const Toke
 {
 }
 
-PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
+PostingListCursor::PostingListCursor(PaddedPODArrayPtr shared_values_)
     : is_embedded(true)
     , shared_values(std::move(shared_values_))
 {
