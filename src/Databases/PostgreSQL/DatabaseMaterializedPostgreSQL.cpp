@@ -10,6 +10,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
@@ -105,6 +106,8 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     /// `persistPartialDropRecoveryMarker`). `startSynchronization` re-applies the recovery decision from it,
     /// but user-facing lookups can arrive before the startup task runs, so hide the surviving nested tables
     /// from the very beginning (see `partial_drop_recovery_in_progress`).
+    /// The database disk can keep its metadata in Keeper, which requires a component for every request.
+    auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL");
     if (getDisk()->existsFile(getPartialDropRecoveryMarkerPath()))
     {
         std::lock_guard tables_lock(tables_mutex);
@@ -150,6 +153,9 @@ std::shared_ptr<PostgreSQLReplicationHandler> DatabaseMaterializedPostgreSQL::ma
 
 void DatabaseMaterializedPostgreSQL::startSynchronization()
 {
+    /// Runs in the background startup task. The database disk can keep its metadata in Keeper (the
+    /// partial-drop recovery marker is checked and removed below), which requires a component.
+    auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::startSynchronization");
     std::lock_guard lock(handler_mutex);
     if (shutdown_called)
         return;
@@ -1272,6 +1278,7 @@ String DatabaseMaterializedPostgreSQL::getPartialDropRecoveryMarkerPath() const
 
 void DatabaseMaterializedPostgreSQL::persistPartialDropRecoveryMarker()
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::persistPartialDropRecoveryMarker");
     const auto marker_path = getPartialDropRecoveryMarkerPath();
     try
     {
@@ -1293,6 +1300,7 @@ void DatabaseMaterializedPostgreSQL::persistPartialDropRecoveryMarker()
 
 void DatabaseMaterializedPostgreSQL::removePartialDropRecoveryMarker()
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseMaterializedPostgreSQL::removePartialDropRecoveryMarker");
     const auto marker_path = getPartialDropRecoveryMarkerPath();
     auto db_disk = getDisk();
     if (db_disk->existsFile(marker_path))
