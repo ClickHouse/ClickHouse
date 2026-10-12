@@ -52,6 +52,7 @@ class MockControl:
         action=None,
         action_args=None,
         copy_sources=None,
+        after_copy=False,
     ):
         url = f"http://localhost:{self._port}/mock_settings/{when}?nothing=1"
 
@@ -60,6 +61,9 @@ class MockControl:
 
         if after is not None:
             url += f"&after={after}"
+
+        if after_copy:
+            url += "&after_copy=1"
 
         if action is not None:
             url += f"&action={action}"
@@ -444,6 +448,7 @@ class _ServerRuntime:
             action_=None,
             action_args_=[],
             copy_sources_=None,
+            after_copy_=False,
         ):
             self.lock = lock
 
@@ -451,6 +456,7 @@ class _ServerRuntime:
             self.after = after_ if after_ is not None else 0
             self.action = action_
             self.action_args = action_args_
+            self.after_copy = after_copy_
             self.copy_sources = (
                 {copy_source.lstrip("/") for copy_source in copy_sources_}
                 if copy_sources_ is not None
@@ -501,12 +507,13 @@ class _ServerRuntime:
                 action_=params.get("action", [None])[0],
                 action_args_=params.get("action_args", []),
                 copy_sources_=params.get("copy_source"),
+                after_copy_=params.get("after_copy", ["0"])[0] == "1",
             )
 
         def __str__(self):
             return (
                 f"count:{self.count} after:{self.after} action:{self.action} "
-                f"action_args:{self.action_args} copy_sources:{self.copy_sources}"
+                f"action_args:{self.action_args} copy_sources:{self.copy_sources} after_copy:{self.after_copy}"
             )
 
         def matches_copy_source(self, copy_source):
@@ -541,6 +548,7 @@ class _ServerRuntime:
             "create_multipart_upload": 0,
             "object_head": 0,
             "object_read": 0,
+            "object_read_injected": 0,
             "object_copy": 0,
             "object_copy_injected": 0,
         }
@@ -578,6 +586,7 @@ class _ServerRuntime:
                 "create_multipart_upload": 0,
                 "object_head": 0,
                 "object_read": 0,
+                "object_read_injected": 0,
                 "object_copy": 0,
                 "object_copy_injected": 0,
             }
@@ -849,8 +858,18 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if not is_listing:
             with _runtime.lock:
                 _runtime.request_counts["object_read"] += 1
-            if _runtime.at_object_read is not None and _runtime.at_object_read.has_effect():
-                return _runtime.at_object_read.inject_error(self)
+                was_copy_source = (
+                    urllib.parse.unquote(parts.path).lstrip("/") in _runtime.copy_sources
+                )
+            action = _runtime.at_object_read
+            if (
+                action is not None
+                and (not action.after_copy or was_copy_source)
+                and action.has_effect()
+            ):
+                with _runtime.lock:
+                    _runtime.request_counts["object_read_injected"] += 1
+                return action.inject_error(self)
 
         if not is_listing and _runtime.slow_get is not None:
             timeout = _runtime.slow_get.get_timeout()
