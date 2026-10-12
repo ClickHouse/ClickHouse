@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -56,9 +57,9 @@ std::optional<size_t> findSourceOfInput(const MergedPlanDAG & merged, const Acti
     return *node_sources.begin();
 }
 
-/// Whether evaluating the node on rows it was never meant to see is harmless: a function that is not
-/// suitable for short-circuit evaluation is cheap and cannot throw, which is exactly what makes it not
-/// worth skipping on the rows short-circuit evaluation would skip.
+/// Whether evaluating the node on rows it was never meant to see is harmless: the rows a join stuffed hold the
+/// defaults, so the function must not throw on any value. Being cheap is not enough: a comparison of decimals of
+/// different scales is not worth evaluating lazily, but rescaling can overflow.
 bool canEvaluateOnStuffedRows(const ActionsDAG::Node * node)
 {
     DataTypesWithConstInfo arguments;
@@ -66,7 +67,9 @@ bool canEvaluateOnStuffedRows(const ActionsDAG::Node * node)
     for (const auto * child : node->children)
         arguments.push_back({child->result_type, child->column && isColumnConst(*child->column)});
 
-    return !node->function_base->isSuitableForShortCircuitArgumentsExecution(arguments);
+    /// Only a function implemented by `IFunction` says whether it can throw; any other one is assumed to.
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get());
+    return adaptor && !adaptor->getFunction()->canThrow(arguments);
 }
 
 class FrontierChooser

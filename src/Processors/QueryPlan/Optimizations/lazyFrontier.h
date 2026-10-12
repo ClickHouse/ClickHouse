@@ -59,9 +59,9 @@ struct LazyFrontier
 ///
 /// `masked_stuffings` are the stuffings the caller has a mask for above the `LIMIT`. A value gated by one
 /// of them is recomputed there as `if(mask, value, default)`, which evaluates it on the rows the join
-/// stuffed as well - so only a value that cannot throw is recomputed this way, which is what a function
-/// not suitable for short-circuit evaluation is: cheap and never throwing. Any other gated value, and one
-/// whose stuffing has no mask, is computed below the `LIMIT`, where the join stuffs it itself.
+/// stuffed as well - so only a value whose function cannot throw (`IExecutableFunction::canThrow`) is
+/// recomputed this way. Any other gated value, and one whose stuffing has no mask, is computed below the
+/// `LIMIT`, where the join stuffs it itself.
 LazyFrontier chooseLazyFrontier(
     const MergedPlanDAG & merged,
     const std::vector<size_t> & eager_output_positions,
