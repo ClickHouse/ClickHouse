@@ -1,4 +1,4 @@
-<test>
+<test requires_local_read_dataset="1">
     <!-- Synthetic-IO twin of iceberg_suite_local_read.xml: enable a fixed delay on each local object-storage read, metadata lookup and listing. -->
     <settings>
         <iceberg_metadata_log_level>none</iceberg_metadata_log_level>

@@ -1,6 +1,6 @@
 <!-- https://clickhouse.com/docs/getting-started/example-datasets/tpch -->
 <!-- Scale factor: 10 -->
-<test>
+<test requires_local_read_dataset="1">
     <!-- Synthetic-IO twin of iceberg_suite_local_tpch.xml: run the shared queries with simulated object-storage read latency. -->
     <settings file="../benchmarks/tpc-h/settings.json"/>
     <settings>

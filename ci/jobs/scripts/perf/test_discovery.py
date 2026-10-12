@@ -54,6 +54,11 @@ def test_requires_s3_catalog(test_path):
     return _root_flag(test_path, "requires_s3_catalog")
 
 
+def test_requires_local_read_dataset(test_path):
+    """Whether a test reads the local Iceberg TPC-H fixture."""
+    return ElementTree.parse(test_path).getroot().get("requires_local_read_dataset") == "1"
+
+
 def _iter_queries(parent, source_dir, stack):
     """Yield `<query>` elements, descending into `<include>`d `<fragment>` files.
 

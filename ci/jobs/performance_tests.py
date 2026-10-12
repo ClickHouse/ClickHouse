@@ -2810,6 +2810,9 @@ def main():
     s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
     needs_s3 = bool(s3_paths)
     needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
+    needs_iceberg_read_dataset = needs_s3_read_dataset or any(
+        map(test_discovery.test_requires_local_read_dataset, run_paths)
+    )
     needs_s3_public_data = nightly and any(map(test_discovery.test_requires_public_data, run_paths))
     needs_s3_catalog = nightly and any(map(test_discovery.test_requires_s3_catalog, run_paths))
 
@@ -3023,7 +3026,7 @@ def main():
         iceberg_dir = Path(db_path) / "user_files" / s3_service.READ_DATASET_DIRECTORY
         # A cached db0 can predate the Iceberg fixture. Restore only the
         # missing archive when the selected S3 read tests require it.
-        if not db_done or (needs_s3_read_dataset and not iceberg_dir.is_dir()):
+        if not db_done or (needs_iceberg_read_dataset and not iceberg_dir.is_dir()):
             Shell.check(f"mkdir -p {db_path}/data/default/", verbose=True)
             dataset_paths = {
                 "hits10": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_10m_single.tar",
