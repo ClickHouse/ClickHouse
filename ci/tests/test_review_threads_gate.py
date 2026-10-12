@@ -66,6 +66,7 @@ class FakeInfo:
         self.pr_body = ""
         self.pr_title = "Some change"
         self.pr_number = 12345
+        self.workflow_name = "PR"
         self.repo_name = "ClickHouse/ClickHouse"
         self.sha = "0000000000000000000000000000000000000000"
         self.notes = []
@@ -1125,6 +1126,41 @@ def test_review_thread_gate_never_widens_the_coverage_family(monkeypatch, fake_i
     fake_info.pr_labels = [Labels.CI_COVERAGE]
     filter_job._pipeline_note_labels = set()
     assert filter_job.should_skip_job(coverage_build) == (False, "")
+
+
+def test_review_thread_gate_never_widens_the_small_pr_builds(fake_info):
+    """The gate may only shrink the pipeline. The builds that a small PR or a
+    single-architecture run skips are on the limited-pipeline allowlist, so
+    they must still honour that skip under the gate."""
+    skipped_builds = list(filter_job.PR_SINGLE_ARCH_SKIPPED_BUILDS) + list(
+        filter_job.SMALL_PR_SKIPPED_BUILDS
+    )
+    for job_name in skipped_builds:
+        assert job_name in filter_job.REVIEW_THREADS_BUILD_JOBS, job_name
+
+    fake_info.kv["product_changed_lines"] = 10
+    for unresolved in (3, 0):
+        fake_info.kv[KV_UNRESOLVED_COUNT] = unresolved
+        for job_name in skipped_builds:
+            filter_job._pipeline_note_labels = set()
+            skip, reason = filter_job.should_skip_job(job_name)
+            assert skip, f"{job_name} with {unresolved} unresolved thread(s)"
+            assert "unresolved review thread" not in reason, job_name
+
+    # A large PR still skips the single-architecture builds, but runs the fuzzers build.
+    fake_info.kv["product_changed_lines"] = 1000
+    fake_info.kv[KV_UNRESOLVED_COUNT] = 3
+    filter_job._pipeline_note_labels = set()
+    assert filter_job.should_skip_job(filter_job.PR_SINGLE_ARCH_SKIPPED_BUILDS[0])[0]
+    filter_job._pipeline_note_labels = set()
+    assert filter_job.should_skip_job(filter_job.SMALL_PR_SKIPPED_BUILDS[0]) == (False, "")
+
+    # `ci-build` asks for the whole build matrix, under the gate too.
+    fake_info.kv["product_changed_lines"] = 10
+    fake_info.pr_labels = [Labels.CI_BUILD]
+    for job_name in skipped_builds:
+        filter_job._pipeline_note_labels = set()
+        assert filter_job.should_skip_job(job_name) == (False, ""), job_name
 
 
 def _retry_non_green_jobs(jobs):
