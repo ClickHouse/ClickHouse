@@ -178,6 +178,11 @@ static constexpr size_t HASH_BATCH_SIZE = 1024;
 
 bool detail::RuntimeFilterIndexAnalysis::supportsDataType(const DataTypePtr & data_type)
 {
+    return runtimeFilterKeySupportsMinMaxRange(data_type);
+}
+
+bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & data_type)
+{
     if (!data_type)
         return false;
 
