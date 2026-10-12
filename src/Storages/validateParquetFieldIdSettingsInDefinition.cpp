@@ -5,6 +5,7 @@
 #if USE_PARQUET
 
 #include <Core/NamesAndTypes.h>
+#include <Formats/FormatFactory.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
@@ -93,6 +94,30 @@ void validateParquetFieldIdSettingsInDefinition(
     (void)format_name;
     (void)format_settings;
     (void)definition_columns_match_writer_header;
+#endif
+}
+
+void validateParquetFieldIdSettingsInMessageQueueDefinition(
+    const StorageFactory::Arguments & args,
+    const String & format_name,
+    const SettingsChanges & definition_format_changes,
+    const NamesAndTypesList & writer_header_columns)
+{
+#if USE_PARQUET
+    if (!boost::iequals(format_name, "Parquet"))
+        return;
+
+    validateParquetFieldIdSettingsInDefinitionImpl(
+        args,
+        format_name,
+        writer_header_columns,
+        getFormatSettingsForTableDefinition(args.getLocalContext(), &definition_format_changes),
+        false);
+#else
+    (void)args;
+    (void)format_name;
+    (void)definition_format_changes;
+    (void)writer_header_columns;
 #endif
 }
 

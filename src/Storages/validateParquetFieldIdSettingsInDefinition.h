@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/StorageFactory.h>
 
@@ -71,6 +72,18 @@ void validateParquetFieldIdSettingsWithResolvedHeader(
   * known-good. Format-independent on purpose: the format may still be `auto` at that point.
   * Always false when Parquet support is compiled out.
   */
+/** The same validation for a message-queue engine (`Kafka`, `NATS`). Such an engine does not freeze
+  * `FormatSettings`, but it applies the format settings of its definition
+  * (`definition_format_changes`, i.e. its settings without the engine-specific prefix) to every
+  * `INSERT`, so an invalid Parquet `field_id` map in the definition would equally make the table
+  * unwritable. `writer_header_columns` are the columns the engine passes to the output format.
+  */
+void validateParquetFieldIdSettingsInMessageQueueDefinition(
+    const StorageFactory::Arguments & args,
+    const String & format_name,
+    const SettingsChanges & definition_format_changes,
+    const NamesAndTypesList & writer_header_columns);
+
 bool freshDefinitionSuppliesParquetFieldIdSettings(
     const StorageFactory::Arguments & args,
     const FormatSettings & format_settings,
