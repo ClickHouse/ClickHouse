@@ -21,9 +21,6 @@
 #include <algorithm>
 #include <memory>
 #include <shared_mutex>
-#include <stack>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -138,7 +135,7 @@ void ExecutingGraph::unregisterSpillables(Node & node)
         auto it = spillable_owners.find(spillable);
         if (it == spillable_owners.end())
             continue;
-        std::erase(it->second, &node);
+        absl::erase_if(it->second, [&](const auto & n) { return n == &node; });
         if (it->second.empty())
             spillable_owners.erase(it);
     }
@@ -165,9 +162,9 @@ void ExecutingGraph::scheduleSpills(Queue & queue)
     {
         ISpillable * spillable;
         Int64 bytes;
-        std::vector<Node *> owners;
+        absl::InlinedVector<Node *, 2> owners;
     };
-    std::vector<Candidate> candidates;
+    absl::InlinedVector<Candidate, 8> candidates;
     {
         std::lock_guard lock(spillables_mutex);
         for (const auto & [spillable, owners] : spillable_owners)

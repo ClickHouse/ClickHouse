@@ -8,14 +8,11 @@
 #include <Common/ListWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Processors/IProcessor.h>
+#include <absl/container/inlined_vector.h>
 #include <Common/SharedMutex.h>
 #include <atomic>
 #include <list>
 #include <mutex>
-#include <queue>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 
 namespace DB
@@ -98,7 +95,7 @@ class ExecutingGraph
         std::mutex status_mutex;
         /// Non-null for an independently scheduled spill; normal `work` must not run for this task.
         ISpillable * spill_target = nullptr;
-        std::vector<ISpillable *> registered_spillables;
+        absl::InlinedVector<ISpillable *, 2> registered_spillables;
 
         /// Last state for profiling.
         std::optional<IProcessor::Status> last_processor_status;
@@ -168,7 +165,7 @@ private:
 
     /// Node lifetimes are protected by `nodes_mutex`; membership changes also take this mutex.
     std::mutex spillables_mutex;
-    std::unordered_map<ISpillable *, std::vector<Node *>> spillable_owners;
+    UnorderedMapWithMemoryTracking<ISpillable *, absl::InlinedVector<Node *, 2>> spillable_owners;
     MemoryReservation * memory_reservation = nullptr;
     std::shared_ptr<MemorySpillScheduler> memory_spill_scheduler;
 
