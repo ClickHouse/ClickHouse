@@ -348,7 +348,6 @@ Block ArrayJoinResultIterator::nextWithElementFilter(const std::atomic<bool> * i
     const bool is_unaligned = array_join->is_unaligned;
     const bool is_left = array_join->is_left;
 
-    /// Dead windows are skipped without returning to the executor, so check for cancellation between them.
     auto stop_if_cancelled = [&]
     {
         if (!is_cancelled || !is_cancelled->load(std::memory_order_acquire))
