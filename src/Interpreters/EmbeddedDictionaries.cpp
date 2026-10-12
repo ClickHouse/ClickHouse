@@ -17,6 +17,11 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType ReloadEmbeddedDictionaries;
+}
+
 void EmbeddedDictionaries::handleException(const bool throw_on_error) const
 {
     const auto exception_ptr = std::current_exception();
@@ -61,6 +66,13 @@ bool EmbeddedDictionaries::reloadDictionary(
 bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool force_reload)
 {
     std::lock_guard lock(mutex);
+
+    if (reload_blocker.isCancelled())
+    {
+        LOG_DEBUG(log, "Loading of embedded dictionaries is stopped.");
+        reload_skipped_while_stopped = true;
+        return false;
+    }
 
     /** If you can not update the directories, then despite this, do not throw an exception (use the old directories).
       * If there are no old correct directories, then when using functions that depend on them,
@@ -110,6 +122,11 @@ void EmbeddedDictionaries::reloadPeriodically()
             cur_reload_period = reload_period;
             is_fast_start_stage = false;
         }
+        else if (reload_blocker.isCancelled())
+        {
+            /// Skipped, not failed: keep the fast start delay, `reloadSkippedWhileStopped` runs the load on start.
+            continue;
+        }
 
         if (is_fast_start_stage)
         {
@@ -146,5 +163,20 @@ void EmbeddedDictionaries::reload()
         throw Exception(ErrorCodes::UNFINISHED, "Some embedded dictionaries were not successfully reloaded");
 }
 
+ActionLock EmbeddedDictionaries::getActionLock()
+{
+    return reload_blocker.cancel();
+}
+
+void EmbeddedDictionaries::reloadSkippedWhileStopped()
+{
+    {
+        std::lock_guard lock(mutex);
+        if (!reload_skipped_while_stopped)
+            return;
+        reload_skipped_while_stopped = false;
+    }
+    reloadImpl(false);
+}
 
 }

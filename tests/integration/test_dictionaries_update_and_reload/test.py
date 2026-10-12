@@ -211,6 +211,29 @@ def test_reload_after_loading(started_cluster):
     assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "83\n"
 
 
+def test_start_reload_applies_config_changed_while_stopped(started_cluster):
+    instance = started_cluster.instances["instance"]
+    query = instance.query
+
+    assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "8\n"
+
+    query("SYSTEM STOP RELOAD DICTIONARIES")
+    time.sleep(1)  # see the comment in test_reload_after_loading
+    replace_in_file_in_container(
+        instance, "/etc/clickhouse-server/dictionaries/executable.xml", "8", "81"
+    )
+
+    # Configuration files are reread once in 5 seconds: the reload for the changed config is blocked.
+    time.sleep(10)
+    assert query("SELECT dictGetInt32('executable', 'a', toUInt64(7))") == "8\n"
+
+    # The config is not reread again since it has not changed since, so only START can apply it.
+    query("SYSTEM START RELOAD DICTIONARIES")
+    assert_eq_with_retry(
+        instance, "SELECT dictGetInt32('executable', 'a', toUInt64(7))", "81"
+    )
+
+
 def test_reload_after_fail_by_system_reload(started_cluster):
     instance = started_cluster.instances["instance"]
     query = instance.query
