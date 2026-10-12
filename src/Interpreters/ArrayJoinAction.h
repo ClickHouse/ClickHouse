@@ -46,8 +46,6 @@ public:
     /// Optional element-space filter: drops elements before expansion so they're never replicated
     ExpressionActionsPtr element_filter;
     String element_filter_column_name;
-    /// row columns that a filter function turns into a small value without an element, it runs once per row on them
-    NameSet element_filter_lazy_inputs;
 
     ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_);
     static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample);

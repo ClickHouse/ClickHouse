@@ -14,6 +14,7 @@ SELECT count() FROM (EXPLAIN actions = 1 SELECT id, item, tag FROM t_aj_whole AR
 SET max_memory_usage = '100Mi';
 SELECT count(), sum(item = 'item-1') FROM t_aj_whole ARRAY JOIN items AS item ARRAY JOIN tags AS tag WHERE NOT (has(items, 'item-1') AND item = 'item-1');
 SELECT count(), sum(item = 'item-1') FROM t_aj_whole ARRAY JOIN items AS item ARRAY JOIN tags AS tag WHERE length(items) > 100 OR item = 'item-1';
+SELECT count(), sum(item = 'item-1') FROM t_aj_whole ARRAY JOIN items AS item ARRAY JOIN tags AS tag WHERE NOT (arrayExists(x -> x = id, items) AND item = 'item-1');
 SELECT count(), sum(item = 'item-1') FROM t_aj_whole ARRAY JOIN items AS item ARRAY JOIN tags AS tag WHERE NOT (has(items, 'item-1') AND item = 'item-1') SETTINGS query_plan_fuse_filter_into_array_join = 0;
 
 DROP TABLE t_aj_whole;
