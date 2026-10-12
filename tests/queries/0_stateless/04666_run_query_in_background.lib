@@ -69,20 +69,35 @@ function shared_native_and_http_tests()
     echo '--- enabling the setting for a whole session is rejected'
     $run "SET run_query_in_background = 1" "" 0 | grep -o -m1 "run_query_in_background cannot be changed with SET"
 
-    echo '--- a query that cannot run in the background fails asynchronously'
+    echo '--- a query that cannot run in the background fails synchronously'
     local set_id="set_${run}_${CLICKHOUSE_DATABASE}"
-    $run "SET max_threads = 4" "$set_id"
-    wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$set_id' AND exception_code != 0"
-    echo "failed asynchronously"
+    $run "SET max_threads = 4" "$set_id" | grep -o -m1 THERE_IS_NO_SESSION
 
-    echo '--- a background query runs as the submitting user, and a missing grant is denied asynchronously'
+    echo '--- a background query runs as the submitting user, and a missing grant is denied synchronously'
     local user="user_${run}_${CLICKHOUSE_DATABASE}"
     $CLICKHOUSE_CLIENT -q "CREATE USER $user IDENTIFIED WITH no_password SETTINGS max_result_rows = 4 CONST; GRANT INSERT ON t TO $user"
     local denied_id="denied_${run}_${CLICKHOUSE_DATABASE}"
     out=$($run "INSERT INTO t SELECT count() FROM t" "$denied_id" 1 "$user")
-    [[ -z "$out" ]] && echo "no output"
+    grep -o -m1 ACCESS_DENIED <<< "$out"
     wait_for_query_log "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$denied_id' AND user = '$user' AND exception_code = 497"
-    echo "denied asynchronously"
+
+    echo '--- errors raised inside the interpreter before the main work are returned synchronously'
+    $run "OPTIMIZE TABLE t DRY RUN PARTS 'all_1_1_0' FINAL" | grep -o -m1 BAD_ARGUMENTS
+    $run "ALTER TABLE t UPDATE n = n + 1 WHERE 1" | grep -o -m1 CANNOT_UPDATE_COLUMN
+    $run "ALTER TABLE t MODIFY COLUMN n String" | grep -o -m1 ALTER_OF_COLUMN_IS_FORBIDDEN
+    $run "DROP TABLE t SETTINGS max_table_size_to_drop = 1" | grep -o -m1 TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT
+    $run "DELETE FROM t WHERE n = 1 SETTINGS enable_lightweight_delete = 0" | grep -o -m1 SUPPORT_IS_DISABLED
+    $run "BACKUP TABLE t TO Disk('backups', 'unused') SETTINGS compression_level = 'abc'" | grep -o -m1 CANNOT_PARSE_INPUT_ASSERTION_FAILED
+
+    echo '--- errors raised after the main work has started are only logged'
+    local logged_id="logged_${run}_${CLICKHOUSE_DATABASE}"
+    $run "OPTIMIZE TABLE t PARTITION ID 'missing' FINAL SETTINGS optimize_throw_if_noop = 1" "${logged_id}_optimize"
+    $run "BACKUP TABLE t_missing TO Disk('backups', '${logged_id}')" "${logged_id}_backup"
+    $run "INSERT INTO t SELECT throwIf(number = 5) FROM numbers(10)" "${logged_id}_insert"
+    $run "INSERT INTO t SELECT 1 PARALLEL WITH ALTER TABLE t UPDATE n = n + 1 WHERE 1" "${logged_id}_parallel_with"
+    wait_for_query_log "count() = 4 FROM system.query_log WHERE current_database = currentDatabase()
+        AND (query_id, exception_code) IN (('${logged_id}_optimize', 388), ('${logged_id}_backup', 60), ('${logged_id}_insert', 395), ('${logged_id}_parallel_with', 420))"
+    echo "only logged"
 
     echo '--- a settings constraint of the user is enforced on a background query'
     $run "SELECT 1 SETTINGS max_result_rows = 8" "" 1 "$user" | grep -o -m1 'SETTING_CONSTRAINT_VIOLATION'

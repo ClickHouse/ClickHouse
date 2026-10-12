@@ -42,6 +42,7 @@ BlockIO InterpreterBackupQuery::execute()
     auto & backups_worker = context->getBackupsWorker();
 
     auto [id, status] = backups_worker.start(query_ptr, context);
+    context->onQueryExecutionStarted();
 
     /// Wait if it's a synchronous operation.
     bool async = BackupSettings::isAsync(backup_query);

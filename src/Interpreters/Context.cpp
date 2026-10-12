@@ -1555,6 +1555,7 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
     streaming_cursor(o.streaming_cursor),
+    query_execution_started_callback(o.query_execution_started_callback),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -8967,6 +8968,17 @@ void Context::setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests)
 Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
 {
     return ddl_additional_checks_on_enqueue;
+}
+
+void Context::setQueryExecutionStartedCallback(std::function<void()> callback)
+{
+    query_execution_started_callback = std::move(callback);
+}
+
+void Context::onQueryExecutionStarted() const
+{
+    if (query_execution_started_callback)
+        query_execution_started_callback();
 }
 
 
