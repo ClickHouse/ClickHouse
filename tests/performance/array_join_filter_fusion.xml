@@ -28,6 +28,8 @@
     <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = concat('e', toString(id % 40)) SETTINGS enable_lazy_columns_replication = 0</query>
     <!-- regression guard: count() carries no passenger, so both paths do the same element comparisons -->
     <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
+    <!-- the fused filter reads the whole array: it must not be copied once per element, a second ARRAY JOIN keeps has() in the filter -->
+    <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem ARRAY JOIN [1] AS one WHERE NOT (has(arr, 'e7') AND elem = 'e7')</query>
 
     <drop_query>DROP TABLE IF EXISTS array_join_filter_fusion</drop_query>
 </test>

@@ -399,14 +399,23 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
             element_block.insert({array.getDataPtr(), nested_type->getNestedType(), name});
         }
 
-        /// Row columns the filter reads are broadcast to the row's elements.
+        /// Row columns the filter reads are broadcast to the row's elements, lazily if a function reads them without an element
+        ColumnPtr element_indexes;
         for (const auto & required : array_join->element_filter->getRequiredColumnsWithTypes())
         {
             if (columns.contains(required.name))
                 continue;
             const auto & src = block.getByName(required.name);
             auto cut_col = src.column->cut(current_row, window_rows)->convertToFullColumnIfReplicated();
-            element_block.insert({cut_col->replicate(win_offsets), src.type, required.name});
+            if (enable_lazy_columns_replication && array_join->element_filter_lazy_inputs.contains(required.name)
+                && isLazyReplicationUseful(cut_col))
+            {
+                if (!element_indexes)
+                    element_indexes = convertOffsetsToIndexes(win_offsets);
+                element_block.insert({ColumnReplicated::create(cut_col, element_indexes), src.type, required.name});
+            }
+            else
+                element_block.insert({cut_col->replicate(win_offsets), src.type, required.name});
         }
         array_join->element_filter->execute(element_block, num_elements);
         auto filter_column = element_block.getByName(array_join->element_filter_column_name).column;

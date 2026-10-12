@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Columns/ColumnReplicated.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
@@ -63,6 +64,14 @@ void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
     {
         array_join_actions->element_filter = std::make_shared<ExpressionActions>(element_filter->clone(), settings.getActionsSettings());
         array_join_actions->element_filter_column_name = element_filter_column_name;
+
+        ActionsDAG::NodeRawConstPtrs row_functions;
+        auto row_part = element_filter->splitActionsBeforeArrayJoin(array_join.columns).first;
+        for (const auto & node : row_part.getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION && !isLazyReplicationUseful(node.result_type->createColumn()))
+                row_functions.push_back(&node);
+        auto row_inputs = ActionsDAG::cloneSubDAG(row_functions, false).getRequiredColumnsNames();
+        array_join_actions->element_filter_lazy_inputs = NameSet(row_inputs.begin(), row_inputs.end());
     }
     /// A standalone FilterStep is a pass-through on the totals stream, so the fused filter must be too -
     /// run the totals stream through an action without the element filter.
