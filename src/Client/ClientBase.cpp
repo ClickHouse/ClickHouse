@@ -45,7 +45,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/ParseError.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -2715,7 +2714,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             /// `StorageFile` pipeline, so unlike the inline/stdin paths there is no input format at hand
             /// to attach a lazy provider to; classify the exception here instead and re-read a bounded
             /// prefix of the file.
-            if (isParseError(e.code()))
+            if (isInsertDataErrorWorthExplaining(e.code()))
             {
                 /// Bound the inference by the row the parser had reached, so that a row it never read
                 /// cannot contaminate the diagnosis of an earlier failure. The row number is taken

@@ -193,4 +193,11 @@ private:
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
+/// Whether an exception thrown while reading the data of an `INSERT` is worth explaining with the
+/// schema-mismatch diagnostic (see `IInputFormat::setParseErrorDiagnosticProvider`). Besides genuine
+/// parse errors (`isParseError`) it covers `CANNOT_PARSE_TEXT`, which is thrown when a format that
+/// decodes a typed source column (`Native`, `Arrow`, `Parquet`, `ORC`, ...) casts it into the
+/// destination type, e.g. a source `String` into `UInt8`.
+bool isInsertDataErrorWorthExplaining(int code);
+
 }

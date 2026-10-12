@@ -41,9 +41,7 @@ printf 'CREATE TABLE t (a UInt8, b UInt8) ENGINE = Memory; INSERT INTO t FORMAT 
     | $CLICKHOUSE_LOCAL 2>&1 | check
 
 # The destination is a nested type: casting the decoded `String` source column into it fails with
-# `CANNOT_READ_ARRAY_FROM_TEXT`, a genuine parse error, so the diagnostic runs. A `String` source going
-# into a numeric column cannot be used here: that cast fails with `CANNOT_PARSE_TEXT`, which is not
-# classified as a parse error, so no diagnostic is attached to it at all.
+# `CANNOT_READ_ARRAY_FROM_TEXT`, a genuine parse error, so the diagnostic runs.
 for format in Parquet Arrow ORC; do
     data_file="$CLICKHOUSE_TMP/data_04903_${format}"
     setting="input_format_${format,,}_case_insensitive_column_matching"
@@ -52,6 +50,21 @@ for format in Parquet Arrow ORC; do
     echo "-- $format, case-insensitive source name still attributes a type mismatch"
     {
         echo "CREATE TABLE t (a Array(UInt8)) ENGINE = Memory; INSERT INTO t SETTINGS $setting = 1 FORMAT $format"
+        cat "$data_file"
+    } | $CLICKHOUSE_LOCAL 2>&1 | check
+
+    rm -f "$data_file"
+done
+
+# A decoded `String` source column cast into a scalar destination fails with `CANNOT_PARSE_TEXT`
+# rather than with one of the `isParseError` codes; the diagnostic must still run for it.
+for format in Native Arrow Parquet ORC; do
+    data_file="$CLICKHOUSE_TMP/data_04903_scalar_${format}"
+    $CLICKHOUSE_LOCAL -q "SELECT 'not_a_number' AS a FORMAT $format" > "$data_file"
+
+    echo "-- $format, String source into UInt8"
+    {
+        echo "CREATE TABLE t (a UInt8) ENGINE = Memory; INSERT INTO t FORMAT $format"
         cat "$data_file"
     } | $CLICKHOUSE_LOCAL 2>&1 | check
 
