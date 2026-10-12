@@ -178,9 +178,11 @@ process_rust_crate() {
            [ "$LICENSE_TYPE" == "MIT/Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "MIT OR Apache-2.0 OR LGPL-2.1-or-later" ] ||
            [ "$LICENSE_TYPE" == "Zlib OR Apache-2.0 OR MIT" ] ||
+           [ "$LICENSE_TYPE" == "Zlib OR MIT OR Apache-2.0" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 OR BSL-1.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0 WITH LLVM-exception" ] ||
+           [ "$LICENSE_TYPE" == "Apache-2.0 / MIT / MPL-2.0" ] ||
            [ "$LICENSE_TYPE" == "Apache-2.0/MIT" ];
         then
             LICENSE_PATH="/utils/list-licenses/Apache-2.0.txt"
