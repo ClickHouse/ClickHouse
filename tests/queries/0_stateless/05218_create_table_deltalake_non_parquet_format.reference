@@ -1,0 +1,7 @@
+parquet: data files are parquet
+1
+2
+3
+csv: create rejected
+gzip: create rejected
+attach: insert rejected
